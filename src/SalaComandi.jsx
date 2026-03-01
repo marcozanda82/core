@@ -339,6 +339,8 @@ export default function SalaComandi() {
   const [currentTime, setCurrentTime] = useState(8);
   const [showDetails, setShowDetails] = useState(false);
   const [chartUnit, setChartUnit] = useState('percent'); // 'percent' | 'kcal'
+  const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
+  const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState(null); 
   
@@ -377,6 +379,7 @@ export default function SalaComandi() {
   const [nutrientModal, setNutrientModal] = useState(null);
   const [editQuantityValue, setEditQuantityValue] = useState('');
   const [showChoiceModal, setShowChoiceModal] = useState(false);
+  const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [userProfile, setUserProfile] = useState({
@@ -442,6 +445,8 @@ export default function SalaComandi() {
   const [draggingNode, setDraggingNode] = useState(null);
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const timelineContainerRef = useRef(null);
+  const chartScrollRef = useRef(null);
+  const chartTouchTimerRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const pendingClickRef = useRef(null);
   const dragOffsetYRef = useRef(0);
@@ -449,6 +454,30 @@ export default function SalaComandi() {
   const miniTimelineActivityRef = useRef(null);
   const currentTrackerDateRef = useRef(currentTrackerDate);
   useEffect(() => { currentTrackerDateRef.current = currentTrackerDate; }, [currentTrackerDate]);
+
+  useEffect(() => {
+    if (draggingNode) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [draggingNode]);
+
+  const centerCurrentTime = useCallback(() => {
+    if (!chartScrollRef.current) return;
+    const container = chartScrollRef.current;
+    const scrollWidth = container.scrollWidth;
+    const clientWidth = container.clientWidth;
+    const timePos = (currentTime / 24) * scrollWidth;
+    const targetScroll = timePos - (clientWidth / 2);
+    container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
+  }, [currentTime]);
+
+  useEffect(() => {
+    const timer = setTimeout(centerCurrentTime, 50);
+    return () => clearTimeout(timer);
+  }, [currentTime, zoomLevel, centerCurrentTime]);
 
   // ============================================================================
   // COMPUTED CON RETROCOMPATIBILITÀ
@@ -1186,53 +1215,30 @@ export default function SalaComandi() {
     setSelectedNodeReport(node);
   };
 
-  const LONG_PRESS_MS = 400;
-  const startLongPress = (node, edge, e) => {
-    e.preventDefault();
+  const startNodeDrag = useCallback((node, edge) => (e) => {
     e.stopPropagation();
-    pendingClickRef.current = { node };
-    const removeListeners = () => {
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointermove', onPointerMove);
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-    };
-    const onPointerUp = () => {
-      removeListeners();
-      if (pendingClickRef.current) {
-        handleNodeClick(pendingClickRef.current.node);
-        pendingClickRef.current = null;
-      }
-    };
-    const onPointerMove = () => {
-      removeListeners();
-      pendingClickRef.current = null;
-    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragOffsetYRef.current = 0;
+    const itemIds = node.type === 'meal'
+      ? (dailyLog || []).filter(item => getSlotKey(item) === String(node.id)).map(i => i.id)
+      : [];
+    setDraggingNode({
+      id: node.id,
+      type: node.type,
+      itemIds,
+      originalTime: node.time,
+      originalDuration: node.duration,
+      edge
+    });
+  }, [dailyLog]);
 
-    let itemIds = [];
-    if (node.type === 'meal') {
-      itemIds = (dailyLog || [])
-        .filter(item => getSlotKey(item) === String(node.id))
-        .map(i => i.id);
-    }
-
-    longPressTimerRef.current = setTimeout(() => {
-      pendingClickRef.current = null;
-      removeListeners();
-      setDraggingNode({
-        id: node.id,
-        edge,
-        type: node.type,
-        originalTime: node.time,
-        originalDuration: node.duration,
-        itemIds
-      });
-    }, LONG_PRESS_MS);
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointermove', onPointerMove);
+  const releaseNodePointer = (e) => {
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
   };
+
+  const handleNodeTap = useCallback((node) => () => {
+    if (Math.abs(dragOffsetYRef.current) < 10) setSelectedNodeReport(node);
+  }, []);
 
   const handleAddWater = (amount) => { 
     setWaterIntake(prev => prev + amount < 0 ? 0 : prev + amount); 
@@ -1957,27 +1963,46 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }
 
   return (
-    <div style={{ backgroundColor: '#000', color: '#fff', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '20px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+    <div style={{ backgroundColor: '#000', color: '#fff', height: '100vh', maxHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '15px 15px 20px 15px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
       <style>
         {`
           .future { stroke-dasharray: 4 6; animation: f-flow 2s linear infinite; opacity: 0.2; }
           @keyframes f-flow { from { stroke-dashoffset: 20; } to { stroke-dashoffset: 0; } }
 
-          .btn-toggle { background: none; border: 1px solid #333; color: #666; padding: 8px 16px; border-radius: 20px; font-size: 0.7rem; cursor: pointer; letter-spacing: 2px; transition: all 0.3s; }
+          /* Tasti header più grandi per il pollice */
+          .btn-toggle { background: none; border: 1px solid #333; color: #666; padding: 10px 20px !important; font-size: 0.8rem !important; min-height: 44px; border-radius: 20px; cursor: pointer; letter-spacing: 2px; transition: all 0.3s; -webkit-tap-highlight-color: transparent; display: flex; align-items: center; }
           .btn-toggle.active { border-color: #00e5ff; color: #00e5ff; box-shadow: 0 0 10px rgba(0,229,255,0.2); }
           
           .drawer-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity 0.4s ease; z-index: 100; }
           .drawer-overlay.open { opacity: 1; pointer-events: all; }
           
-          .drawer-content { position: fixed; bottom: -100%; left: 0; right: 0; background: rgba(15, 15, 15, 0.95); border-top: 1px solid #2a2a2a; border-radius: 35px 35px 0 0; padding: 40px 25px; transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.05); z-index: 101; box-shadow: 0 -10px 50px rgba(0,0,0,0.9); max-height: 88vh; overflow-y: auto; backdrop-filter: blur(25px); }
+          /* Ottimizzazione Drawer per Mobile */
+          .drawer-content { position: fixed; bottom: -100%; left: 0; right: 0; background: rgba(15, 15, 15, 0.95); border-top: 1px solid #2a2a2a; border-radius: 25px 25px 0 0 !important; padding: 30px 20px !important; padding-bottom: max(20px, env(safe-area-inset-bottom)); transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.05); z-index: 101; box-shadow: 0 -10px 50px rgba(0,0,0,0.9); max-height: 92vh !important; overflow-y: auto; backdrop-filter: blur(25px); -webkit-overflow-scrolling: touch; }
           .drawer-content.open { bottom: 0; }
+          
+          /* Navigator Zoom Controls */
+          .zoom-controls { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 10; }
+          .zoom-btn { width: 44px; height: 44px; background: rgba(20, 20, 20, 0.8); border: 1px solid #333; color: #00e5ff; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; backdrop-filter: blur(5px); cursor: pointer; }
+          
+          /* Contenitore per lo scroll del grafico */
+          .chart-scroll-container { width: 100%; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; cursor: grab; }
+          .chart-scroll-container::-webkit-scrollbar { display: none; }
+          
+          /* Super FAB Menu */
+          .fab-container { position: fixed; bottom: 25px; right: 25px; z-index: 1000; }
+          .fab-main { width: 65px; height: 65px; background: #00e5ff; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 2rem; color: #000; box-shadow: 0 4px 20px rgba(0,229,255,0.5); border: none; transition: 0.3s; z-index: 2; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+          .fab-main.open { transform: rotate(45deg); background: #ff4d4d; }
+          .fab-menu { position: absolute; bottom: 80px; right: 5px; display: flex; flex-direction: column; gap: 15px; pointer-events: none; opacity: 0; transition: 0.3s; transform: translateY(20px); }
+          .fab-menu.open { pointer-events: all; opacity: 1; transform: translateY(0); }
+          .fab-item { position: relative; width: 50px; height: 50px; background: #1a1a1a; border: 1px solid #333; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; box-shadow: 0 4px 15px rgba(0,0,0,0.5); cursor: pointer; }
+          .fab-label { position: absolute; right: 65px; background: #000; padding: 5px 12px; border-radius: 8px; font-size: 0.7rem; color: #00e5ff; white-space: nowrap; border: 1px solid #00e5ff; }
           
           @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
           .view-animate { animation: fadeIn 0.3s ease forwards; }
 
-          .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-          .action-btn { background: rgba(255,255,255,0.04); border: 1px solid #2a2a2a; color: #fff; padding: 15px; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: 0.2s; }
+          .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+          .action-btn { background: rgba(255,255,255,0.04); border: 1px solid #2a2a2a; color: #fff; padding: 18px 16px; min-height: 48px; min-width: 48px; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: 0.2s; -webkit-tap-highlight-color: transparent; }
           .action-btn:active { transform: scale(0.95); border-color: #555; background: rgba(255,255,255,0.08); }
           .action-btn.full-width { grid-column: 1 / -1; flex-direction: row; padding: 20px; gap: 15px; }
           .action-btn.full-width .action-icon { font-size: 2rem; }
@@ -2005,12 +2030,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .food-pill-btn { background: none; border: none; cursor: pointer; font-size: 1rem; opacity: 0.6; transition: 0.2s; padding: 0; }
           .food-pill-btn:hover { opacity: 1; }
           .btn-info { color: #fff; } .btn-delete { color: #ff4d4d; }
-          .quick-add-bar { display: flex; background: rgba(255,255,255,0.05); border-radius: 18px; border: 1px solid #333; overflow: hidden; margin-bottom: 20px; transition: border-color 0.3s; }
+          .quick-add-bar { display: flex; width: 100%; background: rgba(255,255,255,0.05); border-radius: 18px; border: 1px solid #333; overflow: hidden; margin-bottom: 20px; transition: border-color 0.3s; }
           .quick-add-bar:focus-within { border-color: #00e5ff; box-shadow: 0 0 15px rgba(0, 229, 255, 0.1); }
           .quick-input { background: transparent; border: none; color: #fff; padding: 16px; font-size: 0.9rem; outline: none; }
-          .input-name { flex: 2; border-right: 1px solid #333; }
-          .input-weight { flex: 1; text-align: center; }
-          .quick-add-btn { background: #00e5ff; color: #000; border: none; padding: 0 20px; font-weight: bold; font-size: 1.2rem; cursor: pointer; transition: 0.2s; }
+          .input-name { flex: 2; min-width: 0; border-right: 1px solid #333; }
+          .input-weight { flex: 1; min-width: 0; text-align: center; }
+          .quick-add-btn { flex-shrink: 0; padding: 0 18px; background: #00e5ff; color: #000; border: none; font-weight: bold; font-size: 1.2rem; cursor: pointer; transition: 0.2s; }
+          
+          /* Tasto Vyta AI in basso a sinistra */
+          .ai-chat-btn { position: fixed; bottom: 25px; left: 20px; background: linear-gradient(135deg, #b388ff, #00e5ff); color: #000; border: none; border-radius: 25px; padding: 12px 20px; font-weight: bold; font-size: 0.9rem; box-shadow: 0 4px 15px rgba(179, 136, 255, 0.3); z-index: 1000; display: flex; align-items: center; gap: 8px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+          
+          /* Blocca lo scroll del grafico quando si trascina un nodo */
+          .chart-scroll-container.dragging { overflow-x: hidden !important; }
           
           .diary-group-title { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 2px; margin: 20px 0 10px 10px; border-left: 2px solid #00e5ff; padding-left: 10px; }
           
@@ -2056,6 +2087,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             .report-modal-overlay { position: absolute; left: 0; top: 0; padding: 0; background: white; }
             .report-no-print { display: none !important; }
           }
+          
+          /* Tooltip grafico invisibile di default, visibile solo con tap prolungato */
+          .hide-tooltip .recharts-tooltip-wrapper { visibility: hidden !important; opacity: 0 !important; transition: opacity 0.2s ease; }
+          .show-tooltip .recharts-tooltip-wrapper { visibility: visible !important; opacity: 1 !important; transition: opacity 0.2s ease; }
         `}
       </style>
 
@@ -2068,14 +2103,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
         <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: 0 }}>VYTA <span style={{color: '#444'}}>SYS</span></h1>
         <button type="button" className="btn-toggle" onClick={() => setShowTelemetryPopup(true)} style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊 STATS</button>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button className={`btn-toggle ${showDetails ? 'active' : ''}`} onClick={() => setShowDetails(!showDetails)}>HUD: {showDetails ? 'ON' : 'OFF'}</button>
-          <button className="btn-toggle" onClick={() => { auth.signOut(); }}>LOGOUT</button>
-        </div>
+        <button className="btn-toggle" onClick={() => { auth.signOut(); }}>LOGOUT</button>
       </div>
 
       {/* Navigazione storica (Time-Travel) */}
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px', marginBottom: '20px', background: '#111', padding: '10px', borderRadius: '12px' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px', marginBottom: '10px', background: '#111', padding: '10px', borderRadius: '12px' }}>
         <button type="button" onClick={() => changeDate(-1)} style={{ background: '#333', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>◀ Ieri</button>
         <h2 style={{ color: '#fff', margin: 0, fontSize: '1.2rem' }}>
           {currentDateObj.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -2083,71 +2115,116 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: currentTrackerDate === getTodayString() ? '#111' : '#333', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', cursor: currentTrackerDate === getTodayString() ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: currentTrackerDate === getTodayString() ? 0.5 : 1 }}>Domani ▶</button>
       </div>
 
+      {/* Barra Telemetria Rapida (Spie e Deficit) */}
+      <div
+        onClick={() => setShowSpieInfo(true)}
+        style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#111', padding: '10px 15px', borderRadius: '12px', marginBottom: '15px', fontSize: '0.75rem', fontWeight: 'bold' }}
+      >
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {(Number(totali?.omega3) ?? 0) < 1 ? (
+            <span style={{ color: '#ff5555', background: 'rgba(255, 85, 85, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🔴 Carenza Ω3</span>
+          ) : (
+            <span style={{ color: '#00e676', background: 'rgba(0, 230, 118, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🟢 Micro OK</span>
+          )}
+          {energyAt20Percent < 40 ? (
+            <span style={{ color: '#ff9800', background: 'rgba(255, 152, 0, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🟠 Rischio Serali</span>
+          ) : (
+            <span style={{ color: '#00e676', background: 'rgba(0, 230, 118, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🟢 Serali OK</span>
+          )}
+        </div>
+        <div style={{ color: ((userTargets?.kcal || 2000) - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff4d4d' }}>
+          {((userTargets?.kcal || 2000) - (totali?.kcal || 0)) >= 0
+            ? `🔥 Rimangono: ${Math.round((userTargets?.kcal || 2000) - (totali?.kcal || 0))} kcal`
+            : `⚠️ Surplus: ${Math.abs(Math.round((userTargets?.kcal || 2000) - (totali?.kcal || 0)))} kcal`}
+        </div>
+      </div>
+
       {/* Cruscotto energetico giornaliero 0-24h */}
-      <div style={{ marginBottom: '24px', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexShrink: 0 }}>
           <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>Energia 0–24h</span>
           <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
             <button type="button" onClick={() => setChartUnit('percent')} style={{ padding: '4px 10px', fontSize: '0.7rem', borderRadius: '8px', border: '1px solid #333', background: chartUnit === 'percent' ? 'rgba(0, 229, 255, 0.2)' : 'transparent', color: chartUnit === 'percent' ? '#00e5ff' : '#666', cursor: 'pointer', fontWeight: chartUnit === 'percent' ? 'bold' : 'normal' }}>%</button>
             <button type="button" onClick={() => setChartUnit('kcal')} style={{ padding: '4px 10px', fontSize: '0.7rem', borderRadius: '8px', border: '1px solid #333', background: chartUnit === 'kcal' ? 'rgba(0, 229, 255, 0.2)' : 'transparent', color: chartUnit === 'kcal' ? '#00e5ff' : '#666', cursor: 'pointer', fontWeight: chartUnit === 'kcal' ? 'bold' : 'normal' }}>Kcal</button>
           </div>
         </div>
-        <div style={{ position: 'relative', overflow: 'visible' }}>
-          <ResponsiveContainer width="100%" height={250}>
-            <ComposedChart data={finalChartData} margin={{ top: 35, right: 20, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="colorEnergy" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
-                  <stop offset="50%" stopColor="#047857" stopOpacity={0.7} />
-                  <stop offset="100%" stopColor="#dc2626" stopOpacity={0.6} />
-                </linearGradient>
-                <linearGradient id="vitalFlow" x1="0" y1="0" x2="1" y2="0">
-                  <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="4s" repeatCount="indefinite" />
-                  <animate attributeName="x2" values="0.7;2.3;0.7" dur="4s" repeatCount="indefinite" />
-                  <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.8" />
-                  <stop offset="50%" stopColor="#b388ff" stopOpacity="1" />
-                  <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.8" />
-                </linearGradient>
-                <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-                  <feMerge>
-                    <feMergeNode in="blur" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
-                </filter>
-              </defs>
-              <XAxis dataKey="time" type="number" domain={[0, 24]} tickCount={13} tickFormatter={(val) => `${Math.floor(val)}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 10 }} />
-              <YAxis domain={chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100]} tick={{ fill: '#555', fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : `${val}%`} />
-              <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
-              <Tooltip labelFormatter={(label) => `${Math.floor(Number(label))}:00`} formatter={(value) => (value != null && !Number.isNaN(Number(value))) ? (chartUnit === 'kcal' ? `${Math.round(Number(value))} kcal` : `${value}%`) : ''} contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', fontSize: '0.8rem' }} />
-              <Area type="monotone" dataKey="energyPast" stroke="url(#vitalFlow)" strokeWidth={3} fill="url(#colorEnergy)" filter="url(#glow)" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} />
-              <Area type="monotone" dataKey="energyFuture" stroke="#333" strokeWidth={2} strokeDasharray="5 5" fill="transparent" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} className="future" />
-              <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255, 255, 255, 0.6)" strokeWidth={2} strokeDasharray="5 5" dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
-              <ReferenceLine x={currentTime} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 11, offset: 10 }} />
-              <ReferenceDot x={currentTime} y={finalDotY} isFront shape={(props) => {
-                const cx = props?.cx;
-                const cy = props?.cy;
-                if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') return <path d="M0 0" />;
-                return (
-                  <g>
-                    <circle cx={cx} cy={cy} r={5} fill="#00e5ff" />
-                    <circle cx={cx} cy={cy} r={5} fill="none" stroke="#00e5ff" strokeWidth={2}>
-                      <animate attributeName="r" values="5;18" dur="1.2s" repeatCount="indefinite" />
-                      <animate attributeName="opacity" values="0.9;0" dur="1.2s" repeatCount="indefinite" />
-                    </circle>
-                    <circle cx={cx} cy={cy} r={8} fill="none" stroke="#b388ff" strokeWidth={1.5} opacity={0.7}>
-                      <animate attributeName="r" values="8;24" dur="2s" repeatCount="indefinite" />
-                      <animate attributeName="opacity" values="0.7;0" dur="2s" repeatCount="indefinite" />
-                    </circle>
-                  </g>
-                );
-              }} />
-            </ComposedChart>
-          </ResponsiveContainer>
-              <div ref={timelineContainerRef} style={{ position: 'relative', height: '44px', marginTop: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid #222', overflow: 'visible' }}>
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div className="zoom-controls">
+            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
+            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
+            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
+          </div>
+          <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} style={{ flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
+            <div
+              className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
+              onTouchStart={() => { chartTouchTimerRef.current = setTimeout(() => setIsChartTooltipActive(true), 400); }}
+              onTouchMove={() => { if (!isChartTooltipActive) clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; }}
+              onTouchEnd={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
+              onMouseDown={() => { chartTouchTimerRef.current = setTimeout(() => setIsChartTooltipActive(true), 400); }}
+              onMouseMove={() => { if (!isChartTooltipActive) clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; }}
+              onMouseUp={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
+              onMouseLeave={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
+              style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={finalChartData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorEnergy" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
+                      <stop offset="50%" stopColor="#047857" stopOpacity={0.7} />
+                      <stop offset="100%" stopColor="#dc2626" stopOpacity={0.6} />
+                    </linearGradient>
+                    <linearGradient id="vitalFlow" x1="0" y1="0" x2="1" y2="0">
+                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="4s" repeatCount="indefinite" />
+                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="4s" repeatCount="indefinite" />
+                      <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.8" />
+                      <stop offset="50%" stopColor="#b388ff" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.8" />
+                    </linearGradient>
+                    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 13 }} />
+                  <YAxis domain={chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100]} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : `${val}%`} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
+                  <Tooltip labelFormatter={(label) => `${Math.floor(Number(label))}:00`} formatter={(value) => (value != null && !Number.isNaN(Number(value))) ? (chartUnit === 'kcal' ? `${Math.round(Number(value))} kcal` : `${value}%`) : ''} contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', fontSize: '0.8rem' }} />
+                  <Area type="monotone" dataKey="energyPast" stroke="url(#vitalFlow)" strokeWidth={6} fill="url(#colorEnergy)" filter="url(#glow)" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} />
+                  <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={4} strokeDasharray="10 10" fill="transparent" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} className="future" />
+                  <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255, 255, 255, 0.2)" strokeWidth={4} strokeDasharray="8 8" dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
+                  <ReferenceLine x={currentTime} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 11, offset: 10 }} />
+                  <ReferenceDot x={currentTime} y={finalDotY} isFront shape={(props) => {
+                    const cx = props?.cx;
+                    const cy = props?.cy;
+                    if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') return <path d="M0 0" />;
+                    return (
+                      <g>
+                        <circle cx={cx} cy={cy} r={10} fill="#00e5ff" />
+                        <circle cx={cx} cy={cy} r={10} fill="none" stroke="#00e5ff" strokeWidth={4}>
+                          <animate attributeName="r" values="10;28" dur="1.5s" repeatCount="indefinite" />
+                          <animate attributeName="opacity" values="0.8;0" dur="1.5s" repeatCount="indefinite" />
+                        </circle>
+                      </g>
+                    );
+                  }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div ref={timelineContainerRef} style={{ position: 'relative', height: '55px', marginTop: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', flexShrink: 0 }}>
                   {allNodes.map((node) => {
+                    // --- LOGICA ANTI-OVERLAP ---
+                    const similarNodes = allNodes.filter(n => Math.abs(n.time - node.time) < 0.1);
+                    const myIndex = similarNodes.findIndex(n => n.id === node.id);
+                    const offsetPx = myIndex > 0 ? myIndex * 42 : 0;
+
                     const isWork = node.type === 'work';
-                    const startPercent = (node.time / 24) * 100;
+                    const percent = (node.time / 24) * 100;
+                    const startPercent = percent;
                     const durationPercent = isWork ? ((node.duration || 1) / 24) * 100 : 0;
                     const idealVal = node.type === 'meal' ? (idealStrategy[node.strategyKey] ?? 400) : (node.type === 'workout' ? (idealStrategy.allenamento ?? 300) : (node.kcal ?? 400));
                     const realVal = (node.type === 'meal' || node.type === 'workout') ? (realTotals[node.strategyKey] ?? 0) : 0;
@@ -2162,8 +2239,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     if (isWork) {
                       const dragEdge = isDragging ? draggingNode?.edge : null;
                       return (
-                        <div key={node.id} onPointerDown={(e) => startLongPress(node, 'all', e)} style={{ position: 'absolute', left: `${startPercent}%`, width: `${durationPercent}%`, top: '50%', marginTop: '-18px', height: '36px', transform: isDragging ? `translateY(${dragY}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s' }}>
-                          <div onPointerDown={(e) => startLongPress(node, 'start', e)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize' }}>
+                        <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `calc(${percent}% + ${offsetPx}px)`, width: `${durationPercent}%`, top: '50%', marginTop: '-18px', height: '36px', transform: isDragging ? `translateY(${dragY}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none' }}>
+                          <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                             {(dragEdge === 'start' || dragEdge === 'all') && (
                               <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                                 {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
@@ -2171,7 +2248,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                             )}
                             💼
                           </div>
-                          <div onPointerDown={(e) => startLongPress(node, 'end', e)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize' }}>
+                          <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                             {(dragEdge === 'end' || dragEdge === 'all') && (
                               <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                                 {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
@@ -2186,7 +2263,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
                     const iconContent = isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•');
                     return (
-                      <div key={node.id} onPointerDown={(e) => startLongPress(node, 'all', e)} style={{ position: 'absolute', left: `${startPercent}%`, transform: isDragging ? `translate(-50%, ${dragY}px) scale(2)` : 'translateX(-50%)', top: '50%', marginTop: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)', border: `2px solid ${pointBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s' }}>
+                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `calc(${percent}% + ${offsetPx}px)`, transform: isDragging ? `translate(-50%, ${dragY}px) scale(2)` : 'translateX(-50%)', top: '50%', marginTop: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)', border: `2px solid ${pointBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none' }}>
                         <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: pointBorderColor, marginBottom: '2px', transition: 'color 0.2s' }}>
                           {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
                         </span>
@@ -2194,25 +2271,30 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       </div>
                     );
                   })}
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setShowChoiceModal(true); }} style={{ position: 'absolute', top: '4px', right: '8px', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,229,255,0.2)', border: '1px solid #00e5ff', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5 }} title="Aggiungi nodo">+</button>
-                </div>
-            </div>
-            <div style={{ display: 'flex', gap: '10px', marginTop: '15px', padding: '10px', flexWrap: 'wrap' }}>
-              {(Number(totali?.omega3) ?? 0) < 1 ? (
-                <span style={{ background: '#440000', color: '#ff5555', borderRadius: 20, padding: '5px 10px', fontSize: '0.8rem' }}>🔴 Carenza Omega3</span>
-              ) : (
-                <span style={{ background: '#003300', color: '#55ff55', borderRadius: 20, padding: '5px 10px', fontSize: '0.8rem' }}>🟢 Micro OK</span>
-              )}
-              {energyAt20Percent < 40 ? (
-                <span style={{ background: '#440000', color: '#ff5555', borderRadius: 20, padding: '5px 10px', fontSize: '0.8rem' }}>🚨 Rischio Cortisolo (Cena)</span>
-              ) : (
-                <span style={{ background: '#003300', color: '#55ff55', borderRadius: 20, padding: '5px 10px', fontSize: '0.8rem' }}>🟢 Livelli Serali OK</span>
-              )}
-            </div>
+              </div>
+          </div>
         </div>
-      <div style={{ textAlign: 'center', marginTop: '24px' }}>
-        <button onClick={openDrawer} style={{ width: '65px', height: '65px', borderRadius: '50%', backgroundColor: '#fff', border: 'none', color: '#000', fontSize: '28px', cursor: 'pointer', boxShadow: '0 0 20px rgba(255,255,255,0.2)', transition: 'transform 0.1s' }} onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.9)'} onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}>+</button>
-      </div>
+
+      {/* Bottom Action Bar (75/25 Split) */}
+      {!isDrawerOpen && (
+        <div style={{ display: 'flex', gap: '10px', marginTop: '15px', flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
+            style={{ flex: 3, background: 'linear-gradient(135deg, #b388ff, #00e5ff)', color: '#000', border: 'none', borderRadius: '16px', padding: '18px', fontWeight: 'bold', fontSize: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0, 229, 255, 0.2)' }}
+          >
+            ✨ VYTA AI
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowChoiceModal(true)}
+            style={{ flex: 1, minHeight: '56px', background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s' }}
+            aria-label="Aggiungi evento"
+          >
+            +
+          </button>
+        </div>
+      )}
 
       {/* --- CASSETTO AZIONI --- */}
       <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={closeDrawer}></div>
@@ -2235,7 +2317,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button className="action-btn" onClick={() => setActiveAction('strategia')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>🎯</span><span className="action-label" style={{ color: '#00e5ff' }}>Protocollo</span></button>
               <button className="action-btn" onClick={() => setActiveAction('focus')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 192, 45, 0.4))' }}>🧘</span><span className="action-label" style={{ color: '#fbc02d' }}>Neural Reset</span></button>
               <button className="action-btn full-width" onClick={() => setActiveAction('ai_chat')} style={{ background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
-                <span className="action-icon" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.5))' }}>✨</span><span className="action-label" style={{ color: '#b388ff' }}>Assistente AI</span>
+                <span className="action-icon" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.5))' }}>✨</span><span className="action-label" style={{ color: '#b388ff' }}>Vyta AI</span>
               </button>
             </div>
             <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '20px' }}>
@@ -2539,7 +2621,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)}
                   onKeyDown={(e) => { if (e.key === 'Enter') document.getElementById('weight-input')?.focus(); }}
                 />
-                <input id="weight-input" type="number" className="quick-input input-weight" placeholder="g" value={foodWeightInput} onChange={(e) => setFoodWeightInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()} />
+                <input id="weight-input" type="number" inputMode="decimal" className="quick-input input-weight" placeholder="g" value={foodWeightInput} onChange={(e) => setFoodWeightInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()} />
                 <button type="button" title="Scansiona barcode" onClick={() => setIsBarcodeScannerOpen(prev => !prev)} style={{ padding: '10px 12px', background: isBarcodeScannerOpen ? '#00e5ff' : 'rgba(255,255,255,0.08)', border: '1px solid #333', borderRadius: '10px', cursor: 'pointer', fontSize: '1.1rem' }}>📷</button>
                 <button className="quick-add-btn" onClick={handleAddFoodManual}>+</button>
               </div>
@@ -2683,7 +2765,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   ))}
                 </div>
                 <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-                  {telemetrySubTab === 'macro' && (<> {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')} {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')} {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')} </>)}
+                  {telemetrySubTab === 'macro' && (<> {renderProgressBar('Calorie', totali.kcal || 0, userTargets.kcal ?? 2000, 'kcal', 'kcal')} {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')} {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')} {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')} </>)}
+                  {telemetrySubTab === 'fat' && (<> {renderProgressBar('Grassi Totali', totali.fatTotal || totali.fat || 0, userTargets.fatTotal ?? userTargets.fat ?? 70, 'g', 'fatTotal')} {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))} </>)}
                   {telemetrySubTab === 'bilanci' && (
                     <div className="view-animate">
                       <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px' }}>RAPPORTI BIOCHIMICI</h4>
@@ -2706,7 +2789,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   {telemetrySubTab === 'amino' && (<> {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.amino[k], 'mg', k))} </>)}
                   {telemetrySubTab === 'vit' && (<> {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.vit[k], k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))} </>)}
                   {telemetrySubTab === 'min' && (<> {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.min[k], k === 'se' ? 'µg' : 'mg', k))} </>)}
-                  {telemetrySubTab === 'fat' && (<> {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))} </>)}
                 </div>
               </div>
             )}
@@ -2926,7 +3008,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <button style={{ background: 'none', border: 'none', color: '#888', fontSize: '1.2rem', cursor: 'pointer' }} onClick={() => setSelectedFoodForEdit(null)}>✕</button>
               </div>
               <p style={{ fontSize: '0.85rem', color: '#ccc', marginBottom: '8px' }}>{selectedFoodForEdit.food?.desc || selectedFoodForEdit.food?.name}</p>
-              <input type="number" min="1" step="1" value={editQuantityValue} onChange={(e) => setEditQuantityValue(e.target.value)} style={{ width: '100%', padding: '12px', background: '#222', border: '1px solid #444', borderRadius: '8px', color: '#fff', fontSize: '1rem', marginBottom: '16px' }} placeholder="Grammi" />
+              <input type="number" min="1" step="1" inputMode="decimal" value={editQuantityValue} onChange={(e) => setEditQuantityValue(e.target.value)} style={{ width: '100%', padding: '12px', background: '#222', border: '1px solid #444', borderRadius: '8px', color: '#fff', fontSize: '1rem', marginBottom: '16px' }} placeholder="Grammi" />
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                 <button style={{ padding: '10px 18px', background: '#333', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }} onClick={() => setSelectedFoodForEdit(null)}>Annulla</button>
                 <button style={{ padding: '10px 18px', background: '#00e676', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }} onClick={() => {
@@ -2949,7 +3031,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       </div>
       {nutrientModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120, padding: '20px' }} onClick={() => setNutrientModal(null)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11000, padding: '20px' }} onClick={() => setNutrientModal(null)}>
           <div style={{ background: '#111', border: '1px solid #333', borderRadius: '16px', maxWidth: '350px', width: '100%', maxHeight: '80vh', overflow: 'auto', padding: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.8)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '0.9rem', color: '#00e5ff', textTransform: 'uppercase', letterSpacing: '1px' }}>Fonti di {nutrientModal.label}</h3>
@@ -3059,9 +3141,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <h3 style={{ margin: '0 0 15px 0' }}>1. Dati Biometrici</h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                 <label style={{ display: 'block' }}>Sesso: <select value={userProfile.gender} onChange={e => setUserProfile({ ...userProfile, gender: e.target.value })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}><option value="M">Uomo</option><option value="F">Donna</option></select></label>
-                <label style={{ display: 'block' }}>Età: <input type="number" min="1" max="120" value={userProfile.age} onChange={e => setUserProfile({ ...userProfile, age: parseInt(e.target.value, 10) || 30 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
-                <label style={{ display: 'block' }}>Peso (kg): <input type="number" min="1" step="0.1" value={userProfile.weight} onChange={e => setUserProfile({ ...userProfile, weight: parseFloat(e.target.value) || 75 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
-                <label style={{ display: 'block' }}>Altezza (cm): <input type="number" min="1" value={userProfile.height} onChange={e => setUserProfile({ ...userProfile, height: parseFloat(e.target.value) || 175 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
+                <label style={{ display: 'block' }}>Età: <input type="number" min="1" max="120" inputMode="numeric" value={userProfile.age} onChange={e => setUserProfile({ ...userProfile, age: parseInt(e.target.value, 10) || 30 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
+                <label style={{ display: 'block' }}>Peso (kg): <input type="number" min="1" step="0.1" inputMode="decimal" value={userProfile.weight} onChange={e => setUserProfile({ ...userProfile, weight: parseFloat(e.target.value) || 75 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
+                <label style={{ display: 'block' }}>Altezza (cm): <input type="number" min="1" inputMode="decimal" value={userProfile.height} onChange={e => setUserProfile({ ...userProfile, height: parseFloat(e.target.value) || 175 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
                 <label style={{ display: 'block' }}>Stile di Vita:
                   <select value={userProfile.activityLevel} onChange={e => setUserProfile({ ...userProfile, activityLevel: e.target.value })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}>
                     <option value="1.2">Sedentario</option>
@@ -3088,7 +3170,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 {Object.keys(userTargets).map(key => (
                   <label key={key} style={{ display: 'flex', flexDirection: 'column', fontSize: '0.9rem' }}>
                     <span style={{ textTransform: 'uppercase', color: '#00e5ff' }}>{key}</span>
-                    <input type="number" min="0" step={key === 'omega3' || key === 'vitD' ? 0.1 : 1} value={userTargets[key] ?? ''} onChange={e => setUserTargets({ ...userTargets, [key]: parseFloat(e.target.value) || 0 })} style={{ padding: '8px', border: '1px solid #444', background: '#111', color: '#fff', borderRadius: '4px' }} />
+                    <input type="number" min="0" step={key === 'omega3' || key === 'vitD' ? 0.1 : 1} inputMode="decimal" value={userTargets[key] ?? ''} onChange={e => setUserTargets({ ...userTargets, [key]: parseFloat(e.target.value) || 0 })} style={{ padding: '8px', border: '1px solid #444', background: '#111', color: '#fff', borderRadius: '4px' }} />
                   </label>
                 ))}
               </div>
@@ -3101,18 +3183,49 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         </div>
       )}
+      {/* Pop-up Scelta Azione (Ottimizzato per schermi piccoli) */}
       {showChoiceModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 130, padding: '20px' }} onClick={() => setShowChoiceModal(false)}>
-          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '16px', maxWidth: '320px', width: '100%', padding: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.8)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '1rem', color: '#fff', textAlign: 'center' }}>Cosa vuoi aggiungere?</h3>
-            <div style={{ display: 'flex', gap: '12px', flexDirection: 'column' }}>
-              <button type="button" onClick={() => { setShowChoiceModal(false); setAddedFoods([]); setEditingMealId(null); setDrawerMealTime(currentTime); setDrawerMealTimeStr(decimalToTimeStr(currentTime)); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ padding: '18px', background: '#00e5ff', color: '#000', borderRadius: '12px', border: 'none', fontSize: '1.05rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                🍎 PASTO
-              </button>
-              <button type="button" onClick={() => { setShowChoiceModal(false); setEditingWorkoutId(null); setWorkoutType('pesi'); setWorkoutStartTime(currentTime); setWorkoutEndTime(currentTime + 1); setWorkoutMuscles([]); setWorkoutKcal(300); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ padding: '18px', background: '#ff6d00', color: '#000', borderRadius: '12px', border: 'none', fontSize: '1.05rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                ⚡ ATTIVITÀ
-              </button>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '15px' }} onClick={() => setShowChoiceModal(false)}>
+          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '25px', padding: '20px', width: '100%', maxWidth: '350px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 10px 50px rgba(0,0,0,0.9)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 10px 0', textAlign: 'center', color: '#fff', fontSize: '1.1rem', letterSpacing: '2px' }}>AGGIUNGI EVENTO</h3>
+
+            <button onClick={() => { setShowChoiceModal(false); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+              <span style={{ fontSize: '1.5rem' }}>🍎</span> PASTO
+            </button>
+
+            <button onClick={() => { setShowChoiceModal(false); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+              <span style={{ fontSize: '1.5rem' }}>💪</span> ALLENAMENTO
+            </button>
+
+            <button onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #00e5ff', color: '#00e5ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+              <span style={{ fontSize: '1.5rem' }}>⚙️</span> MENÙ PRINCIPALE
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pop-up Info Spie (Ottimizzato per schermi piccoli) */}
+      {showSpieInfo && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '15px' }} onClick={() => setShowSpieInfo(false)}>
+          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '25px', padding: '20px', width: '100%', maxWidth: '350px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 10px 50px rgba(0,0,0,0.9)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 15px 0', color: '#00e5ff', fontSize: '1rem', letterSpacing: '2px', textAlign: 'center' }}>TELEMETRIA SISTEMA</h3>
+
+            <div style={{ marginBottom: '12px' }}>
+              <strong style={{ color: '#00e676', fontSize: '0.9rem' }}>🟢 Micro OK:</strong>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#aaa', lineHeight: '1.4' }}>Vitamine e minerali essenziali sono coperti dai pasti inseriti.</p>
             </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <strong style={{ color: '#ff9800', fontSize: '0.9rem' }}>🟠 Livelli Serali:</strong>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#aaa', lineHeight: '1.4' }}>Stato del serbatoio energetico. Previene il rischio di picchi di cortisolo.</p>
+            </div>
+
+            <div>
+              <strong style={{ color: '#00e5ff', fontSize: '0.9rem' }}>🔥 Deficit / Surplus:</strong>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#aaa', lineHeight: '1.4' }}>Il bilancio istantaneo rispetto al tuo target di calorie giornaliere.</p>
+            </div>
+
+            <button onClick={() => setShowSpieInfo(false)} style={{ width: '100%', marginTop: '20px', background: '#333', color: '#fff', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0 }}>CHIUDI</button>
           </div>
         </div>
       )}
@@ -3212,7 +3325,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               ))}
             </div>
             <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-              {telemetrySubTab === 'macro' && (<> {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')} {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')} {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')} </>)}
+              {telemetrySubTab === 'macro' && (<> {renderProgressBar('Calorie', totali.kcal || 0, userTargets.kcal ?? 2000, 'kcal', 'kcal')} {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')} {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')} {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')} </>)}
+              {telemetrySubTab === 'fat' && (<> {renderProgressBar('Grassi Totali', totali.fatTotal || totali.fat || 0, userTargets.fatTotal ?? userTargets.fat ?? 70, 'g', 'fatTotal')} {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))} </>)}
               {telemetrySubTab === 'bilanci' && (
                 <div className="view-animate">
                   <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px' }}>RAPPORTI BIOCHIMICI</h4>
@@ -3223,7 +3337,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {telemetrySubTab === 'amino' && (<> {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.amino[k], 'mg', k))} </>)}
               {telemetrySubTab === 'vit' && (<> {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.vit[k], k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))} </>)}
               {telemetrySubTab === 'min' && (<> {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.min[k], k === 'se' ? 'µg' : 'mg', k))} </>)}
-              {telemetrySubTab === 'fat' && (<> {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))} </>)}
             </div>
           </div>
         </div>
