@@ -536,8 +536,8 @@ export default function SalaComandi() {
     if (currentTrackerDateRef.current !== getTodayString()) return;
     const todayKey = TRACKER_STORICO_KEY(getTodayString());
     const todayNode = fullStorico[todayKey];
-    if (todayNode?.manualNodes?.length > 0) {
-      setManualNodes(todayNode.manualNodes);
+    if (todayNode?.hasEditedNodes || (todayNode?.manualNodes && todayNode.manualNodes.length > 0)) {
+      setManualNodes(todayNode.manualNodes || []);
       return;
     }
     const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
@@ -665,7 +665,8 @@ export default function SalaComandi() {
         data: dateStr,
         log: sanitizedLog,
         mealTimes,
-        manualNodes: sanitizedNodes
+        manualNodes: sanitizedNodes,
+        hasEditedNodes: true
       };
       const sanitized = stripUndefined(payload);
 
@@ -2100,7 +2101,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
 
       {/* HEADER E GRAFICO */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: 0 }}>VYTA <span style={{color: '#444'}}>SYS</span></h1>
         <button type="button" className="btn-toggle" onClick={() => setShowTelemetryPopup(true)} style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊 STATS</button>
         <button className="btn-toggle" onClick={() => { auth.signOut(); }}>LOGOUT</button>
@@ -2217,10 +2218,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
           <div ref={timelineContainerRef} style={{ position: 'relative', height: '55px', marginTop: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', flexShrink: 0 }}>
                   {allNodes.map((node) => {
-                    // --- LOGICA ANTI-OVERLAP ---
-                    const similarNodes = allNodes.filter(n => Math.abs(n.time - node.time) < 0.1);
+                    // --- LOGICA ANTI-OVERLAP POTENZIATA ---
+                    const similarNodes = allNodes.filter(n => Math.abs(n.time - node.time) <= 0.35 && n.type !== 'work');
                     const myIndex = similarNodes.findIndex(n => n.id === node.id);
-                    const offsetPx = myIndex > 0 ? myIndex * 42 : 0;
+                    const offsetPx = myIndex > 0 && node.type !== 'work' ? myIndex * 44 : 0;
 
                     const isWork = node.type === 'work';
                     const percent = (node.time / 24) * 100;
