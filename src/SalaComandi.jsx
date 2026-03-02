@@ -616,7 +616,7 @@ export default function SalaComandi() {
     const updateTime = () => {
       const now = new Date();
       let decimalTime = now.getHours() + now.getMinutes() / 60;
-      setCurrentTime(decimalTime < 8 ? 8 : decimalTime > 23 ? 23 : decimalTime);
+      setCurrentTime(decimalTime);
     };
     updateTime(); 
     const interval = setInterval(updateTime, 60000); 
@@ -1964,7 +1964,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }
 
   return (
-    <div style={{ backgroundColor: '#000', color: '#fff', height: '100vh', maxHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '15px 15px 20px 15px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+    <div style={{ backgroundColor: '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
       <style>
         {`
@@ -2101,14 +2101,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
 
       {/* HEADER E GRAFICO */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(8px, 1.5vh)' }}>
         <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: 0 }}>CORE <span style={{color: '#00e5ff'}}>OS</span></h1>
         <button type="button" className="btn-toggle" onClick={() => setShowTelemetryPopup(true)} style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊 STATS</button>
         <button className="btn-toggle" onClick={() => { auth.signOut(); }}>LOGOUT</button>
       </div>
 
       {/* Navigazione storica (Time-Travel) */}
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px', marginBottom: '10px', background: '#111', padding: '10px', borderRadius: '12px' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px', marginBottom: 'max(6px, 1vh)', background: '#111', padding: 'max(6px, 1vh) 10px', borderRadius: '12px' }}>
         <button type="button" onClick={() => changeDate(-1)} style={{ background: '#333', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>◀ Ieri</button>
         <h2 style={{ color: '#fff', margin: 0, fontSize: '1.2rem' }}>
           {currentDateObj.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -2119,7 +2119,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Barra Telemetria Rapida (Spie e Deficit) */}
       <div
         onClick={() => setShowSpieInfo(true)}
-        style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#111', padding: '10px 15px', borderRadius: '12px', marginBottom: '15px', fontSize: '0.75rem', fontWeight: 'bold' }}
+        style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#111', padding: 'max(8px, 1vh) 15px', borderRadius: '12px', marginBottom: 'max(8px, 1.5vh)', fontSize: '0.75rem', fontWeight: 'bold' }}
       >
         <div style={{ display: 'flex', gap: '10px' }}>
           {(Number(totali?.omega3) ?? 0) < 1 ? (
@@ -2141,7 +2141,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
 
       {/* Cruscotto energetico giornaliero 0-24h */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexShrink: 0 }}>
           <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>Energia 0–24h</span>
           <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -2278,18 +2278,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {/* Bottom Action Bar (75/25 Split) */}
       {!isDrawerOpen && (
-        <div style={{ display: 'flex', gap: '10px', marginTop: '15px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: '10px', marginTop: 'max(10px, 1.5vh)', flexShrink: 0 }}>
           <button
             type="button"
             onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
-            style={{ flex: 3, background: 'linear-gradient(135deg, #b388ff, #00e5ff)', color: '#000', border: 'none', borderRadius: '16px', padding: '18px', fontWeight: 'bold', fontSize: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0, 229, 255, 0.2)' }}
+            style={{ flex: 3, background: 'linear-gradient(135deg, #b388ff, #00e5ff)', color: '#000', border: 'none', borderRadius: '16px', padding: 'max(14px, 1.8vh)', fontWeight: 'bold', fontSize: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0, 229, 255, 0.2)' }}
           >
             ✨ CORE AI
           </button>
           <button
             type="button"
             onClick={() => setShowChoiceModal(true)}
-            style={{ flex: 1, minHeight: '56px', background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s' }}
+            style={{ flex: 1, minHeight: '50px', background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s' }}
             aria-label="Aggiungi evento"
           >
             +
@@ -2470,7 +2470,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </div>
                 <span>24:00</span>
               </div>
-              <div ref={miniTimelineActivityRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333' }}>
+              <div ref={miniTimelineActivityRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'none' }}>
                 {allNodes.filter(n => n.id !== editingWorkoutId).map(n => {
                   const isWork = n.type === 'work';
                   const startP = (n.time / 24) * 100;
@@ -2569,7 +2569,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <input type="text" inputMode="numeric" value={drawerMealTimeStr} onChange={(e) => handleTimeInput(e.target.value)} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
                 <span>24:00</span>
               </div>
-              <div ref={miniTimelinePastoRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333' }}>
+              <div ref={miniTimelinePastoRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'none' }}>
                 {allNodes.filter(n => n.id !== `${mealType}_${drawerMealTime}`).map(n => {
                   const isWork = n.type === 'work';
                   const startP = (n.time / 24) * 100;
