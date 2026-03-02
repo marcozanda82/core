@@ -119,7 +119,7 @@ function decimalToTimeStr(dec) {
  * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
  * Restituisce { chartData, realTotals } per grafico doppia curva e semafori.
  */
-function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy) {
+function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500) {
   const log = dailyLog || [];
   const ideal = idealStrategy || {};
 
@@ -154,6 +154,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy) {
   let currentEnergy = 70;
   let currentIdealEnergy = 70;
   let globalCrashRisk = false;
+
+  let currentHydration = 100;
+  const waterRatio = dailyWaterGoal > 0 ? (waterIntake / dailyWaterGoal) : 0;
+  const waterBoostPerHour = (waterRatio * 100) / 16;
+
   const out = [];
 
   for (let h = 0; h <= 24; h++) {
@@ -211,13 +216,25 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy) {
       }
     });
 
+    currentHydration -= 2.0;
+    if (h >= 8 && h <= 23) {
+      currentHydration += waterBoostPerHour;
+    }
+    (timelineNodes || []).forEach(node => {
+      if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
+        currentHydration -= 8.0;
+      }
+    });
+    currentHydration = Math.max(0, Math.min(100, currentHydration));
+
     currentEnergy = Math.max(0, Math.min(100, currentEnergy));
     currentIdealEnergy = Math.max(0, Math.min(100, currentIdealEnergy));
     out.push({
       time: h,
       energy: currentEnergy,
       idealEnergy: currentIdealEnergy,
-      glicemia: Math.max(55, Math.min(250, gl))
+      glicemia: Math.max(55, Math.min(250, gl)),
+      idratazione: currentHydration
     });
   }
   return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk };
@@ -1883,7 +1900,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   // ========================================================
   // SCHERMATA PRINCIPALE VYTA — Curva ideale dinamica (GPS) — Hooks prima del bivio login
   // ========================================================
-  const energyChartResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy);
+  const energyChartResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy, waterIntake, dailyWaterGoal);
   const chartData = energyChartResult?.chartData ?? [];
   const realTotals = energyChartResult?.realTotals ?? {};
   const hasCrashRisk = energyChartResult?.hasCrashRisk ?? false;
@@ -1897,6 +1914,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const dotGlicemia = chartData.length > 0
     ? (chartData[currentH]?.glicemia ?? 85) + ((chartData[nextH]?.glicemia ?? 85) - (chartData[currentH]?.glicemia ?? 85)) * fraction
     : 85;
+  const dotIdratazione = chartData.length > 0
+    ? (chartData[currentH]?.idratazione ?? 100) + ((chartData[nextH]?.idratazione ?? 100) - (chartData[currentH]?.idratazione ?? 100)) * fraction
+    : 100;
+  const hasWaterRisk = dotIdratazione < 40;
   const currentMinutes = Math.round((currentTime % 1) * 60);
   const timeLabel = `ORA (${currentH.toString().padStart(2, '0')}:${String(currentMinutes).padStart(2, '0')})`;
   const energyAt20 = chartData[20]?.energy;
@@ -1912,7 +1933,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         time: currentTime,
         energy: dotY,
         idealEnergy: idealDotY,
-        glicemia: dotGlicemia
+        glicemia: dotGlicemia,
+        idratazione: dotIdratazione
       });
     }
   });
@@ -1922,7 +1944,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     energyPast: d.time <= currentTime ? d.energy : null,
     energyFuture: d.time >= currentTime ? d.energy : null,
     glicemiaPast: d.time <= currentTime ? d.glicemia : null,
-    glicemiaFuture: d.time >= currentTime ? d.glicemia : null
+    glicemiaFuture: d.time >= currentTime ? d.glicemia : null,
+    idratazionePast: d.time <= currentTime ? d.idratazione : null,
+    idratazioneFuture: d.time >= currentTime ? d.idratazione : null
   }));
 
   const targetKcalChart = userTargets?.kcal ?? 2000;
@@ -1936,7 +1960,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         energyFuture: d.time >= currentTime ? scale(d.energy) : null
       }))
     : renderDataWithSegments;
-  const finalDotY = chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'kcal' ? scale(dotY) : dotY);
+  const finalDotY = chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'kcal' ? scale(dotY) : dotY));
 
   const energyAt20Percent = energyAt20 ?? 50;
 
@@ -2145,6 +2169,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .telemetry-btn.active.blood { background: rgba(239, 68, 68, 0.15); border-color: #ef4444; color: #ef4444; }
           .pulse-alert { animation: pulseAlert 1.5s infinite; color: #ef4444; border-color: #ef4444; font-weight: bold; }
           @keyframes pulseAlert { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+          .telemetry-btn.active.water { background: rgba(0, 229, 255, 0.15); border-color: #00e5ff; color: #00e5ff; }
+          .pulse-alert-water { animation: pulseWater 1.5s infinite; color: #00e5ff; border-color: #00e5ff; font-weight: bold; }
+          @keyframes pulseWater { 0% { box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(0, 229, 255, 0); } 100% { box-shadow: 0 0 0 0 rgba(0, 229, 255, 0); } }
         `}
       </style>
 
@@ -2197,12 +2224,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexShrink: 0 }}>
           <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
-            {chartUnit === 'glicemia' ? 'Simulatore Glicemico' : 'Energia 0–24h'}
+            {chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : 'Energia 0–24h'}
           </span>
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
             <button type="button" onClick={() => setChartUnit('kcal')} className={`telemetry-btn ${chartUnit === 'kcal' ? 'active' : ''}`}>⚡ KCAL</button>
-            <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEMIA</button>
+            <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEM</button>
+            <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`}>💧 IDRAT</button>
           </div>
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -2250,6 +2278,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <stop offset="50%" stopColor="#fca5a5" stopOpacity="1" />
                       <stop offset="100%" stopColor="#ef4444" stopOpacity="0.8" />
                     </linearGradient>
+                    <linearGradient id="colorWater" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#007aff" stopOpacity={0.9} />
+                      <stop offset="50%" stopColor="#00e5ff" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#007aff" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="waterFlow" x1="0" y1="0" x2="1" y2="0">
+                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
+                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
+                      <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.8" />
+                      <stop offset="50%" stopColor="#007aff" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.8" />
+                    </linearGradient>
                     <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
                       <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
                       <feMerge>
@@ -2262,8 +2302,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
                   <Tooltip labelFormatter={(label) => `${Math.floor(Number(label))}:00`} formatter={(value) => (value != null && !Number.isNaN(Number(value))) ? (chartUnit === 'kcal' ? `${Math.round(Number(value))} kcal` : chartUnit === 'glicemia' ? `${Math.round(Number(value))} mg/dL` : `${value}%`) : ''} contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', fontSize: '0.8rem' }} />
-                  <Area type="monotone" dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : 'energyPast'} stroke={chartUnit === 'glicemia' ? 'url(#bloodFlow)' : 'url(#vitalFlow)'} strokeWidth={6} fill={chartUnit === 'glicemia' ? 'url(#colorGlicemia)' : 'url(#colorEnergy)'} filter="url(#glow)" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} />
-                  <Area type="monotone" dataKey={chartUnit === 'glicemia' ? 'glicemiaFuture' : 'energyFuture'} stroke={chartUnit === 'glicemia' ? '#7f1d1d' : '#444'} strokeWidth={4} strokeDasharray="10 10" fill="transparent" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} className="future" />
+                  <Area type="monotone"
+                    dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : (chartUnit === 'idratazione' ? 'idratazionePast' : 'energyPast')}
+                    stroke={chartUnit === 'glicemia' ? 'url(#bloodFlow)' : (chartUnit === 'idratazione' ? 'url(#waterFlow)' : 'url(#vitalFlow)')}
+                    strokeWidth={6}
+                    fill={chartUnit === 'glicemia' ? 'url(#colorGlicemia)' : (chartUnit === 'idratazione' ? 'url(#colorWater)' : 'url(#colorEnergy)')}
+                    filter="url(#glow)" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false}
+                  />
+                  <Area type="monotone"
+                    dataKey={chartUnit === 'glicemia' ? 'glicemiaFuture' : (chartUnit === 'idratazione' ? 'idratazioneFuture' : 'energyFuture')}
+                    stroke={chartUnit === 'glicemia' ? '#7f1d1d' : (chartUnit === 'idratazione' ? '#003a8c' : '#444')}
+                    strokeWidth={4} strokeDasharray="10 10" fill="transparent" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} className="future"
+                  />
                   {chartUnit === 'glicemia' ? (
                     <ReferenceLine y={85} stroke="rgba(255, 255, 255, 0.2)" strokeDasharray="5 5" label={{ position: 'insideTopLeft', value: 'Basale', fill: '#555', fontSize: 10 }} />
                   ) : (
