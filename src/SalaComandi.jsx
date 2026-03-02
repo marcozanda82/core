@@ -153,7 +153,9 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy) {
 
   let currentEnergy = 70;
   let currentIdealEnergy = 70;
+  let globalCrashRisk = false;
   const out = [];
+
   for (let h = 0; h <= 24; h++) {
     currentEnergy -= 2;
     currentIdealEnergy -= 2;
@@ -177,11 +179,48 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy) {
       }
     });
 
+    let gl = 85;
+    log.forEach(entry => {
+      if (entry.type === 'food') {
+        const ft = typeof entry.mealTime === 'number' && !Number.isNaN(entry.mealTime) ? entry.mealTime : 12;
+        const diff = h - ft;
+        if (diff >= 0 && diff <= 3) {
+          const carb = Number(entry.carb) || 0;
+          const fibre = Number(entry.fibre) || 0;
+          const fat = Number(entry.fatTotal || entry.fat) || 0;
+          const prot = Number(entry.prot) || 0;
+          const impact = Math.max(0, (carb * 2.5) - (fibre * 3) - (fat * 0.5) - (prot * 0.2));
+          const diffRound = Math.round(diff);
+          if (diffRound === 0) gl += impact * 0.3;
+          if (diffRound === 1) gl += impact;
+          if (diffRound === 2) {
+            if (carb > 40 && fibre < 4 && fat < 10) {
+              gl -= 15;
+              globalCrashRisk = true;
+            } else {
+              gl += impact * 0.2;
+            }
+          }
+        }
+      }
+    });
+
+    (timelineNodes || []).forEach(node => {
+      if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
+        gl -= 15;
+      }
+    });
+
     currentEnergy = Math.max(0, Math.min(100, currentEnergy));
     currentIdealEnergy = Math.max(0, Math.min(100, currentIdealEnergy));
-    out.push({ time: h, energy: currentEnergy, idealEnergy: currentIdealEnergy });
+    out.push({
+      time: h,
+      energy: currentEnergy,
+      idealEnergy: currentIdealEnergy,
+      glicemia: Math.max(55, Math.min(250, gl))
+    });
   }
-  return { chartData: out, realTotals };
+  return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk };
 }
 
 /**
@@ -1847,6 +1886,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const energyChartResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy);
   const chartData = energyChartResult?.chartData ?? [];
   const realTotals = energyChartResult?.realTotals ?? {};
+  const hasCrashRisk = energyChartResult?.hasCrashRisk ?? false;
 
   const currentH = Math.floor(currentTime);
   const nextH = Math.min(24, currentH + 1);
@@ -1854,6 +1894,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const dotY = chartData.length > 0
     ? (chartData[currentH]?.energy ?? 0) + ((chartData[nextH]?.energy ?? 0) - (chartData[currentH]?.energy ?? 0)) * fraction
     : 0;
+  const dotGlicemia = chartData.length > 0
+    ? (chartData[currentH]?.glicemia ?? 85) + ((chartData[nextH]?.glicemia ?? 85) - (chartData[currentH]?.glicemia ?? 85)) * fraction
+    : 85;
   const currentMinutes = Math.round((currentTime % 1) * 60);
   const timeLabel = `ORA (${currentH.toString().padStart(2, '0')}:${String(currentMinutes).padStart(2, '0')})`;
   const energyAt20 = chartData[20]?.energy;
@@ -1868,7 +1911,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       renderData.push({
         time: currentTime,
         energy: dotY,
-        idealEnergy: idealDotY
+        idealEnergy: idealDotY,
+        glicemia: dotGlicemia
       });
     }
   });
@@ -1876,7 +1920,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const renderDataWithSegments = renderData.map(d => ({
     ...d,
     energyPast: d.time <= currentTime ? d.energy : null,
-    energyFuture: d.time >= currentTime ? d.energy : null
+    energyFuture: d.time >= currentTime ? d.energy : null,
+    glicemiaPast: d.time <= currentTime ? d.glicemia : null,
+    glicemiaFuture: d.time >= currentTime ? d.glicemia : null
   }));
 
   const targetKcalChart = userTargets?.kcal ?? 2000;
@@ -1890,7 +1936,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         energyFuture: d.time >= currentTime ? scale(d.energy) : null
       }))
     : renderDataWithSegments;
-  const finalDotY = chartUnit === 'kcal' ? scale(dotY) : dotY;
+  const finalDotY = chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'kcal' ? scale(dotY) : dotY);
 
   const energyAt20Percent = energyAt20 ?? 50;
 
@@ -2092,6 +2138,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           /* Tooltip grafico invisibile di default, visibile solo con tap prolungato */
           .hide-tooltip .recharts-tooltip-wrapper { visibility: hidden !important; opacity: 0 !important; transition: opacity 0.2s ease; }
           .show-tooltip .recharts-tooltip-wrapper { visibility: visible !important; opacity: 1 !important; transition: opacity 0.2s ease; }
+
+          /* Console di Telemetria */
+          .telemetry-btn { padding: 4px 10px; font-size: 0.7rem; border-radius: 8px; border: 1px solid #333; background: transparent; color: #666; cursor: pointer; transition: 0.3s; font-weight: normal; -webkit-tap-highlight-color: transparent; }
+          .telemetry-btn.active { background: rgba(0, 229, 255, 0.15); border-color: #00e5ff; color: #00e5ff; font-weight: bold; }
+          .telemetry-btn.active.blood { background: rgba(239, 68, 68, 0.15); border-color: #ef4444; color: #ef4444; }
+          .pulse-alert { animation: pulseAlert 1.5s infinite; color: #ef4444; border-color: #ef4444; font-weight: bold; }
+          @keyframes pulseAlert { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
         `}
       </style>
 
@@ -2143,10 +2196,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto energetico giornaliero 0-24h */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexShrink: 0 }}>
-          <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>Energia 0–24h</span>
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            <button type="button" onClick={() => setChartUnit('percent')} style={{ padding: '4px 10px', fontSize: '0.7rem', borderRadius: '8px', border: '1px solid #333', background: chartUnit === 'percent' ? 'rgba(0, 229, 255, 0.2)' : 'transparent', color: chartUnit === 'percent' ? '#00e5ff' : '#666', cursor: 'pointer', fontWeight: chartUnit === 'percent' ? 'bold' : 'normal' }}>%</button>
-            <button type="button" onClick={() => setChartUnit('kcal')} style={{ padding: '4px 10px', fontSize: '0.7rem', borderRadius: '8px', border: '1px solid #333', background: chartUnit === 'kcal' ? 'rgba(0, 229, 255, 0.2)' : 'transparent', color: chartUnit === 'kcal' ? '#00e5ff' : '#666', cursor: 'pointer', fontWeight: chartUnit === 'kcal' ? 'bold' : 'normal' }}>Kcal</button>
+          <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
+            {chartUnit === 'glicemia' ? 'Simulatore Glicemico' : 'Energia 0–24h'}
+          </span>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
+            <button type="button" onClick={() => setChartUnit('kcal')} className={`telemetry-btn ${chartUnit === 'kcal' ? 'active' : ''}`}>⚡ KCAL</button>
+            <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEMIA</button>
           </div>
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -2182,6 +2238,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <stop offset="50%" stopColor="#b388ff" stopOpacity="1" />
                       <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.8" />
                     </linearGradient>
+                    <linearGradient id="colorGlicemia" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#ef4444" stopOpacity={0.9} />
+                      <stop offset="50%" stopColor="#f59e0b" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#ef4444" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="bloodFlow" x1="0" y1="0" x2="1" y2="0">
+                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
+                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
+                      <stop offset="0%" stopColor="#ef4444" stopOpacity="0.8" />
+                      <stop offset="50%" stopColor="#fca5a5" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#ef4444" stopOpacity="0.8" />
+                    </linearGradient>
                     <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
                       <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
                       <feMerge>
@@ -2191,21 +2259,26 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </filter>
                   </defs>
                   <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 13 }} />
-                  <YAxis domain={chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100]} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : `${val}%`} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
+                  <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
-                  <Tooltip labelFormatter={(label) => `${Math.floor(Number(label))}:00`} formatter={(value) => (value != null && !Number.isNaN(Number(value))) ? (chartUnit === 'kcal' ? `${Math.round(Number(value))} kcal` : `${value}%`) : ''} contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', fontSize: '0.8rem' }} />
-                  <Area type="monotone" dataKey="energyPast" stroke="url(#vitalFlow)" strokeWidth={6} fill="url(#colorEnergy)" filter="url(#glow)" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} />
-                  <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={4} strokeDasharray="10 10" fill="transparent" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} className="future" />
-                  <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255, 255, 255, 0.2)" strokeWidth={4} strokeDasharray="8 8" dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
+                  <Tooltip labelFormatter={(label) => `${Math.floor(Number(label))}:00`} formatter={(value) => (value != null && !Number.isNaN(Number(value))) ? (chartUnit === 'kcal' ? `${Math.round(Number(value))} kcal` : chartUnit === 'glicemia' ? `${Math.round(Number(value))} mg/dL` : `${value}%`) : ''} contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', fontSize: '0.8rem' }} />
+                  <Area type="monotone" dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : 'energyPast'} stroke={chartUnit === 'glicemia' ? 'url(#bloodFlow)' : 'url(#vitalFlow)'} strokeWidth={6} fill={chartUnit === 'glicemia' ? 'url(#colorGlicemia)' : 'url(#colorEnergy)'} filter="url(#glow)" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} />
+                  <Area type="monotone" dataKey={chartUnit === 'glicemia' ? 'glicemiaFuture' : 'energyFuture'} stroke={chartUnit === 'glicemia' ? '#7f1d1d' : '#444'} strokeWidth={4} strokeDasharray="10 10" fill="transparent" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} className="future" />
+                  {chartUnit === 'glicemia' ? (
+                    <ReferenceLine y={85} stroke="rgba(255, 255, 255, 0.2)" strokeDasharray="5 5" label={{ position: 'insideTopLeft', value: 'Basale', fill: '#555', fontSize: 10 }} />
+                  ) : (
+                    <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255, 255, 255, 0.2)" strokeWidth={4} strokeDasharray="8 8" dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
+                  )}
                   <ReferenceLine x={currentTime} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 11, offset: 10 }} />
                   <ReferenceDot x={currentTime} y={finalDotY} isFront shape={(props) => {
                     const cx = props?.cx;
                     const cy = props?.cy;
                     if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') return <path d="M0 0" />;
+                    const fillColor = chartUnit === 'glicemia' ? '#ef4444' : '#00e5ff';
                     return (
                       <g>
-                        <circle cx={cx} cy={cy} r={10} fill="#00e5ff" />
-                        <circle cx={cx} cy={cy} r={10} fill="none" stroke="#00e5ff" strokeWidth={4}>
+                        <circle cx={cx} cy={cy} r={10} fill={fillColor} />
+                        <circle cx={cx} cy={cy} r={10} fill="none" stroke={fillColor} strokeWidth={4}>
                           <animate attributeName="r" values="10;28" dur="1.5s" repeatCount="indefinite" />
                           <animate attributeName="opacity" values="0.8;0" dur="1.5s" repeatCount="indefinite" />
                         </circle>
