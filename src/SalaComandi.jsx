@@ -426,6 +426,24 @@ export default function SalaComandi() {
   const [telemetrySubTab, setTelemetrySubTab] = useState('macro');
   const TELEMETRY_TABS = ['macro', 'bilanci', 'amino', 'vit', 'min', 'fat'];
   const telemetryScrollRef = useRef(null);
+  const popupTelemetryScrollRef = useRef(null);
+  const handlePopupTelemetryScroll = (e) => {
+    const { scrollLeft, clientWidth } = e.target;
+    const pageIndex = Math.round(scrollLeft / clientWidth);
+    const activeTab = TELEMETRY_TABS[pageIndex];
+    if (activeTab && activeTab !== telemetrySubTab) {
+      setTelemetrySubTab(activeTab);
+    }
+  };
+
+  const scrollToPopupTelemetryTab = (tabName) => {
+    setTelemetrySubTab(tabName);
+    const index = TELEMETRY_TABS.indexOf(tabName);
+    if (popupTelemetryScrollRef.current && index !== -1) {
+      const container = popupTelemetryScrollRef.current;
+      container.scrollTo({ left: index * container.clientWidth, behavior: 'smooth' });
+    }
+  };
   const [expandedStoricoDate, setExpandedStoricoDate] = useState(null);
 
   // STRATEGIA E DATABASE
@@ -3550,30 +3568,82 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
       {showTelemetryPopup && (
-        <div className="modal-overlay" onClick={() => setShowTelemetryPopup(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: '#1e1e1e', color: '#fff', padding: '25px', borderRadius: '16px', width: '100%', maxWidth: '420px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '12px' }}>
-              <h2 style={{ margin: 0, color: '#00e676', fontSize: '1.1rem' }}>📊 Telemetria</h2>
-              <button type="button" onClick={() => setShowTelemetryPopup(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+        <div className="modal-overlay" onClick={() => setShowTelemetryPopup(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px' }}>
+          
+          {/* Contenitore Modale: 90vh di altezza, layout Flex a colonna */}
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: '#1e1e1e', color: '#fff', padding: '20px', borderRadius: '20px', width: '100%', maxWidth: '500px', height: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
+            
+            {/* Header Fisso */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #333', paddingBottom: '12px', flexShrink: 0 }}>
+              <h2 style={{ margin: 0, color: '#00e676', fontSize: '1.2rem', letterSpacing: '2px' }}>📊 TELEMETRIA</h2>
+              <button type="button" onClick={() => setShowTelemetryPopup(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '1.5rem', cursor: 'pointer', padding: '0 10px' }}>✕</button>
             </div>
-            <div style={{ display: 'flex', gap: '5px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '5px' }}>
-              {['macro', 'bilanci', 'amino', 'vit', 'min', 'fat'].map(t => (
-                <button key={t} type="button" onClick={() => setTelemetrySubTab(t)} style={{ padding: '8px 15px', fontSize: '0.7rem', background: telemetrySubTab === t ? '#00e676' : '#111', color: telemetrySubTab === t ? '#000' : '#888', border: 'none', borderRadius: '20px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: 'pointer' }}>{t}</button>
+            
+            {/* Bottoni Navigazione Fissi */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px', flexShrink: 0 }}>
+              {TELEMETRY_TABS.map(t => (
+                <button 
+                  key={t} 
+                  type="button" 
+                  onClick={() => scrollToPopupTelemetryTab(t)} 
+                  style={{ padding: '10px 18px', fontSize: '0.75rem', fontWeight: 'bold', background: telemetrySubTab === t ? '#00e676' : '#111', color: telemetrySubTab === t ? '#000' : '#888', border: 'none', borderRadius: '20px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: 'pointer', transition: '0.3s' }}
+                >
+                  {t}
+                </button>
               ))}
             </div>
-            <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-              {telemetrySubTab === 'macro' && (<> {renderProgressBar('Calorie', totali.kcal || 0, userTargets.kcal ?? 2000, 'kcal', 'kcal')} {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')} {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')} {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')} </>)}
-              {telemetrySubTab === 'fat' && (<> {renderProgressBar('Grassi Totali', totali.fatTotal || totali.fat || 0, userTargets.fatTotal ?? userTargets.fat ?? 70, 'g', 'fatTotal')} {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))} </>)}
-              {telemetrySubTab === 'bilanci' && (
-                <div className="view-animate">
-                  <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px' }}>RAPPORTI BIOCHIMICI</h4>
+
+            {/* Carosello Elastico: Prende tutto lo spazio verticale rimanente */}
+            <div className="telemetry-snap-container" ref={popupTelemetryScrollRef} onScroll={handlePopupTelemetryScroll} style={{ flex: 1, minHeight: 0, margin: 0 }}>
+              
+              {/* Pagina MACRO */}
+              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
+                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+                  {renderProgressBar('Calorie', totali.kcal || 0, userTargets.kcal ?? 2000, 'kcal', 'kcal')} 
+                  {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')} 
+                  {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')} 
+                  {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')}
+                </div>
+              </div>
+
+              {/* Pagina BILANCI */}
+              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
+                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+                  <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px', marginTop: 0 }}>RAPPORTI BIOCHIMICI</h4>
                   {renderRatioBar('Equilibrio Elettrolitico (Idratazione)', 'Sodio (Na)', totali?.na, 'Potassio (K)', totali?.k, 'Ideale: Na < K', (Number(totali?.na) || 0) < (Number(totali?.k) || 0))}
                   {renderRatioBar('Indice Infiammatorio (Grassi)', 'Omega 6', totali?.omega6, 'Omega 3', totali?.omega3, 'Ideale: W6:W3 < 4:1', (Number(totali?.omega6) || 0) <= (Number(totali?.omega3) || 1) * 4)}
                 </div>
-              )}
-              {telemetrySubTab === 'amino' && (<> {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.amino[k], 'mg', k))} </>)}
-              {telemetrySubTab === 'vit' && (<> {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.vit[k], k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))} </>)}
-              {telemetrySubTab === 'min' && (<> {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.min[k], k === 'se' ? 'µg' : 'mg', k))} </>)}
+              </div>
+
+              {/* Pagina AMINOACIDI */}
+              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
+                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+                  {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.amino[k], 'mg', k))}
+                </div>
+              </div>
+
+              {/* Pagina VITAMINE */}
+              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
+                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+                  {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.vit[k], k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))}
+                </div>
+              </div>
+
+              {/* Pagina MINERALI */}
+              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
+                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+                  {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.min[k], k === 'se' ? 'µg' : 'mg', k))}
+                </div>
+              </div>
+
+              {/* Pagina FAT (Grassi) */}
+              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
+                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+                  {renderProgressBar('Grassi Totali', totali.fatTotal || totali.fat || 0, userTargets.fatTotal ?? userTargets.fat ?? 70, 'g', 'fatTotal')} 
+                  {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))}
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
