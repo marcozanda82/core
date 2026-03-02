@@ -156,8 +156,6 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   let globalCrashRisk = false;
 
   let currentHydration = 100;
-  const waterRatio = dailyWaterGoal > 0 ? (waterIntake / dailyWaterGoal) : 0;
-  const waterBoostPerHour = (waterRatio * 100) / 16;
 
   let globalCortisolRisk = false;
   let currentCortisol = 25;
@@ -220,10 +218,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     });
 
     currentHydration -= 2.0;
-    if (h >= 8 && h <= 23) {
-      currentHydration += waterBoostPerHour;
-    }
     (timelineNodes || []).forEach(node => {
+      if (node.type === 'water' && Math.round(node.time) === h) {
+        const ml = node.ml ?? node.amount ?? 250;
+        currentHydration += (ml / (dailyWaterGoal || 2500)) * 45;
+      }
       if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
         currentHydration -= 8.0;
       }
@@ -476,7 +475,7 @@ export default function SalaComandi() {
   const [editingWorkoutId, setEditingWorkoutId] = useState(null);
   const [editingMealId, setEditingMealId] = useState(null);
 
-  const [waterIntake, setWaterIntake] = useState(0);
+  const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
   const dailyWaterGoal = userTargets.water ?? 2500; 
   const [isZenActive, setIsZenActive] = useState(false);
 
@@ -1317,8 +1316,23 @@ export default function SalaComandi() {
     if (Math.abs(dragOffsetYRef.current) < 10) setSelectedNodeReport(node);
   }, []);
 
-  const handleAddWater = (amount) => { 
-    setWaterIntake(prev => prev + amount < 0 ? 0 : prev + amount); 
+  const handleAddWater = (amount) => {
+    if (amount > 0) {
+      setManualNodes(prev => {
+        const next = [...prev, { id: `water_${Date.now()}`, type: 'water', time: currentTime, ml: amount }];
+        syncDatiFirebase(dailyLog, next);
+        return next;
+      });
+    } else {
+      const toRemove = amount === -250 ? 1 : 2;
+      setManualNodes(prev => {
+        const waterNodes = prev.filter(n => n.type === 'water');
+        const idsToRemove = waterNodes.slice(-toRemove).map(n => n.id);
+        const next = prev.filter(n => !idsToRemove.includes(n.id));
+        syncDatiFirebase(dailyLog, next);
+        return next;
+      });
+    }
   };
   
   const handleSaveWorkout = () => {
@@ -2393,11 +2407,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const percent = (node.time / 24) * 100;
                     const startPercent = percent;
                     const durationPercent = isWork ? ((node.duration || 1) / 24) * 100 : 0;
-                    const idealVal = node.type === 'meal' ? (idealStrategy[node.strategyKey] ?? 400) : (node.type === 'workout' ? (idealStrategy.allenamento ?? 300) : (node.kcal ?? 400));
+                    const idealVal = node.type === 'meal' ? (idealStrategy[node.strategyKey] ?? 400) : (node.type === 'workout' ? (idealStrategy.allenamento ?? 300) : (node.type === 'water' ? 100 : (node.kcal ?? 400)));
                     const realVal = (node.type === 'meal' || node.type === 'workout') ? (realTotals[node.strategyKey] ?? 0) : 0;
                     const ratio = idealVal > 0 ? realVal / idealVal : 1;
                     let borderColor = '#00e5ff';
-                    if (ratio < 0.5) borderColor = '#ff3d00';
+                    if (node.type === 'water') borderColor = '#00e5ff';
+                    else if (ratio < 0.5) borderColor = '#ff3d00';
                     else if (ratio > 1.2) borderColor = '#ffea00';
                     const pointBorderColor = isWork ? '#ffea00' : borderColor;
                     const isDragging = draggingNode?.id === node.id;
@@ -2428,13 +2443,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     }
 
                     const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
-                    const iconContent = isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•');
+                    const isWater = node.type === 'water';
+                    const iconContent = isWater ? '💧' : (isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•'));
+                    const bgColor = isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
+                    const nodeBorderColor = isWater ? '#00e5ff' : pointBorderColor;
                     return (
-                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `calc(${percent}% + ${offsetPx}px)`, transform: isDragging ? `translate(-50%, ${dragY}px) scale(2)` : 'translateX(-50%)', top: '50%', marginTop: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)', border: `2px solid ${pointBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none' }}>
-                        <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: pointBorderColor, marginBottom: '2px', transition: 'color 0.2s' }}>
+                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `calc(${percent}% + ${offsetPx}px)`, transform: isDragging ? `translate(-50%, ${dragY}px) scale(2)` : 'translateX(-50%)', top: '50%', marginTop: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none' }}>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isWater ? '#00e5ff' : pointBorderColor, marginBottom: '2px', transition: 'color 0.2s' }}>
                           {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
                         </span>
-                        <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isPesi ? pointBorderColor : 'inherit' }}>{iconContent}</span>
+                        <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isWater ? '#00e5ff' : (isPesi ? pointBorderColor : 'inherit') }}>{iconContent}</span>
                       </div>
                     );
                   })}
@@ -2606,7 +2624,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
               <button onClick={() => handleAddWater(-250)} className="water-rectify-btn">- 250</button>
               <button onClick={() => handleAddWater(-500)} className="water-rectify-btn">- 500</button>
-              <button onClick={() => setWaterIntake(0)} className="water-rectify-btn" style={{ borderColor: 'rgba(255, 77, 77, 0.4)', color: '#ff4d4d' }}>Azzera</button>
+              <button onClick={() => { setManualNodes(prev => { const next = prev.filter(n => n.type !== 'water'); syncDatiFirebase(dailyLog, next); return next; }); }} className="water-rectify-btn" style={{ borderColor: 'rgba(255, 77, 77, 0.4)', color: '#ff4d4d' }}>Azzera</button>
             </div>
           </div>
         )}
@@ -2636,7 +2654,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </div>
                 <span>24:00</span>
               </div>
-              <div ref={miniTimelineActivityRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'none' }}>
+              <div ref={miniTimelineActivityRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
                 {allNodes.filter(n => n.id !== editingWorkoutId).map(n => {
                   const isWork = n.type === 'work';
                   const startP = (n.time / 24) * 100;
@@ -2735,7 +2753,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <input type="text" inputMode="numeric" value={drawerMealTimeStr} onChange={(e) => handleTimeInput(e.target.value)} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
                 <span>24:00</span>
               </div>
-              <div ref={miniTimelinePastoRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'none' }}>
+              <div ref={miniTimelinePastoRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
                 {allNodes.filter(n => n.id !== `${mealType}_${drawerMealTime}`).map(n => {
                   const isWork = n.type === 'work';
                   const startP = (n.time / 24) * 100;
@@ -3362,6 +3380,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
             <button onClick={() => { setShowChoiceModal(false); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
               <span style={{ fontSize: '1.5rem' }}>💪</span> ALLENAMENTO
+            </button>
+
+            <button onClick={() => { setShowChoiceModal(false); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+              <span style={{ fontSize: '1.5rem' }}>💧</span> ACQUA
             </button>
 
             <button onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #00e5ff', color: '#00e5ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
