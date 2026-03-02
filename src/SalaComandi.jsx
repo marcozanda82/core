@@ -3594,11 +3594,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
 
             {/* Carosello Elastico: Prende tutto lo spazio verticale rimanente */}
-            <div className="telemetry-snap-container" ref={popupTelemetryScrollRef} onScroll={handlePopupTelemetryScroll} style={{ flex: 1, minHeight: 0, margin: 0 }}>
+            <div className="telemetry-carousel" ref={popupTelemetryScrollRef} onScroll={handlePopupTelemetryScroll} style={{ flex: 1, minHeight: 0, margin: 0, paddingBottom: '10px' }}>
               
               {/* Pagina MACRO */}
-              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
-                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
+                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
                   {renderProgressBar('Calorie', totali.kcal || 0, userTargets.kcal ?? 2000, 'kcal', 'kcal')} 
                   {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')} 
                   {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')} 
@@ -3607,8 +3607,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
 
               {/* Pagina BILANCI */}
-              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
-                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
+                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
                   <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px', marginTop: 0 }}>RAPPORTI BIOCHIMICI</h4>
                   {renderRatioBar('Equilibrio Elettrolitico (Idratazione)', 'Sodio (Na)', totali?.na, 'Potassio (K)', totali?.k, 'Ideale: Na < K', (Number(totali?.na) || 0) < (Number(totali?.k) || 0))}
                   {renderRatioBar('Indice Infiammatorio (Grassi)', 'Omega 6', totali?.omega6, 'Omega 3', totali?.omega3, 'Ideale: W6:W3 < 4:1', (Number(totali?.omega6) || 0) <= (Number(totali?.omega3) || 1) * 4)}
@@ -3616,29 +3616,29 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
 
               {/* Pagina AMINOACIDI */}
-              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
-                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
+                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
                   {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.amino[k], 'mg', k))}
                 </div>
               </div>
 
               {/* Pagina VITAMINE */}
-              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
-                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
+                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
                   {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.vit[k], k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))}
                 </div>
               </div>
 
               {/* Pagina MINERALI */}
-              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
-                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
+                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
                   {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.min[k], k === 'se' ? 'µg' : 'mg', k))}
                 </div>
               </div>
 
               {/* Pagina FAT (Grassi) */}
-              <div className="telemetry-snap-page" style={{ overflowY: 'auto' }}>
-                <div className="telemetry-card" style={{ minHeight: '100%' }}>
+              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
+                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
                   {renderProgressBar('Grassi Totali', totali.fatTotal || totali.fat || 0, userTargets.fatTotal ?? userTargets.fat ?? 70, 'g', 'fatTotal')} 
                   {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))}
                 </div>
