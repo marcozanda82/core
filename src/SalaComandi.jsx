@@ -475,7 +475,6 @@ export default function SalaComandi() {
   const [editingWorkoutId, setEditingWorkoutId] = useState(null);
   const [editingMealId, setEditingMealId] = useState(null);
 
-  const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
   const dailyWaterGoal = userTargets.water ?? 2500; 
   const [isZenActive, setIsZenActive] = useState(false);
 
@@ -517,6 +516,7 @@ export default function SalaComandi() {
     ];
     return (Array.isArray(parsed) ? parsed : []).filter(n => n.type === 'work' || n.type === 'workout');
   });
+  const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
   const [draggingNode, setDraggingNode] = useState(null);
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const timelineContainerRef = useRef(null);
@@ -601,6 +601,16 @@ export default function SalaComandi() {
   const allNodes = useMemo(() => {
     return [...computedMealNodes, ...manualNodes].sort((a, b) => a.time - b.time);
   }, [computedMealNodes, manualNodes]);
+
+  useEffect(() => {
+    const pointNodes = allNodes.filter(n => n.type !== 'work');
+    if (pointNodes.length === 0) return;
+    const times = pointNodes.map(n => n.time).sort((a, b) => a - b);
+    let minGap = 24;
+    for (let i = 1; i < times.length; i++) minGap = Math.min(minGap, times[i] - times[i - 1]);
+    const suggested = minGap < 0.35 ? 1.5 : minGap < 0.6 ? 1.3 : minGap < 1 ? 1.1 : minGap < 2 ? 0.9 : 0.65;
+    setZoomLevel(prev => Math.max(0.45, Math.min(1.5, suggested)));
+  }, [allNodes]);
 
   useEffect(() => {
     localStorage.setItem('vyta_timeline', JSON.stringify(manualNodes));
@@ -2296,7 +2306,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               onMouseLeave={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
               style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
             >
-              <ResponsiveContainer width="100%" height="100%">
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80 }}>
+                <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={finalChartData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorEnergy" x1="0" y1="0" x2="0" y2="1">
@@ -2394,15 +2405,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   }} />
                 </ComposedChart>
               </ResponsiveContainer>
-            </div>
-          </div>
-          <div ref={timelineContainerRef} style={{ position: 'relative', height: '55px', marginTop: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', flexShrink: 0 }}>
+              </div>
+              <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
                   {allNodes.map((node) => {
-                    // --- LOGICA ANTI-OVERLAP POTENZIATA ---
-                    const similarNodes = allNodes.filter(n => Math.abs(n.time - node.time) <= 0.35 && n.type !== 'work');
-                    const myIndex = similarNodes.findIndex(n => n.id === node.id);
-                    const offsetPx = myIndex > 0 && node.type !== 'work' ? myIndex * 44 : 0;
-
                     const isWork = node.type === 'work';
                     const percent = (node.time / 24) * 100;
                     const startPercent = percent;
@@ -2421,7 +2426,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     if (isWork) {
                       const dragEdge = isDragging ? draggingNode?.edge : null;
                       return (
-                        <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `calc(${percent}% + ${offsetPx}px)`, width: `${durationPercent}%`, top: '50%', marginTop: '-18px', height: '36px', transform: isDragging ? `translateY(${dragY}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none' }}>
+                        <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: '-18px', height: '36px', transform: isDragging ? `translateY(${dragY}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none' }}>
                           <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                             {(dragEdge === 'start' || dragEdge === 'all') && (
                               <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
@@ -2448,7 +2453,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const bgColor = isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
                     const nodeBorderColor = isWater ? '#00e5ff' : pointBorderColor;
                     return (
-                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `calc(${percent}% + ${offsetPx}px)`, transform: isDragging ? `translate(-50%, ${dragY}px) scale(2)` : 'translateX(-50%)', top: '50%', marginTop: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none' }}>
+                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, transform: isDragging ? `translate(-50%, ${dragY}px) scale(2)` : 'translateX(-50%)', top: '50%', marginTop: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none' }}>
                         <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isWater ? '#00e5ff' : pointBorderColor, marginBottom: '2px', transition: 'color 0.2s' }}>
                           {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
                         </span>
@@ -2457,7 +2462,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     );
                   })}
               </div>
+            </div>
           </div>
+        </div>
         </div>
 
       {/* Bottom Action Bar (75/25 Split) */}
