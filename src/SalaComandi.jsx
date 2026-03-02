@@ -424,6 +424,8 @@ export default function SalaComandi() {
   // SOTTO-NAVIGAZIONE DIARIO
   const [diarioTab, setDiarioTab] = useState('storico');
   const [telemetrySubTab, setTelemetrySubTab] = useState('macro');
+  const TELEMETRY_TABS = ['macro', 'bilanci', 'amino', 'vit', 'min', 'fat'];
+  const telemetryScrollRef = useRef(null);
   const [expandedStoricoDate, setExpandedStoricoDate] = useState(null);
 
   // STRATEGIA E DATABASE
@@ -2123,6 +2125,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
           .view-animate { animation: fadeIn 0.3s ease forwards; }
 
+          /* Carosello Telemetria: scroll orizzontale con snap */
+          .telemetry-carousel { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; scroll-behavior: smooth; }
+          .telemetry-carousel::-webkit-scrollbar { display: none; }
+          .telemetry-carousel-slide { flex: 0 0 100%; scroll-snap-align: start; scroll-snap-stop: always; min-width: 100%; box-sizing: border-box; }
+          .telemetry-carousel.finecorsa { scroll-snap-type: none; }
+
           .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
           .action-btn { background: rgba(255,255,255,0.04); border: 1px solid #2a2a2a; color: #fff; padding: 18px 16px; min-height: 48px; min-width: 48px; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: 0.2s; -webkit-tap-highlight-color: transparent; }
           .action-btn:active { transform: scale(0.95); border-color: #555; background: rgba(255,255,255,0.08); }
@@ -2951,36 +2959,69 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             )}
             {diarioTab === 'telemetria' && (
               <div className="view-animate">
-                <div style={{ display: 'flex', gap: '5px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '5px' }}>
-                  {['macro', 'bilanci', 'amino', 'vit', 'min', 'fat'].map(t => (
-                    <button key={t} onClick={() => setTelemetrySubTab(t)} style={{ padding: '8px 15px', fontSize: '0.7rem', background: telemetrySubTab === t ? '#00e676' : '#111', color: telemetrySubTab === t ? '#000' : '#888', border: 'none', borderRadius: '20px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t}</button>
+                <div style={{ display: 'flex', gap: '5px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '5px', flexShrink: 0 }}>
+                  {TELEMETRY_TABS.map((t, idx) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => {
+                        setTelemetrySubTab(t);
+                        if (telemetryScrollRef.current) {
+                          telemetryScrollRef.current.scrollTo({ left: telemetryScrollRef.current.clientWidth * idx, behavior: 'smooth' });
+                        }
+                      }}
+                      style={{ padding: '8px 15px', fontSize: '0.7rem', background: telemetrySubTab === t ? '#00e676' : '#111', color: telemetrySubTab === t ? '#000' : '#888', border: 'none', borderRadius: '20px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                    >{t}</button>
                   ))}
                 </div>
-                <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-                  {telemetrySubTab === 'macro' && (<> {renderProgressBar('Calorie', totali.kcal || 0, userTargets.kcal ?? 2000, 'kcal', 'kcal')} {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')} {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')} {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')} </>)}
-                  {telemetrySubTab === 'fat' && (<> {renderProgressBar('Grassi Totali', totali.fatTotal || totali.fat || 0, userTargets.fatTotal ?? userTargets.fat ?? 70, 'g', 'fatTotal')} {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))} </>)}
-                  {telemetrySubTab === 'bilanci' && (
-                    <div className="view-animate">
-                      <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px' }}>RAPPORTI BIOCHIMICI</h4>
-                      {renderRatioBar(
-                        'Equilibrio Elettrolitico (Idratazione)',
-                        'Sodio (Na)', totali?.na,
-                        'Potassio (K)', totali?.k,
-                        'Ideale: Na < K',
-                        (Number(totali?.na) || 0) < (Number(totali?.k) || 0)
-                      )}
-                      {renderRatioBar(
-                        'Indice Infiammatorio (Grassi)',
-                        'Omega 6', totali?.omega6,
-                        'Omega 3', totali?.omega3,
-                        'Ideale: W6:W3 < 4:1',
-                        (Number(totali?.omega6) || 0) <= (Number(totali?.omega3) || 1) * 4
-                      )}
+                <div
+                  ref={telemetryScrollRef}
+                  className="telemetry-carousel"
+                  onScroll={() => {
+                    const el = telemetryScrollRef.current;
+                    if (!el) return;
+                    const idx = Math.round(el.scrollLeft / el.clientWidth);
+                    const tab = TELEMETRY_TABS[idx];
+                    if (tab && tab !== telemetrySubTab) setTelemetrySubTab(tab);
+                  }}
+                  style={{ width: '100%', flex: 1, minHeight: 0 }}
+                >
+                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
+                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
+                      {renderProgressBar('Calorie', totali.kcal || 0, userTargets.kcal ?? 2000, 'kcal', 'kcal')}
+                      {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')}
+                      {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')}
+                      {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')}
                     </div>
-                  )}
-                  {telemetrySubTab === 'amino' && (<> {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.amino[k], 'mg', k))} </>)}
-                  {telemetrySubTab === 'vit' && (<> {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.vit[k], k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))} </>)}
-                  {telemetrySubTab === 'min' && (<> {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.min[k], k === 'se' ? 'µg' : 'mg', k))} </>)}
+                  </div>
+                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
+                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
+                      <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px' }}>RAPPORTI BIOCHIMICI</h4>
+                      {renderRatioBar('Equilibrio Elettrolitico (Idratazione)', 'Sodio (Na)', totali?.na, 'Potassio (K)', totali?.k, 'Ideale: Na < K', (Number(totali?.na) || 0) < (Number(totali?.k) || 0))}
+                      {renderRatioBar('Indice Infiammatorio (Grassi)', 'Omega 6', totali?.omega6, 'Omega 3', totali?.omega3, 'Ideale: W6:W3 < 4:1', (Number(totali?.omega6) || 0) <= (Number(totali?.omega3) || 1) * 4)}
+                    </div>
+                  </div>
+                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
+                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
+                      {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.amino[k], 'mg', k))}
+                    </div>
+                  </div>
+                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
+                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
+                      {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.vit[k], k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))}
+                    </div>
+                  </div>
+                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
+                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
+                      {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.min[k], k === 'se' ? 'µg' : 'mg', k))}
+                    </div>
+                  </div>
+                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
+                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
+                      {renderProgressBar('Grassi Totali', totali.fatTotal || totali.fat || 0, userTargets.fatTotal ?? userTargets.fat ?? 70, 'g', 'fatTotal')}
+                      {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
