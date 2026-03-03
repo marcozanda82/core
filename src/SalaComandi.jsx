@@ -529,12 +529,8 @@ export default function SalaComandi() {
 
   const [manualNodes, setManualNodes] = useState(() => {
     const saved = localStorage.getItem('vyta_timeline');
-    const parsed = saved ? JSON.parse(saved) : [
-      { id: 'lavoro_mat', type: 'work', time: 9, duration: 4, kcal: 400, icon: '💼' },
-      { id: 'lavoro_pom', type: 'work', time: 14, duration: 4, kcal: 400, icon: '💼' },
-      { id: 'allenamento', type: 'workout', time: 18, duration: 1, kcal: 300, icon: '🏋️' }
-    ];
-    return (Array.isArray(parsed) ? parsed : []).filter(n => n.type === 'work' || n.type === 'workout');
+    const parsed = saved ? JSON.parse(saved) : [];
+    return Array.isArray(parsed) ? parsed : [];
   });
   const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
   const [draggingNode, setDraggingNode] = useState(null);
@@ -641,20 +637,12 @@ export default function SalaComandi() {
     if (currentTrackerDateRef.current !== getTodayString()) return;
     const todayKey = TRACKER_STORICO_KEY(getTodayString());
     const todayNode = fullStorico[todayKey];
+
     if (todayNode?.hasEditedNodes || (todayNode?.manualNodes && todayNode.manualNodes.length > 0)) {
       setManualNodes(todayNode.manualNodes || []);
-      return;
-    }
-    const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
-    keys.sort((a, b) => b.localeCompare(a));
-    for (const key of keys) {
-      if (key === todayKey) continue;
-      const node = fullStorico[key];
-      const nodes = node?.manualNodes;
-      if (Array.isArray(nodes) && nodes.length > 0) {
-        setManualNodes(nodes);
-        break;
-      }
+    } else {
+      // BUGFIX: Se oggi è vuoto, partiamo puliti. Nessun trascinamento da ieri.
+      setManualNodes([]);
     }
   }, [fullStorico]);
 
@@ -2020,7 +2008,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     cortisoloFuture: d.time >= currentTime ? d.cortisolo : null
   }));
 
-  const targetKcalChart = userTargets?.kcal ?? 2000;
+  // Calcolo Budget Dinamico (Base + Bruciate oggi)
+  const burnedKcal = dailyLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
+  const dynamicDailyKcal = (userTargets?.kcal ?? 2000) + burnedKcal;
+
+  const targetKcalChart = dynamicDailyKcal;
   const scale = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
   const finalChartData = chartUnit === 'kcal'
     ? renderDataWithSegments.map(d => ({
@@ -2293,10 +2285,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <span style={{ color: '#00e676', background: 'rgba(0, 230, 118, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🟢 Serali OK</span>
           )}
         </div>
-        <div style={{ color: ((userTargets?.kcal || 2000) - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff4d4d' }}>
-          {((userTargets?.kcal || 2000) - (totali?.kcal || 0)) >= 0
-            ? `🔥 Rimangono: ${Math.round((userTargets?.kcal || 2000) - (totali?.kcal || 0))} kcal`
-            : `⚠️ Surplus: ${Math.abs(Math.round((userTargets?.kcal || 2000) - (totali?.kcal || 0)))} kcal`}
+        <div style={{ color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff4d4d' }}>
+          {(dynamicDailyKcal - (totali?.kcal || 0)) >= 0
+            ? `🔥 Rimangono: ${Math.round(dynamicDailyKcal - (totali?.kcal || 0))} kcal`
+            : `⚠️ Surplus: ${Math.abs(Math.round(dynamicDailyKcal - (totali?.kcal || 0)))} kcal`}
         </div>
       </div>
 
@@ -3006,7 +2998,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 >
                   <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
                     <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-                      {renderProgressBar('Calorie', totali.kcal || 0, userTargets.kcal ?? 2000, 'kcal', 'kcal')}
+                      {renderProgressBar('Calorie', totali.kcal || 0, dynamicDailyKcal, 'kcal', 'kcal')}
                       {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')}
                       {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')}
                       {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')}
@@ -3599,7 +3591,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {/* Pagina MACRO */}
               <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
                 <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
-                  {renderProgressBar('Calorie', totali.kcal || 0, userTargets.kcal ?? 2000, 'kcal', 'kcal')} 
+                  {renderProgressBar('Calorie', totali.kcal || 0, dynamicDailyKcal, 'kcal', 'kcal')} 
                   {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')} 
                   {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')} 
                   {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')}
