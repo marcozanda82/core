@@ -31,8 +31,17 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-const getTodayString = () => new Date().toISOString().split('T')[0];
-const getYesterdayString = () => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0]; };
+const getTodayString = () => {
+  const d = new Date();
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offset).toISOString().split('T')[0];
+};
+const getYesterdayString = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offset).toISOString().split('T')[0];
+};
 
 // ============================================================================
 // UTILITY CRITICHE PER RETROCOMPATIBILITÀ MEALTYPE
@@ -377,6 +386,12 @@ function denormalizeLogForFirebase(flatLog) {
   return result;
 }
 
+/** Applica gli orari pasto (mealTimes) al log: evita "amnesia" dopo caricamento da Firebase. */
+function applyMealTimes(logArray, timesObj) {
+  if (!logArray || !Array.isArray(logArray)) return logArray || [];
+  return logArray.map(item => (item.type === 'food' && timesObj && timesObj[item.mealType] !== undefined) ? { ...item, mealTime: timesObj[item.mealType] } : item);
+}
+
 /** Dato l'albero tracker_data scaricato (una tantum), restituisce il log normalizzato per una data. */
 function getLogFromStoricoTree(tree, dateStr) {
   if (!tree || !dateStr) return [];
@@ -525,6 +540,8 @@ export default function SalaComandi() {
   ]);
   const chatEndRef = useRef(null);
   const lastLogFromFirebaseRef = useRef(null);
+  const pendingLogRef = useRef(null);
+  const pendingNodesRef = useRef(null);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
 
   const [fullStorico, setFullStorico] = useState(null);
@@ -690,13 +707,17 @@ export default function SalaComandi() {
         const tree = snap.exists() ? snap.val() : null;
         setFullStorico(tree);
         setFullHistory(tree || {});
-        setDailyLog(getLogFromStoricoTree(tree, today));
+        const todayNode = tree?.[TRACKER_STORICO_KEY(today)];
+        const initialLog = getLogFromStoricoTree(tree, today);
+        setDailyLog(applyMealTimes(initialLog, todayNode?.mealTimes ?? {}));
         unsubToday = onValue(ref(db, `${basePath}/${TRACKER_STORICO_KEY(today)}`), (liveSnap) => {
           if (liveSnap.exists() && currentTrackerDateRef.current === getTodayString()) {
-            const incomingLog = liveSnap.val()?.log ?? [];
+            const val = liveSnap.val();
+            const incomingLog = val?.log ?? [];
             const normalized = normalizeLogData(Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}));
+            const mealTimes = val?.mealTimes ?? {};
             lastLogFromFirebaseRef.current = JSON.stringify(normalized);
-            setDailyLog(normalized);
+            setDailyLog(applyMealTimes(normalized, mealTimes));
           }
         });
         setIsInitialLoadComplete(true);
@@ -849,7 +870,8 @@ export default function SalaComandi() {
 
     if (dayData) {
       const rawLog = Array.isArray(dayData.log) ? dayData.log : Object.values(dayData.log || {});
-      setDailyLog(normalizeLogData(rawLog));
+      const normalized = normalizeLogData(rawLog);
+      setDailyLog(applyMealTimes(normalized, dayData.mealTimes ?? {}));
       setManualNodes(Array.isArray(dayData.manualNodes) ? dayData.manualNodes : []);
     } else {
       setDailyLog([]);
@@ -934,7 +956,7 @@ export default function SalaComandi() {
           const next = prev.map(item =>
             itemIds && itemIds.includes(item.id) ? { ...item, mealTime: hour } : item
           );
-          syncDatiFirebase(next, manualNodes);
+          pendingLogRef.current = next;
           return next;
         });
       } else {
@@ -957,7 +979,7 @@ export default function SalaComandi() {
             }
             return { ...n, time: hour };
           });
-          syncDatiFirebase(dailyLog, next);
+          pendingNodesRef.current = next;
           return next;
         });
       }
@@ -1006,6 +1028,12 @@ export default function SalaComandi() {
             });
           }
         }
+      } else {
+        const logToSync = pendingLogRef.current ?? dailyLog;
+        const nodesToSync = pendingNodesRef.current ?? manualNodes;
+        syncDatiFirebase(logToSync, nodesToSync);
+        pendingLogRef.current = null;
+        pendingNodesRef.current = null;
       }
       setDragOffsetY(0);
       dragOffsetYRef.current = 0;
