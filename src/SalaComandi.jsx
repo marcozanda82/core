@@ -1688,9 +1688,11 @@ export default function SalaComandi() {
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
 
+      const paginaAttuale = !activeAction ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
       const systemContext = `
 [CONTESTO DI SISTEMA INVISIBILE - NON MENZIONARLO ALL'UTENTE]
 Stato attuale cruscotto:
+- Pagina attuale visualizzata: ${paginaAttuale}
 - Timeline (nodi): ${JSON.stringify(allNodes.map(n => ({ id: n.id, type: n.type, time: n.time, duration: n.duration, kcal: n.kcal })))}
 - Strategia ideale attuale (kcal): ${JSON.stringify(idealStrategy)}
 - Rischio stress serale (energia < 40 alle ore 20): ${energyAt20 != null && energyAt20 < 40 ? 'ALTO (Intervenire)' : 'Basso'}
@@ -1698,7 +1700,7 @@ Stato attuale cruscotto:
 - Storico ultimi 3 giorni: ${JSON.stringify(pastDaysStorico.slice(0, 3).map(d => ({ data: d.dataStr, kcal: Math.round(d.calorie), prot: Math.round(d.proteine), deficit: d.deficit })))}
 
 REGOLE TASSATIVE PER LA TUA RISPOSTA:
-1. Se l'utente chiede una strategia o descrive la giornata, analizza i dati. Se vedi rischio stress serale, modifica la strategia per aggiungere un pasto tattico prima di cena.
+1. Se l'utente dà un comando rapido senza specificare il pasto o l'orario, usa la "Pagina attuale visualizzata" per dedurre il contesto (es. se è nel pasto "pranzo", aggiungi il cibo al pranzo). Se l'utente chiede una strategia o descrive la giornata, analizza i dati. Se vedi rischio stress serale, modifica la strategia per aggiungere un pasto tattico prima di cena.
 2. Quando un valore nutrizionale non è disponibile per la compilazione automatica, fai una stima e usa il valore medio.
 3. Per modificare la strategia o gli orari, devi inserire alla fine della risposta questo comando esatto (puoi omettere i campi che non cambi):
 [STRATEGIA: colazione=400, pranzo=700, spuntino=250, cena=500, allenamento=300, orario_allenamento=18]
@@ -2279,7 +2281,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }
 
   return (
-    <div style={{ backgroundColor: '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+    <div style={{ backgroundColor: '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '80px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
       <style>
         {`
@@ -2456,7 +2458,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {/* HEADER E GRAFICO */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(8px, 1.5vh)' }}>
-        <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: 0 }}>CORE <span style={{color: '#00e5ff'}}>OS</span></h1>
+        <button type="button" onClick={() => { setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
+          <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: 0 }}>CORE <span style={{color: '#00e5ff'}}>OS</span></h1>
+        </button>
         <button type="button" className="btn-toggle" onClick={() => setShowTelemetryPopup(true)} style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊 STATS</button>
         <button className="btn-toggle" onClick={() => { auth.signOut(); }}>LOGOUT</button>
       </div>
@@ -2701,26 +2705,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
         </div>
 
-      {/* Bottom Action Bar (75/25 Split) */}
-      {!isDrawerOpen && (
-        <div style={{ display: 'flex', gap: '10px', marginTop: 'max(10px, 1.5vh)', flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
-            style={{ flex: 3, background: 'linear-gradient(135deg, #b388ff, #00e5ff)', color: '#000', border: 'none', borderRadius: '16px', padding: 'max(14px, 1.8vh)', fontWeight: 'bold', fontSize: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0, 229, 255, 0.2)' }}
-          >
-            ✨ CORE AI
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowChoiceModal(true)}
-            style={{ flex: 1, minHeight: '50px', background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s' }}
-            aria-label="Aggiungi evento"
-          >
-            +
-          </button>
+      {/* Barra di comando AI persistente (fixed in fondo) */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: 'max(12px, env(safe-area-inset-bottom))', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid #222', zIndex: 90 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 20px', border: '1px solid #333' }}>
+          <input type="text" className="chat-input" placeholder="Es: Ho mangiato 200g pollo..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()} style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: '0.95rem', outline: 'none', minWidth: 0 }} />
+          <button type="button" className={`chat-send-btn ${chatInput.trim() ? 'has-text' : ''}`} onClick={handleChatSubmit} style={{ background: '#fff', color: '#000', border: 'none', width: 40, height: 40, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '1.1rem', flexShrink: 0 }}>↑</button>
         </div>
-      )}
+        <button type="button" onClick={() => setShowChoiceModal(true)} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
+      </div>
 
       {/* --- CASSETTO AZIONI --- */}
       <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={closeDrawer}></div>
@@ -2837,10 +2829,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 ))}
                 <div ref={chatEndRef} />
-              </div>
-              <div className="chat-input-wrapper">
-                <input type="text" className="chat-input" placeholder="Es: Ho mangiato 200g pollo..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()} autoFocus />
-                <button className={`chat-send-btn ${chatInput.trim() ? 'has-text' : ''}`} onClick={handleChatSubmit}>↑</button>
               </div>
             </div>
           </div>
