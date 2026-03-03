@@ -2175,7 +2175,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .drawer-content.open { bottom: 0; }
           
           /* Navigator Zoom Controls */
-          .zoom-controls { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 10; }
+          .zoom-controls { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 10; }
           .zoom-btn { width: 44px; height: 44px; background: rgba(20, 20, 20, 0.8); border: 1px solid #333; color: #00e5ff; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; backdrop-filter: blur(5px); cursor: pointer; }
           
           /* Contenitore per lo scroll del grafico */
@@ -2497,6 +2497,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
                   {allNodes.map((node) => {
+                    const isNodeFocused = !activeAction || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout')) || (activeAction === 'acqua' && node.type === 'water');
                     const isWork = node.type === 'work';
                     const percent = (node.time / 24) * 100;
                     const startPercent = percent;
@@ -2515,7 +2516,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     if (isWork) {
                       const dragEdge = isDragging ? draggingNode?.edge : null;
                       return (
-                        <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: '-18px', height: '36px', transform: isDragging ? `translateY(${dragY}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none' }}>
+                        <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: '-18px', height: '36px', transform: isDragging ? `translateY(${dragY}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
                           <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                             {(dragEdge === 'start' || dragEdge === 'all') && (
                               <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
@@ -2542,7 +2543,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const bgColor = isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
                     const nodeBorderColor = isWater ? '#00e5ff' : pointBorderColor;
                     return (
-                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, transform: isDragging ? `translate(-50%, ${dragY}px) scale(2)` : 'translateX(-50%)', top: '50%', marginTop: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none' }}>
+                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, transform: isDragging ? `translate(-50%, ${dragY}px) scale(2)` : 'translateX(-50%)', top: '50%', marginTop: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
                         <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isWater ? '#00e5ff' : pointBorderColor, marginBottom: '2px', transition: 'color 0.2s' }}>
                           {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
                         </span>
