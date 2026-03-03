@@ -1087,6 +1087,19 @@ export default function SalaComandi() {
   // ============================================================================
 
   /**
+   * Stima il tipo di pasto in base all'orario (ore decimali 0-24).
+   * Usato per pre-selezionare colazione/pranzo/spuntino/cena quando l'utente apre "Nuovo pasto".
+   */
+  const predictMealType = (timeDecimal) => {
+    const h = typeof timeDecimal === 'number' && !Number.isNaN(timeDecimal) ? timeDecimal : getCurrentTimeRoundedTo15Min();
+    if (h >= 5 && h < 10) return 'merenda1';
+    if (h >= 10 && h < 14) return 'pranzo';
+    if (h >= 14 && h < 17) return 'merenda2';
+    if (h >= 17 && h < 24) return 'cena';
+    return 'cena';
+  };
+
+  /**
    * Carica un pasto nel costruttore. Accetta mealType o id composito "mealType_time" (es. snack_16.5).
    * Con id composito carica solo i food con quel mealType e quel mealTime.
    */
@@ -1904,6 +1917,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     });
   }, [fullStorico, todayStr]);
 
+  /** Cibi mangiati ieri nello stesso pasto (stesso mealType) per suggerimenti inserimento fulmineo */
+  const abitudiniIeri = useMemo(() => {
+    if (!fullStorico || !mealType) return [];
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+    const node = fullStorico[TRACKER_STORICO_KEY(yesterdayStr)];
+    const log = node?.log ?? node?.dati?.log;
+    const normalized = normalizeLogData(log ?? []);
+    const equivalents = getEquivalentMealTypes(mealType);
+    return normalized.filter(item => item.type === 'food' && equivalents.includes(item.mealType));
+  }, [fullStorico, mealType]);
+
   const weeklyTrendData = useMemo(() => {
     return [...pastDaysStorico].slice(0, 7).reverse().map(d => ({
       ...d,
@@ -2682,7 +2708,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div className="view-animate">
             <h2 style={{ fontSize: '0.7rem', textAlign: 'center', color: '#777', letterSpacing: '3px', marginBottom: '25px', fontWeight: 'normal' }}>MENU SISTEMA</h2>
             <div className="action-grid">
-              <button className="action-btn" onClick={() => { setAddedFoods([]); setEditingMealId(null); const t = getDefaultMealTime(mealType); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }}><span className="action-icon">🍽️</span><span className="action-label">Pasto</span></button>
+              <button className="action-btn" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getDefaultMealTime(predicted); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }}><span className="action-icon">🍽️</span><span className="action-label">Pasto</span></button>
               <button className="action-btn" onClick={() => setActiveAction('acqua')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>💧</span><span className="action-label" style={{ color: '#00e5ff' }}>Acqua</span></button>
               <button className="action-btn" onClick={() => setActiveAction('allenamento')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(255, 109, 0, 0.4))' }}>⚡</span><span className="action-label" style={{ color: '#ff6d00' }}>Attività</span></button>
               <button className="action-btn" onClick={() => setActiveAction('diario_giornaliero')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 230, 118, 0.4))' }}>📓</span><span className="action-label" style={{ color: '#00e676' }}>Diario Giornaliero</span></button>
@@ -3033,6 +3059,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <button className="quick-add-btn" onClick={handleAddFoodManual}>+</button>
                 </div>
               </div>
+              {abitudiniIeri.length > 0 && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#888', marginBottom: '8px', letterSpacing: '1px' }}>Abitudini di ieri</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {abitudiniIeri.map((f, idx) => (
+                      <button key={f.id || `yest_${idx}`} type="button" onClick={() => setAddedFoods(prev => [...prev, { ...f, id: `habit_${Date.now()}_${idx}`, mealType }])} style={{ padding: '8px 12px', borderRadius: '20px', border: '1px solid #333', background: 'rgba(255,255,255,0.06)', color: '#fff', fontSize: '0.8rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        {f.desc || f.name}{f.qta != null || f.weight != null ? ` (${f.qta ?? f.weight}g)` : ''}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {showFoodDropdown && (foodNameInput.trim() || foodDropdownSuggestions.length > 0) && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#1a1a1a', border: '1px solid #333', borderRadius: '0 0 12px 12px', maxHeight: '220px', overflowY: 'auto', zIndex: 50, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
                   {foodDropdownSuggestions.map(s => (
@@ -3695,7 +3733,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div style={{ background: '#111', border: '1px solid #333', borderRadius: '25px', padding: '20px', width: '100%', maxWidth: '350px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 10px 50px rgba(0,0,0,0.9)' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 10px 0', textAlign: 'center', color: '#fff', fontSize: '1.1rem', letterSpacing: '2px' }}>AGGIUNGI EVENTO</h3>
 
-            <button onClick={() => { setShowChoiceModal(false); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+            <button onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getDefaultMealTime(predicted); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setShowChoiceModal(false); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
               <span style={{ fontSize: '1.5rem' }}>🍎</span> PASTO
             </button>
 
