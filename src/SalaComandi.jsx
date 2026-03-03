@@ -1100,6 +1100,14 @@ export default function SalaComandi() {
     setIsDrawerOpen(true);
   };
 
+  const getCurrentTimeRoundedTo15Min = () => {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const decimal = h + m / 60;
+    return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
+  };
+
   const getDefaultMealTime = (mealTypeKey) => {
     const equivalents = getEquivalentMealTypes(mealTypeKey);
     
@@ -1109,7 +1117,7 @@ export default function SalaComandi() {
     );
     if (first != null && typeof first.mealTime === 'number') return first.mealTime;
     
-    if (!fullStorico) return 12;
+    if (!fullStorico) return getCurrentTimeRoundedTo15Min();
     const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
     keys.sort((a, b) => b.localeCompare(a));
     const todayKey = TRACKER_STORICO_KEY(getTodayString());
@@ -1123,7 +1131,7 @@ export default function SalaComandi() {
         if (typeof t === 'number') return t;
       }
     }
-    return 12;
+    return getCurrentTimeRoundedTo15Min();
   };
 
   const handleTimeInput = (value) => {
@@ -1141,6 +1149,12 @@ export default function SalaComandi() {
     const h = Math.min(23, Math.max(0, parseInt(hh, 10) || 0));
     const m = Math.min(59, Math.max(0, parseInt(mm, 10) || 0));
     setDrawerMealTime(h + m / 60);
+  };
+
+  const adjustMealTime = (delta) => {
+    const next = Math.max(0, Math.min(24, Math.round((drawerMealTime + delta) * 4) / 4));
+    setDrawerMealTime(next);
+    setDrawerMealTimeStr(decimalToTimeStr(next));
   };
 
   const parseTimeStrToDecimal = (value) => {
@@ -2802,9 +2816,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px', gap: '8px' }}>
                 <span>0:00</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input type="text" inputMode="numeric" placeholder="Inizio" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '56px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '0.95rem', fontWeight: 'bold', textAlign: 'center' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button type="button" onClick={() => setWorkoutStartTime(Math.max(0, Math.min(workoutEndTime - 0.25, Math.round((workoutStartTime - 0.25) * 4) / 4)))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
+                    <input type="text" inputMode="numeric" placeholder="Inizio" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '56px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '0.95rem', fontWeight: 'bold', textAlign: 'center' }} />
+                    <button type="button" onClick={() => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, Math.round((workoutStartTime + 0.25) * 4) / 4))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
+                  </div>
                   <span style={{ color: '#666' }}>–</span>
-                  <input type="text" inputMode="numeric" placeholder="Fine" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '56px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '0.95rem', fontWeight: 'bold', textAlign: 'center' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button type="button" onClick={() => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, Math.round((workoutEndTime - 0.25) * 4) / 4))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
+                    <input type="text" inputMode="numeric" placeholder="Fine" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '56px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '0.95rem', fontWeight: 'bold', textAlign: 'center' }} />
+                    <button type="button" onClick={() => setWorkoutEndTime(Math.min(24, Math.max(workoutStartTime + 0.25, Math.round((workoutEndTime + 0.25) * 4) / 4)))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
+                  </div>
                 </div>
                 <span>24:00</span>
               </div>
@@ -2908,7 +2930,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px' }}>
                 <span>0:00</span>
-                <input type="text" inputMode="numeric" value={drawerMealTimeStr} onChange={(e) => handleTimeInput(e.target.value)} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button type="button" onClick={() => adjustMealTime(-0.25)} style={{ width: '36px', height: '36px', padding: 0, borderRadius: '8px', border: '1px solid #00e5ff', background: 'rgba(0, 229, 255, 0.15)', color: '#00e5ff', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
+                  <input type="text" inputMode="numeric" value={drawerMealTimeStr} onChange={(e) => handleTimeInput(e.target.value)} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
+                  <button type="button" onClick={() => adjustMealTime(0.25)} style={{ width: '36px', height: '36px', padding: 0, borderRadius: '8px', border: '1px solid #00e5ff', background: 'rgba(0, 229, 255, 0.15)', color: '#00e5ff', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
+                </div>
                 <span>24:00</span>
               </div>
               <div ref={miniTimelinePastoRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
