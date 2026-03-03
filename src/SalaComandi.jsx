@@ -436,6 +436,23 @@ export default function SalaComandi() {
     }
   };
 
+  const mealCarouselRef = useRef(null);
+  const [mealCarouselTab, setMealCarouselTab] = useState('macro');
+  const handleMealCarouselScroll = (e) => {
+    const { scrollLeft, clientWidth } = e.target;
+    const pageIndex = Math.round(scrollLeft / clientWidth);
+    const activeTab = TELEMETRY_TABS[pageIndex];
+    if (activeTab && activeTab !== mealCarouselTab) setMealCarouselTab(activeTab);
+  };
+  const scrollToMealCarouselTab = (tabName) => {
+    setMealCarouselTab(tabName);
+    const index = TELEMETRY_TABS.indexOf(tabName);
+    if (mealCarouselRef.current && index !== -1) {
+      const container = mealCarouselRef.current;
+      container.scrollTo({ left: index * container.clientWidth, behavior: 'smooth' });
+    }
+  };
+
   const scrollToPopupTelemetryTab = (tabName) => {
     setTelemetrySubTab(tabName);
     const index = TELEMETRY_TABS.indexOf(tabName);
@@ -1284,6 +1301,15 @@ export default function SalaComandi() {
     setFoodWeightInput('');
   };
 
+  const handleCalibrateFoodWeight = (foodId, deltaG) => {
+    const food = addedFoods.find(f => f.id === foodId);
+    if (!food) return;
+    const currentQta = Number(food.qta ?? food.weight ?? 100) || 100;
+    const newQta = Math.max(5, Math.min(5000, currentQta + deltaG));
+    const updated = estraiDatiFoodDb(food.desc || food.name, newQta, food.mealType || mealType);
+    setAddedFoods(prev => prev.map(f => f.id === foodId ? { ...updated, id: foodId } : f));
+  };
+
   const saveMealToDiary = () => {
     const timeToUse = typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime) ? drawerMealTime : 12;
     const uniqueBatchId = Date.now();
@@ -2050,6 +2076,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     fibre: acc.fibre + (Number(food.fibre) || 0)
   }), { kcal: 0, prot: 0, carb: 0, fat: 0, fibre: 0 });
 
+  const mealNutrientKeys = ['kcal', ...Object.values(TARGETS).flatMap(g => Object.keys(g))];
+  const mealTotaliFull = addedFoods.reduce((acc, food) => {
+    acc.kcal = (acc.kcal || 0) + (Number(food.kcal) || Number(food.cal) || 0);
+    mealNutrientKeys.forEach(k => {
+      if (k === 'kcal') return;
+      acc[k] = (acc[k] || 0) + (Number(food[k]) || 0);
+    });
+    return acc;
+  }, {});
+
   const strategyKeyForMeal = {
     merenda1: 'colazione',
     pranzo: 'pranzo',
@@ -2193,6 +2229,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .food-pill-btn { background: none; border: none; cursor: pointer; font-size: 1rem; opacity: 0.6; transition: 0.2s; padding: 0; }
           .food-pill-btn:hover { opacity: 1; }
           .btn-info { color: #fff; } .btn-delete { color: #ff4d4d; }
+          .calibration-btn { min-width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(0, 229, 255, 0.4); background: rgba(0, 229, 255, 0.1); color: #00e5ff; font-size: 1.1rem; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: transform 0.15s, background 0.2s; -webkit-tap-highlight-color: transparent; }
+          .calibration-btn:active { transform: scale(0.92); background: rgba(0, 229, 255, 0.25); }
           .quick-add-bar { display: flex; width: 100%; background: rgba(255,255,255,0.05); border-radius: 18px; border: 1px solid #333; overflow: hidden; margin-bottom: 20px; transition: border-color 0.3s; }
           .quick-add-bar:focus-within { border-color: #00e5ff; box-shadow: 0 0 15px rgba(0, 229, 255, 0.1); }
           .quick-input { background: transparent; border: none; color: #fff; padding: 16px; font-size: 0.9rem; outline: none; }
@@ -2212,6 +2250,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .water-fill-bar { height: 100%; background: linear-gradient(90deg, #007aff, #00e5ff); border-radius: 6px; transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 0 15px rgba(0, 229, 255, 0.6); position: relative; }
           .water-quick-btn { background: rgba(0, 229, 255, 0.05); border: 1px solid rgba(0, 229, 255, 0.2); color: #00e5ff; padding: 25px 0; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer; transition: 0.2s; flex: 1; }
           .water-rectify-btn { background: transparent; border: 1px solid #333; color: #888; border-radius: 12px; padding: 8px 15px; font-size: 0.75rem; cursor: pointer; transition: 0.2s; }
+          
+          /* Modulo Acqua: Glassmorphism + Sfera con onda */
+          .water-glass { background: rgba(255, 255, 255, 0.06); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 24px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+          .water-sphere { position: relative; width: 180px; height: 180px; border-radius: 50%; background: rgba(0, 30, 50, 0.4); border: 2px solid rgba(0, 229, 255, 0.35); box-shadow: inset 0 0 40px rgba(0, 229, 255, 0.1), 0 0 40px rgba(0, 229, 255, 0.15); overflow: hidden; }
+          .water-sphere-inner { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; }
+          .water-wave { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, rgba(0, 150, 255, 0.5) 0%, rgba(0, 229, 255, 0.85) 50%, rgba(0, 234, 255, 0.95) 100%); transition: height 0.8s cubic-bezier(0.33, 1, 0.68, 1); }
+          .water-wave::before { content: ''; position: absolute; left: -50%; top: -100%; width: 200%; height: 200%; background: radial-gradient(ellipse 60% 40% at 50% 100%, rgba(255,255,255,0.15) 0%, transparent 60%); animation: waterShine 4s ease-in-out infinite; }
+          .water-wave::after { content: ''; position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0 60 Q300 20 600 60 T1200 60 L1200 120 L0 120 Z' fill='rgba(255,255,255,0.08)'/%3E%3C/svg%3E") repeat-x bottom center/200% 80px; animation: waveDrift 6s linear infinite; pointer-events: none; }
+          @keyframes waterShine { 0%, 100% { opacity: 0.5; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-5px); } }
+          @keyframes waveDrift { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
           
           .chat-container { display: flex; flex-direction: column; height: 380px; }
           .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; padding-right: 5px; padding-bottom: 20px; }
@@ -2656,22 +2704,34 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         {/* VISTA ACQUA */}
         {activeAction === 'acqua' && (
           <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
               <h2 style={{ fontSize: '0.8rem', color: '#00e5ff', letterSpacing: '2px', margin: 0 }}>💧 IDRATAZIONE</h2>
               <div style={{ width: '70px' }}></div>
             </div>
-            <div style={{ textAlign: 'center', marginTop: '10px' }}>
-              <h3 style={{ fontSize: '3rem', margin: '0', color: '#fff', fontWeight: 'bold' }}>{waterIntake} <span style={{ fontSize: '1rem', color: '#666', fontWeight: 'normal' }}>/ {dailyWaterGoal} ml</span></h3>
-              <div className="water-fill-container"><div className="water-fill-bar" style={{ width: `${waterProgress}%` }}></div></div>
+            <div className="water-glass" style={{ padding: '28px 20px', marginBottom: '20px', textAlign: 'center' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+                <div className="water-sphere">
+                  <div className="water-sphere-inner">
+                    <div className="water-wave" style={{ height: `${waterProgress}%` }} />
+                  </div>
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 2 }}>
+                    <span style={{ fontSize: '2rem', fontWeight: 'bold', color: 'rgba(255,255,255,0.95)', textShadow: '0 0 20px rgba(0,229,255,0.5)' }}>{Math.round(waterProgress)}%</span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: '#fff', marginBottom: '4px' }}>{waterIntake} <span style={{ fontSize: '1rem', color: 'rgba(255,255,255,0.5)', fontWeight: 'normal' }}>ml</span></div>
+                  <div style={{ fontSize: '0.8rem', color: 'rgba(0, 229, 255, 0.9)', letterSpacing: '1px' }}>obiettivo {dailyWaterGoal} ml</div>
+                </div>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: '15px' }}>
-              <button onClick={() => handleAddWater(250)} className="water-quick-btn"><span style={{ fontSize: '1.8rem', marginBottom: '5px' }}>🥛</span><span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>+ 250ml</span></button>
-              <button onClick={() => handleAddWater(500)} className="water-quick-btn"><span style={{ fontSize: '1.8rem', marginBottom: '5px' }}>🚰</span><span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>+ 500ml</span></button>
+            <div className="water-glass" style={{ padding: '16px', display: 'flex', gap: '12px', marginBottom: '12px' }}>
+              <button onClick={() => handleAddWater(250)} className="water-quick-btn" style={{ flex: 1 }}><span style={{ fontSize: '1.8rem', marginBottom: '4px' }}>🥛</span><span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>+ 250</span></button>
+              <button onClick={() => handleAddWater(500)} className="water-quick-btn" style={{ flex: 1 }}><span style={{ fontSize: '1.8rem', marginBottom: '4px' }}>🚰</span><span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>+ 500</span></button>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
-              <button onClick={() => handleAddWater(-250)} className="water-rectify-btn">- 250</button>
-              <button onClick={() => handleAddWater(-500)} className="water-rectify-btn">- 500</button>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <button onClick={() => handleAddWater(-250)} className="water-rectify-btn">− 250</button>
+              <button onClick={() => handleAddWater(-500)} className="water-rectify-btn">− 500</button>
               <button onClick={() => { setManualNodes(prev => { const next = prev.filter(n => n.type !== 'water'); syncDatiFirebase(dailyLog, next); return next; }); }} className="water-rectify-btn" style={{ borderColor: 'rgba(255, 77, 77, 0.4)', color: '#ff4d4d' }}>Azzera</button>
             </div>
           </div>
@@ -2888,12 +2948,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   const omega3Rich = omega3G > 0.5;
                   const mgVal = Number(food.mg) || 0;
                   const mgRich = mgVal >= 30;
+                  const qta = Number(food.qta ?? food.weight ?? 100) || 100;
                   return (
                     <div key={food.id} className="food-pill">
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
                           <span className="food-pill-name">{food.desc || food.name}</span>
-                          <span className="food-pill-weight">{food.qta || food.weight}g</span>
+                          <span className="food-pill-weight">{qta}g</span>
                           {(omega3Rich || mgRich) && (
                             <span style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap' }}>
                               {omega3Rich && <span style={{ fontSize: '0.6rem', padding: '2px 6px', borderRadius: '10px', background: 'rgba(0, 150, 255, 0.25)', color: '#5eb3f6', fontWeight: '600' }}>Ω3</span>}
@@ -2902,10 +2963,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           )}
                         </div>
                       </div>
-                      <div className="food-pill-actions">
-                        <button className="food-pill-btn" onClick={() => setSelectedFoodForInfo(food)} title="Info macro/micro">ℹ️</button>
-                        <button className="food-pill-btn" onClick={() => { setSelectedFoodForEdit({ food, source: 'queue' }); setEditQuantityValue(String(food.qta ?? food.weight ?? 100)); }} title="Modifica quantità">✏️</button>
-                        <button className="food-pill-btn btn-delete" onClick={() => setAddedFoods(addedFoods.filter(f => f.id !== food.id))}>✕</button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, -10)} title="-10g" aria-label="-10g">−</button>
+                        <span style={{ fontSize: '0.8rem', fontWeight: '600', color: '#00e5ff', minWidth: '42px', textAlign: 'center' }}>{qta}g</span>
+                        <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, 10)} title="+10g" aria-label="+10g">+</button>
+                        <div className="food-pill-actions" style={{ marginLeft: '4px' }}>
+                          <button className="food-pill-btn" onClick={() => setSelectedFoodForInfo(food)} title="Info macro/micro">ℹ️</button>
+                          <button className="food-pill-btn" onClick={() => { setSelectedFoodForEdit({ food, source: 'queue' }); setEditQuantityValue(String(qta)); }} title="Modifica quantità">✏️</button>
+                          <button className="food-pill-btn btn-delete" onClick={() => setAddedFoods(prev => prev.filter(f => f.id !== food.id))}>✕</button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -2913,14 +2979,51 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               )}
             </div>
             {addedFoods.length > 0 && (
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '15px', marginBottom: '20px' }}>
-                <h4 style={{ fontSize: '0.65rem', color: '#b388ff', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>Bilancio Pasto ({MEAL_LABELS_SAVE[mealType] || mealType})</h4>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                  {renderMiniBar('KCAL', currentMealTotals.kcal, targetMacrosPasto.kcal, '#00e5ff')}
-                  {renderMiniBar('PROT (g)', currentMealTotals.prot, targetMacrosPasto.prot, '#b388ff')}
-                  {renderMiniBar('CARB (g)', currentMealTotals.carb, targetMacrosPasto.carb, '#00e676')}
-                  {renderMiniBar('FAT (g)', currentMealTotals.fat, targetMacrosPasto.fat, '#ffea00')}
-                  {renderMiniBar('FIBRE (g)', currentMealTotals.fibre, targetMacrosPasto.fibre, '#ff6d00')}
+              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '15px', marginBottom: '20px', overflow: 'hidden' }}>
+                <h4 style={{ fontSize: '0.65rem', color: '#b388ff', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>Telemetria Pasto ({MEAL_LABELS_SAVE[mealType] || mealType})</h4>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', overflowX: 'auto', paddingBottom: '4px' }}>
+                  {TELEMETRY_TABS.map(t => (
+                    <button key={t} type="button" onClick={() => scrollToMealCarouselTab(t)} style={{ padding: '8px 14px', fontSize: '0.7rem', fontWeight: 'bold', background: mealCarouselTab === t ? '#00e5ff' : '#111', color: mealCarouselTab === t ? '#000' : '#888', border: 'none', borderRadius: '20px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: 'pointer' }}>{t}</button>
+                  ))}
+                </div>
+                <div className="telemetry-carousel" ref={mealCarouselRef} onScroll={handleMealCarouselScroll} style={{ height: '220px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none' }}>
+                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                      {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, 'kcal', 'kcal')}
+                      {renderProgressBar('PROTEINE', mealTotaliFull.prot || 0, targetMacrosPasto.prot, 'g', 'prot')}
+                      {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, targetMacrosPasto.carb, 'g', 'carb')}
+                      {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
+                      {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, targetMacrosPasto.fibre, 'g', 'fibre')}
+                    </div>
+                  </div>
+                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                      <h4 style={{ fontSize: '0.65rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '10px', marginTop: 0 }}>RAPPORTI BIOCHIMICI</h4>
+                      {renderRatioBar('Equilibrio Elettrolitico', 'Na', mealTotaliFull?.na, 'K', mealTotaliFull?.k, 'Na < K', (Number(mealTotaliFull?.na) || 0) < (Number(mealTotaliFull?.k) || 0))}
+                      {renderRatioBar('Omega 6:3', 'Ω6', mealTotaliFull?.omega6, 'Ω3', mealTotaliFull?.omega3, 'W6:W3 ≤ 4:1', (Number(mealTotaliFull?.omega6) || 0) <= (Number(mealTotaliFull?.omega3) || 1) * 4)}
+                    </div>
+                  </div>
+                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                      {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.amino[k] || 0) * ratio, 'mg', k))}
+                    </div>
+                  </div>
+                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                      {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.vit[k] || 0) * ratio, k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))}
+                    </div>
+                  </div>
+                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                      {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.min[k] || 0) * ratio, k === 'se' ? 'µg' : 'mg', k))}
+                    </div>
+                  </div>
+                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                      {renderProgressBar('Grassi tot.', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
+                      {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.fat[k] || 0) * ratio, 'g', k))}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
