@@ -521,6 +521,7 @@ export default function SalaComandi() {
   const [nutrientModal, setNutrientModal] = useState(null);
   const [editQuantityValue, setEditQuantityValue] = useState('');
   const [showChoiceModal, setShowChoiceModal] = useState(false);
+  const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
@@ -1087,15 +1088,39 @@ export default function SalaComandi() {
   // ============================================================================
 
   /**
-   * Stima il tipo di pasto in base all'orario (ore decimali 0-24).
-   * Usato per pre-selezionare colazione/pranzo/spuntino/cena quando l'utente apre "Nuovo pasto".
+   * Predizione intelligente: cerca l'orario del pasto più vicino nelle abitudini di ieri.
+   * Se c'è storico ieri, restituisce il mealType del pasto il cui orario è più vicino a now; altrimenti fallback time-based.
    */
   const predictMealType = (timeDecimal) => {
-    const h = typeof timeDecimal === 'number' && !Number.isNaN(timeDecimal) ? timeDecimal : getCurrentTimeRoundedTo15Min();
-    if (h >= 5 && h < 10) return 'merenda1';
-    if (h >= 10 && h < 14) return 'pranzo';
-    if (h >= 14 && h < 17) return 'merenda2';
-    if (h >= 17 && h < 24) return 'cena';
+    const now = typeof timeDecimal === 'number' && !Number.isNaN(timeDecimal) ? timeDecimal : getCurrentTimeRoundedTo15Min();
+    if (fullStorico) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const node = fullStorico[TRACKER_STORICO_KEY(yesterdayStr)];
+      const log = node?.log ?? node?.dati?.log;
+      const normalized = normalizeLogData(log ?? []);
+      const timeByCanonical = {};
+      normalized.forEach(item => {
+        if (item.type !== 'food') return;
+        const t = typeof item.mealTime === 'number' && !Number.isNaN(item.mealTime) ? item.mealTime : 12;
+        const canonical = toCanonicalMealType(item.mealType || 'cena');
+        if (timeByCanonical[canonical] === undefined || t < timeByCanonical[canonical]) timeByCanonical[canonical] = t;
+      });
+      const entries = Object.entries(timeByCanonical);
+      if (entries.length > 0) {
+        let best = entries[0];
+        let bestDist = Math.abs(entries[0][1] - now);
+        for (let i = 1; i < entries.length; i++) {
+          const dist = Math.abs(entries[i][1] - now);
+          if (dist < bestDist) { bestDist = dist; best = entries[i]; }
+        }
+        return best[0];
+      }
+    }
+    if (now >= 5 && now < 10) return 'merenda1';
+    if (now >= 10 && now < 14) return 'pranzo';
+    if (now >= 14 && now < 17) return 'merenda2';
     return 'cena';
   };
 
@@ -2708,9 +2733,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div className="view-animate">
             <h2 style={{ fontSize: '0.7rem', textAlign: 'center', color: '#777', letterSpacing: '3px', marginBottom: '25px', fontWeight: 'normal' }}>MENU SISTEMA</h2>
             <div className="action-grid">
-              <button className="action-btn" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getDefaultMealTime(predicted); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }}><span className="action-icon">🍽️</span><span className="action-label">Pasto</span></button>
+              <button className="action-btn" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }}><span className="action-icon">🍽️</span><span className="action-label">Pasto</span></button>
               <button className="action-btn" onClick={() => setActiveAction('acqua')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>💧</span><span className="action-label" style={{ color: '#00e5ff' }}>Acqua</span></button>
-              <button className="action-btn" onClick={() => setActiveAction('allenamento')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(255, 109, 0, 0.4))' }}>⚡</span><span className="action-label" style={{ color: '#ff6d00' }}>Attività</span></button>
+              <button className="action-btn" onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(255, 109, 0, 0.4))' }}>⚡</span><span className="action-label" style={{ color: '#ff6d00' }}>Attività</span></button>
               <button className="action-btn" onClick={() => setActiveAction('diario_giornaliero')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 230, 118, 0.4))' }}>📓</span><span className="action-label" style={{ color: '#00e676' }}>Diario Giornaliero</span></button>
               <button className="action-btn" onClick={() => setActiveAction('storico')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(176, 190, 197, 0.5))' }}>📚</span><span className="action-label" style={{ color: '#b0bec5' }}>Archivio Storico</span></button>
               <button className="action-btn" onClick={() => setShowReport(true)}><span className="action-icon">📊</span><span className="action-label">Report</span></button>
@@ -2878,13 +2903,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <button type="button" onClick={() => setWorkoutStartTime(Math.max(0, Math.min(workoutEndTime - 0.25, Math.round((workoutStartTime - 0.25) * 4) / 4)))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
-                    <input type="text" inputMode="numeric" placeholder="Inizio" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '56px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '0.95rem', fontWeight: 'bold', textAlign: 'center' }} />
+                    <input type="time" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '56px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '0.95rem', fontWeight: 'bold', textAlign: 'center' }} />
                     <button type="button" onClick={() => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, Math.round((workoutStartTime + 0.25) * 4) / 4))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
                   </div>
                   <span style={{ color: '#666' }}>–</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <button type="button" onClick={() => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, Math.round((workoutEndTime - 0.25) * 4) / 4))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
-                    <input type="text" inputMode="numeric" placeholder="Fine" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '56px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '0.95rem', fontWeight: 'bold', textAlign: 'center' }} />
+                    <input type="time" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '56px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '0.95rem', fontWeight: 'bold', textAlign: 'center' }} />
                     <button type="button" onClick={() => setWorkoutEndTime(Math.min(24, Math.max(workoutStartTime + 0.25, Math.round((workoutEndTime + 0.25) * 4) / 4)))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
                   </div>
                 </div>
@@ -2992,7 +3017,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <span>0:00</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <button type="button" onClick={() => adjustMealTime(-0.25)} style={{ width: '36px', height: '36px', padding: 0, borderRadius: '8px', border: '1px solid #00e5ff', background: 'rgba(0, 229, 255, 0.15)', color: '#00e5ff', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
-                  <input type="text" inputMode="numeric" value={drawerMealTimeStr} onChange={(e) => handleTimeInput(e.target.value)} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
+                  <input type="time" value={decimalToTimeStr(drawerMealTime)} onChange={(e) => { const v = parseTimeStrToDecimal(e.target.value); setDrawerMealTime(v); setDrawerMealTimeStr(decimalToTimeStr(v)); }} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
                   <button type="button" onClick={() => adjustMealTime(0.25)} style={{ width: '36px', height: '36px', padding: 0, borderRadius: '8px', border: '1px solid #00e5ff', background: 'rgba(0, 229, 255, 0.15)', color: '#00e5ff', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
                 </div>
                 <span>24:00</span>
@@ -3061,14 +3086,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
               {abitudiniIeri.length > 0 && (
                 <div style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#888', marginBottom: '8px', letterSpacing: '1px' }}>Abitudini di ieri</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {abitudiniIeri.map((f, idx) => (
-                      <button key={f.id || `yest_${idx}`} type="button" onClick={() => setAddedFoods(prev => [...prev, { ...f, id: `habit_${Date.now()}_${idx}`, mealType }])} style={{ padding: '8px 12px', borderRadius: '20px', border: '1px solid #333', background: 'rgba(255,255,255,0.06)', color: '#fff', fontSize: '0.8rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                        {f.desc || f.name}{f.qta != null || f.weight != null ? ` (${f.qta ?? f.weight}g)` : ''}
-                      </button>
-                    ))}
-                  </div>
+                  <button type="button" onClick={() => setIsAbitudiniOpen(prev => !prev)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid #333', borderRadius: '10px', color: '#888', fontSize: '0.7rem', letterSpacing: '1px', cursor: 'pointer', textAlign: 'left' }}>
+                    <span>Abitudini di ieri</span>
+                    <span style={{ fontSize: '1rem', transition: 'transform 0.2s', transform: isAbitudiniOpen ? 'rotate(180deg)' : 'none' }}>▼</span>
+                  </button>
+                  {isAbitudiniOpen && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                      {abitudiniIeri.map((f, idx) => (
+                        <button key={f.id || `yest_${idx}`} type="button" onClick={() => setAddedFoods(prev => [...prev, { ...f, id: `habit_${Date.now()}_${idx}`, mealType }])} style={{ padding: '8px 12px', borderRadius: '20px', border: '1px solid #333', background: 'rgba(255,255,255,0.06)', color: '#fff', fontSize: '0.8rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          {f.desc || f.name}{f.qta != null || f.weight != null ? ` (${f.qta ?? f.weight}g)` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               {showFoodDropdown && (foodNameInput.trim() || foodDropdownSuggestions.length > 0) && (
@@ -3733,11 +3763,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div style={{ background: '#111', border: '1px solid #333', borderRadius: '25px', padding: '20px', width: '100%', maxWidth: '350px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 10px 50px rgba(0,0,0,0.9)' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 10px 0', textAlign: 'center', color: '#fff', fontSize: '1.1rem', letterSpacing: '2px' }}>AGGIUNGI EVENTO</h3>
 
-            <button onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getDefaultMealTime(predicted); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setShowChoiceModal(false); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+            <button onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setShowChoiceModal(false); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
               <span style={{ fontSize: '1.5rem' }}>🍎</span> PASTO
             </button>
 
-            <button onClick={() => { setShowChoiceModal(false); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+            <button onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setShowChoiceModal(false); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
               <span style={{ fontSize: '1.5rem' }}>💪</span> ALLENAMENTO
             </button>
 
