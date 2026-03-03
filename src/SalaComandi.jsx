@@ -491,6 +491,7 @@ export default function SalaComandi() {
   const [foodNameInput, setFoodNameInput] = useState('');
   const [foodWeightInput, setFoodWeightInput] = useState('');
   const [addedFoods, setAddedFoods] = useState([]);
+  const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
   
   const [foodDropdownSuggestions, setFoodDropdownSuggestions] = useState([]);
@@ -542,6 +543,7 @@ export default function SalaComandi() {
   const lastLogFromFirebaseRef = useRef(null);
   const pendingLogRef = useRef(null);
   const pendingNodesRef = useRef(null);
+  const foodInputRef = useRef(null);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
 
   const [fullStorico, setFullStorico] = useState(null);
@@ -1325,8 +1327,9 @@ export default function SalaComandi() {
     if (!foodNameInput || !foodWeightInput) return;
     const item = estraiDatiFoodDb(foodNameInput.trim(), parseFloat(foodWeightInput), mealType);
     setAddedFoods([item, ...addedFoods]);
-    setFoodNameInput(''); 
+    setFoodNameInput('');
     setFoodWeightInput('');
+    setTimeout(() => foodInputRef.current?.focus(), 100);
   };
 
   const handleCalibrateFoodWeight = (foodId, deltaG) => {
@@ -2135,6 +2138,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const isReadyToDelete = draggingNode && Math.abs(dragOffsetY) > 50;
 
+  const checkBilanciamentoPasto = () => {
+    if (addedFoods.length === 0) return null;
+    const kcal = mealTotaliFull.kcal || 0;
+    const prot = mealTotaliFull.prot || 0;
+    const carb = mealTotaliFull.carb || 0;
+    const fatTotal = mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0;
+    if (kcal < 150) return null;
+    if (carb > (prot * 4) && prot < 15) return { text: '⚠️ Povero di proteine e ricco di carboidrati. Rischio picco glicemico.', color: '#ff9800' };
+    if (prot < 10 && kcal > 400) return { text: '⚠️ Pasto molto calorico ma carente di fonti proteiche.', color: '#ff9800' };
+    if (fatTotal > 30 && carb > 60) return { text: '⚠️ Combinazione alta di grassi e carboidrati. Impegno digestivo severo.', color: '#ff4d4d' };
+    if (prot >= 20 && carb <= 80 && fatTotal <= 25) return { text: '✅ Pasto ottimamente bilanciato.', color: '#00e676' };
+    return null;
+  };
+
   // ========================================================
   // SCHERMATA DI LOGIN
   // ========================================================
@@ -2938,11 +2955,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 </div>
               )}
-              <div className="quick-add-bar">
-                <input
-                  type="text"
-                  className="quick-input input-name"
-                  placeholder="Es. Pollo"
+              <div style={{ position: 'sticky', top: '-20px', zIndex: 50, background: '#111', paddingTop: '20px', paddingBottom: '10px', borderBottom: '1px solid #333', margin: '0 -15px 20px -15px', paddingLeft: '15px', paddingRight: '15px' }}>
+                <div className="quick-add-bar">
+                  <input
+                    ref={foodInputRef}
+                    type="text"
+                    className="quick-input input-name"
+                    placeholder="Es. Pollo"
                   value={foodNameInput}
                   onChange={(e) => setFoodNameInput(e.target.value)}
                   onFocus={() => setShowFoodDropdown(true)}
@@ -2952,6 +2971,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <input id="weight-input" type="number" inputMode="decimal" className="quick-input input-weight" placeholder="g" value={foodWeightInput} onChange={(e) => setFoodWeightInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()} />
                 <button type="button" title="Scansiona barcode" onClick={() => setIsBarcodeScannerOpen(prev => !prev)} style={{ padding: '10px 12px', background: isBarcodeScannerOpen ? '#00e5ff' : 'rgba(255,255,255,0.08)', border: '1px solid #333', borderRadius: '10px', cursor: 'pointer', fontSize: '1.1rem' }}>📷</button>
                 <button className="quick-add-btn" onClick={handleAddFoodManual}>+</button>
+                </div>
               </div>
               {showFoodDropdown && (foodNameInput.trim() || foodDropdownSuggestions.length > 0) && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#1a1a1a', border: '1px solid #333', borderRadius: '0 0 12px 12px', maxHeight: '220px', overflowY: 'auto', zIndex: 50, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
@@ -3008,53 +3028,75 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               )}
             </div>
             {addedFoods.length > 0 && (
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '15px', marginBottom: '20px', overflow: 'hidden' }}>
-                <h4 style={{ fontSize: '0.65rem', color: '#b388ff', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>Telemetria Pasto ({MEAL_LABELS_SAVE[mealType] || mealType})</h4>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', overflowX: 'auto', paddingBottom: '4px' }}>
-                  {TELEMETRY_TABS.map(t => (
-                    <button key={t} type="button" onClick={() => scrollToMealCarouselTab(t)} style={{ padding: '8px 14px', fontSize: '0.7rem', fontWeight: 'bold', background: mealCarouselTab === t ? '#00e5ff' : '#111', color: mealCarouselTab === t ? '#000' : '#888', border: 'none', borderRadius: '20px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: 'pointer' }}>{t}</button>
-                  ))}
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '12px', border: '1px solid #2a2a2a' }}>
+                  {renderMiniBar('KCAL', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, '#00e5ff')}
+                  {renderMiniBar('PROTEINE (g)', mealTotaliFull.prot || 0, targetMacrosPasto.prot, '#b388ff')}
+                  {renderMiniBar('CARBOIDRATI (g)', mealTotaliFull.carb || 0, targetMacrosPasto.carb, '#00e676')}
+                  {renderMiniBar('GRASSI (g)', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, '#ffea00')}
                 </div>
-                <div className="telemetry-carousel" ref={mealCarouselRef} onScroll={handleMealCarouselScroll} style={{ height: '220px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none' }}>
-                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
-                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                      {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, 'kcal', 'kcal')}
-                      {renderProgressBar('PROTEINE', mealTotaliFull.prot || 0, targetMacrosPasto.prot, 'g', 'prot')}
-                      {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, targetMacrosPasto.carb, 'g', 'carb')}
-                      {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
-                      {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, targetMacrosPasto.fibre, 'g', 'fibre')}
+                <button type="button" onClick={() => setIsAdvancedPastoMode(prev => !prev)} style={{ width: '100%', marginBottom: '16px', padding: '10px 14px', fontSize: '0.8rem', background: isAdvancedPastoMode ? 'rgba(0, 229, 255, 0.15)' : '#1a1a1a', border: '1px solid #333', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', textAlign: 'center' }}>
+                  {isAdvancedPastoMode ? '⚙️ Nascondi Telemetria Avanzata' : '⚙️ Mostra Telemetria Avanzata'}
+                </button>
+                {(() => {
+                  const alert = checkBilanciamentoPasto();
+                  if (!alert) return null;
+                  return (
+                    <div style={{ marginBottom: '20px', padding: '12px 14px', borderRadius: '10px', border: `1px solid ${alert.color}`, background: `${alert.color}20`, color: alert.color, fontSize: '0.8rem', lineHeight: 1.4 }}>
+                      {alert.text}
+                    </div>
+                  );
+                })()}
+                {isAdvancedPastoMode && (
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '15px', marginBottom: '20px', overflow: 'hidden' }}>
+                    <h4 style={{ fontSize: '0.65rem', color: '#b388ff', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>Telemetria Pasto ({MEAL_LABELS_SAVE[mealType] || mealType})</h4>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', overflowX: 'auto', paddingBottom: '4px' }}>
+                      {TELEMETRY_TABS.map(t => (
+                        <button key={t} type="button" onClick={() => scrollToMealCarouselTab(t)} style={{ padding: '8px 14px', fontSize: '0.7rem', fontWeight: 'bold', background: mealCarouselTab === t ? '#00e5ff' : '#111', color: mealCarouselTab === t ? '#000' : '#888', border: 'none', borderRadius: '20px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: 'pointer' }}>{t}</button>
+                      ))}
+                    </div>
+                    <div className="telemetry-carousel" ref={mealCarouselRef} onScroll={handleMealCarouselScroll} style={{ height: '220px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none' }}>
+                      <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                        <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                          {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, 'kcal', 'kcal')}
+                          {renderProgressBar('PROTEINE', mealTotaliFull.prot || 0, targetMacrosPasto.prot, 'g', 'prot')}
+                          {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, targetMacrosPasto.carb, 'g', 'carb')}
+                          {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
+                          {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, targetMacrosPasto.fibre, 'g', 'fibre')}
+                        </div>
+                      </div>
+                      <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                        <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                          <h4 style={{ fontSize: '0.65rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '10px', marginTop: 0 }}>RAPPORTI BIOCHIMICI</h4>
+                          {renderRatioBar('Equilibrio Elettrolitico', 'Na', mealTotaliFull?.na, 'K', mealTotaliFull?.k, 'Na < K', (Number(mealTotaliFull?.na) || 0) < (Number(mealTotaliFull?.k) || 0))}
+                          {renderRatioBar('Omega 6:3', 'Ω6', mealTotaliFull?.omega6, 'Ω3', mealTotaliFull?.omega3, 'W6:W3 ≤ 4:1', (Number(mealTotaliFull?.omega6) || 0) <= (Number(mealTotaliFull?.omega3) || 1) * 4)}
+                        </div>
+                      </div>
+                      <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                        <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                          {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.amino[k] || 0) * ratio, 'mg', k))}
+                        </div>
+                      </div>
+                      <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                        <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                          {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.vit[k] || 0) * ratio, k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))}
+                        </div>
+                      </div>
+                      <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                        <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                          {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.min[k] || 0) * ratio, k === 'se' ? 'µg' : 'mg', k))}
+                        </div>
+                      </div>
+                      <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                        <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
+                          {renderProgressBar('Grassi tot.', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
+                          {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.fat[k] || 0) * ratio, 'g', k))}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
-                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                      <h4 style={{ fontSize: '0.65rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '10px', marginTop: 0 }}>RAPPORTI BIOCHIMICI</h4>
-                      {renderRatioBar('Equilibrio Elettrolitico', 'Na', mealTotaliFull?.na, 'K', mealTotaliFull?.k, 'Na < K', (Number(mealTotaliFull?.na) || 0) < (Number(mealTotaliFull?.k) || 0))}
-                      {renderRatioBar('Omega 6:3', 'Ω6', mealTotaliFull?.omega6, 'Ω3', mealTotaliFull?.omega3, 'W6:W3 ≤ 4:1', (Number(mealTotaliFull?.omega6) || 0) <= (Number(mealTotaliFull?.omega3) || 1) * 4)}
-                    </div>
-                  </div>
-                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
-                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                      {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.amino[k] || 0) * ratio, 'mg', k))}
-                    </div>
-                  </div>
-                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
-                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                      {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.vit[k] || 0) * ratio, k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))}
-                    </div>
-                  </div>
-                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
-                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                      {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.min[k] || 0) * ratio, k === 'se' ? 'µg' : 'mg', k))}
-                    </div>
-                  </div>
-                  <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
-                    <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                      {renderProgressBar('Grassi tot.', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
-                      {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.fat[k] || 0) * ratio, 'g', k))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+                )}
+              </>
             )}
             <button onClick={saveMealToDiary} style={{ width: '100%', padding: '18px', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', opacity: addedFoods.length > 0 ? 1 : 0.5 }}>SALVA NEL DIARIO</button>
           </div>
