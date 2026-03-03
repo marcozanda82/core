@@ -556,6 +556,7 @@ export default function SalaComandi() {
   }, [draggingNode]);
 
   const centerCurrentTime = useCallback(() => {
+    if (currentTrackerDate !== getTodayString()) return;
     if (!chartScrollRef.current) return;
     const container = chartScrollRef.current;
     const scrollWidth = container.scrollWidth;
@@ -563,7 +564,7 @@ export default function SalaComandi() {
     const timePos = (currentTime / 24) * scrollWidth;
     const targetScroll = timePos - (clientWidth / 2);
     container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
-  }, [currentTime]);
+  }, [currentTime, currentTrackerDate]);
 
   useEffect(() => {
     const timer = setTimeout(centerCurrentTime, 50);
@@ -619,6 +620,10 @@ export default function SalaComandi() {
   }, [computedMealNodes, manualNodes]);
 
   useEffect(() => {
+    if (currentTrackerDate !== getTodayString()) {
+      setZoomLevel(0.45);
+      return;
+    }
     const pointNodes = allNodes.filter(n => n.type !== 'work');
     if (pointNodes.length === 0) return;
     const times = pointNodes.map(n => n.time).sort((a, b) => a - b);
@@ -626,7 +631,7 @@ export default function SalaComandi() {
     for (let i = 1; i < times.length; i++) minGap = Math.min(minGap, times[i] - times[i - 1]);
     const suggested = minGap < 0.35 ? 1.5 : minGap < 0.6 ? 1.3 : minGap < 1 ? 1.1 : minGap < 2 ? 0.9 : 0.65;
     setZoomLevel(prev => Math.max(0.45, Math.min(1.5, suggested)));
-  }, [allNodes]);
+  }, [allNodes, currentTrackerDate]);
 
   useEffect(() => {
     localStorage.setItem('vyta_timeline', JSON.stringify(manualNodes));
@@ -1958,9 +1963,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const hasCrashRisk = energyChartResult?.hasCrashRisk ?? false;
   const hasCortisolRisk = energyChartResult?.hasCortisolRisk ?? false;
 
-  const currentH = Math.floor(currentTime);
+  const isViewingPastDate = currentTrackerDate !== getTodayString();
+  const displayTime = isViewingPastDate ? 24 : currentTime;
+  const currentH = Math.floor(displayTime);
   const nextH = Math.min(24, currentH + 1);
-  const fraction = currentTime - currentH;
+  const fraction = displayTime - currentH;
   const dotY = chartData.length > 0
     ? (chartData[currentH]?.energy ?? 0) + ((chartData[nextH]?.energy ?? 0) - (chartData[currentH]?.energy ?? 0)) * fraction
     : 0;
@@ -1974,8 +1981,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const dotCortisolo = chartData.length > 0
     ? (chartData[currentH]?.cortisolo ?? 25) + ((chartData[nextH]?.cortisolo ?? 25) - (chartData[currentH]?.cortisolo ?? 25)) * fraction
     : 25;
-  const currentMinutes = Math.round((currentTime % 1) * 60);
-  const timeLabel = `ORA (${currentH.toString().padStart(2, '0')}:${String(currentMinutes).padStart(2, '0')})`;
+  const currentMinutes = Math.round((displayTime % 1) * 60);
+  const timeLabel = isViewingPastDate ? 'Fine giornata (24:00)' : `ORA (${currentH.toString().padStart(2, '0')}:${String(currentMinutes).padStart(2, '0')})`;
   const energyAt20 = chartData[20]?.energy;
   const idealDotY = chartData.length > 0
     ? (chartData[currentH]?.idealEnergy ?? 0) + ((chartData[nextH]?.idealEnergy ?? 0) - (chartData[currentH]?.idealEnergy ?? 0)) * fraction
@@ -1986,7 +1993,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     renderData.push(point);
     if (index === currentH && fraction > 0) {
       renderData.push({
-        time: currentTime,
+        time: displayTime,
         energy: dotY,
         idealEnergy: idealDotY,
         glicemia: dotGlicemia,
@@ -1998,14 +2005,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const renderDataWithSegments = renderData.map(d => ({
     ...d,
-    energyPast: d.time <= currentTime ? d.energy : null,
-    energyFuture: d.time >= currentTime ? d.energy : null,
-    glicemiaPast: d.time <= currentTime ? d.glicemia : null,
-    glicemiaFuture: d.time >= currentTime ? d.glicemia : null,
-    idratazionePast: d.time <= currentTime ? d.idratazione : null,
-    idratazioneFuture: d.time >= currentTime ? d.idratazione : null,
-    cortisoloPast: d.time <= currentTime ? d.cortisolo : null,
-    cortisoloFuture: d.time >= currentTime ? d.cortisolo : null
+    energyPast: d.time <= displayTime ? d.energy : null,
+    energyFuture: d.time >= displayTime ? d.energy : null,
+    glicemiaPast: d.time <= displayTime ? d.glicemia : null,
+    glicemiaFuture: d.time >= displayTime ? d.glicemia : null,
+    idratazionePast: d.time <= displayTime ? d.idratazione : null,
+    idratazioneFuture: d.time >= displayTime ? d.idratazione : null,
+    cortisoloPast: d.time <= displayTime ? d.cortisolo : null,
+    cortisoloFuture: d.time >= displayTime ? d.cortisolo : null
   }));
 
   // Calcolo Budget Dinamico (Base + Bruciate oggi)
@@ -2019,8 +2026,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         ...d,
         energy: scale(d.energy),
         idealEnergy: scale(d.idealEnergy),
-        energyPast: d.time <= currentTime ? scale(d.energy) : null,
-        energyFuture: d.time >= currentTime ? scale(d.energy) : null
+        energyPast: d.time <= displayTime ? scale(d.energy) : null,
+        energyFuture: d.time >= displayTime ? scale(d.energy) : null
       }))
     : renderDataWithSegments;
   const finalDotY = chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'kcal' ? scale(dotY) : dotY)));
@@ -2405,8 +2412,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   ) : (
                     <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255, 255, 255, 0.2)" strokeWidth={4} strokeDasharray="8 8" dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
                   )}
-                  <ReferenceLine x={currentTime} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 11, offset: 10 }} />
-                  <ReferenceDot x={currentTime} y={finalDotY} isFront shape={(props) => {
+                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 11, offset: 10 }} />
+                  <ReferenceDot x={displayTime} y={finalDotY} isFront shape={(props) => {
                     const cx = props?.cx;
                     const cy = props?.cy;
                     if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') return <path d="M0 0" />;
