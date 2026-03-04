@@ -9,7 +9,7 @@
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip } from 'recharts';
+import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea } from 'recharts';
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
@@ -2192,6 +2192,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const energyAt20Percent = energyAt20 ?? 50;
 
+  // Radar metabolico: stato attuale da glicemia e digestione
+  const gl = typeof dotGlicemia === 'number' && !Number.isNaN(dotGlicemia) ? dotGlicemia : 85;
+  const dig = typeof dotDigestione === 'number' && !Number.isNaN(dotDigestione) ? dotDigestione : 0;
+  const metabolicState = (() => {
+    if (gl < 85 && dig < 25) return { key: 'autofagia', label: 'Autofagia', color: '#22c55e' };
+    if (gl >= 85 && gl < 140 && dig < 50) return { key: 'lipolisi', label: 'Lipolisi', color: '#eab308' };
+    return { key: 'anabolismo', label: 'Anabolismo', color: '#3b82f6' };
+  })();
+
   const currentMealTotals = addedFoods.reduce((acc, food) => ({
     kcal: acc.kcal + (Number(food.kcal) || Number(food.cal) || 0),
     prot: acc.prot + (Number(food.prot) || 0),
@@ -2523,6 +2532,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol' : ''}`}>🧠 CORTISOL</button>
             <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGEST</button>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', marginTop: '6px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: `1px solid ${metabolicState.color}40` }}>
+            <span style={{ fontSize: '0.7rem', color: '#888' }}>Radar metabolico:</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
+            <span style={{ fontSize: '0.65rem', color: '#666' }}>🩸 {Math.round(gl)} · ⚙️ {Math.round(dig)}%</span>
+          </div>
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="zoom-controls">
@@ -2617,6 +2631,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 13 }} />
                   <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
+                  {chartUnit === 'glicemia' && (
+                    <>
+                      <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
+                      <ReferenceArea y1={85} y2={140} fill="#eab30820" stroke="none" />
+                      <ReferenceArea y1={140} y2={220} fill="#3b82f620" stroke="none" />
+                    </>
+                  )}
                   <Tooltip labelFormatter={(label) => `${Math.floor(Number(label))}:00`} formatter={(value) => (value != null && !Number.isNaN(Number(value))) ? (chartUnit === 'kcal' ? `${Math.round(Number(value))} kcal` : chartUnit === 'glicemia' ? `${Math.round(Number(value))} mg/dL` : chartUnit === 'digestione' ? `${Math.round(Number(value))}%` : `${value}%`) : ''} contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', fontSize: '0.8rem' }} />
                   <Area type="monotone"
                     dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : (chartUnit === 'idratazione' ? 'idratazionePast' : chartUnit === 'cortisolo' ? 'cortisoloPast' : chartUnit === 'digestione' ? 'digestionePast' : 'energyPast')}
