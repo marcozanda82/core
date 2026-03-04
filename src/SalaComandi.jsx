@@ -1792,8 +1792,20 @@ Contesto: Pagina attuale ${paginaAttuale}. Rischio stress serale ${energyAt20 !=
           parts: [{ text: (m.text || '').trim() }]
         }));
       const firstUserIndex = mapped.findIndex(m => m.role === 'user');
-      const fromFirstUser = firstUserIndex >= 0 ? mapped.slice(firstUserIndex) : [];
-      const contents = [...fromFirstUser, { role: 'user', parts: [{ text: userText }] }];
+      let fromFirstUser = firstUserIndex >= 0 ? mapped.slice(firstUserIndex) : [];
+      const alternated = [];
+      fromFirstUser.forEach(m => {
+        if (alternated.length === 0) {
+          alternated.push(m);
+          return;
+        }
+        if (m.role === alternated[alternated.length - 1].role) {
+          alternated[alternated.length - 1] = m;
+        } else {
+          alternated.push(m);
+        }
+      });
+      const contents = [...alternated, { role: 'user', parts: [{ text: userText }] }];
 
       const responseText = await callGeminiAPIWithRotation('', { systemInstruction, contents });
 
