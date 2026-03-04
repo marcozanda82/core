@@ -2770,36 +2770,38 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </>
       )}
 
-      {/* Cruscotto Essenziale (Modalità Base) - design "piccola utilitaria chic" */}
+      {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px' }}>
-          {/* Tachimetro circolare calorie */}
-          <div style={{ position: 'relative', width: 'min(200px, 50vw)', height: 'min(200px, 50vw)', flexShrink: 0 }}>
-            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `conic-gradient(#00e5ff 0deg, #00e5ff ${Math.min(360, ((totali?.kcal || 0) / Math.max(1, dynamicDailyKcal)) * 360)}deg, #1a1a1a ${Math.min(360, ((totali?.kcal || 0) / Math.max(1, dynamicDailyKcal)) * 360)}deg 360deg)`, padding: '8px', boxShadow: 'inset 0 0 0 2px #0a0a0a, 0 0 20px rgba(0,229,255,0.15)' }}>
-              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px solid #111' }}>
-                <span style={{ fontSize: '1.75rem', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00', lineHeight: 1.1 }}>{Math.round(totali?.kcal || 0)}</span>
-                <span style={{ fontSize: '0.6rem', color: '#555', letterSpacing: '1px', marginTop: '2px' }}>kcal</span>
-                <span style={{ fontSize: '0.6rem', color: '#444', marginTop: '2px' }}>/ {Math.round(dynamicDailyKcal)}</span>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
+          {/* Tachimetro circolare calorie - ingrandito e espanso */}
+          <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
+            <div style={{ position: 'relative', width: 'min(320px, 85vw)', height: 'min(320px, 85vw)', maxWidth: 'min(320px, 85vw)', maxHeight: 'min(320px, 85vw)', aspectRatio: '1' }}>
+              <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `conic-gradient(#00e5ff 0deg, #00e5ff ${Math.min(360, ((totali?.kcal || 0) / Math.max(1, dynamicDailyKcal)) * 360)}deg, #1a1a1a ${Math.min(360, ((totali?.kcal || 0) / Math.max(1, dynamicDailyKcal)) * 360)}deg 360deg)`, padding: '12px', boxShadow: 'inset 0 0 0 3px #0a0a0a, 0 0 24px rgba(0,229,255,0.2)' }}>
+                <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111' }}>
+                  <span style={{ fontSize: 'clamp(2rem, 8vw, 3.5rem)', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00', lineHeight: 1.1 }}>{Math.round(totali?.kcal || 0)}</span>
+                  <span style={{ fontSize: '0.75rem', color: '#555', letterSpacing: '1px', marginTop: '4px' }}>kcal</span>
+                  <span style={{ fontSize: '0.7rem', color: '#444', marginTop: '2px' }}>obiettivo {Math.round(dynamicDailyKcal)}</span>
+                </div>
               </div>
             </div>
           </div>
-          {/* Display macro incassato */}
-          <div style={{ width: '100%', maxWidth: '280px', background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 16px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 0', minWidth: '70px', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.6rem', color: '#b388ff', letterSpacing: '1px', marginBottom: '2px' }}>P</div>
-              <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.7rem', color: '#666', fontWeight: 'normal' }}>/{Math.round(userTargets?.prot ?? 150)}</span></div>
+          {/* Macro per esteso in griglia dedicata */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px 12px', width: '100%', maxWidth: '400px', margin: '0 auto', flexShrink: 0 }}>
+            <div style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 10px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#b388ff', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '600' }}>Proteine</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.75rem', color: '#666', fontWeight: 'normal' }}> / {Math.round(userTargets?.prot ?? 150)} g</span></div>
             </div>
-            <div style={{ flex: '1 1 0', minWidth: '70px', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.6rem', color: '#00e676', letterSpacing: '1px', marginBottom: '2px' }}>C</div>
-              <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.7rem', color: '#666', fontWeight: 'normal' }}>/{Math.round(userTargets?.carb ?? 200)}</span></div>
+            <div style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 10px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#00e676', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '600' }}>Carboidrati</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.75rem', color: '#666', fontWeight: 'normal' }}> / {Math.round(userTargets?.carb ?? 200)} g</span></div>
             </div>
-            <div style={{ flex: '1 1 0', minWidth: '70px', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.6rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '2px' }}>F</div>
-              <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.7rem', color: '#666', fontWeight: 'normal' }}>/{Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 60)}</span></div>
+            <div style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 10px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '600' }}>Grassi</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.75rem', color: '#666', fontWeight: 'normal' }}> / {Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 60)} g</span></div>
             </div>
           </div>
-          {/* Fila 5 bottoni: Pasto, Acqua, MENÙ (centro, più grande), Attività, Diario */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '320px', flexWrap: 'nowrap' }}>
+          {/* Fila 5 bottoni */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '320px', margin: '0 auto', flexShrink: 0 }}>
             <button type="button" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: '#1a1a1a', border: '1px solid #333', borderRadius: '10px', color: '#fff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Pasto">🍽️<span>Pasto</span></button>
             <button type="button" onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(0,229,255,0.08)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Acqua">💧<span>Acqua</span></button>
             <button type="button" onClick={() => setIsDrawerOpen(true)} style={{ flex: '0 0 auto', width: '56px', height: '56px', padding: 0, fontSize: '1.4rem', fontWeight: 'bold', background: 'linear-gradient(180deg, #00e5ff 0%, #0097a7 100%)', border: '2px solid rgba(255,255,255,0.3)', borderRadius: '50%', color: '#000', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,229,255,0.4)' }} title="Menù">☰</button>
