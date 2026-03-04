@@ -594,6 +594,8 @@ export default function SalaComandi() {
   const dragOffsetYRef = useRef(0);
   const miniTimelinePastoRef = useRef(null);
   const miniTimelineActivityRef = useRef(null);
+  const miniTimelineWaterRef = useRef(null);
+  const [drawerWaterTime, setDrawerWaterTime] = useState(12);
   const currentTrackerDateRef = useRef(currentTrackerDate);
   useEffect(() => { currentTrackerDateRef.current = currentTrackerDate; }, [currentTrackerDate]);
 
@@ -1491,7 +1493,7 @@ export default function SalaComandi() {
 
   const handleAddWater = (amount) => {
     if (amount > 0) {
-      const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: currentTime, ml: amount }];
+      const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: drawerWaterTime, ml: amount }];
       setManualNodes(next);
       syncDatiFirebase(dailyLog, next);
     } else {
@@ -2735,7 +2737,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <h2 style={{ fontSize: '0.7rem', textAlign: 'center', color: '#777', letterSpacing: '3px', marginBottom: '25px', fontWeight: 'normal' }}>MENU SISTEMA</h2>
             <div className="action-grid">
               <button className="action-btn" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }}><span className="action-icon">🍽️</span><span className="action-label">Pasto</span></button>
-              <button className="action-btn" onClick={() => setActiveAction('acqua')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>💧</span><span className="action-label" style={{ color: '#00e5ff' }}>Acqua</span></button>
+              <button className="action-btn" onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>💧</span><span className="action-label" style={{ color: '#00e5ff' }}>Acqua</span></button>
               <button className="action-btn" onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(255, 109, 0, 0.4))' }}>⚡</span><span className="action-label" style={{ color: '#ff6d00' }}>Attività</span></button>
               <button className="action-btn" onClick={() => setActiveAction('diario_giornaliero')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 230, 118, 0.4))' }}>📓</span><span className="action-label" style={{ color: '#00e676' }}>Diario Giornaliero</span></button>
               <button className="action-btn" onClick={() => setActiveAction('storico')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(176, 190, 197, 0.5))' }}>📚</span><span className="action-label" style={{ color: '#b0bec5' }}>Archivio Storico</span></button>
@@ -2851,6 +2853,34 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <h2 style={{ fontSize: '0.8rem', color: '#00e5ff', letterSpacing: '2px', margin: 0 }}>💧 IDRATAZIONE</h2>
               <div style={{ width: '70px' }}></div>
             </div>
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px' }}>
+                <span>0:00</span>
+                <input type="time" value={decimalToTimeStr(drawerWaterTime)} onChange={(e) => setDrawerWaterTime(parseTimeStrToDecimal(e.target.value))} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
+                <span>24:00</span>
+              </div>
+              <div ref={miniTimelineWaterRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
+                {allNodes.map(n => {
+                  const isWork = n.type === 'work';
+                  const startP = (n.time / 24) * 100;
+                  const durP = isWork ? ((n.duration || 1) / 24) * 100 : 0;
+                  if (isWork) {
+                    return (
+                      <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, width: `${durP}%`, top: '50%', transform: 'translateY(-50%)', height: '20px', background: 'rgba(255, 234, 0, 0.2)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }} />
+                    );
+                  }
+                  return (
+                    <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(0,0,0,0.5)', border: '2px solid #666', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }} />
+                  );
+                })}
+                <div className="mini-timeline-hitbox" role="slider" aria-label="Ora acqua" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelineWaterRef, 'point', drawerWaterTime, null, setDrawerWaterTime, null)} style={{ position: 'absolute', left: `${(drawerWaterTime / 24) * 100}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, touchAction: 'none' }}>
+                  <div className="mini-timeline-point-bubble" style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: '28px', height: '28px', borderRadius: '50%', background: '#00e5ff', border: '2px solid #fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px rgba(0,229,255,0.5)', pointerEvents: 'none' }}>
+                    <span style={{ fontSize: '0.5rem', fontWeight: 'bold', color: '#000' }}>{decimalToTimeStr(drawerWaterTime)}</span>
+                    <span style={{ lineHeight: 1 }}>💧</span>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="water-glass" style={{ padding: '28px 20px', marginBottom: '20px', textAlign: 'center' }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
                 <div className="water-sphere">
@@ -2898,17 +2928,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px', gap: '8px' }}>
                 <span>0:00</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <button type="button" onClick={() => setWorkoutStartTime(Math.max(0, Math.min(workoutEndTime - 0.25, Math.round((workoutStartTime - 0.25) * 4) / 4)))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
-                    <input type="time" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '56px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '0.95rem', fontWeight: 'bold', textAlign: 'center' }} />
-                    <button type="button" onClick={() => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, Math.round((workoutStartTime + 0.25) * 4) / 4))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
-                  </div>
+                  <input type="time" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '80px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
                   <span style={{ color: '#666' }}>–</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <button type="button" onClick={() => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, Math.round((workoutEndTime - 0.25) * 4) / 4))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
-                    <input type="time" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '56px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '0.95rem', fontWeight: 'bold', textAlign: 'center' }} />
-                    <button type="button" onClick={() => setWorkoutEndTime(Math.min(24, Math.max(workoutStartTime + 0.25, Math.round((workoutEndTime + 0.25) * 4) / 4)))} style={{ width: '32px', height: '32px', padding: 0, borderRadius: '6px', border: '1px solid #ff6d00', background: 'rgba(255, 109, 0, 0.15)', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
-                  </div>
+                  <input type="time" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '80px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
                 </div>
                 <span>24:00</span>
               </div>
@@ -2932,9 +2954,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 })}
                 <div className="mini-timeline-bar-wrap" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-all', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime)} style={{ position: 'absolute', left: `${(workoutStartTime/24)*100}%`, width: `${((workoutEndTime - workoutStartTime)/24)*100}%`, top: '50%', transform: 'translateY(-50%)', height: '24px', background: 'rgba(255, 109, 0, 0.4)', border: '1px solid #ff6d00', borderRadius: '4px', cursor: 'grab', zIndex: 10, touchAction: 'none' }}>
                   <div className="mini-timeline-hitbox" role="slider" aria-label="Inizio attività" onPointerDown={(e) => { e.stopPropagation(); handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-start', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime); }} style={{ position: 'absolute', left: '-22px', top: '50%', transform: 'translateY(-50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11 }}>
+                    <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ff6d00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', pointerEvents: 'none', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>{decimalToTimeStr(workoutStartTime)}</div>
                     <div style={{ width: '12px', height: '24px', background: '#ff6d00', borderRadius: '4px', pointerEvents: 'none' }}></div>
                   </div>
                   <div className="mini-timeline-hitbox" role="slider" aria-label="Fine attività" onPointerDown={(e) => { e.stopPropagation(); handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-end', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime); }} style={{ position: 'absolute', right: '-22px', top: '50%', transform: 'translateY(-50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11 }}>
+                    <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ff6d00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', pointerEvents: 'none', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>{decimalToTimeStr(workoutEndTime)}</div>
                     <div style={{ width: '12px', height: '24px', background: '#ff6d00', borderRadius: '4px', pointerEvents: 'none' }}></div>
                   </div>
                 </div>
@@ -3012,11 +3036,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px' }}>
                 <span>0:00</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <button type="button" onClick={() => adjustMealTime(-0.25)} style={{ width: '36px', height: '36px', padding: 0, borderRadius: '8px', border: '1px solid #00e5ff', background: 'rgba(0, 229, 255, 0.15)', color: '#00e5ff', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
-                  <input type="time" value={decimalToTimeStr(drawerMealTime)} onChange={(e) => { const v = parseTimeStrToDecimal(e.target.value); setDrawerMealTime(v); setDrawerMealTimeStr(decimalToTimeStr(v)); }} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
-                  <button type="button" onClick={() => adjustMealTime(0.25)} style={{ width: '36px', height: '36px', padding: 0, borderRadius: '8px', border: '1px solid #00e5ff', background: 'rgba(0, 229, 255, 0.15)', color: '#00e5ff', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
-                </div>
+                <input type="time" value={decimalToTimeStr(drawerMealTime)} onChange={(e) => { const v = parseTimeStrToDecimal(e.target.value); setDrawerMealTime(v); setDrawerMealTimeStr(decimalToTimeStr(v)); }} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
                 <span>24:00</span>
               </div>
               <div ref={miniTimelinePastoRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
@@ -3768,7 +3788,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <span style={{ fontSize: '1.5rem' }}>💪</span> ALLENAMENTO
             </button>
 
-            <button onClick={() => { setShowChoiceModal(false); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+            <button onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setShowChoiceModal(false); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
               <span style={{ fontSize: '1.5rem' }}>💧</span> ACQUA
             </button>
 
