@@ -84,7 +84,9 @@ function areMealTypesEquivalent(typeA, typeB) {
  * Converte qualsiasi mealType al suo ID canonico per salvataggio nuovi dati
  */
 function toCanonicalMealType(type) {
-  return MEAL_TYPE_TO_CANONICAL[type] || type;
+  const str = String(type || '');
+  const base = str.includes('_') ? str.split('_')[0] : str;
+  return MEAL_TYPE_TO_CANONICAL[base] || base;
 }
 
 /** 
@@ -107,11 +109,32 @@ function getMealIcon(label) {
   return '🍎';
 }
 
+function getGhostMealType(baseType, log) {
+  const base = String(baseType || '').split('_')[0];
+  const canonical = toCanonicalMealType(base);
+  const existingFoods = (log || []).filter(i => i.type === 'food');
+  let maxSuffix = 0;
+  let baseExists = false;
+  existingFoods.forEach(f => {
+    const mType = f.mealType || '';
+    const mBase = mType.split('_')[0];
+    if (toCanonicalMealType(mBase) === canonical) {
+      baseExists = true;
+      if (mType.includes('_')) {
+        const num = parseInt(mType.split('_')[1], 10);
+        if (!isNaN(num) && num > maxSuffix) maxSuffix = num;
+      } else {
+        if (maxSuffix === 0) maxSuffix = 1;
+      }
+    }
+  });
+  if (!baseExists) return base;
+  return `${base}_${maxSuffix + 1}`;
+}
+
 function getSlotKey(item) {
   if (item.type !== 'food') return null;
-  const canonical = toCanonicalMealType(item.mealType);
-  const t = typeof item.mealTime === 'number' && !Number.isNaN(item.mealTime) ? item.mealTime : 12;
-  return `${canonical}_${t}`;
+  return item.mealType;
 }
 
 /** Decimale (es. 12.5) -> "HH:mm" per display. */
@@ -379,10 +402,13 @@ function denormalizeLogForFirebase(flatLog) {
   
   [...order, ...otherMeals].forEach(mealId => {
     if (!meals[mealId] || meals[mealId].length === 0) return;
+    const baseId = mealId.split('_')[0];
+    const suffix = mealId.includes('_') ? ` ${mealId.split('_')[1]}` : '';
+    const descName = MEAL_LABELS_SAVE[baseId] || baseId;
     result.push({
       type: 'meal',
       mealId,
-      desc: MEAL_LABELS_SAVE[mealId] || mealId,
+      desc: descName + suffix,
       items: meals[mealId].map(it => ({ 
         id: it.id, 
         desc: it.desc || it.name, 
@@ -651,7 +677,7 @@ export default function SalaComandi() {
       if (slotKey) {
         if (!bySlot[slotKey]) {
           bySlot[slotKey] = {
-            mealType: toCanonicalMealType(f.mealType),
+            mealType: f.mealType,
             originalTypes: new Set(),
             time: typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 12,
             strategyKey: getStrategyKey(toCanonicalMealType(f.mealType))
@@ -662,12 +688,12 @@ export default function SalaComandi() {
     });
 
     return Object.values(bySlot).map(m => ({
-      id: `${m.mealType}_${m.time}`,
+      id: m.mealType,
       type: 'meal',
       time: m.time,
       strategyKey: m.strategyKey,
       originalTypes: Array.from(m.originalTypes),
-      icon: getMealIcon(m.mealType)
+      icon: getMealIcon(m.mealType.split('_')[0])
     }));
   }, [dailyLog]);
 
@@ -1431,9 +1457,16 @@ export default function SalaComandi() {
     const timeToUse = typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime) ? drawerMealTime : 12;
     const uniqueBatchId = Date.now();
 
+    let finalMealType = mealType;
+    if (!editingMealId) {
+      finalMealType = getGhostMealType(mealType, dailyLog);
+    } else {
+      finalMealType = editingMealId;
+    }
+
     const mealItems = addedFoods.map((f, index) => ({
       ...f,
-      mealType: mealType,
+      mealType: finalMealType,
       mealTime: timeToUse,
       id: f.id ? f.id : `f_${uniqueBatchId}_${index}`
     }));
@@ -1565,6 +1598,7 @@ export default function SalaComandi() {
     const batchId = Date.now();
     const nuoviAlimenti = [];
     const nuoviWorkout = [];
+    const ghostTypesCache = {};
 
     const regexFood = /\[(.*?)\s*\|\s*([0-9.,]+)\s*\|\s*(colazione|spuntino\s*mattina|pranzo|spuntino\s*pomeriggio|cena|snack)\]/gi;
     let matchFood;
@@ -1574,12 +1608,17 @@ export default function SalaComandi() {
       const qta = parseFloat(String(matchFood[2]).replace(',', '.')) || 0;
       const pastoString = String(matchFood[3]).trim().toLowerCase().replace(/\s+/g, ' ');
       const pastoCanonical = PASTO_ALIAS_TO_ID[pastoString] || toCanonicalMealType(pastoString);
-      const item = estraiDatiFoodDb(nome, qta, pastoCanonical);
+      if (!ghostTypesCache[pastoCanonical]) {
+        ghostTypesCache[pastoCanonical] = getGhostMealType(pastoCanonical, [...(dailyLog || []), ...nuoviAlimenti]);
+      }
+      const finalMealType = ghostTypesCache[pastoCanonical];
+      const item = estraiDatiFoodDb(nome, qta, finalMealType);
       nuoviAlimenti.push({
         ...item,
         id: `f_${batchId}_${trovati}`,
         mealTime: getDefaultMealTime(pastoCanonical)
       });
+      ghostTypesCache[pastoCanonical] = getGhostMealType(pastoCanonical, [...(dailyLog || []), ...nuoviAlimenti]);
     }
 
     const regexWorkout = /\[ALLENAMENTO:\s*([^|\]]+?)\s*\|\s*([0-9.,]+)\]/gi;
@@ -1778,9 +1817,10 @@ Contesto: Pagina attuale ${paginaAttuale}. Rischio stress serale ${energyAt20 !=
       if (insertPayload) {
         const desc = insertPayload.desc || insertPayload.name || '';
         const qta = Math.max(1, parseFloat(insertPayload.qta) || 100);
-        const mealType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(insertPayload.mealType) ? insertPayload.mealType : predictMealType(getCurrentTimeRoundedTo15Min());
+        let mType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(insertPayload.mealType) ? insertPayload.mealType : predictMealType(getCurrentTimeRoundedTo15Min());
+        mType = getGhostMealType(mType, dailyLog);
         const mealTime = typeof insertPayload.mealTime === 'number' ? insertPayload.mealTime : getCurrentTimeRoundedTo15Min();
-        const newItem = estraiDatiFoodDb(desc, qta, mealType);
+        const newItem = estraiDatiFoodDb(desc, qta, mType);
         newItem.mealTime = mealTime;
         const newLog = [newItem, ...(dailyLog || [])];
         setDailyLog(newLog);
@@ -3421,8 +3461,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   Object.keys(groupedFoods).map(slotKey => {
                     const items = groupedFoods[slotKey];
                     const mType = items[0]?.mealType || slotKey.split('_')[0];
+                    const baseType = mType.split('_')[0];
+                    const suffixType = mType.includes('_') ? ` ${mType.split('_')[1]}` : '';
                     const mTime = items[0]?.mealTime ?? 12;
-                    const label = `${MEAL_LABELS_SAVE[toCanonicalMealType(mType)] || mType} (${decimalToTimeStr(mTime)})`;
+                    const label = `${MEAL_LABELS_SAVE[toCanonicalMealType(baseType)] || baseType}${suffixType} (${decimalToTimeStr(mTime)})`;
 
                     return (
                       <div key={slotKey} style={{ marginBottom: '20px' }}>
