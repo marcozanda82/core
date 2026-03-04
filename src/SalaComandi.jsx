@@ -555,6 +555,7 @@ export default function SalaComandi() {
   const [chatHistory, setChatHistory] = useState([
     { sender: 'ai', text: 'CORE OS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
   ]);
+  const CHAT_HISTORY_WINDOW = 10;
   const chatEndRef = useRef(null);
   const lastLogFromFirebaseRef = useRef(null);
   const pendingLogRef = useRef(null);
@@ -1674,35 +1675,43 @@ export default function SalaComandi() {
     setShowAiSettings(false); 
   };
 
-  const callGeminiAPIWithRotation = async (promptText) => {
+  const callGeminiAPIWithRotation = async (promptText, options = null) => {
     const validKeys = apiKeys.filter(k => k.trim() !== '');
     if (validKeys.length === 0) throw new Error("Nessuna API Key configurata.");
+    const useChat = options?.systemInstruction != null && Array.isArray(options?.contents);
+    const body = useChat
+      ? {
+          systemInstruction: { parts: [{ text: options.systemInstruction }] },
+          contents: options.contents,
+          generationConfig: { temperature: 0.3 }
+        }
+      : {
+          contents: [{ role: 'user', parts: [{ text: promptText }] }],
+          generationConfig: { temperature: 0.1 }
+        };
     let attempt = 0;
     while (attempt < validKeys.length) {
       const currentIndex = (activeKeyIndex + attempt) % validKeys.length;
       const currentKey = validKeys[currentIndex];
       try {
         const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${currentKey}`, {
-          method: 'POST', 
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            contents: [{ parts: [{ text: promptText }] }], 
-            generationConfig: { temperature: 0.1 } 
-          })
+          body: JSON.stringify(body)
         });
-        if (!response.ok) { 
-          if (response.status === 429) { 
-            attempt++; 
-            continue; 
-          } 
-          throw new Error(`Errore Server: ${response.status}`); 
+        if (!response.ok) {
+          if (response.status === 429) {
+            attempt++;
+            continue;
+          }
+          throw new Error(`Errore Server: ${response.status}`);
         }
         const data = await response.json();
         if (attempt > 0) setActiveKeyIndex(currentIndex);
         return data.candidates[0].content.parts[0].text;
-      } catch (e) { 
-        if (attempt === validKeys.length - 1) throw e; 
-        attempt++; 
+      } catch (e) {
+        if (attempt === validKeys.length - 1) throw e;
+        attempt++;
       }
     }
     throw new Error("Cluster API esaurito.");
@@ -1712,134 +1721,124 @@ export default function SalaComandi() {
     if (!chatInput.trim()) return;
     const userText = chatInput.trim();
     setChatHistory(prev => [...prev, { sender: 'user', text: userText }]);
-    setChatInput(''); 
+    setChatInput('');
     setChatHistory(prev => [...prev, { sender: 'ai', isTyping: true }]);
+    // Messaggio utente e risposta AI vengono entrambi aggiunti a chatHistory (risposta quando si sostituisce il typing)
 
     try {
+      const foodDbNames = Object.keys(foodDb || {}).map(k => foodDb[k]?.desc || foodDb[k]?.name || k).filter(Boolean).slice(0, 150);
       const energyResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
-
       const paginaAttuale = !activeAction ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
-      const systemContext = `
-[CONTESTO DI SISTEMA INVISIBILE - NON MENZIONARLO ALL'UTENTE]
-Stato attuale cruscotto:
-- Pagina attuale visualizzata: ${paginaAttuale}
-- Timeline (nodi): ${JSON.stringify(allNodes.map(n => ({ id: n.id, type: n.type, time: n.time, duration: n.duration, kcal: n.kcal })))}
-- Strategia ideale attuale (kcal): ${JSON.stringify(idealStrategy)}
-- Rischio stress serale (energia < 40 alle ore 20): ${energyAt20 != null && energyAt20 < 40 ? 'ALTO (Intervenire)' : 'Basso'}
-- Carenza Omega3: ${(Number(totali?.omega3) ?? 0) < 1 ? 'SI' : 'NO'}
-- Storico ultimi 3 giorni: ${JSON.stringify(pastDaysStorico.slice(0, 3).map(d => ({ data: d.dataStr, kcal: Math.round(d.calorie), prot: Math.round(d.proteine), deficit: d.deficit })))}
 
-REGOLE TASSATIVE PER LA TUA RISPOSTA:
-1. Se l'utente dà un comando rapido senza specificare il pasto o l'orario, usa la "Pagina attuale visualizzata" per dedurre il contesto (es. se è nel pasto "pranzo", aggiungi il cibo al pranzo). Se l'utente chiede una strategia o descrive la giornata, analizza i dati. Se vedi rischio stress serale, modifica la strategia per aggiungere un pasto tattico prima di cena.
-2. Quando un valore nutrizionale non è disponibile per la compilazione automatica, fai una stima e usa il valore medio.
-3. Per modificare la strategia o gli orari, devi inserire alla fine della risposta questo comando esatto (puoi omettere i campi che non cambi):
-[STRATEGIA: colazione=400, pranzo=700, spuntino=250, cena=500, allenamento=300, orario_allenamento=18]
-4. Se l'utente chiede un bilancio, un'analisi dei giorni scorsi o come sta andando la settimana, basati sui dati dello "Storico ultimi 3 giorni" per dare un feedback personalizzato.
-`;
+      const systemInstruction = `Sei l'assistente nutrizionale di Core OS. Il tuo scopo è dialogare con l'utente in italiano.
 
-      const prompt = systemContext + `\n\nAnalizza: "${userText}". CASO CIBO: Rispondi [AGGIUNGI: nome | grammi | pasto]. Se no grammi, scrivi 0. CASO ALLENAMENTO: Rispondi [ALLENAMENTO: descrizione | kcal]. STIMA kcal se mancano. Rispondi SOLO con i comandi tra parentesi quadre.`;
-      const responseText = await callGeminiAPIWithRotation(prompt);
-      let foundAny = false; 
-      let newLogItems = [];
+Se l'utente dice di aver mangiato qualcosa, NON generare subito il comando di inserimento. Cerca tra gli alimenti noti (usa il database fornito sotto) e rispondi TESTUALMENTE, ad esempio: "Ho trovato questi alimenti: [A], [B]. Quale preferisci? Oppure ne creo uno nuovo?" Solo quando l'utente CONFERMA esplicitamente l'alimento e la quantità, allora restituisci un JSON speciale {"action":"insert","food":{"desc":"nome","qta":grammi,"mealType":"pranzo"}} nascosto nel testo (su una riga, senza altro attorno); il sistema lo intercetterà. mealType: merenda1, pranzo, merenda2, cena, snack.
 
-      const regexFood = /\[AGGIUNGI:\s*([^|\]]+?)\s*\|\s*([0-9.,]+)\s*\|\s*([^\]]+?)\]/gi;
-      let matchFood;
-      while ((matchFood = regexFood.exec(responseText)) !== null) {
-          foundAny = true;
-          const grammi = parseFloat(matchFood[2].replace(',', '.'));
-          const qta = (typeof grammi === 'number' && !Number.isNaN(grammi) && grammi > 0) ? grammi : 100;
-          const pastoF = matchFood[3].trim().toLowerCase();
-          
-          // Mappa i nomi comuni ai mealType canonici
-          const mealTypeMap = {
-            'colazione': 'merenda1',
-            'merenda': 'merenda1',
-            'merenda am': 'merenda1',
-            'pranzo': 'pranzo',
-            'spuntino': 'snack',
-            'merenda pm': 'merenda2',
-            'cena': 'cena',
-            'snack': 'snack'
-          };
-          const canonicalMeal = mealTypeMap[pastoF] || pastoF;
-          newLogItems.push(estraiDatiFoodDb(matchFood[1].trim(), qta, canonicalMeal));
+Database alimenti noti (proponi alternative da qui): ${foodDbNames.length ? foodDbNames.join(', ') : 'nessuno'}.
+
+Contesto: Pagina attuale ${paginaAttuale}. Rischio stress serale ${energyAt20 != null && energyAt20 < 40 ? 'ALTO' : 'Basso'}. Per strategia: [STRATEGIA: colazione=400, pranzo=700, ...]. Allenamento confermato: [ALLENAMENTO: descrizione | kcal]. Rispondi in modo naturale e breve.`;
+
+      const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
+      const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
+      const contents = [
+        ...recentHistory.map(m => ({
+          role: m.sender === 'user' ? 'user' : 'model',
+          parts: [{ text: (m.text || '').trim() }]
+        })),
+        { role: 'user', parts: [{ text: userText }] }
+      ];
+
+      const responseText = await callGeminiAPIWithRotation('', { systemInstruction, contents });
+
+      let insertPayload = null;
+      const insertStart = responseText.indexOf('{"action":"insert"');
+      if (insertStart !== -1) {
+        let depth = 0;
+        let end = insertStart;
+        for (let i = insertStart; i < responseText.length; i++) {
+          if (responseText[i] === '{') depth++;
+          else if (responseText[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+        }
+        try {
+          const parsed = JSON.parse(responseText.slice(insertStart, end + 1));
+          if (parsed.action === 'insert' && parsed.food && (parsed.food.desc || parsed.food.name)) {
+            insertPayload = parsed.food;
+          }
+        } catch (_) {}
       }
 
-      const regexWorkout = /\[ALLENAMENTO:\s*([^|\]]+?)\s*\|\s*([0-9.,]+)\]/gi;
-      let matchWorkout;
-      while ((matchWorkout = regexWorkout.exec(responseText)) !== null) {
-          foundAny = true;
-          const kcalRaw = parseFloat(matchWorkout[2].replace(',', '.'));
-          const kcal = (typeof kcalRaw === 'number' && !Number.isNaN(kcalRaw) && kcalRaw > 0) ? kcalRaw : 300;
-          newLogItems.push({ 
-            id: Date.now() + Math.random(), 
-            type: 'workout', 
-            workoutType: 'misto', 
-            desc: matchWorkout[1].trim().toUpperCase(), 
-            kcal, 
-            duration: Math.floor(kcal / 6) 
-          });
+      if (insertPayload) {
+        const desc = insertPayload.desc || insertPayload.name || '';
+        const qta = Math.max(1, parseFloat(insertPayload.qta) || 100);
+        const mealType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(insertPayload.mealType) ? insertPayload.mealType : predictMealType(getCurrentTimeRoundedTo15Min());
+        const mealTime = typeof insertPayload.mealTime === 'number' ? insertPayload.mealTime : getCurrentTimeRoundedTo15Min();
+        const newItem = estraiDatiFoodDb(desc, qta, mealType);
+        newItem.mealTime = mealTime;
+        const newLog = [newItem, ...(dailyLog || [])];
+        setDailyLog(newLog);
+        syncDatiFirebase(newLog, manualNodes);
+        setChatHistory(prev => {
+          const next = [...prev];
+          next.pop();
+          next.push({ sender: 'ai', text: 'Perfetto, ho inserito l\'alimento nel diario!' });
+          return next;
+        });
+        return;
       }
 
       const regexStrategia = /\[STRATEGIA:\s*(.+?)\]/gi;
       let matchStrategia;
       while ((matchStrategia = regexStrategia.exec(responseText)) !== null) {
-          const pairs = matchStrategia[1].split(',');
-          const newStrategy = { ...idealStrategy };
-          const timeUpdates = {};
-          pairs.forEach(pair => {
-              const [key, val] = pair.split('=').map(s => (s || '').trim().toLowerCase());
-              const numVal = parseFloat(val);
-              if (!isNaN(numVal) && key) {
-                  if (key.startsWith('orario_')) {
-                      const timeKey = key.replace('orario_', '');
-                      timeUpdates[timeKey] = numVal;
-                  } else if (newStrategy[key] !== undefined) {
-                      newStrategy[key] = numVal;
-                  }
-              }
-          });
-          setIdealStrategy(newStrategy);
-          if (Object.keys(timeUpdates).length > 0) {
-            setManualNodes(prev => {
-              const next = prev.map(n => n.id in timeUpdates ? { ...n, time: timeUpdates[n.id] } : n);
-              syncDatiFirebase(dailyLog, next);
-              return next;
-            });
-          }
+        const pairs = matchStrategia[1].split(',');
+        const newStrategy = { ...idealStrategy };
+        pairs.forEach(pair => {
+          const [key, val] = pair.split('=').map(s => (s || '').trim().toLowerCase());
+          const numVal = parseFloat(val);
+          if (!isNaN(numVal) && key && newStrategy[key] !== undefined) newStrategy[key] = numVal;
+        });
+        setIdealStrategy(newStrategy);
       }
 
-      // Pulisce il testo rimuovendo i comandi tecnici invisibili
-      let cleanText = responseText
-        .replace(/\[AGGIUNGI:\s*[^\]]+\]/gi, '')
-        .replace(/\[ALLENAMENTO:\s*[^\]]+\]/gi, '')
-        .replace(/\[STRATEGIA:\s*[^\]]+\]/gi, '')
-        .trim();
-
-      if (cleanText === '') {
-        cleanText = '✨ Strategia applicata con successo.';
+      const regexWorkout = /\[ALLENAMENTO:\s*([^|\]]+?)\s*\|\s*([0-9.,]+)\]/gi;
+      let matchWorkout;
+      while ((matchWorkout = regexWorkout.exec(responseText)) !== null) {
+        const kcal = Math.max(0, parseFloat((matchWorkout[2] || '').replace(',', '.')) || 300);
+        const newItem = { id: Date.now() + Math.random(), type: 'workout', workoutType: 'misto', desc: (matchWorkout[1] || '').trim().toUpperCase(), kcal, duration: Math.floor(kcal / 6) };
+        setDailyLog(prev => {
+          const newLog = [newItem, ...(prev || [])];
+          syncDatiFirebase(newLog, manualNodes);
+          return newLog;
+        });
       }
+
+      let cleanText = responseText;
+      const stripInsertStart = cleanText.indexOf('{"action":"insert"');
+      if (stripInsertStart !== -1) {
+        let depth = 0;
+        let stripEnd = stripInsertStart;
+        for (let i = stripInsertStart; i < cleanText.length; i++) {
+          if (cleanText[i] === '{') depth++;
+          else if (cleanText[i] === '}') { depth--; if (depth === 0) { stripEnd = i; break; } }
+        }
+        cleanText = (cleanText.slice(0, stripInsertStart) + cleanText.slice(stripEnd + 1)).trim();
+      }
+      cleanText = cleanText.replace(/\[STRATEGIA:\s*[^\]]+\]/gi, '').replace(/\[ALLENAMENTO:\s*[^\]]+\]/gi, '').trim();
+      if (!cleanText) cleanText = '✨ Operazione completata.';
 
       setChatHistory(prev => {
         const newHist = [...prev];
-        newHist.pop(); // Rimuove il typing indicator
+        newHist.pop();
         newHist.push({ sender: 'ai', text: cleanText });
         return newHist;
       });
-
-      if (newLogItems.length > 0) setDailyLog(prev => {
-        const newLog = [...newLogItems, ...prev];
-        syncDatiFirebase(newLog, manualNodes);
-        return newLog;
-      });
     } catch (e) {
-      setChatHistory(prev => { 
-        const newHist = [...prev]; 
-        newHist.pop(); 
-        newHist.push({ sender: 'ai', text: `❌ ${e.message}` }); 
-        return newHist; 
+      setChatHistory(prev => {
+        const newHist = [...prev];
+        newHist.pop();
+        newHist.push({ sender: 'ai', text: `❌ ${e.message || String(e)}` });
+        return newHist;
       });
     }
   };
