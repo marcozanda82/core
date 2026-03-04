@@ -2819,11 +2819,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
 
-      {/* Barra di comando AI persistente (fixed in fondo) */}
+      {/* Barra trigger AI persistente (fixed in fondo) - Apre la chat reale */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: 'max(12px, env(safe-area-inset-bottom))', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid #222', zIndex: 90 }}>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 20px', border: '1px solid #333' }}>
-          <input type="text" className="chat-input" placeholder="Es: Ho mangiato 200g pollo..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()} style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: '0.95rem', outline: 'none', minWidth: 0 }} />
-          <button type="button" className={`chat-send-btn ${chatInput.trim() ? 'has-text' : ''}`} onClick={handleChatSubmit} style={{ background: '#fff', color: '#000', border: 'none', width: 40, height: 40, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '1.1rem', flexShrink: 0 }}>↑</button>
+        <div
+          onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
+          style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '12px 20px', border: '1px solid #333', cursor: 'pointer' }}
+        >
+          <span style={{ fontSize: '1.2rem' }}>✨</span>
+          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
         </div>
         <button type="button" onClick={() => setShowChoiceModal(true)} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
       </div>
@@ -2935,14 +2938,43 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             )}
 
-            <div className="chat-container">
-              <div className="chat-messages">
+            <div className="chat-container" style={{ height: '65vh', display: 'flex', flexDirection: 'column' }}>
+              {/* Cronologia Messaggi */}
+              <div className="chat-messages" style={{ flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
                 {chatHistory.map((msg, idx) => (
                   <div key={idx} className={`chat-bubble ${msg.sender === 'ai' ? 'bubble-ai' : 'bubble-user'}`}>
                     {msg.isTyping ? (<div className="typing-indicator"><div className="dot"></div><div className="dot"></div><div className="dot"></div></div>) : (msg.text)}
                   </div>
                 ))}
                 <div ref={chatEndRef} />
+              </div>
+              {/* Vero Input AI Spostato Qui Sotto i Messaggi */}
+              <div className="chat-input-wrapper" style={{ marginTop: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 20px', border: '1px solid #333' }}>
+                <input
+                  type="text"
+                  className="chat-input"
+                  placeholder="Scrivi qui a Core AI..."
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleChatSubmit();
+                      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                    }
+                  }}
+                  style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: '0.95rem', outline: 'none', minWidth: 0 }}
+                />
+                <button
+                  type="button"
+                  className={`chat-send-btn ${chatInput.trim() ? 'has-text' : ''}`}
+                  onClick={() => {
+                    handleChatSubmit();
+                    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                  }}
+                  style={{ background: chatInput.trim() ? '#b388ff' : '#fff', color: chatInput.trim() ? '#fff' : '#000', border: 'none', width: 40, height: 40, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '1.1rem', flexShrink: 0 }}
+                >
+                  ↑
+                </button>
               </div>
             </div>
           </div>
