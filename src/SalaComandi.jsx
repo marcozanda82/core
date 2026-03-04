@@ -2303,7 +2303,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .mini-timeline-bar-wrap { transition: transform 0.15s ease-out; }
           .mini-timeline-bar-wrap:active { transform: scale(1.03); }
           .mini-timeline-point-bubble { transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
-          .mini-timeline-point-bubble:active { transform: translate(-50%, -50%) scale(1.2); }
+          .mini-timeline-point-bubble:active { transform: translate(-50%, -50%) scale(2); }
 
           /* Tasti header più grandi per il pollice */
           .btn-toggle { background: none; border: 1px solid #333; color: #666; padding: 10px 20px !important; font-size: 0.8rem !important; min-height: 44px; border-radius: 20px; cursor: pointer; letter-spacing: 2px; transition: all 0.3s; -webkit-tap-highlight-color: transparent; display: flex; align-items: center; }
@@ -2928,9 +2928,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px', gap: '8px' }}>
                 <span>0:00</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input type="time" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '80px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
+                  <input type="time" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '95px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
                   <span style={{ color: '#666' }}>–</span>
-                  <input type="time" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '80px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
+                  <input type="time" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '95px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
                 </div>
                 <span>24:00</span>
               </div>
@@ -2954,11 +2954,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 })}
                 <div className="mini-timeline-bar-wrap" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-all', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime)} style={{ position: 'absolute', left: `${(workoutStartTime/24)*100}%`, width: `${((workoutEndTime - workoutStartTime)/24)*100}%`, top: '50%', transform: 'translateY(-50%)', height: '24px', background: 'rgba(255, 109, 0, 0.4)', border: '1px solid #ff6d00', borderRadius: '4px', cursor: 'grab', zIndex: 10, touchAction: 'none' }}>
                   <div className="mini-timeline-hitbox" role="slider" aria-label="Inizio attività" onPointerDown={(e) => { e.stopPropagation(); handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-start', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime); }} style={{ position: 'absolute', left: '-22px', top: '50%', transform: 'translateY(-50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11 }}>
-                    <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ff6d00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', pointerEvents: 'none', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>{decimalToTimeStr(workoutStartTime)}</div>
                     <div style={{ width: '12px', height: '24px', background: '#ff6d00', borderRadius: '4px', pointerEvents: 'none' }}></div>
                   </div>
                   <div className="mini-timeline-hitbox" role="slider" aria-label="Fine attività" onPointerDown={(e) => { e.stopPropagation(); handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-end', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime); }} style={{ position: 'absolute', right: '-22px', top: '50%', transform: 'translateY(-50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11 }}>
-                    <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ff6d00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', pointerEvents: 'none', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>{decimalToTimeStr(workoutEndTime)}</div>
                     <div style={{ width: '12px', height: '24px', background: '#ff6d00', borderRadius: '4px', pointerEvents: 'none' }}></div>
                   </div>
                 </div>
@@ -3036,7 +3034,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px' }}>
                 <span>0:00</span>
-                <input type="time" value={decimalToTimeStr(drawerMealTime)} onChange={(e) => { const v = parseTimeStrToDecimal(e.target.value); setDrawerMealTime(v); setDrawerMealTimeStr(decimalToTimeStr(v)); }} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
+                <input type="time" value={decimalToTimeStr(drawerMealTime)} onChange={(e) => { const v = parseTimeStrToDecimal(e.target.value); setDrawerMealTime(v); setDrawerMealTimeStr(decimalToTimeStr(v)); }} style={{ width: '95px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
                 <span>24:00</span>
               </div>
               <div ref={miniTimelinePastoRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
