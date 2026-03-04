@@ -1785,29 +1785,13 @@ Contesto: Pagina attuale ${paginaAttuale}. Rischio stress serale ${energyAt20 !=
         const t = (text || '').trim();
         return t.startsWith('❌') || t.includes('Errore Server') || t.includes('Nessuna API Key');
       };
-      const mapped = recentHistory
-        .filter(m => !isLocalError(m.text))
-        .map(m => ({
-          role: m.sender === 'user' ? 'user' : 'model',
-          parts: [{ text: (m.text || '').trim() }]
-        }));
-      const firstUserIndex = mapped.findIndex(m => m.role === 'user');
-      let fromFirstUser = firstUserIndex >= 0 ? mapped.slice(firstUserIndex) : [];
-      const alternated = [];
-      fromFirstUser.forEach(m => {
-        if (alternated.length === 0) {
-          alternated.push(m);
-          return;
-        }
-        if (m.role === alternated[alternated.length - 1].role) {
-          alternated[alternated.length - 1] = m;
-        } else {
-          alternated.push(m);
-        }
-      });
-      const contents = [...alternated, { role: 'user', parts: [{ text: userText }] }];
+      const filtered = recentHistory.filter(m => !isLocalError(m.text));
+      const conversationLines = filtered.map(m => (m.sender === 'user' ? 'Utente: ' : 'Assistente: ') + (m.text || '').trim());
+      conversationLines.push('Utente: ' + userText);
+      const conversationText = conversationLines.join('\n');
+      const fullPrompt = systemInstruction + '\n\n---\nConversazione (rispondi come Assistente all\'ultimo messaggio):\n' + conversationText;
 
-      const responseText = await callGeminiAPIWithRotation('', { systemInstruction, contents });
+      const responseText = await callGeminiAPIWithRotation(fullPrompt);
 
       let insertPayload = null;
       const insertStart = responseText.indexOf('{"action":"insert"');
