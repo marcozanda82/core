@@ -2571,7 +2571,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="zoom-controls">
-            <button type="button" className="zoom-btn" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} title="Torna alla Home">🏠</button>
+            <button type="button" className="zoom-btn" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} title="Torna alla Home" style={{ marginBottom: '30px', borderRadius: '50%' }}>🏠</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
@@ -2773,12 +2773,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
-          {/* Tasto ANALISI: passa alla modalità Pro (grafico/telemetria) */}
-          <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))} style={{ alignSelf: 'center', padding: '10px 20px', fontSize: '0.85rem', fontWeight: 'bold', background: 'rgba(0,229,255,0.12)', border: '1px solid #00e5ff', borderRadius: '12px', color: '#00e5ff', cursor: 'pointer', letterSpacing: '1px', flexShrink: 0 }}>📊 ANALISI</button>
-          {/* Tachimetro circolare calorie - ingrandito e espanso */}
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
+          {/* Tasto ANALISI ancorato in alto a destra */}
+          <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))} style={{ position: 'absolute', top: 'max(12px, 1.5vh)', right: '14px', zIndex: 5, padding: '8px 16px', fontSize: '0.8rem', fontWeight: 'bold', background: 'rgba(0,229,255,0.12)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', letterSpacing: '0.5px' }}>📊 ANALISI</button>
+          {/* Tachimetro circolare calorie - 285px (ridotto 5%) */}
           <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
-            <div style={{ position: 'relative', width: 'min(320px, 85vw)', height: 'min(320px, 85vw)', maxWidth: 'min(320px, 85vw)', maxHeight: 'min(320px, 85vw)', aspectRatio: '1' }}>
+            <div style={{ position: 'relative', width: 'min(285px, 80vw)', height: 'min(285px, 80vw)', maxWidth: 'min(285px, 80vw)', maxHeight: 'min(285px, 80vw)', aspectRatio: '1' }}>
               <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `conic-gradient(#00e5ff 0deg, #00e5ff ${Math.min(360, ((totali?.kcal || 0) / Math.max(1, dynamicDailyKcal)) * 360)}deg, #1a1a1a ${Math.min(360, ((totali?.kcal || 0) / Math.max(1, dynamicDailyKcal)) * 360)}deg 360deg)`, padding: '12px', boxShadow: 'inset 0 0 0 3px #0a0a0a, 0 0 24px rgba(0,229,255,0.2)' }}>
                 <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111' }}>
                   <span style={{ fontSize: 'clamp(3rem, 12vw, 5.25rem)', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00', lineHeight: 1.1 }}>{Math.round(totali?.kcal || 0)}</span>
