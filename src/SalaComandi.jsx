@@ -617,7 +617,7 @@ export default function SalaComandi() {
     const scrollWidth = container.scrollWidth;
     const clientWidth = container.clientWidth;
     const timePos = (currentTime / 24) * scrollWidth;
-    const targetScroll = timePos - (clientWidth / 2);
+    const targetScroll = timePos - (clientWidth / 2) + 80;
     container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
   }, [currentTime, currentTrackerDate]);
 
