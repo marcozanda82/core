@@ -585,6 +585,7 @@ export default function SalaComandi() {
   });
   const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
   const [draggingNode, setDraggingNode] = useState(null);
+  const [isTimelineLocked, setIsTimelineLocked] = useState(true);
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const timelineContainerRef = useRef(null);
   const chartScrollRef = useRef(null);
@@ -669,6 +670,21 @@ export default function SalaComandi() {
   const allNodes = useMemo(() => {
     return [...computedMealNodes, ...manualNodes].sort((a, b) => a.time - b.time);
   }, [computedMealNodes, manualNodes]);
+
+  const allNodesWithStack = useMemo(() => {
+    const overlaps = (a, b) => {
+      const aEnd = a.type === 'work' ? a.time + (a.duration || 1) : a.time;
+      const bEnd = b.type === 'work' ? b.time + (b.duration || 1) : b.time;
+      return a.time < bEnd && b.time < aEnd;
+    };
+    return allNodes.map((node, i) => {
+      let stackIndex = 0;
+      for (let j = 0; j < i; j++) {
+        if (overlaps(allNodes[j], node)) stackIndex++;
+      }
+      return { ...node, stackIndex };
+    });
+  }, [allNodes]);
 
   useEffect(() => {
     if (currentTrackerDate !== getTodayString()) {
@@ -1418,15 +1434,11 @@ export default function SalaComandi() {
       id: f.id ? f.id : `f_${uniqueBatchId}_${index}`
     }));
 
-    setDailyLog(prev => {
-      let filtered = prev;
-      if (editingMealId) {
-        filtered = prev.filter(item => getSlotKey(item) !== editingMealId);
-      }
-      const nuovoLog = [...mealItems, ...filtered];
-      syncDatiFirebase(nuovoLog, manualNodes);
-      return nuovoLog;
-    });
+    const nextLog = editingMealId ? dailyLog.filter(item => getSlotKey(item) !== editingMealId) : dailyLog;
+    const nuovoLog = [...mealItems, ...nextLog];
+
+    setDailyLog(nuovoLog);
+    syncDatiFirebase(nuovoLog, manualNodes);
 
     setAddedFoods([]);
     setEditingMealId(null);
@@ -1438,6 +1450,7 @@ export default function SalaComandi() {
   };
 
   const startNodeDrag = useCallback((node, edge) => (e) => {
+    if (isTimelineLocked) return;
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     dragOffsetYRef.current = 0;
@@ -1452,7 +1465,7 @@ export default function SalaComandi() {
       originalDuration: node.duration,
       edge
     });
-  }, [dailyLog]);
+  }, [dailyLog, isTimelineLocked]);
 
   const releaseNodePointer = (e) => {
     if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
@@ -1464,20 +1477,16 @@ export default function SalaComandi() {
 
   const handleAddWater = (amount) => {
     if (amount > 0) {
-      setManualNodes(prev => {
-        const next = [...prev, { id: `water_${Date.now()}`, type: 'water', time: currentTime, ml: amount }];
-        syncDatiFirebase(dailyLog, next);
-        return next;
-      });
+      const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: currentTime, ml: amount }];
+      setManualNodes(next);
+      syncDatiFirebase(dailyLog, next);
     } else {
       const toRemove = amount === -250 ? 1 : 2;
-      setManualNodes(prev => {
-        const waterNodes = prev.filter(n => n.type === 'water');
-        const idsToRemove = waterNodes.slice(-toRemove).map(n => n.id);
-        const next = prev.filter(n => !idsToRemove.includes(n.id));
-        syncDatiFirebase(dailyLog, next);
-        return next;
-      });
+      const waterNodes = manualNodes.filter(n => n.type === 'water');
+      const idsToRemove = waterNodes.slice(-toRemove).map(n => n.id);
+      const next = manualNodes.filter(n => !idsToRemove.includes(n.id));
+      setManualNodes(next);
+      syncDatiFirebase(dailyLog, next);
     }
   };
   
@@ -1492,30 +1501,14 @@ export default function SalaComandi() {
                  workoutType === 'hiit' ? 'HIIT / Circuito' : 'Attività Lavorativa';
 
     const nodeData = { id: finalId, type: isWork ? 'work' : 'workout', time: Number(workoutStartTime), duration, kcal: workoutKcal, icon: isWork ? '💼' : '🏋️', subType: workoutType, muscles: workoutMuscles };
-    const logData = {
-      id: finalId,
-      type: 'workout',
-      workoutType,
-      desc,
-      name: isWork ? 'Lavoro' : desc,
-      kcal: workoutKcal,
-      cal: workoutKcal,
-      duration
-    };
+    const logData = { id: finalId, type: 'workout', workoutType, desc, name: isWork ? 'Lavoro' : desc, kcal: workoutKcal, cal: workoutKcal, duration };
 
-    setDailyLog(prev => {
-      const newLog = prev.some(n => n.id === finalId)
-        ? prev.map(n => n.id === finalId ? logData : n)
-        : [logData, ...prev];
-      setManualNodes(prevN => {
-        const newNodes = prevN.some(n => n.id === finalId)
-          ? prevN.map(n => n.id === finalId ? nodeData : n)
-          : [...prevN, nodeData];
-        syncDatiFirebase(newLog, newNodes);
-        return newNodes;
-      });
-      return newLog;
-    });
+    const newLog = dailyLog.some(n => n.id === finalId) ? dailyLog.map(n => n.id === finalId ? logData : n) : [logData, ...dailyLog];
+    const newNodes = manualNodes.some(n => n.id === finalId) ? manualNodes.map(n => n.id === finalId ? nodeData : n) : [...manualNodes, nodeData];
+
+    setDailyLog(newLog);
+    setManualNodes(newNodes);
+    syncDatiFirebase(newLog, newNodes);
 
     setEditingWorkoutId(null);
     setWorkoutMuscles([]);
@@ -1575,15 +1568,11 @@ export default function SalaComandi() {
   };
 
   const removeLogItem = (id) => {
-    setDailyLog(prev => {
-      const newLog = prev.filter(item => item.id !== id);
-      setManualNodes(prevN => {
-        const newNodes = prevN.filter(n => n.id !== id);
-        syncDatiFirebase(newLog, newNodes);
-        return newNodes;
-      });
-      return newLog;
-    });
+    const newLog = dailyLog.filter(item => item.id !== id);
+    const newNodes = manualNodes.filter(n => n.id !== id);
+    setDailyLog(newLog);
+    setManualNodes(newNodes);
+    syncDatiFirebase(newLog, newNodes);
   };
 
   const handleMiniTimelineDrag = (e, containerRef, type, currentStart, currentEnd, setterStart, setterEnd) => {
@@ -2510,13 +2499,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : 'Energia 0–24h'}
             </span>
           </div>
-          <div className="scrollbar-hide" style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
-            <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`} style={{ flexShrink: 0 }}>⚡ %</button>
-            <button type="button" onClick={() => setChartUnit('kcal')} className={`telemetry-btn ${chartUnit === 'kcal' ? 'active' : ''}`} style={{ flexShrink: 0 }}>⚡ KCAL</button>
-            <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`} style={{ flexShrink: 0 }}>🩸 GLICEM</button>
-            <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`} style={{ flexShrink: 0 }}>💧 IDRAT</button>
-            <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol' : ''}`} style={{ flexShrink: 0 }}>🧠 CORTISOL</button>
-            <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert' : ''}`} style={{ flexShrink: 0, ...(chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : {}) }}>⚙️ DIGEST</button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
+            <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
+            <button type="button" onClick={() => setChartUnit('kcal')} className={`telemetry-btn ${chartUnit === 'kcal' ? 'active' : ''}`}>⚡ KCAL</button>
+            <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEM</button>
+            <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`}>💧 IDRAT</button>
+            <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol' : ''}`}>🧠 CORTISOL</button>
+            <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGEST</button>
           </div>
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -2650,7 +2639,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </ResponsiveContainer>
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
-                  {allNodes.map((node) => {
+                  <button type="button" onClick={() => setIsTimelineLocked(prev => !prev)} title={isTimelineLocked ? 'Sblocca timeline (abilita trascinamento)' : 'Blocca timeline'} style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 20, width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #444', background: isTimelineLocked ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: isTimelineLocked ? '#00e5ff' : '#888', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{isTimelineLocked ? '🔒' : '🔓'}</button>
+                  {allNodesWithStack.map((node) => {
                     const isNodeFocused = !activeAction || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout')) || (activeAction === 'acqua' && node.type === 'water');
                     const isWork = node.type === 'work';
                     const percent = (node.time / 24) * 100;
@@ -2670,7 +2660,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     if (isWork) {
                       const dragEdge = isDragging ? draggingNode?.edge : null;
                       return (
-                        <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: '-18px', height: '36px', transform: isDragging ? `translateY(${dragY}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
+                        <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
                           <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                             {(dragEdge === 'start' || dragEdge === 'all') && (
                               <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
@@ -2697,7 +2687,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const bgColor = isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
                     const nodeBorderColor = isWater ? '#00e5ff' : pointBorderColor;
                     return (
-                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, transform: isDragging ? `translate(-50%, ${dragY}px) scale(2)` : 'translateX(-50%)', top: '50%', marginTop: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
+                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, transform: isDragging ? `translate(-50%, ${dragY - 45}px) scale(1.5)` : 'translateX(-50%)', top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
                         <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isWater ? '#00e5ff' : pointBorderColor, marginBottom: '2px', transition: 'color 0.2s' }}>
                           {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
                         </span>
@@ -2871,7 +2861,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <button onClick={() => handleAddWater(-250)} className="water-rectify-btn">− 250</button>
               <button onClick={() => handleAddWater(-500)} className="water-rectify-btn">− 500</button>
-              <button onClick={() => { setManualNodes(prev => { const next = prev.filter(n => n.type !== 'water'); syncDatiFirebase(dailyLog, next); return next; }); }} className="water-rectify-btn" style={{ borderColor: 'rgba(255, 77, 77, 0.4)', color: '#ff4d4d' }}>Azzera</button>
+              <button onClick={() => { const next = manualNodes.filter(n => n.type !== 'water'); setManualNodes(next); syncDatiFirebase(dailyLog, next); }} className="water-rectify-btn" style={{ borderColor: 'rgba(255, 77, 77, 0.4)', color: '#ff4d4d' }}>Azzera</button>
             </div>
           </div>
         )}
