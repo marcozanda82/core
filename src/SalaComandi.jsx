@@ -2770,6 +2770,39 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </>
       )}
 
+      {userProfile?.level !== 'pro' && (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(16px, 2vh) 14px', marginBottom: '12px' }}>
+          <div style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '4px' }}>Cruscotto essenziale</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ background: '#111', padding: '14px', borderRadius: '12px', border: '1px solid #222' }}>
+              <div style={{ fontSize: '0.65rem', color: '#888', marginBottom: '6px' }}>🔥 Calorie</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00' }}>
+                {Math.round(totali?.kcal || 0)} / {Math.round(dynamicDailyKcal)}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                {(dynamicDailyKcal - (totali?.kcal || 0)) >= 0
+                  ? `Rimangono ${Math.round(dynamicDailyKcal - (totali?.kcal || 0))} kcal`
+                  : `Surplus ${Math.abs(Math.round((totali?.kcal || 0) - dynamicDailyKcal))} kcal`}
+              </div>
+            </div>
+            <div style={{ background: '#111', padding: '14px', borderRadius: '12px', border: '1px solid #222' }}>
+              <div style={{ fontSize: '0.65rem', color: '#888', marginBottom: '8px' }}>Macro (g)</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#b388ff' }}>P</span><span style={{ color: '#fff' }}>{Math.round(totali?.prot || 0)} / {Math.round(userTargets?.prot ?? 150)}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#00e676' }}>C</span><span style={{ color: '#fff' }}>{Math.round(totali?.carb || 0)} / {Math.round(userTargets?.carb ?? 200)}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#ffea00' }}>F</span><span style={{ color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)} / {Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 60)}</span></div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', marginTop: '8px' }}>
+            <button type="button" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '12px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>🍽️ Pasto</button>
+            <button type="button" onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'rgba(0,229,255,0.1)', border: '1px solid #00e5ff', borderRadius: '12px', color: '#00e5ff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>💧 Acqua</button>
+            <button type="button" onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'rgba(255,109,0,0.1)', border: '1px solid #ff6d00', borderRadius: '12px', color: '#ff6d00', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>⚡ Attività</button>
+            <button type="button" onClick={() => setActiveAction('diario_giornaliero')} style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'rgba(0,230,118,0.1)', border: '1px solid #00e676', borderRadius: '12px', color: '#00e676', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>📓 Diario</button>
+          </div>
+        </div>
+      )}
+
       {/* Barra di comando AI persistente (fixed in fondo) */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: 'max(12px, env(safe-area-inset-bottom))', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid #222', zIndex: 90 }}>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 20px', border: '1px solid #333' }}>
