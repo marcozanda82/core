@@ -2770,35 +2770,41 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </>
       )}
 
+      {/* Cruscotto Essenziale (Modalità Base) - design "piccola utilitaria chic" */}
       {userProfile?.level !== 'pro' && (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(16px, 2vh) 14px', marginBottom: '12px' }}>
-          <div style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '4px' }}>Cruscotto essenziale</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <div style={{ background: '#111', padding: '14px', borderRadius: '12px', border: '1px solid #222' }}>
-              <div style={{ fontSize: '0.65rem', color: '#888', marginBottom: '6px' }}>🔥 Calorie</div>
-              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00' }}>
-                {Math.round(totali?.kcal || 0)} / {Math.round(dynamicDailyKcal)}
-              </div>
-              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
-                {(dynamicDailyKcal - (totali?.kcal || 0)) >= 0
-                  ? `Rimangono ${Math.round(dynamicDailyKcal - (totali?.kcal || 0))} kcal`
-                  : `Surplus ${Math.abs(Math.round((totali?.kcal || 0) - dynamicDailyKcal))} kcal`}
-              </div>
-            </div>
-            <div style={{ background: '#111', padding: '14px', borderRadius: '12px', border: '1px solid #222' }}>
-              <div style={{ fontSize: '0.65rem', color: '#888', marginBottom: '8px' }}>Macro (g)</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#b388ff' }}>P</span><span style={{ color: '#fff' }}>{Math.round(totali?.prot || 0)} / {Math.round(userTargets?.prot ?? 150)}</span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#00e676' }}>C</span><span style={{ color: '#fff' }}>{Math.round(totali?.carb || 0)} / {Math.round(userTargets?.carb ?? 200)}</span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#ffea00' }}>F</span><span style={{ color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)} / {Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 60)}</span></div>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px' }}>
+          {/* Tachimetro circolare calorie */}
+          <div style={{ position: 'relative', width: 'min(200px, 50vw)', height: 'min(200px, 50vw)', flexShrink: 0 }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `conic-gradient(#00e5ff 0deg, #00e5ff ${Math.min(360, ((totali?.kcal || 0) / Math.max(1, dynamicDailyKcal)) * 360)}deg, #1a1a1a ${Math.min(360, ((totali?.kcal || 0) / Math.max(1, dynamicDailyKcal)) * 360)}deg 360deg)`, padding: '8px', boxShadow: 'inset 0 0 0 2px #0a0a0a, 0 0 20px rgba(0,229,255,0.15)' }}>
+              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px solid #111' }}>
+                <span style={{ fontSize: '1.75rem', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00', lineHeight: 1.1 }}>{Math.round(totali?.kcal || 0)}</span>
+                <span style={{ fontSize: '0.6rem', color: '#555', letterSpacing: '1px', marginTop: '2px' }}>kcal</span>
+                <span style={{ fontSize: '0.6rem', color: '#444', marginTop: '2px' }}>/ {Math.round(dynamicDailyKcal)}</span>
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', marginTop: '8px' }}>
-            <button type="button" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '12px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>🍽️ Pasto</button>
-            <button type="button" onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'rgba(0,229,255,0.1)', border: '1px solid #00e5ff', borderRadius: '12px', color: '#00e5ff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>💧 Acqua</button>
-            <button type="button" onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'rgba(255,109,0,0.1)', border: '1px solid #ff6d00', borderRadius: '12px', color: '#ff6d00', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>⚡ Attività</button>
-            <button type="button" onClick={() => setActiveAction('diario_giornaliero')} style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'rgba(0,230,118,0.1)', border: '1px solid #00e676', borderRadius: '12px', color: '#00e676', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>📓 Diario</button>
+          {/* Display macro incassato */}
+          <div style={{ width: '100%', maxWidth: '280px', background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 16px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 0', minWidth: '70px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.6rem', color: '#b388ff', letterSpacing: '1px', marginBottom: '2px' }}>P</div>
+              <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.7rem', color: '#666', fontWeight: 'normal' }}>/{Math.round(userTargets?.prot ?? 150)}</span></div>
+            </div>
+            <div style={{ flex: '1 1 0', minWidth: '70px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.6rem', color: '#00e676', letterSpacing: '1px', marginBottom: '2px' }}>C</div>
+              <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.7rem', color: '#666', fontWeight: 'normal' }}>/{Math.round(userTargets?.carb ?? 200)}</span></div>
+            </div>
+            <div style={{ flex: '1 1 0', minWidth: '70px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.6rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '2px' }}>F</div>
+              <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.7rem', color: '#666', fontWeight: 'normal' }}>/{Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 60)}</span></div>
+            </div>
+          </div>
+          {/* Fila 5 bottoni: Pasto, Acqua, MENÙ (centro, più grande), Attività, Diario */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '320px', flexWrap: 'nowrap' }}>
+            <button type="button" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: '#1a1a1a', border: '1px solid #333', borderRadius: '10px', color: '#fff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Pasto">🍽️<span>Pasto</span></button>
+            <button type="button" onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(0,229,255,0.08)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Acqua">💧<span>Acqua</span></button>
+            <button type="button" onClick={() => setIsDrawerOpen(true)} style={{ flex: '0 0 auto', width: '56px', height: '56px', padding: 0, fontSize: '1.4rem', fontWeight: 'bold', background: 'linear-gradient(180deg, #00e5ff 0%, #0097a7 100%)', border: '2px solid rgba(255,255,255,0.3)', borderRadius: '50%', color: '#000', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,229,255,0.4)' }} title="Menù">☰</button>
+            <button type="button" onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(255,109,0,0.08)', border: '1px solid #ff6d00', borderRadius: '10px', color: '#ff6d00', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Attività">⚡<span>Attività</span></button>
+            <button type="button" onClick={() => setActiveAction('diario_giornaliero')} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(0,230,118,0.08)', border: '1px solid #00e676', borderRadius: '10px', color: '#00e676', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Diario">📓<span>Diario</span></button>
           </div>
         </div>
       )}
