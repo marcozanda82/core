@@ -1742,13 +1742,19 @@ Contesto: Pagina attuale ${paginaAttuale}. Rischio stress serale ${energyAt20 !=
 
       const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
       const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
-      const contents = [
-        ...recentHistory.map(m => ({
+      const isLocalError = (text) => {
+        const t = (text || '').trim();
+        return t.startsWith('❌') || t.includes('Errore Server') || t.includes('Nessuna API Key');
+      };
+      const mapped = recentHistory
+        .filter(m => !isLocalError(m.text))
+        .map(m => ({
           role: m.sender === 'user' ? 'user' : 'model',
           parts: [{ text: (m.text || '').trim() }]
-        })),
-        { role: 'user', parts: [{ text: userText }] }
-      ];
+        }));
+      const firstUserIndex = mapped.findIndex(m => m.role === 'user');
+      const fromFirstUser = firstUserIndex >= 0 ? mapped.slice(firstUserIndex) : [];
+      const contents = [...fromFirstUser, { role: 'user', parts: [{ text: userText }] }];
 
       const responseText = await callGeminiAPIWithRotation('', { systemInstruction, contents });
 
