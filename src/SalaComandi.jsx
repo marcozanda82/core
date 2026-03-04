@@ -590,6 +590,7 @@ export default function SalaComandi() {
   const chartScrollRef = useRef(null);
   const chartTouchTimerRef = useRef(null);
   const longPressTimerRef = useRef(null);
+  const longPressMoveCleanupRef = useRef(null);
   const pendingClickRef = useRef(null);
   const dragOffsetYRef = useRef(0);
   const miniTimelinePastoRef = useRef(null);
@@ -676,7 +677,7 @@ export default function SalaComandi() {
     const overlaps = (a, b) => {
       const aEnd = a.type === 'work' ? a.time + (a.duration || 1) : a.time;
       const bEnd = b.type === 'work' ? b.time + (b.duration || 1) : b.time;
-      return a.time < bEnd && b.time < aEnd;
+      return a.time <= bEnd && b.time <= aEnd;
     };
     return allNodes.map((node, i) => {
       let stackIndex = 0;
@@ -1295,7 +1296,7 @@ export default function SalaComandi() {
           if (entryPer100[k] == null) entryPer100[k] = getDefaultNutrientValue(k); 
         }));
         if (entryPer100.kcal == null) entryPer100.kcal = getDefaultNutrientValue('kcal');
-        const newKey = `food_${Date.now()}_${name.replace(/\s+/g, '_').slice(0, 20)}`;
+        const newKey = `food_${Date.now()}_${String(name).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
         const basePath = `users/${userUid}/tracker_data`;
         await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
         setFoodDb(prev => ({ ...prev, [newKey]: entryPer100 }));
@@ -1450,19 +1451,42 @@ export default function SalaComandi() {
     setSelectedNodeReport(node);
   };
 
-  const cancelLongPress = useCallback(() => {
+  const startNodeDrag = useCallback((node, edge) => (e) => {
+    e.stopPropagation();
+    const target = e.currentTarget;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const DRAG_THRESHOLD_PX = 15;
+
+    longPressMoveCleanupRef.current?.();
+    longPressMoveCleanupRef.current = null;
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-  }, []);
 
-  const startNodeDrag = useCallback((node, edge) => (e) => {
-    e.stopPropagation();
-    cancelLongPress();
+    const onMove = (ev) => {
+      const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
+      if (dist > DRAG_THRESHOLD_PX) {
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        target.removeEventListener('pointermove', onMove);
+        longPressMoveCleanupRef.current = null;
+      }
+    };
+    target.addEventListener('pointermove', onMove);
+    longPressMoveCleanupRef.current = () => {
+      target.removeEventListener('pointermove', onMove);
+      longPressMoveCleanupRef.current = null;
+    };
+
     longPressTimerRef.current = setTimeout(() => {
       longPressTimerRef.current = null;
-      e.currentTarget.setPointerCapture(e.pointerId);
+      longPressMoveCleanupRef.current?.();
+      longPressMoveCleanupRef.current = null;
+      target.setPointerCapture(e.pointerId);
       dragOffsetYRef.current = 0;
       const itemIds = node.type === 'meal'
         ? (dailyLog || []).filter(item => getSlotKey(item) === String(node.id)).map(i => i.id)
@@ -1476,9 +1500,11 @@ export default function SalaComandi() {
         edge
       });
     }, 350);
-  }, [dailyLog, cancelLongPress]);
+  }, [dailyLog]);
 
   const releaseNodePointer = (e) => {
+    longPressMoveCleanupRef.current?.();
+    longPressMoveCleanupRef.current = null;
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
@@ -1845,7 +1871,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       }));
       if (entryPer100.kcal == null || entryPer100.kcal === 0) entryPer100.kcal = entryPer100.cal ?? getAverageEstimate('kcal', desc);
       entryPer100.cal = entryPer100.cal ?? entryPer100.kcal;
-      const newKey = `food_${Date.now()}_${desc.replace(/\s+/g, '_').slice(0, 20)}`;
+      const newKey = `food_${Date.now()}_${String(desc).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
       const basePath = `users/${userUid}/tracker_data`;
       await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
       setFoodDb(prev => ({ ...prev, [newKey]: entryPer100 }));
@@ -2696,8 +2722,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     if (isWork) {
                       const dragEdge = isDragging ? draggingNode?.edge : null;
                       return (
-                        <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerMove={cancelLongPress} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
-                          <div onPointerDown={startNodeDrag(node, 'start')} onPointerMove={cancelLongPress} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                        <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
+                          <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                             {(dragEdge === 'start' || dragEdge === 'all') && (
                               <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                                 {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
@@ -2705,7 +2731,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                             )}
                             💼
                           </div>
-                          <div onPointerDown={startNodeDrag(node, 'end')} onPointerMove={cancelLongPress} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                          <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                             {(dragEdge === 'end' || dragEdge === 'all') && (
                               <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                                 {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
@@ -2723,7 +2749,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const bgColor = isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
                     const nodeBorderColor = isWater ? '#00e5ff' : pointBorderColor;
                     return (
-                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerMove={cancelLongPress} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, transform: isDragging ? `translate(-50%, ${dragY - 45}px) scale(1.5)` : 'translateX(-50%)', top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
+                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, transform: isDragging ? `translate(-50%, ${dragY - 45}px) scale(1.5)` : 'translateX(-50%)', top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
                         <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isWater ? '#00e5ff' : pointBorderColor, marginBottom: '2px', transition: 'color 0.2s' }}>
                           {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
                         </span>
