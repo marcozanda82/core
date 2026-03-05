@@ -558,7 +558,7 @@ export default function SalaComandi() {
     height: 175,
     activityLevel: '1.55',
     goal: 'maintain',
-    level: 'pro'
+    level: 'base'
   });
   const [userTargets, setUserTargets] = useState({ ...DEFAULT_TARGETS });
 
@@ -638,15 +638,20 @@ export default function SalaComandi() {
   }, [draggingNode]);
 
   const centerCurrentTime = useCallback(() => {
-    if (currentTrackerDate !== getTodayString()) return;
     if (!chartScrollRef.current) return;
     const container = chartScrollRef.current;
     const scrollWidth = container.scrollWidth;
     const clientWidth = container.clientWidth;
-    const timePos = (currentTime / 24) * scrollWidth;
-    const targetScroll = timePos - (clientWidth / 2) + 80;
-    container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
-  }, [currentTime, currentTrackerDate]);
+
+    if (currentTrackerDate === getTodayString()) {
+      const chartWidth = scrollWidth - 80;
+      const timePos = (currentTime / 24) * chartWidth;
+      const targetScroll = timePos - (clientWidth / 2);
+      container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
+    } else {
+      container.scrollLeft = scrollWidth;
+    }
+  }, [currentTime, currentTrackerDate, zoomLevel]);
 
   useEffect(() => {
     const timer = setTimeout(centerCurrentTime, 50);
@@ -2362,6 +2367,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     );
   }
 
+  if (!isInitialLoadComplete) {
+    return (
+      <div style={{ backgroundColor: '#000', color: '#00e5ff', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace' }}>
+        <style>
+          {`
+            .spinner-sync { border: 2px solid transparent; border-top-color: #00e5ff; border-radius: 50%; width: 30px; height: 30px; animation: spin-sync 1s linear infinite; margin-bottom: 20px; }
+            @keyframes spin-sync { to { transform: rotate(360deg); } }
+          `}
+        </style>
+        <div className="spinner-sync"></div>
+        <div style={{ letterSpacing: '2px', fontSize: '0.8rem' }}>SINCRONIZZAZIONE PROFILO...</div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ backgroundColor: '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '80px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
@@ -2617,7 +2637,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
           </div>
-          <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} style={{ flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
+          <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
             <div
               className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
               onTouchStart={() => { chartTouchTimerRef.current = setTimeout(() => setIsChartTooltipActive(true), 400); }}
@@ -2627,7 +2647,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               onMouseMove={() => { if (!isChartTooltipActive) clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; }}
               onMouseUp={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
               onMouseLeave={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
-              style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
+              style={{ flexShrink: 0, width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
             >
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -2806,6 +2826,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   })}
               </div>
             </div>
+            {/* SPACER PER PULSANTIERA: Permette di scrollare oltre la fine del grafico per non coprire le 24:00 */}
+            <div style={{ width: '80px', flexShrink: 0 }}></div>
           </div>
         </div>
         </div>
