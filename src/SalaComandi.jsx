@@ -614,6 +614,17 @@ export default function SalaComandi() {
   const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
   const [draggingNode, setDraggingNode] = useState(null);
   const [dragOffsetY, setDragOffsetY] = useState(0);
+  const [dragLiveTime, setDragLiveTime] = useState(null);
+  const dragEngine = useRef({
+    isActive: false,
+    nodeId: null,
+    nodeType: null,
+    startX: 0,
+    initialTime: 0,
+    lastX: 0,
+    lastTime: 0,
+    currentLiveTime: 0
+  });
   const timelineContainerRef = useRef(null);
   const chartScrollRef = useRef(null);
   const chartTouchTimerRef = useRef(null);
@@ -1016,6 +1027,18 @@ export default function SalaComandi() {
     dragOffsetYRef.current = 0;
     const el = timelineContainerRef.current;
     const { id: dragId, edge: dragEdge, type: dragType, originalTime, originalDuration } = draggingNode;
+    const initialTime = dragType === 'work' && dragEdge === 'end' ? (originalTime + (originalDuration ?? 0)) : originalTime;
+    dragEngine.current = {
+      isActive: true,
+      nodeId: dragId,
+      nodeType: dragType,
+      startX: 0,
+      initialTime,
+      lastX: 0,
+      lastTime: 0,
+      currentLiveTime: initialTime
+    };
+    setDragLiveTime(initialTime);
 
     const onMove = (e) => {
       if (!el || !draggingNode) return;
@@ -1024,46 +1047,36 @@ export default function SalaComandi() {
       const offsetY = e.clientY - centerY;
       dragOffsetYRef.current = offsetY;
       setDragOffsetY(offsetY);
-      const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const hour = Math.round(percent * 24 * 4) / 4;
 
-      if (dragType === 'meal') {
-        const { itemIds } = draggingNode;
-        setDailyLog(prev => {
-          const next = prev.map(item =>
-            itemIds && itemIds.includes(item.id) ? { ...item, mealTime: hour } : item
-          );
-          pendingLogRef.current = next;
-          return next;
-        });
-      } else {
-        setManualNodes(prev => {
-          const next = prev.map(n => {
-            if (n.id !== dragId) return n;
-            if (n.type === 'work') {
-              if (dragEdge === 'start') {
-                const end = n.time + (n.duration || 1);
-                const newTime = Math.min(hour, end - 0.25);
-                return { ...n, time: newTime, duration: end - newTime };
-              }
-              if (dragEdge === 'end') {
-                const newEnd = Math.max(hour, n.time + 0.25);
-                return { ...n, duration: newEnd - n.time };
-              }
-              if (dragEdge === 'all') {
-                return { ...n, time: hour };
-              }
-            }
-            return { ...n, time: hour };
-          });
-          pendingNodesRef.current = next;
-          return next;
-        });
+      const currentX = e.clientX;
+      const currentT = performance.now();
+      const { lastX, lastTime, currentLiveTime } = dragEngine.current;
+      const pixelsPerHour = rect.width / 24;
+
+      if (dragEngine.current.lastTime === 0) {
+        dragEngine.current.lastX = currentX;
+        dragEngine.current.lastTime = currentT;
+        return;
       }
+      const dx = currentX - lastX;
+      const dt = currentT - lastTime;
+      const velocity = Math.abs(dx / (dt || 1));
+      const sensitivity = velocity < 0.3 ? 0.1 : 1.0;
+      const deltaHours = (dx / pixelsPerHour) * sensitivity;
+      let newTime = currentLiveTime + deltaHours;
+      if (newTime < 0) newTime = 0;
+      if (newTime > 24) newTime = 24;
+      dragEngine.current.currentLiveTime = newTime;
+      dragEngine.current.lastX = currentX;
+      dragEngine.current.lastTime = currentT;
+      setDragLiveTime(Math.round(newTime * 60) / 60);
     };
 
     const onUp = () => {
       const isOutside = Math.abs(dragOffsetYRef.current) > 50;
+      const finalTimeRaw = dragEngine.current.currentLiveTime;
+      const finalTimeRounded = Math.round(finalTimeRaw * 12) / 12;
+
       if (isOutside) {
         const confirmDelete = window.confirm('Vuoi eliminare questo elemento?');
         if (confirmDelete) {
@@ -1106,12 +1119,38 @@ export default function SalaComandi() {
           }
         }
       } else {
-        const logToSync = pendingLogRef.current ?? dailyLog;
-        const nodesToSync = pendingNodesRef.current ?? manualNodes;
-        syncDatiFirebase(logToSync, nodesToSync);
-        pendingLogRef.current = null;
-        pendingNodesRef.current = null;
+        if (dragType === 'meal') {
+          const { itemIds } = draggingNode;
+          const nextLog = dailyLog.map(item =>
+            itemIds && itemIds.includes(item.id) ? { ...item, mealTime: finalTimeRounded } : item
+          );
+          setDailyLog(nextLog);
+          syncDatiFirebase(nextLog, manualNodes);
+        } else {
+          setManualNodes(prev => {
+            const next = prev.map(n => {
+              if (n.id !== dragId) return n;
+              if (n.type === 'work') {
+                if (dragEdge === 'start') {
+                  const end = n.time + (n.duration || 1);
+                  const newTime = Math.min(finalTimeRounded, end - 0.25);
+                  return { ...n, time: newTime, duration: end - newTime };
+                }
+                if (dragEdge === 'end') {
+                  const newEnd = Math.max(finalTimeRounded, n.time + 0.25);
+                  return { ...n, duration: newEnd - n.time };
+                }
+                return { ...n, time: finalTimeRounded };
+              }
+              return { ...n, time: finalTimeRounded };
+            });
+            syncDatiFirebase(dailyLog, next);
+            return next;
+          });
+        }
       }
+      dragEngine.current.isActive = false;
+      setDragLiveTime(null);
       setDragOffsetY(0);
       dragOffsetYRef.current = 0;
       setDraggingNode(null);
@@ -2589,6 +2628,29 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .delete-overlay.active .delete-icon { transform: scale(1); opacity: 0.8; }
           .delete-text { color: #ef4444; font-size: 1.2rem; letter-spacing: 4px; font-weight: bold; margin-top: 20px; text-shadow: 0 0 10px rgba(220, 38, 38, 0.5); }
 
+          /* Blocco selezione nativa e preparazione animazione nodi timeline */
+          .timeline-node, .meal-node {
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-user-drag: none;
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease;
+            cursor: grab;
+          }
+          .timeline-node.is-dragging, .meal-node.is-dragging {
+            transform: scale(2) translateY(-20px);
+            z-index: 9999 !important;
+            box-shadow: 0 15px 25px rgba(0,0,0,0.6);
+            cursor: grabbing;
+            transition: transform 0.1s ease, box-shadow 0.2s ease;
+          }
+          .is-dragging .node-time-label {
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+          }
+
           @media print {
             body * { visibility: hidden; }
             .report-modal-overlay, .report-modal-overlay * { visibility: visible; }
@@ -2870,11 +2932,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const pointBorderColor = isWork ? '#ffea00' : borderColor;
                     const isDragging = draggingNode?.id === node.id;
                     const dragY = isDragging ? dragOffsetY : 0;
+                    const displayTimeVal = (isDragging && dragLiveTime != null) ? dragLiveTime : node.time;
+                    const displayPercent = (displayTimeVal / 24) * 100;
+                    const workEndTime = node.time + (node.duration || 1);
+                    const displayDurationPercent = isWork && isDragging && dragLiveTime != null && draggingNode?.edge === 'start'
+                      ? ((workEndTime - dragLiveTime) / 24) * 100
+                      : isWork && isDragging && dragLiveTime != null && draggingNode?.edge === 'end'
+                        ? ((dragLiveTime - node.time) / 24) * 100
+                        : durationPercent;
+                    const workBarLeftPercent = isWork && isDragging && dragLiveTime != null && draggingNode?.edge === 'end' ? percent : displayPercent;
 
                     if (isWork) {
                       const dragEdge = isDragging ? draggingNode?.edge : null;
                       return (
-                        <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
+                        <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px)` : undefined, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
                           <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                             {(dragEdge === 'start' || dragEdge === 'all') && (
                               <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
@@ -2900,10 +2971,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const iconContent = isWater ? '💧' : (isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•'));
                     const bgColor = isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
                     const nodeBorderColor = isWater ? '#00e5ff' : pointBorderColor;
+                    const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
                     return (
-                      <div key={node.id} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${percent}%`, transform: isDragging ? `translate(-50%, ${dragY - 45}px) scale(1.5)` : 'translateX(-50%)', top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
-                        <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isWater ? '#00e5ff' : pointBorderColor, marginBottom: '2px', transition: 'color 0.2s' }}>
-                          {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
+                      <div key={node.id} className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${displayPercent}%`, transform: isDragging ? `translate(-50%, ${dragY - 45}px)` : 'translateX(-50%)', top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
+                        <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isWater ? '#00e5ff' : pointBorderColor, marginBottom: '2px', transition: 'color 0.2s' }}>
+                          {timeLabelStr}
                         </span>
                         <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isWater ? '#00e5ff' : (isPesi ? pointBorderColor : 'inherit') }}>{iconContent}</span>
                       </div>
