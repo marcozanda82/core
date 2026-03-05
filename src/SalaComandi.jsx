@@ -3160,8 +3160,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
-          {/* Tasto ANALISI ancorato in alto a destra */}
-          <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))} style={{ position: 'absolute', top: 'max(12px, 1.5vh)', right: '14px', zIndex: 5, padding: '8px 16px', fontSize: '0.8rem', fontWeight: 'bold', background: 'rgba(0,229,255,0.12)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', letterSpacing: '0.5px' }}>📊 ANALISI</button>
           {/* Tachimetro circolare calorie - 285px (ridotto 5%) */}
           <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
             <div style={{ position: 'relative', width: 'min(285px, 80vw)', height: 'min(285px, 80vw)', maxWidth: 'min(285px, 80vw)', maxHeight: 'min(285px, 80vw)', aspectRatio: '1' }}>
@@ -3170,6 +3168,29 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <span style={{ fontSize: 'clamp(3rem, 12vw, 5.25rem)', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00', lineHeight: 1.1 }}>{Math.round(totali?.kcal || 0)}</span>
                   <span style={{ fontSize: '1.125rem', color: '#555', letterSpacing: '1px', marginTop: '4px' }}>kcal</span>
                   <span style={{ fontSize: '1.05rem', color: '#444', marginTop: '2px' }}>obiettivo {Math.round(dynamicDailyKcal)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
+                    style={{
+                      marginTop: '15px',
+                      padding: '8px 24px',
+                      fontSize: '1rem',
+                      fontWeight: 'bold',
+                      background: 'rgba(0, 229, 255, 0.1)',
+                      border: '1px solid #00e5ff',
+                      borderRadius: '25px',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      letterSpacing: '1px',
+                      boxShadow: '0 0 15px rgba(0, 229, 255, 0.3), inset 0 0 10px rgba(0, 229, 255, 0.1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <span>📊</span> Analizza
+                  </button>
                 </div>
               </div>
             </div>
