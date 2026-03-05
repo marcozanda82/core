@@ -1191,7 +1191,6 @@ export default function SalaComandi() {
   const loadMealToConstructor = (mTypeOrId) => {
     setAddedFoods([]);
     setEditingMealId(mTypeOrId);
-
     let items = (dailyLog || []).filter(item => getSlotKey(item) === String(mTypeOrId));
 
     if (items.length === 0) {
@@ -1468,26 +1467,26 @@ export default function SalaComandi() {
   };
 
   const saveMealToDiary = () => {
-    const timeToUse = typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime) ? drawerMealTime : 12;
+    if (!isInitialLoadComplete) return;
+    const currentTargetType = mealType;
     const uniqueBatchId = Date.now();
-
-    let finalMealType = mealType;
-    if (!editingMealId) {
-      finalMealType = getGhostMealType(mealType, dailyLog);
-    } else {
-      finalMealType = editingMealId;
-    }
+    const timeToUse = typeof drawerMealTime === 'number' ? drawerMealTime : 12;
+    const ourSlot = editingMealId || getGhostMealType(currentTargetType, dailyLog);
 
     const mealItems = addedFoods.map((f, index) => ({
       ...f,
-      mealType: finalMealType,
+      type: 'food',
+      mealType: ourSlot,
       mealTime: timeToUse,
-      id: f.id ? f.id : `f_${uniqueBatchId}_${index}`
+      id: f.id || `f_${uniqueBatchId}_${index}`
     }));
 
-    const nextLog = editingMealId ? dailyLog.filter(item => getSlotKey(item) !== editingMealId) : dailyLog;
-    const nuovoLog = [...mealItems, ...nextLog];
+    const rest = dailyLog.filter(item => {
+      if (item.type !== 'food') return true;
+      return getSlotKey(item) !== ourSlot;
+    });
 
+    const nuovoLog = [...mealItems, ...rest];
     setDailyLog(nuovoLog);
     syncDatiFirebase(nuovoLog, manualNodes);
 
@@ -2378,15 +2377,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   if (!isInitialLoadComplete) {
     return (
-      <div style={{ backgroundColor: '#000', color: '#00e5ff', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace' }}>
+      <div style={{ height: '100dvh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff', fontFamily: 'monospace' }}>
         <style>
           {`
             .spinner-sync { border: 2px solid transparent; border-top-color: #00e5ff; border-radius: 50%; width: 30px; height: 30px; animation: spin-sync 1s linear infinite; margin-bottom: 20px; }
             @keyframes spin-sync { to { transform: rotate(360deg); } }
           `}
         </style>
-        <div className="spinner-sync"></div>
-        <div style={{ letterSpacing: '2px', fontSize: '0.8rem' }}>SINCRONIZZAZIONE PROFILO...</div>
+        <div style={{ textAlign: 'center' }}>
+          <div className="spinner-sync"></div>
+          <div style={{ letterSpacing: '4px', fontWeight: 'bold' }}>VYTA SYSTEM</div>
+          <div style={{ fontSize: '0.6rem', color: '#444', marginTop: '10px' }}>INITIALIZING CORE...</div>
+        </div>
       </div>
     );
   }
