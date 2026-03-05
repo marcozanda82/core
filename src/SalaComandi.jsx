@@ -13,7 +13,7 @@ import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, 
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
-import { getDatabase, ref, get, set, onValue } from 'firebase/database';
+import { getDatabase, ref, get, set, onValue, update } from 'firebase/database';
 
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 
@@ -823,6 +823,7 @@ export default function SalaComandi() {
   const pendingLogRef = useRef(null);
   const pendingNodesRef = useRef(null);
   const foodInputRef = useRef(null);
+  const csvInputRef = useRef(null);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
 
   const [fullStorico, setFullStorico] = useState(null);
@@ -1183,6 +1184,74 @@ export default function SalaComandi() {
       alert("✅ Profilo e Target salvati con successo!");
       setShowProfile(false);
     }).catch(err => console.error("Errore salvataggio profilo:", err));
+  };
+
+  const handleCSVUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result;
+      if (!text || typeof text !== 'string') return;
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+
+      if (lines.length < 2) {
+        alert('File CSV vuoto o non valido.');
+        return;
+      }
+
+      const updates = {};
+      let count = 0;
+      const uid = userUid;
+
+      for (let i = 1; i < lines.length; i++) {
+        let line = lines[i];
+        if (line.startsWith('"') && line.endsWith('"')) {
+          line = line.substring(1, line.length - 1);
+        }
+        const cols = line.split('","');
+        if (cols.length < 10) continue;
+
+        const dateString = cols[0];
+        const datePart = dateString.split(' ')[0];
+        const parts = datePart.split('-');
+        if (parts.length < 3) continue;
+        const [month, day, year] = parts;
+        if (!year || !month || !day) continue;
+        const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+
+        const cleanNum = (str) => parseFloat((str || '').replace(/[^0-9.]/g, '')) || 0;
+
+        const bodyMetrics = {
+          weight: cleanNum(cols[1]),
+          bodyFat: cleanNum(cols[2]),
+          muscleMass: cleanNum(cols[3]),
+          water: cleanNum(cols[8]),
+          timestamp: Date.now()
+        };
+
+        if (uid) {
+          const path = `users/${uid}/tracker_data/trackerStorico_${formattedDate}/bodyMetrics`;
+          updates[path] = bodyMetrics;
+          count++;
+        }
+      }
+
+      if (count > 0 && uid) {
+        try {
+          await update(ref(db), updates);
+          alert(`✅ Importazione completata! ${count} misurazioni salvate nel database.`);
+        } catch (error) {
+          console.error('Errore importazione batch:', error);
+          alert('❌ Errore durante il salvataggio dei dati.');
+        }
+      } else if (count === 0) {
+        alert('Nessuna riga valida trovata nel CSV.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const calculateSmartTargets = () => {
@@ -4827,6 +4896,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </label>
                 ))}
               </div>
+            </div>
+
+            <div style={{ background: '#2c2c2c', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
+              <h3 style={{ margin: '0 0 10px 0', color: '#00e5ff' }}>3. Sincronizzazione Bilancia (CSV)</h3>
+              <p style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '15px', lineHeight: 1.4 }}>
+                Importa lo storico delle pesate dalla tua bilancia smart. Il sistema leggerà automaticamente Peso, Massa Grassa, Massa Muscolare e Idratazione, assegnandoli ai giorni corretti nel tuo diario.
+              </p>
+              <input type="file" accept=".csv" ref={csvInputRef} style={{ display: 'none' }} onChange={handleCSVUpload} />
+              <button
+                type="button"
+                onClick={() => csvInputRef.current?.click()}
+                style={{ width: '100%', padding: '12px', background: 'rgba(0, 229, 255, 0.1)', color: '#00e5ff', border: '1px dashed #00e5ff', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}
+              >
+                <span style={{ fontSize: '1.2rem' }}>📊</span> Carica File CSV Bilancia
+              </button>
             </div>
 
             <div style={{ display: 'flex', gap: '15px' }}>
