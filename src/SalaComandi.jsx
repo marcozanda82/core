@@ -1844,13 +1844,17 @@ export default function SalaComandi() {
       const energyAt20 = chartData[20]?.energy;
       const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
 
-      const systemInstruction = `Sei l'assistente nutrizionale di Core OS. Il tuo scopo è dialogare con l'utente in italiano.
+      const systemInstruction = `Sei l'assistente di CORE OS. Il tuo scopo è dialogare con l'utente in italiano.
 
-Se l'utente dice di aver mangiato qualcosa, NON generare subito il comando di inserimento. Cerca tra gli alimenti noti (usa il database fornito sotto) e rispondi TESTUALMENTE, ad esempio: "Ho trovato questi alimenti: [A], [B]. Quale preferisci? Oppure ne creo uno nuovo?" Solo quando l'utente CONFERMA esplicitamente l'alimento e la quantità, allora restituisci un JSON speciale {"action":"insert","food":{"desc":"nome","qta":grammi,"mealType":"pranzo"}} nascosto nel testo (su una riga, senza altro attorno); il sistema lo intercetterà. mealType: merenda1, pranzo, merenda2, cena, snack.
+Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino"), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
 
-Database alimenti noti (proponi alternative da qui): ${foodDbNames.length ? foodDbNames.join(', ') : 'nessuno'}.
+REGOLA MOLTIPLICATORE: Se l'utente indica quantità a pezzi (es. "3 gallette di riso", "2 uova"), stima il peso di UNA singola unità, moltiplicalo per la quantità, e inserisci il PESO TOTALE IN GRAMMI nel campo "weight" (es. 2 uova ≈ 120g, 3 gallette ≈ 30g totali). Un solo alimento = array con un elemento [{"name":"...", "weight": N, "mealType":"..."}].
 
-Contesto: Pagina attuale ${paginaAttuale}. Rischio stress serale ${energyAt20 != null && energyAt20 < 40 ? 'ALTO' : 'Basso'}. Per strategia: [STRATEGIA: colazione=400, pranzo=700, ...]. Allenamento confermato: [ALLENAMENTO: descrizione | kcal]. Rispondi in modo naturale e breve.`;
+Puoi anche proporre alternative dal database e chiedere conferma; alla conferma restituisci l'array JSON. In alternativa, per un singolo inserimento legacy, puoi usare {"action":"insert","food":{"desc":"nome","qta":grammi,"mealType":"pranzo"}}.
+
+Database alimenti noti: ${foodDbNames.length ? foodDbNames.join(', ') : 'nessuno'}.
+
+Contesto: Pagina ${paginaAttuale}. Rischio stress serale ${energyAt20 != null && energyAt20 < 40 ? 'ALTO' : 'Basso'}. [STRATEGIA: ...]. [ALLENAMENTO: desc | kcal]. Rispondi in modo naturale e breve.`;
 
       const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
       const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
@@ -1867,6 +1871,8 @@ Contesto: Pagina attuale ${paginaAttuale}. Rischio stress serale ${energyAt20 !=
       const responseText = await callGeminiAPIWithRotation(fullPrompt);
 
       let insertPayload = null;
+      let itemsArray = null;
+
       const insertStart = responseText.indexOf('{"action":"insert"');
       if (insertStart !== -1) {
         let depth = 0;
@@ -1883,21 +1889,45 @@ Contesto: Pagina attuale ${paginaAttuale}. Rischio stress serale ${energyAt20 !=
         } catch (_) {}
       }
 
-      if (insertPayload) {
-        const desc = insertPayload.desc || insertPayload.name || '';
-        const qta = Math.max(1, parseFloat(insertPayload.qta) || 100);
-        let mType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(insertPayload.mealType) ? insertPayload.mealType : predictMealType(getCurrentTimeRoundedTo15Min());
-        mType = getGhostMealType(mType, dailyLog);
-        const mealTime = typeof insertPayload.mealTime === 'number' ? insertPayload.mealTime : getCurrentTimeRoundedTo15Min();
-        const newItem = estraiDatiFoodDb(desc, qta, mType);
-        newItem.mealTime = mealTime;
-        const newLog = [newItem, ...(dailyLog || [])];
+      const arrayStart = responseText.indexOf('[');
+      if (itemsArray == null && arrayStart !== -1) {
+        let depth = 0;
+        let arrayEnd = arrayStart;
+        for (let i = arrayStart; i < responseText.length; i++) {
+          if (responseText[i] === '[' || responseText[i] === '{') depth++;
+          else if (responseText[i] === ']' || responseText[i] === '}') { depth--; if (depth === 0 && responseText[i] === ']') { arrayEnd = i; break; } }
+        }
+        try {
+          const parsed = JSON.parse(responseText.slice(arrayStart, arrayEnd + 1));
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(x => x && (x.name || x.desc) && (x.weight != null || x.qta != null))) {
+            itemsArray = parsed;
+          }
+        } catch (_) {}
+      }
+
+      const itemsToSave = itemsArray != null ? itemsArray : (insertPayload ? [insertPayload] : []);
+
+      if (itemsToSave.length > 0) {
+        let newLog = dailyLog || [];
+        const baseMealTime = getCurrentTimeRoundedTo15Min();
+        const predictedType = predictMealType(baseMealTime);
+        itemsToSave.forEach((item, idx) => {
+          const desc = item.desc || item.name || '';
+          if (!desc) return;
+          const qta = Math.max(1, parseFloat(item.weight ?? item.qta) || 100);
+          let mType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(item.mealType) ? item.mealType : predictedType;
+          mType = getGhostMealType(mType, newLog);
+          const mealTime = typeof item.mealTime === 'number' ? item.mealTime : baseMealTime;
+          const newItem = estraiDatiFoodDb(desc, qta, mType);
+          newItem.mealTime = mealTime;
+          newLog = [newItem, ...newLog];
+        });
         setDailyLog(newLog);
         syncDatiFirebase(newLog, manualNodes);
         setChatHistory(prev => {
           const next = [...prev];
           next.pop();
-          next.push({ sender: 'ai', text: 'Perfetto, ho inserito l\'alimento nel diario!' });
+          next.push({ sender: 'ai', text: itemsToSave.length > 1 ? `Perfetto, ho inserito ${itemsToSave.length} alimenti nel diario!` : 'Perfetto, ho inserito l\'alimento nel diario!' });
           return next;
         });
         return;
@@ -1938,6 +1968,18 @@ Contesto: Pagina attuale ${paginaAttuale}. Rischio stress serale ${energyAt20 !=
           else if (cleanText[i] === '}') { depth--; if (depth === 0) { stripEnd = i; break; } }
         }
         cleanText = (cleanText.slice(0, stripInsertStart) + cleanText.slice(stripEnd + 1)).trim();
+      }
+      if (itemsArray != null && itemsArray.length > 0) {
+        const arrStart = cleanText.indexOf('[');
+        if (arrStart !== -1) {
+          let depth = 0;
+          let arrEnd = arrStart;
+          for (let i = arrStart; i < cleanText.length; i++) {
+            if (cleanText[i] === '[' || cleanText[i] === '{') depth++;
+            else if (cleanText[i] === ']' || cleanText[i] === '}') { depth--; if (depth === 0 && cleanText[i] === ']') { arrEnd = i; break; } }
+          }
+          cleanText = (cleanText.slice(0, arrStart) + cleanText.slice(arrEnd + 1)).trim();
+        }
       }
       cleanText = cleanText.replace(/\[STRATEGIA:\s*[^\]]+\]/gi, '').replace(/\[ALLENAMENTO:\s*[^\]]+\]/gi, '').trim();
       if (!cleanText) cleanText = '✨ Operazione completata.';
@@ -2484,6 +2526,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       
       <style>
         {`
+          html, body {
+            touch-action: pan-x pan-y;
+            overscroll-behavior: none;
+          }
+          * { touch-action: manipulation; }
+
           /* Scrollbar nascosta per contenitori scorrevoli generici */
           .scrollbar-hide { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; -ms-overflow-style: none; }
           .scrollbar-hide::-webkit-scrollbar { display: none; }
@@ -3034,7 +3082,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(0,229,255,0.08)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Acqua">💧<span>Acqua</span></button>
             <button type="button" onClick={() => setIsDrawerOpen(true)} style={{ flex: '0 0 auto', width: '56px', height: '56px', padding: 0, fontSize: '1.4rem', fontWeight: 'bold', background: 'linear-gradient(180deg, #00e5ff 0%, #0097a7 100%)', border: '2px solid rgba(255,255,255,0.3)', borderRadius: '50%', color: '#000', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,229,255,0.4)' }} title="Menù">☰</button>
             <button type="button" onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(255,109,0,0.08)', border: '1px solid #ff6d00', borderRadius: '10px', color: '#ff6d00', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Attività">⚡<span>Attività</span></button>
-            <button type="button" onClick={() => setActiveAction('diario_giornaliero')} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(0,230,118,0.08)', border: '1px solid #00e676', borderRadius: '10px', color: '#00e676', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Diario">📓<span>Diario</span></button>
+            <button type="button" onClick={() => { setActiveAction('diario_giornaliero'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(0,230,118,0.08)', border: '1px solid #00e676', borderRadius: '10px', color: '#00e676', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Diario">📓<span>Diario</span></button>
           </div>
         </div>
       )}
