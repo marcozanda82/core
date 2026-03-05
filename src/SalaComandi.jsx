@@ -812,7 +812,7 @@ export default function SalaComandi() {
   const [activeKeyIndex, setActiveKeyIndex] = useState(0);
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [chatInput, setChatInput] = useState('');
-  const [chatImage, setChatImage] = useState(null);
+  const [chatImages, setChatImages] = useState([]);
   const chatFileInputRef = useRef(null);
   const [chatHistory, setChatHistory] = useState([
     { sender: 'ai', text: 'CORE OS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
@@ -2056,6 +2056,13 @@ export default function SalaComandi() {
     if (validKeys.length === 0) throw new Error("Nessuna API Key configurata.");
     const useChat = options?.systemInstruction != null && Array.isArray(options?.contents);
     let partsArray = [];
+    if (options?.images && Array.isArray(options.images)) {
+      options.images.forEach(img => {
+        const base64Data = (img || '').split(',')[1];
+        const mimeType = ((img || '').split(';')[0] || '').split(':')[1] || 'image/jpeg';
+        if (base64Data) partsArray.push({ inlineData: { mimeType, data: base64Data } });
+      });
+    }
     if (options?.image) {
       const base64Data = options.image.split(',')[1];
       const mimeType = (options.image.split(';')[0] || '').split(':')[1] || 'image/jpeg';
@@ -2102,7 +2109,7 @@ export default function SalaComandi() {
 
   const handleChatSubmit = async (optionalReply) => {
     const userMessage = (optionalReply != null && String(optionalReply).trim()) ? String(optionalReply).trim() : chatInput.trim();
-    if (!userMessage && !chatImage) return;
+    if (!userMessage && chatImages.length === 0) return;
 
     if (pendingAiBatch && userMessage) {
       const lowerMsg = userMessage.toLowerCase();
@@ -2174,7 +2181,8 @@ export default function SalaComandi() {
       }
     }
 
-    setChatHistory(prev => [...prev, { sender: 'user', text: userMessage || (chatImage ? '📷 Screenshot allegato' : '') }]);
+    const historyMessage = userMessage || (chatImages.length > 0 ? `📷 ${chatImages.length} immagine/i allegata/e` : '');
+    setChatHistory(prev => [...prev, { sender: 'user', text: historyMessage }]);
     if (optionalReply == null) setChatInput('');
     setChatHistory(prev => [...prev, { sender: 'ai', isTyping: true }]);
 
@@ -2233,12 +2241,13 @@ Se l'utente allega uno screenshot di un'app di tracciamento del sonno (es. Mi Fi
       };
       const filtered = recentHistory.filter(m => !isLocalError(m.text));
       const conversationLines = filtered.map(m => (m.sender === 'user' ? 'Utente: ' : 'Assistente: ') + (m.text || '').trim());
-      conversationLines.push('Utente: ' + (userMessage || (chatImage ? '[Allegato screenshot da analizzare]' : '')));
+      const apiMessage = userMessage || (chatImages.length > 0 ? `[Allegati ${chatImages.length} screenshot da analizzare]` : '');
+      conversationLines.push('Utente: ' + apiMessage);
       const conversationText = conversationLines.join('\n');
       const fullPrompt = dynamicSystemPrompt + '\n\n---\nConversazione (rispondi come Assistente all\'ultimo messaggio):\n' + conversationText;
 
-      const responseText = await callGeminiAPIWithRotation(fullPrompt, { image: chatImage || undefined });
-      setChatImage(null);
+      const responseText = await callGeminiAPIWithRotation(fullPrompt, { images: chatImages.length > 0 ? chatImages : undefined });
+      setChatImages([]);
 
       let insertPayload = null;
       let itemsArray = null;
@@ -3746,28 +3755,47 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 ))}
                 <div ref={chatEndRef} />
               </div>
-              {/* Anteprima immagine sopra l'input se presente */}
-              {chatImage && (
-                <div style={{ position: 'relative', display: 'inline-block', marginBottom: '10px', marginLeft: '10px' }}>
-                  <img src={chatImage} alt="Upload" style={{ height: '80px', borderRadius: '8px', border: '1px solid #444' }} />
-                  <button type="button" onClick={() => setChatImage(null)} style={{ position: 'absolute', top: '-5px', right: '-5px', background: '#ff4d4d', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontSize: '0.7rem' }}>✕</button>
+              {/* Anteprima Immagini Multiple */}
+              {chatImages.length > 0 && (
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', marginLeft: '10px', overflowX: 'auto' }}>
+                  {chatImages.map((imgSrc, index) => (
+                    <div key={index} style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }}>
+                      <img src={imgSrc} alt={`Upload ${index}`} style={{ height: '60px', borderRadius: '8px', border: '1px solid #444' }} />
+                      <button
+                        type="button"
+                        onClick={() => setChatImages(prev => prev.filter((_, i) => i !== index))}
+                        style={{ position: 'absolute', top: '-5px', right: '-5px', background: '#ff4d4d', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontSize: '0.7rem' }}
+                      >✕</button>
+                    </div>
+                  ))}
                 </div>
               )}
               <div className="chat-input-wrapper" style={{ marginTop: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 10px', border: '1px solid #333' }}>
-                <input type="file" accept="image/*" ref={chatFileInputRef} style={{ display: 'none' }} onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => setChatImage(reader.result);
-                    reader.readAsDataURL(file);
-                  }
-                  e.target.value = '';
-                }} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  ref={chatFileInputRef}
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    if (files.length > 0) {
+                      Promise.all(files.map(file => new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.readAsDataURL(file);
+                      }))).then(newBase64Images => {
+                        setChatImages(prev => [...prev, ...newBase64Images]);
+                      });
+                      e.target.value = '';
+                    }
+                  }}
+                />
                 <button type="button" onClick={() => chatFileInputRef.current?.click()} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>📷</button>
                 <input
                   type="text"
                   className="chat-input"
-                  placeholder={chatImage ? "Aggiungi un commento all'immagine..." : "Scrivi qui a Core AI..."}
+                  placeholder={chatImages.length > 0 ? "Aggiungi un commento alle immagini..." : "Scrivi qui a Core AI..."}
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -3780,12 +3808,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 />
                 <button
                   type="button"
-                  className={`chat-send-btn ${(chatInput.trim() || chatImage) ? 'has-text' : ''}`}
+                  className={`chat-send-btn ${(chatInput.trim() || chatImages.length > 0) ? 'has-text' : ''}`}
                   onClick={() => {
                     handleChatSubmit();
                     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                   }}
-                  style={{ background: (chatInput.trim() || chatImage) ? '#b388ff' : '#fff', color: (chatInput.trim() || chatImage) ? '#fff' : '#000', border: 'none', width: 40, height: 40, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '1.1rem', flexShrink: 0 }}
+                  style={{ background: (chatInput.trim() || chatImages.length > 0) ? '#b388ff' : '#fff', color: (chatInput.trim() || chatImages.length > 0) ? '#fff' : '#000', border: 'none', width: 40, height: 40, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '1.1rem', flexShrink: 0 }}
                 >
                   ↑
                 </button>
