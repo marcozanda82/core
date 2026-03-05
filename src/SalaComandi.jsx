@@ -361,12 +361,20 @@ function generateCortisolCurve(dailyLog, manualNodes = []) {
     cortisolScore: 0
   }));
 
-  // 1. Base circadiana: alto al mattino (8:00), basso la sera (22:00)
+  // 1. Base circadiana: alto al mattino, basso la sera. Se c'è un log sonno con wakeTime, centra il picco sull'ora di risveglio.
+  const sleepEntry = (dailyLog || []).find(n => n.type === 'sleep' && typeof n.wakeTime === 'number');
+  const wakeCenter = sleepEntry != null ? sleepEntry.wakeTime : 8;
+  const peakStart = Math.max(0, wakeCenter - 2);
+  const peakEnd = Math.min(24, wakeCenter + 2);
+  const riseLen = Math.max(0.5, wakeCenter - peakStart);
+  const fallLen = Math.max(0.5, peakEnd - wakeCenter);
   timeline.forEach(point => {
     let base = 20;
-    if (point.time >= 6 && point.time <= 10) base = 20 + ((point.time - 6) / 4) * 60; // Picco mattutino (80)
-    else if (point.time > 10 && point.time <= 24) base = 80 - (((point.time - 10) / 14) * 70); // Discesa fino a 10
-    point.cortisolScore = Math.max(0, base);
+    if (point.time >= peakStart && point.time <= peakEnd) {
+      if (point.time <= wakeCenter) base = 20 + ((point.time - peakStart) / riseLen) * 60;
+      else base = 80 - (((point.time - wakeCenter) / fallLen) * 70);
+    } else if (point.time > peakEnd && point.time <= 24) base = 80 - (((point.time - peakEnd) / (24 - peakEnd)) * 70);
+    point.cortisolScore = Math.max(0, Math.min(100, base));
   });
 
   // 2. Impatto nodi manuali (lavoro e allenamento)
@@ -477,8 +485,21 @@ function denormalizeLogForFirebase(flatLog) {
   if (!flatLog || !Array.isArray(flatLog)) return [];
   const meals = {};
   const workouts = [];
-  
+  const sleeps = [];
+
   (flatLog || []).forEach(entry => {
+    if (entry.type === 'sleep') {
+      sleeps.push({
+        type: 'sleep',
+        id: entry.id,
+        wakeTime: entry.wakeTime,
+        hours: entry.hours,
+        deepMin: entry.deepMin,
+        remMin: entry.remMin,
+        hr: entry.hr
+      });
+      return;
+    }
     if (entry.type === 'workout' || entry.type === 'work') {
       const desc = entry.desc || entry.name || (entry.type === 'work' ? 'Lavoro' : 'Attività');
       const cal = entry.kcal ?? entry.cal ?? 0;
@@ -529,6 +550,7 @@ function denormalizeLogForFirebase(flatLog) {
     });
   });
   result.push(...workouts);
+  result.push(...sleeps);
   return result;
 }
 
@@ -790,6 +812,8 @@ export default function SalaComandi() {
   const [activeKeyIndex, setActiveKeyIndex] = useState(0);
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [chatInput, setChatInput] = useState('');
+  const [chatImage, setChatImage] = useState(null);
+  const chatFileInputRef = useRef(null);
   const [chatHistory, setChatHistory] = useState([
     { sender: 'ai', text: 'CORE OS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
   ]);
@@ -2031,14 +2055,21 @@ export default function SalaComandi() {
     const validKeys = apiKeys.filter(k => k.trim() !== '');
     if (validKeys.length === 0) throw new Error("Nessuna API Key configurata.");
     const useChat = options?.systemInstruction != null && Array.isArray(options?.contents);
+    let partsArray = [];
+    if (options?.image) {
+      const base64Data = options.image.split(',')[1];
+      const mimeType = (options.image.split(';')[0] || '').split(':')[1] || 'image/jpeg';
+      if (base64Data) partsArray.push({ inlineData: { mimeType, data: base64Data } });
+    }
+    partsArray.push({ text: promptText });
     const body = useChat
       ? {
           systemInstruction: { parts: [{ text: options.systemInstruction }] },
-          contents: options.contents,
+          contents: [...(options.contents || []), { role: 'user', parts: partsArray }],
           generationConfig: { temperature: 0.3 }
         }
       : {
-          contents: [{ role: 'user', parts: [{ text: promptText }] }],
+          contents: [{ role: 'user', parts: partsArray }],
           generationConfig: { temperature: 0.1 }
         };
     let attempt = 0;
@@ -2071,11 +2102,40 @@ export default function SalaComandi() {
 
   const handleChatSubmit = async (optionalReply) => {
     const userMessage = (optionalReply != null && String(optionalReply).trim()) ? String(optionalReply).trim() : chatInput.trim();
-    if (!userMessage) return;
+    if (!userMessage && !chatImage) return;
 
     if (pendingAiBatch && userMessage) {
       const lowerMsg = userMessage.toLowerCase();
-      if (lowerMsg.includes('conferm') || lowerMsg.includes('sì') || lowerMsg.includes('si ')) {
+      const isConfirm = lowerMsg.includes('conferm') || lowerMsg.includes('sì') || lowerMsg.includes('si ');
+      const isCancel = lowerMsg.includes('annulla') || lowerMsg.includes('no');
+
+      if (pendingAiBatch.type === 'sleep' && isConfirm && pendingAiBatch.data) {
+        const d = pendingAiBatch.data;
+        const sleepEntry = {
+          type: 'sleep',
+          id: `sleep_${Date.now()}`,
+          wakeTime: d.wakeTime,
+          hours: d.hours,
+          deepMin: d.deepMin,
+          remMin: d.remMin,
+          hr: d.hr
+        };
+        const nuovoLog = [...(dailyLog || []), sleepEntry];
+        setDailyLog(nuovoLog);
+        syncDatiFirebase(nuovoLog, manualNodes);
+        setPendingAiBatch(null);
+        setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Ho registrato i dati del sonno nel diario. La curva del cortisolo terrà conto dell\'ora di risveglio.' }]);
+        if (optionalReply == null) setChatInput('');
+        return;
+      }
+      if (pendingAiBatch.type === 'sleep' && isCancel) {
+        setPendingAiBatch(null);
+        setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Operazione annullata. Cosa vuoi fare ora?' }]);
+        if (optionalReply == null) setChatInput('');
+        return;
+      }
+
+      if (Array.isArray(pendingAiBatch) && isConfirm) {
         const baseMealTime = getCurrentTimeRoundedTo15Min();
         const predictedType = predictMealType(baseMealTime);
         const dominantMealType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(pendingAiBatch[0]?.mealType) ? pendingAiBatch[0].mealType : predictedType;
@@ -2114,7 +2174,7 @@ export default function SalaComandi() {
       }
     }
 
-    setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }]);
+    setChatHistory(prev => [...prev, { sender: 'user', text: userMessage || (chatImage ? '📷 Screenshot allegato' : '') }]);
     if (optionalReply == null) setChatInput('');
     setChatHistory(prev => [...prev, { sender: 'ai', isTyping: true }]);
 
@@ -2160,7 +2220,10 @@ LETTURA DEI GRAFICI ODIERNI:
 - Picco massimo Cortisolo oggi: ${Math.round(piccoCortisolo)}
 
 REGOLA PER SPIEGAZIONE GRAFICI:
-Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi livelli (es. "spiegami il grafico viola", "perché l'anabolismo è basso?"), usa i dati forniti per fargli un'analisi personalizzata. Spiega che il grafico viola (Cortisolo) indica lo stress nervoso (che sale con lavoro e allenamento), mentre la curva azzurra/verde (Sintesi proteica) indica il nutrimento muscolare. Sii un analista biochimico chiaro e diretto.`;
+Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi livelli (es. "spiegami il grafico viola", "perché l'anabolismo è basso?"), usa i dati forniti per fargli un'analisi personalizzata. Spiega che il grafico viola (Cortisolo) indica lo stress nervoso (che sale con lavoro e allenamento), mentre la curva azzurra/verde (Sintesi proteica) indica il nutrimento muscolare. Sii un analista biochimico chiaro e diretto.
+
+TRACCIAMENTO DEL SONNO E VISION:
+Se l'utente allega uno screenshot di un'app di tracciamento del sonno (es. Mi Fitness) o scrive i dati testualmente, estrai questi valori chiave: Ora di risveglio (es. 06:18 diventa 6.3 in ore decimali), Ore totali di sonno (es. 6 ore e 34 min diventa 6.56), Tempo in fase Profonda in minuti (es. 2h 14m = 134), Tempo in fase REM in minuti, Frequenza cardiaca media (BPM). Rispondi con un breve riepilogo testuale ("Ho letto i dati: hai dormito 6h 34m, recupero profondo ottimo...") e includi un JSON strutturato su una riga: {"action": "log_sleep", "sleepData": {"wakeTime": 6.3, "hours": 6.56, "deepMin": 134, "remMin": 94, "hr": 56}}. Usa SEMPRE i quick_replies: {"quick_replies": ["Sì, confermo", "No, annulla"]} per la conferma prima del salvataggio.`;
 
       const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
       const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
@@ -2170,11 +2233,12 @@ Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi l
       };
       const filtered = recentHistory.filter(m => !isLocalError(m.text));
       const conversationLines = filtered.map(m => (m.sender === 'user' ? 'Utente: ' : 'Assistente: ') + (m.text || '').trim());
-      conversationLines.push('Utente: ' + userMessage);
+      conversationLines.push('Utente: ' + (userMessage || (chatImage ? '[Allegato screenshot da analizzare]' : '')));
       const conversationText = conversationLines.join('\n');
       const fullPrompt = dynamicSystemPrompt + '\n\n---\nConversazione (rispondi come Assistente all\'ultimo messaggio):\n' + conversationText;
 
-      const responseText = await callGeminiAPIWithRotation(fullPrompt);
+      const responseText = await callGeminiAPIWithRotation(fullPrompt, { image: chatImage || undefined });
+      setChatImage(null);
 
       let insertPayload = null;
       let itemsArray = null;
@@ -2209,6 +2273,48 @@ Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi l
             itemsArray = parsed;
           }
         } catch (_) {}
+      }
+
+      let sleepDataPayload = null;
+      const logSleepIdx = responseText.indexOf('"log_sleep"');
+      if (logSleepIdx === -1) {
+        const altIdx = responseText.indexOf('log_sleep');
+        if (altIdx !== -1) {
+          let objStart = responseText.lastIndexOf('{', altIdx);
+          if (objStart !== -1) {
+            let depth = 0;
+            let objEnd = objStart;
+            for (let i = objStart; i < responseText.length; i++) {
+              if (responseText[i] === '{') depth++;
+              else if (responseText[i] === '}') { depth--; if (depth === 0) { objEnd = i; break; } }
+            }
+            try {
+              const parsed = JSON.parse(responseText.slice(objStart, objEnd + 1));
+              if (parsed.action === 'log_sleep' && parsed.sleepData && typeof parsed.sleepData === 'object') {
+                sleepDataPayload = parsed.sleepData;
+              }
+            } catch (_) {}
+          }
+        }
+      } else {
+        let objStart = responseText.lastIndexOf('{', logSleepIdx);
+        if (objStart !== -1) {
+          let depth = 0;
+          let objEnd = objStart;
+          for (let i = objStart; i < responseText.length; i++) {
+            if (responseText[i] === '{') depth++;
+            else if (responseText[i] === '}') { depth--; if (depth === 0) { objEnd = i; break; } }
+          }
+          try {
+            const parsed = JSON.parse(responseText.slice(objStart, objEnd + 1));
+            if (parsed.action === 'log_sleep' && parsed.sleepData && typeof parsed.sleepData === 'object') {
+              sleepDataPayload = parsed.sleepData;
+            }
+          } catch (_) {}
+        }
+      }
+      if (sleepDataPayload) {
+        setPendingAiBatch({ type: 'sleep', data: sleepDataPayload });
       }
 
       const itemsToSave = itemsArray != null ? itemsArray : (insertPayload ? [insertPayload] : []);
@@ -2296,6 +2402,20 @@ Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi l
             else if (cleanText[i] === ']' || cleanText[i] === '}') { depth--; if (depth === 0 && cleanText[i] === ']') { arrEnd = i; break; } }
           }
           cleanText = (cleanText.slice(0, arrStart) + cleanText.slice(arrEnd + 1)).trim();
+        }
+      }
+      if (sleepDataPayload) {
+        const lsIdx = cleanText.indexOf('"log_sleep"');
+        const lsAlt = cleanText.indexOf('log_sleep');
+        const idx = lsIdx !== -1 ? cleanText.lastIndexOf('{', lsIdx) : (lsAlt !== -1 ? cleanText.lastIndexOf('{', lsAlt) : -1);
+        if (idx !== -1) {
+          let depth = 0;
+          let end = idx;
+          for (let i = idx; i < cleanText.length; i++) {
+            if (cleanText[i] === '{') depth++;
+            else if (cleanText[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+          }
+          cleanText = (cleanText.slice(0, idx) + cleanText.slice(end + 1)).trim();
         }
       }
       cleanText = cleanText.replace(/\[STRATEGIA:\s*[^\]]+\]/gi, '').replace(/\[ALLENAMENTO:\s*[^\]]+\]/gi, '').trim();
@@ -3626,12 +3746,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 ))}
                 <div ref={chatEndRef} />
               </div>
-              {/* Vero Input AI Spostato Qui Sotto i Messaggi */}
-              <div className="chat-input-wrapper" style={{ marginTop: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 20px', border: '1px solid #333' }}>
+              {/* Anteprima immagine sopra l'input se presente */}
+              {chatImage && (
+                <div style={{ position: 'relative', display: 'inline-block', marginBottom: '10px', marginLeft: '10px' }}>
+                  <img src={chatImage} alt="Upload" style={{ height: '80px', borderRadius: '8px', border: '1px solid #444' }} />
+                  <button type="button" onClick={() => setChatImage(null)} style={{ position: 'absolute', top: '-5px', right: '-5px', background: '#ff4d4d', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontSize: '0.7rem' }}>✕</button>
+                </div>
+              )}
+              <div className="chat-input-wrapper" style={{ marginTop: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 10px', border: '1px solid #333' }}>
+                <input type="file" accept="image/*" ref={chatFileInputRef} style={{ display: 'none' }} onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => setChatImage(reader.result);
+                    reader.readAsDataURL(file);
+                  }
+                  e.target.value = '';
+                }} />
+                <button type="button" onClick={() => chatFileInputRef.current?.click()} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>📷</button>
                 <input
                   type="text"
                   className="chat-input"
-                  placeholder="Scrivi qui a Core AI..."
+                  placeholder={chatImage ? "Aggiungi un commento all'immagine..." : "Scrivi qui a Core AI..."}
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -3644,12 +3780,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 />
                 <button
                   type="button"
-                  className={`chat-send-btn ${chatInput.trim() ? 'has-text' : ''}`}
+                  className={`chat-send-btn ${(chatInput.trim() || chatImage) ? 'has-text' : ''}`}
                   onClick={() => {
                     handleChatSubmit();
                     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                   }}
-                  style={{ background: chatInput.trim() ? '#b388ff' : '#fff', color: chatInput.trim() ? '#fff' : '#000', border: 'none', width: 40, height: 40, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '1.1rem', flexShrink: 0 }}
+                  style={{ background: (chatInput.trim() || chatImage) ? '#b388ff' : '#fff', color: (chatInput.trim() || chatImage) ? '#fff' : '#000', border: 'none', width: 40, height: 40, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '1.1rem', flexShrink: 0 }}
                 >
                   ↑
                 </button>
