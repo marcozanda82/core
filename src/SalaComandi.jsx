@@ -352,6 +352,53 @@ function generateAnabolicCurve(dailyLog) {
 }
 
 /**
+ * Curva del cortisolo 0-24h (slot ogni 0.5h). Base circadiana (alto al mattino, basso la sera)
+ * più picchi da lavoro (work) e allenamento (workout).
+ */
+function generateCortisolCurve(dailyLog, manualNodes = []) {
+  const timeline = Array.from({ length: 49 }, (_, i) => ({
+    time: i * 0.5,
+    cortisolScore: 0
+  }));
+
+  // 1. Base circadiana: alto al mattino (8:00), basso la sera (22:00)
+  timeline.forEach(point => {
+    let base = 20;
+    if (point.time >= 6 && point.time <= 10) base = 20 + ((point.time - 6) / 4) * 60; // Picco mattutino (80)
+    else if (point.time > 10 && point.time <= 24) base = 80 - (((point.time - 10) / 14) * 70); // Discesa fino a 10
+    point.cortisolScore = Math.max(0, base);
+  });
+
+  // 2. Impatto nodi manuali (lavoro e allenamento)
+  const stressEvents = [...(dailyLog || []), ...(manualNodes || [])].filter(n => n.type === 'work' || n.type === 'workout');
+
+  stressEvents.forEach(event => {
+    const start = event.time ?? event.mealTime ?? 0;
+    const end = event.end ?? (start + (event.duration ?? 1));
+    const isWorkout = event.type === 'workout';
+
+    timeline.forEach(point => {
+      if (point.time >= start && point.time <= end + (isWorkout ? 3 : 1)) {
+        const timeAfterStart = point.time - start;
+        let stressSpike = 0;
+
+        if (isWorkout) {
+          if (point.time <= end) stressSpike = (timeAfterStart / Math.max(0.01, end - start)) * 40;
+          else stressSpike = 40 - (((point.time - end) / 3) * 40);
+        } else {
+          if (point.time <= end) stressSpike = 20;
+          else stressSpike = 20 - (((point.time - end) / 1) * 20);
+        }
+
+        point.cortisolScore = Math.min(100, point.cortisolScore + stressSpike);
+      }
+    });
+  });
+
+  return timeline;
+}
+
+/**
  * Semaforo allenamento: stato in base a curva anabolica e pasto recente.
  */
 function getWorkoutTrafficLight(currentTime, anabolicCurve, dailyLog) {
@@ -1999,7 +2046,11 @@ export default function SalaComandi() {
       const energyAt20 = chartData[20]?.energy;
       const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
 
-      const systemInstruction = `Sei l'assistente di CORE OS. Il tuo scopo è dialogare con l'utente in italiano.
+      const currentDecimalTime = new Date().getHours() + (new Date().getMinutes() / 60);
+      const roundedTime = Math.round(currentDecimalTime * 2) / 2;
+      const currentCortisolScore = cortisolCurve?.find(c => c.time === roundedTime)?.cortisolScore ?? 0;
+
+      const baseSystemPrompt = `Sei l'assistente di CORE OS. Il tuo scopo è dialogare con l'utente in italiano.
 
 Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino"), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
 
@@ -2013,6 +2064,15 @@ Contesto: Pagina ${paginaAttuale}. Rischio stress serale ${energyAt20 != null &&
 
 Se fai una domanda all'utente o proponi un'azione, puoi suggerire delle risposte rapide. Includi nel testo della tua risposta un blocco JSON nascosto con questo formato esatto: {"quick_replies": ["Si, confermo", "Modifica quantità", "No, annulla"]}. Il blocco JSON deve stare su una riga separata alla fine del messaggio.`;
 
+      const dynamicSystemPrompt = `${baseSystemPrompt}
+
+DATI BIOCHIMICI IN TEMPO REALE DELL'UTENTE:
+- Ora locale: ${new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+- Livello di Cortisolo stimato (0-100): ${Math.round(currentCortisolScore)}
+
+REGOLA BIOCHIMICA FONDAMENTALE (RECUPERO NERVOSO):
+Se l'utente chiede consigli per un pasto (in particolar modo la cena) o valuta opzioni alimentari, devi analizzare il livello di Cortisolo. Se il cortisolo è medio-alto in orario serale, è un segnale di allarme per il sistema nervoso. In questo caso, DEVI prioritizzare suggerimenti nutrizionali calmanti: proponi fonti di carboidrati complessi (che aiutano ad abbassare il cortisolo e favoriscono il sonno), alimenti ricchi di magnesio, omega 3 o triptofano. Evita di proporre pasti serali composti solo da proteine magre se lo stress è alto. Adatta il tuo tono di voce per essere rassicurante e focalizzato sul recupero.`;
+
       const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
       const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
       const isLocalError = (text) => {
@@ -2023,7 +2083,7 @@ Se fai una domanda all'utente o proponi un'azione, puoi suggerire delle risposte
       const conversationLines = filtered.map(m => (m.sender === 'user' ? 'Utente: ' : 'Assistente: ') + (m.text || '').trim());
       conversationLines.push('Utente: ' + userText);
       const conversationText = conversationLines.join('\n');
-      const fullPrompt = systemInstruction + '\n\n---\nConversazione (rispondi come Assistente all\'ultimo messaggio):\n' + conversationText;
+      const fullPrompt = dynamicSystemPrompt + '\n\n---\nConversazione (rispondi come Assistente all\'ultimo messaggio):\n' + conversationText;
 
       const responseText = await callGeminiAPIWithRotation(fullPrompt);
 
@@ -2512,11 +2572,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const hasDigestionRisk = energyChartResult?.hasDigestionRisk ?? false;
 
   const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
+  const cortisolCurve = useMemo(() => generateCortisolCurve(dailyLog, manualNodes), [dailyLog, manualNodes]);
   const getAnabolicAtTime = (curve, t) => {
     const i = t * 2;
     const idx = Math.min(Math.floor(i), 48);
     const pt = curve[idx];
     return pt ? pt.anabolicScore : 0;
+  };
+  const getCortisolAtTime = (curve, t) => {
+    const i = t * 2;
+    const idx = Math.min(Math.floor(i), 48);
+    const pt = curve[idx];
+    return pt ? pt.cortisolScore : 0;
   };
 
   const isViewingPastDate = currentTrackerDate !== getTodayString();
@@ -2566,6 +2633,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const renderDataWithSegments = renderData.map(d => ({
     ...d,
     anabolicScore: getAnabolicAtTime(anabolicCurve, d.time),
+    cortisolScore: getCortisolAtTime(cortisolCurve, d.time),
     energyPast: d.time <= displayTime ? d.energy : null,
     energyFuture: d.time >= displayTime ? d.energy : null,
     glicemiaPast: d.time <= displayTime ? d.glicemia : null,
@@ -3110,6 +3178,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <stop offset="5%" stopColor="#00e5ff" stopOpacity={0.6} />
                       <stop offset="95%" stopColor="#00e5ff" stopOpacity={0} />
                     </linearGradient>
+                    <linearGradient id="colorCortisol" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#9c27b0" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#9c27b0" stopOpacity={0} />
+                    </linearGradient>
                     <linearGradient id="colorDigestion" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#9333ea" stopOpacity={0.9} />
                       <stop offset="50%" stopColor="#a855f7" stopOpacity={0.5} />
@@ -3135,6 +3207,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} hide />
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
                   <Area type="monotone" dataKey="anabolicScore" fill="url(#colorAnabolic)" stroke="transparent" strokeWidth={0} fillOpacity={0.35} yAxisId="anabolic" isAnimationActive={!draggingNode} />
+                  <Area type="monotone" dataKey="cortisolScore" fill="url(#colorCortisol)" stroke="#9c27b0" strokeWidth={2} strokeDasharray="5 5" fillOpacity={0.3} yAxisId="anabolic" isAnimationActive={!draggingNode} />
                   {chartUnit === 'glicemia' && (
                     <>
                       <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
