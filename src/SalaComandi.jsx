@@ -305,6 +305,46 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 }
 
 /**
+ * Curva anabolica 0-24h (slot ogni 0.5h). Un pasto con >= 15g proteine genera un'onda di ~3.5h.
+ */
+function generateAnabolicCurve(dailyLog) {
+  const timeline = Array.from({ length: 49 }, (_, i) => ({
+    time: i * 0.5,
+    anabolicScore: 0
+  }));
+  const meals = (dailyLog || []).filter(item => item.type === 'food' && item.mealTime !== undefined);
+  meals.forEach(meal => {
+    const protein = Number(meal.prot) || 0;
+    if (protein >= 15) {
+      const startTime = meal.mealTime;
+      timeline.forEach(point => {
+        if (point.time >= startTime && point.time <= startTime + 3.5) {
+          const oreDalPasto = point.time - startTime;
+          let score = 0;
+          if (oreDalPasto <= 1.5) score = (oreDalPasto / 1.5) * 100;
+          else score = 100 - (((oreDalPasto - 1.5) / 2) * 100);
+          point.anabolicScore = Math.max(point.anabolicScore, score);
+        }
+      });
+    }
+  });
+  return timeline;
+}
+
+/**
+ * Semaforo allenamento: stato in base a curva anabolica e pasto recente.
+ */
+function getWorkoutTrafficLight(currentTime, anabolicCurve, dailyLog) {
+  const roundedTime = Math.round(currentTime * 2) / 2;
+  const currentStatus = anabolicCurve.find(p => p.time === roundedTime)?.anabolicScore ?? 0;
+  const pastoRecente = (dailyLog || []).find(item => item.type === 'food' && currentTime - item.mealTime >= 0 && currentTime - item.mealTime <= 1);
+  if (pastoRecente) return { color: '#ff9800', text: 'IN DIGESTIONE', msg: 'Attendi la fine della digestione prima di allenarti.' };
+  if (currentStatus > 50) return { color: '#00e5ff', text: 'FINESTRA ANABOLICA', msg: 'Momento perfetto per l\'allenamento.' };
+  if (currentStatus > 0) return { color: '#ffeb3b', text: 'SCORTE IN ESAURIMENTO', msg: 'Allenamento leggero o assumi uno spuntino.' };
+  return { color: '#f44336', text: 'CATABOLISMO / DIGIUNO', msg: 'Assumi proteine o amminoacidi prima di allenarti.' };
+}
+
+/**
  * Struttura tracker_data (da vecchio storico.html e index_vecchio.html):
  * Elenco piatto: chiavi trackerStorico_YYYY-MM-DD, nessun annidamento anno/mese.
  * Ogni valore: { data: string, log: Array, note?: string }.
@@ -2373,6 +2413,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const hasCortisolRisk = energyChartResult?.hasCortisolRisk ?? false;
   const hasDigestionRisk = energyChartResult?.hasDigestionRisk ?? false;
 
+  const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
+  const getAnabolicAtTime = (curve, t) => {
+    const i = t * 2;
+    const idx = Math.min(Math.floor(i), 48);
+    const pt = curve[idx];
+    return pt ? pt.anabolicScore : 0;
+  };
+
   const isViewingPastDate = currentTrackerDate !== getTodayString();
   const displayTime = isViewingPastDate ? 24 : currentTime;
   const currentH = Math.floor(displayTime);
@@ -2419,6 +2467,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const renderDataWithSegments = renderData.map(d => ({
     ...d,
+    anabolicScore: getAnabolicAtTime(anabolicCurve, d.time),
     energyPast: d.time <= displayTime ? d.energy : null,
     energyFuture: d.time >= displayTime ? d.energy : null,
     glicemiaPast: d.time <= displayTime ? d.glicemia : null,
@@ -2430,6 +2479,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     digestionePast: d.time <= displayTime ? d.digestione : null,
     digestioneFuture: d.time >= displayTime ? d.digestione : null
   }));
+
+  const trafficLight = getWorkoutTrafficLight(displayTime, anabolicCurve, dailyLog);
 
   // Calcolo Budget Dinamico (Base + Bruciate oggi)
   const burnedKcal = dailyLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
@@ -2878,6 +2929,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
             <span style={{ fontSize: '0.65rem', color: '#666' }}>🩸 {Math.round(gl)} · ⚙️ {Math.round(dig)}%</span>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', padding: '10px 15px', borderRadius: '12px', border: `1px solid ${trafficLight.color}`, marginTop: '8px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: trafficLight.color, boxShadow: `0 0 10px ${trafficLight.color}` }} />
+            <div>
+              <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: trafficLight.color }}>{trafficLight.text}</div>
+              <div style={{ fontSize: '0.65rem', color: '#aaa' }}>{trafficLight.msg}</div>
+            </div>
+          </div>
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="zoom-controls">
@@ -2950,6 +3008,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <stop offset="50%" stopColor="#fcd34d" stopOpacity="1" />
                       <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.8" />
                     </linearGradient>
+                    <linearGradient id="colorAnabolic" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#00e5ff" stopOpacity={0.6} />
+                      <stop offset="95%" stopColor="#00e5ff" stopOpacity={0} />
+                    </linearGradient>
                     <linearGradient id="colorDigestion" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#9333ea" stopOpacity={0.9} />
                       <stop offset="50%" stopColor="#a855f7" stopOpacity={0.5} />
@@ -2972,7 +3034,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </defs>
                   <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 13 }} />
                   <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
+                  <YAxis yAxisId="anabolic" orientation="right" domain={[0, 100]} hide />
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
+                  <Area type="monotone" dataKey="anabolicScore" fill="url(#colorAnabolic)" stroke="transparent" strokeWidth={0} fillOpacity={0.35} yAxisId="anabolic" isAnimationActive={!draggingNode} />
                   {chartUnit === 'glicemia' && (
                     <>
                       <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
