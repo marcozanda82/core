@@ -3424,6 +3424,22 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
                   <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} hide />
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
+                  {dailyLog.filter(item => item.type === 'sleep').map((sleepItem, index) => (
+                    <ReferenceLine
+                      key={`sleep-ref-${sleepItem.id ?? index}`}
+                      x={sleepItem.wakeTime}
+                      stroke="#4ba3e3"
+                      strokeDasharray="3 3"
+                      strokeWidth={1.5}
+                      label={{
+                        position: 'insideTopLeft',
+                        value: '🌅 Sveglia',
+                        fill: '#4ba3e3',
+                        fontSize: 11,
+                        fontWeight: 'bold'
+                      }}
+                    />
+                  ))}
                   <Area type="monotone" dataKey="anabolicScore" fill="url(#colorAnabolic)" stroke="transparent" strokeWidth={0} fillOpacity={0.35} yAxisId="anabolic" isAnimationActive={!draggingNode} />
                   <Area type="monotone" dataKey="cortisolScore" fill="url(#colorCortisol)" stroke="#9c27b0" strokeWidth={2} strokeDasharray="5 5" fillOpacity={0.3} yAxisId="anabolic" isAnimationActive={!draggingNode} />
                   {chartUnit === 'glicemia' && (
@@ -4251,6 +4267,54 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
             {diarioTab === 'storico' && (
               <div style={{ minHeight: '200px' }}>
+                {(dailyLog || []).filter(item => item.type === 'sleep').map(item => (
+                  <div
+                    key={item.id}
+                    style={{
+                      background: 'linear-gradient(145deg, #1a1c29, #11121a)',
+                      borderLeft: '4px solid #4ba3e3',
+                      borderRadius: '12px',
+                      padding: '15px',
+                      marginBottom: '10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: '#4ba3e3', fontWeight: 'bold', fontSize: '1.1rem' }}>🌙 Riposo Notturno</span>
+                      <span style={{ color: '#888', fontSize: '0.9rem' }}>
+                        Sveglia ore {Math.floor(item.wakeTime)}:{String(Math.round((item.wakeTime % 1) * 60)).padStart(2, '0')}
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '5px' }}>
+                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#888' }}>Durata Totale</div>
+                        <div style={{ color: '#fff', fontWeight: 'bold' }}>{item.hours != null ? `${Number(item.hours).toFixed(1)}h` : '--'}</div>
+                      </div>
+                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#888' }}>Battito Medio</div>
+                        <div style={{ color: '#ff4d4d', fontWeight: 'bold' }}>{item.hr != null ? `${item.hr} bpm` : '--'}</div>
+                      </div>
+                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#888' }}>Sonno Profondo</div>
+                        <div style={{ color: '#8c52ff', fontWeight: 'bold' }}>{item.deepMin != null ? `${Math.floor(item.deepMin / 60)}h ${item.deepMin % 60}m` : '--'}</div>
+                      </div>
+                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#888' }}>Fase REM</div>
+                        <div style={{ color: '#00e5ff', fontWeight: 'bold' }}>{item.remMin != null ? `${Math.floor(item.remMin / 60)}h ${item.remMin % 60}m` : '--'}</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeLogItem(item.id)}
+                      style={{ alignSelf: 'flex-end', background: 'transparent', border: 'none', color: '#ff4d4d', fontSize: '0.8rem', cursor: 'pointer', marginTop: '5px' }}
+                    >
+                      Rimuovi dati
+                    </button>
+                  </div>
+                ))}
                 {workoutsLog.length > 0 && (
                   <div style={{ marginBottom: '20px' }}>
                     <h4 style={{ fontSize: '0.7rem', color: '#ff6d00', letterSpacing: '1px', marginBottom: '8px' }}>OUTPUT ENERGETICO</h4>
@@ -4268,7 +4332,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     ))}
                   </div>
                 )}
-                {Object.keys(groupedFoods).length === 0 && workoutsLog.length === 0 ? (
+                {Object.keys(groupedFoods).length === 0 && workoutsLog.length === 0 && !(dailyLog || []).some(i => i.type === 'sleep') ? (
                   <p style={{ textAlign: 'center', color: '#444', fontSize: '0.8rem', fontStyle: 'italic' }}>Nessuna traccia registrata oggi.</p>
                 ) : (
                   Object.keys(groupedFoods).map(slotKey => {
