@@ -305,24 +305,44 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 }
 
 /**
- * Curva anabolica 0-24h (slot ogni 0.5h). Un pasto con >= 15g proteine genera un'onda di ~3.5h.
+ * Curva anabolica 0-24h (slot ogni 0.5h). Pasti con >= 15g proteine generano un'onda;
+ * se il pasto è nella finestra post-workout (fino a 3h dopo l'allenamento), l'onda è amplificata.
  */
 function generateAnabolicCurve(dailyLog) {
   const timeline = Array.from({ length: 49 }, (_, i) => ({
     time: i * 0.5,
     anabolicScore: 0
   }));
+
+  const workouts = (dailyLog || []).filter(item => item.type === 'workout' || item.type === 'work');
   const meals = (dailyLog || []).filter(item => item.type === 'food' && item.mealTime !== undefined);
+
   meals.forEach(meal => {
     const protein = Number(meal.prot) || 0;
     if (protein >= 15) {
       const startTime = meal.mealTime;
+
+      let isPostWorkout = false;
+      workouts.forEach(wo => {
+        const woEnd = (wo.time ?? 0) + (wo.duration ?? 1);
+        if (startTime >= woEnd - 0.5 && startTime <= woEnd + 3) {
+          isPostWorkout = true;
+        }
+      });
+
+      const peakValue = isPostWorkout ? 150 : 100;
+      const duration = isPostWorkout ? 5 : 3.5;
+      const timeToPeak = isPostWorkout ? 2 : 1.5;
+
       timeline.forEach(point => {
-        if (point.time >= startTime && point.time <= startTime + 3.5) {
+        if (point.time >= startTime && point.time <= startTime + duration) {
           const oreDalPasto = point.time - startTime;
           let score = 0;
-          if (oreDalPasto <= 1.5) score = (oreDalPasto / 1.5) * 100;
-          else score = 100 - (((oreDalPasto - 1.5) / 2) * 100);
+          if (oreDalPasto <= timeToPeak) {
+            score = (oreDalPasto / timeToPeak) * peakValue;
+          } else {
+            score = peakValue - (((oreDalPasto - timeToPeak) / (duration - timeToPeak)) * peakValue);
+          }
           point.anabolicScore = Math.max(point.anabolicScore, score);
         }
       });
@@ -512,8 +532,34 @@ export default function SalaComandi() {
   const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [activeAction, setActiveAction] = useState('home'); 
-  
+  const [activeAction, setActiveAction] = useState('home');
+  const [pendingAiBatch, setPendingAiBatch] = useState(null);
+
+  const isDrawerOpenRef = useRef(isDrawerOpen);
+  const activeActionRef = useRef(activeAction);
+  useEffect(() => { isDrawerOpenRef.current = isDrawerOpen; }, [isDrawerOpen]);
+  useEffect(() => { activeActionRef.current = activeAction; }, [activeAction]);
+
+  useEffect(() => {
+    window.history.pushState({ noExit: true }, '');
+    const handlePopState = () => {
+      if (isDrawerOpenRef.current) {
+        setIsDrawerOpen(false);
+        window.history.pushState({ noExit: true }, '');
+      } else if (activeActionRef.current && activeActionRef.current !== 'home') {
+        setActiveAction('home');
+        window.history.pushState({ noExit: true }, '');
+      } else {
+        const confirmExit = window.confirm('Vuoi uscire da CORE OS?');
+        if (!confirmExit) {
+          window.history.pushState({ noExit: true }, '');
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const [selectedHistoryDate, setSelectedHistoryDate] = useState('');
 
   // SOTTO-NAVIGAZIONE DIARIO
@@ -1898,12 +1944,53 @@ export default function SalaComandi() {
   };
 
   const handleChatSubmit = async (optionalReply) => {
-    const userText = (optionalReply != null && String(optionalReply).trim()) ? String(optionalReply).trim() : chatInput.trim();
-    if (!userText) return;
-    setChatHistory(prev => [...prev, { sender: 'user', text: userText }]);
+    const userMessage = (optionalReply != null && String(optionalReply).trim()) ? String(optionalReply).trim() : chatInput.trim();
+    if (!userMessage) return;
+
+    if (pendingAiBatch && userMessage) {
+      const lowerMsg = userMessage.toLowerCase();
+      if (lowerMsg.includes('conferm') || lowerMsg.includes('sì') || lowerMsg.includes('si ')) {
+        const baseMealTime = getCurrentTimeRoundedTo15Min();
+        const predictedType = predictMealType(baseMealTime);
+        const dominantMealType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(pendingAiBatch[0]?.mealType) ? pendingAiBatch[0].mealType : predictedType;
+        const sharedMealTime = typeof pendingAiBatch[0]?.mealTime === 'number' ? pendingAiBatch[0].mealTime : baseMealTime;
+        const batchGhostType = getGhostMealType(dominantMealType, dailyLog || []);
+        const batchId = `batch_${Date.now()}`;
+        const alimentiProcessati = pendingAiBatch
+          .map((item, index) => {
+            const desc = item.desc || item.name || '';
+            if (!desc) return null;
+            const qta = Math.max(1, parseFloat(item.weight ?? item.qta) || 100);
+            const datiNutrizionali = estraiDatiFoodDb(desc, qta, batchGhostType);
+            return {
+              ...datiNutrizionali,
+              id: datiNutrizionali.id || `ai_${batchId}_${index}`,
+              type: 'food',
+              mealType: batchGhostType,
+              mealTime: sharedMealTime,
+              batchId
+            };
+          })
+          .filter(Boolean);
+        const nuovoLog = [...alimentiProcessati, ...(dailyLog || [])];
+        setDailyLog(nuovoLog);
+        syncDatiFirebase(nuovoLog, manualNodes);
+        setPendingAiBatch(null);
+        setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Perfetto, ho salvato tutto nel diario! 📝' }]);
+        if (optionalReply == null) setChatInput('');
+        return;
+      }
+      if (lowerMsg.includes('annulla') || lowerMsg.includes('no')) {
+        setPendingAiBatch(null);
+        setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Operazione annullata. Cosa vuoi fare ora?' }]);
+        if (optionalReply == null) setChatInput('');
+        return;
+      }
+    }
+
+    setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }]);
     if (optionalReply == null) setChatInput('');
     setChatHistory(prev => [...prev, { sender: 'ai', isTyping: true }]);
-    // Messaggio utente e risposta AI vengono entrambi aggiunti a chatHistory (risposta quando si sostituisce il typing)
 
     try {
       const foodDbNames = Object.keys(foodDb || {}).map(k => foodDb[k]?.desc || foodDb[k]?.name || k).filter(Boolean).slice(0, 150);
@@ -3045,7 +3132,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </defs>
                   <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 13 }} />
                   <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
-                  <YAxis yAxisId="anabolic" orientation="right" domain={[0, 100]} hide />
+                  <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} hide />
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
                   <Area type="monotone" dataKey="anabolicScore" fill="url(#colorAnabolic)" stroke="transparent" strokeWidth={0} fillOpacity={0.35} yAxisId="anabolic" isAnimationActive={!draggingNode} />
                   {chartUnit === 'glicemia' && (
