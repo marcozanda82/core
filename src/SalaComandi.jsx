@@ -1147,41 +1147,55 @@ export default function SalaComandi() {
   // FUNZIONI CRITICHE CON RETROCOMPATIBILITÀ
   // ============================================================================
 
+  const fallbackPredict = (now) => {
+    if (now >= 5 && now < 10) return 'merenda1';
+    if (now >= 10 && now < 14.5) return 'pranzo';
+    if (now >= 14.5 && now < 18) return 'snack';
+    return 'cena';
+  };
+
   /**
-   * Predizione intelligente: cerca l'orario del pasto più vicino nelle abitudini di ieri.
-   * Se c'è storico ieri, restituisce il mealType del pasto il cui orario è più vicino a now; altrimenti fallback time-based.
+   * Predizione a 3 giorni: media degli orari degli ultimi 3 giorni per categoria, poi match sul più vicino a targetTime.
    */
   const predictMealType = (timeDecimal) => {
-    const now = typeof timeDecimal === 'number' && !Number.isNaN(timeDecimal) ? timeDecimal : getCurrentTimeRoundedTo15Min();
-    if (fullStorico) {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().slice(0, 10);
-      const node = fullStorico[TRACKER_STORICO_KEY(yesterdayStr)];
-      const log = node?.log ?? node?.dati?.log;
-      const normalized = normalizeLogData(log ?? []);
-      const timeByCanonical = {};
-      normalized.forEach(item => {
+    const targetTime = typeof timeDecimal === 'number' && !Number.isNaN(timeDecimal) ? timeDecimal : getCurrentTimeRoundedTo15Min();
+    if (!fullStorico) return fallbackPredict(targetTime);
+
+    const pastDays = Object.keys(fullStorico)
+      .filter(k => k.startsWith('trackerStorico_') && k !== TRACKER_STORICO_KEY(getTodayString()))
+      .sort((a, b) => b.localeCompare(a))
+      .slice(0, 3);
+    if (pastDays.length === 0) return fallbackPredict(targetTime);
+
+    const timeAcc = {};
+    const timeCount = {};
+    pastDays.forEach(dayKey => {
+      const mealTimesObj = fullStorico[dayKey]?.mealTimes || {};
+      const log = fullStorico[dayKey]?.log || [];
+      const flatLog = normalizeLogData(Array.isArray(log) ? log : Object.values(log));
+      flatLog.forEach(item => {
         if (item.type !== 'food') return;
-        const t = typeof item.mealTime === 'number' && !Number.isNaN(item.mealTime) ? item.mealTime : 12;
-        const canonical = toCanonicalMealType(item.mealType || 'cena');
-        if (timeByCanonical[canonical] === undefined || t < timeByCanonical[canonical]) timeByCanonical[canonical] = t;
-      });
-      const entries = Object.entries(timeByCanonical);
-      if (entries.length > 0) {
-        let best = entries[0];
-        let bestDist = Math.abs(entries[0][1] - now);
-        for (let i = 1; i < entries.length; i++) {
-          const dist = Math.abs(entries[i][1] - now);
-          if (dist < bestDist) { bestDist = dist; best = entries[i]; }
+        const canonical = toCanonicalMealType(item.mealType);
+        const t = mealTimesObj[item.mealType] ?? item.mealTime;
+        if (typeof t === 'number') {
+          timeAcc[canonical] = (timeAcc[canonical] || 0) + t;
+          timeCount[canonical] = (timeCount[canonical] || 0) + 1;
         }
-        return best[0];
+      });
+    });
+
+    let bestMatch = 'pranzo';
+    let minDiff = Infinity;
+    Object.keys(timeAcc).forEach(canonical => {
+      const avgTime = timeAcc[canonical] / timeCount[canonical];
+      const diff = Math.abs(avgTime - targetTime);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestMatch = canonical;
       }
-    }
-    if (now >= 5 && now < 10) return 'merenda1';
-    if (now >= 10 && now < 14) return 'pranzo';
-    if (now >= 14 && now < 17) return 'merenda2';
-    return 'cena';
+    });
+    if (minDiff > 3) return fallbackPredict(targetTime);
+    return bestMatch;
   };
 
   /**
@@ -1210,6 +1224,13 @@ export default function SalaComandi() {
     setActiveAction('pasto');
     setIsDrawerOpen(true);
   };
+
+  useEffect(() => {
+    if (activeAction === 'pasto' && !editingMealId && addedFoods.length === 0) {
+      const predicted = predictMealType(drawerMealTime);
+      if (predicted !== mealType) setMealType(predicted);
+    }
+  }, [drawerMealTime, activeAction, editingMealId, addedFoods.length]);
 
   const getCurrentTimeRoundedTo15Min = () => {
     const now = new Date();
@@ -2186,6 +2207,32 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     );
   };
 
+  const renderLiveProgressBar = (label, currentDaily, mealAddition, dailyTarget, unit, color) => {
+    const current = Number(currentDaily) || 0;
+    const addition = Number(mealAddition) || 0;
+    const target = Number(dailyTarget) || 1;
+    const currentPercent = Math.min((current / target) * 100, 100);
+    const additionPercent = Math.min((addition / target) * 100, 100 - currentPercent);
+    const isOverflow = current + addition > target;
+    return (
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px', fontWeight: 'bold' }}>
+          <span style={{ color: color }}>{label.toUpperCase()}</span>
+          <span>
+            {current.toFixed(1)} <span style={{ color, filter: 'brightness(1.5)' }}>+{addition.toFixed(1)}</span> / {target} {unit}
+          </span>
+        </div>
+        <div style={{ height: '12px', background: '#1a1a1a', borderRadius: '6px', overflow: 'hidden', display: 'flex', border: '1px solid #333' }}>
+          <div style={{ width: `${currentPercent}%`, background: '#444', transition: 'width 0.3s' }}></div>
+          {addition > 0 && (
+            <div className={`live-bar-addition ${isOverflow ? 'live-bar-overflow' : ''}`} style={{ width: `${Math.max(2, additionPercent)}%`, backgroundColor: isOverflow ? '#ff1744' : color, color: isOverflow ? '#ff1744' : color }}></div>
+          )}
+        </div>
+        {isOverflow && <div style={{ fontSize: '0.65rem', color: '#ff1744', marginTop: '4px', textAlign: 'right' }}>⚠️ Superato limite giornaliero</div>}
+      </div>
+    );
+  };
+
   // ========================================================
   // SCHERMATA PRINCIPALE VYTA — Curva ideale dinamica (GPS) — Hooks prima del bivio login
   // ========================================================
@@ -2565,6 +2612,26 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .telemetry-btn.active.cortisol { background: rgba(245, 158, 11, 0.15); border-color: #f59e0b; color: #f59e0b; }
           .pulse-alert-cortisol { animation: pulseCortisol 1.5s infinite; color: #f59e0b; border-color: #f59e0b; font-weight: bold; }
           @keyframes pulseCortisol { 0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); } 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); } }
+
+          /* Barre Live Telemetria */
+          @keyframes neonPulse {
+            0% { filter: brightness(1); opacity: 0.8; }
+            100% { filter: brightness(1.3); opacity: 1; box-shadow: 0 0 10px currentColor; }
+          }
+          .live-bar-addition {
+            animation: neonPulse 1s infinite alternate;
+            background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 5px, transparent 5px, transparent 10px);
+            border-left: 1px solid rgba(0,0,0,0.5);
+          }
+          .live-bar-overflow { background: #ff1744 !important; box-shadow: 0 0 10px #ff1744; }
+
+          /* Ottimizzazione Desktop per Costruttore */
+          @media (min-width: 768px) {
+            .drawer-content.open { height: 95vh; max-height: 95vh !important; display: flex; flex-direction: column; }
+            .pasto-container { display: flex; gap: 30px; height: 100%; }
+            .pasto-telemetry-panel { flex: 1; border-right: 1px solid #333; padding-right: 20px; overflow-y: auto; }
+            .pasto-builder-panel { flex: 1.5; overflow-y: auto; padding-left: 10px; }
+          }
         `}
       </style>
 
@@ -3067,7 +3134,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px' }}>
                 <span>0:00</span>
-                <input type="time" value={decimalToTimeStr(drawerWaterTime)} onChange={(e) => setDrawerWaterTime(parseTimeStrToDecimal(e.target.value))} style={{ width: '72px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
+                <input type="time" value={decimalToTimeStr(drawerWaterTime)} onChange={(e) => setDrawerWaterTime(parseTimeStrToDecimal(e.target.value))} style={{ width: '130px', minWidth: '110px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
                 <span>24:00</span>
               </div>
               <div ref={miniTimelineWaterRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
@@ -3139,9 +3206,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px', gap: '8px' }}>
                 <span>0:00</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input type="time" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '95px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
+                  <input type="time" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '130px', minWidth: '110px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
                   <span style={{ color: '#666' }}>–</span>
-                  <input type="time" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '95px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
+                  <input type="time" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '130px', minWidth: '110px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
                 </div>
                 <span>24:00</span>
               </div>
@@ -3245,7 +3312,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px' }}>
                 <span>0:00</span>
-                <input type="time" value={decimalToTimeStr(drawerMealTime)} onChange={(e) => { const v = parseTimeStrToDecimal(e.target.value); setDrawerMealTime(v); setDrawerMealTimeStr(decimalToTimeStr(v)); }} style={{ width: '95px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
+                <input type="time" value={decimalToTimeStr(drawerMealTime)} onChange={(e) => { const v = parseTimeStrToDecimal(e.target.value); setDrawerMealTime(v); setDrawerMealTimeStr(decimalToTimeStr(v)); }} style={{ width: '130px', minWidth: '110px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
                 <span>24:00</span>
               </div>
               <div ref={miniTimelinePastoRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
@@ -3271,9 +3338,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     <span style={{ fontSize: '0.5rem', fontWeight: 'bold', color: '#000' }}>{decimalToTimeStr(drawerMealTime)}</span>
                     <span style={{ lineHeight: 1 }}>🍎</span>
                   </div>
-                </div>
               </div>
             </div>
+            </div>
+            <div className="pasto-container">
+              <div className="pasto-telemetry-panel">
+                <h4 style={{ fontSize: '0.7rem', color: '#00e5ff', letterSpacing: '1px', marginBottom: '12px', textTransform: 'uppercase' }}>Telemetria live (oggi + pasto)</h4>
+                {renderLiveProgressBar('Kcal', totali?.kcal || 0, mealTotaliFull.kcal || 0, dynamicDailyKcal, 'kcal', '#00e5ff')}
+                {renderLiveProgressBar('Proteine', totali?.prot || 0, mealTotaliFull.prot || 0, userTargets?.prot ?? 150, 'g', '#b388ff')}
+                {renderLiveProgressBar('Carboidrati', totali?.carb || 0, mealTotaliFull.carb || 0, userTargets?.carb ?? 200, 'g', '#00e676')}
+                {renderLiveProgressBar('Grassi', totali?.fatTotal ?? totali?.fat ?? 0, mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, userTargets?.fatTotal ?? userTargets?.fat ?? 60, 'g', '#ffea00')}
+              </div>
+              <div className="pasto-builder-panel">
             <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: energyAt20Percent < 40 ? 'rgba(220, 38, 38, 0.12)' : 'rgba(34, 197, 94, 0.1)', borderColor: energyAt20Percent < 40 ? 'rgba(220, 38, 38, 0.4)' : 'rgba(34, 197, 94, 0.35)' }}>
               <div style={{ fontSize: '0.7rem', fontWeight: '600', color: energyAt20Percent < 40 ? '#f87171' : '#4ade80', marginBottom: '4px' }}>Analisi Bio-Feedback</div>
               {energyAt20Percent < 40 ? (
@@ -3457,6 +3533,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </>
             )}
             <button onClick={saveMealToDiary} style={{ width: '100%', padding: '18px', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', opacity: addedFoods.length > 0 ? 1 : 0.5 }}>SALVA NEL DIARIO</button>
+            </div>
+            </div>
           </div>
         )}
 
