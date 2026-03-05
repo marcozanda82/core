@@ -627,6 +627,8 @@ export default function SalaComandi() {
   });
   const timelineContainerRef = useRef(null);
   const chartScrollRef = useRef(null);
+  const initialPinchDistance = useRef(null);
+  const initialZoomLevel = useRef(1);
   const chartTouchTimerRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressMoveCleanupRef = useRef(null);
@@ -676,6 +678,32 @@ export default function SalaComandi() {
       return () => clearTimeout(timer);
     }
   }, [userProfile?.level, currentTrackerDate, zoomLevel, centerCurrentTime]);
+
+  const handleChartTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+      initialPinchDistance.current = dist;
+      initialZoomLevel.current = zoomLevel;
+    }
+  };
+  const handleChartTouchMove = (e) => {
+    if (e.touches.length === 2 && initialPinchDistance.current != null) {
+      e.preventDefault();
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const currentDist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+      const scale = currentDist / initialPinchDistance.current;
+      let newZoom = initialZoomLevel.current * scale;
+      newZoom = Math.max(0.45, Math.min(1.5, newZoom));
+      setZoomLevel(newZoom);
+    }
+  };
+  const handleChartTouchEnd = () => {
+    initialPinchDistance.current = null;
+  };
 
   // ============================================================================
   // COMPUTED CON RETROCOMPATIBILITÀ
@@ -1829,11 +1857,11 @@ export default function SalaComandi() {
     throw new Error("Cluster API esaurito.");
   };
 
-  const handleChatSubmit = async () => {
-    if (!chatInput.trim()) return;
-    const userText = chatInput.trim();
+  const handleChatSubmit = async (optionalReply) => {
+    const userText = (optionalReply != null && String(optionalReply).trim()) ? String(optionalReply).trim() : chatInput.trim();
+    if (!userText) return;
     setChatHistory(prev => [...prev, { sender: 'user', text: userText }]);
-    setChatInput('');
+    if (optionalReply == null) setChatInput('');
     setChatHistory(prev => [...prev, { sender: 'ai', isTyping: true }]);
     // Messaggio utente e risposta AI vengono entrambi aggiunti a chatHistory (risposta quando si sostituisce il typing)
 
@@ -1854,7 +1882,9 @@ Puoi anche proporre alternative dal database e chiedere conferma; alla conferma 
 
 Database alimenti noti: ${foodDbNames.length ? foodDbNames.join(', ') : 'nessuno'}.
 
-Contesto: Pagina ${paginaAttuale}. Rischio stress serale ${energyAt20 != null && energyAt20 < 40 ? 'ALTO' : 'Basso'}. [STRATEGIA: ...]. [ALLENAMENTO: desc | kcal]. Rispondi in modo naturale e breve.`;
+Contesto: Pagina ${paginaAttuale}. Rischio stress serale ${energyAt20 != null && energyAt20 < 40 ? 'ALTO' : 'Basso'}. [STRATEGIA: ...]. [ALLENAMENTO: desc | kcal]. Rispondi in modo naturale e breve.
+
+Se fai una domanda all'utente o proponi un'azione, puoi suggerire delle risposte rapide. Includi nel testo della tua risposta un blocco JSON nascosto con questo formato esatto: {"quick_replies": ["Si, confermo", "Modifica quantità", "No, annulla"]}. Il blocco JSON deve stare su una riga separata alla fine del messaggio.`;
 
       const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
       const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
@@ -1982,12 +2012,31 @@ Contesto: Pagina ${paginaAttuale}. Rischio stress serale ${energyAt20 != null &&
         }
       }
       cleanText = cleanText.replace(/\[STRATEGIA:\s*[^\]]+\]/gi, '').replace(/\[ALLENAMENTO:\s*[^\]]+\]/gi, '').trim();
+
+      let quickReplies = [];
+      const qrIdx = cleanText.indexOf('"quick_replies"');
+      if (qrIdx !== -1) {
+        const objStart = cleanText.lastIndexOf('{', qrIdx);
+        if (objStart !== -1) {
+          let depth = 0;
+          let objEnd = objStart;
+          for (let i = objStart; i < cleanText.length; i++) {
+            if (cleanText[i] === '{') depth++;
+            else if (cleanText[i] === '}') { depth--; if (depth === 0) { objEnd = i; break; } }
+          }
+          try {
+            const parsedQR = JSON.parse(cleanText.slice(objStart, objEnd + 1));
+            if (Array.isArray(parsedQR.quick_replies)) quickReplies = parsedQR.quick_replies;
+            cleanText = (cleanText.slice(0, objStart) + cleanText.slice(objEnd + 1)).trim();
+          } catch (_) {}
+        }
+      }
       if (!cleanText) cleanText = '✨ Operazione completata.';
 
       setChatHistory(prev => {
         const newHist = [...prev];
         newHist.pop();
-        newHist.push({ sender: 'ai', text: cleanText });
+        newHist.push({ sender: 'ai', text: cleanText, quickReplies: quickReplies.length > 0 ? quickReplies : undefined });
         return newHist;
       });
     } catch (e) {
@@ -2837,7 +2886,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
           </div>
-          <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
+          <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
             <div
               className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
               onTouchStart={() => { chartTouchTimerRef.current = setTimeout(() => setIsChartTooltipActive(true), 400); }}
@@ -3210,8 +3259,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {/* Cronologia Messaggi */}
               <div className="chat-messages" style={{ flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
                 {chatHistory.map((msg, idx) => (
-                  <div key={idx} className={`chat-bubble ${msg.sender === 'ai' ? 'bubble-ai' : 'bubble-user'}`}>
-                    {msg.isTyping ? (<div className="typing-indicator"><div className="dot"></div><div className="dot"></div><div className="dot"></div></div>) : (msg.text)}
+                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'ai' ? 'flex-start' : 'flex-end', width: '100%' }}>
+                    <div className={`chat-bubble ${msg.sender === 'ai' ? 'bubble-ai' : 'bubble-user'}`}>
+                      {msg.isTyping ? (<div className="typing-indicator"><div className="dot"></div><div className="dot"></div><div className="dot"></div></div>) : (msg.text)}
+                    </div>
+                    {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && (
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                        {msg.quickReplies.map((reply, rIdx) => (
+                          <button
+                            key={rIdx}
+                            type="button"
+                            onClick={() => { handleChatSubmit(reply); setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100); }}
+                            style={{ padding: '8px 15px', background: '#00e5ff', color: '#000', borderRadius: '20px', border: 'none', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                          >
+                            {reply}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div ref={chatEndRef} />
