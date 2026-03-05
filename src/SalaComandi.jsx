@@ -1978,26 +1978,37 @@ Se fai una domanda all'utente o proponi un'azione, puoi suggerire delle risposte
       const itemsToSave = itemsArray != null ? itemsArray : (insertPayload ? [insertPayload] : []);
 
       if (itemsToSave.length > 0) {
-        let newLog = dailyLog || [];
         const baseMealTime = getCurrentTimeRoundedTo15Min();
         const predictedType = predictMealType(baseMealTime);
-        itemsToSave.forEach((item, idx) => {
-          const desc = item.desc || item.name || '';
-          if (!desc) return;
-          const qta = Math.max(1, parseFloat(item.weight ?? item.qta) || 100);
-          let mType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(item.mealType) ? item.mealType : predictedType;
-          mType = getGhostMealType(mType, newLog);
-          const mealTime = typeof item.mealTime === 'number' ? item.mealTime : baseMealTime;
-          const newItem = estraiDatiFoodDb(desc, qta, mType);
-          newItem.mealTime = mealTime;
-          newLog = [newItem, ...newLog];
-        });
-        setDailyLog(newLog);
-        syncDatiFirebase(newLog, manualNodes);
+        const dominantMealType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(itemsToSave[0]?.mealType) ? itemsToSave[0].mealType : predictedType;
+        const sharedMealTime = typeof itemsToSave[0]?.mealTime === 'number' ? itemsToSave[0].mealTime : baseMealTime;
+        const batchGhostType = getGhostMealType(dominantMealType, dailyLog || []);
+        const batchId = `batch_${Date.now()}`;
+
+        const alimentiProcessati = itemsToSave
+          .map((item, index) => {
+            const desc = item.desc || item.name || '';
+            if (!desc) return null;
+            const qta = Math.max(1, parseFloat(item.weight ?? item.qta) || 100);
+            const datiNutrizionali = estraiDatiFoodDb(desc, qta, batchGhostType);
+            return {
+              ...datiNutrizionali,
+              id: datiNutrizionali.id || `ai_${batchId}_${index}`,
+              type: 'food',
+              mealType: batchGhostType,
+              mealTime: sharedMealTime,
+              batchId
+            };
+          })
+          .filter(Boolean);
+
+        const nuovoLog = [...alimentiProcessati, ...(dailyLog || [])];
+        setDailyLog(nuovoLog);
+        syncDatiFirebase(nuovoLog, manualNodes);
         setChatHistory(prev => {
           const next = [...prev];
           next.pop();
-          next.push({ sender: 'ai', text: itemsToSave.length > 1 ? `Perfetto, ho inserito ${itemsToSave.length} alimenti nel diario!` : 'Perfetto, ho inserito l\'alimento nel diario!' });
+          next.push({ sender: 'ai', text: alimentiProcessati.length > 1 ? `Perfetto, ho inserito ${alimentiProcessati.length} alimenti nel diario!` : 'Perfetto, ho inserito l\'alimento nel diario!' });
           return next;
         });
         return;
