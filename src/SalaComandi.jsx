@@ -472,7 +472,7 @@ export default function SalaComandi() {
   const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [activeAction, setActiveAction] = useState(null); 
+  const [activeAction, setActiveAction] = useState('home'); 
   
   const [selectedHistoryDate, setSelectedHistoryDate] = useState('');
 
@@ -658,6 +658,14 @@ export default function SalaComandi() {
     return () => clearTimeout(timer);
   }, [currentTime, zoomLevel, centerCurrentTime]);
 
+  // Forza la centratura del grafico quando si apre la vista Analisi (Pro)
+  useEffect(() => {
+    if (userProfile?.level === 'pro') {
+      const timer = setTimeout(() => centerCurrentTime(), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [userProfile?.level, currentTrackerDate, zoomLevel, centerCurrentTime]);
+
   // ============================================================================
   // COMPUTED CON RETROCOMPATIBILITÀ
   // ============================================================================
@@ -788,6 +796,7 @@ export default function SalaComandi() {
             setDailyLog(applyMealTimes(normalized, mealTimes));
           }
         });
+        setActiveAction('home');
         setIsInitialLoadComplete(true);
       });
 
@@ -1774,7 +1783,7 @@ export default function SalaComandi() {
       const energyResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
-      const paginaAttuale = !activeAction ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
+      const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
 
       const systemInstruction = `Sei l'assistente nutrizionale di Core OS. Il tuo scopo è dialogare con l'utente in italiano.
 
@@ -2770,7 +2779,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
                   {allNodesWithStack.map((node) => {
-                    const isNodeFocused = !activeAction || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout')) || (activeAction === 'acqua' && node.type === 'water');
+                    const isNodeFocused = (!activeAction || activeAction === 'home') || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout')) || (activeAction === 'acqua' && node.type === 'water');
                     const isWork = node.type === 'work';
                     const percent = (node.time / 24) * 100;
                     const startPercent = percent;
@@ -2896,7 +2905,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ width: '40px', height: '4px', backgroundColor: '#444', borderRadius: '2px', margin: '0 auto 20px auto' }}></div>
         
         {/* VISTA MENU PRINCIPALE */}
-        {!activeAction && (
+        {(!activeAction || activeAction === 'home') && (
           <div className="view-animate">
             <h2 style={{ fontSize: '0.7rem', textAlign: 'center', color: '#777', letterSpacing: '3px', marginBottom: '25px', fontWeight: 'normal' }}>MENU SISTEMA</h2>
             <div className="action-grid">
