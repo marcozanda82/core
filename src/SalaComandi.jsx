@@ -2568,7 +2568,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         `}
       </style>
 
-      <div className={`delete-overlay ${isReadyToDelete ? 'active' : ''}`}>
+      <div
+        className={`delete-overlay ${isReadyToDelete ? 'active' : ''}`}
+        style={{
+          opacity: isReadyToDelete ? 1 : 0,
+          visibility: isReadyToDelete ? 'visible' : 'hidden',
+          pointerEvents: 'none'
+        }}
+      >
         <div className="delete-icon">🗑️</div>
         <div className="delete-text">RILASCIA PER ELIMINARE</div>
       </div>
