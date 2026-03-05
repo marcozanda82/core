@@ -564,6 +564,85 @@ const PIANO_SETTIMANALE = {
   6: { cal: 2300, prot: 140 }
 };
 
+/** Tooltip personalizzato per la timeline: spiega sintesi proteica, cortisolo e altre metriche con range e cause. */
+function CustomChartTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
+  const ore = Math.floor(Number(label));
+  const minuti = Math.round((Number(label) - ore) * 60);
+  const orarioStr = `${ore.toString().padStart(2, '0')}:${minuti.toString().padStart(2, '0')}`;
+
+  return (
+    <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: '1px solid #333', padding: '15px', borderRadius: '12px', boxShadow: '0 5px 15px rgba(0,0,0,0.5)', maxWidth: '280px', backdropFilter: 'blur(5px)' }}>
+      <p style={{ margin: '0 0 10px 0', borderBottom: '1px solid #444', paddingBottom: '5px', fontWeight: 'bold', color: '#fff' }}>Ore {orarioStr}</p>
+      {payload.map((entry, index) => {
+        let explanation = '';
+        let cause = '';
+        let statusColor = entry.color;
+
+        if (entry.dataKey === 'anabolicScore') {
+          const val = Number(entry.value) || 0;
+          if (val > 50) {
+            explanation = 'Finestra Anabolica (Alta)';
+            cause = 'Stimolata da pasti proteici e/o allenamento recente.';
+            statusColor = '#00e5ff';
+          } else if (val > 10) {
+            explanation = 'Scorte in Esaurimento';
+            cause = 'Le proteine stanno venendo assimilate.';
+            statusColor = '#ff9800';
+          } else {
+            explanation = 'Catabolismo / Digiuno';
+            cause = 'Assenza di nutrienti anabolici nel sangue.';
+            statusColor = '#f44336';
+          }
+          return (
+            <div key={index} style={{ marginBottom: '10px' }}>
+              <div style={{ color: statusColor, fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: statusColor }} />
+                SINTESI PROTEICA: {Math.round(val)}%
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#ccc', marginTop: '2px' }}>{explanation}</div>
+              <div style={{ fontSize: '0.7rem', color: '#888', fontStyle: 'italic' }}>Causa: {cause}</div>
+            </div>
+          );
+        }
+
+        if (entry.dataKey === 'cortisolScore') {
+          const val = Number(entry.value) || 0;
+          if (val > 70) {
+            explanation = 'Stress Elevato / Allerta';
+            cause = 'Lavoro intenso, allenamento pesante o risveglio mattutino.';
+            statusColor = '#f44336';
+          } else if (val > 40) {
+            explanation = 'Attivazione Media';
+            cause = 'Normale attività quotidiana.';
+            statusColor = '#ffeb3b';
+          } else {
+            explanation = 'Rilassamento / Recupero';
+            cause = 'Disattivazione del sistema nervoso (Ideale la sera).';
+            statusColor = '#4caf50';
+          }
+          return (
+            <div key={index} style={{ marginBottom: '10px' }}>
+              <div style={{ color: '#9c27b0', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#9c27b0' }} />
+                CORTISOLO: {Math.round(val)}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#ccc', marginTop: '2px' }}>{explanation}</div>
+              <div style={{ fontSize: '0.7rem', color: '#888', fontStyle: 'italic' }}>Causa: {cause}</div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={index} style={{ fontSize: '0.8rem', color: entry.color }}>
+            {entry.name || entry.dataKey}: {entry.value != null && !Number.isNaN(Number(entry.value)) ? Math.round(Number(entry.value)) : entry.value}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function SalaComandi() {
   // AUTENTICAZIONE
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -2050,6 +2129,9 @@ export default function SalaComandi() {
       const roundedTime = Math.round(currentDecimalTime * 2) / 2;
       const currentCortisolScore = cortisolCurve?.find(c => c.time === roundedTime)?.cortisolScore ?? 0;
 
+      const piccoAnabolico = Math.max(0, ...(anabolicCurve?.map(c => c.anabolicScore) ?? [0]));
+      const piccoCortisolo = Math.max(0, ...(cortisolCurve?.map(c => c.cortisolScore) ?? [0]));
+
       const baseSystemPrompt = `Sei l'assistente di CORE OS. Il tuo scopo è dialogare con l'utente in italiano.
 
 Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino"), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
@@ -2071,7 +2153,14 @@ DATI BIOCHIMICI IN TEMPO REALE DELL'UTENTE:
 - Livello di Cortisolo stimato (0-100): ${Math.round(currentCortisolScore)}
 
 REGOLA BIOCHIMICA FONDAMENTALE (RECUPERO NERVOSO):
-Se l'utente chiede consigli per un pasto (in particolar modo la cena) o valuta opzioni alimentari, devi analizzare il livello di Cortisolo. Se il cortisolo è medio-alto in orario serale, è un segnale di allarme per il sistema nervoso. In questo caso, DEVI prioritizzare suggerimenti nutrizionali calmanti: proponi fonti di carboidrati complessi (che aiutano ad abbassare il cortisolo e favoriscono il sonno), alimenti ricchi di magnesio, omega 3 o triptofano. Evita di proporre pasti serali composti solo da proteine magre se lo stress è alto. Adatta il tuo tono di voce per essere rassicurante e focalizzato sul recupero.`;
+Se l'utente chiede consigli per un pasto (in particolar modo la cena) o valuta opzioni alimentari, devi analizzare il livello di Cortisolo. Se il cortisolo è medio-alto in orario serale, è un segnale di allarme per il sistema nervoso. In questo caso, DEVI prioritizzare suggerimenti nutrizionali calmanti: proponi fonti di carboidrati complessi (che aiutano ad abbassare il cortisolo e favoriscono il sonno), alimenti ricchi di magnesio, omega 3 o triptofano. Evita di proporre pasti serali composti solo da proteine magre se lo stress è alto. Adatta il tuo tono di voce per essere rassicurante e focalizzato sul recupero.
+
+LETTURA DEI GRAFICI ODIERNI:
+- Picco massimo Sintesi Proteica oggi: ${Math.round(piccoAnabolico)}%
+- Picco massimo Cortisolo oggi: ${Math.round(piccoCortisolo)}
+
+REGOLA PER SPIEGAZIONE GRAFICI:
+Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi livelli (es. "spiegami il grafico viola", "perché l'anabolismo è basso?"), usa i dati forniti per fargli un'analisi personalizzata. Spiega che il grafico viola (Cortisolo) indica lo stress nervoso (che sale con lavoro e allenamento), mentre la curva azzurra/verde (Sintesi proteica) indica il nutrimento muscolare. Sii un analista biochimico chiaro e diretto.`;
 
       const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
       const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
@@ -2081,7 +2170,7 @@ Se l'utente chiede consigli per un pasto (in particolar modo la cena) o valuta o
       };
       const filtered = recentHistory.filter(m => !isLocalError(m.text));
       const conversationLines = filtered.map(m => (m.sender === 'user' ? 'Utente: ' : 'Assistente: ') + (m.text || '').trim());
-      conversationLines.push('Utente: ' + userText);
+      conversationLines.push('Utente: ' + userMessage);
       const conversationText = conversationLines.join('\n');
       const fullPrompt = dynamicSystemPrompt + '\n\n---\nConversazione (rispondi come Assistente all\'ultimo messaggio):\n' + conversationText;
 
@@ -3215,7 +3304,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <ReferenceArea y1={140} y2={220} fill="#3b82f620" stroke="none" />
                     </>
                   )}
-                  <Tooltip labelFormatter={(label) => `${Math.floor(Number(label))}:00`} formatter={(value) => (value != null && !Number.isNaN(Number(value))) ? (chartUnit === 'kcal' ? `${Math.round(Number(value))} kcal` : chartUnit === 'glicemia' ? `${Math.round(Number(value))} mg/dL` : chartUnit === 'digestione' ? `${Math.round(Number(value))}%` : `${value}%`) : ''} contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', fontSize: '0.8rem' }} />
+                  <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1, strokeDasharray: '5 5' }} />
                   <Area type="monotone"
                     dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : (chartUnit === 'idratazione' ? 'idratazionePast' : chartUnit === 'cortisolo' ? 'cortisoloPast' : chartUnit === 'digestione' ? 'digestionePast' : 'energyPast')}
                     stroke={chartUnit === 'glicemia' ? 'url(#bloodFlow)' : (chartUnit === 'idratazione' ? 'url(#waterFlow)' : chartUnit === 'cortisolo' ? 'url(#cortisolFlow)' : chartUnit === 'digestione' ? 'url(#digestionFlow)' : 'url(#vitalFlow)')}
