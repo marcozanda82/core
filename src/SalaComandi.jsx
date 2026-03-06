@@ -3024,6 +3024,31 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         energyFuture: d.time >= displayTime ? scale(d.energy) : null
       }))
     : renderDataWithSegments;
+  const modalCalorieData = useMemo(() => {
+    const seg = renderData.map(d => ({
+      ...d,
+      anabolicScore: getAnabolicAtTime(anabolicCurve, d.time),
+      cortisolScore: getCortisolAtTime(cortisolCurve, d.time),
+      energyPast: d.time <= displayTime ? d.energy : null,
+      energyFuture: d.time >= displayTime ? d.energy : null,
+      glicemiaPast: d.time <= displayTime ? d.glicemia : null,
+      glicemiaFuture: d.time >= displayTime ? d.glicemia : null,
+      idratazionePast: d.time <= displayTime ? d.idratazione : null,
+      idratazioneFuture: d.time >= displayTime ? d.idratazione : null,
+      cortisoloPast: d.time <= displayTime ? d.cortisolo : null,
+      cortisoloFuture: d.time >= displayTime ? d.cortisolo : null,
+      digestionePast: d.time <= displayTime ? d.digestione : null,
+      digestioneFuture: d.time >= displayTime ? d.digestione : null
+    }));
+    const scaleFn = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
+    return seg.map(d => ({
+      ...d,
+      energy: scaleFn(d.energy),
+      idealEnergy: scaleFn(d.idealEnergy),
+      energyPast: d.time <= displayTime ? scaleFn(d.energy) : null,
+      energyFuture: d.time >= displayTime ? scaleFn(d.energy) : null
+    }));
+  }, [renderData, displayTime, targetKcalChart, anabolicCurve, cortisolCurve]);
   const finalDotY = chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'kcal' ? scale(dotY) : dotY))));
 
   const energyAt20Percent = energyAt20 ?? 50;
@@ -3171,9 +3196,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const chartCurrentHour = Math.round(currentTime);
 
   const chartExplanations = [
-    { id: 'calorie', title: '🔥 Andamento Calorico', description: "Mostra l'accumulo delle calorie ingerite (Carburante) dal risveglio fino a sera. A differenza dell'Energia, le calorie salgono a gradini ogni volta che consumi un pasto. Analizzare questa curva ti aiuta a capire se stai distribuendo i nutrienti in modo corretto durante la giornata o se stai concentrando troppo cibo in una singola fascia oraria." },
-    { id: 'energia', title: '⚡ Energia (SNC)', description: "Questo grafico traccia la tua Body Battery nell'arco delle 24h. L'energia del Sistema Nervoso Centrale si ricarica solo con il sonno. Durante il giorno si consuma fisiologicamente con la veglia, e subisce crolli verticali (scalini) in corrispondenza degli allenamenti. È il parametro vitale per capire quando il tuo corpo ha bisogno di riposo per evitare il sovrallenamento." }
+    { id: 'calorie', title: '🔥 Andamento Calorico', description: "Mostra l'accumulo delle calorie ingerite (Carburante) dal risveglio fino a sera. A differenza dell'Energia, le calorie salgono a gradini ogni volta che consumi un pasto. Analizzare questa curva ti aiuta a capire se stai distribuendo i nutrienti in modo corretto durante la giornata o se stai concentrando troppo cibo in una singola fascia oraria.", color: '#00e5ff' },
+    { id: 'energia', title: '⚡ Energia (SNC)', description: "Questo grafico traccia la tua Body Battery nell'arco delle 24h. L'energia del Sistema Nervoso Centrale si ricarica solo con il sonno. Durante il giorno si consuma fisiologicamente con la veglia, e subisce crolli verticali (scalini) in corrispondenza degli allenamenti. È il parametro vitale per capire quando il tuo corpo ha bisogno di riposo per evitare il sovrallenamento.", color: '#00e676' },
+    { id: 'glicemia', title: '🩸 Simulatore Glicemico', description: "Evidenzia il carico glicemico dei pasti e l'andamento stimato della glicemia nelle 24h. Le zone verde/giallo/blu indicano range di sicurezza, rischio e iperglicemia. Mantenere i picchi sotto controllo riduce i crash insulinici, la letargia post-prandiale e favorisce stabilità metabolica e composizione corporea.", color: '#ef4444' },
+    { id: 'idratazione', title: '💧 Idratazione', description: "Stima il livello di idratazione in base ad acqua registrata e contesto (sonno, allenamenti). Restare nella fascia ottimale migliora performance cognitiva e fisica, riduce il cortisolo e supporta il trasporto dei nutrienti. Un calo eccessivo impatta recupero e termoregolazione.", color: '#007aff' },
+    { id: 'cortisolo', title: '🧠 Cortisolo / Stress', description: "Modella la curva del cortisolo nelle 24h: fisiologicamente alto al risveglio e in calo verso sera. Picchi anomali o livelli elevati in orario serale segnalano stress, sovrallenamento o sonno insufficiente. Ottimizzare questa curva aiuta il recupero, il sonno e la composizione corporea.", color: '#f59e0b' },
+    { id: 'digestione', title: '⚙️ Digestione', description: "Stima il carico digestivo orario in base a pasti e tipologia degli alimenti. Evitare picchi eccessivi o pasti troppo ravvicinati riduce affaticamento, gonfiore e interferenze con il sonno. Una distribuzione equilibrata supporta l'assorbimento e il metabolismo.", color: '#9333ea' }
   ];
+  const chartUnitToModalIndex = (unit) => (unit === 'kcal' ? 0 : unit === 'glicemia' ? 2 : unit === 'idratazione' ? 3 : unit === 'cortisolo' ? 4 : unit === 'digestione' ? 5 : 0);
   // --- FINE ZONA SICURA ---
 
   const renderCustomizedLabel = (props) => {
@@ -3604,8 +3634,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               style={{ flexShrink: 0, width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
             >
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                {/* GRAFICO 1: Andamento Calorie/Macro (primo) */}
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 0 })} style={{ width: '100%', minHeight: 280, flex: '0 0 50%', cursor: 'pointer' }}>
+                {/* GRAFICO 1: Timeline (Calorie / Glicemia / Idratazione / Cortisolo / Digestione) - indice da chartUnit */}
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: chartUnitToModalIndex(chartUnit) })} style={{ width: '100%', minHeight: 280, flex: '0 0 50%', cursor: 'pointer' }}>
                 <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={finalChartData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
                   <defs>
@@ -5452,28 +5482,108 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <h3 style={{ margin: '0 0 10px 0', fontSize: '1rem', color: '#fff' }}>{chartExplanations[chartExplanationModal.activeIndex].title}</h3>
               <div style={{ width: '100%', height: 'calc(100% - 30px)' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  {chartExplanationModal.activeIndex === 0 ? (
-                    <ComposedChart data={finalChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                      <YAxis stroke="#666" fontSize={10} tickFormatter={(v) => (v != null && !Number.isNaN(Number(v))) ? Math.round(Number(v)) : v} />
-                      <Area type="monotone" dataKey="energy" stroke="#00e5ff" strokeWidth={3} fillOpacity={0.2} fill="#00e5ff" />
-                    </ComposedChart>
-                  ) : (
-                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
-                      <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
-                      <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={0.2} fill="#00e676" />
-                      <ReferenceLine x={chartWakeTime} stroke="#aaa" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Sveglia', fill: '#aaa', fontSize: 10 }} />
-                      <ReferenceLine x={chartCurrentHour} stroke="#00e5ff" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: 'Ora', fill: '#00e5ff', fontSize: 10 }} />
-                    </ComposedChart>
-                  )}
+                  {(() => {
+                    const idx = chartExplanationModal.activeIndex;
+                    if (idx === 0) {
+                      return (
+                        <ComposedChart data={modalCalorieData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                          <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
+                          <YAxis stroke="#666" fontSize={10} tickFormatter={(v) => (v != null && !Number.isNaN(Number(v))) ? Math.round(Number(v)) : v} />
+                          <Area type="monotone" dataKey="energy" stroke="#00e5ff" strokeWidth={3} fillOpacity={0.2} fill="#00e5ff" />
+                        </ComposedChart>
+                      );
+                    }
+                    if (idx === 1) {
+                      return (
+                        <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                          <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
+                          <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
+                          <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={0.2} fill="#00e676" />
+                          <ReferenceLine x={chartWakeTime} stroke="#aaa" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Sveglia', fill: '#aaa', fontSize: 10 }} />
+                          <ReferenceLine x={chartCurrentHour} stroke="#00e5ff" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: 'Ora', fill: '#00e5ff', fontSize: 10 }} />
+                        </ComposedChart>
+                      );
+                    }
+                    if (idx === 2) {
+                      return (
+                        <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="modalColorGlicemia" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#ef4444" stopOpacity={0.9} />
+                              <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                          <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
+                          <YAxis domain={[40, 220]} stroke="#666" fontSize={10} tickFormatter={(v) => v} />
+                          <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
+                          <ReferenceArea y1={85} y2={140} fill="#eab30820" stroke="none" />
+                          <ReferenceArea y1={140} y2={220} fill="#3b82f620" stroke="none" />
+                          <Area type="monotone" dataKey="glicemiaPast" stroke="#ef4444" strokeWidth={3} fillOpacity={0.2} fill="url(#modalColorGlicemia)" connectNulls={false} />
+                          <Area type="monotone" dataKey="glicemiaFuture" stroke="#7f1d1d" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
+                        </ComposedChart>
+                      );
+                    }
+                    if (idx === 3) {
+                      return (
+                        <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="modalColorWater" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#007aff" stopOpacity={0.9} />
+                              <stop offset="100%" stopColor="#007aff" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                          <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
+                          <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => `${v}%`} />
+                          <Area type="monotone" dataKey="idratazionePast" stroke="#007aff" strokeWidth={3} fillOpacity={0.2} fill="url(#modalColorWater)" connectNulls={false} />
+                          <Area type="monotone" dataKey="idratazioneFuture" stroke="#003a8c" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
+                        </ComposedChart>
+                      );
+                    }
+                    if (idx === 4) {
+                      return (
+                        <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="modalColorCortisol" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} />
+                              <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                          <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
+                          <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => `${v}%`} />
+                          <Area type="monotone" dataKey="cortisoloPast" stroke="#f59e0b" strokeWidth={3} fillOpacity={0.2} fill="url(#modalColorCortisol)" connectNulls={false} />
+                          <Area type="monotone" dataKey="cortisoloFuture" stroke="#78350f" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
+                        </ComposedChart>
+                      );
+                    }
+                    if (idx === 5) {
+                      return (
+                        <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="modalColorDigestion" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#9333ea" stopOpacity={0.9} />
+                              <stop offset="100%" stopColor="#9333ea" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                          <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
+                          <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => `${v}%`} />
+                          <Area type="monotone" dataKey="digestionePast" stroke="#9333ea" strokeWidth={3} fillOpacity={0.2} fill="url(#modalColorDigestion)" connectNulls={false} />
+                          <Area type="monotone" dataKey="digestioneFuture" stroke="#581c87" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
+                        </ComposedChart>
+                      );
+                    }
+                    return null;
+                  })()}
                 </ResponsiveContainer>
               </div>
             </div>
             <div>
-              <h2 style={{ fontSize: '1.5rem', marginBottom: '15px', color: chartExplanationModal.activeIndex === 0 ? '#00e5ff' : '#00e676' }}>Come leggerlo</h2>
+              <h2 style={{ fontSize: '1.5rem', marginBottom: '15px', color: (chartExplanations[chartExplanationModal.activeIndex]?.color) || '#fff' }}>Come leggerlo</h2>
               <p style={{ fontSize: '1.05rem', lineHeight: '1.6', color: '#ccc' }}>
                 {chartExplanations[chartExplanationModal.activeIndex].description}
               </p>
