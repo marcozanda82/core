@@ -3142,6 +3142,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     else if (currentBattery <= 50) { batteryColor = '#ffea00'; }
     return { level: Math.round(currentBattery), color: batteryColor, icon: batteryIcon };
   }, [dailyLog, currentTime]);
+
+  const energyChartData = useMemo(() => {
+    const sleepNode = (dailyLog || []).find(i => i.type === 'sleep');
+    const wakeTime = sleepNode?.wakeTime ?? 7.5;
+    const sleepHours = sleepNode?.hours ?? 8.0;
+    const startingBattery = Math.min(100, Math.max(0, 100 - ((8 - sleepHours) * 10)));
+    const data = [];
+    for (let h = 0; h <= 24; h++) {
+      let hoursAwake = h - wakeTime;
+      if (hoursAwake < 0) hoursAwake = 0;
+      const timeDrain = hoursAwake * 3.5;
+      const workoutCount = (dailyLog || []).filter(i => i.type === 'workout' && (i.mealTime ?? i.time ?? 0) <= h).length;
+      const workoutDrain = workoutCount * 15;
+      let currentBattery = startingBattery - timeDrain - workoutDrain;
+      currentBattery = Math.max(0, Math.min(100, currentBattery));
+      data.push({ ora: h, energia: Math.round(currentBattery) });
+    }
+    return data;
+  }, [dailyLog]);
   // --- FINE ZONA SICURA ---
 
   const renderCustomizedLabel = (props) => {
@@ -3581,6 +3600,38 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               style={{ flexShrink: 0, width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
             >
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80 }}>
+                {chartUnit === 'percent' ? (
+              <div style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
+                <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>⚡ Livello Energia (SNC)</span>
+                  <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
+                </h3>
+                <div style={{ width: '100%', height: '220px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
+                          <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
+                      <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
+                        itemStyle={{ color: '#00e676', fontWeight: 'bold' }}
+                        formatter={(value) => [`${value}%`, 'Energia Residua']}
+                        labelFormatter={(label) => `Ore ${label}:00`}
+                      />
+                      <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" />
+                      <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
+                      <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+                ) : (
                 <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={finalChartData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
                   <defs>
@@ -3725,6 +3776,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   }} />
                 </ComposedChart>
               </ResponsiveContainer>
+                )}
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
                   {allNodesWithStack.map((node) => {
