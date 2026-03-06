@@ -3145,7 +3145,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, name, fill }) => {
     if (name === 'Rimanenti' || value === 0) return null;
-    const radius = outerRadius + 14;
+    const radius = outerRadius + 18;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
     let icon = '🍎';
@@ -3499,8 +3499,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       </div>
 
-      {/* Barra Telemetria Rapida Premium */}
-      <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: 'max(12px, 1.5vh)', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'nowrap' }}>
+      {/* Barra Telemetria Rapida Premium - wrap attivato e centrato */}
+      <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(12px, 1.5vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
           <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676'}`, padding: '8px 12px', borderRadius: '20px', color: ((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676', boxShadow: `0 0 10px ${((Number(totali?.omega3) ?? 0) < 1) ? 'rgba(255,85,85,0.2)' : 'rgba(0,230,118,0.1)'}`, whiteSpace: 'nowrap' }}>
             {((Number(totali?.omega3) ?? 0) < 1) ? '🔴 Carenza Micro' : '🟢 Micro OK'}
@@ -3789,19 +3789,27 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
-          {/* Tachimetro circolare calorie - 285px (ridotto 5%) */}
-          <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
-            {/* Contenitore base più piccolo (min(280px, 72vw)) per lasciare margine esterno alle icone */}
-            <div style={{ position: 'relative', width: 'min(280px, 72vw)', height: 'min(280px, 72vw)', maxWidth: 'min(280px, 72vw)', maxHeight: 'min(280px, 72vw)', aspectRatio: '1', transform: 'scale(0.95)' }}>
-              <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: '50%', zIndex: 10, boxShadow: `inset 0 0 0 3px #0a0a0a, 0 0 30px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.2)' : 'rgba(255,77,77,0.4)'}`, transition: 'box-shadow 0.5s' }}>
+          {/* TACHIMETRO CIRCOLARE (Layout a Layer Multipli per FIX Z-Index e Margini) */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '340px', aspectRatio: '1', margin: '0 auto' }}>
+
+              {/* Layer 1: Glow Esterno e Sfondo Centrale (Dietro il grafico, Z-Index 5) */}
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '53%', height: '53%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}` }}>
+                <span style={{ color: '#888', fontSize: '0.8rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
+                <span style={{ fontSize: '2.4rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
+                <span style={{ fontSize: '0.8rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
+              </div>
+
+              {/* Layer 2: Grafico a Torta (Z-Index 10) */}
+              <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={mealPieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius="92%"
-                      outerRadius="100%"
+                      innerRadius="55%"
+                      outerRadius="70%"
                       paddingAngle={2}
                       dataKey="value"
                       stroke="none"
@@ -3812,44 +3820,26 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    {/* Rimuoviamo allowEscapeViewBox così Recharts lo tiene sempre dentro lo schermo */}
                     <Tooltip
                       content={<MealPieTooltip />}
+                      allowEscapeViewBox={{ x: true, y: true }}
                       wrapperStyle={{ zIndex: 1000, pointerEvents: 'none', outline: 'none' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ position: 'absolute', inset: '12px', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 20 }}>
-                  <span style={{ fontSize: 'clamp(3rem, 12vw, 5.25rem)', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00', lineHeight: 1.1 }}>{Math.round(totali?.kcal || 0)}</span>
-                  <span style={{ fontSize: '1.125rem', color: '#555', letterSpacing: '1px', marginTop: '4px' }}>kcal</span>
-                  <span style={{ fontSize: '1.05rem', color: '#444', marginTop: '2px' }}>obiettivo {Math.round(dynamicDailyKcal)}</span>
-                  <button
-                    type="button"
-                    onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
-                    style={{
-                      marginTop: '15px',
-                      padding: '8px 24px',
-                      fontSize: '1rem',
-                      fontWeight: 'bold',
-                      background: 'rgba(0, 229, 255, 0.1)',
-                      border: '1px solid #00e5ff',
-                      borderRadius: '25px',
-                      color: '#fff',
-                      cursor: 'pointer',
-                      letterSpacing: '1px',
-                      boxShadow: '0 0 15px rgba(0, 229, 255, 0.3), inset 0 0 10px rgba(0, 229, 255, 0.1)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    <span>📊</span> Analizza giornata
-                  </button>
-                </div>
-              </div>
+
+              {/* Layer 3: Bottone Analizza (Sopra il grafico, Z-Index 20) */}
+              <button
+                type="button"
+                onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
+                style={{ position: 'absolute', top: '70%', left: '50%', transform: 'translate(-50%, -50%)', background: 'linear-gradient(145deg, #111, #222)', border: '1px solid #444', color: '#00e5ff', padding: '6px 14px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer', zIndex: 20, boxShadow: '0 4px 10px rgba(0,0,0,0.4)' }}
+              >
+                <span>📊</span> Analizza giornata
+              </button>
+
             </div>
+          </div>
           {/* Macro griglia */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px 12px', width: '100%', maxWidth: '400px', margin: '0 auto', flexShrink: 0 }}>
             <div style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 10px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', textAlign: 'center' }}>
