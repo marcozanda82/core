@@ -9,7 +9,7 @@
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea } from 'recharts';
+import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell } from 'recharts';
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
@@ -661,6 +661,32 @@ function CustomChartTooltip({ active, payload, label }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Tooltip per il PieChart pasti (Home): mostra macro del pasto al passaggio/click. */
+function MealPieTooltip({ active, payload }) {
+  if (!active || !payload || !payload.length) return null;
+  const data = payload[0].payload;
+  if (data.name === 'Rimanenti') {
+    return (
+      <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: '1px dashed #555', padding: '10px', borderRadius: '12px', textAlign: 'center' }}>
+        <p style={{ margin: 0, color: '#aaa', fontSize: '0.85rem' }}>Calorie Rimanenti</p>
+        <p style={{ margin: 0, color: '#fff', fontWeight: 'bold', fontSize: '1.2rem' }}>{Math.round(data.value)} kcal</p>
+      </div>
+    );
+  }
+  const macros = data.macros || {};
+  return (
+    <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: `1px solid ${data.color}`, padding: '12px', borderRadius: '12px', boxShadow: `0 0 15px ${data.color}40`, minWidth: '150px' }}>
+      <p style={{ margin: '0 0 5px 0', color: data.color, fontWeight: 'bold', borderBottom: '1px solid #333', paddingBottom: '5px' }}>{data.name}</p>
+      <p style={{ margin: '0 0 8px 0', color: '#fff', fontWeight: 'bold', fontSize: '1.2rem' }}>{Math.round(data.value)} kcal</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+        <span style={{ color: '#ffb74d' }}>C: {Math.round(Number(macros.carb) || 0)}g</span>
+        <span style={{ color: '#64b5f6' }}>P: {Math.round(Number(macros.pro) || 0)}g</span>
+        <span style={{ color: '#81c784' }}>F: {Math.round(Number(macros.fat) || 0)}g</span>
+      </div>
     </div>
   );
 }
@@ -2939,6 +2965,49 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const burnedKcal = dailyLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
   const dynamicDailyKcal = (userTargets?.kcal ?? 2000) + burnedKcal;
 
+  const mealPieData = useMemo(() => {
+    const foodItems = (dailyLog || []).filter(item => item.type === 'food');
+    const colors = {
+      merenda1: '#ffd700',
+      colazione: '#ffd700',
+      pranzo: '#00e676',
+      merenda2: '#4ba3e3',
+      cena: '#ff4d4d',
+      spuntino: '#4ba3e3',
+      snack: '#4ba3e3'
+    };
+    const byMeal = {};
+    foodItems.forEach(item => {
+      const slot = item.mealType ? (item.mealType.split('_')[0] || 'snack') : 'snack';
+      if (!byMeal[slot]) byMeal[slot] = { kcal: 0, carb: 0, pro: 0, fat: 0 };
+      const kcal = Number(item.kcal ?? item.cal ?? 0) || 0;
+      byMeal[slot].kcal += kcal;
+      byMeal[slot].carb += Number(item.carb) || 0;
+      byMeal[slot].pro += Number(item.prot) || 0;
+      byMeal[slot].fat += Number(item.fatTotal ?? item.fat) || 0;
+    });
+    const data = Object.entries(byMeal).map(([slot, agg]) => ({
+      name: MEAL_LABELS_SAVE[slot] || (slot.charAt(0).toUpperCase() + slot.slice(1)),
+      value: agg.kcal,
+      macros: { carb: agg.carb, pro: agg.pro, fat: agg.fat },
+      color: colors[slot] || '#9c27b0'
+    })).filter(d => d.value > 0);
+    const currentTotal = data.reduce((s, d) => s + d.value, 0);
+    const targetKcal = dynamicDailyKcal || (userTargets?.kcal ?? 2000);
+    if (currentTotal < targetKcal) {
+      data.push({
+        name: 'Rimanenti',
+        value: targetKcal - currentTotal,
+        macros: null,
+        color: 'rgba(255, 255, 255, 0.05)'
+      });
+    }
+    if (data.length === 0) {
+      data.push({ name: 'Rimanenti', value: userTargets?.kcal ?? 2000, macros: null, color: 'rgba(255,255,255,0.05)' });
+    }
+    return data;
+  }, [dailyLog, userTargets?.kcal]);
+
   const targetKcalChart = dynamicDailyKcal;
   const scale = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
   const finalChartData = chartUnit === 'kcal'
@@ -3637,8 +3706,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           {/* Tachimetro circolare calorie - 285px (ridotto 5%) */}
           <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
             <div style={{ position: 'relative', width: 'min(285px, 80vw)', height: 'min(285px, 80vw)', maxWidth: 'min(285px, 80vw)', maxHeight: 'min(285px, 80vw)', aspectRatio: '1' }}>
-              <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `conic-gradient(#00e5ff 0deg, #00e5ff ${Math.min(360, ((totali?.kcal || 0) / Math.max(1, dynamicDailyKcal)) * 360)}deg, #1a1a1a ${Math.min(360, ((totali?.kcal || 0) / Math.max(1, dynamicDailyKcal)) * 360)}deg 360deg)`, padding: '12px', boxShadow: 'inset 0 0 0 3px #0a0a0a, 0 0 24px rgba(0,229,255,0.2)' }}>
-                <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111' }}>
+              <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: '50%', overflow: 'hidden', boxShadow: 'inset 0 0 0 3px #0a0a0a, 0 0 24px rgba(0,229,255,0.2)' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={mealPieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="92%"
+                      outerRadius="100%"
+                      paddingAngle={2}
+                      dataKey="value"
+                      stroke="none"
+                    >
+                      {mealPieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<MealPieTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ position: 'absolute', inset: '12px', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111' }}>
                   <span style={{ fontSize: 'clamp(3rem, 12vw, 5.25rem)', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00', lineHeight: 1.1 }}>{Math.round(totali?.kcal || 0)}</span>
                   <span style={{ fontSize: '1.125rem', color: '#555', letterSpacing: '1px', marginTop: '4px' }}>kcal</span>
                   <span style={{ fontSize: '1.05rem', color: '#444', marginTop: '2px' }}>obiettivo {Math.round(dynamicDailyKcal)}</span>
@@ -3668,8 +3757,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </div>
               </div>
             </div>
-          </div>
-          {/* Macro per esteso in griglia dedicata */}
+          {/* Macro griglia */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px 12px', width: '100%', maxWidth: '400px', margin: '0 auto', flexShrink: 0 }}>
             <div style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 10px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', textAlign: 'center' }}>
               <div style={{ fontSize: '0.7rem', color: '#b388ff', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '600' }}>Proteine</div>
