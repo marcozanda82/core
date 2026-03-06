@@ -711,6 +711,8 @@ export default function SalaComandi() {
   const [activeAction, setActiveAction] = useState('home');
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
+  const [chartExplanationModal, setChartExplanationModal] = useState({ isOpen: false, activeIndex: 0 });
+  const [touchStartX, setTouchStartX] = useState(null);
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -3161,6 +3163,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     }
     return data;
   }, [dailyLog]);
+
+  const chartExplanations = [
+    { id: 'energia', title: '⚡ Energia (SNC)', description: "Questo grafico traccia la tua Body Battery nell'arco delle 24h. L'energia del Sistema Nervoso Centrale si ricarica solo con il sonno. Durante il giorno si consuma fisiologicamente con la veglia, e subisce crolli verticali (scalini) in corrispondenza degli allenamenti. È il parametro vitale per capire quando il tuo corpo ha bisogno di riposo per evitare il sovrallenamento." },
+    { id: 'calorie', title: '🔥 Andamento Calorico', description: "Mostra l'accumulo delle calorie ingerite (Carburante) dal risveglio fino a sera. A differenza dell'Energia, le calorie salgono a gradini ogni volta che consumi un pasto. Analizzare questa curva ti aiuta a capire se stai distribuendo i nutrienti in modo corretto durante la giornata o se stai concentrando troppo cibo in una singola fascia oraria." }
+  ];
   // --- FINE ZONA SICURA ---
 
   const renderCustomizedLabel = (props) => {
@@ -3573,16 +3580,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="zoom-controls">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '30px' }}>
-              <button type="button" className="zoom-btn" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} title="Torna alla Home" style={{ borderRadius: '50%', width: '66px', height: '66px', fontSize: '1.8rem' }}>🏠</button>
-              <button
-                type="button"
-                onClick={() => alert("Spiegazione Grafico:\n\n- TACHIMETRO: Mostra l'assunzione calorica divisa per pasti. Tocca uno spicchio per i dettagli.\n- BARRA ENERGIA: Mostra l'energia del Sistema Nervoso. Si ricarica dormendo e si consuma con veglia e allenamenti.\n- DIGIUNO: Indica la tua attuale fase metabolica cellulare.")}
-                style={{ background: 'transparent', border: '1px solid #555', color: '#aaa', borderRadius: '50%', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', cursor: 'pointer' }}
-              >
-                ?
-              </button>
-            </div>
+            <button type="button" className="zoom-btn" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} title="Torna alla Home" style={{ marginBottom: '30px', borderRadius: '50%' }}>🏠</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
@@ -3601,7 +3599,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             >
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80 }}>
                 {chartUnit === 'percent' ? (
-              <div style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
+              <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 0 })} style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
                 <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
                   <span>⚡ Livello Energia (SNC)</span>
                   <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
@@ -3632,6 +3630,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </div>
               </div>
                 ) : (
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 1 })} style={{ width: '100%', height: '100%', cursor: 'pointer' }}>
                 <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={finalChartData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
                   <defs>
@@ -3776,6 +3775,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   }} />
                 </ComposedChart>
               </ResponsiveContainer>
+                </div>
                 )}
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
@@ -5415,6 +5415,65 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
 
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SPIEGAZIONE GRAFICI (Pop-up a schermo intero) */}
+      {chartExplanationModal.isOpen && (
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.95)', zIndex: 10000, display: 'flex', flexDirection: 'column', color: '#fff', backdropFilter: 'blur(10px)' }}
+          onTouchStart={(e) => setTouchStartX(e.touches[0].clientX)}
+          onTouchEnd={(e) => {
+            if (touchStartX == null) return;
+            const touchEndX = e.changedTouches[0].clientX;
+            const diff = touchStartX - touchEndX;
+            if (diff > 50 && chartExplanationModal.activeIndex < chartExplanations.length - 1) {
+              setChartExplanationModal(prev => ({ ...prev, activeIndex: prev.activeIndex + 1 }));
+            } else if (diff < -50 && chartExplanationModal.activeIndex > 0) {
+              setChartExplanationModal(prev => ({ ...prev, activeIndex: prev.activeIndex - 1 }));
+            }
+            setTouchStartX(null);
+          }}
+        >
+          <div style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333' }}>
+            <span style={{ fontSize: '0.9rem', color: '#888' }}>Grafico {chartExplanationModal.activeIndex + 1} di {chartExplanations.length}</span>
+            <button type="button" onClick={() => setChartExplanationModal({ isOpen: false, activeIndex: 0 })} style={{ background: '#333', border: 'none', color: '#fff', borderRadius: '50%', width: '36px', height: '36px', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>×</button>
+          </div>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
+            <div style={{ height: '250px', width: '100%', background: '#111', borderRadius: '15px', padding: '15px', border: '1px solid #222', marginBottom: '30px' }}>
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '1rem', color: '#fff' }}>{chartExplanations[chartExplanationModal.activeIndex].title}</h3>
+              <div style={{ width: '100%', height: 'calc(100% - 30px)' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  {chartExplanationModal.activeIndex === 0 ? (
+                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
+                      <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
+                      <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={0.2} fill="#00e676" />
+                    </ComposedChart>
+                  ) : (
+                    <ComposedChart data={finalChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                      <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
+                      <YAxis stroke="#666" fontSize={10} tickFormatter={(v) => (v != null && !Number.isNaN(Number(v))) ? Math.round(Number(v)) : v} />
+                      <Area type="monotone" dataKey="energy" stroke="#00e5ff" strokeWidth={3} fillOpacity={0.2} fill="#00e5ff" />
+                    </ComposedChart>
+                  )}
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.5rem', marginBottom: '15px', color: chartExplanationModal.activeIndex === 0 ? '#00e676' : '#00e5ff' }}>Come leggerlo</h2>
+              <p style={{ fontSize: '1.05rem', lineHeight: '1.6', color: '#ccc' }}>
+                {chartExplanations[chartExplanationModal.activeIndex].description}
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '20px', gap: '10px' }}>
+            {chartExplanations.map((_, idx) => (
+              <div key={idx} style={{ width: '8px', height: '8px', borderRadius: '50%', background: idx === chartExplanationModal.activeIndex ? '#fff' : '#444', transition: 'background 0.3s' }} />
+            ))}
           </div>
         </div>
       )}
