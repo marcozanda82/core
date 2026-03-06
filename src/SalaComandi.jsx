@@ -3143,6 +3143,78 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     );
   }
 
+  const fastingData = useMemo(() => {
+    let lastMealTime = null;
+    let lastMealDate = null;
+
+    const todayMeals = (dailyLog || [])
+      .filter(i => i.type === 'food' && typeof i.mealTime === 'number' && i.mealTime <= currentTime)
+      .sort((a, b) => b.mealTime - a.mealTime);
+
+    if (todayMeals.length > 0) {
+      lastMealTime = todayMeals[0].mealTime;
+      lastMealDate = 'today';
+    }
+
+    if (lastMealDate === null && fullHistory) {
+      const yesterdayObj = new Date(currentDateObj);
+      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+      const offset = yesterdayObj.getTimezoneOffset() * 60000;
+      const yesterdayStr = new Date(yesterdayObj.getTime() - offset).toISOString().slice(0, 10);
+      const yesterdayNode = fullHistory[TRACKER_STORICO_KEY(yesterdayStr)];
+
+      if (yesterdayNode && yesterdayNode.log) {
+        const yesterdayLog = normalizeLogData(Array.isArray(yesterdayNode.log) ? yesterdayNode.log : Object.values(yesterdayNode.log));
+        const yestMeals = yesterdayLog.filter(i => i.type === 'food');
+        let maxYestTime = -1;
+        yestMeals.forEach(m => {
+          const t = yesterdayNode.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
+          if (t > maxYestTime) maxYestTime = t;
+        });
+        if (maxYestTime >= 0) {
+          lastMealTime = maxYestTime;
+          lastMealDate = 'yesterday';
+        }
+      }
+    }
+
+    let hoursFasted = 0;
+    if (lastMealDate === 'today') {
+      hoursFasted = currentTime - lastMealTime;
+    } else if (lastMealDate === 'yesterday') {
+      hoursFasted = (24 - lastMealTime) + currentTime;
+    }
+
+    hoursFasted = Math.max(0, hoursFasted);
+    const h = Math.floor(hoursFasted);
+    const m = Math.round((hoursFasted - h) * 60);
+    const timeString = `${h}h ${m}m`;
+
+    let phaseName = 'Assorbimento';
+    let phaseColor = '#00e676';
+    let phaseDesc = 'Digestione e sintesi attiva.';
+    let progress = Math.min((hoursFasted / 4) * 100, 100);
+
+    if (hoursFasted >= 16) {
+      phaseName = 'Autofagia';
+      phaseColor = '#9c27b0';
+      phaseDesc = 'Rigenerazione cellulare profonda.';
+      progress = 100;
+    } else if (hoursFasted >= 12) {
+      phaseName = 'Chetosi / Lipolisi';
+      phaseColor = '#ffea00';
+      phaseDesc = 'Uso intensivo dei grassi corporei.';
+      progress = ((hoursFasted - 12) / 4) * 100;
+    } else if (hoursFasted >= 4) {
+      phaseName = 'Catabolismo / Digiuno';
+      phaseColor = '#00e5ff';
+      phaseDesc = 'Glicogeno in esaurimento, calo insulina.';
+      progress = ((hoursFasted - 4) / 8) * 100;
+    }
+
+    return { hoursFasted, timeString, phaseName, phaseColor, phaseDesc, progress };
+  }, [dailyLog, currentTime, fullHistory, currentDateObj]);
+
   return (
     <div style={{ backgroundColor: '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '80px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
@@ -3770,6 +3842,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 10px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', textAlign: 'center' }}>
               <div style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '600' }}>Grassi</div>
               <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.75rem', color: '#666', fontWeight: 'normal' }}> / {Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 60)} g</span></div>
+            </div>
+          </div>
+          {/* Widget Orologio Metabolico (Digiuno) */}
+          <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '12px', padding: '12px 15px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.2rem', filter: `drop-shadow(0 0 5px ${fastingData.phaseColor})` }}>⏳</span>
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Stato Metabolico</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: fastingData.phaseColor }}>{fastingData.phaseName}</div>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff', fontFamily: 'monospace' }}>{fastingData.timeString}</div>
+                <div style={{ fontSize: '0.65rem', color: '#666' }}>di digiuno</div>
+              </div>
+            </div>
+            <div style={{ height: '4px', background: '#222', borderRadius: '2px', overflow: 'hidden', marginTop: '2px' }}>
+              <div style={{ width: `${fastingData.progress}%`, height: '100%', background: fastingData.phaseColor, transition: 'width 1s ease-in-out', boxShadow: `0 0 10px ${fastingData.phaseColor}` }}></div>
+            </div>
+            <div style={{ fontSize: '0.65rem', color: '#aaa', fontStyle: 'italic', textAlign: 'center', marginTop: '2px' }}>
+              {fastingData.phaseDesc}
             </div>
           </div>
           {/* Fila 5 bottoni */}
