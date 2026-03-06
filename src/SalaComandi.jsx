@@ -3791,7 +3791,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
           {/* Tachimetro circolare calorie - 285px (ridotto 5%) */}
           <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
-            <div style={{ position: 'relative', width: 'min(285px, 80vw)', height: 'min(285px, 80vw)', maxWidth: 'min(285px, 80vw)', maxHeight: 'min(285px, 80vw)', aspectRatio: '1', transform: 'scale(0.95)' }}>
+            {/* Contenitore base più piccolo (min(280px, 72vw)) per lasciare margine esterno alle icone */}
+            <div style={{ position: 'relative', width: 'min(280px, 72vw)', height: 'min(280px, 72vw)', maxWidth: 'min(280px, 72vw)', maxHeight: 'min(280px, 72vw)', aspectRatio: '1', transform: 'scale(0.95)' }}>
               <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: '50%', zIndex: 10, boxShadow: `inset 0 0 0 3px #0a0a0a, 0 0 30px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.2)' : 'rgba(255,77,77,0.4)'}`, transition: 'box-shadow 0.5s' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
