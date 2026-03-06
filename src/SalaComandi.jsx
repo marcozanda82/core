@@ -671,7 +671,7 @@ function MealPieTooltip({ active, payload }) {
   const data = payload[0].payload;
   if (data.name === 'Rimanenti') {
     return (
-      <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: '1px dashed #555', padding: '10px', borderRadius: '12px', textAlign: 'center' }}>
+      <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: '1px dashed #555', padding: '10px', borderRadius: '12px', textAlign: 'center', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
         <p style={{ margin: 0, color: '#aaa', fontSize: '0.85rem' }}>Calorie Rimanenti</p>
         <p style={{ margin: 0, color: '#fff', fontWeight: 'bold', fontSize: '1.2rem' }}>{Math.round(data.value)} kcal</p>
       </div>
@@ -679,7 +679,7 @@ function MealPieTooltip({ active, payload }) {
   }
   const macros = data.macros || {};
   return (
-    <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: `1px solid ${data.color}`, padding: '12px', borderRadius: '12px', boxShadow: `0 0 15px ${data.color}40`, minWidth: '150px' }}>
+    <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: `1px solid ${data.color}`, padding: '12px', borderRadius: '12px', boxShadow: `0 0 15px ${data.color}40`, width: 'max-content', maxWidth: '220px', pointerEvents: 'none' }}>
       <p style={{ margin: '0 0 5px 0', color: data.color, fontWeight: 'bold', borderBottom: '1px solid #333', paddingBottom: '5px' }}>{data.name}</p>
       <p style={{ margin: '0 0 8px 0', color: '#fff', fontWeight: 'bold', fontSize: '1.2rem' }}>{Math.round(data.value)} kcal</p>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
@@ -3801,10 +3801,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
+                    {/* Rimuoviamo allowEscapeViewBox così Recharts lo tiene sempre dentro lo schermo */}
                     <Tooltip
                       content={<MealPieTooltip />}
-                      wrapperStyle={{ zIndex: 1000 }}
-                      allowEscapeViewBox={{ x: true, y: true }}
+                      wrapperStyle={{ zIndex: 1000, pointerEvents: 'none', outline: 'none' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
