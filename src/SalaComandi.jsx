@@ -759,6 +759,7 @@ export default function SalaComandi() {
   const [touchStartX, setTouchStartX] = useState(null);
   const [energyDrawerBeverage, setEnergyDrawerBeverage] = useState(''); // 'coffee' | 'tea' | 'energy_drink' | 'nap' | 'meditation' | ''
   const [energyDrawerDuration, setEnergyDrawerDuration] = useState(0.25); // ore (es. 0.25 = 15 min)
+  const [activeProChartIndex, setActiveProChartIndex] = useState(0); // 0-5: quale grafico mostrare nella dashboard Pro
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -3807,8 +3808,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               style={{ flexShrink: 0, width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
             >
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                {/* Barra navigazione grafici Pro (un grafico alla volta) */}
+                <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', padding: '8px 0 12px 0', marginBottom: '8px', flexShrink: 0, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+                  {[
+                    { idx: 0, label: 'KCAL', alert: (dynamicDailyKcal - (totali?.kcal || 0)) < 0 },
+                    { idx: 1, label: 'BATT', alert: (bodyBatteryData?.level ?? 100) <= 20 || energyAt20Percent < 40 },
+                    { idx: 2, label: 'CORT', alert: hasCortisolRisk },
+                    { idx: 3, label: 'GLIC', alert: hasCrashRisk },
+                    { idx: 4, label: 'DIG', alert: hasDigestionRisk },
+                    { idx: 5, label: 'IDR', alert: hasWaterRisk }
+                  ].map(({ idx, label, alert }) => (
+                    <button key={idx} type="button" onClick={() => setActiveProChartIndex(idx)} style={{ position: 'relative', flexShrink: 0, padding: '10px 14px', borderRadius: '10px', border: `2px solid ${activeProChartIndex === idx ? '#00e5ff' : '#333'}`, background: activeProChartIndex === idx ? 'rgba(0,229,255,0.1)' : '#1a1a1a', color: activeProChartIndex === idx ? '#00e5ff' : '#aaa', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                      {alert && <span style={{ position: 'absolute', top: '4px', right: '6px', width: '6px', height: '6px', borderRadius: '50%', background: '#ff4d4d', boxShadow: '0 0 6px #ff4d4d' }} />}
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 {/* 1. Calorie */}
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 0 })} style={{ width: '100%', minHeight: 220, marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
+                {activeProChartIndex === 0 && (
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 0 })} style={{ width: '100%', minHeight: 220, background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>🔥 Andamento Calorico</h3>
                   <div style={{ width: '100%', height: '200px' }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -3821,8 +3839,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ResponsiveContainer>
                   </div>
                 </div>
+                )}
                 {/* 2. Body Battery */}
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 1 })} style={{ marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
+                {activeProChartIndex === 1 && (
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 1 })} style={{ width: '100%', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
                     <span>🔋 Body Battery (Sistema Nervoso)</span>
                     <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
@@ -3854,8 +3874,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ResponsiveContainer>
                   </div>
                 </div>
+                )}
                 {/* 3. Cortisolo */}
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 2 })} style={{ marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
+                {activeProChartIndex === 2 && (
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 2 })} style={{ width: '100%', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>🧠 Cortisolo / Stress</h3>
                   <div style={{ width: '100%', height: '220px' }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -3876,8 +3898,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ResponsiveContainer>
                   </div>
                 </div>
+                )}
                 {/* 4. Glicemia */}
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 3 })} style={{ marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
+                {activeProChartIndex === 3 && (
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 3 })} style={{ width: '100%', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>🩸 Simulatore Glicemico</h3>
                   <div style={{ width: '100%', height: '220px' }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -3895,8 +3919,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ResponsiveContainer>
                   </div>
                 </div>
+                )}
                 {/* 5. Digestione */}
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 4 })} style={{ marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
+                {activeProChartIndex === 4 && (
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 4 })} style={{ width: '100%', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>⚙️ Digestione</h3>
                   <div style={{ width: '100%', height: '220px' }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -3911,8 +3937,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ResponsiveContainer>
                   </div>
                 </div>
+                )}
                 {/* 6. Idratazione */}
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 5 })} style={{ marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
+                {activeProChartIndex === 5 && (
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 5 })} style={{ width: '100%', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>💧 Idratazione</h3>
                   <div style={{ width: '100%', height: '220px' }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -3927,6 +3955,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ResponsiveContainer>
                   </div>
                 </div>
+                )}
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
                   {allNodesWithStack.map((node) => {
