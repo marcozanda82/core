@@ -3778,7 +3778,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           {/* Tachimetro circolare calorie - 285px (ridotto 5%) */}
           <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
             <div style={{ position: 'relative', width: 'min(285px, 80vw)', height: 'min(285px, 80vw)', maxWidth: 'min(285px, 80vw)', maxHeight: 'min(285px, 80vw)', aspectRatio: '1' }}>
-              <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: '50%', overflow: 'hidden', boxShadow: 'inset 0 0 0 3px #0a0a0a, 0 0 24px rgba(0,229,255,0.2)' }}>
+              <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: '50%', zIndex: 10, boxShadow: 'inset 0 0 0 3px #0a0a0a, 0 0 24px rgba(0,229,255,0.2)' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -3795,11 +3795,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip content={<MealPieTooltip />} />
+                    <Tooltip
+                      content={<MealPieTooltip />}
+                      wrapperStyle={{ zIndex: 1000 }}
+                      allowEscapeViewBox={{ x: true, y: true }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ position: 'absolute', inset: '12px', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111' }}>
+              <div style={{ position: 'absolute', inset: '12px', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5 }}>
                   <span style={{ fontSize: 'clamp(3rem, 12vw, 5.25rem)', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00', lineHeight: 1.1 }}>{Math.round(totali?.kcal || 0)}</span>
                   <span style={{ fontSize: '1.125rem', color: '#555', letterSpacing: '1px', marginTop: '4px' }}>kcal</span>
                   <span style={{ fontSize: '1.05rem', color: '#444', marginTop: '2px' }}>obiettivo {Math.round(dynamicDailyKcal)}</span>
