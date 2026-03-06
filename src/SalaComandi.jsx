@@ -405,6 +405,34 @@ function generateCortisolCurve(dailyLog, manualNodes = []) {
     });
   });
 
+  // 3. Impatto modificatori (Caffè ☕, Nap 😴, Meditazione 🧘)
+  const modifiers = [...(dailyLog || []), ...(manualNodes || [])].filter(n => n.type === 'coffee' || n.type === 'nap' || n.type === 'meditation');
+  modifiers.forEach(mod => {
+    const t = mod.time ?? mod.mealTime ?? 0;
+    if (mod.type === 'nap') {
+      timeline.forEach(point => {
+        if (point.time >= t && point.time <= t + 1.5) {
+          const decay = 1 - (point.time - t) / 1.5;
+          point.cortisolScore = Math.max(0, point.cortisolScore - 18 * decay);
+        }
+      });
+    } else if (mod.type === 'meditation') {
+      timeline.forEach(point => {
+        if (point.time >= t && point.time <= t + 0.5) {
+          const decay = 1 - (point.time - t) / 0.5;
+          point.cortisolScore = Math.max(0, point.cortisolScore - 12 * decay);
+        }
+      });
+    } else if (mod.type === 'coffee') {
+      timeline.forEach(point => {
+        if (point.time >= t && point.time <= t + 1) {
+          const decay = 1 - (point.time - t) / 1;
+          point.cortisolScore = Math.min(100, point.cortisolScore + 8 * decay);
+        }
+      });
+    }
+  });
+
   return timeline;
 }
 
@@ -3163,18 +3191,27 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const workoutCount = (dailyLog || []).filter(i => i.type === 'workout' && i.mealTime <= currentTime).length;
     const workoutDrain = workoutCount * 15;
     let currentBattery = startingBattery - timeDrain - workoutDrain;
+    const modifiers = [...(dailyLog || []), ...(manualNodes || [])].filter(m => m.type === 'coffee' || m.type === 'nap' || m.type === 'meditation');
+    modifiers.forEach(m => {
+      const t = m.time ?? m.mealTime ?? 0;
+      if (t > currentTime) return;
+      if (m.type === 'nap' && currentTime <= t + 1.5) currentBattery += 15 * (1 - (currentTime - t) / 1.5);
+      else if (m.type === 'meditation' && currentTime <= t + 0.5) currentBattery += 8 * (1 - (currentTime - t) / 0.5);
+      else if (m.type === 'coffee' && currentTime <= t + 1) currentBattery += 8 * (1 - (currentTime - t) / 1);
+    });
     currentBattery = Math.max(0, Math.min(100, currentBattery));
     let batteryColor = '#00e676'; let batteryIcon = '🔋';
     if (currentBattery <= 20) { batteryColor = '#ff4d4d'; batteryIcon = '🪫'; }
     else if (currentBattery <= 50) { batteryColor = '#ffea00'; }
     return { level: Math.round(currentBattery), color: batteryColor, icon: batteryIcon };
-  }, [dailyLog, currentTime]);
+  }, [dailyLog, currentTime, manualNodes]);
 
   const energyChartData = useMemo(() => {
     const sleepNode = (dailyLog || []).find(i => i.type === 'sleep');
     const wakeTime = sleepNode?.wakeTime ?? 7.5;
     const sleepHours = sleepNode?.hours ?? 8.0;
     const startingBattery = Math.min(100, Math.max(0, 100 - ((8 - sleepHours) * 10)));
+    const modifiers = [...(dailyLog || []), ...(manualNodes || [])].filter(m => m.type === 'coffee' || m.type === 'nap' || m.type === 'meditation');
     const data = [];
     for (let h = 0; h <= 24; h++) {
       let hoursAwake = h - wakeTime;
@@ -3183,21 +3220,32 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       const workoutCount = (dailyLog || []).filter(i => i.type === 'workout' && (i.mealTime ?? i.time ?? 0) <= h).length;
       const workoutDrain = workoutCount * 15;
       let currentBattery = startingBattery - timeDrain - workoutDrain;
+      modifiers.forEach(m => {
+        const t = m.time ?? m.mealTime ?? 0;
+        if (t > h) return;
+        if (m.type === 'nap' && h <= t + 1.5) currentBattery += 15 * Math.max(0, 1 - (h - t) / 1.5);
+        else if (m.type === 'meditation' && h <= t + 0.5) currentBattery += 8 * Math.max(0, 1 - (h - t) / 0.5);
+        else if (m.type === 'coffee' && h <= t + 1) currentBattery += 8 * Math.max(0, 1 - (h - t) / 1);
+      });
       currentBattery = Math.max(0, Math.min(100, currentBattery));
       data.push({ ora: h, energia: Math.round(currentBattery) });
     }
     return data;
-  }, [dailyLog]);
+  }, [dailyLog, manualNodes]);
 
   const chartWakeTime = useMemo(() => {
     const sleepNode = (dailyLog || []).find(i => i.type === 'sleep');
     return Math.round(sleepNode?.wakeTime ?? 7.5);
   }, [dailyLog]);
   const chartCurrentHour = Math.round(currentTime);
+  const modifierNodes = useMemo(() =>
+    [...(dailyLog || []), ...(manualNodes || [])].filter(m => m.type === 'coffee' || m.type === 'nap' || m.type === 'meditation'),
+    [dailyLog, manualNodes]
+  );
 
   const chartExplanations = [
     { id: 'calorie', title: '🔥 Andamento Calorico', description: "Mostra l'accumulo delle calorie ingerite (Carburante) dal risveglio fino a sera. A differenza dell'Energia, le calorie salgono a gradini ogni volta che consumi un pasto. Analizzare questa curva ti aiuta a capire se stai distribuendo i nutrienti in modo corretto durante la giornata o se stai concentrando troppo cibo in una singola fascia oraria.", color: '#00e5ff' },
-    { id: 'energia', title: '⚡ Energia (SNC)', description: "Questo grafico traccia la tua Body Battery nell'arco delle 24h. L'energia del Sistema Nervoso Centrale si ricarica solo con il sonno. Durante il giorno si consuma fisiologicamente con la veglia, e subisce crolli verticali (scalini) in corrispondenza degli allenamenti. È il parametro vitale per capire quando il tuo corpo ha bisogno di riposo per evitare il sovrallenamento.", color: '#00e676' },
+    { id: 'energia', title: '🔋 Body Battery (Sistema Nervoso)', description: "Questo grafico traccia la tua Body Battery nell'arco delle 24h. L'energia del Sistema Nervoso Centrale si ricarica solo con il sonno. Durante il giorno si consuma fisiologicamente con la veglia, e subisce crolli verticali (scalini) in corrispondenza degli allenamenti. È il parametro vitale per capire quando il tuo corpo ha bisogno di riposo per evitare il sovrallenamento.", color: '#00e676' },
     { id: 'glicemia', title: '🩸 Simulatore Glicemico', description: "Evidenzia il carico glicemico dei pasti e l'andamento stimato della glicemia nelle 24h. Le zone verde/giallo/blu indicano range di sicurezza, rischio e iperglicemia. Mantenere i picchi sotto controllo riduce i crash insulinici, la letargia post-prandiale e favorisce stabilità metabolica e composizione corporea.", color: '#ef4444' },
     { id: 'idratazione', title: '💧 Idratazione', description: "Stima il livello di idratazione in base ad acqua registrata e contesto (sonno, allenamenti). Restare nella fascia ottimale migliora performance cognitiva e fisica, riduce il cortisolo e supporta il trasporto dei nutrienti. Un calo eccessivo impatta recupero e termoregolazione.", color: '#007aff' },
     { id: 'cortisolo', title: '🧠 Cortisolo / Stress', description: "Modella la curva del cortisolo nelle 24h: fisiologicamente alto al risveglio e in calo verso sera. Picchi anomali o livelli elevati in orario serale segnalano stress, sovrallenamento o sonno insufficiente. Ottimizzare questa curva aiuta il recupero, il sonno e la composizione corporea.", color: '#f59e0b' },
@@ -3683,8 +3731,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </span>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
-            <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
-            <button type="button" onClick={() => setChartUnit('kcal')} className={`telemetry-btn ${chartUnit === 'kcal' ? 'active' : ''}`}>⚡ KCAL</button>
+            <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚖️ BILANCIO %</button>
+            <button type="button" onClick={() => setChartUnit('kcal')} className={`telemetry-btn ${chartUnit === 'kcal' ? 'active' : ''}`}>⚖️ BILANCIO KCAL</button>
             <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEM</button>
             <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`}>💧 IDRAT</button>
             <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol' : ''}`}>🧠 CORTISOL</button>
@@ -3867,13 +3915,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       </g>
                     );
                   }} />
+                  {chartUnit === 'cortisolo' && modifierNodes.map(m => {
+                    const icon = m.type === 'coffee' ? '☕' : m.type === 'nap' ? '😴' : '🧘';
+                    const t = m.time ?? m.mealTime ?? 0;
+                    const yVal = getCortisolAtTime(cortisolCurve, t);
+                    return <ReferenceDot key={m.id} x={t} y={yVal} r={0} isFront shape={(props) => <g transform={`translate(${props.x},${props.y})`}><text y={-10} textAnchor="middle" fontSize={12}>{icon}</text></g>} />;
+                  })}
                 </ComposedChart>
               </ResponsiveContainer>
                 </div>
-                {/* GRAFICO 2: Livello Energia (SNC) - secondo */}
+                {/* GRAFICO 2: Body Battery (Sistema Nervoso) - secondo */}
                 <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 1 })} style={{ marginTop: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>⚡ Livello Energia (SNC)</span>
+                    <span>🔋 Body Battery (Sistema Nervoso)</span>
                     <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
                   </h3>
                   <div style={{ width: '100%', height: '220px' }}>
@@ -3899,6 +3953,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         <ReferenceLine x={chartCurrentHour} stroke="#00e5ff" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: 'Ora', fill: '#00e5ff', fontSize: 10 }} />
                         <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                         <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
+                        {modifierNodes.map(m => {
+                          const icon = m.type === 'coffee' ? '☕' : m.type === 'nap' ? '😴' : '🧘';
+                          const yVal = energyChartData.find(d => d.ora === Math.floor(m.time ?? m.mealTime ?? 0))?.energia ?? 50;
+                          return <ReferenceDot key={m.id} x={m.time ?? m.mealTime ?? 0} y={yVal} r={0} isFront shape={(props) => <g transform={`translate(${props.x},${props.y})`}><text y={-10} textAnchor="middle" fontSize={14}>{icon}</text></g>} />;
+                        })}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -3991,7 +4050,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
               <div
                 onClick={() => setSelectedMealCenter(null)}
-                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default' }}
+                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '61%', height: '61%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default' }}
               >
                 {!selectedMealCenter ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-14px)' }}>
@@ -4016,15 +4075,39 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 )}
               </div>
 
-              {/* Layer 2: Grafico a Torta */}
+              {/* Layer 2: Doppio Anello Concentrico (Calorie esterno, Body Battery interno) */}
               <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
+                    {/* Anello interno: Body Battery (Sistema Nervoso) */}
+                    <Pie
+                      data={[
+                        { name: 'Carica', value: bodyBatteryData?.level ?? 50, color: bodyBatteryData?.color ?? '#00e676' },
+                        { name: 'Vuoto', value: 100 - (bodyBatteryData?.level ?? 50), color: '#1a1a1a' }
+                      ].filter(d => d.value > 0)}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="61%"
+                      outerRadius="73%"
+                      paddingAngle={0}
+                      dataKey="value"
+                      stroke="none"
+                      labelLine={false}
+                      label={null}
+                    >
+                      {[
+                        { name: 'Carica', value: bodyBatteryData?.level ?? 50, color: bodyBatteryData?.color ?? '#00e676' },
+                        { name: 'Vuoto', value: 100 - (bodyBatteryData?.level ?? 50), color: '#1a1a1a' }
+                      ].filter(d => d.value > 0).map((entry, index) => (
+                        <Cell key={`battery-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    {/* Anello esterno: Calorie (Carburante) */}
                     <Pie
                       data={mealPieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius="68%"
+                      innerRadius="73%"
                       outerRadius="85%"
                       paddingAngle={3}
                       dataKey="value"
@@ -5348,6 +5431,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <span style={{ fontSize: '1.5rem' }}>💧</span> ACQUA
             </button>
 
+            <button onClick={() => { const t = getCurrentTimeRoundedTo15Min(); const next = [...manualNodes, { id: `coffee_${Date.now()}`, type: 'coffee', time: t }]; setManualNodes(next); syncDatiFirebase(dailyLog, next); setShowChoiceModal(false); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+              <span style={{ fontSize: '1.5rem' }}>☕</span> CAFFÈ
+            </button>
+            <button onClick={() => { const t = getCurrentTimeRoundedTo15Min(); const next = [...manualNodes, { id: `nap_${Date.now()}`, type: 'nap', time: t }]; setManualNodes(next); syncDatiFirebase(dailyLog, next); setShowChoiceModal(false); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+              <span style={{ fontSize: '1.5rem' }}>😴</span> NAP
+            </button>
+            <button onClick={() => { const t = getCurrentTimeRoundedTo15Min(); const next = [...manualNodes, { id: `meditation_${Date.now()}`, type: 'meditation', time: t }]; setManualNodes(next); syncDatiFirebase(dailyLog, next); setShowChoiceModal(false); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+              <span style={{ fontSize: '1.5rem' }}>🧘</span> MEDITAZIONE
+            </button>
+
             <button onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #00e5ff', color: '#00e5ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
               <span style={{ fontSize: '1.5rem' }}>⚙️</span> MENÙ PRINCIPALE
             </button>
@@ -5592,6 +5685,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={0.2} fill="#00e676" />
                           <ReferenceLine x={chartWakeTime} stroke="#aaa" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Sveglia', fill: '#aaa', fontSize: 10 }} />
                           <ReferenceLine x={chartCurrentHour} stroke="#00e5ff" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: 'Ora', fill: '#00e5ff', fontSize: 10 }} />
+                          {modifierNodes.map(m => {
+                            const icon = m.type === 'coffee' ? '☕' : m.type === 'nap' ? '😴' : '🧘';
+                            const yVal = energyChartData.find(d => d.ora === Math.floor(m.time ?? m.mealTime ?? 0))?.energia ?? 50;
+                            return <ReferenceDot key={m.id} x={m.time ?? m.mealTime ?? 0} y={yVal} r={0} isFront shape={(props) => <g transform={`translate(${props.x},${props.y})`}><text y={-10} textAnchor="middle" fontSize={12}>{icon}</text></g>} />;
+                          })}
                         </ComposedChart>
                       );
                     }
@@ -5646,6 +5744,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => `${v}%`} />
                           <Area type="monotone" dataKey="cortisoloPast" stroke="#f59e0b" strokeWidth={3} fillOpacity={0.2} fill="url(#modalColorCortisol)" connectNulls={false} />
                           <Area type="monotone" dataKey="cortisoloFuture" stroke="#78350f" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
+                          {modifierNodes.map(m => {
+                            const icon = m.type === 'coffee' ? '☕' : m.type === 'nap' ? '😴' : '🧘';
+                            const t = m.time ?? m.mealTime ?? 0;
+                            const yVal = getCortisolAtTime(cortisolCurve, t);
+                            return <ReferenceDot key={m.id} x={t} y={yVal} r={0} isFront shape={(props) => <g transform={`translate(${props.x},${props.y})`}><text y={-10} textAnchor="middle" fontSize={12}>{icon}</text></g>} />;
+                          })}
                         </ComposedChart>
                       );
                     }
