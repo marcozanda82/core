@@ -710,6 +710,7 @@ export default function SalaComandi() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
+  const [selectedMealCenter, setSelectedMealCenter] = useState(null);
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -2782,8 +2783,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <span>{label}</span>
           <span>{c.toFixed(1)} / {t} {unit}</span>
         </div>
-        <div style={{ height: '4px', background: '#222', borderRadius: '2px', overflow: 'hidden' }}>
-          <div style={{ width: `${p}%`, height: '100%', background: color, transition: 'width 0.5s' }}></div>
+        <div style={{ height: '12px', background: '#333', borderRadius: '6px', overflow: 'hidden' }}>
+          <div style={{ width: `${p}%`, height: '100%', background: color, borderRadius: '6px', transition: 'width 0.5s' }}></div>
         </div>
       </div>
     );
@@ -3143,9 +3144,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [dailyLog, currentTime]);
   // --- FINE ZONA SICURA ---
 
-  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, name, fill }) => {
+  const renderCustomizedLabel = (props) => {
+    const { cx, cy, midAngle, outerRadius, value, name, fill, payload, macros } = props;
     if (name === 'Rimanenti' || value === 0) return null;
-    const radius = outerRadius + 12; // Icone più vicine all'anello
+    const radius = outerRadius + 14;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
     let icon = '🍎';
@@ -3154,10 +3156,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     else if (n.includes('cena')) icon = '🍽️';
     else if (n.includes('colazion')) icon = '🍳';
     else if (n.includes('snack') || n.includes('merenda')) icon = '🫐';
+    const segmentData = { name, value, payload: { color: fill || payload?.color, macros: macros || payload?.macros } };
     return (
-      <g transform={`translate(${x},${y})`} style={{ pointerEvents: 'none' }}>
-        <circle cx="0" cy="0" r="14" fill="#111" stroke={fill} strokeWidth="1.5" style={{ filter: `drop-shadow(0 0 4px ${fill}80)` }} />
-        <text x="0" y="0" dy="4.5" textAnchor="middle" fontSize="13">{icon}</text>
+      <g
+        transform={`translate(${x},${y})`}
+        onClick={() => setSelectedMealCenter(segmentData)}
+        style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+      >
+        <circle cx="0" cy="0" r="16" fill="#111" stroke={fill} strokeWidth="1.5" style={{ filter: `drop-shadow(0 0 4px ${fill}80)` }} />
+        <text x="0" y="0" dy="4.5" textAnchor="middle" fontSize="14">{icon}</text>
       </g>
     );
   };
@@ -3547,7 +3554,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="zoom-controls">
-            <button type="button" className="zoom-btn" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} title="Torna alla Home" style={{ marginBottom: '30px', borderRadius: '50%' }}>🏠</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '30px' }}>
+              <button type="button" className="zoom-btn" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} title="Torna alla Home" style={{ borderRadius: '50%', width: '66px', height: '66px', fontSize: '1.8rem' }}>🏠</button>
+              <button
+                type="button"
+                onClick={() => alert("Spiegazione Grafico:\n\n- TACHIMETRO: Mostra l'assunzione calorica divisa per pasti. Tocca uno spicchio per i dettagli.\n- BARRA ENERGIA: Mostra l'energia del Sistema Nervoso. Si ricarica dormendo e si consuma con veglia e allenamenti.\n- DIGIUNO: Indica la tua attuale fase metabolica cellulare.")}
+                style={{ background: 'transparent', border: '1px solid #555', color: '#aaa', borderRadius: '50%', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', cursor: 'pointer' }}
+              >
+                ?
+              </button>
+            </div>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
@@ -3789,22 +3805,40 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
-          {/* TACHIMETRO CIRCOLARE (Layout a Layer Multipli per FIX Z-Index e Margini) */}
+          {/* TACHIMETRO CIRCOLARE E INTERATTIVO */}
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-            {/* Contenitore allargato a 360px */}
-            <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto' }}>
+            {/* Contenitore ingrandito a 380px */}
+            <div style={{ position: 'relative', width: '100%', maxWidth: '380px', aspectRatio: '1', margin: '0 auto' }}>
 
-              {/* Layer 1: Glow Esterno e Sfondo Centrale (Allargato al 64% per riempire l'interno) */}
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '64%', height: '64%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}` }}>
-                {/* Contenitore testo traslato verso l'alto per fare spazio al bottone */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-12px)' }}>
-                  <span style={{ color: '#888', fontSize: '0.8rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
-                  <span style={{ fontSize: '2.5rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
-                  <span style={{ fontSize: '0.85rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
-                </div>
+              {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
+              <div
+                onClick={() => setSelectedMealCenter(null)}
+                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default' }}
+              >
+                {!selectedMealCenter ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-14px)' }}>
+                    <span style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
+                    <span style={{ fontSize: '2.6rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-10px)', width: '80%', textAlign: 'center' }}>
+                    <span style={{ color: selectedMealCenter.payload?.color || '#fff', fontSize: '0.9rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', borderBottom: `1px solid ${(selectedMealCenter.payload?.color || '#fff')}50`, paddingBottom: '2px' }}>
+                      {selectedMealCenter.name}
+                    </span>
+                    <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(selectedMealCenter.value)} <span style={{ fontSize: '0.8rem', color: '#aaa' }}>kcal</span></span>
+                    {selectedMealCenter.payload?.macros && (
+                      <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', marginTop: '4px', fontWeight: 'bold' }}>
+                        <span style={{ color: '#ffb74d' }}>C:{Math.round(selectedMealCenter.payload.macros.carb)}</span>
+                        <span style={{ color: '#64b5f6' }}>P:{Math.round(selectedMealCenter.payload.macros.pro)}</span>
+                        <span style={{ color: '#81c784' }}>F:{Math.round(selectedMealCenter.payload.macros.fat)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* Layer 2: Grafico a Torta (Raggi allargati) */}
+              {/* Layer 2: Grafico a Torta */}
               <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -3812,32 +3846,29 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       data={mealPieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius="66%"
-                      outerRadius="82%"
-                      paddingAngle={2}
+                      innerRadius="68%"
+                      outerRadius="85%"
+                      paddingAngle={3}
                       dataKey="value"
                       stroke="none"
                       labelLine={false}
                       label={renderCustomizedLabel}
+                      onClick={(data) => setSelectedMealCenter({ name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
+                      style={{ cursor: 'pointer' }}
                     >
                       {mealPieData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip
-                      content={<MealPieTooltip />}
-                      allowEscapeViewBox={{ x: true, y: true }}
-                      wrapperStyle={{ zIndex: 1000, pointerEvents: 'none', outline: 'none' }}
-                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
 
-              {/* Layer 3: Bottone Analizza (Posizionato nel bordo inferiore del cerchio nero) */}
+              {/* Layer 3: Bottone Analizza Alzato */}
               <button
                 type="button"
                 onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
-                style={{ position: 'absolute', top: '74%', left: '50%', transform: 'translate(-50%, -50%)', background: 'linear-gradient(145deg, #111, #222)', border: '1px solid #444', color: '#00e5ff', padding: '6px 16px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', zIndex: 20, boxShadow: '0 4px 10px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}
+                style={{ position: 'absolute', top: '71%', left: '50%', transform: 'translate(-50%, -50%)', background: 'linear-gradient(145deg, #111, #222)', border: '1px solid #444', color: '#00e5ff', padding: '8px 18px', borderRadius: '25px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', zIndex: 20, boxShadow: '0 4px 10px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}
               >
                 <span>📊</span> Analizza giornata
               </button>
