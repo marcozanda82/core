@@ -3145,7 +3145,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, name, fill }) => {
     if (name === 'Rimanenti' || value === 0) return null;
-    const radius = outerRadius + 18;
+    const radius = outerRadius + 12; // Icone più vicine all'anello
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
     let icon = '🍎';
@@ -3791,16 +3791,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
           {/* TACHIMETRO CIRCOLARE (Layout a Layer Multipli per FIX Z-Index e Margini) */}
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-            <div style={{ position: 'relative', width: '100%', maxWidth: '340px', aspectRatio: '1', margin: '0 auto' }}>
+            {/* Contenitore allargato a 360px */}
+            <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto' }}>
 
-              {/* Layer 1: Glow Esterno e Sfondo Centrale (Dietro il grafico, Z-Index 5) */}
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '53%', height: '53%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}` }}>
-                <span style={{ color: '#888', fontSize: '0.8rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
-                <span style={{ fontSize: '2.4rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
-                <span style={{ fontSize: '0.8rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
+              {/* Layer 1: Glow Esterno e Sfondo Centrale (Allargato al 64% per riempire l'interno) */}
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '64%', height: '64%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}` }}>
+                {/* Contenitore testo traslato verso l'alto per fare spazio al bottone */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-12px)' }}>
+                  <span style={{ color: '#888', fontSize: '0.8rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
+                  <span style={{ fontSize: '2.5rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
+                  <span style={{ fontSize: '0.85rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
+                </div>
               </div>
 
-              {/* Layer 2: Grafico a Torta (Z-Index 10) */}
+              {/* Layer 2: Grafico a Torta (Raggi allargati) */}
               <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -3808,8 +3812,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       data={mealPieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius="55%"
-                      outerRadius="70%"
+                      innerRadius="66%"
+                      outerRadius="82%"
                       paddingAngle={2}
                       dataKey="value"
                       stroke="none"
@@ -3829,11 +3833,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </ResponsiveContainer>
               </div>
 
-              {/* Layer 3: Bottone Analizza (Sopra il grafico, Z-Index 20) */}
+              {/* Layer 3: Bottone Analizza (Posizionato nel bordo inferiore del cerchio nero) */}
               <button
                 type="button"
                 onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
-                style={{ position: 'absolute', top: '70%', left: '50%', transform: 'translate(-50%, -50%)', background: 'linear-gradient(145deg, #111, #222)', border: '1px solid #444', color: '#00e5ff', padding: '6px 14px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer', zIndex: 20, boxShadow: '0 4px 10px rgba(0,0,0,0.4)' }}
+                style={{ position: 'absolute', top: '74%', left: '50%', transform: 'translate(-50%, -50%)', background: 'linear-gradient(145deg, #111, #222)', border: '1px solid #444', color: '#00e5ff', padding: '6px 16px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', zIndex: 20, boxShadow: '0 4px 10px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}
               >
                 <span>📊</span> Analizza giornata
               </button>
