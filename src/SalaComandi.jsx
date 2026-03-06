@@ -3783,17 +3783,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
           {/* Tachimetro circolare calorie - 285px (ridotto 5%) */}
           <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
-            <div style={{ position: 'relative', width: 'min(285px, 80vw)', height: 'min(285px, 80vw)', maxWidth: 'min(285px, 80vw)', maxHeight: 'min(285px, 80vw)', aspectRatio: '1' }}>
+            <div style={{ position: 'relative', width: 'min(285px, 80vw)', height: 'min(285px, 80vw)', maxWidth: 'min(285px, 80vw)', maxHeight: 'min(285px, 80vw)', aspectRatio: '1', transform: 'scale(0.95)' }}>
               <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: '50%', zIndex: 10, boxShadow: 'inset 0 0 0 3px #0a0a0a, 0 0 24px rgba(0,229,255,0.2)' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    {/* Raggi ridotti per lasciare margine dal bordo */}
                     <Pie
                       data={mealPieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius="87%"
-                      outerRadius="95%"
+                      innerRadius="92%"
+                      outerRadius="100%"
                       paddingAngle={2}
                       dataKey="value"
                       stroke="none"
@@ -3810,7 +3809,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ position: 'absolute', inset: '12px', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5 }}>
+              <div style={{ position: 'absolute', inset: '12px', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 20 }}>
                   <span style={{ fontSize: 'clamp(3rem, 12vw, 5.25rem)', fontWeight: 'bold', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff6d00', lineHeight: 1.1 }}>{Math.round(totali?.kcal || 0)}</span>
                   <span style={{ fontSize: '1.125rem', color: '#555', letterSpacing: '1px', marginTop: '4px' }}>kcal</span>
                   <span style={{ fontSize: '1.05rem', color: '#444', marginTop: '2px' }}>obiettivo {Math.round(dynamicDailyKcal)}</span>
