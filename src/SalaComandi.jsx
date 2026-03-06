@@ -3231,6 +3231,95 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     );
   };
 
+  /** Analisi dinamica in tempo reale per il Modal Spiegazione Grafici: cosa sta succedendo oggi + criticità */
+  const ChartExplanationAnalysis = ({ activeIndex }) => {
+    const kcalConsumate = Math.round(totali?.kcal || 0);
+    const targetKcal = Math.round(dynamicDailyKcal);
+    const surplus = targetKcal - kcalConsumate;
+    const targetProt = userTargets?.prot ?? 150;
+    const targetCarb = userTargets?.carb ?? 200;
+    const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 60;
+    const gl = typeof dotGlicemia === 'number' && !Number.isNaN(dotGlicemia) ? Math.round(dotGlicemia) : 85;
+    const idr = typeof dotIdratazione === 'number' && !Number.isNaN(dotIdratazione) ? Math.round(dotIdratazione) : 100;
+    const cort = typeof dotCortisolo === 'number' && !Number.isNaN(dotCortisolo) ? Math.round(dotCortisolo) : 50;
+    const dig = typeof dotDigestione === 'number' && !Number.isNaN(dotDigestione) ? Math.round(dotDigestione) : 0;
+    const critStyle = { color: '#ff6b6b', fontWeight: 'bold' };
+    const okStyle = { color: '#00e676' };
+
+    if (activeIndex === 0) {
+      const hasSurplus = surplus < 0;
+      const protOk = (totali?.prot || 0) >= targetProt * 0.85;
+      const carbOk = (totali?.carb || 0) >= targetCarb * 0.7 && (totali?.carb || 0) <= targetCarb * 1.3;
+      const fatOk = (totali?.fatTotal ?? totali?.fat ?? 0) >= targetFat * 0.7;
+      return (
+        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
+          <p>Oggi hai consumato <strong style={{ color: '#fff' }}>{kcalConsumate} kcal</strong> su un target di <strong style={{ color: '#fff' }}>{targetKcal} kcal</strong>.</p>
+          {surplus >= 0 ? (
+            <p style={okStyle}>✓ Rimangono <strong>{Math.round(surplus)} kcal</strong> — sei in deficit o in linea con l'obiettivo.</p>
+          ) : (
+            <p style={critStyle}>⚠️ Surplus calorico di <strong>{Math.abs(Math.round(surplus))} kcal</strong>. Il corpo tenderà a depositare il surplus; considera di ridurre le porzioni o l'intake nei prossimi pasti.</p>
+          )}
+          <p>Macronutrienti: Proteine {protOk ? <span style={okStyle}>✓</span> : <span style={critStyle}>sotto target</span>}, Carboidrati {carbOk ? <span style={okStyle}>✓</span> : <span style={critStyle}>sbilanciati</span>}, Grassi {fatOk ? <span style={okStyle}>✓</span> : <span style={critStyle}>da monitorare</span>}.</p>
+        </div>
+      );
+    }
+    if (activeIndex === 1) {
+      const level = bodyBatteryData?.level ?? 50;
+      const seraleRischio = energyAt20Percent < 40;
+      return (
+        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
+          <p>La tua <strong style={{ color: '#fff' }}>Body Battery (SNC)</strong> è al <strong style={{ color: bodyBatteryData?.color ?? '#fff' }}>{level}%</strong>.</p>
+          {level <= 20 && <p style={critStyle}>⚠️ Batteria critica: il sistema nervoso è sotto stress. Priorità a riposo e sonno; evita allenamenti intensi.</p>}
+          {level > 20 && level <= 50 && <p style={{ color: '#ffea00' }}>Batteria in zona media: gestisci il carico e prediligi recupero nelle prossime ore.</p>}
+          {level > 50 && <p style={okStyle}>✓ Livello energetico adeguato per le attività della giornata.</p>}
+          {seraleRischio && <p style={critStyle}>⚠️ Rischio serale: energia residua stimata sotto il 40% in fascia serale — possibile impatto su sonno e cortisolo. Considera una cena bilanciata e niente stimoli eccessivi.</p>}
+        </div>
+      );
+    }
+    if (activeIndex === 2) {
+      const zona = gl < 85 ? 'bassa/normale' : gl < 140 ? 'normale/post-prandiale' : 'alta';
+      const rischio = gl >= 140 || gl < 70;
+      return (
+        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
+          <p>Glicemia stimata attuale: <strong style={{ color: '#fff' }}>{gl} mg/dL</strong> — zona <strong>{zona}</strong>.</p>
+          {rischio && <p style={critStyle}>⚠️ {gl >= 140 ? 'Picco glicemico elevato: favorisce insulina e accumulo. Riduci carico glicemico ai prossimi pasti.' : 'Valore basso: rischio ipoglicemia o letargia. Considera uno snack bilanciato.'}</p>}
+          {!rischio && <p style={okStyle}>✓ Andamento nella fascia di sicurezza; mantieni distribuzione e qualità dei carboidrati.</p>}
+        </div>
+      );
+    }
+    if (activeIndex === 3) {
+      const bassa = idr < 70;
+      return (
+        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
+          <p>Idratazione stimata: <strong style={{ color: '#fff' }}>{idr}%</strong>.</p>
+          {bassa && <p style={critStyle}>⚠️ Idratazione sotto la soglia ottimale: impatta performance, recupero e termoregolazione. Aumenta l'assunzione di acqua.</p>}
+          {!bassa && <p style={okStyle}>✓ Livello idratazione nella norma; continua a bere con regolarità.</p>}
+        </div>
+      );
+    }
+    if (activeIndex === 4) {
+      const altoSerale = cort > 60 && currentTime >= 18;
+      return (
+        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
+          <p>Cortisolo stimato in questo momento: <strong style={{ color: '#fff' }}>{cort}%</strong> della curva circadiana.</p>
+          {altoSerale && <p style={critStyle}>⚠️ Cortisolo elevato in fascia serale: può interferire con addormentamento e recupero. Riduci stimoli, schermi e caffeina; prediligi attività calmanti.</p>}
+          {!altoSerale && <p style={okStyle}>✓ Curva cortisolo coerente con il ritmo giorno/notte.</p>}
+        </div>
+      );
+    }
+    if (activeIndex === 5) {
+      const caricoAlto = dig > 70;
+      return (
+        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
+          <p>Carico digestivo stimato: <strong style={{ color: '#fff' }}>{dig}%</strong>.</p>
+          {caricoAlto && <p style={critStyle}>⚠️ Carico digestivo elevato: può causare gonfiore e affaticamento. Evita pasti abbondanti ravvicinati e prediligi cene leggere.</p>}
+          {!caricoAlto && <p style={okStyle}>✓ Distribuzione dei pasti gestibile; l'intestino non è sovraccarico.</p>}
+        </div>
+      );
+    }
+    return <p style={{ color: '#888' }}>Seleziona un grafico per l'analisi.</p>;
+  };
+
   // ========================================================
   // SCHERMATA DI LOGIN
   // ========================================================
@@ -5583,10 +5672,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             </div>
             <div>
-              <h2 style={{ fontSize: '1.5rem', marginBottom: '15px', color: (chartExplanations[chartExplanationModal.activeIndex]?.color) || '#fff' }}>Come leggerlo</h2>
-              <p style={{ fontSize: '1.05rem', lineHeight: '1.6', color: '#ccc' }}>
-                {chartExplanations[chartExplanationModal.activeIndex].description}
-              </p>
+              <h2 style={{ fontSize: '1.5rem', marginBottom: '15px', color: (chartExplanations[chartExplanationModal.activeIndex]?.color) || '#fff' }}>Analisi in tempo reale</h2>
+              <ChartExplanationAnalysis activeIndex={chartExplanationModal.activeIndex} />
             </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'center', padding: '20px', gap: '10px' }}>
