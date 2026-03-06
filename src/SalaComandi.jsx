@@ -748,7 +748,7 @@ export default function SalaComandi() {
   // STATI INTERFACCIA
   const [currentTime, setCurrentTime] = useState(8);
   const [showDetails, setShowDetails] = useState(false);
-  const [chartUnit, setChartUnit] = useState('kcal'); // 'kcal' | 'glicemia' | 'idratazione' | 'cortisolo' | 'digestione'
+  const [chartUnit, setChartUnit] = useState('glicemia'); // per Radar Metabolico Pro: 'glicemia' | 'idratazione' | 'cortisolo' | 'digestione'
   const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -759,7 +759,6 @@ export default function SalaComandi() {
   const [touchStartX, setTouchStartX] = useState(null);
   const [energyDrawerBeverage, setEnergyDrawerBeverage] = useState(''); // 'coffee' | 'tea' | 'energy_drink' | 'nap' | 'meditation' | ''
   const [energyDrawerDuration, setEnergyDrawerDuration] = useState(0.25); // ore (es. 0.25 = 15 min)
-  const [activeProChartIndex, setActiveProChartIndex] = useState(0); // 0-5: quale grafico mostrare nella dashboard Pro
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -3808,25 +3807,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               style={{ flexShrink: 0, width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
             >
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                {/* Barra navigazione grafici Pro (un grafico alla volta) */}
-                <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', padding: '8px 0 12px 0', marginBottom: '8px', flexShrink: 0, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-                  {[
-                    { idx: 0, label: 'KCAL', alert: (dynamicDailyKcal - (totali?.kcal || 0)) < 0 },
-                    { idx: 1, label: 'BATT', alert: (bodyBatteryData?.level ?? 100) <= 20 || energyAt20Percent < 40 },
-                    { idx: 2, label: 'CORT', alert: hasCortisolRisk },
-                    { idx: 3, label: 'GLIC', alert: hasCrashRisk },
-                    { idx: 4, label: 'DIG', alert: hasDigestionRisk },
-                    { idx: 5, label: 'IDR', alert: hasWaterRisk }
-                  ].map(({ idx, label, alert }) => (
-                    <button key={idx} type="button" onClick={() => setActiveProChartIndex(idx)} style={{ position: 'relative', flexShrink: 0, padding: '10px 14px', borderRadius: '10px', border: `2px solid ${activeProChartIndex === idx ? '#00e5ff' : '#333'}`, background: activeProChartIndex === idx ? 'rgba(0,229,255,0.1)' : '#1a1a1a', color: activeProChartIndex === idx ? '#00e5ff' : '#aaa', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>
-                      {alert && <span style={{ position: 'absolute', top: '4px', right: '6px', width: '6px', height: '6px', borderRadius: '50%', background: '#ff4d4d', boxShadow: '0 0 6px #ff4d4d' }} />}
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {/* 1. Calorie */}
-                {activeProChartIndex === 0 && (
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 0 })} style={{ width: '100%', minHeight: 220, background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
+                {/* BLOCCO 1: Andamento Calorico (fisso) */}
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 0 })} style={{ width: '100%', minHeight: 220, marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>🔥 Andamento Calorico</h3>
                   <div style={{ width: '100%', height: '200px' }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -3839,10 +3821,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ResponsiveContainer>
                   </div>
                 </div>
-                )}
-                {/* 2. Body Battery */}
-                {activeProChartIndex === 1 && (
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 1 })} style={{ width: '100%', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
+                {/* BLOCCO 2: Body Battery (fisso) */}
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 1 })} style={{ marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
                     <span>🔋 Body Battery (Sistema Nervoso)</span>
                     <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
@@ -3874,21 +3854,37 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ResponsiveContainer>
                   </div>
                 </div>
-                )}
-                {/* 3. Cortisolo */}
-                {activeProChartIndex === 2 && (
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 2 })} style={{ width: '100%', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
-                  <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>🧠 Cortisolo / Stress</h3>
-                  <div style={{ width: '100%', height: '220px' }}>
+                {/* BLOCCO 3: Radar Metabolico (grafici selezionabili con chartUnit) */}
+                <div style={{ marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#fff' }}>Radar Metabolico</h3>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                    <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEMIA</button>
+                    <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`}>💧 IDRATAZIONE</button>
+                    <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol' : ''}`}>🧠 CORTISOLO</button>
+                    <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGESTIONE</button>
+                  </div>
+                  <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: chartUnitToModalIndex(chartUnit) })} style={{ width: '100%', height: '220px', cursor: 'pointer' }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                        <defs><linearGradient id="proColorCortisol" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} /><stop offset="100%" stopColor="#f59e0b" stopOpacity={0} /></linearGradient></defs>
+                        <defs>
+                          <linearGradient id="proRadarGlicemia" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" stopOpacity={0.9} /><stop offset="100%" stopColor="#ef4444" stopOpacity={0} /></linearGradient>
+                          <linearGradient id="proRadarWater" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#007aff" stopOpacity={0.9} /><stop offset="100%" stopColor="#007aff" stopOpacity={0} /></linearGradient>
+                          <linearGradient id="proRadarCortisol" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} /><stop offset="100%" stopColor="#f59e0b" stopOpacity={0} /></linearGradient>
+                          <linearGradient id="proRadarDigestion" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9333ea" stopOpacity={0.9} /><stop offset="100%" stopColor="#9333ea" stopOpacity={0} /></linearGradient>
+                        </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                         <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                        <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => `${v}%`} />
-                        <Area type="monotone" dataKey="cortisoloPast" stroke="#f59e0b" strokeWidth={3} fillOpacity={0.2} fill="url(#proColorCortisol)" connectNulls={false} />
-                        <Area type="monotone" dataKey="cortisoloFuture" stroke="#78350f" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
-                        {modifierNodes.map(m => {
+                        <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : [0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => (chartUnit === 'glicemia' ? v : `${v}%`)} />
+                        {chartUnit === 'glicemia' && (
+                          <>
+                            <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
+                            <ReferenceArea y1={85} y2={140} fill="#eab30820" stroke="none" />
+                            <ReferenceArea y1={140} y2={220} fill="#3b82f620" stroke="none" />
+                          </>
+                        )}
+                        <Area type="monotone" dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : chartUnit === 'idratazione' ? 'idratazionePast' : chartUnit === 'cortisolo' ? 'cortisoloPast' : 'digestionePast'} stroke={chartUnit === 'glicemia' ? '#ef4444' : chartUnit === 'idratazione' ? '#007aff' : chartUnit === 'cortisolo' ? '#f59e0b' : '#9333ea'} strokeWidth={3} fillOpacity={0.2} fill={chartUnit === 'glicemia' ? 'url(#proRadarGlicemia)' : chartUnit === 'idratazione' ? 'url(#proRadarWater)' : chartUnit === 'cortisolo' ? 'url(#proRadarCortisol)' : 'url(#proRadarDigestion)'} connectNulls={false} />
+                        <Area type="monotone" dataKey={chartUnit === 'glicemia' ? 'glicemiaFuture' : chartUnit === 'idratazione' ? 'idratazioneFuture' : chartUnit === 'cortisolo' ? 'cortisoloFuture' : 'digestioneFuture'} stroke={chartUnit === 'glicemia' ? '#7f1d1d' : chartUnit === 'idratazione' ? '#003a8c' : chartUnit === 'cortisolo' ? '#78350f' : '#581c87'} strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
+                        {chartUnit === 'cortisolo' && modifierNodes.map(m => {
                           const icon = getModifierIcon(m.type);
                           const t = m.time ?? m.mealTime ?? 0;
                           const yVal = getCortisolAtTime(cortisolCurve, t);
@@ -3898,64 +3894,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ResponsiveContainer>
                   </div>
                 </div>
-                )}
-                {/* 4. Glicemia */}
-                {activeProChartIndex === 3 && (
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 3 })} style={{ width: '100%', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
-                  <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>🩸 Simulatore Glicemico</h3>
-                  <div style={{ width: '100%', height: '220px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                        <defs><linearGradient id="proColorGlicemia" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" stopOpacity={0.9} /><stop offset="100%" stopColor="#ef4444" stopOpacity={0} /></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                        <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                        <YAxis domain={[40, 220]} stroke="#666" fontSize={10} tickFormatter={(v) => v} />
-                        <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
-                        <ReferenceArea y1={85} y2={140} fill="#eab30820" stroke="none" />
-                        <ReferenceArea y1={140} y2={220} fill="#3b82f620" stroke="none" />
-                        <Area type="monotone" dataKey="glicemiaPast" stroke="#ef4444" strokeWidth={3} fillOpacity={0.2} fill="url(#proColorGlicemia)" connectNulls={false} />
-                        <Area type="monotone" dataKey="glicemiaFuture" stroke="#7f1d1d" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-                )}
-                {/* 5. Digestione */}
-                {activeProChartIndex === 4 && (
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 4 })} style={{ width: '100%', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
-                  <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>⚙️ Digestione</h3>
-                  <div style={{ width: '100%', height: '220px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                        <defs><linearGradient id="proColorDigestion" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9333ea" stopOpacity={0.9} /><stop offset="100%" stopColor="#9333ea" stopOpacity={0} /></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                        <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                        <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => `${v}%`} />
-                        <Area type="monotone" dataKey="digestionePast" stroke="#9333ea" strokeWidth={3} fillOpacity={0.2} fill="url(#proColorDigestion)" connectNulls={false} />
-                        <Area type="monotone" dataKey="digestioneFuture" stroke="#581c87" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-                )}
-                {/* 6. Idratazione */}
-                {activeProChartIndex === 5 && (
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 5 })} style={{ width: '100%', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
-                  <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>💧 Idratazione</h3>
-                  <div style={{ width: '100%', height: '220px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                        <defs><linearGradient id="proColorWater" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#007aff" stopOpacity={0.9} /><stop offset="100%" stopColor="#007aff" stopOpacity={0} /></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                        <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                        <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => `${v}%`} />
-                        <Area type="monotone" dataKey="idratazionePast" stroke="#007aff" strokeWidth={3} fillOpacity={0.2} fill="url(#proColorWater)" connectNulls={false} />
-                        <Area type="monotone" dataKey="idratazioneFuture" stroke="#003a8c" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-                )}
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
                   {allNodesWithStack.map((node) => {
@@ -4044,7 +3982,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
               <div
                 onClick={handleCenterClick}
-                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '64%', height: '64%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default' }}
+                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '64%', height: '64%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 20, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default' }}
               >
                 {!selectedMealCenter ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-14px)' }}>
