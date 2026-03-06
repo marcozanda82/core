@@ -3787,12 +3787,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: '50%', zIndex: 10, boxShadow: 'inset 0 0 0 3px #0a0a0a, 0 0 24px rgba(0,229,255,0.2)' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
+                    {/* Raggi ridotti per lasciare margine dal bordo */}
                     <Pie
                       data={mealPieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius="92%"
-                      outerRadius="100%"
+                      innerRadius="87%"
+                      outerRadius="95%"
                       paddingAngle={2}
                       dataKey="value"
                       stroke="none"
