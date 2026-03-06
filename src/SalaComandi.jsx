@@ -3164,9 +3164,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return data;
   }, [dailyLog]);
 
+  const chartWakeTime = useMemo(() => {
+    const sleepNode = (dailyLog || []).find(i => i.type === 'sleep');
+    return Math.round(sleepNode?.wakeTime ?? 7.5);
+  }, [dailyLog]);
+  const chartCurrentHour = Math.round(currentTime);
+
   const chartExplanations = [
-    { id: 'energia', title: '⚡ Energia (SNC)', description: "Questo grafico traccia la tua Body Battery nell'arco delle 24h. L'energia del Sistema Nervoso Centrale si ricarica solo con il sonno. Durante il giorno si consuma fisiologicamente con la veglia, e subisce crolli verticali (scalini) in corrispondenza degli allenamenti. È il parametro vitale per capire quando il tuo corpo ha bisogno di riposo per evitare il sovrallenamento." },
-    { id: 'calorie', title: '🔥 Andamento Calorico', description: "Mostra l'accumulo delle calorie ingerite (Carburante) dal risveglio fino a sera. A differenza dell'Energia, le calorie salgono a gradini ogni volta che consumi un pasto. Analizzare questa curva ti aiuta a capire se stai distribuendo i nutrienti in modo corretto durante la giornata o se stai concentrando troppo cibo in una singola fascia oraria." }
+    { id: 'calorie', title: '🔥 Andamento Calorico', description: "Mostra l'accumulo delle calorie ingerite (Carburante) dal risveglio fino a sera. A differenza dell'Energia, le calorie salgono a gradini ogni volta che consumi un pasto. Analizzare questa curva ti aiuta a capire se stai distribuendo i nutrienti in modo corretto durante la giornata o se stai concentrando troppo cibo in una singola fascia oraria." },
+    { id: 'energia', title: '⚡ Energia (SNC)', description: "Questo grafico traccia la tua Body Battery nell'arco delle 24h. L'energia del Sistema Nervoso Centrale si ricarica solo con il sonno. Durante il giorno si consuma fisiologicamente con la veglia, e subisce crolli verticali (scalini) in corrispondenza degli allenamenti. È il parametro vitale per capire quando il tuo corpo ha bisogno di riposo per evitare il sovrallenamento." }
   ];
   // --- FINE ZONA SICURA ---
 
@@ -3597,40 +3603,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               onMouseLeave={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
               style={{ flexShrink: 0, width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
             >
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80 }}>
-                {chartUnit === 'percent' ? (
-              <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 0 })} style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
-                <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>⚡ Livello Energia (SNC)</span>
-                  <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
-                </h3>
-                <div style={{ width: '100%', height: '220px' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
-                          <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
-                      <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
-                        itemStyle={{ color: '#00e676', fontWeight: 'bold' }}
-                        formatter={(value) => [`${value}%`, 'Energia Residua']}
-                        labelFormatter={(label) => `Ore ${label}:00`}
-                      />
-                      <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" />
-                      <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
-                      <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-                ) : (
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 1 })} style={{ width: '100%', height: '100%', cursor: 'pointer' }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                {/* GRAFICO 1: Andamento Calorie/Macro (primo) */}
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 0 })} style={{ width: '100%', minHeight: 280, flex: '0 0 50%', cursor: 'pointer' }}>
                 <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={finalChartData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
                   <defs>
@@ -3776,7 +3751,39 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </ComposedChart>
               </ResponsiveContainer>
                 </div>
-                )}
+                {/* GRAFICO 2: Livello Energia (SNC) - secondo */}
+                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 1 })} style={{ marginTop: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
+                  <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>⚡ Livello Energia (SNC)</span>
+                    <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
+                  </h3>
+                  <div style={{ width: '100%', height: '220px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
+                            <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                        <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
+                        <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
+                          itemStyle={{ color: '#00e676', fontWeight: 'bold' }}
+                          formatter={(value) => [`${value}%`, 'Energia Residua']}
+                          labelFormatter={(label) => `Ore ${label}:00`}
+                        />
+                        <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" />
+                        <ReferenceLine x={chartWakeTime} stroke="#aaa" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Sveglia', fill: '#aaa', fontSize: 10 }} />
+                        <ReferenceLine x={chartCurrentHour} stroke="#00e5ff" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: 'Ora', fill: '#00e5ff', fontSize: 10 }} />
+                        <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
+                        <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
                   {allNodesWithStack.map((node) => {
@@ -5446,25 +5453,27 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ width: '100%', height: 'calc(100% - 30px)' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   {chartExplanationModal.activeIndex === 0 ? (
-                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
-                      <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
-                      <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={0.2} fill="#00e676" />
-                    </ComposedChart>
-                  ) : (
                     <ComposedChart data={finalChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                       <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
                       <YAxis stroke="#666" fontSize={10} tickFormatter={(v) => (v != null && !Number.isNaN(Number(v))) ? Math.round(Number(v)) : v} />
                       <Area type="monotone" dataKey="energy" stroke="#00e5ff" strokeWidth={3} fillOpacity={0.2} fill="#00e5ff" />
                     </ComposedChart>
+                  ) : (
+                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
+                      <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
+                      <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={0.2} fill="#00e676" />
+                      <ReferenceLine x={chartWakeTime} stroke="#aaa" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Sveglia', fill: '#aaa', fontSize: 10 }} />
+                      <ReferenceLine x={chartCurrentHour} stroke="#00e5ff" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: 'Ora', fill: '#00e5ff', fontSize: 10 }} />
+                    </ComposedChart>
                   )}
                 </ResponsiveContainer>
               </div>
             </div>
             <div>
-              <h2 style={{ fontSize: '1.5rem', marginBottom: '15px', color: chartExplanationModal.activeIndex === 0 ? '#00e676' : '#00e5ff' }}>Come leggerlo</h2>
+              <h2 style={{ fontSize: '1.5rem', marginBottom: '15px', color: chartExplanationModal.activeIndex === 0 ? '#00e5ff' : '#00e676' }}>Come leggerlo</h2>
               <p style={{ fontSize: '1.05rem', lineHeight: '1.6', color: '#ccc' }}>
                 {chartExplanations[chartExplanationModal.activeIndex].description}
               </p>
