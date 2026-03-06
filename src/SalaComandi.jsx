@@ -3085,6 +3085,62 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return null;
   };
 
+  // --- ZONA SICURA HOOKS: MOTORE METABOLICO E BODY BATTERY ---
+  const fastingData = useMemo(() => {
+    let lastMealTime = null;
+    let lastMealDate = null;
+    const todayMeals = (dailyLog || []).filter(i => i.type === 'food' && typeof i.mealTime === 'number' && i.mealTime <= currentTime).sort((a, b) => b.mealTime - a.mealTime);
+    if (todayMeals.length > 0) { lastMealTime = todayMeals[0].mealTime; lastMealDate = 'today'; }
+    if (lastMealDate === null && fullHistory) {
+      const yesterdayObj = new Date(currentDateObj);
+      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+      const offset = yesterdayObj.getTimezoneOffset() * 60000;
+      const yesterdayStr = new Date(yesterdayObj.getTime() - offset).toISOString().slice(0, 10);
+      const yesterdayNode = fullHistory[TRACKER_STORICO_KEY(yesterdayStr)];
+      if (yesterdayNode && yesterdayNode.log) {
+        const yesterdayLog = normalizeLogData(Array.isArray(yesterdayNode.log) ? yesterdayNode.log : Object.values(yesterdayNode.log));
+        const yestMeals = yesterdayLog.filter(i => i.type === 'food');
+        let maxYestTime = -1;
+        yestMeals.forEach(m => {
+          const t = yesterdayNode.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
+          if (t > maxYestTime) maxYestTime = t;
+        });
+        if (maxYestTime >= 0) { lastMealTime = maxYestTime; lastMealDate = 'yesterday'; }
+      }
+    }
+    let hoursFasted = 0;
+    if (lastMealDate === 'today') hoursFasted = currentTime - lastMealTime;
+    else if (lastMealDate === 'yesterday') hoursFasted = (24 - lastMealTime) + currentTime;
+    hoursFasted = Math.max(0, hoursFasted);
+    const h = Math.floor(hoursFasted);
+    const m = Math.round((hoursFasted - h) * 60);
+    const timeString = `${h}h ${m}m`;
+    let phaseName = 'Assorbimento'; let phaseColor = '#00e676'; let phaseDesc = 'Digestione e sintesi attiva.'; let progress = Math.min((hoursFasted / 4) * 100, 100);
+    if (hoursFasted >= 16) { phaseName = 'Autofagia'; phaseColor = '#9c27b0'; phaseDesc = 'Rigenerazione cellulare profonda.'; progress = 100; }
+    else if (hoursFasted >= 12) { phaseName = 'Chetosi / Lipolisi'; phaseColor = '#ffea00'; phaseDesc = 'Uso intensivo dei grassi corporei.'; progress = ((hoursFasted - 12) / 4) * 100; }
+    else if (hoursFasted >= 4) { phaseName = 'Catabolismo / Digiuno'; phaseColor = '#00e5ff'; phaseDesc = 'Glicogeno in esaurimento, calo insulina.'; progress = ((hoursFasted - 4) / 8) * 100; }
+    return { hoursFasted, timeString, phaseName, phaseColor, phaseDesc, progress };
+  }, [dailyLog, currentTime, fullHistory, currentDateObj]);
+
+  const bodyBatteryData = useMemo(() => {
+    const sleepNode = (dailyLog || []).find(i => i.type === 'sleep');
+    const wakeTime = sleepNode?.wakeTime ?? 7.5;
+    const sleepHours = sleepNode?.hours ?? 8.0;
+    const startingBattery = Math.min(100, Math.max(0, 100 - ((8 - sleepHours) * 10)));
+    let hoursAwake = currentTime - wakeTime;
+    if (hoursAwake < 0) hoursAwake = 0;
+    const timeDrain = hoursAwake * 3.5;
+    const workoutCount = (dailyLog || []).filter(i => i.type === 'workout' && i.mealTime <= currentTime).length;
+    const workoutDrain = workoutCount * 15;
+    let currentBattery = startingBattery - timeDrain - workoutDrain;
+    currentBattery = Math.max(0, Math.min(100, currentBattery));
+    let batteryColor = '#00e676'; let batteryIcon = '🔋';
+    if (currentBattery <= 20) { batteryColor = '#ff4d4d'; batteryIcon = '🪫'; }
+    else if (currentBattery <= 50) { batteryColor = '#ffea00'; }
+    return { level: Math.round(currentBattery), color: batteryColor, icon: batteryIcon };
+  }, [dailyLog, currentTime]);
+  // --- FINE ZONA SICURA ---
+
   // ========================================================
   // SCHERMATA DI LOGIN
   // ========================================================
@@ -3142,78 +3198,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
     );
   }
-
-  const fastingData = useMemo(() => {
-    let lastMealTime = null;
-    let lastMealDate = null;
-
-    const todayMeals = (dailyLog || [])
-      .filter(i => i.type === 'food' && typeof i.mealTime === 'number' && i.mealTime <= currentTime)
-      .sort((a, b) => b.mealTime - a.mealTime);
-
-    if (todayMeals.length > 0) {
-      lastMealTime = todayMeals[0].mealTime;
-      lastMealDate = 'today';
-    }
-
-    if (lastMealDate === null && fullHistory) {
-      const yesterdayObj = new Date(currentDateObj);
-      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
-      const offset = yesterdayObj.getTimezoneOffset() * 60000;
-      const yesterdayStr = new Date(yesterdayObj.getTime() - offset).toISOString().slice(0, 10);
-      const yesterdayNode = fullHistory[TRACKER_STORICO_KEY(yesterdayStr)];
-
-      if (yesterdayNode && yesterdayNode.log) {
-        const yesterdayLog = normalizeLogData(Array.isArray(yesterdayNode.log) ? yesterdayNode.log : Object.values(yesterdayNode.log));
-        const yestMeals = yesterdayLog.filter(i => i.type === 'food');
-        let maxYestTime = -1;
-        yestMeals.forEach(m => {
-          const t = yesterdayNode.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
-          if (t > maxYestTime) maxYestTime = t;
-        });
-        if (maxYestTime >= 0) {
-          lastMealTime = maxYestTime;
-          lastMealDate = 'yesterday';
-        }
-      }
-    }
-
-    let hoursFasted = 0;
-    if (lastMealDate === 'today') {
-      hoursFasted = currentTime - lastMealTime;
-    } else if (lastMealDate === 'yesterday') {
-      hoursFasted = (24 - lastMealTime) + currentTime;
-    }
-
-    hoursFasted = Math.max(0, hoursFasted);
-    const h = Math.floor(hoursFasted);
-    const m = Math.round((hoursFasted - h) * 60);
-    const timeString = `${h}h ${m}m`;
-
-    let phaseName = 'Assorbimento';
-    let phaseColor = '#00e676';
-    let phaseDesc = 'Digestione e sintesi attiva.';
-    let progress = Math.min((hoursFasted / 4) * 100, 100);
-
-    if (hoursFasted >= 16) {
-      phaseName = 'Autofagia';
-      phaseColor = '#9c27b0';
-      phaseDesc = 'Rigenerazione cellulare profonda.';
-      progress = 100;
-    } else if (hoursFasted >= 12) {
-      phaseName = 'Chetosi / Lipolisi';
-      phaseColor = '#ffea00';
-      phaseDesc = 'Uso intensivo dei grassi corporei.';
-      progress = ((hoursFasted - 12) / 4) * 100;
-    } else if (hoursFasted >= 4) {
-      phaseName = 'Catabolismo / Digiuno';
-      phaseColor = '#00e5ff';
-      phaseDesc = 'Glicogeno in esaurimento, calo insulina.';
-      progress = ((hoursFasted - 4) / 8) * 100;
-    }
-
-    return { hoursFasted, timeString, phaseName, phaseColor, phaseDesc, progress };
-  }, [dailyLog, currentTime, fullHistory, currentDateObj]);
 
   return (
     <div style={{ backgroundColor: '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '80px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
@@ -3467,13 +3451,35 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <button className="btn-toggle" onClick={() => { auth.signOut(); }}>LOGOUT</button>
       </div>
 
-      {/* Navigazione storica (Time-Travel) */}
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px', marginBottom: 'max(6px, 1vh)', background: '#111', padding: 'max(6px, 1vh) 10px', borderRadius: '12px' }}>
-        <button type="button" onClick={() => changeDate(-1)} style={{ background: '#333', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>◀ Ieri</button>
-        <h2 style={{ color: '#fff', margin: 0, fontSize: '1.2rem' }}>
-          {currentDateObj.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </h2>
-        <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: currentTrackerDate === getTodayString() ? '#111' : '#333', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', cursor: currentTrackerDate === getTodayString() ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: currentTrackerDate === getTodayString() ? 0.5 : 1 }}>Domani ▶</button>
+      {/* Navigazione storica (Time-Travel) + Body Battery */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: 'max(6px, 1vh) 15px', borderRadius: '12px', border: '1px solid #222' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button type="button" onClick={() => changeDate(-1)} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>◀</button>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Diario</span>
+            <h2 style={{ color: '#fff', margin: 0, fontSize: '0.95rem' }}>
+              {currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
+            </h2>
+          </div>
+          <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ fontSize: '0.7rem', color: '#888', textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontWeight: 'bold', color: bodyBatteryData.color }}>{bodyBatteryData.level}%</span>
+            <span style={{ fontSize: '0.55rem', textTransform: 'uppercase' }}>Energia</span>
+          </div>
+          <div style={{ width: '28px', height: '12px', border: '1px solid #666', borderRadius: '2px', position: 'relative', padding: '1px' }}>
+            <div style={{ position: 'absolute', right: '-3px', top: '2px', width: '2px', height: '6px', background: '#666', borderRadius: '0 2px 2px 0' }}></div>
+            <div style={{
+              width: `${bodyBatteryData.level}%`,
+              height: '100%',
+              background: bodyBatteryData.color,
+              borderRadius: '1px',
+              transition: 'width 1s ease-in-out, background 0.5s',
+              boxShadow: bodyBatteryData.level > 20 ? `0 0 5px ${bodyBatteryData.color}` : 'none'
+            }}></div>
+          </div>
+        </div>
       </div>
 
       {/* Barra Telemetria Rapida (Spie e Deficit) */}
