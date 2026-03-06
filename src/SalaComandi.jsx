@@ -17,6 +17,8 @@ import { getDatabase, ref, get, set, onValue, update } from 'firebase/database';
 
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 
+const RADIAN = Math.PI / 180;
+
 const firebaseConfig = {
   apiKey: "AIzaSyA5pSzpfq1aGZ1wjNV5-eXnIqWL6brl424",
   authDomain: "mio-tracker.firebaseapp.com",
@@ -3115,10 +3117,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const h = Math.floor(hoursFasted);
     const m = Math.round((hoursFasted - h) * 60);
     const timeString = `${h}h ${m}m`;
-    let phaseName = 'Assorbimento'; let phaseColor = '#00e676'; let phaseDesc = 'Digestione e sintesi attiva.'; let progress = Math.min((hoursFasted / 4) * 100, 100);
-    if (hoursFasted >= 16) { phaseName = 'Autofagia'; phaseColor = '#9c27b0'; phaseDesc = 'Rigenerazione cellulare profonda.'; progress = 100; }
-    else if (hoursFasted >= 12) { phaseName = 'Chetosi / Lipolisi'; phaseColor = '#ffea00'; phaseDesc = 'Uso intensivo dei grassi corporei.'; progress = ((hoursFasted - 12) / 4) * 100; }
-    else if (hoursFasted >= 4) { phaseName = 'Catabolismo / Digiuno'; phaseColor = '#00e5ff'; phaseDesc = 'Glicogeno in esaurimento, calo insulina.'; progress = ((hoursFasted - 4) / 8) * 100; }
+    let phaseName = 'ASSORBIMENTO'; let phaseColor = '#00e676'; let phaseDesc = 'Digestione attiva • Sintesi glicogeno'; let progress = Math.min((hoursFasted / 4) * 100, 100);
+    if (hoursFasted >= 16) { phaseName = 'AUTOFAGIA'; phaseColor = '#9c27b0'; phaseDesc = 'Rigenerazione profonda • Pulizia cellulare'; progress = 100; }
+    else if (hoursFasted >= 12) { phaseName = 'CHETOSI / LIPOLISI'; phaseColor = '#ffea00'; phaseDesc = 'Uso intensivo grassi • Chetoni attivi'; progress = ((hoursFasted - 12) / 4) * 100; }
+    else if (hoursFasted >= 4) { phaseName = 'DIGIUNO / CATABOLISMO'; phaseColor = '#00e5ff'; phaseDesc = 'Esaurimento scorte • Calo insulina'; progress = ((hoursFasted - 4) / 8) * 100; }
     return { hoursFasted, timeString, phaseName, phaseColor, phaseDesc, progress };
   }, [dailyLog, currentTime, fullHistory, currentDateObj]);
 
@@ -3140,6 +3142,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return { level: Math.round(currentBattery), color: batteryColor, icon: batteryIcon };
   }, [dailyLog, currentTime]);
   // --- FINE ZONA SICURA ---
+
+  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, name, fill }) => {
+    if (name === 'Rimanenti' || value === 0) return null;
+    const radius = outerRadius + 14;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    let icon = '🍎';
+    const n = (name || '').toLowerCase();
+    if (n.includes('pranzo')) icon = '🍝';
+    else if (n.includes('cena')) icon = '🍽️';
+    else if (n.includes('colazion')) icon = '🍳';
+    else if (n.includes('snack') || n.includes('merenda')) icon = '🫐';
+    return (
+      <g transform={`translate(${x},${y})`} style={{ pointerEvents: 'none' }}>
+        <circle cx="0" cy="0" r="14" fill="#111" stroke={fill} strokeWidth="1.5" style={{ filter: `drop-shadow(0 0 4px ${fill}80)` }} />
+        <text x="0" y="0" dy="4.5" textAnchor="middle" fontSize="13">{icon}</text>
+      </g>
+    );
+  };
 
   // ========================================================
   // SCHERMATA DI LOGIN
@@ -3463,47 +3484,34 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
           <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ fontSize: '0.7rem', color: '#888', textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontWeight: 'bold', color: bodyBatteryData.color }}>{bodyBatteryData.level}%</span>
-            <span style={{ fontSize: '0.55rem', textTransform: 'uppercase' }}>Energia</span>
+        {/* Widget Energia Biologica (Arco) */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', marginRight: '5px' }}>
+          <div style={{ position: 'relative', width: '56px', height: '28px' }}>
+            <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+              <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
+              <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData.color} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - (bodyBatteryData.level / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
+            </svg>
+            <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', fontSize: '0.8rem', fontWeight: 'bold', color: bodyBatteryData.color, textShadow: `0 0 10px ${bodyBatteryData.color}80`, paddingBottom: '2px' }}>
+              {bodyBatteryData.level}%
+            </div>
           </div>
-          <div style={{ width: '28px', height: '12px', border: '1px solid #666', borderRadius: '2px', position: 'relative', padding: '1px' }}>
-            <div style={{ position: 'absolute', right: '-3px', top: '2px', width: '2px', height: '6px', background: '#666', borderRadius: '0 2px 2px 0' }}></div>
-            <div style={{
-              width: `${bodyBatteryData.level}%`,
-              height: '100%',
-              background: bodyBatteryData.color,
-              borderRadius: '1px',
-              transition: 'width 1s ease-in-out, background 0.5s',
-              boxShadow: bodyBatteryData.level > 20 ? `0 0 5px ${bodyBatteryData.color}` : 'none'
-            }}></div>
-          </div>
+          <span style={{ fontSize: '0.5rem', textTransform: 'uppercase', color: '#888', marginTop: '2px' }}>Energia corporea</span>
         </div>
       </div>
 
-      {/* Barra Telemetria Rapida (Spie e Deficit) */}
-      <div
-        onClick={() => setShowSpieInfo(true)}
-        style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#111', padding: 'max(8px, 1vh) 15px', borderRadius: '12px', marginBottom: 'max(8px, 1.5vh)', fontSize: '0.75rem', fontWeight: 'bold' }}
-      >
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {(Number(totali?.omega3) ?? 0) < 1 ? (
-            <span style={{ color: '#ff5555', background: 'rgba(255, 85, 85, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🔴 Carenza Ω3</span>
-          ) : (
-            <span style={{ color: '#00e676', background: 'rgba(0, 230, 118, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🟢 Micro OK</span>
-          )}
-          {energyAt20Percent < 40 ? (
-            <span style={{ color: '#ff9800', background: 'rgba(255, 152, 0, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🟠 Rischio Serali</span>
-          ) : (
-            <span style={{ color: '#00e676', background: 'rgba(0, 230, 118, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>🟢 Serali OK</span>
-          )}
+      {/* Barra Telemetria Rapida Premium */}
+      <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: 'max(12px, 1.5vh)', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'nowrap' }}>
+        <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
+          <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676'}`, padding: '8px 12px', borderRadius: '20px', color: ((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676', boxShadow: `0 0 10px ${((Number(totali?.omega3) ?? 0) < 1) ? 'rgba(255,85,85,0.2)' : 'rgba(0,230,118,0.1)'}`, whiteSpace: 'nowrap' }}>
+            {((Number(totali?.omega3) ?? 0) < 1) ? '🔴 Carenza Micro' : '🟢 Micro OK'}
+          </span>
+          <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${energyAt20Percent < 40 ? '#ff9800' : '#00e676'}`, padding: '8px 12px', borderRadius: '20px', color: energyAt20Percent < 40 ? '#ff9800' : '#00e676', boxShadow: `0 0 10px ${energyAt20Percent < 40 ? 'rgba(255,152,0,0.2)' : 'rgba(0,230,118,0.1)'}`, whiteSpace: 'nowrap' }}>
+            {energyAt20Percent < 40 ? '🟠 Rischio Serali' : '🟢 Serali OK'}
+          </span>
         </div>
-        <div style={{ color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#00e5ff' : '#ff4d4d' }}>
-          {(dynamicDailyKcal - (totali?.kcal || 0)) >= 0
-            ? `🔥 Rimangono: ${Math.round(dynamicDailyKcal - (totali?.kcal || 0))} kcal`
-            : `⚠️ Surplus: ${Math.abs(Math.round(dynamicDailyKcal - (totali?.kcal || 0)))} kcal`}
-        </div>
+        <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#333' : '#ff4d4d'}`, padding: '8px 12px', borderRadius: '20px', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#aaa' : '#ff4d4d', boxShadow: (dynamicDailyKcal - (totali?.kcal || 0)) < 0 ? '0 0 10px rgba(255,77,77,0.3)' : 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? `🎯 Rimangono ${Math.round(dynamicDailyKcal - (totali?.kcal || 0))} kcal` : `🔥 Surplus calorico +${Math.abs(Math.round(dynamicDailyKcal - (totali?.kcal || 0)))} kcal`}
+        </span>
       </div>
 
       {userProfile?.level === 'pro' && (
@@ -3784,7 +3792,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           {/* Tachimetro circolare calorie - 285px (ridotto 5%) */}
           <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
             <div style={{ position: 'relative', width: 'min(285px, 80vw)', height: 'min(285px, 80vw)', maxWidth: 'min(285px, 80vw)', maxHeight: 'min(285px, 80vw)', aspectRatio: '1', transform: 'scale(0.95)' }}>
-              <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: '50%', zIndex: 10, boxShadow: 'inset 0 0 0 3px #0a0a0a, 0 0 24px rgba(0,229,255,0.2)' }}>
+              <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: '50%', zIndex: 10, boxShadow: `inset 0 0 0 3px #0a0a0a, 0 0 30px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.2)' : 'rgba(255,77,77,0.4)'}`, transition: 'box-shadow 0.5s' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -3796,6 +3804,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       paddingAngle={2}
                       dataKey="value"
                       stroke="none"
+                      labelLine={false}
+                      label={renderCustomizedLabel}
                     >
                       {mealPieData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
@@ -3834,7 +3844,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       transition: 'all 0.2s ease'
                     }}
                   >
-                    <span>📊</span> Analizza
+                    <span>📊</span> Analizza giornata
                   </button>
                 </div>
               </div>
@@ -3855,25 +3865,29 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           </div>
           {/* Widget Orologio Metabolico (Digiuno) */}
-          <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '12px', padding: '12px 15px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '12px', padding: '15px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1.2rem', filter: `drop-shadow(0 0 5px ${fastingData.phaseColor})` }}>⏳</span>
+                <span style={{ fontSize: '1.4rem', filter: `drop-shadow(0 0 5px ${fastingData.phaseColor})` }}>⏳</span>
                 <div>
-                  <div style={{ fontSize: '0.7rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Stato Metabolico</div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: fastingData.phaseColor }}>{fastingData.phaseName}</div>
+                  <div style={{ fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '2px' }}>Fase Metabolica</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 'bold', color: fastingData.phaseColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{fastingData.phaseName}</div>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff', fontFamily: 'monospace' }}>{fastingData.timeString}</div>
-                <div style={{ fontSize: '0.65rem', color: '#666' }}>di digiuno</div>
+              <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.75rem', color: '#888' }}>🕒 Digiuno</span>
+                <span style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>
+                  {fastingData.hoursFasted >= 1 ? `${Math.floor(fastingData.hoursFasted)}h ${Math.round((fastingData.hoursFasted % 1) * 60)}m` : `${Math.round(fastingData.hoursFasted * 60)} min`}
+                </span>
               </div>
             </div>
-            <div style={{ height: '4px', background: '#222', borderRadius: '2px', overflow: 'hidden', marginTop: '2px' }}>
+            <div style={{ height: '4px', background: '#222', borderRadius: '2px', overflow: 'hidden' }}>
               <div style={{ width: `${fastingData.progress}%`, height: '100%', background: fastingData.phaseColor, transition: 'width 1s ease-in-out', boxShadow: `0 0 10px ${fastingData.phaseColor}` }}></div>
             </div>
-            <div style={{ fontSize: '0.65rem', color: '#aaa', fontStyle: 'italic', textAlign: 'center', marginTop: '2px' }}>
-              {fastingData.phaseDesc}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#aaa', padding: '0 4px' }}>
+              {fastingData.phaseDesc.split('•').map((pt, i) => (
+                <span key={i}>• {pt.trim()}</span>
+              ))}
             </div>
           </div>
           {/* Fila 5 bottoni */}
