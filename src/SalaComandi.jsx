@@ -9,7 +9,7 @@
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell } from 'recharts';
+import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
@@ -3279,6 +3279,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     );
   };
 
+  /** Evidenzia lo spicchio cliccato aumentandone il raggio esterno (senza outline di focus) */
+  const renderActiveShape = (props) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    const r = typeof outerRadius === 'number' ? outerRadius * 1.08 : `${parseFloat(String(outerRadius)) * 1.08}%`;
+    return (
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius}
+        outerRadius={r}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        stroke="none"
+        style={{ outline: 'none' }}
+      />
+    );
+  };
+
   /** Analisi dinamica in tempo reale per il Modal Spiegazione Grafici: cosa sta succedendo oggi + criticità */
   const ChartExplanationAnalysis = ({ activeIndex }) => {
     const kcalConsumate = Math.round(totali?.kcal || 0);
@@ -4050,7 +4069,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
               <div
                 onClick={() => setSelectedMealCenter(null)}
-                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '61%', height: '61%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default' }}
+                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '64%', height: '64%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default' }}
               >
                 {!selectedMealCenter ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-14px)' }}>
@@ -4075,47 +4094,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 )}
               </div>
 
-              {/* Layer 2: Doppio Anello Concentrico (Calorie esterno, Body Battery interno) */}
-              <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+              {/* Layer 2: Grafico a Torta (singolo anello Calorie) + activeShape senza outline */}
+              <div style={{ position: 'absolute', inset: 0, zIndex: 10, outline: 'none' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    {/* Anello interno: Body Battery (Sistema Nervoso) */}
-                    <Pie
-                      data={[
-                        { name: 'Carica', value: bodyBatteryData?.level ?? 50, color: bodyBatteryData?.color ?? '#00e676' },
-                        { name: 'Vuoto', value: 100 - (bodyBatteryData?.level ?? 50), color: '#1a1a1a' }
-                      ].filter(d => d.value > 0)}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="61%"
-                      outerRadius="73%"
-                      paddingAngle={0}
-                      dataKey="value"
-                      stroke="none"
-                      labelLine={false}
-                      label={null}
-                    >
-                      {[
-                        { name: 'Carica', value: bodyBatteryData?.level ?? 50, color: bodyBatteryData?.color ?? '#00e676' },
-                        { name: 'Vuoto', value: 100 - (bodyBatteryData?.level ?? 50), color: '#1a1a1a' }
-                      ].filter(d => d.value > 0).map((entry, index) => (
-                        <Cell key={`battery-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    {/* Anello esterno: Calorie (Carburante) */}
+                  <PieChart style={{ outline: 'none' }}>
                     <Pie
                       data={mealPieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius="73%"
+                      innerRadius="68%"
                       outerRadius="85%"
                       paddingAngle={3}
                       dataKey="value"
                       stroke="none"
                       labelLine={false}
                       label={renderCustomizedLabel}
+                      activeIndex={selectedMealCenter != null ? mealPieData.findIndex(d => d.name === selectedMealCenter.name) : -1}
+                      activeShape={renderActiveShape}
                       onClick={(data) => setSelectedMealCenter({ name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
-                      style={{ cursor: 'pointer' }}
+                      style={{ cursor: 'pointer', outline: 'none' }}
                     >
                       {mealPieData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
