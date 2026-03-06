@@ -9,7 +9,7 @@
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
+import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell } from 'recharts';
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
@@ -405,50 +405,6 @@ function generateCortisolCurve(dailyLog, manualNodes = []) {
     });
   });
 
-  // 3. Impatto modificatori (bevande e riposo, con durata variabile)
-  const modifierTypes = ['coffee', 'tea', 'energy_drink', 'nap', 'meditation'];
-  const modifiers = [...(dailyLog || []), ...(manualNodes || [])].filter(n => modifierTypes.includes(n.type));
-  modifiers.forEach(mod => {
-    const t = mod.time ?? mod.mealTime ?? 0;
-    const dur = typeof mod.duration === 'number' && mod.duration > 0 ? mod.duration : (mod.type === 'nap' ? 1.5 : mod.type === 'meditation' ? 0.5 : mod.type === 'tea' ? 0.75 : mod.type === 'energy_drink' ? 1.25 : 1);
-    if (mod.type === 'nap') {
-      timeline.forEach(point => {
-        if (point.time >= t && point.time <= t + dur) {
-          const decay = 1 - (point.time - t) / dur;
-          point.cortisolScore = Math.max(0, point.cortisolScore - 18 * decay);
-        }
-      });
-    } else if (mod.type === 'meditation') {
-      timeline.forEach(point => {
-        if (point.time >= t && point.time <= t + dur) {
-          const decay = 1 - (point.time - t) / dur;
-          point.cortisolScore = Math.max(0, point.cortisolScore - 12 * decay);
-        }
-      });
-    } else if (mod.type === 'coffee') {
-      timeline.forEach(point => {
-        if (point.time >= t && point.time <= t + dur) {
-          const decay = 1 - (point.time - t) / dur;
-          point.cortisolScore = Math.min(100, point.cortisolScore + 8 * decay);
-        }
-      });
-    } else if (mod.type === 'tea') {
-      timeline.forEach(point => {
-        if (point.time >= t && point.time <= t + dur) {
-          const decay = 1 - (point.time - t) / dur;
-          point.cortisolScore = Math.min(100, point.cortisolScore + 4 * decay);
-        }
-      });
-    } else if (mod.type === 'energy_drink') {
-      timeline.forEach(point => {
-        if (point.time >= t && point.time <= t + dur) {
-          const decay = 1 - (point.time - t) / dur;
-          point.cortisolScore = Math.min(100, point.cortisolScore + 10 * decay);
-        }
-      });
-    }
-  });
-
   return timeline;
 }
 
@@ -748,17 +704,12 @@ export default function SalaComandi() {
   // STATI INTERFACCIA
   const [currentTime, setCurrentTime] = useState(8);
   const [showDetails, setShowDetails] = useState(false);
-  const [chartUnit, setChartUnit] = useState('glicemia'); // per Radar Metabolico Pro: 'glicemia' | 'idratazione' | 'cortisolo' | 'digestione'
+  const [chartUnit, setChartUnit] = useState('percent'); // 'percent' | 'kcal'
   const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
-  const [selectedMealCenter, setSelectedMealCenter] = useState(null);
-  const [chartExplanationModal, setChartExplanationModal] = useState({ isOpen: false, activeIndex: 0 });
-  const [touchStartX, setTouchStartX] = useState(null);
-  const [energyDrawerBeverage, setEnergyDrawerBeverage] = useState(''); // 'coffee' | 'tea' | 'energy_drink' | 'nap' | 'meditation' | ''
-  const [energyDrawerDuration, setEnergyDrawerDuration] = useState(0.25); // ore (es. 0.25 = 15 min)
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -2831,8 +2782,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <span>{label}</span>
           <span>{c.toFixed(1)} / {t} {unit}</span>
         </div>
-        <div style={{ height: '12px', background: '#333', borderRadius: '6px', overflow: 'hidden' }}>
-          <div style={{ width: `${p}%`, height: '100%', background: color, borderRadius: '6px', transition: 'width 0.5s' }}></div>
+        <div style={{ height: '4px', background: '#222', borderRadius: '2px', overflow: 'hidden' }}>
+          <div style={{ width: `${p}%`, height: '100%', background: color, transition: 'width 0.5s' }}></div>
         </div>
       </div>
     );
@@ -3070,31 +3021,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         energyFuture: d.time >= displayTime ? scale(d.energy) : null
       }))
     : renderDataWithSegments;
-  const modalCalorieData = useMemo(() => {
-    const seg = renderData.map(d => ({
-      ...d,
-      anabolicScore: getAnabolicAtTime(anabolicCurve, d.time),
-      cortisolScore: getCortisolAtTime(cortisolCurve, d.time),
-      energyPast: d.time <= displayTime ? d.energy : null,
-      energyFuture: d.time >= displayTime ? d.energy : null,
-      glicemiaPast: d.time <= displayTime ? d.glicemia : null,
-      glicemiaFuture: d.time >= displayTime ? d.glicemia : null,
-      idratazionePast: d.time <= displayTime ? d.idratazione : null,
-      idratazioneFuture: d.time >= displayTime ? d.idratazione : null,
-      cortisoloPast: d.time <= displayTime ? d.cortisolo : null,
-      cortisoloFuture: d.time >= displayTime ? d.cortisolo : null,
-      digestionePast: d.time <= displayTime ? d.digestione : null,
-      digestioneFuture: d.time >= displayTime ? d.digestione : null
-    }));
-    const scaleFn = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
-    return seg.map(d => ({
-      ...d,
-      energy: scaleFn(d.energy),
-      idealEnergy: scaleFn(d.idealEnergy),
-      energyPast: d.time <= displayTime ? scaleFn(d.energy) : null,
-      energyFuture: d.time >= displayTime ? scaleFn(d.energy) : null
-    }));
-  }, [renderData, displayTime, targetKcalChart, anabolicCurve, cortisolCurve]);
   const finalDotY = chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'kcal' ? scale(dotY) : dotY))));
 
   const energyAt20Percent = energyAt20 ?? 50;
@@ -3209,85 +3135,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const workoutCount = (dailyLog || []).filter(i => i.type === 'workout' && i.mealTime <= currentTime).length;
     const workoutDrain = workoutCount * 15;
     let currentBattery = startingBattery - timeDrain - workoutDrain;
-    const modifierTypes = ['coffee', 'tea', 'energy_drink', 'nap', 'meditation'];
-    const modifiers = [...(dailyLog || []), ...(manualNodes || [])].filter(m => modifierTypes.includes(m.type));
-    modifiers.forEach(m => {
-      const t = m.time ?? m.mealTime ?? 0;
-      const dur = typeof m.duration === 'number' && m.duration > 0 ? m.duration : (m.type === 'nap' ? 1.5 : m.type === 'meditation' ? 0.5 : m.type === 'tea' ? 0.75 : m.type === 'energy_drink' ? 1.25 : 1);
-      if (t > currentTime) return;
-      if (m.type === 'nap' && currentTime <= t + dur) currentBattery += 15 * (1 - (currentTime - t) / dur);
-      else if (m.type === 'meditation' && currentTime <= t + dur) currentBattery += 8 * (1 - (currentTime - t) / dur);
-      else if (m.type === 'coffee' && currentTime <= t + dur) currentBattery += 8 * (1 - (currentTime - t) / dur);
-      else if (m.type === 'tea' && currentTime <= t + dur) currentBattery += 5 * (1 - (currentTime - t) / dur);
-      else if (m.type === 'energy_drink' && currentTime <= t + dur) currentBattery += 10 * (1 - (currentTime - t) / dur);
-    });
     currentBattery = Math.max(0, Math.min(100, currentBattery));
     let batteryColor = '#00e676'; let batteryIcon = '🔋';
     if (currentBattery <= 20) { batteryColor = '#ff4d4d'; batteryIcon = '🪫'; }
     else if (currentBattery <= 50) { batteryColor = '#ffea00'; }
     return { level: Math.round(currentBattery), color: batteryColor, icon: batteryIcon };
-  }, [dailyLog, currentTime, manualNodes]);
-
-  const energyChartData = useMemo(() => {
-    const sleepNode = (dailyLog || []).find(i => i.type === 'sleep');
-    const wakeTime = sleepNode?.wakeTime ?? 7.5;
-    const sleepHours = sleepNode?.hours ?? 8.0;
-    const startingBattery = Math.min(100, Math.max(0, 100 - ((8 - sleepHours) * 10)));
-    const modifierTypes = ['coffee', 'tea', 'energy_drink', 'nap', 'meditation'];
-    const modifiers = [...(dailyLog || []), ...(manualNodes || [])].filter(m => modifierTypes.includes(m.type));
-    const data = [];
-    for (let h = 0; h <= 24; h++) {
-      let hoursAwake = h - wakeTime;
-      if (hoursAwake < 0) hoursAwake = 0;
-      const timeDrain = hoursAwake * 3.5;
-      const workoutCount = (dailyLog || []).filter(i => i.type === 'workout' && (i.mealTime ?? i.time ?? 0) <= h).length;
-      const workoutDrain = workoutCount * 15;
-      let currentBattery = startingBattery - timeDrain - workoutDrain;
-      modifiers.forEach(m => {
-        const t = m.time ?? m.mealTime ?? 0;
-        const dur = typeof m.duration === 'number' && m.duration > 0 ? m.duration : (m.type === 'nap' ? 1.5 : m.type === 'meditation' ? 0.5 : m.type === 'tea' ? 0.75 : m.type === 'energy_drink' ? 1.25 : 1);
-        if (t > h) return;
-        if (m.type === 'nap' && h <= t + dur) currentBattery += 15 * Math.max(0, 1 - (h - t) / dur);
-        else if (m.type === 'meditation' && h <= t + dur) currentBattery += 8 * Math.max(0, 1 - (h - t) / dur);
-        else if (m.type === 'coffee' && h <= t + dur) currentBattery += 8 * Math.max(0, 1 - (h - t) / dur);
-        else if (m.type === 'tea' && h <= t + dur) currentBattery += 5 * Math.max(0, 1 - (h - t) / dur);
-        else if (m.type === 'energy_drink' && h <= t + dur) currentBattery += 10 * Math.max(0, 1 - (h - t) / dur);
-      });
-      currentBattery = Math.max(0, Math.min(100, currentBattery));
-      data.push({ ora: h, energia: Math.round(currentBattery) });
-    }
-    return data;
-  }, [dailyLog, manualNodes]);
-
-  const chartWakeTime = useMemo(() => {
-    const sleepNode = (dailyLog || []).find(i => i.type === 'sleep');
-    return Math.round(sleepNode?.wakeTime ?? 7.5);
-  }, [dailyLog]);
-  const chartCurrentHour = Math.round(currentTime);
-  const modifierNodes = useMemo(() =>
-    [...(dailyLog || []), ...(manualNodes || [])].filter(m => ['coffee', 'tea', 'energy_drink', 'nap', 'meditation'].includes(m.type)),
-    [dailyLog, manualNodes]
-  );
-  const getModifierIcon = (type) => ({ coffee: '☕', tea: '🍵', energy_drink: '🥫', nap: '😴', meditation: '🧘' }[type] || '•');
-
-  const chartExplanations = [
-    { id: 'calorie', title: '🔥 Andamento Calorico', description: "Mostra l'accumulo delle calorie ingerite (Carburante) dal risveglio fino a sera. A differenza dell'Energia, le calorie salgono a gradini ogni volta che consumi un pasto. Analizzare questa curva ti aiuta a capire se stai distribuendo i nutrienti in modo corretto durante la giornata o se stai concentrando troppo cibo in una singola fascia oraria.", color: '#00e5ff' },
-    { id: 'energia', title: '🔋 Body Battery (Sistema Nervoso)', description: "Questo grafico traccia la tua Body Battery nell'arco delle 24h. L'energia del Sistema Nervoso Centrale si ricarica solo con il sonno. Durante il giorno si consuma fisiologicamente con la veglia, e subisce crolli verticali (scalini) in corrispondenza degli allenamenti. È il parametro vitale per capire quando il tuo corpo ha bisogno di riposo per evitare il sovrallenamento.", color: '#00e676' },
-    { id: 'cortisolo', title: '🧠 Cortisolo / Stress', description: "Modella la curva del cortisolo nelle 24h: fisiologicamente alto al risveglio e in calo verso sera. Picchi anomali o livelli elevati in orario serale segnalano stress, sovrallenamento o sonno insufficiente. Ottimizzare questa curva aiuta il recupero, il sonno e la composizione corporea.", color: '#f59e0b' },
-    { id: 'glicemia', title: '🩸 Simulatore Glicemico', description: "Evidenzia il carico glicemico dei pasti e l'andamento stimato della glicemia nelle 24h. Le zone verde/giallo/blu indicano range di sicurezza, rischio e iperglicemia. Mantenere i picchi sotto controllo riduce i crash insulinici, la letargia post-prandiale e favorisce stabilità metabolica e composizione corporea.", color: '#ef4444' },
-    { id: 'digestione', title: '⚙️ Digestione', description: "Stima il carico digestivo orario in base a pasti e tipologia degli alimenti. Evitare picchi eccessivi o pasti troppo ravvicinati riduce affaticamento, gonfiore e interferenze con il sonno. Una distribuzione equilibrata supporta l'assorbimento e il metabolismo.", color: '#9333ea' },
-    { id: 'idratazione', title: '💧 Idratazione', description: "Stima il livello di idratazione in base ad acqua registrata e contesto (sonno, allenamenti). Restare nella fascia ottimale migliora performance cognitiva e fisica, riduce il cortisolo e supporta il trasporto dei nutrienti. Un calo eccessivo impatta recupero e termoregolazione.", color: '#007aff' }
-  ];
-  const chartUnitToModalIndex = (unit) => (unit === 'kcal' ? 0 : unit === 'glicemia' ? 3 : unit === 'idratazione' ? 5 : unit === 'cortisolo' ? 2 : unit === 'digestione' ? 4 : 0);
+  }, [dailyLog, currentTime]);
   // --- FINE ZONA SICURA ---
 
-  /** Click sul centro del tachimetro: chiude il dettaglio pasto (carosello) */
-  const handleCenterClick = () => setSelectedMealCenter(null);
-
-  const renderCustomizedLabel = (props) => {
-    const { cx, cy, midAngle, outerRadius, value, name, fill, payload, macros } = props;
+  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, name, fill }) => {
     if (name === 'Rimanenti' || value === 0) return null;
-    const radius = outerRadius + 14;
+    const radius = outerRadius + 12; // Icone più vicine all'anello
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
     let icon = '🍎';
@@ -3296,125 +3154,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     else if (n.includes('cena')) icon = '🍽️';
     else if (n.includes('colazion')) icon = '🍳';
     else if (n.includes('snack') || n.includes('merenda')) icon = '🫐';
-    const segmentData = { name, value, payload: { color: fill || payload?.color, macros: macros || payload?.macros } };
     return (
-      <g
-        transform={`translate(${x},${y})`}
-        onClick={() => setSelectedMealCenter(segmentData)}
-        style={{ cursor: 'pointer', pointerEvents: 'auto' }}
-      >
-        <circle cx="0" cy="0" r="16" fill="#111" stroke={fill} strokeWidth="1.5" style={{ filter: `drop-shadow(0 0 4px ${fill}80)` }} />
-        <text x="0" y="0" dy="4.5" textAnchor="middle" fontSize="14">{icon}</text>
+      <g transform={`translate(${x},${y})`} style={{ pointerEvents: 'none' }}>
+        <circle cx="0" cy="0" r="14" fill="#111" stroke={fill} strokeWidth="1.5" style={{ filter: `drop-shadow(0 0 4px ${fill}80)` }} />
+        <text x="0" y="0" dy="4.5" textAnchor="middle" fontSize="13">{icon}</text>
       </g>
     );
-  };
-
-  /** Evidenzia lo spicchio cliccato aumentandone il raggio esterno (senza outline di focus) */
-  const renderActiveShape = (props) => {
-    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
-    const r = typeof outerRadius === 'number' ? outerRadius * 1.08 : `${parseFloat(String(outerRadius)) * 1.08}%`;
-    return (
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius}
-        outerRadius={r}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-        stroke="none"
-        style={{ outline: 'none' }}
-      />
-    );
-  };
-
-  /** Analisi dinamica in tempo reale per il Modal Spiegazione Grafici: cosa sta succedendo oggi + criticità */
-  const ChartExplanationAnalysis = ({ activeIndex }) => {
-    const kcalConsumate = Math.round(totali?.kcal || 0);
-    const targetKcal = Math.round(dynamicDailyKcal);
-    const surplus = targetKcal - kcalConsumate;
-    const targetProt = userTargets?.prot ?? 150;
-    const targetCarb = userTargets?.carb ?? 200;
-    const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 60;
-    const gl = typeof dotGlicemia === 'number' && !Number.isNaN(dotGlicemia) ? Math.round(dotGlicemia) : 85;
-    const idr = typeof dotIdratazione === 'number' && !Number.isNaN(dotIdratazione) ? Math.round(dotIdratazione) : 100;
-    const cort = typeof dotCortisolo === 'number' && !Number.isNaN(dotCortisolo) ? Math.round(dotCortisolo) : 50;
-    const dig = typeof dotDigestione === 'number' && !Number.isNaN(dotDigestione) ? Math.round(dotDigestione) : 0;
-    const critStyle = { color: '#ff6b6b', fontWeight: 'bold' };
-    const okStyle = { color: '#00e676' };
-
-    if (activeIndex === 0) {
-      const hasSurplus = surplus < 0;
-      const protOk = (totali?.prot || 0) >= targetProt * 0.85;
-      const carbOk = (totali?.carb || 0) >= targetCarb * 0.7 && (totali?.carb || 0) <= targetCarb * 1.3;
-      const fatOk = (totali?.fatTotal ?? totali?.fat ?? 0) >= targetFat * 0.7;
-      return (
-        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
-          <p>Oggi hai consumato <strong style={{ color: '#fff' }}>{kcalConsumate} kcal</strong> su un target di <strong style={{ color: '#fff' }}>{targetKcal} kcal</strong>.</p>
-          {surplus >= 0 ? (
-            <p style={okStyle}>✓ Rimangono <strong>{Math.round(surplus)} kcal</strong> — sei in deficit o in linea con l'obiettivo.</p>
-          ) : (
-            <p style={critStyle}>⚠️ Surplus calorico di <strong>{Math.abs(Math.round(surplus))} kcal</strong>. Il corpo tenderà a depositare il surplus; considera di ridurre le porzioni o l'intake nei prossimi pasti.</p>
-          )}
-          <p>Macronutrienti: Proteine {protOk ? <span style={okStyle}>✓</span> : <span style={critStyle}>sotto target</span>}, Carboidrati {carbOk ? <span style={okStyle}>✓</span> : <span style={critStyle}>sbilanciati</span>}, Grassi {fatOk ? <span style={okStyle}>✓</span> : <span style={critStyle}>da monitorare</span>}.</p>
-        </div>
-      );
-    }
-    if (activeIndex === 1) {
-      const level = bodyBatteryData?.level ?? 50;
-      const seraleRischio = energyAt20Percent < 40;
-      return (
-        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
-          <p>La tua <strong style={{ color: '#fff' }}>Body Battery (SNC)</strong> è al <strong style={{ color: bodyBatteryData?.color ?? '#fff' }}>{level}%</strong>.</p>
-          {level <= 20 && <p style={critStyle}>⚠️ Batteria critica: il sistema nervoso è sotto stress. Priorità a riposo e sonno; evita allenamenti intensi.</p>}
-          {level > 20 && level <= 50 && <p style={{ color: '#ffea00' }}>Batteria in zona media: gestisci il carico e prediligi recupero nelle prossime ore.</p>}
-          {level > 50 && <p style={okStyle}>✓ Livello energetico adeguato per le attività della giornata.</p>}
-          {seraleRischio && <p style={critStyle}>⚠️ Rischio serale: energia residua stimata sotto il 40% in fascia serale — possibile impatto su sonno e cortisolo. Considera una cena bilanciata e niente stimoli eccessivi.</p>}
-        </div>
-      );
-    }
-    if (activeIndex === 2) {
-      const altoSerale = cort > 60 && currentTime >= 18;
-      return (
-        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
-          <p>Cortisolo stimato in questo momento: <strong style={{ color: '#fff' }}>{cort}%</strong> della curva circadiana.</p>
-          {altoSerale && <p style={critStyle}>⚠️ Cortisolo elevato in fascia serale: può interferire con addormentamento e recupero. Riduci stimoli, schermi e caffeina; prediligi attività calmanti.</p>}
-          {!altoSerale && <p style={okStyle}>✓ Curva cortisolo coerente con il ritmo giorno/notte.</p>}
-        </div>
-      );
-    }
-    if (activeIndex === 3) {
-      const zona = gl < 85 ? 'bassa/normale' : gl < 140 ? 'normale/post-prandiale' : 'alta';
-      const rischio = gl >= 140 || gl < 70;
-      return (
-        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
-          <p>Glicemia stimata attuale: <strong style={{ color: '#fff' }}>{gl} mg/dL</strong> — zona <strong>{zona}</strong>.</p>
-          {rischio && <p style={critStyle}>⚠️ {gl >= 140 ? 'Picco glicemico elevato: favorisce insulina e accumulo. Riduci carico glicemico ai prossimi pasti.' : 'Valore basso: rischio ipoglicemia o letargia. Considera uno snack bilanciato.'}</p>}
-          {!rischio && <p style={okStyle}>✓ Andamento nella fascia di sicurezza; mantieni distribuzione e qualità dei carboidrati.</p>}
-        </div>
-      );
-    }
-    if (activeIndex === 4) {
-      const caricoAlto = dig > 70;
-      return (
-        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
-          <p>Carico digestivo stimato: <strong style={{ color: '#fff' }}>{dig}%</strong>.</p>
-          {caricoAlto && <p style={critStyle}>⚠️ Carico digestivo elevato: può causare gonfiore e affaticamento. Evita pasti abbondanti ravvicinati e prediligi cene leggere.</p>}
-          {!caricoAlto && <p style={okStyle}>✓ Distribuzione dei pasti gestibile; l'intestino non è sovraccarico.</p>}
-        </div>
-      );
-    }
-    if (activeIndex === 5) {
-      const bassa = idr < 70;
-      return (
-        <div style={{ fontSize: '1.05rem', lineHeight: '1.7', color: '#ccc' }}>
-          <p>Idratazione stimata: <strong style={{ color: '#fff' }}>{idr}%</strong>.</p>
-          {bassa && <p style={critStyle}>⚠️ Idratazione sotto la soglia ottimale: impatta performance, recupero e termoregolazione. Aumenta l'assunzione di acqua.</p>}
-          {!bassa && <p style={okStyle}>✓ Livello idratazione nella norma; continua a bere con regolarità.</p>}
-        </div>
-      );
-    }
-    return <p style={{ color: '#888' }}>Seleziona un grafico per l'analisi.</p>;
   };
 
   // ========================================================
@@ -3774,6 +3519,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto energetico giornaliero 0-24h */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
         <div style={{ flexShrink: 0, marginBottom: '10px' }}>
+          <div style={{ marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
+              {chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : 'Energia 0–24h'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
+            <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
+            <button type="button" onClick={() => setChartUnit('kcal')} className={`telemetry-btn ${chartUnit === 'kcal' ? 'active' : ''}`}>⚡ KCAL</button>
+            <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEM</button>
+            <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`}>💧 IDRAT</button>
+            <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol' : ''}`}>🧠 CORTISOL</button>
+            <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGEST</button>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', marginTop: '6px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: `1px solid ${metabolicState.color}40` }}>
             <span style={{ fontSize: '0.7rem', color: '#888' }}>Radar metabolico:</span>
             <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
@@ -3806,94 +3564,151 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               onMouseLeave={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
               style={{ flexShrink: 0, width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
             >
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                {/* BLOCCO 1: Andamento Calorico (fisso) */}
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 0 })} style={{ width: '100%', minHeight: 220, marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
-                  <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff' }}>🔥 Andamento Calorico</h3>
-                  <div style={{ width: '100%', height: '200px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={modalCalorieData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                        <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                        <YAxis stroke="#666" fontSize={10} tickFormatter={(v) => (v != null && !Number.isNaN(Number(v))) ? Math.round(Number(v)) : v} />
-                        <Area type="monotone" dataKey="energy" stroke="#00e5ff" strokeWidth={3} fillOpacity={0.2} fill="#00e5ff" />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-                {/* BLOCCO 2: Body Battery (fisso) */}
-                <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: 1 })} style={{ marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222', cursor: 'pointer' }}>
-                  <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>🔋 Body Battery (Sistema Nervoso)</span>
-                    <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
-                  </h3>
-                  <div style={{ width: '100%', height: '220px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
-                            <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                        <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
-                        <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
-                        <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} itemStyle={{ color: '#00e676', fontWeight: 'bold' }} formatter={(value) => [`${value}%`, 'Energia Residua']} labelFormatter={(label) => `Ore ${label}:00`} />
-                        <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" />
-                        <ReferenceLine x={chartWakeTime} stroke="#aaa" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Sveglia', fill: '#aaa', fontSize: 10 }} />
-                        <ReferenceLine x={chartCurrentHour} stroke="#00e5ff" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: 'Ora', fill: '#00e5ff', fontSize: 10 }} />
-                        <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
-                        <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
-                        {modifierNodes.map(m => {
-                          const icon = getModifierIcon(m.type);
-                          const yVal = energyChartData.find(d => d.ora === Math.floor(m.time ?? m.mealTime ?? 0))?.energia ?? 50;
-                          return <ReferenceDot key={m.id} x={m.time ?? m.mealTime ?? 0} y={yVal} r={0} isFront shape={(props) => <g transform={`translate(${props.x},${props.y})`}><text y={-20} textAnchor="middle" fontSize={24}>{icon}</text></g>} />;
-                        })}
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-                {/* BLOCCO 3: Radar Metabolico (grafici selezionabili con chartUnit) */}
-                <div style={{ marginBottom: '20px', background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
-                  <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#fff' }}>Radar Metabolico</h3>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
-                    <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEMIA</button>
-                    <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`}>💧 IDRATAZIONE</button>
-                    <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol' : ''}`}>🧠 CORTISOLO</button>
-                    <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGESTIONE</button>
-                  </div>
-                  <div onClick={() => setChartExplanationModal({ isOpen: true, activeIndex: chartUnitToModalIndex(chartUnit) })} style={{ width: '100%', height: '220px', cursor: 'pointer' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="proRadarGlicemia" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" stopOpacity={0.9} /><stop offset="100%" stopColor="#ef4444" stopOpacity={0} /></linearGradient>
-                          <linearGradient id="proRadarWater" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#007aff" stopOpacity={0.9} /><stop offset="100%" stopColor="#007aff" stopOpacity={0} /></linearGradient>
-                          <linearGradient id="proRadarCortisol" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} /><stop offset="100%" stopColor="#f59e0b" stopOpacity={0} /></linearGradient>
-                          <linearGradient id="proRadarDigestion" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9333ea" stopOpacity={0.9} /><stop offset="100%" stopColor="#9333ea" stopOpacity={0} /></linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                        <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                        <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : [0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => (chartUnit === 'glicemia' ? v : `${v}%`)} />
-                        {chartUnit === 'glicemia' && (
-                          <>
-                            <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
-                            <ReferenceArea y1={85} y2={140} fill="#eab30820" stroke="none" />
-                            <ReferenceArea y1={140} y2={220} fill="#3b82f620" stroke="none" />
-                          </>
-                        )}
-                        <Area type="monotone" dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : chartUnit === 'idratazione' ? 'idratazionePast' : chartUnit === 'cortisolo' ? 'cortisoloPast' : 'digestionePast'} stroke={chartUnit === 'glicemia' ? '#ef4444' : chartUnit === 'idratazione' ? '#007aff' : chartUnit === 'cortisolo' ? '#f59e0b' : '#9333ea'} strokeWidth={3} fillOpacity={0.2} fill={chartUnit === 'glicemia' ? 'url(#proRadarGlicemia)' : chartUnit === 'idratazione' ? 'url(#proRadarWater)' : chartUnit === 'cortisolo' ? 'url(#proRadarCortisol)' : 'url(#proRadarDigestion)'} connectNulls={false} />
-                        <Area type="monotone" dataKey={chartUnit === 'glicemia' ? 'glicemiaFuture' : chartUnit === 'idratazione' ? 'idratazioneFuture' : chartUnit === 'cortisolo' ? 'cortisoloFuture' : 'digestioneFuture'} stroke={chartUnit === 'glicemia' ? '#7f1d1d' : chartUnit === 'idratazione' ? '#003a8c' : chartUnit === 'cortisolo' ? '#78350f' : '#581c87'} strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
-                        {chartUnit === 'cortisolo' && modifierNodes.map(m => {
-                          const icon = getModifierIcon(m.type);
-                          const t = m.time ?? m.mealTime ?? 0;
-                          const yVal = getCortisolAtTime(cortisolCurve, t);
-                          return <ReferenceDot key={m.id} x={t} y={yVal} r={0} isFront shape={(props) => <g transform={`translate(${props.x},${props.y})`}><text y={-20} textAnchor="middle" fontSize={24}>{icon}</text></g>} />;
-                        })}
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={finalChartData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorEnergy" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
+                      <stop offset="50%" stopColor="#047857" stopOpacity={0.7} />
+                      <stop offset="100%" stopColor="#dc2626" stopOpacity={0.6} />
+                    </linearGradient>
+                    <linearGradient id="vitalFlow" x1="0" y1="0" x2="1" y2="0">
+                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="4s" repeatCount="indefinite" />
+                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="4s" repeatCount="indefinite" />
+                      <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.8" />
+                      <stop offset="50%" stopColor="#b388ff" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.8" />
+                    </linearGradient>
+                    <linearGradient id="colorGlicemia" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#ef4444" stopOpacity={0.9} />
+                      <stop offset="50%" stopColor="#f59e0b" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#ef4444" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="bloodFlow" x1="0" y1="0" x2="1" y2="0">
+                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
+                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
+                      <stop offset="0%" stopColor="#ef4444" stopOpacity="0.8" />
+                      <stop offset="50%" stopColor="#fca5a5" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#ef4444" stopOpacity="0.8" />
+                    </linearGradient>
+                    <linearGradient id="colorWater" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#007aff" stopOpacity={0.9} />
+                      <stop offset="50%" stopColor="#00e5ff" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#007aff" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="waterFlow" x1="0" y1="0" x2="1" y2="0">
+                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
+                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
+                      <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.8" />
+                      <stop offset="50%" stopColor="#007aff" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.8" />
+                    </linearGradient>
+                    <linearGradient id="colorCortisol" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} />
+                      <stop offset="50%" stopColor="#fbbf24" stopOpacity={0.5} />
+                      <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="cortisolFlow" x1="0" y1="0" x2="1" y2="0">
+                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
+                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
+                      <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.8" />
+                      <stop offset="50%" stopColor="#fcd34d" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.8" />
+                    </linearGradient>
+                    <linearGradient id="colorAnabolic" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#00e5ff" stopOpacity={0.6} />
+                      <stop offset="95%" stopColor="#00e5ff" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorCortisol" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#9c27b0" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#9c27b0" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorDigestion" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#9333ea" stopOpacity={0.9} />
+                      <stop offset="50%" stopColor="#a855f7" stopOpacity={0.5} />
+                      <stop offset="100%" stopColor="#9333ea" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="digestionFlow" x1="0" y1="0" x2="1" y2="0">
+                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
+                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
+                      <stop offset="0%" stopColor="#9333ea" stopOpacity="0.8" />
+                      <stop offset="50%" stopColor="#c084fc" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#9333ea" stopOpacity="0.8" />
+                    </linearGradient>
+                    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 13 }} />
+                  <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
+                  <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} hide />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
+                  {dailyLog.filter(item => item.type === 'sleep').map((sleepItem, index) => (
+                    <ReferenceLine
+                      key={`sleep-ref-${sleepItem.id ?? index}`}
+                      x={sleepItem.wakeTime}
+                      stroke="#4ba3e3"
+                      strokeDasharray="3 3"
+                      strokeWidth={1.5}
+                      label={{
+                        position: 'insideTopLeft',
+                        value: '🌅 Sveglia',
+                        fill: '#4ba3e3',
+                        fontSize: 11,
+                        fontWeight: 'bold'
+                      }}
+                    />
+                  ))}
+                  <Area type="monotone" dataKey="anabolicScore" fill="url(#colorAnabolic)" stroke="transparent" strokeWidth={0} fillOpacity={0.35} yAxisId="anabolic" isAnimationActive={!draggingNode} />
+                  <Area type="monotone" dataKey="cortisolScore" fill="url(#colorCortisol)" stroke="#9c27b0" strokeWidth={2} strokeDasharray="5 5" fillOpacity={0.3} yAxisId="anabolic" isAnimationActive={!draggingNode} />
+                  {chartUnit === 'glicemia' && (
+                    <>
+                      <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
+                      <ReferenceArea y1={85} y2={140} fill="#eab30820" stroke="none" />
+                      <ReferenceArea y1={140} y2={220} fill="#3b82f620" stroke="none" />
+                    </>
+                  )}
+                  <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1, strokeDasharray: '5 5' }} />
+                  <Area type="monotone"
+                    dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : (chartUnit === 'idratazione' ? 'idratazionePast' : chartUnit === 'cortisolo' ? 'cortisoloPast' : chartUnit === 'digestione' ? 'digestionePast' : 'energyPast')}
+                    stroke={chartUnit === 'glicemia' ? 'url(#bloodFlow)' : (chartUnit === 'idratazione' ? 'url(#waterFlow)' : chartUnit === 'cortisolo' ? 'url(#cortisolFlow)' : chartUnit === 'digestione' ? 'url(#digestionFlow)' : 'url(#vitalFlow)')}
+                    strokeWidth={6}
+                    fill={chartUnit === 'glicemia' ? 'url(#colorGlicemia)' : (chartUnit === 'idratazione' ? 'url(#colorWater)' : chartUnit === 'cortisolo' ? 'url(#colorCortisol)' : chartUnit === 'digestione' ? 'url(#colorDigestion)' : 'url(#colorEnergy)')}
+                    filter="url(#glow)" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false}
+                  />
+                  <Area type="monotone"
+                    dataKey={chartUnit === 'glicemia' ? 'glicemiaFuture' : (chartUnit === 'idratazione' ? 'idratazioneFuture' : chartUnit === 'cortisolo' ? 'cortisoloFuture' : chartUnit === 'digestione' ? 'digestioneFuture' : 'energyFuture')}
+                    stroke={chartUnit === 'glicemia' ? '#7f1d1d' : (chartUnit === 'idratazione' ? '#003a8c' : chartUnit === 'cortisolo' ? '#78350f' : chartUnit === 'digestione' ? '#581c87' : '#444')}
+                    strokeWidth={4} strokeDasharray="10 10" fill="transparent" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} className="future"
+                  />
+                  {chartUnit === 'glicemia' ? (
+                    <ReferenceLine y={85} stroke="rgba(255, 255, 255, 0.2)" strokeDasharray="5 5" label={{ position: 'insideTopLeft', value: 'Basale', fill: '#555', fontSize: 10 }} />
+                  ) : (
+                    <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255, 255, 255, 0.2)" strokeWidth={4} strokeDasharray="8 8" dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
+                  )}
+                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 11, offset: 10 }} />
+                  <ReferenceDot x={displayTime} y={finalDotY} isFront shape={(props) => {
+                    const cx = props?.cx;
+                    const cy = props?.cy;
+                    if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') return <path d="M0 0" />;
+                    const fillColor = chartUnit === 'glicemia' ? '#ef4444' : (chartUnit === 'cortisolo' ? '#f59e0b' : chartUnit === 'digestione' ? '#9333ea' : '#00e5ff');
+                    return (
+                      <g>
+                        <circle cx={cx} cy={cy} r={10} fill={fillColor} />
+                        <circle cx={cx} cy={cy} r={10} fill="none" stroke={fillColor} strokeWidth={4}>
+                          <animate attributeName="r" values="10;28" dur="1.5s" repeatCount="indefinite" />
+                          <animate attributeName="opacity" values="0.8;0" dur="1.5s" repeatCount="indefinite" />
+                        </circle>
+                      </g>
+                    );
+                  }} />
+                </ComposedChart>
+              </ResponsiveContainer>
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
                   {allNodesWithStack.map((node) => {
@@ -3974,72 +3789,55 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
-          {/* TACHIMETRO CIRCOLARE E INTERATTIVO */}
+          {/* TACHIMETRO CIRCOLARE (Layout a Layer Multipli per FIX Z-Index e Margini) */}
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-            {/* Contenitore ingrandito a 380px */}
-            <div style={{ position: 'relative', width: '100%', maxWidth: '380px', aspectRatio: '1', margin: '0 auto' }}>
+            {/* Contenitore allargato a 360px */}
+            <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto' }}>
 
-              {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
-              <div
-                onClick={handleCenterClick}
-                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '64%', height: '64%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 20, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default' }}
-              >
-                {!selectedMealCenter ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-14px)' }}>
-                    <span style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
-                    <span style={{ fontSize: '2.6rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
-                    <span style={{ fontSize: '0.9rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-10px)', width: '80%', textAlign: 'center' }}>
-                    <span style={{ color: selectedMealCenter.payload?.color || '#fff', fontSize: '0.9rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', borderBottom: `1px solid ${(selectedMealCenter.payload?.color || '#fff')}50`, paddingBottom: '2px' }}>
-                      {selectedMealCenter.name}
-                    </span>
-                    <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(selectedMealCenter.value)} <span style={{ fontSize: '0.8rem', color: '#aaa' }}>kcal</span></span>
-                    {selectedMealCenter.payload?.macros && (
-                      <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', marginTop: '4px', fontWeight: 'bold' }}>
-                        <span style={{ color: '#ffb74d' }}>C:{Math.round(selectedMealCenter.payload.macros.carb)}</span>
-                        <span style={{ color: '#64b5f6' }}>P:{Math.round(selectedMealCenter.payload.macros.pro)}</span>
-                        <span style={{ color: '#81c784' }}>F:{Math.round(selectedMealCenter.payload.macros.fat)}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
+              {/* Layer 1: Glow Esterno e Sfondo Centrale (Allargato al 64% per riempire l'interno) */}
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '64%', height: '64%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}` }}>
+                {/* Contenitore testo traslato verso l'alto per fare spazio al bottone */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-12px)' }}>
+                  <span style={{ color: '#888', fontSize: '0.8rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
+                  <span style={{ fontSize: '2.5rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
+                  <span style={{ fontSize: '0.85rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
+                </div>
               </div>
 
-              {/* Layer 2: Grafico a Torta (singolo anello Calorie) + activeShape senza outline */}
-              <div style={{ position: 'absolute', inset: 0, zIndex: 10, outline: 'none' }}>
+              {/* Layer 2: Grafico a Torta (Raggi allargati) */}
+              <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart style={{ outline: 'none' }}>
+                  <PieChart>
                     <Pie
                       data={mealPieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius="68%"
-                      outerRadius="85%"
-                      paddingAngle={3}
+                      innerRadius="66%"
+                      outerRadius="82%"
+                      paddingAngle={2}
                       dataKey="value"
                       stroke="none"
                       labelLine={false}
                       label={renderCustomizedLabel}
-                      activeIndex={selectedMealCenter != null ? mealPieData.findIndex(d => d.name === selectedMealCenter.name) : -1}
-                      activeShape={renderActiveShape}
-                      onClick={(data) => setSelectedMealCenter({ name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
-                      style={{ cursor: 'pointer', outline: 'none' }}
                     >
                       {mealPieData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
+                    <Tooltip
+                      content={<MealPieTooltip />}
+                      allowEscapeViewBox={{ x: true, y: true }}
+                      wrapperStyle={{ zIndex: 1000, pointerEvents: 'none', outline: 'none' }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
 
-              {/* Layer 3: Bottone Analizza Alzato */}
+              {/* Layer 3: Bottone Analizza (Posizionato nel bordo inferiore del cerchio nero) */}
               <button
                 type="button"
                 onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
-                style={{ position: 'absolute', top: '71%', left: '50%', transform: 'translate(-50%, -50%)', background: 'linear-gradient(145deg, #111, #222)', border: '1px solid #444', color: '#00e5ff', padding: '8px 18px', borderRadius: '25px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', zIndex: 20, boxShadow: '0 4px 10px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}
+                style={{ position: 'absolute', top: '74%', left: '50%', transform: 'translate(-50%, -50%)', background: 'linear-gradient(145deg, #111, #222)', border: '1px solid #444', color: '#00e5ff', padding: '6px 16px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', zIndex: 20, boxShadow: '0 4px 10px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}
               >
                 <span>📊</span> Analizza giornata
               </button>
@@ -4373,65 +4171,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           </div>
         )}
-
-        {/* VISTA ENERGIA E RECUPERO (Bevande / Riposo) */}
-        {activeAction === 'energia' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#ffea00', letterSpacing: '2px', margin: 0 }}>⚡ ENERGIA E RECUPERO</h2>
-              <div style={{ width: '70px' }}></div>
-            </div>
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#888', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '1px' }}>Bevande</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {[{ id: 'coffee', label: 'Caffè', icon: '☕' }, { id: 'tea', label: 'Tè', icon: '🍵' }, { id: 'energy_drink', label: 'Energy Drink', icon: '🥫' }].map(opt => (
-                  <button key={opt.id} type="button" onClick={() => setEnergyDrawerBeverage(energyDrawerBeverage === opt.id ? '' : opt.id)} style={{ padding: '12px 16px', borderRadius: '12px', border: `2px solid ${energyDrawerBeverage === opt.id ? '#ffea00' : '#333'}`, background: energyDrawerBeverage === opt.id ? 'rgba(255,234,0,0.15)' : '#1a1a1a', color: '#fff', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '1.2rem' }}>{opt.icon}</span> {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#888', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '1px' }}>Riposo</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {[{ id: 'nap', label: 'Pisolino', icon: '😴' }, { id: 'meditation', label: 'Meditazione', icon: '🧘' }].map(opt => (
-                  <button key={opt.id} type="button" onClick={() => setEnergyDrawerBeverage(energyDrawerBeverage === opt.id ? '' : opt.id)} style={{ padding: '12px 16px', borderRadius: '12px', border: `2px solid ${energyDrawerBeverage === opt.id ? '#ffea00' : '#333'}`, background: energyDrawerBeverage === opt.id ? 'rgba(255,234,0,0.15)' : '#1a1a1a', color: '#fff', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '1.2rem' }}>{opt.icon}</span> {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>Durata</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {[0.25, 0.5, 0.75, 1, 1.25, 1.5].map(hr => (
-                  <button key={hr} type="button" onClick={() => setEnergyDrawerDuration(hr)} style={{ padding: '10px 14px', borderRadius: '10px', border: `2px solid ${energyDrawerDuration === hr ? '#ffea00' : '#333'}`, background: energyDrawerDuration === hr ? 'rgba(255,234,0,0.15)' : '#1a1a1a', color: '#fff', fontSize: '0.85rem', cursor: 'pointer' }}>
-                    {hr < 1 ? `${Math.round(hr * 60)} min` : `${hr} h`}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled={!energyDrawerBeverage}
-              onClick={() => {
-                if (!energyDrawerBeverage) return;
-                const t = getCurrentTimeRoundedTo15Min();
-                const next = [...manualNodes, { id: `${energyDrawerBeverage}_${Date.now()}`, type: energyDrawerBeverage, time: t, duration: energyDrawerDuration }];
-                setManualNodes(next);
-                syncDatiFirebase(dailyLog, next);
-                setActiveAction(null);
-                setEnergyDrawerBeverage('');
-                setEnergyDrawerDuration(0.25);
-              }}
-              style={{ width: '100%', padding: '16px', borderRadius: '15px', border: '2px solid #ffea00', background: energyDrawerBeverage ? 'rgba(255,234,0,0.2)' : '#333', color: energyDrawerBeverage ? '#ffea00' : '#666', fontSize: '1rem', fontWeight: 'bold', cursor: energyDrawerBeverage ? 'pointer' : 'not-allowed' }}
-            >
-              Registra
-            </button>
-          </div>
-        )}
-
+        
         {/* VISTA ALLENAMENTO */}
         {activeAction === 'allenamento' && (
           <div className="view-animate">
@@ -5399,10 +5139,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <span style={{ fontSize: '1.5rem' }}>💧</span> ACQUA
             </button>
 
-            <button onClick={() => { setShowChoiceModal(false); setActiveAction('energia'); setIsDrawerOpen(true); setEnergyDrawerBeverage(''); setEnergyDrawerDuration(0.25); }} style={{ background: 'rgba(255,234,0,0.08)', border: '1px solid #ffea00', color: '#ffea00', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-              <span style={{ fontSize: '1.5rem' }}>⚡</span> ENERGIA E RECUPERO
-            </button>
-
             <button onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #00e5ff', color: '#00e5ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
               <span style={{ fontSize: '1.5rem' }}>⚙️</span> MENÙ PRINCIPALE
             </button>
@@ -5596,156 +5332,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
 
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL SPIEGAZIONE GRAFICI (Pop-up a schermo intero) */}
-      {chartExplanationModal.isOpen && (
-        <div
-          style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.95)', zIndex: 10000, display: 'flex', flexDirection: 'column', color: '#fff', backdropFilter: 'blur(10px)' }}
-          onTouchStart={(e) => setTouchStartX(e.touches[0].clientX)}
-          onTouchEnd={(e) => {
-            if (touchStartX == null) return;
-            const touchEndX = e.changedTouches[0].clientX;
-            const diff = touchStartX - touchEndX;
-            if (diff > 50 && chartExplanationModal.activeIndex < chartExplanations.length - 1) {
-              setChartExplanationModal(prev => ({ ...prev, activeIndex: prev.activeIndex + 1 }));
-            } else if (diff < -50 && chartExplanationModal.activeIndex > 0) {
-              setChartExplanationModal(prev => ({ ...prev, activeIndex: prev.activeIndex - 1 }));
-            }
-            setTouchStartX(null);
-          }}
-        >
-          <div style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333' }}>
-            <span style={{ fontSize: '0.9rem', color: '#888' }}>Grafico {chartExplanationModal.activeIndex + 1} di {chartExplanations.length}</span>
-            <button type="button" onClick={() => setChartExplanationModal({ isOpen: false, activeIndex: 0 })} style={{ background: '#333', border: 'none', color: '#fff', borderRadius: '50%', width: '36px', height: '36px', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>×</button>
-          </div>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
-            <div style={{ height: '250px', width: '100%', background: '#111', borderRadius: '15px', padding: '15px', border: '1px solid #222', marginBottom: '30px' }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '1rem', color: '#fff' }}>{chartExplanations[chartExplanationModal.activeIndex].title}</h3>
-              <div style={{ width: '100%', height: 'calc(100% - 30px)' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  {(() => {
-                    const idx = chartExplanationModal.activeIndex;
-                    if (idx === 0) {
-                      return (
-                        <ComposedChart data={modalCalorieData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                          <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                          <YAxis stroke="#666" fontSize={10} tickFormatter={(v) => (v != null && !Number.isNaN(Number(v))) ? Math.round(Number(v)) : v} />
-                          <Area type="monotone" dataKey="energy" stroke="#00e5ff" strokeWidth={3} fillOpacity={0.2} fill="#00e5ff" />
-                        </ComposedChart>
-                      );
-                    }
-                    if (idx === 1) {
-                      return (
-                        <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                          <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
-                          <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
-                          <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={0.2} fill="#00e676" />
-                          <ReferenceLine x={chartWakeTime} stroke="#aaa" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Sveglia', fill: '#aaa', fontSize: 10 }} />
-                          <ReferenceLine x={chartCurrentHour} stroke="#00e5ff" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: 'Ora', fill: '#00e5ff', fontSize: 10 }} />
-                          {modifierNodes.map(m => {
-                            const icon = getModifierIcon(m.type);
-                            const yVal = energyChartData.find(d => d.ora === Math.floor(m.time ?? m.mealTime ?? 0))?.energia ?? 50;
-                            return <ReferenceDot key={m.id} x={m.time ?? m.mealTime ?? 0} y={yVal} r={0} isFront shape={(props) => <g transform={`translate(${props.x},${props.y})`}><text y={-20} textAnchor="middle" fontSize={24}>{icon}</text></g>} />;
-                          })}
-                        </ComposedChart>
-                      );
-                    }
-                    if (idx === 2) {
-                      return (
-                        <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                          <defs>
-                            <linearGradient id="modalColorCortisol" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} />
-                              <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                          <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                          <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => `${v}%`} />
-                          <Area type="monotone" dataKey="cortisoloPast" stroke="#f59e0b" strokeWidth={3} fillOpacity={0.2} fill="url(#modalColorCortisol)" connectNulls={false} />
-                          <Area type="monotone" dataKey="cortisoloFuture" stroke="#78350f" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
-                          {modifierNodes.map(m => {
-                            const icon = getModifierIcon(m.type);
-                            const t = m.time ?? m.mealTime ?? 0;
-                            const yVal = getCortisolAtTime(cortisolCurve, t);
-                            return <ReferenceDot key={m.id} x={t} y={yVal} r={0} isFront shape={(props) => <g transform={`translate(${props.x},${props.y})`}><text y={-20} textAnchor="middle" fontSize={24}>{icon}</text></g>} />;
-                          })}
-                        </ComposedChart>
-                      );
-                    }
-                    if (idx === 3) {
-                      return (
-                        <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                          <defs>
-                            <linearGradient id="modalColorGlicemia" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#ef4444" stopOpacity={0.9} />
-                              <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                          <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                          <YAxis domain={[40, 220]} stroke="#666" fontSize={10} tickFormatter={(v) => v} />
-                          <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
-                          <ReferenceArea y1={85} y2={140} fill="#eab30820" stroke="none" />
-                          <ReferenceArea y1={140} y2={220} fill="#3b82f620" stroke="none" />
-                          <Area type="monotone" dataKey="glicemiaPast" stroke="#ef4444" strokeWidth={3} fillOpacity={0.2} fill="url(#modalColorGlicemia)" connectNulls={false} />
-                          <Area type="monotone" dataKey="glicemiaFuture" stroke="#7f1d1d" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
-                        </ComposedChart>
-                      );
-                    }
-                    if (idx === 4) {
-                      return (
-                        <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                          <defs>
-                            <linearGradient id="modalColorDigestion" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#9333ea" stopOpacity={0.9} />
-                              <stop offset="100%" stopColor="#9333ea" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                          <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                          <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => `${v}%`} />
-                          <Area type="monotone" dataKey="digestionePast" stroke="#9333ea" strokeWidth={3} fillOpacity={0.2} fill="url(#modalColorDigestion)" connectNulls={false} />
-                          <Area type="monotone" dataKey="digestioneFuture" stroke="#581c87" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
-                        </ComposedChart>
-                      );
-                    }
-                    if (idx === 5) {
-                      return (
-                        <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                          <defs>
-                            <linearGradient id="modalColorWater" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#007aff" stopOpacity={0.9} />
-                              <stop offset="100%" stopColor="#007aff" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                          <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(v) => `${Math.floor(v)}:00`} />
-                          <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(v) => `${v}%`} />
-                          <Area type="monotone" dataKey="idratazionePast" stroke="#007aff" strokeWidth={3} fillOpacity={0.2} fill="url(#modalColorWater)" connectNulls={false} />
-                          <Area type="monotone" dataKey="idratazioneFuture" stroke="#003a8c" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} />
-                        </ComposedChart>
-                      );
-                    }
-                    return null;
-                  })()}
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <div>
-              <h2 style={{ fontSize: '1.5rem', marginBottom: '15px', color: (chartExplanations[chartExplanationModal.activeIndex]?.color) || '#fff' }}>Analisi in tempo reale</h2>
-              <ChartExplanationAnalysis activeIndex={chartExplanationModal.activeIndex} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '20px', gap: '10px' }}>
-            {chartExplanations.map((_, idx) => (
-              <div key={idx} style={{ width: '8px', height: '8px', borderRadius: '50%', background: idx === chartExplanationModal.activeIndex ? '#fff' : '#444', transition: 'background 0.3s' }} />
-            ))}
           </div>
         </div>
       )}
