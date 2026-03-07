@@ -310,6 +310,12 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
   const out = [];
 
+  function carbAbsorption(t, carbs) {
+    if (t < 0 || t > 3) return 0;
+    const peak = Math.exp(-Math.pow((t - 1) / 0.8, 2));
+    return peak * (carbs * 2);
+  }
+
   for (let h = 0; h <= 24; h++) {
     let currentDigestione = 0;
     const useContinuityAtZero = h === 0 && initialEnergy != null;
@@ -380,18 +386,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const carb = Number(entry.carb) || 0;
           const fibre = Number(entry.fibre) || 0;
           const fat = Number(entry.fatTotal || entry.fat) || 0;
-          const prot = Number(entry.prot) || 0;
-          const impact = Math.max(0, (carb * 2.5) - (fibre * 3) - (fat * 0.5) - (prot * 0.2));
-          const diffRound = Math.round(diff);
-          if (diffRound === 0) gl += impact * 0.3;
-          if (diffRound === 1) gl += impact;
-          if (diffRound === 2) {
-            if (carb > 40 && fibre < 4 && fat < 10) {
-              gl -= 15 * model.carbCrashSensitivity;
-              globalCrashRisk = true;
-            } else {
-              gl += impact * 0.2;
-            }
+          gl += carbAbsorption(diff, carb);
+          if (carb > 40 && fibre < 4 && fat < 10 && diff >= 1.5 && diff < 2.5) {
+            gl -= 15 * model.carbCrashSensitivity;
+            globalCrashRisk = true;
           }
         }
       }
