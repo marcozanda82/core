@@ -1500,13 +1500,17 @@ export default function SalaComandi() {
     (dailyLog || []).forEach(f => {
       const slotKey = getSlotKey(f);
       if (slotKey) {
+        const foodKcal = Number(f.kcal ?? f.cal ?? 0) || 0;
         if (!bySlot[slotKey]) {
           bySlot[slotKey] = {
             mealType: f.mealType,
             originalTypes: new Set(),
             time: typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 12,
-            strategyKey: getStrategyKey(toCanonicalMealType(f.mealType))
+            strategyKey: getStrategyKey(toCanonicalMealType(f.mealType)),
+            kcal: foodKcal
           };
+        } else {
+          bySlot[slotKey].kcal += foodKcal;
         }
         bySlot[slotKey].originalTypes.add(f.mealType);
       }
@@ -1517,6 +1521,7 @@ export default function SalaComandi() {
       type: 'meal',
       time: m.time,
       strategyKey: m.strategyKey,
+      kcal: m.kcal ?? 0,
       originalTypes: Array.from(m.originalTypes),
       icon: getMealIcon(m.mealType.split('_')[0])
     }));
