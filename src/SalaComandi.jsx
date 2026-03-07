@@ -45,6 +45,22 @@ const getYesterdayString = () => {
   return new Date(d.getTime() - offset).toISOString().split('T')[0];
 };
 
+/** Returns YYYY-MM-DD of Monday of the week containing dateStr. Week starts Monday. */
+function getMondayOfWeek(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Add n days to dateStr (YYYY-MM-DD), return YYYY-MM-DD. */
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 // ============================================================================
 // UTILITY CRITICHE PER RETROCOMPATIBILITÀ MEALTYPE
 // ============================================================================
@@ -954,6 +970,94 @@ function clampModelValue(v) {
   return Math.max(0.5, Math.min(1.5, Number(v) ?? 1));
 }
 
+/**
+ * weeklyData: {
+ *   predictedEnergy: number,
+ *   actualEnergy: number,
+ *   caffeineEvents: number,
+ *   crashEvents: number,
+ *   sleepQualityExpected: number,
+ *   sleepQualityActual: number
+ * }
+ */
+function calibrateUserModel(weeklyData, currentModel) {
+  const newModel = { ...currentModel };
+  const error = (weeklyData.actualEnergy ?? 0) - (weeklyData.predictedEnergy ?? 0);
+  const learningRate = 0.02;
+
+  newModel.stressSensitivity = clampModelValue(
+    newModel.stressSensitivity + error * learningRate
+  );
+
+  if ((weeklyData.caffeineEvents ?? 0) > 3) {
+    const sleepError =
+      (weeklyData.sleepQualityExpected ?? 0) - (weeklyData.sleepQualityActual ?? 0);
+    newModel.caffeineSensitivity = clampModelValue(
+      newModel.caffeineSensitivity + sleepError * 0.01
+    );
+  }
+
+  if ((weeklyData.crashEvents ?? 0) > 2) {
+    newModel.carbCrashSensitivity = clampModelValue(
+      newModel.carbCrashSensitivity + 0.02
+    );
+  }
+
+  return newModel;
+}
+
+/**
+ * Build weeklyData for the week starting on weekStartMonday (YYYY-MM-DD) from fullHistory.
+ * Used for weekly calibration. actualEnergy and sleep quality default to predicted/0 when not available.
+ */
+function buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, weekStartMonday) {
+  const mealTypesToStrategy = { merenda1: 'colazione', colazione: 'colazione', pranzo: 'pranzo', merenda2: 'spuntino', spuntino: 'spuntino', snack: 'spuntino', cena: 'cena' };
+  let predictedEnergySum = 0;
+  let daysWithPrediction = 0;
+  let caffeineEvents = 0;
+  let crashEvents = 0;
+
+  for (let i = 0; i < 7; i++) {
+    const dayStr = addDays(weekStartMonday, i);
+    const node = fullHistory[TRACKER_STORICO_KEY(dayStr)];
+    const raw = node?.log;
+    if (!raw) continue;
+    const log = normalizeLogData(Array.isArray(raw) ? raw : Object.values(raw));
+    const manualNodes = node?.manualNodes ?? [];
+    const timelineNodes = [];
+    log.forEach(entry => {
+      if (entry?.type === 'food') {
+        const t = typeof entry.mealTime === 'number' ? entry.mealTime : 12;
+        const strategyKey = mealTypesToStrategy[entry.mealType?.split('_')[0]] || 'cena';
+        timelineNodes.push({ type: 'meal', time: t, strategyKey });
+      } else if (entry?.type === 'workout' || entry?.type === 'work') {
+        timelineNodes.push({ type: 'workout', time: entry.time ?? entry.mealTime ?? 12, duration: entry.duration ?? 1, kcal: entry.kcal ?? entry.cal ?? 300 });
+      }
+    });
+    timelineNodes.push(...manualNodes);
+    timelineNodes.sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+
+    const waterMl = manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0);
+    const result = generateRealEnergyData(timelineNodes, log, idealStrategy, waterMl, 2500, null, null, userModel);
+    if (result?.chartData?.[24]) {
+      predictedEnergySum += result.chartData[24].energy;
+      daysWithPrediction++;
+      if (result.hasCrashRisk) crashEvents++;
+    }
+    caffeineEvents += manualNodes.filter(n => n.type === 'stimulant').length;
+  }
+
+  const predictedEnergy = daysWithPrediction > 0 ? predictedEnergySum / daysWithPrediction : 0;
+  return {
+    predictedEnergy,
+    actualEnergy: predictedEnergy,
+    caffeineEvents,
+    crashEvents,
+    sleepQualityExpected: 0,
+    sleepQualityActual: 0
+  };
+}
+
 export default function SalaComandi() {
   // AUTENTICAZIONE
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -983,6 +1087,7 @@ export default function SalaComandi() {
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
   const [userModel, setUserModel] = useState(DEFAULT_USER_MODEL);
+  const [lastCalibrationWeek, setLastCalibrationWeek] = useState(null);
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -1403,10 +1508,45 @@ export default function SalaComandi() {
         }
       });
 
+      get(ref(db, `users/${user.uid}/physiology_model`)).then(physSnap => {
+        if (physSnap.exists()) {
+          const data = physSnap.val();
+          const { lastCalibrationWeek: savedCalWeek, ...model } = data;
+          if (savedCalWeek) setLastCalibrationWeek(savedCalWeek);
+          if (model && typeof model === 'object') {
+            setUserModel(prev => ({
+              ...DEFAULT_USER_MODEL,
+              ...model,
+              caffeineSensitivity: clampModelValue(model.caffeineSensitivity ?? 1),
+              carbCrashSensitivity: clampModelValue(model.carbCrashSensitivity ?? 1),
+              stressSensitivity: clampModelValue(model.stressSensitivity ?? 1),
+              hydrationSensitivity: clampModelValue(model.hydrationSensitivity ?? 1),
+              recoveryRate: clampModelValue(model.recoveryRate ?? 1)
+            }));
+          }
+        }
+      });
+
       get(ref(db, `${basePath}/trackerFoodDatabase`)).then(s => { if (s.exists()) setFoodDb(s.val()); });
     });
     return () => { unsubAuth(); unsubToday?.(); };
   }, []);
+
+  // Weekly calibration: at start of new week (Monday), adjust userModel from last week's data and persist.
+  useEffect(() => {
+    if (!userUid || !isAuthenticated || typeof fullHistory !== 'object') return;
+    const today = getTodayString();
+    const mondayThisWeek = getMondayOfWeek(today);
+    if (today !== mondayThisWeek) return;
+    const lastWeekMonday = addDays(mondayThisWeek, -7);
+    if (lastCalibrationWeek === lastWeekMonday) return;
+
+    const weeklyData = buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, lastWeekMonday);
+    const updatedModel = calibrateUserModel(weeklyData, userModel);
+    setUserModel(updatedModel);
+    setLastCalibrationWeek(lastWeekMonday);
+    set(ref(db, `users/${userUid}/physiology_model`), { ...updatedModel, lastCalibrationWeek: lastWeekMonday }).catch(err => console.warn('Physiology model save failed', err));
+  }, [userUid, isAuthenticated, fullHistory, userModel, idealStrategy, lastCalibrationWeek]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
