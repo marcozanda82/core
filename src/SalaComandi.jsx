@@ -468,6 +468,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     });
     currentNeuro = Math.max(0, Math.min(100, currentNeuro));
 
+    gl += (85 - gl) * 0.25;
+    currentCortisol += (20 - currentCortisol) * 0.10;
+    currentHydration += (80 - currentHydration) * 0.05;
+
     out.push({
       time: h,
       energy: useContinuityAtZero ? initialEnergy : currentEnergy,
