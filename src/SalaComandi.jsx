@@ -316,7 +316,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     return peak * (carbs * 2);
   }
 
+  let glycemicMemory = 0;
+
   for (let h = 0; h <= 24; h++) {
+    glycemicMemory *= 0.92;
     let currentDigestione = 0;
     const useContinuityAtZero = h === 0 && initialEnergy != null;
     if (!useContinuityAtZero) {
@@ -387,6 +390,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const fibre = Number(entry.fibre) || 0;
           const fat = Number(entry.fatTotal || entry.fat) || 0;
           gl += carbAbsorption(diff, carb);
+          glycemicMemory += carb * 0.4;
           if (carb > 40 && fibre < 4 && fat < 10 && diff >= 1.5 && diff < 2.5) {
             gl -= 15 * model.carbCrashSensitivity;
             globalCrashRisk = true;
@@ -401,6 +405,9 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         gl -= 15 * model.carbCrashSensitivity;
       }
     });
+
+    currentEnergy -= glycemicMemory * 0.05;
+    glycemicMemory = Math.max(0, Math.min(100, glycemicMemory));
 
     currentHydration -= PHYSIOLOGY_CONFIG.hydrationDecayPerHour;
     (timelineNodes || []).forEach(node => {
