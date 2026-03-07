@@ -359,14 +359,24 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     load = Math.max(0, Math.min(100, load));
 
     let gl = 85;
+    (timelineNodes || []).forEach(node => {
+      if (node.type === 'meal') {
+        const diff = h - node.time;
+        if (diff >= 0 && diff <= 3) {
+          const digestionFactor = 1 - diff / 3;
+          const mealKcal = node.kcal ?? node.cal ?? 500;
+          const mealLoad = Math.max(0, Math.min(3, mealKcal / 600));
+          currentEnergy -= mealLoad * PHYSIOLOGY_CONFIG.digestionEnergyImpact * digestionFactor;
+          currentDigestione += 100 * (1 - diff / 3);
+          currentDigestione += mealLoad * 30 * (1 - diff / 3);
+        }
+      }
+    });
     log.forEach(entry => {
       if (entry.type === 'food') {
         const ft = typeof entry.mealTime === 'number' && !Number.isNaN(entry.mealTime) ? entry.mealTime : 12;
         const diff = h - ft;
-        const digestiveLoad = computeDigestiveLoad(entry);
         if (diff >= 0 && diff <= 3) {
-          const digestionFactor = 1 - diff / 3;
-          currentEnergy -= digestiveLoad * PHYSIOLOGY_CONFIG.digestionEnergyImpact * digestionFactor;
           const carb = Number(entry.carb) || 0;
           const fibre = Number(entry.fibre) || 0;
           const fat = Number(entry.fatTotal || entry.fat) || 0;
@@ -383,8 +393,6 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
               gl += impact * 0.2;
             }
           }
-          currentDigestione += 100 * (1 - diff / 3);
-          currentDigestione += digestiveLoad * 30 * (1 - diff / 3);
         }
       }
     });
@@ -3661,26 +3669,34 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const targetKcalChart = dynamicDailyKcal;
   const scale = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
   const finalChartData = chartUnit === 'kcal'
-    ? renderDataWithSegments.map(d => ({
-        ...d,
-        energy: scale(d.energy),
-        idealEnergy: scale(d.idealEnergy),
-        energyPast: d.time <= displayTime ? scale(d.energy) : null,
-        energyFuture: d.time >= displayTime ? scale(d.energy) : null,
-        kcalPast: d.time <= displayTime ? scale(d.energy) : null,
-        kcalFuture: d.time >= displayTime ? scale(d.energy) : null,
-        cortisolScaledToKcal: (d.cortisolo / 100) * targetKcalChart
-      }))
+    ? renderDataWithSegments.map(d => {
+        const rawEnergy = d.energy ?? d.energia ?? 0;
+        const rawCortisolo = d.cortisolo ?? d.cortisol ?? 0;
+        return {
+          ...d,
+          energy: scale(rawEnergy),
+          idealEnergy: scale(d.idealEnergy ?? d.energiaIdeale ?? 0),
+          energyPast: d.time <= displayTime ? scale(rawEnergy) : null,
+          energyFuture: d.time >= displayTime ? scale(rawEnergy) : null,
+          kcalPast: d.time <= displayTime ? scale(rawEnergy) : null,
+          kcalFuture: d.time >= displayTime ? scale(rawEnergy) : null,
+          cortisolScaledToKcal: (Number(rawCortisolo) / 100) * targetKcalChart
+        };
+      })
     : renderDataWithSegments;
   const modalChartData = expandedChart === 'kcal'
-    ? renderDataWithSegments.map(d => ({
-        ...d,
-        energy: scale(d.energy),
-        idealEnergy: scale(d.idealEnergy),
-        kcalPast: d.time <= displayTime ? scale(d.energy) : null,
-        kcalFuture: d.time >= displayTime ? scale(d.energy) : null,
-        cortisolScaledToKcal: (d.cortisolo / 100) * targetKcalChart
-      }))
+    ? renderDataWithSegments.map(d => {
+        const rawEnergy = d.energy ?? d.energia ?? 0;
+        const rawCortisolo = d.cortisolo ?? d.cortisol ?? 0;
+        return {
+          ...d,
+          energy: scale(rawEnergy),
+          idealEnergy: scale(d.idealEnergy ?? d.energiaIdeale ?? 0),
+          kcalPast: d.time <= displayTime ? scale(rawEnergy) : null,
+          kcalFuture: d.time >= displayTime ? scale(rawEnergy) : null,
+          cortisolScaledToKcal: (Number(rawCortisolo) / 100) * targetKcalChart
+        };
+      })
     : finalChartData;
   const finalDotY = chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'kcal' ? scale(dotY) : dotY)))));
 
