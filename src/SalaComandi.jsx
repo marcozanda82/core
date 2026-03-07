@@ -1105,6 +1105,8 @@ export default function SalaComandi() {
   const [userModel, setUserModel] = useState(DEFAULT_USER_MODEL);
   const [lastCalibrationWeek, setLastCalibrationWeek] = useState(null);
   const [nervousSystemLoad, setNervousSystemLoad] = useState(30);
+  const [simulationMode, setSimulationMode] = useState(false);
+  const [simulationNodes, setSimulationNodes] = useState([]);
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -1431,6 +1433,8 @@ export default function SalaComandi() {
     return [...computedMealNodes, ...manualNodes].sort((a, b) => a.time - b.time);
   }, [computedMealNodes, manualNodes]);
 
+  const activeNodes = simulationMode ? simulationNodes : allNodes;
+
   const allNodesWithStack = useMemo(() => {
     const overlaps = (a, b) => {
       const aEnd = a.type === 'work' ? a.time + (a.duration || 1) : a.time;
@@ -1446,19 +1450,53 @@ export default function SalaComandi() {
     });
   }, [allNodes]);
 
+  const activeNodesWithStack = useMemo(() => {
+    const nodes = simulationMode ? simulationNodes : allNodes;
+    const overlaps = (a, b) => {
+      const aEnd = a.type === 'work' ? a.time + (a.duration || 1) : a.time;
+      const bEnd = b.type === 'work' ? b.time + (b.duration || 1) : b.time;
+      return a.time <= bEnd && b.time <= aEnd;
+    };
+    return nodes.map((node, i) => {
+      let stackIndex = 0;
+      for (let j = 0; j < i; j++) {
+        if (overlaps(nodes[j], node)) stackIndex++;
+      }
+      return { ...node, stackIndex };
+    });
+  }, [simulationMode, simulationNodes, allNodes]);
+
+  const enterSimulationMode = () => {
+    setSimulationNodes(JSON.parse(JSON.stringify(allNodes)));
+    setSimulationMode(true);
+  };
+
+  const exitSimulationMode = () => {
+    setSimulationMode(false);
+    setSimulationNodes([]);
+  };
+
+  const addSimulationEvent = (event) => {
+    setSimulationNodes(prev => [...prev, event].sort((a, b) => (a.time ?? 0) - (b.time ?? 0)));
+  };
+
+  const removeSimulationEvent = (index) => {
+    setSimulationNodes(prev => prev.filter((_, i) => i !== index));
+  };
+
   useEffect(() => {
     if (currentTrackerDate !== getTodayString()) {
       setZoomLevel(0.45);
       return;
     }
-    const pointNodes = allNodes.filter(n => n.type !== 'work');
+    const pointNodes = activeNodes.filter(n => n.type !== 'work');
     if (pointNodes.length === 0) return;
     const times = pointNodes.map(n => n.time).sort((a, b) => a - b);
     let minGap = 24;
     for (let i = 1; i < times.length; i++) minGap = Math.min(minGap, times[i] - times[i - 1]);
     const suggested = minGap < 0.35 ? 1.5 : minGap < 0.6 ? 1.3 : minGap < 1 ? 1.1 : minGap < 2 ? 0.9 : 0.65;
     setZoomLevel(prev => Math.max(0.45, Math.min(1.5, suggested)));
-  }, [allNodes, currentTrackerDate]);
+  }, [simulationMode, simulationNodes, allNodes, currentTrackerDate]);
 
   useEffect(() => {
     localStorage.setItem('vyta_timeline', JSON.stringify(manualNodes));
@@ -2733,7 +2771,7 @@ export default function SalaComandi() {
 
     try {
       const foodDbNames = Object.keys(foodDb || {}).map(k => foodDb[k]?.desc || foodDb[k]?.name || k).filter(Boolean).slice(0, 150);
-      const energyResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad);
+      const energyResult = generateRealEnergyData(activeNodes, dailyLog || [], idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
       const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
@@ -3365,7 +3403,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return { energy: last.energy, idealEnergy: last.idealEnergy };
   }, [currentTrackerDate, fullHistory, idealStrategy, userModel]);
 
-  const energyChartResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy, waterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
+  const activeWaterIntake = simulationMode ? activeNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0) : waterIntake;
+  const energyChartResult = generateRealEnergyData(activeNodes, dailyLog || [], idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
   const chartData = energyChartResult?.chartData ?? [];
   const realTotals = energyChartResult?.realTotals ?? {};
   const hasCrashRisk = energyChartResult?.hasCrashRisk ?? false;
@@ -3373,10 +3412,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const hasDigestionRisk = energyChartResult?.hasDigestionRisk ?? false;
 
   useEffect(() => {
-    if (currentTrackerDate === getTodayString() && energyChartResult?.nervousSystemLoad != null) {
+    if (!simulationMode && currentTrackerDate === getTodayString() && energyChartResult?.nervousSystemLoad != null) {
       setNervousSystemLoad(energyChartResult.nervousSystemLoad);
     }
-  }, [currentTrackerDate, energyChartResult?.nervousSystemLoad]);
+  }, [simulationMode, currentTrackerDate, energyChartResult?.nervousSystemLoad]);
 
   const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
   const cortisolCurve = useMemo(() => generateCortisolCurve(dailyLog, manualNodes), [dailyLog, manualNodes]);
@@ -4384,7 +4423,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 )}
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
-                  {allNodesWithStack.map((node) => {
+                  {activeNodesWithStack.map((node) => {
                     const currentChartUnit = chartUnit;
                     const effectiveNodeType = node.type === 'meal' ? 'meal' : node.type;
                     const isImportant = NODE_IMPORTANCE[currentChartUnit]?.includes(effectiveNodeType);
