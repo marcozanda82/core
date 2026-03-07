@@ -199,9 +199,16 @@ function responseCurve(t, peakTime, duration) {
  * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
  * Restituisce { chartData, realTotals } per grafico doppia curva e semafori.
  */
-function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null) {
+function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null) {
   const log = dailyLog || [];
   const ideal = idealStrategy || {};
+  const model = {
+    caffeineSensitivity: clampModelValue(userModel?.caffeineSensitivity ?? 1),
+    carbCrashSensitivity: clampModelValue(userModel?.carbCrashSensitivity ?? 1),
+    stressSensitivity: clampModelValue(userModel?.stressSensitivity ?? 1),
+    hydrationSensitivity: clampModelValue(userModel?.hydrationSensitivity ?? 1),
+    recoveryRate: clampModelValue(userModel?.recoveryRate ?? 1)
+  };
 
   const baselineEnergy = initialEnergy != null ? initialEnergy : computeBaselineEnergy(log);
   console.log('Baseline energy:', baselineEnergy);
@@ -327,7 +334,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           if (diffRound === 1) gl += impact;
           if (diffRound === 2) {
             if (carb > 40 && fibre < 4 && fat < 10) {
-              gl -= 15;
+              gl -= 15 * model.carbCrashSensitivity;
               globalCrashRisk = true;
             } else {
               gl += impact * 0.2;
@@ -342,7 +349,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     (timelineNodes || []).forEach(node => {
       if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
-        gl -= 15;
+        gl -= 15 * model.carbCrashSensitivity;
       }
     });
 
@@ -371,10 +378,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     else if (h > 9) cortisolBase = Math.max(18, 55 - (h - 9) * 2.5);
     currentCortisol = cortisolBase;
     if (currentEnergy < 35) { currentCortisol += 18; globalCortisolRisk = true; }
-    if (currentHydration < 45) { currentCortisol += 15; globalCortisolRisk = true; }
+    if (currentHydration < 45) { currentCortisol += 15 * model.hydrationSensitivity; globalCortisolRisk = true; }
     (timelineNodes || []).forEach(node => {
       if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
-        currentCortisol += 12;
+        currentCortisol += 12 * model.stressSensitivity;
         globalCortisolRisk = true;
       }
     });
@@ -385,7 +392,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         if (effect > 0) {
           const sub = (node.subtype || 'caffè').toLowerCase();
           const stimulantCortisolImpact = sub === 'energy drink' ? 25 : sub === 'caffè' ? 15 : 10;
-          currentCortisol += effect * stimulantCortisolImpact;
+          currentCortisol += effect * stimulantCortisolImpact * model.caffeineSensitivity;
         }
       }
     });
@@ -405,7 +412,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       if (node.type === 'stimulant' && Math.round(node.time) === h) {
         const sub = (node.subtype || 'caffè').toLowerCase();
         const boost = sub === 'energy drink' ? 15 : sub === 'caffè' ? 10 : 5;
-        currentNeuro = Math.min(100, currentNeuro + boost);
+        currentNeuro = Math.min(100, currentNeuro + boost * model.recoveryRate);
       }
     });
     currentNeuro = Math.max(0, Math.min(100, currentNeuro));
@@ -934,6 +941,19 @@ function MealPieTooltip({ active, payload }) {
   );
 }
 
+/** Modello fisiologico utente: coefficienti che modificano intensità degli effetti (tutti in [0.5, 1.5]). */
+const DEFAULT_USER_MODEL = {
+  caffeineSensitivity: 1.0,
+  carbCrashSensitivity: 1.0,
+  stressSensitivity: 1.0,
+  hydrationSensitivity: 1.0,
+  recoveryRate: 1.0
+};
+
+function clampModelValue(v) {
+  return Math.max(0.5, Math.min(1.5, Number(v) ?? 1));
+}
+
 export default function SalaComandi() {
   // AUTENTICAZIONE
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -962,6 +982,7 @@ export default function SalaComandi() {
   const [activeAction, setActiveAction] = useState('home');
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
+  const [userModel, setUserModel] = useState(DEFAULT_USER_MODEL);
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -2555,7 +2576,7 @@ export default function SalaComandi() {
 
     try {
       const foodDbNames = Object.keys(foodDb || {}).map(k => foodDb[k]?.desc || foodDb[k]?.name || k).filter(Boolean).slice(0, 150);
-      const energyResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy);
+      const energyResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy, 0, 2500, null, null, userModel);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
       const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
@@ -3181,13 +3202,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         yesterdayNodes.push({ type: 'workout', time: entry.time ?? entry.mealTime ?? 12, duration: entry.duration ?? 1, kcal: entry.kcal ?? entry.cal ?? 300 });
       }
     });
-    const result = generateRealEnergyData(yesterdayNodes, yesterdayLog, idealStrategy, 0, 2500);
+    const result = generateRealEnergyData(yesterdayNodes, yesterdayLog, idealStrategy, 0, 2500, null, null, userModel);
     const last = result?.chartData?.[24];
     if (!last) return null;
     return { energy: last.energy, idealEnergy: last.idealEnergy };
-  }, [currentTrackerDate, fullHistory, idealStrategy]);
+  }, [currentTrackerDate, fullHistory, idealStrategy, userModel]);
 
-  const energyChartResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy, waterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined);
+  const energyChartResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy, waterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel);
   const chartData = energyChartResult?.chartData ?? [];
   const realTotals = energyChartResult?.realTotals ?? {};
   const hasCrashRisk = energyChartResult?.hasCrashRisk ?? false;
