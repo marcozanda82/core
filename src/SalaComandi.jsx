@@ -4366,15 +4366,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         digestione: dotDigestione,
                         neuro: dotNeuro
                       });
-                      const fetchAIAnalysis = (p) => new Promise((resolve) => {
-                        setTimeout(() => {
-                          resolve("La tua Energia SNC è stabile. Hai superato la Sveglia e la Finestra Anabolica è attiva. Fai attenzione al Cortisolo (linea tratteggiata magenta) stasera: tieni bassi i picchi serali. Digestione e Glicemia sono nella norma.");
-                        }, 2000);
-                      });
-                      fetchAIAnalysis(prompt).then((result) => {
-                        setAiInsights(prev => ({ ...prev, [expandedChart]: result }));
-                        setIsAiLoading(false);
-                      }).catch(() => setIsAiLoading(false));
+                      callGeminiAPIWithRotation(prompt)
+                        .then((result) => {
+                          setAiInsights(prev => ({ ...prev, [expandedChart]: result }));
+                          setIsAiLoading(false);
+                        })
+                        .catch((err) => {
+                          console.error("Errore AI Analisi Grafico:", err);
+                          setAiInsights(prev => ({
+                            ...prev,
+                            [expandedChart]: "❌ Connessione con Core AI fallita. Verifica le API Key."
+                          }));
+                          setIsAiLoading(false);
+                        });
                     }}
                     style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'linear-gradient(135deg, rgba(0,229,255,0.2) 0%, rgba(147,51,234,0.15) 100%)', border: '1px solid rgba(0,229,255,0.5)', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}
                   >
