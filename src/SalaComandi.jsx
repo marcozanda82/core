@@ -172,6 +172,18 @@ function computeBaselineEnergy(dailyLog) {
 }
 
 /**
+ * Carico digestivo per singolo alimento/pasto (0–3): contribuisce a affaticamento post-prandiale.
+ */
+function computeDigestiveLoad(entry) {
+  const kcal = Number(entry.kcal || entry.cal || 0) || 0;
+  const fat = Number(entry.fatTotal || entry.fat || 0) || 0;
+  const fibre = Number(entry.fibre || 0) || 0;
+
+  let load = (kcal / 600) + (fat / 30) + (fibre / 10);
+  return Math.max(0, Math.min(3, load));
+}
+
+/**
  * Dati reali + ideali per il cruscotto energetico 0-24h: 25 punti (ore 0..24).
  * timelineNodes: array di { id, type: 'meal'|'work'|'workout', time, duration?, kcal?, icon }.
  * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
@@ -276,7 +288,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       if (entry.type === 'food') {
         const ft = typeof entry.mealTime === 'number' && !Number.isNaN(entry.mealTime) ? entry.mealTime : 12;
         const diff = h - ft;
+        const load = computeDigestiveLoad(entry);
         if (diff >= 0 && diff <= 3) {
+          const digestionFactor = 1 - diff / 3;
+          currentEnergy -= load * 8 * digestionFactor;
           const carb = Number(entry.carb) || 0;
           const fibre = Number(entry.fibre) || 0;
           const fat = Number(entry.fatTotal || entry.fat) || 0;
@@ -294,9 +309,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
             }
           }
           currentDigestione += 100 * (1 - diff / 3);
+          currentDigestione += load * 30 * (1 - diff / 3);
         }
       }
     });
+    currentDigestione = Math.max(0, Math.min(100, currentDigestione));
 
     (timelineNodes || []).forEach(node => {
       if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
