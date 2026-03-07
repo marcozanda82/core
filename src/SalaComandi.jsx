@@ -3666,9 +3666,22 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         energy: scale(d.energy),
         idealEnergy: scale(d.idealEnergy),
         energyPast: d.time <= displayTime ? scale(d.energy) : null,
-        energyFuture: d.time >= displayTime ? scale(d.energy) : null
+        energyFuture: d.time >= displayTime ? scale(d.energy) : null,
+        kcalPast: d.time <= displayTime ? scale(d.energy) : null,
+        kcalFuture: d.time >= displayTime ? scale(d.energy) : null,
+        cortisolScaledToKcal: (d.cortisolo / 100) * targetKcalChart
       }))
     : renderDataWithSegments;
+  const modalChartData = expandedChart === 'kcal'
+    ? renderDataWithSegments.map(d => ({
+        ...d,
+        energy: scale(d.energy),
+        idealEnergy: scale(d.idealEnergy),
+        kcalPast: d.time <= displayTime ? scale(d.energy) : null,
+        kcalFuture: d.time >= displayTime ? scale(d.energy) : null,
+        cortisolScaledToKcal: (d.cortisolo / 100) * targetKcalChart
+      }))
+    : finalChartData;
   const finalDotY = chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'kcal' ? scale(dotY) : dotY)))));
 
   const energyAt20Percent = energyAt20 ?? 50;
@@ -4385,6 +4398,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <stop offset="50%" stopColor="#047857" stopOpacity={0.7} />
                       <stop offset="100%" stopColor="#dc2626" stopOpacity={0.6} />
                     </linearGradient>
+                    <linearGradient id="colorKcal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
+                      <stop offset="50%" stopColor="#047857" stopOpacity={0.7} />
+                      <stop offset="100%" stopColor="#dc2626" stopOpacity={0.6} />
+                    </linearGradient>
                     <linearGradient id="vitalFlow" x1="0" y1="0" x2="1" y2="0">
                       <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="4s" repeatCount="indefinite" />
                       <animate attributeName="x2" values="0.7;2.3;0.7" dur="4s" repeatCount="indefinite" />
@@ -4498,18 +4516,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </>
                   )}
                   <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                  <Area type="monotone"
-                    dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : (chartUnit === 'idratazione' ? 'idratazionePast' : chartUnit === 'cortisolo' ? 'cortisoloPast' : chartUnit === 'digestione' ? 'digestionePast' : chartUnit === 'neuro' ? 'neuroPast' : 'energyPast')}
-                    stroke={chartUnit === 'glicemia' ? 'url(#bloodFlow)' : (chartUnit === 'idratazione' ? 'url(#waterFlow)' : chartUnit === 'cortisolo' ? 'url(#cortisolFlow)' : chartUnit === 'digestione' ? 'url(#digestionFlow)' : chartUnit === 'neuro' ? 'url(#neuroFlow)' : 'url(#vitalFlow)')}
-                    strokeWidth={6}
-                    fill={chartUnit === 'glicemia' ? 'url(#colorGlicemia)' : (chartUnit === 'idratazione' ? 'url(#colorWater)' : chartUnit === 'cortisolo' ? 'url(#colorCortisol)' : chartUnit === 'digestione' ? 'url(#colorDigestion)' : chartUnit === 'neuro' ? 'url(#colorNeuro)' : 'url(#colorEnergy)')}
-                    filter="url(#glow)" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false}
-                  />
-                  <Area type="monotone"
-                    dataKey={chartUnit === 'glicemia' ? 'glicemiaFuture' : (chartUnit === 'idratazione' ? 'idratazioneFuture' : chartUnit === 'cortisolo' ? 'cortisoloFuture' : chartUnit === 'digestione' ? 'digestioneFuture' : chartUnit === 'neuro' ? 'neuroFuture' : 'energyFuture')}
-                    stroke={chartUnit === 'glicemia' ? '#7f1d1d' : (chartUnit === 'idratazione' ? '#003a8c' : chartUnit === 'cortisolo' ? '#78350f' : chartUnit === 'digestione' ? '#581c87' : chartUnit === 'neuro' ? '#3730a3' : '#444')}
-                    strokeWidth={4} strokeDasharray="10 10" fill="transparent" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} className="future"
-                  />
+                  {chartUnit === 'kcal' ? (
+                    <>
+                      <Area type="monotone" dataKey="kcalPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorKcal)" connectNulls={false} isAnimationActive={!draggingNode} />
+                      <Area type="monotone" dataKey="kcalFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
+                      <Line type="monotone" dataKey="cortisolScaledToKcal" stroke="#9c27b0" strokeWidth={2} strokeDasharray="5 5" dot={false} isAnimationActive={!draggingNode} />
+                    </>
+                  ) : (
+                    <>
+                      <Area type="monotone"
+                        dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : (chartUnit === 'idratazione' ? 'idratazionePast' : chartUnit === 'cortisolo' ? 'cortisoloPast' : chartUnit === 'digestione' ? 'digestionePast' : chartUnit === 'neuro' ? 'neuroPast' : 'energyPast')}
+                        stroke={chartUnit === 'glicemia' ? 'url(#bloodFlow)' : (chartUnit === 'idratazione' ? 'url(#waterFlow)' : chartUnit === 'cortisolo' ? 'url(#cortisolFlow)' : chartUnit === 'digestione' ? 'url(#digestionFlow)' : chartUnit === 'neuro' ? 'url(#neuroFlow)' : 'url(#vitalFlow)')}
+                        strokeWidth={6}
+                        fill={chartUnit === 'glicemia' ? 'url(#colorGlicemia)' : (chartUnit === 'idratazione' ? 'url(#colorWater)' : chartUnit === 'cortisolo' ? 'url(#colorCortisol)' : chartUnit === 'digestione' ? 'url(#colorDigestion)' : chartUnit === 'neuro' ? 'url(#colorNeuro)' : 'url(#colorEnergy)')}
+                        filter="url(#glow)" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false}
+                      />
+                      <Area type="monotone"
+                        dataKey={chartUnit === 'glicemia' ? 'glicemiaFuture' : (chartUnit === 'idratazione' ? 'idratazioneFuture' : chartUnit === 'cortisolo' ? 'cortisoloFuture' : chartUnit === 'digestione' ? 'digestioneFuture' : chartUnit === 'neuro' ? 'neuroFuture' : 'energyFuture')}
+                        stroke={chartUnit === 'glicemia' ? '#7f1d1d' : (chartUnit === 'idratazione' ? '#003a8c' : chartUnit === 'cortisolo' ? '#78350f' : chartUnit === 'digestione' ? '#581c87' : chartUnit === 'neuro' ? '#3730a3' : '#444')}
+                        strokeWidth={4} strokeDasharray="10 10" fill="transparent" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} className="future"
+                      />
+                    </>
+                  )}
                   {chartUnit === 'glicemia' ? (
                     <ReferenceLine y={85} stroke="rgba(255, 255, 255, 0.2)" strokeDasharray="5 5" label={{ position: 'insideTopLeft', value: 'Basale', fill: '#555', fontSize: 10 }} />
                   ) : (
@@ -4743,7 +4771,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </ResponsiveContainer>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={finalChartData} margin={{ top: 15, right: 25, left: -10, bottom: 0 }}>
+                    <ComposedChart data={modalChartData} margin={{ top: 15, right: 25, left: -10, bottom: 0 }}>
                       <defs>
                         <linearGradient id="modalColorAnabolic" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00e5ff" stopOpacity={0.6}/><stop offset="95%" stopColor="#00e5ff" stopOpacity={0}/></linearGradient>
                         <linearGradient id="modalColorCortisol" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#9c27b0" stopOpacity={0.4}/><stop offset="95%" stopColor="#9c27b0" stopOpacity={0}/></linearGradient>
@@ -4754,6 +4782,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         <linearGradient id="modalColorNeuro" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6366f1" stopOpacity={0.9}/><stop offset="50%" stopColor="#818cf8" stopOpacity={0.5}/><stop offset="100%" stopColor="#6366f1" stopOpacity={0}/></linearGradient>
                         <linearGradient id="modalNeuroFlow" x1="0" y1="0" x2="1" y2="0"><animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" /><animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" /><stop offset="0%" stopColor="#6366f1" stopOpacity="0.8" /><stop offset="50%" stopColor="#818cf8" stopOpacity="1" /><stop offset="100%" stopColor="#6366f1" stopOpacity="0.8" /></linearGradient>
                         <filter id="modalGlowMulti" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                        <filter id="modalGlowCortisol" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
                       </defs>
                       <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 6, 12, 18, 24]} tickFormatter={(val) => `${val}:00`} tick={{ fill: '#666', fontSize: 11 }} />
                       <YAxis domain={expandedChart === 'glicemia' ? [40, 220] : (expandedChart === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => expandedChart === 'kcal' ? Math.round(Number(val)) : (expandedChart === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 11 }} width={36} />
@@ -4766,10 +4795,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <Area type="monotone" dataKey="cortisolScore" fill="url(#modalColorCortisol)" stroke="#9c27b0" strokeWidth={activeHighlight === 'cortisolo' ? 4 : 2} strokeOpacity={activeHighlight == null ? 1 : (activeHighlight === 'cortisolo' ? 1 : 0.6)} fillOpacity={activeHighlight == null ? 0.3 : (activeHighlight === 'cortisolo' ? 0.45 : 0.55)} yAxisId="anabolic" filter={activeHighlight === 'cortisolo' ? 'url(#modalGlowMulti)' : undefined} />
                       {(() => { const isMainSeriesHighlight = activeHighlight === 'energia' || (expandedChart === 'neuro' && activeHighlight === 'neuro') || (expandedChart === 'cortisolo' && activeHighlight === 'cortisolo') || (expandedChart === 'digestione' && activeHighlight === 'digestione'); return (
                       <>
-                      <Area type="monotone" dataKey={expandedChart === 'glicemia' ? 'glicemiaPast' : (expandedChart === 'idratazione' ? 'idratazionePast' : expandedChart === 'cortisolo' ? 'cortisoloPast' : expandedChart === 'digestione' ? 'digestionePast' : expandedChart === 'neuro' ? 'neuroPast' : 'energyPast')} strokeWidth={isMainSeriesHighlight ? 8 : (activeHighlight != null ? 3 : 6)} strokeOpacity={activeHighlight == null ? 1 : (isMainSeriesHighlight ? 1 : 0.6)} fillOpacity={activeHighlight == null ? 0.6 : (isMainSeriesHighlight ? 0.7 : 0.55)} fill={expandedChart === 'glicemia' ? 'url(#modalColorGlicemia)' : (expandedChart === 'idratazione' ? 'url(#modalColorWater)' : expandedChart === 'cortisolo' ? 'url(#modalColorCortisol)' : expandedChart === 'digestione' ? 'url(#modalColorDigestion)' : expandedChart === 'neuro' ? 'url(#modalColorNeuro)' : 'url(#modalColorEnergy)')} filter={isMainSeriesHighlight ? 'url(#modalGlowMulti)' : undefined} />
-                      <Area type="monotone" dataKey={expandedChart === 'glicemia' ? 'glicemiaFuture' : (expandedChart === 'idratazione' ? 'idratazioneFuture' : expandedChart === 'cortisolo' ? 'cortisoloFuture' : expandedChart === 'digestione' ? 'digestioneFuture' : expandedChart === 'neuro' ? 'neuroFuture' : 'energyFuture')} stroke={expandedChart === 'neuro' ? '#3730a3' : '#444'} strokeWidth={2} strokeDasharray="10 10" fill="transparent" strokeOpacity={activeHighlight == null || isMainSeriesHighlight ? 1 : 0.6} />
+                      <Area type="monotone" dataKey={expandedChart === 'kcal' ? 'kcalPast' : (expandedChart === 'glicemia' ? 'glicemiaPast' : expandedChart === 'idratazione' ? 'idratazionePast' : expandedChart === 'cortisolo' ? 'cortisoloPast' : expandedChart === 'digestione' ? 'digestionePast' : expandedChart === 'neuro' ? 'neuroPast' : 'energyPast')} strokeWidth={isMainSeriesHighlight ? 8 : (activeHighlight != null ? 3 : 6)} strokeOpacity={activeHighlight == null ? 1 : (isMainSeriesHighlight ? 1 : 0.6)} fillOpacity={activeHighlight == null ? 0.6 : (isMainSeriesHighlight ? 0.7 : 0.55)} fill={expandedChart === 'kcal' ? 'url(#modalColorEnergy)' : (expandedChart === 'glicemia' ? 'url(#modalColorGlicemia)' : expandedChart === 'idratazione' ? 'url(#modalColorWater)' : expandedChart === 'cortisolo' ? 'url(#modalColorCortisol)' : expandedChart === 'digestione' ? 'url(#modalColorDigestion)' : expandedChart === 'neuro' ? 'url(#modalColorNeuro)' : 'url(#modalColorEnergy)')} filter={isMainSeriesHighlight ? 'url(#modalGlowMulti)' : undefined} />
+                      <Area type="monotone" dataKey={expandedChart === 'kcal' ? 'kcalFuture' : (expandedChart === 'glicemia' ? 'glicemiaFuture' : expandedChart === 'idratazione' ? 'idratazioneFuture' : expandedChart === 'cortisolo' ? 'cortisoloFuture' : expandedChart === 'digestione' ? 'digestioneFuture' : expandedChart === 'neuro' ? 'neuroFuture' : 'energyFuture')} stroke={expandedChart === 'neuro' ? '#3730a3' : '#444'} strokeWidth={2} strokeDasharray="10 10" fill="transparent" strokeOpacity={activeHighlight == null || isMainSeriesHighlight ? 1 : 0.6} />
                       </>
                     ); })()}
+                      {expandedChart === 'kcal' && <Line type="monotone" dataKey="cortisolScaledToKcal" stroke="#9c27b0" strokeWidth={activeHighlight === 'cortisolo' ? 4 : (activeHighlight != null ? 1 : 2)} strokeDasharray="5 5" dot={false} strokeOpacity={activeHighlight == null || activeHighlight === 'cortisolo' ? 1 : 0.6} filter={activeHighlight === 'cortisolo' ? 'url(#modalGlowCortisol)' : undefined} />}
                       {expandedChart === 'glicemia' && <ReferenceLine y={85} stroke="rgba(255,255,255,0.2)" strokeDasharray="5 5" />}
                       {expandedChart !== 'glicemia' && <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255,255,255,0.2)" strokeWidth={2} strokeDasharray="8 8" dot={false} />}
                       <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 4 : 1} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
