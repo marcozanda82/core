@@ -492,6 +492,26 @@ function computeEnergyForecast(chartData) {
   return result;
 }
 
+/** Explain possible cause of the lowest energy moment from chartData at forecast time. */
+function explainEnergyCrash(chartData, forecast) {
+  if (!forecast) return null;
+  const crashTime = forecast.time;
+  const point = chartData?.find(p => p.time === crashTime);
+  if (!point) return null;
+  let reason = 'unknown';
+  const digestione = point.digestione ?? point.digestion;
+  const cortisolo = point.cortisolo ?? point.cortisol;
+  const idratazione = point.idratazione ?? point.hydration;
+  if (digestione > 60) {
+    reason = 'high digestive load';
+  } else if (cortisolo > 65) {
+    reason = 'stress response';
+  } else if (idratazione < 40) {
+    reason = 'low hydration';
+  }
+  return { time: crashTime, reason };
+}
+
 /** Format hour (0-24) as "HH:MM" for insight messages. */
 function formatTimeForInsight(hour) {
   const h = Math.floor(hour);
@@ -1179,6 +1199,7 @@ export default function SalaComandi() {
   const [simulationNodes, setSimulationNodes] = useState([]);
   const [dailyInsights, setDailyInsights] = useState([]);
   const [energyForecast, setEnergyForecast] = useState(null);
+  const [crashExplanation, setCrashExplanation] = useState(null);
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -3494,6 +3515,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     setDailyInsights(insights);
     const forecast = computeEnergyForecast(chartData);
     setEnergyForecast(forecast);
+    const explanation = explainEnergyCrash(chartData, forecast);
+    setCrashExplanation(explanation);
   }, [chartData]);
 
   const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
