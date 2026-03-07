@@ -148,6 +148,30 @@ function decimalToTimeStr(dec) {
 }
 
 /**
+ * Baseline energetica giornaliera in base a sonno e recupero neurologico.
+ * Giornate con buon sonno partono con energia più alta (70–85), con sonno scarso più bassa (45–60).
+ */
+function computeBaselineEnergy(dailyLog) {
+  const log = dailyLog || [];
+  let sleepEntry = log.find(e => e.type === 'sleep');
+  let sleepScore = 0;
+  let neuroScore = 0;
+
+  if (sleepEntry) {
+    const hours = sleepEntry.hours || 7;
+    const deep = sleepEntry.deepMin || 60;
+    const rem = sleepEntry.remMin || 60;
+
+    sleepScore = (hours / 8) * 20;
+    neuroScore = ((deep + rem) / 180) * 20;
+  }
+
+  let baseline = 50 + sleepScore + neuroScore;
+  baseline = Math.max(40, Math.min(90, baseline));
+  return baseline;
+}
+
+/**
  * Dati reali + ideali per il cruscotto energetico 0-24h: 25 punti (ore 0..24).
  * timelineNodes: array di { id, type: 'meal'|'work'|'workout', time, duration?, kcal?, icon }.
  * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
@@ -156,6 +180,9 @@ function decimalToTimeStr(dec) {
 function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null) {
   const log = dailyLog || [];
   const ideal = idealStrategy || {};
+
+  const baselineEnergy = initialEnergy != null ? initialEnergy : computeBaselineEnergy(log);
+  console.log('Baseline energy:', baselineEnergy);
 
   // Mappa da canonical strategy key a array di mealType equivalenti
   const strategyToMealTypes = {
@@ -185,7 +212,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   });
   realTotals.allenamento = workoutKcal;
 
-  let currentEnergy = initialEnergy != null ? initialEnergy : 70;
+  let currentEnergy = baselineEnergy;
   let currentIdealEnergy = initialIdealEnergy != null ? (initialIdealEnergy ?? initialEnergy) : 70;
   let globalCrashRisk = false;
 
