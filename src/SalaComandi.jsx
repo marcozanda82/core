@@ -491,6 +491,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     currentCortisol += (20 - currentCortisol) * 0.10;
     currentHydration += (80 - currentHydration) * 0.05;
 
+    currentEnergy += (70 - currentEnergy) * 0.05;
+
     out.push({
       time: h,
       energy: useContinuityAtZero ? initialEnergy : currentEnergy,
