@@ -538,6 +538,21 @@ function explainEnergyCrash(chartData, forecast) {
   return { time: crashTime, reason };
 }
 
+/** Simulate adding a snack 1h before the first predicted crash; returns modified dataset or null. */
+function simulateSnackIntervention(chartData) {
+  if (!chartData || chartData.length === 0) return null;
+  const crashPoint = chartData.find(p => (p.energy ?? 0) < 40);
+  if (!crashPoint) return null;
+  const snackTime = crashPoint.time - 1;
+  const out = chartData.map(p => ({
+    ...p,
+    energy: (p.time >= snackTime && p.time <= snackTime + 2)
+      ? (p.energy ?? 0) + 8
+      : (p.energy ?? 0)
+  }));
+  return out;
+}
+
 /** Format hour (0-24) as "HH:MM" for insight messages. */
 function formatTimeForInsight(hour) {
   const h = Math.floor(hour);
