@@ -209,6 +209,17 @@ function responseCurve(t, peakTime, duration) {
   return Math.max(0, peak);
 }
 
+/** Centralized physiological simulation coefficients for tuning and maintenance. */
+const PHYSIOLOGY_CONFIG = {
+  energyDecayPerHour: 2,
+  nervousSystemImpact: 0.15,
+  digestionEnergyImpact: 8,
+  hydrationDecayPerHour: 2.0,
+  workoutLoadImpact: 5,
+  workLoadImpact: 0.5,
+  stimulantLoadImpact: 2
+};
+
 /**
  * Dati reali + ideali per il cruscotto energetico 0-24h: 25 punti (ore 0..24).
  * timelineNodes: array di { id, type: 'meal'|'work'|'workout', time, duration?, kcal?, icon }.
@@ -235,7 +246,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   load = Math.max(0, Math.min(100, load));
 
   let baselineEnergy = initialEnergy != null ? initialEnergy : computeBaselineEnergy(log);
-  baselineEnergy -= load * 0.15;
+  baselineEnergy -= load * PHYSIOLOGY_CONFIG.nervousSystemImpact;
   baselineEnergy = Math.max(40, Math.min(90, baselineEnergy));
   console.log('Baseline energy:', baselineEnergy);
 
@@ -303,8 +314,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     let currentDigestione = 0;
     const useContinuityAtZero = h === 0 && initialEnergy != null;
     if (!useContinuityAtZero) {
-      currentEnergy -= 2;
-      currentIdealEnergy -= 2;
+      currentEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
+      currentIdealEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
     }
 
     (timelineNodes || []).forEach(node => {
@@ -330,12 +341,12 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           currentIdealEnergy -= fatigueEffect * drain;
         }
         if (Math.round(node.time) === h) {
-          if (node.type === 'workout') load += 5;
-          else if (node.type === 'work') load += (node.duration ?? 1) * 0.5;
+          if (node.type === 'workout') load += PHYSIOLOGY_CONFIG.workoutLoadImpact;
+          else if (node.type === 'work') load += (node.duration ?? 1) * PHYSIOLOGY_CONFIG.workLoadImpact;
         }
       }
       if (node.type === 'stimulant') {
-        if (Math.round(node.time) === h) load += 2;
+        if (Math.round(node.time) === h) load += PHYSIOLOGY_CONFIG.stimulantLoadImpact;
         const timeSince = h - node.time;
         const effect = responseCurve(timeSince, 1.5, 4);
         if (effect > 0) {
@@ -355,7 +366,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         const digestiveLoad = computeDigestiveLoad(entry);
         if (diff >= 0 && diff <= 3) {
           const digestionFactor = 1 - diff / 3;
-          currentEnergy -= digestiveLoad * 8 * digestionFactor;
+          currentEnergy -= digestiveLoad * PHYSIOLOGY_CONFIG.digestionEnergyImpact * digestionFactor;
           const carb = Number(entry.carb) || 0;
           const fibre = Number(entry.fibre) || 0;
           const fat = Number(entry.fatTotal || entry.fat) || 0;
@@ -385,7 +396,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       }
     });
 
-    currentHydration -= 2.0;
+    currentHydration -= PHYSIOLOGY_CONFIG.hydrationDecayPerHour;
     (timelineNodes || []).forEach(node => {
       if (node.type === 'water' && Math.round(node.time) === h) {
         const ml = node.ml ?? node.amount ?? 250;
@@ -460,8 +471,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       neuro: currentNeuro
     });
     if (useContinuityAtZero) {
-      currentEnergy -= 2;
-      currentIdealEnergy -= 2;
+      currentEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
+      currentIdealEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
     }
   }
   return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk, hasCortisolRisk: globalCortisolRisk, hasDigestionRisk, nervousSystemLoad: load };
