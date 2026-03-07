@@ -410,14 +410,40 @@ function generateCortisolCurve(dailyLog, manualNodes = []) {
 
 /**
  * Semaforo allenamento: stato in base a curva anabolica e pasto recente.
+ * options: { fullHistory, currentTrackerDate, userTargets } per mitigazione mattutina.
  */
-function getWorkoutTrafficLight(currentTime, anabolicCurve, dailyLog) {
+function getWorkoutTrafficLight(currentTime, anabolicCurve, dailyLog, options) {
   const roundedTime = Math.round(currentTime * 2) / 2;
   const currentStatus = anabolicCurve.find(p => p.time === roundedTime)?.anabolicScore ?? 0;
   const pastoRecente = (dailyLog || []).find(item => item.type === 'food' && currentTime - item.mealTime >= 0 && currentTime - item.mealTime <= 1);
   if (pastoRecente) return { color: '#ff9800', text: 'IN DIGESTIONE', msg: 'Attendi la fine della digestione prima di allenarti.' };
   if (currentStatus > 50) return { color: '#00e5ff', text: 'FINESTRA ANABOLICA', msg: 'Momento perfetto per l\'allenamento.' };
   if (currentStatus > 0) return { color: '#ffeb3b', text: 'SCORTE IN ESAURIMENTO', msg: 'Allenamento leggero o assumi uno spuntino.' };
+  if (currentStatus === 0 && currentTime < 11 && options?.fullHistory != null && options?.currentTrackerDate) {
+    const yesterday = new Date(options.currentTrackerDate + 'T12:00:00');
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+    const yesterdayNode = options.fullHistory[TRACKER_STORICO_KEY(yesterdayStr)];
+    const rawYesterday = yesterdayNode?.log;
+    const yesterdayLog = Array.isArray(rawYesterday) ? rawYesterday : Object.values(rawYesterday || {});
+    let protIeri = 0;
+    let kcalIeri = 0;
+    yesterdayLog.forEach(entry => {
+      if (entry?.type === 'meal' && entry?.items) {
+        entry.items.forEach(it => { protIeri += Number(it?.prot) || 0; kcalIeri += Number(it?.cal ?? it?.kcal) || 0; });
+      } else if (entry?.type === 'food' || entry?.type === 'single' || !entry?.type) {
+        protIeri += Number(entry?.prot) || 0;
+        kcalIeri += Number(entry?.cal ?? entry?.kcal) || 0;
+      }
+    });
+    const targetProt = options?.userTargets?.prot ?? 150;
+    const targetKcal = options?.userTargets?.kcal ?? 2000;
+    const buoneProteine = protIeri > 100 || protIeri >= targetProt * 0.7;
+    const nonGraveDeficit = kcalIeri >= targetKcal * 0.7;
+    if (buoneProteine && nonGraveDeficit) {
+      return { color: '#ffeb3b', text: 'SCORTE SERALI ANCORA ATTIVE', msg: 'Allenamento leggero possibile.' };
+    }
+  }
   return { color: '#f44336', text: 'CATABOLISMO / DIGIUNO', msg: 'Assumi proteine o amminoacidi prima di allenarti.' };
 }
 
@@ -2709,11 +2735,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [fullStorico, mealType]);
 
   const weeklyTrendData = useMemo(() => {
-    return [...pastDaysStorico].slice(0, 7).reverse().map(d => ({
-      ...d,
-      shortDate: d.dataStr.substring(5)
-    }));
-  }, [pastDaysStorico]);
+    return [...pastDaysStorico].slice(0, 7).reverse().map(d => {
+      const prevDate = new Date(d.dataStr + 'T12:00:00');
+      prevDate.setDate(prevDate.getDate() - 1);
+      const prevStr = prevDate.toISOString().slice(0, 10);
+      const prevNode = fullStorico?.[TRACKER_STORICO_KEY(prevStr)];
+      const prevLog = Array.isArray(prevNode?.log) ? prevNode.log : Object.values(prevNode?.log || {});
+      const prevFood = prevLog.filter(i => i?.type === 'food' && i?.mealTime != null);
+      const todayFood = (d.log || []).filter(i => i?.type === 'food' && i?.mealTime != null);
+      const lastMealPrev = prevFood.length ? Math.max(...prevFood.map(i => i.mealTime)) : null;
+      const firstMealToday = todayFood.length ? Math.min(...todayFood.map(i => i.mealTime)) : null;
+      let maxFastingHours = null;
+      if (lastMealPrev != null && firstMealToday != null) {
+        maxFastingHours = (24 - lastMealPrev) + firstMealToday;
+      }
+      return { ...d, shortDate: d.dataStr.substring(5), maxFastingHours };
+    });
+  }, [pastDaysStorico, fullStorico]);
 
   const weeklyMicrosTotals = useMemo(() => {
     const totals = { fatTotal: 0, omega3: 0, omega6: 0, vitA: 0, vitD: 0, vitE: 0, vitK: 0, vitB12: 0 };
@@ -2962,7 +3000,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     digestioneFuture: d.time >= displayTime ? d.digestione : null
   }));
 
-  const trafficLight = getWorkoutTrafficLight(displayTime, anabolicCurve, dailyLog);
+  const trafficLight = getWorkoutTrafficLight(displayTime, anabolicCurve, dailyLog, { fullHistory, currentTrackerDate, userTargets });
 
   // Calcolo Budget Dinamico (Base + Bruciate oggi)
   const burnedKcal = dailyLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
@@ -3126,14 +3164,39 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [dailyLog, currentTime, fullHistory, currentDateObj]);
 
   const bodyBatteryData = useMemo(() => {
-    const sleepNode = (dailyLog || []).find(i => i.type === 'sleep');
+    const log = dailyLog || [];
+    const sleepNode = log.find(i => i.type === 'sleep');
     const wakeTime = sleepNode?.wakeTime ?? 7.5;
-    const sleepHours = sleepNode?.hours ?? 8.0;
-    const startingBattery = Math.min(100, Math.max(0, 100 - ((8 - sleepHours) * 10)));
+    let startingBattery;
+    if (sleepNode?.hours != null) {
+      const sleepHours = sleepNode.hours ?? 8.0;
+      startingBattery = Math.min(100, Math.max(0, 100 - ((8 - sleepHours) * 10)));
+    } else {
+      const yesterday = new Date(currentTrackerDate + 'T12:00:00');
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const yesterdayNode = fullHistory?.[TRACKER_STORICO_KEY(yesterdayStr)];
+      const rawYesterday = yesterdayNode?.log;
+      const yesterdayLog = Array.isArray(rawYesterday) ? rawYesterday : Object.values(rawYesterday || {});
+      const yesterdaySleep = yesterdayLog.find(i => i?.type === 'sleep');
+      if (yesterdaySleep?.hours != null) {
+        const yWake = yesterdaySleep?.wakeTime ?? 7.5;
+        const ySleepHours = yesterdaySleep.hours ?? 8.0;
+        const yStart = Math.min(100, Math.max(0, 100 - ((8 - ySleepHours) * 10)));
+        let yHoursAwake = 24 - yWake;
+        if (yHoursAwake < 0) yHoursAwake = 0;
+        const yTimeDrain = yHoursAwake * 3.5;
+        const yWorkoutCount = yesterdayLog.filter(i => i?.type === 'workout' && (i.mealTime ?? i.time ?? 0) <= 24).length;
+        const yWorkoutDrain = yWorkoutCount * 15;
+        startingBattery = Math.max(0, Math.min(100, Math.round(yStart - yTimeDrain - yWorkoutDrain)));
+      } else {
+        startingBattery = 40;
+      }
+    }
     let hoursAwake = currentTime - wakeTime;
     if (hoursAwake < 0) hoursAwake = 0;
     const timeDrain = hoursAwake * 3.5;
-    const workoutCount = (dailyLog || []).filter(i => i.type === 'workout' && i.mealTime <= currentTime).length;
+    const workoutCount = log.filter(i => i.type === 'workout' && i.mealTime <= currentTime).length;
     const workoutDrain = workoutCount * 15;
     let currentBattery = startingBattery - timeDrain - workoutDrain;
     currentBattery = Math.max(0, Math.min(100, currentBattery));
@@ -3141,26 +3204,51 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     if (currentBattery <= 20) { batteryColor = '#ff4d4d'; batteryIcon = '🪫'; }
     else if (currentBattery <= 50) { batteryColor = '#ffea00'; }
     return { level: Math.round(currentBattery), color: batteryColor, icon: batteryIcon };
-  }, [dailyLog, currentTime]);
+  }, [dailyLog, currentTime, fullHistory, currentTrackerDate]);
 
   const energyChartData = useMemo(() => {
-    const sleepNode = (dailyLog || []).find(i => i.type === 'sleep');
+    const log = dailyLog || [];
+    const sleepNode = log.find(i => i.type === 'sleep');
     const wakeTime = sleepNode?.wakeTime ?? 7.5;
-    const sleepHours = sleepNode?.hours ?? 8.0;
-    const startingBattery = Math.min(100, Math.max(0, 100 - ((8 - sleepHours) * 10)));
+    let startingBattery;
+    if (sleepNode?.hours != null) {
+      const sleepHours = sleepNode.hours ?? 8.0;
+      startingBattery = Math.min(100, Math.max(0, 100 - ((8 - sleepHours) * 10)));
+    } else {
+      const yesterday = new Date(currentTrackerDate + 'T12:00:00');
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const yesterdayNode = fullHistory?.[TRACKER_STORICO_KEY(yesterdayStr)];
+      const rawYesterday = yesterdayNode?.log;
+      const yesterdayLog = Array.isArray(rawYesterday) ? rawYesterday : Object.values(rawYesterday || {});
+      const yesterdaySleep = yesterdayLog.find(i => i?.type === 'sleep');
+      if (yesterdaySleep?.hours != null) {
+        const yWake = yesterdaySleep?.wakeTime ?? 7.5;
+        const ySleepHours = yesterdaySleep.hours ?? 8.0;
+        const yStart = Math.min(100, Math.max(0, 100 - ((8 - ySleepHours) * 10)));
+        let yHoursAwake = 24 - yWake;
+        if (yHoursAwake < 0) yHoursAwake = 0;
+        const yTimeDrain = yHoursAwake * 3.5;
+        const yWorkoutCount = yesterdayLog.filter(i => i?.type === 'workout' && (i.mealTime ?? i.time ?? 0) <= 24).length;
+        const yWorkoutDrain = yWorkoutCount * 15;
+        startingBattery = Math.max(0, Math.min(100, Math.round(yStart - yTimeDrain - yWorkoutDrain)));
+      } else {
+        startingBattery = 40;
+      }
+    }
     const data = [];
     for (let h = 0; h <= 24; h++) {
       let hoursAwake = h - wakeTime;
       if (hoursAwake < 0) hoursAwake = 0;
       const timeDrain = hoursAwake * 3.5;
-      const workoutCount = (dailyLog || []).filter(i => i.type === 'workout' && (i.mealTime ?? i.time ?? 0) <= h).length;
+      const workoutCount = log.filter(i => i.type === 'workout' && (i.mealTime ?? i.time ?? 0) <= h).length;
       const workoutDrain = workoutCount * 15;
       let currentBattery = startingBattery - timeDrain - workoutDrain;
       currentBattery = Math.max(0, Math.min(100, currentBattery));
       data.push({ ora: h, energia: Math.round(currentBattery) });
     }
     return data;
-  }, [dailyLog]);
+  }, [dailyLog, fullHistory, currentTrackerDate]);
   // --- FINE ZONA SICURA ---
 
   const renderCustomizedLabel = (props) => {
@@ -4426,6 +4514,44 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 {renderLiveProgressBar('Proteine', totali?.prot || 0, mealTotaliFull.prot || 0, userTargets?.prot ?? 150, 'g', '#b388ff')}
                 {renderLiveProgressBar('Carboidrati', totali?.carb || 0, mealTotaliFull.carb || 0, userTargets?.carb ?? 200, 'g', '#00e676')}
                 {renderLiveProgressBar('Grassi', totali?.fatTotal ?? totali?.fat ?? 0, mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, userTargets?.fatTotal ?? userTargets?.fat ?? 60, 'g', '#ffea00')}
+                {mealType === 'cena' && (() => {
+                  const targetKcal = dynamicDailyKcal;
+                  const targetProt = userTargets?.prot ?? 150;
+                  const targetCarb = userTargets?.carb ?? 200;
+                  const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 60;
+                  const totalKcal = (totali?.kcal || 0) + (mealTotaliFull?.kcal || 0);
+                  const totalProt = (totali?.prot || 0) + (mealTotaliFull?.prot || 0);
+                  const totalCarb = (totali?.carb || 0) + (mealTotaliFull?.carb || 0);
+                  const totalFat = (totali?.fatTotal ?? totali?.fat ?? 0) + (mealTotaliFull?.fatTotal ?? mealTotaliFull?.fat ?? 0);
+                  const deltaKcal = targetKcal - totalKcal;
+                  const deltaProt = targetProt - totalProt;
+                  const deltaCarb = targetCarb - totalCarb;
+                  const deltaFat = targetFat - totalFat;
+                  return (
+                    <div style={{ marginTop: '16px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: 'rgba(0,0,0,0.2)' }}>
+                      <h4 style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>Bilancio di Fine Giornata</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaKcal >= 0 ? '#00e676' : '#ff1744' }}>
+                          <span>Kcal</span>
+                          <span>{deltaKcal >= 0 ? `Rimangono ${Math.round(deltaKcal)}` : `Eccesso ${Math.round(-deltaKcal)}`}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaProt >= 0 ? '#00e676' : '#ff1744' }}>
+                          <span>Proteine (g)</span>
+                          <span>{deltaProt >= 0 ? `Rimangono ${deltaProt.toFixed(0)}` : `Eccesso ${(-deltaProt).toFixed(0)}`}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaCarb >= 0 ? '#00e676' : '#ff1744' }}>
+                          <span>Carboidrati (g)</span>
+                          <span>{deltaCarb >= 0 ? `Rimangono ${deltaCarb.toFixed(0)}` : `Eccesso ${(-deltaCarb).toFixed(0)}`}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaFat >= 0 ? '#00e676' : '#ff1744' }}>
+                          <span>Grassi (g)</span>
+                          <span>{deltaFat >= 0 ? `Rimangono ${deltaFat.toFixed(0)}` : `Eccesso ${(-deltaFat).toFixed(0)}`}</span>
+                        </div>
+                      </div>
+                      <p style={{ margin: '8px 0 0', fontSize: '0.65rem', color: '#888' }}>Utile per bilanciare i carboidrati serali e supportare il cortisolo notturno.</p>
+                    </div>
+                  );
+                })()}
               </div>
               <div className="pasto-builder-panel">
             <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: energyAt20Percent < 40 ? 'rgba(220, 38, 38, 0.12)' : 'rgba(34, 197, 94, 0.1)', borderColor: energyAt20Percent < 40 ? 'rgba(220, 38, 38, 0.4)' : 'rgba(34, 197, 94, 0.35)' }}>
@@ -4822,6 +4948,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 style={{ width: '100%', padding: '12px 14px', background: '#111', border: '1px solid #2a2a2a', borderRadius: '10px', color: '#fff', fontSize: '0.9rem', outline: 'none' }}
               />
             </div>
+            {weeklyTrendData.length > 0 && (() => {
+              const totalDeepFastingHours = weeklyTrendData.reduce((acc, d) => acc + (d.maxFastingHours != null && d.maxFastingHours > 12 ? d.maxFastingHours - 12 : 0), 0);
+              return (
+                <div style={{ marginBottom: '16px', padding: '12px 15px', borderRadius: '12px', border: '1px solid rgba(156, 39, 176, 0.4)', background: 'rgba(156, 39, 176, 0.08)' }}>
+                  <h4 style={{ fontSize: '0.7rem', color: '#ce93d8', letterSpacing: '1px', marginBottom: '8px' }}>Digiuno Settimanale</h4>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#e1bee7' }}>
+                    Negli ultimi 7 giorni: <strong style={{ color: '#ffea00' }}>{totalDeepFastingHours.toFixed(1)} h</strong> in digiuno profondo (Chetosi/Autofagia, &gt;12 h consecutive).
+                  </p>
+                </div>
+              );
+            })()}
             <div style={{ marginBottom: '24px', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '12px', border: '1px solid #2a2a2a' }}>
               <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px' }}>TREND CALORICO ULTIMI 7 GIORNI</h4>
               {weeklyTrendData.length > 0 ? (
