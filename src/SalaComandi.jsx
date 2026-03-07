@@ -3188,6 +3188,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     : renderDataWithSegments;
   const finalDotY = chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'kcal' ? scale(dotY) : dotY))));
 
+  const renderEnergyPercentData = [];
+  energyChartData.forEach((point, index) => {
+    renderEnergyPercentData.push(point);
+    if (index === currentH && fraction > 0) {
+      const nextVal = energyChartData[nextH]?.energia ?? point.energia;
+      const interpolated = point.energia + (nextVal - point.energia) * fraction;
+      renderEnergyPercentData.push({
+        ora: displayTime,
+        energia: interpolated
+      });
+    }
+  });
+  const finalEnergyPercentData = renderEnergyPercentData.map(d => ({
+    ...d,
+    energiaPast: d.ora <= displayTime ? d.energia : null,
+    energiaFuture: d.ora >= displayTime ? d.energia : null
+  }));
+
   const energyAt20Percent = energyAt20 ?? 50;
 
   // Radar metabolico: stato attuale da glicemia e digestione
@@ -3826,7 +3844,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </h3>
                 <div style={{ width: '100%', height: '220px' }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                    <ComposedChart data={finalEnergyPercentData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -3866,7 +3884,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           </g>
                         );
                       }} />
-                      <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" />
+                      <Area type="monotone" dataKey="energiaPast" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
+                      <Area type="monotone" dataKey="energiaFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
                       <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
                     </ComposedChart>
@@ -4140,7 +4159,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ flex: 1, minHeight: 120 }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <ComposedChart data={finalEnergyPercentData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorEnergiaModal" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -4160,7 +4179,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       ))}
                       <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 4 : 1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
                       <ReferenceDot x={displayTime} y={(() => { const idx = Math.floor(displayTime); const next = Math.min(24, idx + 1); const frac = displayTime - idx; const a = energyChartData[idx]?.energia; const b = energyChartData[next]?.energia; return a != null ? (b != null ? a + (b - a) * frac : a) : 50; })()} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
-                      <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} />
+                      <Area type="monotone" dataKey="energiaPast" stroke="#00e676" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} connectNulls={false} />
+                      <Area type="monotone" dataKey="energiaFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.6} connectNulls={false} />
                       <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
                     </ComposedChart>
