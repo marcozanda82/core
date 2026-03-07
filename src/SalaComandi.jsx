@@ -478,6 +478,20 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk, hasCortisolRisk: globalCortisolRisk, hasDigestionRisk, nervousSystemLoad: load };
 }
 
+/** Compute the lowest predicted energy point of the day from chartData. */
+function computeEnergyForecast(chartData) {
+  if (!chartData || chartData.length === 0) return null;
+  let minPoint = chartData[0];
+  chartData.forEach(point => {
+    if (point.energy < minPoint.energy) {
+      minPoint = point;
+    }
+  });
+  const result = { time: minPoint.time, energy: minPoint.energy };
+  if (minPoint.energy < 40) result.crashRisk = true;
+  return result;
+}
+
 /** Format hour (0-24) as "HH:MM" for insight messages. */
 function formatTimeForInsight(hour) {
   const h = Math.floor(hour);
@@ -1164,6 +1178,7 @@ export default function SalaComandi() {
   const [simulationMode, setSimulationMode] = useState(false);
   const [simulationNodes, setSimulationNodes] = useState([]);
   const [dailyInsights, setDailyInsights] = useState([]);
+  const [energyForecast, setEnergyForecast] = useState(null);
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -3477,6 +3492,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   useEffect(() => {
     const insights = generateDailyInsights(chartData);
     setDailyInsights(insights);
+    const forecast = computeEnergyForecast(chartData);
+    setEnergyForecast(forecast);
   }, [chartData]);
 
   const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
