@@ -467,6 +467,51 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk, hasCortisolRisk: globalCortisolRisk, hasDigestionRisk, nervousSystemLoad: load };
 }
 
+/** Format hour (0-24) as "HH:MM" for insight messages. */
+function formatTimeForInsight(hour) {
+  const h = Math.floor(hour);
+  const m = Math.round((hour - h) * 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Build daily insights from chartData; deduplicate by type within 60 minutes. */
+function generateDailyInsights(chartData) {
+  const insights = [];
+  (chartData || []).forEach(point => {
+    const timeStr = formatTimeForInsight(point.time);
+    if (point.energy < 40) {
+      insights.push({ type: 'energy_crash', time: point.time, timeStr, message: `Possible energy crash detected around ${timeStr}.` });
+    }
+    const cortisol = point.cortisolo ?? point.cortisol;
+    if (cortisol > 70) {
+      insights.push({ type: 'high_stress', time: point.time, timeStr, message: `High cortisol levels detected around ${timeStr}.` });
+    }
+    const digestion = point.digestione ?? point.digestion;
+    if (digestion > 60) {
+      insights.push({ type: 'heavy_digestion', time: point.time, timeStr, message: `High digestive load around ${timeStr} may reduce energy.` });
+    }
+  });
+  // Remove duplicates: ignore if another insight of the same type occurred within 60 minutes
+  const WINDOW_HOURS = 1;
+  const byType = {};
+  insights.forEach(ins => {
+    if (!byType[ins.type]) byType[ins.type] = [];
+    byType[ins.type].push(ins);
+  });
+  const deduped = [];
+  Object.keys(byType).forEach(type => {
+    const list = byType[type].sort((a, b) => a.time - b.time);
+    let lastKeptTime = -999;
+    list.forEach(ins => {
+      if (ins.time - lastKeptTime >= WINDOW_HOURS) {
+        deduped.push(ins);
+        lastKeptTime = ins.time;
+      }
+    });
+  });
+  return deduped.sort((a, b) => a.time - b.time);
+}
+
 /**
  * Curva anabolica 0-24h (slot ogni 0.5h). Pasti con >= 15g proteine generano un'onda;
  * se il pasto è nella finestra post-workout (fino a 3h dopo l'allenamento), l'onda è amplificata.
@@ -1107,6 +1152,7 @@ export default function SalaComandi() {
   const [nervousSystemLoad, setNervousSystemLoad] = useState(30);
   const [simulationMode, setSimulationMode] = useState(false);
   const [simulationNodes, setSimulationNodes] = useState([]);
+  const [dailyInsights, setDailyInsights] = useState([]);
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -3416,6 +3462,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       setNervousSystemLoad(energyChartResult.nervousSystemLoad);
     }
   }, [simulationMode, currentTrackerDate, energyChartResult?.nervousSystemLoad]);
+
+  useEffect(() => {
+    const insights = generateDailyInsights(chartData);
+    setDailyInsights(insights);
+  }, [chartData]);
 
   const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
   const cortisolCurve = useMemo(() => generateCortisolCurve(dailyLog, manualNodes), [dailyLog, manualNodes]);
