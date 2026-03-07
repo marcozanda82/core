@@ -3681,7 +3681,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`}>💧 IDRAT</button>
             <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol' : ''}`}>🧠 CORTISOL</button>
             <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGEST</button>
-            <button type="button" onClick={() => { setExpandedChart(chartUnit); setActiveHighlight(null); }} style={{ marginLeft: 'auto', padding: '8px 14px', fontSize: '0.7rem', background: 'rgba(0,229,255,0.15)', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', cursor: 'pointer', fontWeight: 'bold' }} title="Apri grafico a tutto schermo con glossario">📊 Espandi</button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', marginTop: '6px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: `1px solid ${metabolicState.color}40` }}>
             <span style={{ fontSize: '0.7rem', color: '#888' }}>Radar metabolico:</span>
@@ -3715,7 +3714,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               onMouseLeave={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
               style={{ flexShrink: 0, width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
             >
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80 }}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => { if (!draggingNode) { setExpandedChart(chartUnit); setActiveHighlight(null); } }}
+                onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !draggingNode) { e.preventDefault(); setExpandedChart(chartUnit); setActiveHighlight(null); } }}
+                style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80, cursor: 'pointer' }}
+                aria-label="Apri grafico a tutto schermo"
+              >
                 {chartUnit === 'percent' ? (
               <div style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
                 <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
@@ -4058,25 +4064,65 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             </div>
             <div style={{ flex: '0 0 40%', overflow: 'auto', padding: '16px', borderTop: '1px solid #222' }}>
-              <h4 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '12px' }}>Glossario</h4>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                {expandedChart === 'percent' ? (
-                  <>
-                    <button type="button" onClick={() => setActiveHighlight(activeHighlight === 'energia' ? null : 'energia')} style={{ padding: '10px 16px', fontSize: '0.8rem', background: activeHighlight === 'energia' ? 'rgba(0,230,118,0.2)' : 'transparent', border: `2px solid ${activeHighlight === 'energia' ? '#00e676' : '#444'}`, borderRadius: '8px', color: activeHighlight === 'energia' ? '#00e676' : '#aaa', cursor: 'pointer' }}>Energia SNC</button>
-                    <button type="button" onClick={() => setActiveHighlight(activeHighlight === 'sveglia' ? null : 'sveglia')} style={{ padding: '10px 16px', fontSize: '0.8rem', background: activeHighlight === 'sveglia' ? 'rgba(75,163,227,0.2)' : 'transparent', border: `2px solid ${activeHighlight === 'sveglia' ? '#4ba3e3' : '#444'}`, borderRadius: '8px', color: activeHighlight === 'sveglia' ? '#4ba3e3' : '#aaa', cursor: 'pointer' }}>Sveglia</button>
-                    <button type="button" onClick={() => setActiveHighlight(activeHighlight === 'ora' ? null : 'ora')} style={{ padding: '10px 16px', fontSize: '0.8rem', background: activeHighlight === 'ora' ? 'rgba(255,255,255,0.1)' : 'transparent', border: `2px solid ${activeHighlight === 'ora' ? '#fff' : '#444'}`, borderRadius: '8px', color: activeHighlight === 'ora' ? '#fff' : '#aaa', cursor: 'pointer' }}>Ora attuale</button>
-                  </>
-                ) : (
-                  <>
-                    <button type="button" onClick={() => setActiveHighlight(activeHighlight === 'anabolica' ? null : 'anabolica')} style={{ padding: '10px 16px', fontSize: '0.8rem', background: activeHighlight === 'anabolica' ? 'rgba(0,229,255,0.2)' : 'transparent', border: `2px solid ${activeHighlight === 'anabolica' ? '#00e5ff' : '#444'}`, borderRadius: '8px', color: activeHighlight === 'anabolica' ? '#00e5ff' : '#aaa', cursor: 'pointer' }}>Finestra Anabolica</button>
-                    <button type="button" onClick={() => setActiveHighlight(activeHighlight === 'cortisolo' ? null : 'cortisolo')} style={{ padding: '10px 16px', fontSize: '0.8rem', background: activeHighlight === 'cortisolo' ? 'rgba(156,39,176,0.2)' : 'transparent', border: `2px solid ${activeHighlight === 'cortisolo' ? '#9c27b0' : '#444'}`, borderRadius: '8px', color: activeHighlight === 'cortisolo' ? '#9c27b0' : '#aaa', cursor: 'pointer' }}>Cortisolo</button>
-                    <button type="button" onClick={() => setActiveHighlight(activeHighlight === 'sveglia' ? null : 'sveglia')} style={{ padding: '10px 16px', fontSize: '0.8rem', background: activeHighlight === 'sveglia' ? 'rgba(75,163,227,0.2)' : 'transparent', border: `2px solid ${activeHighlight === 'sveglia' ? '#4ba3e3' : '#444'}`, borderRadius: '8px', color: activeHighlight === 'sveglia' ? '#4ba3e3' : '#aaa', cursor: 'pointer' }}>Sveglia</button>
-                    <button type="button" onClick={() => setActiveHighlight(activeHighlight === 'energia' ? null : 'energia')} style={{ padding: '10px 16px', fontSize: '0.8rem', background: activeHighlight === 'energia' ? 'rgba(0,229,255,0.2)' : 'transparent', border: `2px solid ${activeHighlight === 'energia' ? '#00e5ff' : '#444'}`, borderRadius: '8px', color: activeHighlight === 'energia' ? '#00e5ff' : '#aaa', cursor: 'pointer' }}>Energia / Calorie</button>
-                    <button type="button" onClick={() => setActiveHighlight(activeHighlight === 'digestione' ? null : 'digestione')} style={{ padding: '10px 16px', fontSize: '0.8rem', background: activeHighlight === 'digestione' ? 'rgba(147,51,234,0.2)' : 'transparent', border: `2px solid ${activeHighlight === 'digestione' ? '#9333ea' : '#444'}`, borderRadius: '8px', color: activeHighlight === 'digestione' ? '#9333ea' : '#aaa', cursor: 'pointer' }}>Digestione</button>
-                    <button type="button" onClick={() => setActiveHighlight(activeHighlight === 'ora' ? null : 'ora')} style={{ padding: '10px 16px', fontSize: '0.8rem', background: activeHighlight === 'ora' ? 'rgba(255,255,255,0.1)' : 'transparent', border: `2px solid ${activeHighlight === 'ora' ? '#fff' : '#444'}`, borderRadius: '8px', color: activeHighlight === 'ora' ? '#fff' : '#aaa', cursor: 'pointer' }}>Ora attuale</button>
-                  </>
-                )}
-              </div>
+              <h4 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '12px' }}>Descrizione</h4>
+              {(() => {
+                const termConfig = expandedChart === 'percent' || expandedChart === 'kcal'
+                  ? [{ key: 'energia', label: 'Energia SNC', color: '#00e676' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                  : expandedChart === 'cortisolo'
+                    ? [{ key: 'cortisolo', label: 'Cortisolo', color: '#9c27b0' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                    : expandedChart === 'glicemia'
+                      ? [{ key: 'energia', label: 'Glicemia', color: '#ef4444' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                      : expandedChart === 'idratazione'
+                        ? [{ key: 'energia', label: 'Idratazione', color: '#00e5ff' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                        : expandedChart === 'digestione'
+                          ? [{ key: 'digestione', label: 'Digestione', color: '#9333ea' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                          : [{ key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'cortisolo', label: 'Cortisolo', color: '#9c27b0' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'energia', label: 'Energia / Calorie', color: '#00e5ff' }, { key: 'digestione', label: 'Digestione', color: '#9333ea' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }];
+                const descriptions = {
+                  percent: "Questa curva rappresenta la tua [Energia SNC]. Si rigenera durante la notte (partendo dalla [Sveglia]) e si esaurisce gradualmente con lo stress e gli allenamenti fino all'[Ora attuale].",
+                  kcal: "Questa curva rappresenta la tua [Energia SNC] in termini calorici. Si rigenera dalla [Sveglia] e si modula con pasti e attività fino all'[Ora attuale].",
+                  cortisolo: "Il grafico mostra l'andamento del tuo [Cortisolo]. Segue un ritmo circadiano che inizia dalla [Sveglia]. Evita picchi eccessivi verso l'[Ora attuale] per garantire un buon riposo.",
+                  glicemia: "La curva simula l'andamento della [Glicemia] nel corso della giornata. I pasti e la [Sveglia] influenzano i livelli; il marcatore indica l'[Ora attuale].",
+                  idratazione: "Questo grafico mostra il livello di [Idratazione]. Bere acqua e la [Sveglia] contribuiscono al rialzo; l'[Ora attuale] indica dove sei ora.",
+                  digestione: "La curva rappresenta il carico di [Digestione] dopo i pasti. La [Sveglia] e l'[Ora attuale] aiutano a contestualizzare i picchi."
+                };
+                const text = descriptions[expandedChart] || descriptions.percent;
+                const parts = text.split(/(\[[^\]]+\])/g);
+                const linkStyle = (key, color) => ({
+                  fontWeight: 'bold',
+                  color,
+                  borderBottom: `1px solid ${color}`,
+                  cursor: 'pointer',
+                  padding: '0 2px',
+                  borderRadius: '2px',
+                  background: activeHighlight === key ? `${color}22` : 'transparent',
+                  transition: 'background 0.2s ease'
+                });
+                return (
+                  <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: '#b0b0b0', margin: 0 }}>
+                    {parts.map((part, i) => {
+                      const m = part.match(/^\[([^\]]+)\]$/);
+                      if (m) {
+                        const term = termConfig.find(t => t.label === m[1]);
+                        if (!term) return part;
+                        const isActive = activeHighlight === term.key;
+                        return (
+                          <span
+                            key={i}
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => { e.stopPropagation(); setActiveHighlight(isActive ? null : term.key); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveHighlight(isActive ? null : term.key); } }}
+                            style={linkStyle(term.key, term.color)}
+                          >
+                            {term.label}
+                          </span>
+                        );
+                      }
+                      return part;
+                    })}
+                  </p>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -4095,7 +4141,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div
                 className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
                 onClick={() => setSelectedMealCenter(null)}
-                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
+                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
               >
                 {!selectedMealCenter ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-14px)' }}>
