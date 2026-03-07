@@ -184,6 +184,16 @@ function computeDigestiveLoad(entry) {
 }
 
 /**
+ * Curva di risposta fisiologica: effetto che sale, picco, poi decade (inerzia).
+ * t = tempo dall'evento, peakTime = ora del picco, duration = durata totale.
+ */
+function responseCurve(t, peakTime, duration) {
+  if (t < 0 || t > duration) return 0;
+  const peak = 1 - Math.abs((t - peakTime) / peakTime);
+  return Math.max(0, peak);
+}
+
+/**
  * Dati reali + ideali per il cruscotto energetico 0-24h: 25 punti (ore 0..24).
  * timelineNodes: array di { id, type: 'meal'|'work'|'workout', time, duration?, kcal?, icon }.
  * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
@@ -265,20 +275,35 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     }
 
     (timelineNodes || []).forEach(node => {
-      if (node.type === 'meal' && Math.round(node.time) === h) {
-        const realK = realTotals[node.strategyKey] || 0;
-        const idealK = Number(ideal[node.strategyKey]) || (node.strategyKey === 'spuntino' ? 250 : 500);
-        currentEnergy += realK / 20;
-        currentIdealEnergy += idealK / 20;
+      if (node.type === 'meal') {
+        const timeSince = h - node.time;
+        if (timeSince >= 0 && timeSince <= 3) {
+          const mealEffect = responseCurve(timeSince, 1, 3);
+          const realK = realTotals[node.strategyKey] || 0;
+          const idealK = Number(ideal[node.strategyKey]) || (node.strategyKey === 'spuntino' ? 250 : 500);
+          currentEnergy += mealEffect * (realK / 20);
+          currentIdealEnergy += mealEffect * (idealK / 20);
+        }
       }
       if (node.type === 'work' || node.type === 'workout') {
-        const startH = Math.round(node.time);
-        const dur = Math.max(1, Math.round(node.duration || 1));
-        if (h >= startH && h < startH + dur) {
+        const dur = Math.max(0.5, node.duration || 1);
+        const timeSince = h - node.time;
+        const fatigueWindow = dur + 2;
+        if (timeSince >= 0 && timeSince <= fatigueWindow) {
+          const fatigueEffect = responseCurve(timeSince, 0.5, fatigueWindow);
           const burnKcal = node.kcal || 300;
           const drain = (burnKcal / dur) / 10;
-          currentEnergy -= drain;
-          currentIdealEnergy -= drain;
+          currentEnergy -= fatigueEffect * drain;
+          currentIdealEnergy -= fatigueEffect * drain;
+        }
+      }
+      if (node.type === 'stimulant') {
+        const timeSince = h - node.time;
+        const effect = responseCurve(timeSince, 1.5, 4);
+        if (effect > 0) {
+          const sub = (node.subtype || 'caffè').toLowerCase();
+          const stimulantBoost = sub === 'energy drink' ? 12 : sub === 'caffè' ? 8 : 5;
+          currentEnergy += effect * stimulantBoost;
         }
       }
     });
@@ -354,11 +379,14 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       }
     });
     (timelineNodes || []).forEach(node => {
-      if (node.type === 'stimulant' && h >= node.time && h <= node.time + 4) {
-        const sub = (node.subtype || 'caffè').toLowerCase();
-        const maxBoost = sub === 'energy drink' ? 25 : sub === 'caffè' ? 15 : 10;
-        const decay = 1 - (h - node.time) / 4;
-        currentCortisol += maxBoost * Math.max(0, decay);
+      if (node.type === 'stimulant') {
+        const timeSince = h - node.time;
+        const effect = responseCurve(timeSince, 1.5, 4);
+        if (effect > 0) {
+          const sub = (node.subtype || 'caffè').toLowerCase();
+          const stimulantCortisolImpact = sub === 'energy drink' ? 25 : sub === 'caffè' ? 15 : 10;
+          currentCortisol += effect * stimulantCortisolImpact;
+        }
       }
     });
     if (globalCrashRisk && h >= 14 && h <= 20) currentCortisol += 10;
