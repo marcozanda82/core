@@ -340,13 +340,13 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           currentEnergy -= fatigueEffect * drain;
           currentIdealEnergy -= fatigueEffect * drain;
         }
-        if (Math.round(node.time) === h) {
+        if (node.time >= h && node.time < h + 1) {
           if (node.type === 'workout') load += PHYSIOLOGY_CONFIG.workoutLoadImpact;
           else if (node.type === 'work') load += (node.duration ?? 1) * PHYSIOLOGY_CONFIG.workLoadImpact;
         }
       }
       if (node.type === 'stimulant') {
-        if (Math.round(node.time) === h) load += PHYSIOLOGY_CONFIG.stimulantLoadImpact;
+        if (node.time >= h && node.time < h + 1) load += PHYSIOLOGY_CONFIG.stimulantLoadImpact;
         const timeSince = h - node.time;
         const effect = responseCurve(timeSince, 1.5, 4);
         if (effect > 0) {
@@ -406,14 +406,14 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     currentHydration -= PHYSIOLOGY_CONFIG.hydrationDecayPerHour;
     (timelineNodes || []).forEach(node => {
-      if (node.type === 'water' && Math.round(node.time) === h) {
+      if (node.type === 'water' && node.time >= h && node.time < h + 1) {
         const ml = node.ml ?? node.amount ?? 250;
         currentHydration += (ml / (dailyWaterGoal || 2500)) * 45;
       }
       if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
         currentHydration -= 8.0;
       }
-      if (node.type === 'stimulant' && Math.round(node.time) === h) {
+      if (node.type === 'stimulant' && node.time >= h && node.time < h + 1) {
         const sub = (node.subtype || 'caffè').toLowerCase();
         const malus = sub === 'energy drink' ? 15 : sub === 'caffè' ? 10 : 5;
         currentHydration -= malus;
@@ -460,7 +460,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         const drain = node.type === 'workout' ? 12 : 6;
         currentNeuro -= (drain / Math.max(0.5, (node.duration || 1)));
       }
-      if (node.type === 'stimulant' && Math.round(node.time) === h) {
+      if (node.type === 'stimulant' && node.time >= h && node.time < h + 1) {
         const sub = (node.subtype || 'caffè').toLowerCase();
         const boost = sub === 'energy drink' ? 15 : sub === 'caffè' ? 10 : 5;
         currentNeuro = Math.min(100, currentNeuro + boost * model.recoveryRate);
