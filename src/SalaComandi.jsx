@@ -352,10 +352,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       if (entry.type === 'food') {
         const ft = typeof entry.mealTime === 'number' && !Number.isNaN(entry.mealTime) ? entry.mealTime : 12;
         const diff = h - ft;
-        const load = computeDigestiveLoad(entry);
+        const digestiveLoad = computeDigestiveLoad(entry);
         if (diff >= 0 && diff <= 3) {
           const digestionFactor = 1 - diff / 3;
-          currentEnergy -= load * 8 * digestionFactor;
+          currentEnergy -= digestiveLoad * 8 * digestionFactor;
           const carb = Number(entry.carb) || 0;
           const fibre = Number(entry.fibre) || 0;
           const fat = Number(entry.fatTotal || entry.fat) || 0;
@@ -373,7 +373,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
             }
           }
           currentDigestione += 100 * (1 - diff / 3);
-          currentDigestione += load * 30 * (1 - diff / 3);
+          currentDigestione += digestiveLoad * 30 * (1 - diff / 3);
         }
       }
     });
