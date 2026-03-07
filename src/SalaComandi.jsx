@@ -847,11 +847,13 @@ export default function SalaComandi() {
   const [chartUnit, setChartUnit] = useState('percent'); // 'percent' | 'kcal'
   const [expandedChart, setExpandedChart] = useState(null); // 'percent' | 'kcal' | 'glicemia' | ... per modale fullscreen
   const [activeHighlight, setActiveHighlight] = useState(null); // glossario: 'energia' | 'anabolica' | 'cortisolo' | 'sveglia' | 'digestione' | 'ora'
-  const [isAiMode, setIsAiMode] = useState(false);
+  const [bottomTab, setBottomTab] = useState('desc'); // 'desc' | 'ai' (metà inferiore modale)
+  const [aiInsightsList, setAiInsightsList] = useState([]); // Array di { time: string, text: string }
+  const [currentAiIndex, setCurrentAiIndex] = useState(0);
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [globalAiInsight, setGlobalAiInsight] = useState(null); // analisi AI globale unica (modale)
   const highlightResetTimeoutRef = useRef(null);
   const modalSwipeStartXRef = useRef(null);
+  const bottomTouchStartX = useRef(null);
   const CHART_VIEWS_CAROUSEL = ['percent', 'kcal', 'glicemia', 'idratazione', 'neuro', 'cortisolo', 'digestione'];
   const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
@@ -4199,6 +4201,50 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             setActiveHighlight(highlightKey);
             highlightResetTimeoutRef.current = setTimeout(() => { setActiveHighlight(null); highlightResetTimeoutRef.current = null; }, 3000);
           };
+          const handleBottomTouchStart = (e) => { bottomTouchStartX.current = e.touches?.[0]?.clientX ?? e.clientX; };
+          const handleBottomTouchEnd = (e) => {
+            if (bottomTouchStartX.current == null) return;
+            const endX = e.changedTouches?.[0]?.clientX ?? e.clientX;
+            const deltaX = bottomTouchStartX.current - endX;
+            if (deltaX > 50 && currentAiIndex < aiInsightsList.length - 1) {
+              setCurrentAiIndex(prev => prev + 1);
+            } else if (deltaX < -50 && currentAiIndex > 0) {
+              setCurrentAiIndex(prev => prev - 1);
+            }
+            bottomTouchStartX.current = null;
+          };
+          const runGenerateGlobalAI = () => {
+            setIsAiLoading(true);
+            const prompt = buildGlobalAIPrompt({
+              displayTime,
+              energy: dotY,
+              cortisolo: dotCortisolo,
+              glicemia: dotGlicemia,
+              idratazione: dotIdratazione,
+              digestione: dotDigestione,
+              neuro: dotNeuro
+            });
+            const timeStr = `${String(Math.floor(displayTime)).padStart(2, '0')}:${String(Math.round((displayTime % 1) * 60)).padStart(2, '0')}`;
+            callGeminiAPIWithRotation(prompt)
+              .then((result) => {
+                const newInsight = { time: timeStr, text: result };
+                setAiInsightsList(prev => {
+                  const next = [...prev, newInsight];
+                  setCurrentAiIndex(next.length - 1);
+                  return next;
+                });
+                setIsAiLoading(false);
+              })
+              .catch((err) => {
+                console.error("Errore AI Analisi Grafico:", err);
+                setAiInsightsList(prev => {
+                  const next = [...prev, { time: timeStr, text: "❌ Connessione con Core AI fallita. Verifica le API Key." }];
+                  setCurrentAiIndex(next.length - 1);
+                  return next;
+                });
+                setIsAiLoading(false);
+              });
+          };
           return (
           <div
             style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000, background: '#050505', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
@@ -4218,7 +4264,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
                   {expandedChart === 'percent' ? '⚡ Livello Energia (SNC)' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : 'Energia 0–24h'}
                 </span>
-                <button type="button" onClick={() => { setExpandedChart(null); setActiveHighlight(null); setIsAiMode(false); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi</button>
+                <button type="button" onClick={() => { setExpandedChart(null); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi</button>
               </div>
               <div style={{ flex: 1, minHeight: 120 }}>
                 {expandedChart === 'percent' ? (
@@ -4287,129 +4333,143 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 )}
               </div>
             </div>
-            <div style={{ flex: '0 0 40%', overflow: 'auto', padding: '16px', borderTop: '1px solid #222' }}>
-              {isAiMode ? (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <h4 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '1px', margin: 0 }}>Analisi AI</h4>
-                    <button type="button" onClick={() => { setIsAiMode(false); }} style={{ padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', background: 'rgba(255,255,255,0.08)', border: '1px solid #444', borderRadius: '8px', color: '#aaa', cursor: 'pointer' }}>Chiudi AI Mode</button>
-                  </div>
-                  {isAiLoading ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#00e5ff', fontSize: '0.85rem' }}>
-                      <span className="loading-dots" style={{ display: 'inline-block' }}>...</span>
-                      L'AI sta analizzando i tuoi biomarcatori...
-                    </div>
-                  ) : globalAiInsight ? (
-                    <InteractiveAIText text={globalAiInsight} onKeywordClick={handleGlobalKeywordClick} />
-                  ) : null}
-                </>
+            <div style={{ flex: '0 0 40%', overflow: 'auto', padding: '16px', borderTop: '1px solid #222', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', background: '#222', borderRadius: '20px', padding: '4px', marginBottom: '15px', flexShrink: 0 }}>
+                <div role="button" tabIndex={0} onClick={() => setBottomTab('desc')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setBottomTab('desc'); } }} style={{ flex: 1, textAlign: 'center', padding: '8px', borderRadius: '16px', background: bottomTab === 'desc' ? '#333' : 'transparent', color: bottomTab === 'desc' ? '#fff' : '#888', cursor: 'pointer', transition: 'all 0.3s' }}>
+                  Descrizione
+                </div>
+                <div role="button" tabIndex={0} onClick={() => setBottomTab('ai')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setBottomTab('ai'); } }} style={{ flex: 1, textAlign: 'center', padding: '8px', borderRadius: '16px', background: bottomTab === 'ai' ? '#00e5ff' : 'transparent', color: bottomTab === 'ai' ? '#000' : '#888', fontWeight: bottomTab === 'ai' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.3s' }}>
+                  Analisi AI
+                </div>
+              </div>
+              {bottomTab === 'desc' ? (
+                (() => {
+                  const termConfig = expandedChart === 'percent'
+                    ? [{ key: 'energia', label: 'Energia SNC', color: '#00e676' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                    : expandedChart === 'kcal'
+                      ? [{ key: 'energia', label: 'Energia', color: '#00e5ff' }, { key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                      : expandedChart === 'neuro'
+                      ? [{ key: 'neuro', label: 'Recupero Neurologico', color: '#6366f1' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                      : expandedChart === 'cortisolo'
+                      ? [{ key: 'cortisolo', label: 'Cortisolo', color: '#9c27b0' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                      : expandedChart === 'glicemia'
+                        ? [{ key: 'energia', label: 'Glicemia', color: '#ef4444' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                        : expandedChart === 'idratazione'
+                          ? [{ key: 'energia', label: 'Idratazione', color: '#00e5ff' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                          : expandedChart === 'digestione'
+                            ? [{ key: 'digestione', label: 'Digestione', color: '#9333ea' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                            : [{ key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'cortisolo', label: 'Cortisolo', color: '#9c27b0' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'energia', label: 'Energia / Calorie', color: '#00e5ff' }, { key: 'digestione', label: 'Digestione', color: '#9333ea' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }];
+                  const descriptions = {
+                    percent: "Questa curva rappresenta la tua [Energia SNC]. Si rigenera durante la notte (partendo dalla [Sveglia]) e si esaurisce gradualmente con lo stress e gli allenamenti fino all'[Ora attuale].",
+                    kcal: "Questo grafico mostra il tuo bilancio di [Energia] (Calorie). La [Finestra Anabolica] (area azzurra) mostra il livello di sintesi proteica: i picchi indicano il momento migliore per l'allenamento, quando il muscolo è nutrito a dovere. La [Sveglia] e l'[Ora attuale] contestualizzano la giornata.",
+                    neuro: "Il grafico mostra il tuo [Recupero Neurologico]: si ricarica durante il sonno fino alla [Sveglia] e si consuma con lavoro e allenamento. Il punto indica l'[Ora attuale].",
+                    cortisolo: "Il grafico mostra l'andamento del tuo [Cortisolo]. Segue un ritmo circadiano che inizia dalla [Sveglia]. Evita picchi eccessivi verso l'[Ora attuale] per garantire un buon riposo.",
+                    glicemia: "La curva simula l'andamento della [Glicemia] nel corso della giornata. I pasti e la [Sveglia] influenzano i livelli; il marcatore indica l'[Ora attuale].",
+                    idratazione: "Questo grafico mostra il livello di [Idratazione]. Bere acqua e la [Sveglia] contribuiscono al rialzo; l'[Ora attuale] indica dove sei ora.",
+                    digestione: "La curva rappresenta il carico di [Digestione] dopo i pasti. La [Sveglia] e l'[Ora attuale] aiutano a contestualizzare i picchi."
+                  };
+                  const text = descriptions[expandedChart] || descriptions.percent;
+                  const parts = text.split(/(\[[^\]]+\])/g);
+                  const linkStyle = (key, color) => ({
+                    fontWeight: 'bold',
+                    color,
+                    borderBottom: `1px solid ${color}`,
+                    cursor: 'pointer',
+                    padding: '0 2px',
+                    borderRadius: '2px',
+                    background: activeHighlight === key ? `${color}22` : 'transparent',
+                    transition: 'background 0.2s ease'
+                  });
+                  return (
+                    <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: '#b0b0b0', margin: 0 }}>
+                      {parts.map((part, i) => {
+                        const m = part.match(/^\[([^\]]+)\]$/);
+                        if (m) {
+                          const term = termConfig.find(t => t.label === m[1]);
+                          if (!term) return part;
+                          const isActive = activeHighlight === term.key;
+                          const handleTermClick = () => {
+                            if (highlightResetTimeoutRef.current) { clearTimeout(highlightResetTimeoutRef.current); highlightResetTimeoutRef.current = null; }
+                            const next = isActive ? null : term.key;
+                            setActiveHighlight(next);
+                            if (next != null) {
+                              highlightResetTimeoutRef.current = setTimeout(() => { setActiveHighlight(null); highlightResetTimeoutRef.current = null; }, 3000);
+                            }
+                          };
+                          return (
+                            <span
+                              key={i}
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => { e.stopPropagation(); handleTermClick(); }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTermClick(); } }}
+                              style={linkStyle(term.key, term.color)}
+                            >
+                              {term.label}
+                            </span>
+                          );
+                        }
+                        return part;
+                      })}
+                    </p>
+                  );
+                })()
               ) : (
-                <>
-                  <h4 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '12px' }}>Descrizione</h4>
-                  {(() => {
-                    const termConfig = expandedChart === 'percent'
-                      ? [{ key: 'energia', label: 'Energia SNC', color: '#00e676' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
-                      : expandedChart === 'kcal'
-                        ? [{ key: 'energia', label: 'Energia', color: '#00e5ff' }, { key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
-                        : expandedChart === 'neuro'
-                        ? [{ key: 'neuro', label: 'Recupero Neurologico', color: '#6366f1' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
-                        : expandedChart === 'cortisolo'
-                        ? [{ key: 'cortisolo', label: 'Cortisolo', color: '#9c27b0' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
-                        : expandedChart === 'glicemia'
-                          ? [{ key: 'energia', label: 'Glicemia', color: '#ef4444' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
-                          : expandedChart === 'idratazione'
-                            ? [{ key: 'energia', label: 'Idratazione', color: '#00e5ff' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
-                            : expandedChart === 'digestione'
-                              ? [{ key: 'digestione', label: 'Digestione', color: '#9333ea' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
-                              : [{ key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'cortisolo', label: 'Cortisolo', color: '#9c27b0' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'energia', label: 'Energia / Calorie', color: '#00e5ff' }, { key: 'digestione', label: 'Digestione', color: '#9333ea' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }];
-                    const descriptions = {
-                      percent: "Questa curva rappresenta la tua [Energia SNC]. Si rigenera durante la notte (partendo dalla [Sveglia]) e si esaurisce gradualmente con lo stress e gli allenamenti fino all'[Ora attuale].",
-                      kcal: "Questo grafico mostra il tuo bilancio di [Energia] (Calorie). La [Finestra Anabolica] (area azzurra) mostra il livello di sintesi proteica: i picchi indicano il momento migliore per l'allenamento, quando il muscolo è nutrito a dovere. La [Sveglia] e l'[Ora attuale] contestualizzano la giornata.",
-                      neuro: "Il grafico mostra il tuo [Recupero Neurologico]: si ricarica durante il sonno fino alla [Sveglia] e si consuma con lavoro e allenamento. Il punto indica l'[Ora attuale].",
-                      cortisolo: "Il grafico mostra l'andamento del tuo [Cortisolo]. Segue un ritmo circadiano che inizia dalla [Sveglia]. Evita picchi eccessivi verso l'[Ora attuale] per garantire un buon riposo.",
-                      glicemia: "La curva simula l'andamento della [Glicemia] nel corso della giornata. I pasti e la [Sveglia] influenzano i livelli; il marcatore indica l'[Ora attuale].",
-                      idratazione: "Questo grafico mostra il livello di [Idratazione]. Bere acqua e la [Sveglia] contribuiscono al rialzo; l'[Ora attuale] indica dove sei ora.",
-                      digestione: "La curva rappresenta il carico di [Digestione] dopo i pasti. La [Sveglia] e l'[Ora attuale] aiutano a contestualizzare i picchi."
-                    };
-                    const text = descriptions[expandedChart] || descriptions.percent;
-                    const parts = text.split(/(\[[^\]]+\])/g);
-                    const linkStyle = (key, color) => ({
-                      fontWeight: 'bold',
-                      color,
-                      borderBottom: `1px solid ${color}`,
-                      cursor: 'pointer',
-                      padding: '0 2px',
-                      borderRadius: '2px',
-                      background: activeHighlight === key ? `${color}22` : 'transparent',
-                      transition: 'background 0.2s ease'
-                    });
-                    return (
-                      <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: '#b0b0b0', margin: 0 }}>
-                        {parts.map((part, i) => {
-                          const m = part.match(/^\[([^\]]+)\]$/);
-                          if (m) {
-                            const term = termConfig.find(t => t.label === m[1]);
-                            if (!term) return part;
-                            const isActive = activeHighlight === term.key;
-                            const handleTermClick = () => {
-                              if (highlightResetTimeoutRef.current) { clearTimeout(highlightResetTimeoutRef.current); highlightResetTimeoutRef.current = null; }
-                              const next = isActive ? null : term.key;
-                              setActiveHighlight(next);
-                              if (next != null) {
-                                highlightResetTimeoutRef.current = setTimeout(() => { setActiveHighlight(null); highlightResetTimeoutRef.current = null; }, 3000);
-                              }
-                            };
-                            return (
-                              <span
-                                key={i}
-                                role="button"
-                                tabIndex={0}
-                                onClick={(e) => { e.stopPropagation(); handleTermClick(); }}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTermClick(); } }}
-                                style={linkStyle(term.key, term.color)}
-                              >
-                                {term.label}
-                              </span>
-                            );
-                          }
-                          return part;
-                        })}
-                      </p>
-                    );
-                  })()}
-                  <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #333' }}>
-                    <h4 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '10px' }}>Analisi AI</h4>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAiMode(true);
-                        setIsAiLoading(true);
-                        const prompt = buildGlobalAIPrompt({
-                          displayTime,
-                          energy: dotY,
-                          cortisolo: dotCortisolo,
-                          glicemia: dotGlicemia,
-                          idratazione: dotIdratazione,
-                          digestione: dotDigestione,
-                          neuro: dotNeuro
-                        });
-                        callGeminiAPIWithRotation(prompt)
-                          .then((result) => {
-                            setGlobalAiInsight(result);
-                            setIsAiLoading(false);
-                          })
-                          .catch((err) => {
-                            console.error("Errore AI Analisi Grafico:", err);
-                            setGlobalAiInsight("❌ Connessione con Core AI fallita. Verifica le API Key.");
-                            setIsAiLoading(false);
-                          });
-                      }}
-                      style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'linear-gradient(135deg, rgba(0,229,255,0.2) 0%, rgba(147,51,234,0.15) 100%)', border: '1px solid rgba(0,229,255,0.5)', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}
-                    >
-                      ✨ Genera Analisi Globale (AI)
-                    </button>
-                  </div>
-                </>
+                <div
+                  style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}
+                  onTouchStart={handleBottomTouchStart}
+                  onTouchEnd={handleBottomTouchEnd}
+                >
+                  {aiInsightsList.length === 0 ? (
+                    <>
+                      <p style={{ fontSize: '0.9rem', color: '#888', marginBottom: '16px' }}>Nessuna analisi generata oggi.</p>
+                      <button
+                        type="button"
+                        onClick={runGenerateGlobalAI}
+                        disabled={isAiLoading}
+                        style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'linear-gradient(135deg, rgba(0,229,255,0.2) 0%, rgba(147,51,234,0.15) 100%)', border: '1px solid rgba(0,229,255,0.5)', borderRadius: '10px', color: '#00e5ff', cursor: isAiLoading ? 'wait' : 'pointer', opacity: isAiLoading ? 0.8 : 1 }}
+                      >
+                        {isAiLoading ? '...' : '✨ Genera Analisi Globale (AI)'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '0.75rem', color: '#b0bec5', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                        Analisi delle ore {(aiInsightsList[Math.min(currentAiIndex, aiInsightsList.length - 1)] ?? {}).time ?? '--:--'}
+                      </div>
+                      {isAiLoading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#00e5ff', fontSize: '0.85rem', marginBottom: '12px' }}>
+                          <span className="loading-dots" style={{ display: 'inline-block' }}>...</span>
+                          L'AI sta analizzando i tuoi biomarcatori...
+                        </div>
+                      ) : (
+                        <InteractiveAIText text={(aiInsightsList[Math.min(currentAiIndex, aiInsightsList.length - 1)] ?? {}).text ?? ''} onKeywordClick={handleGlobalKeywordClick} />
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '14px', flexShrink: 0 }}>
+                        {aiInsightsList.map((_, i) => (
+                          <span
+                            key={i}
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: '50%',
+                              background: i === currentAiIndex ? '#00e5ff' : 'rgba(255,255,255,0.25)',
+                              transition: 'background 0.2s'
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={runGenerateGlobalAI}
+                        disabled={isAiLoading}
+                        style={{ marginTop: '12px', padding: '8px 14px', fontSize: '0.8rem', fontWeight: '600', background: 'transparent', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', cursor: isAiLoading ? 'wait' : 'pointer' }}
+                      >
+                        + Nuova Analisi
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>
