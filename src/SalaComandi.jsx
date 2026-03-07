@@ -4359,14 +4359,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           : expandedChart === 'digestione'
                             ? [{ key: 'digestione', label: 'Digestione', color: '#9333ea' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
                             : [{ key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'cortisolo', label: 'Cortisolo', color: '#9c27b0' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'energia', label: 'Energia / Calorie', color: '#00e5ff' }, { key: 'digestione', label: 'Digestione', color: '#9333ea' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }];
+                  const currentKcalVal = dotY != null ? Math.round((dotY / 100) * targetKcalChart) : 0;
+                  const idealKcalVal = idealDotY != null ? Math.round((idealDotY / 100) * targetKcalChart) : 0;
+
                   const descriptions = {
-                    percent: "Questa curva rappresenta la tua [Energia SNC]. Si rigenera durante la notte (partendo dalla [Sveglia]) e si esaurisce gradualmente con lo stress e gli allenamenti fino all'[Ora attuale].",
-                    kcal: "Questo grafico mostra il tuo bilancio di [Energia] (Calorie). La [Finestra Anabolica] (area azzurra) mostra il livello di sintesi proteica: i picchi indicano il momento migliore per l'allenamento, quando il muscolo è nutrito a dovere. La [Sveglia] e l'[Ora attuale] contestualizzano la giornata.",
-                    neuro: "Il grafico mostra il tuo [Recupero Neurologico]: si ricarica durante il sonno fino alla [Sveglia] e si consuma con lavoro e allenamento. Il punto indica l'[Ora attuale].",
-                    cortisolo: "Il grafico mostra l'andamento del tuo [Cortisolo]. Segue un ritmo circadiano che inizia dalla [Sveglia]. Evita picchi eccessivi verso l'[Ora attuale] per garantire un buon riposo.",
-                    glicemia: "La curva simula l'andamento della [Glicemia] nel corso della giornata. I pasti e la [Sveglia] influenzano i livelli; il marcatore indica l'[Ora attuale].",
-                    idratazione: "Questo grafico mostra il livello di [Idratazione]. Bere acqua e la [Sveglia] contribuiscono al rialzo; l'[Ora attuale] indica dove sei ora.",
-                    digestione: "La curva rappresenta il carico di [Digestione] dopo i pasti. La [Sveglia] e l'[Ora attuale] aiutano a contestualizzare i picchi."
+                    percent: `Questa curva rappresenta la tua [Energia SNC]. Si rigenera durante la notte (partendo dalla [Sveglia]) e si esaurisce gradualmente. All'[Ora attuale] sei al ${Math.round(dotY ?? 0)}% (Ideale: ${Math.round(idealDotY ?? 0)}%). Se vuoi saperne di più, passa all'Analisi AI.`,
+                    kcal: `Questo grafico mostra il bilancio di [Energia] (Calorie). La [Finestra Anabolica] mostra il livello di sintesi proteica. All'[Ora attuale] l'energia è a ${currentKcalVal} kcal (Target ideale: ${idealKcalVal} kcal). Se vuoi saperne di più, passa all'Analisi AI.`,
+                    neuro: `Il grafico mostra il tuo [Recupero Neurologico], ricaricato dal sonno fino alla [Sveglia]. All'[Ora attuale] il livello è al ${Math.round(dotNeuro ?? 0)}% (ideale mantenersi sopra il 40%). Se vuoi saperne di più, passa all'Analisi AI.`,
+                    cortisolo: `Il grafico mostra l'andamento del tuo [Cortisolo] dalla [Sveglia]. All'[Ora attuale] il livello stimato è ${Math.round(dotCortisolo ?? 0)}/100 (ottimale la sera è stare sotto 40). Se vuoi saperne di più, passa all'Analisi AI.`,
+                    glicemia: `La curva simula l'andamento della [Glicemia]. All'[Ora attuale] il valore stimato è ${Math.round(dotGlicemia ?? 0)} mg/dL (target basale a riposo ~85). Se vuoi saperne di più, passa all'Analisi AI.`,
+                    idratazione: `Mostra il livello di [Idratazione] dalla [Sveglia]. All'[Ora attuale] il serbatoio è al ${Math.round(dotIdratazione ?? 0)}% (ottimale restare sopra il 60%). Se vuoi saperne di più, passa all'Analisi AI.`,
+                    digestione: `Rappresenta il carico di [Digestione] in corso. All'[Ora attuale] l'impegno digestivo è al ${Math.round(dotDigestione ?? 0)}% (0% significa assorbimento completato). Se vuoi saperne di più, passa all'Analisi AI.`
                   };
                   const text = descriptions[expandedChart] || descriptions.percent;
                   const parts = text.split(/(\[[^\]]+\])/g);
