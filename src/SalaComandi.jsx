@@ -3285,7 +3285,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           
           /* Navigator Zoom Controls */
           .zoom-controls { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 10; }
-          .zoom-btn { width: 44px; height: 44px; background: rgba(20, 20, 20, 0.8); border: 1px solid #333; color: #00e5ff; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; backdrop-filter: blur(5px); cursor: pointer; }
+          .zoom-btn { width: 44px; height: 44px; background: rgba(20, 20, 20, 0.8); border: 1px solid #333; color: #00e5ff; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; backdrop-filter: blur(5px); cursor: pointer; outline: none; }
+          .tachimeter-center.tachimeter-center-reset:hover { filter: brightness(1.08); box-shadow: 0 0 45px rgba(255,255,255,0.12); }
           
           /* Contenitore per lo scroll del grafico */
           .chart-scroll-container { width: 100%; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; cursor: grab; }
@@ -3573,16 +3574,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="zoom-controls">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '30px' }}>
-              <button type="button" className="zoom-btn" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} title="Torna alla Home" style={{ borderRadius: '50%', width: '66px', height: '66px', fontSize: '1.8rem' }}>🏠</button>
-              <button
-                type="button"
-                onClick={() => alert("Spiegazione Grafico:\n\n- TACHIMETRO: Mostra l'assunzione calorica divisa per pasti. Tocca uno spicchio per i dettagli.\n- BARRA ENERGIA: Mostra l'energia del Sistema Nervoso. Si ricarica dormendo e si consuma con veglia e allenamenti.\n- DIGIUNO: Indica la tua attuale fase metabolica cellulare.")}
-                style={{ background: 'transparent', border: '1px solid #555', color: '#aaa', borderRadius: '50%', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', cursor: 'pointer' }}
-              >
-                ?
-              </button>
-            </div>
+            <button type="button" className="zoom-btn" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} title="Torna alla Home">🏠</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
@@ -3864,8 +3856,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
               {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
               <div
+                className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
                 onClick={() => setSelectedMealCenter(null)}
-                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default' }}
+                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 5, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
               >
                 {!selectedMealCenter ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-14px)' }}>
@@ -3879,6 +3872,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       {selectedMealCenter.name}
                     </span>
                     <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(selectedMealCenter.value)} <span style={{ fontSize: '0.8rem', color: '#aaa' }}>kcal</span></span>
+                    {dynamicDailyKcal > 0 && (
+                      <span style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
+                        ({Math.round((selectedMealCenter.value / dynamicDailyKcal) * 100)}% del totale)
+                      </span>
+                    )}
                     {selectedMealCenter.payload?.macros && (
                       <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', marginTop: '4px', fontWeight: 'bold' }}>
                         <span style={{ color: '#ffb74d' }}>C:{Math.round(selectedMealCenter.payload.macros.carb)}</span>
@@ -3906,11 +3904,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       labelLine={false}
                       label={renderCustomizedLabel}
                       onClick={(data) => setSelectedMealCenter({ name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
-                      style={{ cursor: 'pointer' }}
+                      style={{ cursor: 'pointer', outline: 'none' }}
                     >
-                      {mealPieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
+                      {mealPieData.map((entry, index) => {
+                        const isSelected = selectedMealCenter && entry.name === selectedMealCenter.name;
+                        const hasSelection = !!selectedMealCenter;
+                        return (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={entry.color}
+                            style={{
+                              filter: isSelected ? `drop-shadow(0 0 15px ${entry.color})` : 'none',
+                              opacity: hasSelection && !isSelected ? 0.3 : 1,
+                              outline: 'none'
+                            }}
+                          />
+                        );
+                      })}
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
