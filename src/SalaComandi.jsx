@@ -324,9 +324,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   }
 
   let glycemicMemory = 0;
+  let neuralFatigue = 0;
 
   for (let h = 0; h <= 24; h++) {
     glycemicMemory *= 0.92;
+    neuralFatigue *= 0.96;
     let currentDigestione = 0;
     const useContinuityAtZero = h === 0 && initialEnergy != null;
     if (!useContinuityAtZero) {
@@ -359,12 +361,12 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           currentIdealEnergy -= fatigueEffect * drain;
         }
         if (node.time >= h && node.time < h + 1) {
-          if (node.type === 'workout') load += PHYSIOLOGY_CONFIG.workoutLoadImpact;
-          else if (node.type === 'work') load += (node.duration ?? 1) * PHYSIOLOGY_CONFIG.workLoadImpact;
+          if (node.type === 'workout') { load += PHYSIOLOGY_CONFIG.workoutLoadImpact; neuralFatigue += 3; }
+          else if (node.type === 'work') { load += (node.duration ?? 1) * PHYSIOLOGY_CONFIG.workLoadImpact; neuralFatigue += 2; }
         }
       }
       if (node.type === 'stimulant') {
-        if (node.time >= h && node.time < h + 1) load += PHYSIOLOGY_CONFIG.stimulantLoadImpact;
+        if (node.time >= h && node.time < h + 1) { load += PHYSIOLOGY_CONFIG.stimulantLoadImpact; neuralFatigue += 1; }
         const timeSince = h - node.time;
         const effect = responseCurve(timeSince, 1.5, 4);
         if (effect > 0) {
@@ -417,6 +419,9 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     currentEnergy -= glycemicMemory * 0.05;
     glycemicMemory = Math.max(0, Math.min(100, glycemicMemory));
+
+    currentEnergy -= neuralFatigue * 0.08;
+    neuralFatigue = Math.max(0, Math.min(100, neuralFatigue));
 
     currentHydration -= PHYSIOLOGY_CONFIG.hydrationDecayPerHour;
     (timelineNodes || []).forEach(node => {
