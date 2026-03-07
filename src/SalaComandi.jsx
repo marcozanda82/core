@@ -3713,7 +3713,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <button className="btn-toggle" onClick={() => { auth.signOut(); }}>LOGOUT</button>
       </div>
 
-      {/* Navigazione storica (Time-Travel) + Body Battery */}
+      {/* Navigazione storica (Time-Travel) + Widget Energia + Toggle vista */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: 'max(6px, 1vh) 15px', borderRadius: '12px', border: '1px solid #222' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button type="button" onClick={() => changeDate(-1)} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>◀</button>
@@ -3724,20 +3724,26 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </h2>
           </div>
           <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
-        </div>
-        {/* Widget Energia Biologica (Arco) */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', marginRight: '5px' }}>
-          <div style={{ position: 'relative', width: '56px', height: '28px' }}>
-            <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-              <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
-              <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData.color} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - (bodyBatteryData.level / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
-            </svg>
-            <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', fontSize: '0.8rem', fontWeight: 'bold', color: bodyBatteryData.color, textShadow: `0 0 10px ${bodyBatteryData.color}80`, paddingBottom: '2px' }}>
-              {bodyBatteryData.level}%
+          {/* Widget Energia Biologica (Arco) - subito a destra della data */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', marginLeft: '8px' }}>
+            <div style={{ position: 'relative', width: '56px', height: '28px' }}>
+              <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+                <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
+                <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData.color} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - (bodyBatteryData.level / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
+              </svg>
+              <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', fontSize: '0.8rem', fontWeight: 'bold', color: bodyBatteryData.color, textShadow: `0 0 10px ${bodyBatteryData.color}80`, paddingBottom: '2px' }}>
+                {bodyBatteryData.level}%
+              </div>
             </div>
+            <span style={{ fontSize: '0.5rem', textTransform: 'uppercase', color: '#888', marginTop: '2px' }}>Energia corporea</span>
           </div>
-          <span style={{ fontSize: '0.5rem', textTransform: 'uppercase', color: '#888', marginTop: '2px' }}>Energia corporea</span>
         </div>
+        {/* Toggle vista: HOME (da pro) o ANALISI (verso pro) */}
+        {userProfile?.level === 'pro' ? (
+          <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} style={{ padding: '8px 14px', fontSize: '0.75rem', fontWeight: 'bold', background: 'rgba(0,229,255,0.12)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', whiteSpace: 'nowrap' }}>🏠 HOME</button>
+        ) : (
+          <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))} style={{ padding: '8px 14px', fontSize: '0.75rem', fontWeight: 'bold', background: 'rgba(147,51,234,0.15)', border: '1px solid #9333ea', borderRadius: '10px', color: '#c084fc', cursor: 'pointer', whiteSpace: 'nowrap' }}>📊 ANALISI</button>
+        )}
       </div>
 
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato */}
@@ -3788,7 +3794,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="zoom-controls">
-            <button type="button" className="zoom-btn" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} title="Torna alla Home">🏠</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
@@ -4394,15 +4399,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-
-              {/* Layer 3: Bottone Analizza Alzato */}
-              <button
-                type="button"
-                onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
-                style={{ position: 'absolute', top: '71%', left: '50%', transform: 'translate(-50%, -50%)', background: 'linear-gradient(145deg, #111, #222)', border: '1px solid #444', color: '#00e5ff', padding: '8px 18px', borderRadius: '25px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', zIndex: 20, boxShadow: '0 4px 10px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}
-              >
-                <span>📊</span> Analizza giornata
-              </button>
 
             </div>
           </div>
