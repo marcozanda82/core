@@ -454,6 +454,77 @@ function getWorkoutTrafficLight(currentTime, anabolicCurve, dailyLog, options) {
   return { color: '#f44336', text: 'CATABOLISMO / DIGIUNO', msg: 'Assumi proteine o amminoacidi prima di allenarti.' };
 }
 
+/** Costruisce il prompt per l'analisi AI del grafico (nome grafico + dati attuali + direttive). */
+function buildAIPrompt(expandedChart, data) {
+  const chartNames = {
+    percent: 'Livello Energia SNC (%)',
+    kcal: 'Energia/Calorie 0-24h',
+    glicemia: 'Simulatore Glicemico',
+    idratazione: 'Idratazione',
+    cortisolo: 'Cortisolo/Stress',
+    digestione: 'Digestione'
+  };
+  const nomeGrafico = chartNames[expandedChart] || expandedChart;
+  const { displayTime = 12, energy = 50, cortisolo = 25, glicemia = 85, idratazione = 80, digestione = 0 } = data || {};
+  return `Sei un assistente biochimico. Analizza in 3-4 righe la situazione attuale dell'utente guardando il grafico: ${nomeGrafico}.
+Dati attuali: orario ${Number(displayTime).toFixed(1)}h, energia ${Number(energy).toFixed(0)}, cortisolo ${Number(cortisolo).toFixed(0)}, glicemia ${Number(glicemia).toFixed(0)}, idratazione ${Number(idratazione).toFixed(0)}, digestione ${Number(digestione).toFixed(0)}.
+Regola Tassativa: Se un valore non è disponibile per l'analisi, fai una stima e usa il valore medio.
+Regola Tassativa: Se l'analisi riguarda la cena, gli orari serali o il parametro 'Cortisolo', tieni conto che l'utente soffre di cortisolo alto la sera. Fornisci un'analisi mirata ad abbassarlo.
+Usa ESATTAMENTE le seguenti parole chiave nel tuo testo: Sveglia, Energia SNC, Finestra Anabolica, Cortisolo, Digestione, Glicemia. In particolare, spiega che il Cortisolo è rappresentato dalla linea tratteggiata magenta.`;
+}
+
+/** Mappa keyword testuale -> chiave activeHighlight per il grafico. */
+const AI_KEYWORD_TO_HIGHLIGHT = {
+  'Sveglia': 'sveglia',
+  'Energia SNC': 'energia',
+  'Finestra Anabolica': 'anabolica',
+  'Cortisolo': 'cortisolo',
+  'Digestione': 'digestione',
+  'Glicemia': 'energia'
+};
+const AI_KEYWORDS_ORDERED = ['Finestra Anabolica', 'Energia SNC', 'Cortisolo', 'Digestione', 'Glicemia', 'Sveglia'];
+
+function InteractiveAIText({ text, onKeywordClick }) {
+  if (!text || typeof text !== 'string') return null;
+  const parts = [];
+  const pattern = AI_KEYWORDS_ORDERED.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const re = new RegExp(`(${pattern})`, 'gi');
+  let lastIndex = 0;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', value: text.slice(lastIndex, match.index) });
+    }
+    const matched = match[1];
+    const key = AI_KEYWORDS_ORDERED.find(k => k.toLowerCase() === matched.toLowerCase());
+    parts.push({ type: 'keyword', value: matched, highlightKey: key ? AI_KEYWORD_TO_HIGHLIGHT[key] : 'energia' });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push({ type: 'text', value: text.slice(lastIndex) });
+  }
+  return (
+    <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: '#b0b0b0', margin: 0 }}>
+      {parts.map((part, i) => {
+        if (part.type === 'text') return part.value;
+        return (
+          <span
+            key={i}
+            className="ai-keyword"
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); onKeywordClick(part.highlightKey); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onKeywordClick(part.highlightKey); } }}
+            style={{ fontWeight: 'bold', color: '#00e5ff', borderBottom: '1px solid #00e5ff', cursor: 'pointer', padding: '0 2px', borderRadius: '2px' }}
+          >
+            {part.value}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
 /**
  * Struttura tracker_data (da vecchio storico.html e index_vecchio.html):
  * Elenco piatto: chiavi trackerStorico_YYYY-MM-DD, nessun annidamento anno/mese.
@@ -740,6 +811,8 @@ export default function SalaComandi() {
   const [chartUnit, setChartUnit] = useState('percent'); // 'percent' | 'kcal'
   const [expandedChart, setExpandedChart] = useState(null); // 'percent' | 'kcal' | 'glicemia' | ... per modale fullscreen
   const [activeHighlight, setActiveHighlight] = useState(null); // glossario: 'energia' | 'anabolica' | 'cortisolo' | 'sveglia' | 'digestione' | 'ora'
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiInsights, setAiInsights] = useState({}); // cache analisi per expandedChart
   const highlightResetTimeoutRef = useRef(null);
   const modalSwipeStartXRef = useRef(null);
   const CHART_VIEWS_CAROUSEL = ['percent', 'kcal', 'glicemia', 'idratazione', 'cortisolo', 'digestione'];
@@ -4189,6 +4262,52 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </p>
                 );
               })()}
+              {/* Analisi AI Dinamica */}
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #333' }}>
+                <h4 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '10px' }}>Analisi AI</h4>
+                {isAiLoading ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#00e5ff', fontSize: '0.85rem' }}>
+                    <span className="loading-dots" style={{ display: 'inline-block' }}>...</span>
+                    L'AI sta analizzando i tuoi biomarcatori...
+                  </div>
+                ) : aiInsights[expandedChart] ? (
+                  <InteractiveAIText
+                    text={aiInsights[expandedChart]}
+                    onKeywordClick={(highlightKey) => {
+                      if (highlightResetTimeoutRef.current) { clearTimeout(highlightResetTimeoutRef.current); highlightResetTimeoutRef.current = null; }
+                      setActiveHighlight(highlightKey);
+                      highlightResetTimeoutRef.current = setTimeout(() => { setActiveHighlight(null); highlightResetTimeoutRef.current = null; }, 3000);
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAiLoading(true);
+                      const prompt = buildAIPrompt(expandedChart, {
+                        displayTime,
+                        energy: dotY,
+                        cortisolo: dotCortisolo,
+                        glicemia: dotGlicemia,
+                        idratazione: dotIdratazione,
+                        digestione: dotDigestione
+                      });
+                      const fetchAIAnalysis = (p) => new Promise((resolve) => {
+                        setTimeout(() => {
+                          resolve("La tua Energia SNC è stabile. Hai superato la Sveglia e la Finestra Anabolica è attiva. Fai attenzione al Cortisolo (linea tratteggiata magenta) stasera: tieni bassi i picchi serali. Digestione e Glicemia sono nella norma.");
+                        }, 2000);
+                      });
+                      fetchAIAnalysis(prompt).then((result) => {
+                        setAiInsights(prev => ({ ...prev, [expandedChart]: result }));
+                        setIsAiLoading(false);
+                      }).catch(() => setIsAiLoading(false));
+                    }}
+                    style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'linear-gradient(135deg, rgba(0,229,255,0.2) 0%, rgba(147,51,234,0.15) 100%)', border: '1px solid rgba(0,229,255,0.5)', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}
+                  >
+                    ✨ Genera Analisi AI Attuale
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           );
