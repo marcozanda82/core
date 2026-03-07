@@ -286,6 +286,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
         currentHydration -= 8.0;
       }
+      if (node.type === 'stimulant' && Math.round(node.time) === h) {
+        const sub = (node.subtype || 'caffè').toLowerCase();
+        const malus = sub === 'energy drink' ? 15 : sub === 'caffè' ? 10 : 5;
+        currentHydration -= malus;
+      }
     });
     currentHydration = Math.max(0, Math.min(100, currentHydration));
 
@@ -304,6 +309,14 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         globalCortisolRisk = true;
       }
     });
+    (timelineNodes || []).forEach(node => {
+      if (node.type === 'stimulant' && h >= node.time && h <= node.time + 4) {
+        const sub = (node.subtype || 'caffè').toLowerCase();
+        const maxBoost = sub === 'energy drink' ? 25 : sub === 'caffè' ? 15 : 10;
+        const decay = 1 - (h - node.time) / 4;
+        currentCortisol += maxBoost * Math.max(0, decay);
+      }
+    });
     if (globalCrashRisk && h >= 14 && h <= 20) currentCortisol += 10;
     currentCortisol = Math.max(0, Math.min(100, currentCortisol));
 
@@ -316,6 +329,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
         const drain = node.type === 'workout' ? 12 : 6;
         currentNeuro -= (drain / Math.max(0.5, (node.duration || 1)));
+      }
+      if (node.type === 'stimulant' && Math.round(node.time) === h) {
+        const sub = (node.subtype || 'caffè').toLowerCase();
+        const boost = sub === 'energy drink' ? 15 : sub === 'caffè' ? 10 : 5;
+        currentNeuro = Math.min(100, currentNeuro + boost);
       }
     });
     currentNeuro = Math.max(0, Math.min(100, currentNeuro));
@@ -621,6 +639,17 @@ const MEAL_LABELS_SAVE = {
   snack: 'Snack',
   spuntino: 'Snack',
   colazione: 'Colazione'
+};
+
+/** Importanza dinamica dei nodi per vista grafico: quali tipi evidenziare. */
+const NODE_IMPORTANCE = {
+  percent: ['meal', 'workout', 'stimulant'],
+  kcal: ['meal', 'workout'],
+  cortisolo: ['work', 'workout', 'stimulant'],
+  glicemia: ['meal', 'workout', 'stimulant'],
+  idratazione: ['water', 'workout', 'stimulant'],
+  digestione: ['meal'],
+  neuro: ['sleep', 'work', 'workout', 'stimulant']
 };
 
 function denormalizeLogForFirebase(flatLog) {
@@ -975,6 +1004,9 @@ export default function SalaComandi() {
   const [nutrientModal, setNutrientModal] = useState(null);
   const [editQuantityValue, setEditQuantityValue] = useState('');
   const [showChoiceModal, setShowChoiceModal] = useState(false);
+  const [addChoiceView, setAddChoiceView] = useState('main'); // 'main' | 'stimulant'
+  const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
+  const [stimulantTime, setStimulantTime] = useState(8);
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
@@ -4097,6 +4129,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
               <div ref={timelineContainerRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible' }}>
                   {allNodesWithStack.map((node) => {
+                    const currentChartUnit = chartUnit;
+                    const effectiveNodeType = node.type === 'meal' ? 'meal' : node.type;
+                    const isImportant = NODE_IMPORTANCE[currentChartUnit]?.includes(effectiveNodeType);
+                    const importanceStyle = isImportant ? { filter: 'none', opacity: 1, zIndex: 10 } : { filter: 'grayscale(100%)', opacity: 0.35, zIndex: 1 };
                     const isNodeFocused = (!activeAction || activeAction === 'home') || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout')) || (activeAction === 'acqua' && node.type === 'water');
                     const isWork = node.type === 'work';
                     const percent = (node.time / 24) * 100;
@@ -4125,7 +4161,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     if (isWork) {
                       const dragEdge = isDragging ? draggingNode?.edge : null;
                       return (
-                        <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : 'scale(1)', background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 5, transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
+                        <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : (isImportant ? 'scale(1)' : 'scale(0.8)'), background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', ...(isDragging ? {} : importanceStyle) }}>
                           <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                             {(dragEdge === 'start' || dragEdge === 'all') && (
                               <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
@@ -4148,16 +4184,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
                     const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
                     const isWater = node.type === 'water';
-                    const iconContent = isWater ? '💧' : (isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•'));
-                    const bgColor = isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
-                    const nodeBorderColor = isWater ? '#00e5ff' : pointBorderColor;
+                    const isStimulant = node.type === 'stimulant';
+                    const iconContent = isStimulant ? '☕' : (isWater ? '💧' : (isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•')));
+                    const bgColor = isStimulant ? (isDragging ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.2)') : (isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)'));
+                    const nodeBorderColor = isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : pointBorderColor);
                     const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
+                    const pointTransform = isDragging ? `translate(-50%, ${dragY - 45}px) scale(2)` : (isImportant ? 'translateX(-50%) scale(1)' : 'translateX(-50%) scale(0.8)');
                     return (
-                      <div key={node.id} className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${displayPercent}%`, transform: isDragging ? `translate(-50%, ${dragY - 45}px) scale(2)` : 'translateX(-50%) scale(1)', top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', zIndex: isDragging ? 50 : 10, transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none', opacity: isNodeFocused ? 1 : 0.35, pointerEvents: isNodeFocused ? 'auto' : 'none' }}>
-                        <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isWater ? '#00e5ff' : pointBorderColor, marginBottom: '2px', transition: 'color 0.2s' }}>
+                      <div key={node.id} className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${displayPercent}%`, transform: pointTransform, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', ...(isDragging ? {} : importanceStyle) }}>
+                        <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : pointBorderColor), marginBottom: '2px', transition: 'color 0.2s' }}>
                           {timeLabelStr}
                         </span>
-                        <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isWater ? '#00e5ff' : (isPesi ? pointBorderColor : 'inherit') }}>{iconContent}</span>
+                        <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isPesi ? pointBorderColor : 'inherit')) }}>{iconContent}</span>
                       </div>
                     );
                   })}
@@ -4624,7 +4662,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <span style={{ fontSize: '1.2rem' }}>✨</span>
           <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
         </div>
-        <button type="button" onClick={() => setShowChoiceModal(true)} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
+        <button type="button" onClick={() => { setAddChoiceView('main'); setShowChoiceModal(true); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
       </div>
 
       {/* --- CASSETTO AZIONI --- */}
@@ -5891,25 +5929,63 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       )}
       {/* Pop-up Scelta Azione (Ottimizzato per schermi piccoli) */}
       {showChoiceModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '15px' }} onClick={() => setShowChoiceModal(false)}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '15px' }} onClick={() => { setShowChoiceModal(false); setAddChoiceView('main'); }}>
           <div style={{ background: '#111', border: '1px solid #333', borderRadius: '25px', padding: '20px', width: '100%', maxWidth: '350px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 10px 50px rgba(0,0,0,0.9)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 10px 0', textAlign: 'center', color: '#fff', fontSize: '1.1rem', letterSpacing: '2px' }}>AGGIUNGI EVENTO</h3>
+            {addChoiceView === 'stimulant' ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <button type="button" onClick={() => setAddChoiceView('main')} style={{ background: 'none', border: 'none', color: '#888', fontSize: '0.9rem', cursor: 'pointer' }}>← Indietro</button>
+                  <h3 style={{ margin: 0, color: '#fff', fontSize: '1rem', letterSpacing: '1px' }}>☕ Sostanza energizzante</h3>
+                  <div style={{ width: '70px' }} />
+                </div>
+                <p style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#aaa' }}>Tipo</p>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                  {['caffè', 'tè', 'energy drink'].map((sub) => (
+                    <button key={sub} type="button" onClick={() => setStimulantSubtype(sub)} style={{ flex: 1, padding: '10px', borderRadius: '12px', border: stimulantSubtype === sub ? '2px solid #f59e0b' : '1px solid #333', background: stimulantSubtype === sub ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)', color: stimulantSubtype === sub ? '#f59e0b' : '#fff', fontSize: '0.85rem', fontWeight: stimulantSubtype === sub ? 'bold' : 'normal', cursor: 'pointer' }}>
+                      {sub === 'caffè' ? '☕ Caffè' : sub === 'tè' ? '🍵 Tè' : '🥤 Energy'}
+                    </button>
+                  ))}
+                </div>
+                <p style={{ margin: '0 0 8px 0', fontSize: '0.85rem', color: '#aaa' }}>Orario</p>
+                <input type="range" min={0} max={24} step={0.25} value={stimulantTime} onChange={(e) => setStimulantTime(Number(e.target.value))} style={{ width: '100%', marginBottom: '8px' }} />
+                <span style={{ fontSize: '0.9rem', color: '#00e5ff', marginBottom: '16px' }}>{Math.floor(stimulantTime)}:{String(Math.round((stimulantTime % 1) * 60)).padStart(2, '0')}</span>
+                <button type="button" onClick={() => {
+                  const id = Date.now().toString();
+                  const node = { id, type: 'stimulant', subtype: stimulantSubtype, time: stimulantTime };
+                  const next = [...manualNodes, node];
+                  setManualNodes(next);
+                  syncDatiFirebase(dailyLog, next);
+                  setShowChoiceModal(false);
+                  setAddChoiceView('main');
+                }} style={{ padding: '14px', background: '#f59e0b', color: '#000', border: 'none', borderRadius: '12px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                  Salva
+                </button>
+              </>
+            ) : (
+              <>
+                <h3 style={{ margin: '0 0 10px 0', textAlign: 'center', color: '#fff', fontSize: '1.1rem', letterSpacing: '2px' }}>AGGIUNGI EVENTO</h3>
 
-            <button onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setShowChoiceModal(false); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-              <span style={{ fontSize: '1.5rem' }}>🍎</span> PASTO
-            </button>
+                <button onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setShowChoiceModal(false); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+                  <span style={{ fontSize: '1.5rem' }}>🍎</span> PASTO
+                </button>
 
-            <button onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setShowChoiceModal(false); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-              <span style={{ fontSize: '1.5rem' }}>💪</span> ALLENAMENTO
-            </button>
+                <button onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setShowChoiceModal(false); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+                  <span style={{ fontSize: '1.5rem' }}>💪</span> ALLENAMENTO
+                </button>
 
-            <button onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setShowChoiceModal(false); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-              <span style={{ fontSize: '1.5rem' }}>💧</span> ACQUA
-            </button>
+                <button onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setShowChoiceModal(false); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+                  <span style={{ fontSize: '1.5rem' }}>💧</span> ACQUA
+                </button>
 
-            <button onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #00e5ff', color: '#00e5ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-              <span style={{ fontSize: '1.5rem' }}>⚙️</span> MENÙ PRINCIPALE
-            </button>
+                <button onClick={() => { setStimulantTime(getCurrentTimeRoundedTo15Min()); setStimulantSubtype('caffè'); setAddChoiceView('stimulant'); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #f59e0b', color: '#f59e0b', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+                  <span style={{ fontSize: '1.5rem' }}>☕</span> ENERGIZZANTE
+                </button>
+
+                <button onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #00e5ff', color: '#00e5ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+                  <span style={{ fontSize: '1.5rem' }}>⚙️</span> MENÙ PRINCIPALE
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
