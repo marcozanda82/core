@@ -1135,7 +1135,7 @@ function buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, weekS
       if (entry?.type === 'food') {
         const t = typeof entry.mealTime === 'number' ? entry.mealTime : 12;
         const strategyKey = mealTypesToStrategy[entry.mealType?.split('_')[0]] || 'cena';
-        timelineNodes.push({ type: 'meal', time: t, strategyKey });
+        timelineNodes.push({ type: 'meal', time: t, strategyKey, kcal: entry.kcal ?? entry.cal ?? 0 });
       } else if (entry?.type === 'workout' || entry?.type === 'work') {
         timelineNodes.push({ type: 'workout', time: entry.time ?? entry.mealTime ?? 12, duration: entry.duration ?? 1, kcal: entry.kcal ?? entry.cal ?? 300 });
       }
@@ -3485,7 +3485,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       if (entry?.type === 'food') {
         const t = typeof entry.mealTime === 'number' ? entry.mealTime : 12;
         const strategyKey = mealTypesToStrategy[entry.mealType?.split('_')[0]] || 'cena';
-        yesterdayNodes.push({ type: 'meal', time: t, strategyKey });
+        yesterdayNodes.push({ type: 'meal', time: t, strategyKey, kcal: entry.kcal ?? entry.cal ?? 0 });
       } else if (entry?.type === 'workout' || entry?.type === 'work') {
         yesterdayNodes.push({ type: 'workout', time: entry.time ?? entry.mealTime ?? 12, duration: entry.duration ?? 1, kcal: entry.kcal ?? entry.cal ?? 300 });
       }
