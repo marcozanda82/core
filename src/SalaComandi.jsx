@@ -316,6 +316,13 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     return peak * (carbs * 2);
   }
 
+  function circadianEnergyModifier(h) {
+    const morningPeak = Math.exp(-Math.pow((h - 9) / 3, 2)) * 6;
+    const afternoonDip = Math.exp(-Math.pow((h - 14) / 2, 2)) * -5;
+    const eveningDip = Math.exp(-Math.pow((h - 22) / 3, 2)) * -4;
+    return morningPeak + afternoonDip + eveningDip;
+  }
+
   let glycemicMemory = 0;
 
   for (let h = 0; h <= 24; h++) {
@@ -326,6 +333,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       currentEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
       currentIdealEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
     }
+
+    currentEnergy += circadianEnergyModifier(h);
 
     (timelineNodes || []).forEach(node => {
       if (node.type === 'meal') {
