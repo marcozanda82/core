@@ -558,6 +558,46 @@ function simulateSnackIntervention(chartData) {
   return out;
 }
 
+/** Simulate coffee intervention around first crash; returns modified dataset or null. Pure. */
+function simulateCoffeeIntervention(chartData) {
+  if (!chartData || chartData.length === 0) return null;
+  const crashPoint = chartData.find(p => (p.energy ?? 0) < 40);
+  if (!crashPoint) return null;
+  const crashTime = crashPoint.time;
+  return chartData.map(p => ({
+    ...p,
+    energy: (p.time >= crashTime - 1 && p.time <= crashTime + 1)
+      ? (p.energy ?? 0) + 6
+      : (p.energy ?? 0)
+  }));
+}
+
+/** Simulate water intervention around first crash; returns modified dataset or null. Pure. */
+function simulateWaterIntervention(chartData) {
+  if (!chartData || chartData.length === 0) return null;
+  const crashPoint = chartData.find(p => (p.energy ?? 0) < 40);
+  if (!crashPoint) return null;
+  const crashTime = crashPoint.time;
+  return chartData.map(p => {
+    const current = p.cortisolo ?? p.cortisol ?? 0;
+    const cortisolo = (p.time >= crashTime - 1 && p.time <= crashTime + 1)
+      ? Math.max(0, current - 5)
+      : current;
+    return { ...p, cortisolo };
+  });
+}
+
+/** Evaluate snack, coffee and water interventions for the first predicted energy crash. */
+function simulateInterventions(chartData) {
+  if (!chartData || chartData.length === 0) return null;
+  const crashPoint = chartData.find(p => (p.energy ?? 0) < 40);
+  if (!crashPoint) return null;
+  const snackResult = simulateSnackIntervention(chartData);
+  const coffeeResult = simulateCoffeeIntervention(chartData);
+  const waterResult = simulateWaterIntervention(chartData);
+  return { snack: snackResult, coffee: coffeeResult, water: waterResult };
+}
+
 /** Format hour (0-24) as "HH:MM" for insight messages. */
 function formatTimeForInsight(hour) {
   const h = Math.floor(hour);
