@@ -215,7 +215,7 @@ function responseCurve(t, peakTime, duration) {
  * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
  * Restituisce { chartData, realTotals } per grafico doppia curva e semafori.
  */
-function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null) {
+function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30) {
   const log = dailyLog || [];
   const ideal = idealStrategy || {};
   const model = {
@@ -226,7 +226,17 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     recoveryRate: clampModelValue(userModel?.recoveryRate ?? 1)
   };
 
-  const baselineEnergy = initialEnergy != null ? initialEnergy : computeBaselineEnergy(log);
+  let load = Math.max(0, Math.min(100, Number(nervousSystemLoad) ?? 30));
+  log.forEach(entry => {
+    if (entry.type === 'sleep') {
+      load -= (entry.hours ?? 0) * 4;
+    }
+  });
+  load = Math.max(0, Math.min(100, load));
+
+  let baselineEnergy = initialEnergy != null ? initialEnergy : computeBaselineEnergy(log);
+  baselineEnergy -= load * 0.15;
+  baselineEnergy = Math.max(40, Math.min(90, baselineEnergy));
   console.log('Baseline energy:', baselineEnergy);
 
   // Mappa da canonical strategy key a array di mealType equivalenti
@@ -319,8 +329,13 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           currentEnergy -= fatigueEffect * drain;
           currentIdealEnergy -= fatigueEffect * drain;
         }
+        if (Math.round(node.time) === h) {
+          if (node.type === 'workout') load += 5;
+          else if (node.type === 'work') load += (node.duration ?? 1) * 0.5;
+        }
       }
       if (node.type === 'stimulant') {
+        if (Math.round(node.time) === h) load += 2;
         const timeSince = h - node.time;
         const effect = responseCurve(timeSince, 1.5, 4);
         if (effect > 0) {
@@ -330,6 +345,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         }
       }
     });
+    load = Math.max(0, Math.min(100, load));
 
     let gl = 85;
     log.forEach(entry => {
@@ -448,7 +464,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       currentIdealEnergy -= 2;
     }
   }
-  return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk, hasCortisolRisk: globalCortisolRisk, hasDigestionRisk };
+  return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk, hasCortisolRisk: globalCortisolRisk, hasDigestionRisk, nervousSystemLoad: load };
 }
 
 /**
@@ -1038,7 +1054,7 @@ function buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, weekS
     timelineNodes.sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
 
     const waterMl = manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0);
-    const result = generateRealEnergyData(timelineNodes, log, idealStrategy, waterMl, 2500, null, null, userModel);
+    const result = generateRealEnergyData(timelineNodes, log, idealStrategy, waterMl, 2500, null, null, userModel, 30);
     if (result?.chartData?.[24]) {
       predictedEnergySum += result.chartData[24].energy;
       daysWithPrediction++;
@@ -1088,6 +1104,7 @@ export default function SalaComandi() {
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
   const [userModel, setUserModel] = useState(DEFAULT_USER_MODEL);
   const [lastCalibrationWeek, setLastCalibrationWeek] = useState(null);
+  const [nervousSystemLoad, setNervousSystemLoad] = useState(30);
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
@@ -2716,7 +2733,7 @@ export default function SalaComandi() {
 
     try {
       const foodDbNames = Object.keys(foodDb || {}).map(k => foodDb[k]?.desc || foodDb[k]?.name || k).filter(Boolean).slice(0, 150);
-      const energyResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy, 0, 2500, null, null, userModel);
+      const energyResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
       const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
@@ -3342,18 +3359,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         yesterdayNodes.push({ type: 'workout', time: entry.time ?? entry.mealTime ?? 12, duration: entry.duration ?? 1, kcal: entry.kcal ?? entry.cal ?? 300 });
       }
     });
-    const result = generateRealEnergyData(yesterdayNodes, yesterdayLog, idealStrategy, 0, 2500, null, null, userModel);
+    const result = generateRealEnergyData(yesterdayNodes, yesterdayLog, idealStrategy, 0, 2500, null, null, userModel, 30);
     const last = result?.chartData?.[24];
     if (!last) return null;
     return { energy: last.energy, idealEnergy: last.idealEnergy };
   }, [currentTrackerDate, fullHistory, idealStrategy, userModel]);
 
-  const energyChartResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy, waterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel);
+  const energyChartResult = generateRealEnergyData(allNodes, dailyLog || [], idealStrategy, waterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
   const chartData = energyChartResult?.chartData ?? [];
   const realTotals = energyChartResult?.realTotals ?? {};
   const hasCrashRisk = energyChartResult?.hasCrashRisk ?? false;
   const hasCortisolRisk = energyChartResult?.hasCortisolRisk ?? false;
   const hasDigestionRisk = energyChartResult?.hasDigestionRisk ?? false;
+
+  useEffect(() => {
+    if (currentTrackerDate === getTodayString() && energyChartResult?.nervousSystemLoad != null) {
+      setNervousSystemLoad(energyChartResult.nervousSystemLoad);
+    }
+  }, [currentTrackerDate, energyChartResult?.nervousSystemLoad]);
 
   const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
   const cortisolCurve = useMemo(() => generateCortisolCurve(dailyLog, manualNodes), [dailyLog, manualNodes]);
