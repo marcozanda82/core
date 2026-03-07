@@ -740,6 +740,9 @@ export default function SalaComandi() {
   const [chartUnit, setChartUnit] = useState('percent'); // 'percent' | 'kcal'
   const [expandedChart, setExpandedChart] = useState(null); // 'percent' | 'kcal' | 'glicemia' | ... per modale fullscreen
   const [activeHighlight, setActiveHighlight] = useState(null); // glossario: 'energia' | 'anabolica' | 'cortisolo' | 'sveglia' | 'digestione' | 'ora'
+  const highlightResetTimeoutRef = useRef(null);
+  const modalSwipeStartXRef = useRef(null);
+  const CHART_VIEWS_CAROUSEL = ['percent', 'kcal', 'glicemia', 'idratazione', 'cortisolo', 'digestione'];
   const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -751,6 +754,21 @@ export default function SalaComandi() {
   const activeActionRef = useRef(activeAction);
   useEffect(() => { isDrawerOpenRef.current = isDrawerOpen; }, [isDrawerOpen]);
   useEffect(() => { activeActionRef.current = activeAction; }, [activeAction]);
+
+  useEffect(() => {
+    if (expandedChart == null) {
+      if (highlightResetTimeoutRef.current) {
+        clearTimeout(highlightResetTimeoutRef.current);
+        highlightResetTimeoutRef.current = null;
+      }
+    }
+    return () => {
+      if (highlightResetTimeoutRef.current) {
+        clearTimeout(highlightResetTimeoutRef.current);
+        highlightResetTimeoutRef.current = null;
+      }
+    };
+  }, [expandedChart]);
 
   useEffect(() => {
     window.history.pushState({ noExit: true }, '');
@@ -3998,9 +4016,42 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
         </div>
 
-        {/* Modale Grafico Fullscreen con Glossario */}
-        {expandedChart != null && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000, background: '#050505', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} role="dialog" aria-modal="true" aria-label="Grafico a tutto schermo">
+        {/* Modale Grafico Fullscreen con Glossario e Carosello Swipe */}
+        {expandedChart != null && (() => {
+          const currentIndex = CHART_VIEWS_CAROUSEL.indexOf(expandedChart);
+          const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+          const handleModalSwipeStart = (e) => { modalSwipeStartXRef.current = e.touches?.[0]?.clientX ?? e.clientX; };
+          const handleModalSwipeEnd = (e) => {
+            const endX = e.changedTouches?.[0]?.clientX ?? e.clientX;
+            const startX = modalSwipeStartXRef.current;
+            if (startX == null) return;
+            const deltaX = endX - startX;
+            const SWIPE_THRESHOLD = 50;
+            if (deltaX < -SWIPE_THRESHOLD) {
+              const nextIndex = (safeIndex + 1) % CHART_VIEWS_CAROUSEL.length;
+              setExpandedChart(CHART_VIEWS_CAROUSEL[nextIndex]);
+              setActiveHighlight(null);
+            } else if (deltaX > SWIPE_THRESHOLD) {
+              const prevIndex = safeIndex === 0 ? CHART_VIEWS_CAROUSEL.length - 1 : safeIndex - 1;
+              setExpandedChart(CHART_VIEWS_CAROUSEL[prevIndex]);
+              setActiveHighlight(null);
+            }
+            modalSwipeStartXRef.current = null;
+          };
+          const handleModalSwipeStartMouse = (e) => { modalSwipeStartXRef.current = e.clientX; };
+          const handleModalSwipeEndMouse = (e) => { if (modalSwipeStartXRef.current != null) { handleModalSwipeEnd({ changedTouches: null, clientX: e.clientX }); } };
+          return (
+          <div
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000, background: '#050505', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Grafico a tutto schermo"
+            onTouchStart={handleModalSwipeStart}
+            onTouchEnd={handleModalSwipeEnd}
+            onMouseDown={handleModalSwipeStartMouse}
+            onMouseUp={handleModalSwipeEndMouse}
+            onMouseLeave={() => { modalSwipeStartXRef.current = null; }}
+          >
             <div style={{ flex: '0 0 60%', minHeight: 0, padding: '16px', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
@@ -4017,17 +4068,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
                           <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
                         </linearGradient>
+                        <filter id="modalGlowEnergia" x="-20%" y="-20%" width="140%" height="140%">
+                          <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+                          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                        </filter>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                       <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
                       <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
                       <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${value}%`, 'Energia']} labelFormatter={(label) => `Ore ${label}:00`} />
                       {(dailyLog || []).filter(item => item.type === 'sleep').map((sleepItem, index) => (
-                        <ReferenceLine key={`modal-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 3 : 1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
+                        <ReferenceLine key={`modal-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 4 : 1.5} strokeOpacity={activeHighlight === 'sveglia' ? 1 : 0.8} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
                       ))}
-                      <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 3 : 1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
+                      <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 4 : 1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
                       <ReferenceDot x={displayTime} y={(() => { const idx = Math.floor(displayTime); const next = Math.min(24, idx + 1); const frac = displayTime - idx; const a = energyChartData[idx]?.energia; const b = energyChartData[next]?.energia; return a != null ? (b != null ? a + (b - a) * frac : a) : 50; })()} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
-                      <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={activeHighlight == null || activeHighlight === 'energia' ? 3 : 1} fillOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.15} fill="url(#colorEnergiaModal)" />
+                      <Area type="monotone" dataKey="energia" stroke="#00e676" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} />
                       <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
                     </ComposedChart>
@@ -4042,22 +4097,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         <linearGradient id="modalColorGlicemia" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" stopOpacity={0.9}/><stop offset="50%" stopColor="#f59e0b" stopOpacity={0.4}/><stop offset="100%" stopColor="#ef4444" stopOpacity={0}/></linearGradient>
                         <linearGradient id="modalColorWater" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#007aff" stopOpacity={0.9}/><stop offset="50%" stopColor="#00e5ff" stopOpacity={0.4}/><stop offset="100%" stopColor="#007aff" stopOpacity={0}/></linearGradient>
                         <linearGradient id="modalColorDigestion" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9333ea" stopOpacity={0.9}/><stop offset="50%" stopColor="#a855f7" stopOpacity={0.5}/><stop offset="100%" stopColor="#9333ea" stopOpacity={0}/></linearGradient>
+                        <filter id="modalGlowMulti" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
                       </defs>
                       <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 6, 12, 18, 24]} tickFormatter={(val) => `${val}:00`} tick={{ fill: '#666', fontSize: 11 }} />
-                      <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 11 }} width={36} />
+                      <YAxis domain={expandedChart === 'glicemia' ? [40, 220] : (expandedChart === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => expandedChart === 'kcal' ? Math.round(Number(val)) : (expandedChart === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 11 }} width={36} />
                       <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} hide />
                       <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
                       {(dailyLog || []).filter(item => item.type === 'sleep').map((sleepItem, index) => (
-                        <ReferenceLine key={`modal-sleep2-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 3 : 1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 10 }} />
+                        <ReferenceLine key={`modal-sleep2-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 4 : 1.5} strokeOpacity={activeHighlight === 'sveglia' ? 1 : 0.8} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 10 }} />
                       ))}
-                      <Area type="monotone" dataKey="anabolicScore" fill="url(#modalColorAnabolic)" stroke="transparent" fillOpacity={activeHighlight == null || activeHighlight === 'anabolica' ? 0.35 : 0.08} yAxisId="anabolic" />
-                      <Area type="monotone" dataKey="cortisolScore" fill="url(#modalColorCortisol)" stroke="#9c27b0" strokeWidth={activeHighlight == null || activeHighlight === 'cortisolo' ? 2 : 0.5} strokeOpacity={activeHighlight == null || activeHighlight === 'cortisolo' ? 1 : 0.2} fillOpacity={activeHighlight == null || activeHighlight === 'cortisolo' ? 0.3 : 0.06} yAxisId="anabolic" />
-                      <Area type="monotone" dataKey={chartUnit === 'glicemia' ? 'glicemiaPast' : (chartUnit === 'idratazione' ? 'idratazionePast' : chartUnit === 'cortisolo' ? 'cortisoloPast' : chartUnit === 'digestione' ? 'digestionePast' : 'energyPast')} strokeWidth={activeHighlight == null || activeHighlight === 'energia' ? 6 : 2} strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.2} fillOpacity={activeHighlight == null || activeHighlight === 'energia' ? 0.6 : 0.1} fill={chartUnit === 'glicemia' ? 'url(#modalColorGlicemia)' : (chartUnit === 'idratazione' ? 'url(#modalColorWater)' : chartUnit === 'cortisolo' ? 'url(#modalColorCortisol)' : chartUnit === 'digestione' ? 'url(#modalColorDigestion)' : 'url(#modalColorEnergy)')} />
-                      <Area type="monotone" dataKey={chartUnit === 'glicemia' ? 'glicemiaFuture' : (chartUnit === 'idratazione' ? 'idratazioneFuture' : chartUnit === 'cortisolo' ? 'cortisoloFuture' : chartUnit === 'digestione' ? 'digestioneFuture' : 'energyFuture')} stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.2} />
-                      {chartUnit === 'glicemia' && <ReferenceLine y={85} stroke="rgba(255,255,255,0.2)" strokeDasharray="5 5" />}
-                      {chartUnit !== 'glicemia' && <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255,255,255,0.2)" strokeWidth={2} strokeDasharray="8 8" dot={false} />}
-                      <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 2.5 : 1} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
-                      <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill="#00e5ff" stroke="#fff" strokeWidth={2} />
+                      <Area type="monotone" dataKey="anabolicScore" fill="url(#modalColorAnabolic)" stroke="transparent" fillOpacity={activeHighlight == null ? 0.35 : (activeHighlight === 'anabolica' ? 0.5 : 0.55)} yAxisId="anabolic" filter={activeHighlight === 'anabolica' ? 'url(#modalGlowMulti)' : undefined} />
+                      <Area type="monotone" dataKey="cortisolScore" fill="url(#modalColorCortisol)" stroke="#9c27b0" strokeWidth={activeHighlight === 'cortisolo' ? 4 : 2} strokeOpacity={activeHighlight == null ? 1 : (activeHighlight === 'cortisolo' ? 1 : 0.6)} fillOpacity={activeHighlight == null ? 0.3 : (activeHighlight === 'cortisolo' ? 0.45 : 0.55)} yAxisId="anabolic" filter={activeHighlight === 'cortisolo' ? 'url(#modalGlowMulti)' : undefined} />
+                      <Area type="monotone" dataKey={expandedChart === 'glicemia' ? 'glicemiaPast' : (expandedChart === 'idratazione' ? 'idratazionePast' : expandedChart === 'cortisolo' ? 'cortisoloPast' : expandedChart === 'digestione' ? 'digestionePast' : 'energyPast')} strokeWidth={activeHighlight === 'energia' ? 8 : (activeHighlight != null ? 3 : 6)} strokeOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.6)} fillOpacity={activeHighlight == null ? 0.6 : (activeHighlight === 'energia' ? 0.7 : 0.55)} fill={expandedChart === 'glicemia' ? 'url(#modalColorGlicemia)' : (expandedChart === 'idratazione' ? 'url(#modalColorWater)' : expandedChart === 'cortisolo' ? 'url(#modalColorCortisol)' : expandedChart === 'digestione' ? 'url(#modalColorDigestion)' : 'url(#modalColorEnergy)')} filter={activeHighlight === 'energia' ? 'url(#modalGlowMulti)' : undefined} />
+                      <Area type="monotone" dataKey={expandedChart === 'glicemia' ? 'glicemiaFuture' : (expandedChart === 'idratazione' ? 'idratazioneFuture' : expandedChart === 'cortisolo' ? 'cortisoloFuture' : expandedChart === 'digestione' ? 'digestioneFuture' : 'energyFuture')} stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.6} />
+                      {expandedChart === 'glicemia' && <ReferenceLine y={85} stroke="rgba(255,255,255,0.2)" strokeDasharray="5 5" />}
+                      {expandedChart !== 'glicemia' && <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255,255,255,0.2)" strokeWidth={2} strokeDasharray="8 8" dot={false} />}
+                      <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 4 : 1} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
+                      <ReferenceDot x={displayTime} y={expandedChart === 'glicemia' ? dotGlicemia : (expandedChart === 'idratazione' ? dotIdratazione : (expandedChart === 'cortisolo' ? dotCortisolo : (expandedChart === 'digestione' ? dotDigestione : (expandedChart === 'kcal' ? (dotY != null ? (dotY / 100) * targetKcalChart : 0) : dotY))))} isFront r={8} fill="#00e5ff" stroke="#fff" strokeWidth={2} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 )}
@@ -4066,9 +4122,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ flex: '0 0 40%', overflow: 'auto', padding: '16px', borderTop: '1px solid #222' }}>
               <h4 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '12px' }}>Descrizione</h4>
               {(() => {
-                const termConfig = expandedChart === 'percent' || expandedChart === 'kcal'
+                const termConfig = expandedChart === 'percent'
                   ? [{ key: 'energia', label: 'Energia SNC', color: '#00e676' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
-                  : expandedChart === 'cortisolo'
+                  : expandedChart === 'kcal'
+                    ? [{ key: 'energia', label: 'Energia', color: '#00e5ff' }, { key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                    : expandedChart === 'cortisolo'
                     ? [{ key: 'cortisolo', label: 'Cortisolo', color: '#9c27b0' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
                     : expandedChart === 'glicemia'
                       ? [{ key: 'energia', label: 'Glicemia', color: '#ef4444' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
@@ -4079,7 +4137,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           : [{ key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'cortisolo', label: 'Cortisolo', color: '#9c27b0' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'energia', label: 'Energia / Calorie', color: '#00e5ff' }, { key: 'digestione', label: 'Digestione', color: '#9333ea' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }];
                 const descriptions = {
                   percent: "Questa curva rappresenta la tua [Energia SNC]. Si rigenera durante la notte (partendo dalla [Sveglia]) e si esaurisce gradualmente con lo stress e gli allenamenti fino all'[Ora attuale].",
-                  kcal: "Questa curva rappresenta la tua [Energia SNC] in termini calorici. Si rigenera dalla [Sveglia] e si modula con pasti e attività fino all'[Ora attuale].",
+                  kcal: "Questo grafico mostra il tuo bilancio di [Energia] (Calorie). La [Finestra Anabolica] (area azzurra) mostra il livello di sintesi proteica: i picchi indicano il momento migliore per l'allenamento, quando il muscolo è nutrito a dovere. La [Sveglia] e l'[Ora attuale] contestualizzano la giornata.",
                   cortisolo: "Il grafico mostra l'andamento del tuo [Cortisolo]. Segue un ritmo circadiano che inizia dalla [Sveglia]. Evita picchi eccessivi verso l'[Ora attuale] per garantire un buon riposo.",
                   glicemia: "La curva simula l'andamento della [Glicemia] nel corso della giornata. I pasti e la [Sveglia] influenzano i livelli; il marcatore indica l'[Ora attuale].",
                   idratazione: "Questo grafico mostra il livello di [Idratazione]. Bere acqua e la [Sveglia] contribuiscono al rialzo; l'[Ora attuale] indica dove sei ora.",
@@ -4105,13 +4163,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         const term = termConfig.find(t => t.label === m[1]);
                         if (!term) return part;
                         const isActive = activeHighlight === term.key;
+                        const handleTermClick = () => {
+                          if (highlightResetTimeoutRef.current) { clearTimeout(highlightResetTimeoutRef.current); highlightResetTimeoutRef.current = null; }
+                          const next = isActive ? null : term.key;
+                          setActiveHighlight(next);
+                          if (next != null) {
+                            highlightResetTimeoutRef.current = setTimeout(() => { setActiveHighlight(null); highlightResetTimeoutRef.current = null; }, 3000);
+                          }
+                        };
                         return (
                           <span
                             key={i}
                             role="button"
                             tabIndex={0}
-                            onClick={(e) => { e.stopPropagation(); setActiveHighlight(isActive ? null : term.key); }}
-                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveHighlight(isActive ? null : term.key); } }}
+                            onClick={(e) => { e.stopPropagation(); handleTermClick(); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTermClick(); } }}
                             style={linkStyle(term.key, term.color)}
                           >
                             {term.label}
@@ -4125,7 +4191,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               })()}
             </div>
           </div>
-        )}
+          );
+        })()}
       </>
       )}
 
