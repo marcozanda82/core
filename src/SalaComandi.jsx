@@ -323,7 +323,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         const timeSince = h - node.time;
         if (timeSince >= 0 && timeSince <= 3) {
           const mealEffect = responseCurve(timeSince, 1, 3);
-          const realK = realTotals[node.strategyKey] || 0;
+          const realK = node.kcal || node.cal || 500;
           const idealK = Number(ideal[node.strategyKey]) || (node.strategyKey === 'spuntino' ? 250 : 500);
           currentEnergy += mealEffect * (realK / 20);
           currentIdealEnergy += mealEffect * (idealK / 20);
@@ -3511,12 +3511,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [simulationMode, currentTrackerDate, energyChartResult?.nervousSystemLoad]);
 
   useEffect(() => {
-    const insights = generateDailyInsights(chartData);
-    setDailyInsights(insights);
+    if (!chartData || chartData.length === 0) {
+      setEnergyForecast(null);
+      setCrashExplanation(null);
+      setDailyInsights([]);
+      return;
+    }
     const forecast = computeEnergyForecast(chartData);
     setEnergyForecast(forecast);
     const explanation = explainEnergyCrash(chartData, forecast);
     setCrashExplanation(explanation);
+    const insights = generateDailyInsights(chartData);
+    setDailyInsights(insights);
   }, [chartData]);
 
   const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
