@@ -1797,6 +1797,11 @@ export default function SalaComandi() {
   });
   const [userTargets, setUserTargets] = useState({ ...DEFAULT_TARGETS });
 
+  // Motore biochimico: dichiarato subito dopo le dipendenze per evitare TDZ / "Cannot access before initialization"
+  const baseKcal = (userTargets?.kcal ?? STRATEGY_PROFILES[dayProfile]?.kcal ?? 2000) + calorieTuning;
+  const { totali, obiettiviPasti } = useBiochimico(dailyLog, baseKcal);
+  const targetKcal = baseKcal + (totali?.workout ?? 0);
+
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(300);
   const [workoutStartTime, setWorkoutStartTime] = useState(18);
@@ -2634,11 +2639,6 @@ export default function SalaComandi() {
   useEffect(() => {
     if (isDrawerOpen && activeAction === 'pasto') setDrawerMealTimeStr(decimalToTimeStr(drawerMealTime));
   }, [isDrawerOpen, activeAction, drawerMealTime]);
-
-  // Motore biochimico
-  const baseKcal = (userTargets.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
-  const { totali, obiettiviPasti } = useBiochimico(dailyLog, baseKcal);
-  const targetKcal = baseKcal + (totali?.workout ?? 0);
 
   const openDrawer = () => { setActiveAction(null); setIsDrawerOpen(true); };
   const closeDrawer = () => { setIsDrawerOpen(false); setTimeout(() => setActiveAction(null), 400); };
@@ -4434,7 +4434,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     () => getRestantiMacro(userTargets, totali),
     [userTargets, totali]
   );
-  const { restantiPRO, restantiCARB, restantiFAT, restantiFIBRE, eccessoPRO, eccessoCARB, eccessoFAT, eccessoFIBRE } = restantiMacro;
+  const { restantiPRO = 0, restantiCARB = 0, restantiFAT = 0, restantiFIBRE = 0, eccessoPRO = 0, eccessoCARB = 0, eccessoFAT = 0, eccessoFIBRE = 0 } = restantiMacro ?? {};
 
   const targetMacrosPastoCena = useMemo(
     () => getTargetMacrosPastoCena(mealType, dynamicDailyKcal, totali, restantiMacro),
