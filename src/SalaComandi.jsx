@@ -4313,14 +4313,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
 
       {/* HEADER E GRAFICO */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(8px, 1.5vh)' }}>
-        <button type="button" onClick={() => { setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', width: '100%', marginBottom: 'max(8px, 1.5vh)' }}>
+        <button type="button" onClick={() => { setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', justifySelf: 'start' }}>
           <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: 0 }}>CORE <span style={{color: '#00e5ff'}}>OS</span></h1>
         </button>
-        {userProfile?.level === 'pro' && (
-          <button type="button" className="btn-toggle" onClick={() => setShowTelemetryPopup(true)} style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊 STATS</button>
-        )}
-        <button className="btn-toggle" onClick={() => { auth.signOut(); }}>LOGOUT</button>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          {userProfile?.level === 'pro' ? (
+            <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} style={{ padding: '6px 12px', fontSize: '0.7rem', fontWeight: 'bold', background: 'rgba(0,229,255,0.12)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', whiteSpace: 'nowrap' }}>🏠 HOME</button>
+          ) : (
+            <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))} style={{ padding: '6px 12px', fontSize: '0.7rem', fontWeight: 'bold', background: 'rgba(147,51,234,0.15)', border: '1px solid #9333ea', borderRadius: '10px', color: '#c084fc', cursor: 'pointer', whiteSpace: 'nowrap' }}>📊 ANALISI</button>
+          )}
+        </div>
+        <button className="btn-toggle" onClick={() => { auth.signOut(); }} style={{ justifySelf: 'end' }}>LOGOUT</button>
       </div>
 
       {/* Navigazione storica (Time-Travel) + Widget Energia + Toggle vista */}
@@ -4348,12 +4352,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <span style={{ fontSize: '0.5rem', textTransform: 'uppercase', color: '#888', marginTop: '2px' }}>Energia corporea</span>
           </div>
         </div>
-        {/* Toggle vista: HOME (da pro) o ANALISI (verso pro) */}
-        {userProfile?.level === 'pro' ? (
-          <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} style={{ padding: '8px 14px', fontSize: '0.75rem', fontWeight: 'bold', background: 'rgba(0,229,255,0.12)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', whiteSpace: 'nowrap' }}>🏠 HOME</button>
-        ) : (
-          <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))} style={{ padding: '8px 14px', fontSize: '0.75rem', fontWeight: 'bold', background: 'rgba(147,51,234,0.15)', border: '1px solid #9333ea', borderRadius: '10px', color: '#c084fc', cursor: 'pointer', whiteSpace: 'nowrap' }}>📊 ANALISI</button>
-        )}
       </div>
 
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato */}
@@ -4405,6 +4403,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="zoom-controls">
+            <button type="button" className="zoom-btn" onClick={() => setShowTelemetryPopup(true)} title="Stats" style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
             <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
@@ -5055,122 +5054,135 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
-        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(12px, 1.5vh)', padding: 'max(12px, 1.5vh) 14px', marginBottom: '12px', overflow: 'auto' }}>
-          {/* TACHIMETRO CIRCOLARE E INTERATTIVO */}
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-            {/* Contenitore ingrandito a 380px */}
-            <div style={{ position: 'relative', width: '100%', maxWidth: '380px', aspectRatio: '1', margin: '0 auto' }}>
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }}>
+          {/* Griglia 3 colonne: macro sinistra | tachimetro centro | macro destra */}
+          <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 70px', alignItems: 'center', gap: '10px', width: '100%', maxWidth: '450px', margin: '0 auto', marginBottom: '8px', flex: 1, minHeight: 0 }}>
+            {/* Colonna Sinistra */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid #222', borderRadius: '10px', padding: '8px 5px' }}>
+                <div style={{ fontSize: '0.6rem', color: '#b388ff', marginBottom: '2px' }}>PRO</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.prot || 0)}</div>
+                <div style={{ fontSize: '0.55rem', color: '#666' }}>/ {Math.round(userTargets?.prot ?? 150)}g</div>
+              </div>
+              <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid #222', borderRadius: '10px', padding: '8px 5px' }}>
+                <div style={{ fontSize: '0.6rem', color: '#ffea00', marginBottom: '2px' }}>FAT</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}</div>
+                <div style={{ fontSize: '0.55rem', color: '#666' }}>/ {Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 60)}g</div>
+              </div>
+            </div>
 
-              {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
-              <div
-                className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
-                onClick={() => setSelectedMealCenter(null)}
-                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
-              >
-                {!selectedMealCenter ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-14px)' }}>
-                    <span style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
-                    <span style={{ fontSize: '2.6rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
-                    <span style={{ fontSize: '0.9rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-10px)', width: '80%', textAlign: 'center' }}>
-                    <span style={{ color: selectedMealCenter.payload?.color || '#fff', fontSize: '0.9rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', borderBottom: `1px solid ${(selectedMealCenter.payload?.color || '#fff')}50`, paddingBottom: '2px' }}>
-                      {selectedMealCenter.name}
-                    </span>
-                    <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(selectedMealCenter.value)} <span style={{ fontSize: '0.8rem', color: '#aaa' }}>kcal</span></span>
-                    {dynamicDailyKcal > 0 && (
-                      <span style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
-                        ({Math.round((selectedMealCenter.value / dynamicDailyKcal) * 100)}% del totale)
+            {/* Colonna Centrale (Tachimetro) */}
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '180px' }}>
+              <div style={{ position: 'relative', width: '100%', aspectRatio: '1', maxHeight: '100%' }}>
+                {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
+                <div
+                  className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
+                  onClick={() => setSelectedMealCenter(null)}
+                  style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
+                >
+                  {!selectedMealCenter ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-10px)' }}>
+                      <span style={{ color: '#888', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
+                      <span style={{ fontSize: '2rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
+                      <span style={{ fontSize: '0.8rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-8px)', width: '80%', textAlign: 'center' }}>
+                      <span style={{ color: selectedMealCenter.payload?.color || '#fff', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '2px', borderBottom: `1px solid ${(selectedMealCenter.payload?.color || '#fff')}50`, paddingBottom: '2px' }}>
+                        {selectedMealCenter.name}
                       </span>
-                    )}
-                    {selectedMealCenter.payload?.macros && (
-                      <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', marginTop: '4px', fontWeight: 'bold' }}>
-                        <span style={{ color: '#ffb74d' }}>C:{Math.round(selectedMealCenter.payload.macros.carb)}</span>
-                        <span style={{ color: '#64b5f6' }}>P:{Math.round(selectedMealCenter.payload.macros.pro)}</span>
-                        <span style={{ color: '#81c784' }}>F:{Math.round(selectedMealCenter.payload.macros.fat)}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Layer 2: Grafico a Torta */}
-              <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={mealPieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="68%"
-                      outerRadius="85%"
-                      paddingAngle={3}
-                      dataKey="value"
-                      stroke="none"
-                      labelLine={false}
-                      label={renderCustomizedLabel}
-                      onClick={(data) => setSelectedMealCenter({ name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
-                      style={{ cursor: 'pointer', outline: 'none' }}
-                    >
-                      {mealPieData.map((entry, index) => {
-                        const isSelected = selectedMealCenter && entry.name === selectedMealCenter.name;
-                        const hasSelection = !!selectedMealCenter;
-                        return (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={entry.color}
-                            style={{
-                              filter: isSelected ? `drop-shadow(0 0 15px ${entry.color})` : 'none',
-                              opacity: hasSelection && !isSelected ? 0.3 : 1,
-                              outline: 'none'
-                            }}
-                          />
-                        );
-                      })}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-
-            </div>
-          </div>
-          {/* Macro griglia */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px 12px', width: '100%', maxWidth: '400px', margin: '0 auto', flexShrink: 0 }}>
-            <div style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 10px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.7rem', color: '#b388ff', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '600' }}>Proteine</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.75rem', color: '#666', fontWeight: 'normal' }}> / {Math.round(userTargets?.prot ?? 150)} g</span></div>
-            </div>
-            <div style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 10px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.7rem', color: '#00e676', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '600' }}>Carboidrati</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.75rem', color: '#666', fontWeight: 'normal' }}> / {Math.round(userTargets?.carb ?? 200)} g</span></div>
-            </div>
-            <div style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #111 100%)', border: '1px solid #222', borderRadius: '10px', padding: '12px 10px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '600' }}>Grassi</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.75rem', color: '#666', fontWeight: 'normal' }}> / {Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 60)} g</span></div>
-            </div>
-          </div>
-          {/* Widget Orologio Metabolico (Digiuno) */}
-          <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '12px', padding: '15px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1.4rem', filter: `drop-shadow(0 0 5px ${fastingData.phaseColor})` }}>⏳</span>
-                <div>
-                  <div style={{ fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '2px' }}>Fase Metabolica</div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: 'bold', color: fastingData.phaseColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{fastingData.phaseName}</div>
+                      <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(selectedMealCenter.value)} <span style={{ fontSize: '0.7rem', color: '#aaa' }}>kcal</span></span>
+                      {dynamicDailyKcal > 0 && (
+                        <span style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>
+                          ({Math.round((selectedMealCenter.value / dynamicDailyKcal) * 100)}% del totale)
+                        </span>
+                      )}
+                      {selectedMealCenter.payload?.macros && (
+                        <div style={{ display: 'flex', gap: '6px', fontSize: '0.7rem', marginTop: '2px', fontWeight: 'bold' }}>
+                          <span style={{ color: '#ffb74d' }}>C:{Math.round(selectedMealCenter.payload.macros.carb)}</span>
+                          <span style={{ color: '#64b5f6' }}>P:{Math.round(selectedMealCenter.payload.macros.pro)}</span>
+                          <span style={{ color: '#81c784' }}>F:{Math.round(selectedMealCenter.payload.macros.fat)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Layer 2: Grafico a Torta */}
+                <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={mealPieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius="68%"
+                        outerRadius="85%"
+                        paddingAngle={3}
+                        dataKey="value"
+                        stroke="none"
+                        labelLine={false}
+                        label={renderCustomizedLabel}
+                        onClick={(data) => setSelectedMealCenter({ name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
+                        style={{ cursor: 'pointer', outline: 'none' }}
+                      >
+                        {mealPieData.map((entry, index) => {
+                          const isSelected = selectedMealCenter && entry.name === selectedMealCenter.name;
+                          const hasSelection = !!selectedMealCenter;
+                          return (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={entry.color}
+                              style={{
+                                filter: isSelected ? `drop-shadow(0 0 15px ${entry.color})` : 'none',
+                                opacity: hasSelection && !isSelected ? 0.3 : 1,
+                                outline: 'none'
+                              }}
+                            />
+                          );
+                        })}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
-              <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '0.75rem', color: '#888' }}>🕒 Digiuno</span>
-                <span style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>
+            </div>
+
+            {/* Colonna Destra */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid #222', borderRadius: '10px', padding: '8px 5px' }}>
+                <div style={{ fontSize: '0.6rem', color: '#00e676', marginBottom: '2px' }}>CARB</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.carb || 0)}</div>
+                <div style={{ fontSize: '0.55rem', color: '#666' }}>/ {Math.round(userTargets?.carb ?? 200)}g</div>
+              </div>
+              <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid #222', borderRadius: '10px', padding: '8px 5px' }}>
+                <div style={{ fontSize: '0.6rem', color: '#f97316', marginBottom: '2px' }}>FIBRE</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fibre || 0)}</div>
+                <div style={{ fontSize: '0.55rem', color: '#666' }}>/ {Math.round(userTargets?.fibre ?? 30)}g</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Widget Orologio Metabolico (Digiuno) - compatto */}
+          <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '10px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '1.1rem', filter: `drop-shadow(0 0 5px ${fastingData.phaseColor})` }}>⏳</span>
+                <div>
+                  <div style={{ fontSize: '0.55rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1px' }}>Fase Metabolica</div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: fastingData.phaseColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{fastingData.phaseName}</div>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '0.65rem', color: '#888' }}>🕒 Digiuno</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff' }}>
                   {fastingData.hoursFasted >= 1 ? `${Math.floor(fastingData.hoursFasted)}h ${Math.round((fastingData.hoursFasted % 1) * 60)}m` : `${Math.round(fastingData.hoursFasted * 60)} min`}
                 </span>
               </div>
             </div>
-            <div style={{ height: '4px', background: '#222', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{ height: '3px', background: '#222', borderRadius: '2px', overflow: 'hidden' }}>
               <div style={{ width: `${fastingData.progress}%`, height: '100%', background: fastingData.phaseColor, transition: 'width 1s ease-in-out', boxShadow: `0 0 10px ${fastingData.phaseColor}` }}></div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#aaa', padding: '0 4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: '#aaa', padding: '0 2px' }}>
               {fastingData.phaseDesc.split('•').map((pt, i) => (
                 <span key={i}>• {pt.trim()}</span>
               ))}
