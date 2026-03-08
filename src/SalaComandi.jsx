@@ -786,11 +786,34 @@ function getWorkoutTrafficLight(currentTime, anabolicCurve, dailyLog, options) {
   return { color: '#f44336', text: 'CATABOLISMO / DIGIUNO', msg: 'Assumi proteine o amminoacidi prima di allenarti.' };
 }
 
+/** Timeline calorie cumulative da dailyLog (solo dati reali pasti). */
+function generateCalorieTimeline(dailyLog) {
+  const entries = (dailyLog || []).filter(entry => entry.type === 'food');
+  const withKcal = entries.map(entry => {
+    const kcal = Number(entry.kcal ?? entry.cal ?? 0);
+    const t = typeof entry.mealTime === 'number' ? entry.mealTime : 12;
+    return { kcal, mealTime: t };
+  }).filter(x => !Number.isNaN(x.kcal));
+  withKcal.sort((a, b) => a.mealTime - b.mealTime);
+
+  const timeline = [];
+  for (let h = 0; h <= 24; h++) {
+    let cumulative = 0;
+    withKcal.forEach(({ kcal, mealTime }) => {
+      if (mealTime <= h) cumulative += kcal;
+    });
+    timeline.push({ time: h, kcal: cumulative });
+  }
+  const totalCalories = timeline[24]?.kcal ?? 0;
+  return { calorieTimeline: timeline, totalCalories };
+}
+
 /** Costruisce il prompt per l'analisi AI del grafico (nome grafico + dati attuali + direttive). */
 function buildAIPrompt(expandedChart, data) {
   const chartNames = {
     percent: 'Energia SNC (%)',
     kcal: 'Calorie ingerite',
+    calorieTimeline: 'Calorie cumulative',
     glicemia: 'Simulatore Glicemico',
     idratazione: 'Idratazione',
     neuro: 'Recupero Neurologico',
@@ -1088,6 +1111,19 @@ function CustomChartTooltip({ active, payload, label }) {
           );
         }
 
+        if (entry.dataKey === 'kcal' && payload.length <= 2) {
+          const displayName = 'Calorie cumulative';
+          const val = entry.value != null && !Number.isNaN(Number(entry.value)) ? Math.round(Number(entry.value)) : entry.value;
+          return (
+            <div key={index} style={{ marginBottom: '10px' }}>
+              <div style={{ color: '#ff9800', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ff9800' }} />
+                {displayName}: {val} kcal
+              </div>
+            </div>
+          );
+        }
+
         if (entry.dataKey === 'kcalPast' || entry.dataKey === 'kcalFuture') {
           const displayName = 'Calorie';
           const val = entry.value != null && !Number.isNaN(Number(entry.value)) ? Math.round(Number(entry.value)) : entry.value;
@@ -1286,7 +1322,7 @@ export default function SalaComandi() {
   const highlightResetTimeoutRef = useRef(null);
   const modalSwipeStartXRef = useRef(null);
   const bottomTouchStartX = useRef(null);
-  const CHART_VIEWS_CAROUSEL = ['percent', 'kcal', 'glicemia', 'idratazione', 'neuro', 'cortisolo', 'digestione'];
+  const CHART_VIEWS_CAROUSEL = ['percent', 'kcal', 'calorieTimeline', 'glicemia', 'idratazione', 'neuro', 'cortisolo', 'digestione'];
   const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -3826,7 +3862,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         };
       })
     : renderDataWithSegments;
-  const modalChartData = expandedChart === 'kcal'
+  const mainChartData = chartUnit === 'calorieTimeline' ? calorieTimelineData : finalChartData;
+  const dotYCalorieTimeline = (() => {
+    if (chartUnit !== 'calorieTimeline' && expandedChart !== 'calorieTimeline') return null;
+    const tl = calorieTimelineData;
+    const idx = Math.floor(displayTime);
+    const next = Math.min(24, idx + 1);
+    const frac = displayTime - idx;
+    const a = tl[idx]?.kcal;
+    const b = tl[next]?.kcal;
+    return a != null ? (b != null ? a + (b - a) * frac : a) : 0;
+  })();
+  const modalChartData = expandedChart === 'calorieTimeline'
+    ? calorieTimelineData
+    : expandedChart === 'kcal'
     ? renderDataWithSegments.map(d => {
         const rawEnergy = d.energy ?? d.energia ?? 0;
         const rawCortisolo = d.cortisolo ?? d.cortisol ?? 0;
@@ -3840,7 +3889,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         };
       })
     : finalChartData;
-  const finalDotY = chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'kcal' ? scale(dotY) : dotY)))));
+  const finalDotY = chartUnit === 'calorieTimeline' ? (dotYCalorieTimeline ?? 0) : (chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'kcal' ? scale(dotY) : dotY))))));
 
   const energyAt20Percent = energyAt20 ?? 50;
 
@@ -4029,6 +4078,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     }
     return data;
   }, [dailyLog, fullHistory, currentTrackerDate]);
+
+  const { calorieTimeline: calorieTimelineData, totalCalories: totalCaloriesTimeline } = useMemo(() => generateCalorieTimeline(dailyLog), [dailyLog]);
   // --- FINE ZONA SICURA ---
 
   const renderEnergyPercentData = [];
@@ -4449,8 +4500,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ flexShrink: 0, marginBottom: '10px' }}>
           <div style={{ marginBottom: '8px' }}>
             <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
-              {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'kcal' ? 'Calorie ingerite 0–24h' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Calorie ingerite 0–24h'}
+              {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'kcal' ? 'Calorie ingerite 0–24h' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Calorie ingerite 0–24h'}
             </span>
+            {chartUnit === 'calorieTimeline' && (
+              <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
+                Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
+              </div>
+            )}
             {chartUnit === 'kcal' && (
               <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Calorie ingerite nel corso della giornata in base ai pasti registrati.">
                 Calorie ingerite nel corso della giornata in base ai pasti registrati.
@@ -4460,6 +4516,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
             <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
             <button type="button" onClick={() => setChartUnit('kcal')} className={`telemetry-btn ${chartUnit === 'kcal' ? 'active' : ''}`}>⚡ KCAL</button>
+            <button type="button" onClick={() => setChartUnit('calorieTimeline')} className={`telemetry-btn ${chartUnit === 'calorieTimeline' ? 'active' : ''}`} style={chartUnit === 'calorieTimeline' ? { color: '#ff9800', borderColor: '#ff9800' } : undefined}>📈 CUMUL</button>
             <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEM</button>
             <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`}>💧 IDRAT</button>
             <button type="button" onClick={() => setChartUnit('neuro')} className={`telemetry-btn ${chartUnit === 'neuro' ? 'active' : ''}`} style={chartUnit === 'neuro' ? { color: '#6366f1', borderColor: '#6366f1' } : undefined}>🧠 NEURO</button>
@@ -4567,7 +4624,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
                 ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
+                <ComposedChart data={mainChartData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorEnergy" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
@@ -4663,7 +4720,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </filter>
                   </defs>
                   <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 13 }} />
-                  <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => chartUnit === 'kcal' ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
+                  <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' || chartUnit === 'calorieTimeline' ? [0, Math.max(targetKcalChart, totalCaloriesTimeline || 0)] : [0, 100])} tickFormatter={(val) => (chartUnit === 'kcal' || chartUnit === 'calorieTimeline') ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
                   <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} hide />
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
                   {dailyLog.filter(item => item.type === 'sleep').map((sleepItem, index) => (
@@ -4682,8 +4739,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       }}
                     />
                   ))}
-                  <Area type="monotone" dataKey="anabolicScore" fill="url(#colorAnabolic)" stroke="transparent" strokeWidth={0} fillOpacity={0.35} yAxisId="anabolic" isAnimationActive={!draggingNode} />
-                  <Area type="monotone" dataKey="cortisolScore" fill="url(#colorCortisol)" stroke="#9c27b0" strokeWidth={2} strokeDasharray="5 5" fillOpacity={0.3} yAxisId="anabolic" isAnimationActive={!draggingNode} />
+                  {chartUnit !== 'calorieTimeline' && (
+                    <>
+                      <Area type="monotone" dataKey="anabolicScore" fill="url(#colorAnabolic)" stroke="transparent" strokeWidth={0} fillOpacity={0.35} yAxisId="anabolic" isAnimationActive={!draggingNode} />
+                      <Area type="monotone" dataKey="cortisolScore" fill="url(#colorCortisol)" stroke="#9c27b0" strokeWidth={2} strokeDasharray="5 5" fillOpacity={0.3} yAxisId="anabolic" isAnimationActive={!draggingNode} />
+                    </>
+                  )}
                   {chartUnit === 'glicemia' && (
                     <>
                       <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
@@ -4692,7 +4753,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </>
                   )}
                   <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                  {chartUnit === 'kcal' ? (
+                  {chartUnit === 'calorieTimeline' ? (
+                    <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
+                  ) : chartUnit === 'kcal' ? (
                     <>
                       <Area type="monotone" dataKey="kcalPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorKcal)" connectNulls={false} isAnimationActive={!draggingNode} />
                       <Area type="monotone" dataKey="kcalFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
@@ -4716,7 +4779,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   )}
                   {chartUnit === 'glicemia' ? (
                     <ReferenceLine y={85} stroke="rgba(255, 255, 255, 0.2)" strokeDasharray="5 5" label={{ position: 'insideTopLeft', value: 'Basale', fill: '#555', fontSize: 10 }} />
-                  ) : (
+                  ) : chartUnit === 'calorieTimeline' ? null : (
                     <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255, 255, 255, 0.2)" strokeWidth={4} strokeDasharray="8 8" dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
                   )}
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 11, offset: 10 }} />
@@ -4724,7 +4787,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const cx = props?.cx;
                     const cy = props?.cy;
                     if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') return <path d="M0 0" />;
-                    const fillColor = chartUnit === 'glicemia' ? '#ef4444' : (chartUnit === 'cortisolo' ? '#f59e0b' : chartUnit === 'digestione' ? '#9333ea' : chartUnit === 'neuro' ? '#6366f1' : '#00e5ff');
+                    const fillColor = chartUnit === 'glicemia' ? '#ef4444' : (chartUnit === 'cortisolo' ? '#f59e0b' : chartUnit === 'digestione' ? '#9333ea' : chartUnit === 'neuro' ? '#6366f1' : chartUnit === 'calorieTimeline' ? '#ff9800' : '#00e5ff');
                     return (
                       <g>
                         <circle cx={cx} cy={cy} r={10} fill={fillColor} />
@@ -4912,7 +4975,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
-                  {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : 'Calorie ingerite 0–24h'}
+                  {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'calorieTimeline' ? '📈 Calorie cumulative' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : 'Calorie ingerite 0–24h'}
                 </span>
                 <button type="button" onClick={() => { setExpandedChart(null); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi</button>
               </div>
@@ -4955,6 +5018,26 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
                     </ComposedChart>
                   </ResponsiveContainer>
+                ) : expandedChart === 'calorieTimeline' ? (
+                  <>
+                    <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
+                      Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
+                    </div>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={calorieTimelineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                        <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 6, 12, 18, 24]} tickFormatter={(val) => `${val}:00`} stroke="#666" fontSize={10} />
+                        <YAxis domain={[0, Math.max(targetKcalChart, totalCaloriesTimeline || 0)]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={36} />
+                        <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${Math.round(Number(value))} kcal`, 'Calorie cumulative']} labelFormatter={(label) => `Ore ${label}:00`} />
+                        {(dailyLog || []).filter(item => item.type === 'sleep').map((sleepItem, index) => (
+                          <ReferenceLine key={`modal-ctl-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 10 }} />
+                        ))}
+                        <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
+                        <ReferenceDot x={displayTime} y={dotYCalorieTimeline ?? 0} isFront r={8} fill="#ff9800" stroke="#fff" strokeWidth={2} />
+                        <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={2} dot={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={modalChartData} margin={{ top: 15, right: 25, left: -10, bottom: 0 }}>
@@ -5008,7 +5091,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 (() => {
                   const termConfig = expandedChart === 'percent'
                     ? [{ key: 'energia', label: 'Energia SNC', color: '#00e676' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
-                    : expandedChart === 'kcal'
+                    : expandedChart === 'calorieTimeline'
+                      ? [{ key: 'energia', label: 'Calorie cumulative', color: '#ff9800' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                      : expandedChart === 'kcal'
                       ? [{ key: 'energia', label: 'Calorie', color: '#00e5ff' }, { key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
                       : expandedChart === 'neuro'
                       ? [{ key: 'neuro', label: 'Recupero Neurologico', color: '#6366f1' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
@@ -5026,6 +5111,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
                   const descriptions = {
                     percent: `Questa curva rappresenta la tua [Energia SNC]. Si rigenera durante la notte (partendo dalla [Sveglia]) e si esaurisce gradualmente. All'[Ora attuale] sei al ${Math.round(dotY ?? 0)}% (Ideale: ${Math.round(idealDotY ?? 0)}%). Se vuoi saperne di più, passa all'Analisi AI.`,
+                    calorieTimeline: `Questo grafico mostra l'accumulo delle [Calorie cumulative] durante la giornata in base ai pasti registrati. All'[Ora attuale] hai assunto ${Math.round(dotYCalorieTimeline ?? 0)} kcal in totale. Se vuoi saperne di più, passa all'Analisi AI.`,
                     kcal: `Questo grafico mostra le [Calorie] ingerite nel corso della giornata. La [Finestra Anabolica] mostra il livello di sintesi proteica. All'[Ora attuale] le calorie sono a ${currentKcalVal} kcal (Target ideale: ${idealKcalVal} kcal). Se vuoi saperne di più, passa all'Analisi AI.`,
                     neuro: `Il grafico mostra il tuo [Recupero Neurologico], ricaricato dal sonno fino alla [Sveglia]. All'[Ora attuale] il livello è al ${Math.round(dotNeuro ?? 0)}% (ideale mantenersi sopra il 40%). Se vuoi saperne di più, passa all'Analisi AI.`,
                     cortisolo: `Il grafico mostra l'andamento del tuo [Cortisolo] dalla [Sveglia]. All'[Ora attuale] il livello stimato è ${Math.round(dotCortisolo ?? 0)}/100 (ottimale la sera è stare sotto 40). Se vuoi saperne di più, passa all'Analisi AI.`,
