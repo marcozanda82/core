@@ -4112,9 +4112,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .zoom-btn { width: 44px; height: 44px; background: rgba(20, 20, 20, 0.8); border: 1px solid #333; color: #00e5ff; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; backdrop-filter: blur(5px); cursor: pointer; outline: none; }
           .tachimeter-center.tachimeter-center-reset:hover { filter: brightness(1.08); box-shadow: 0 0 45px rgba(255,255,255,0.12); }
 
-          /* Macro widgets: SVG wedge shape + text overlay */
-          .macro-widget { position: absolute; width: 90px; height: 90px; z-index: 10; pointer-events: none; }
-          .macro-widget svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+          /* Macro widgets: rectangular with diagonal inner edge (clip-path), gap from radar */
+          .macro-widget { position: absolute; width: 90px; height: 90px; z-index: 10; pointer-events: none; background: rgba(15,15,15,0.95); }
+          .macro-widget.macro-tl { -webkit-clip-path: polygon(0 0, 100% 0, 100% 65%, 65% 100%, 0 100%); clip-path: polygon(0 0, 100% 0, 100% 65%, 65% 100%, 0 100%); }
+          .macro-widget.macro-tr { -webkit-clip-path: polygon(100% 0, 100% 100%, 0 100%, 0 65%, 35% 0); clip-path: polygon(100% 0, 100% 100%, 0 100%, 0 65%, 35% 0); }
+          .macro-widget.macro-bl { -webkit-clip-path: polygon(0 100%, 0 0, 35% 0, 100% 35%, 100% 100%); clip-path: polygon(0 100%, 0 0, 35% 0, 100% 35%, 100% 100%); }
+          .macro-widget.macro-br { -webkit-clip-path: polygon(100% 100%, 100% 0, 65% 0, 0 35%, 0 100%); clip-path: polygon(100% 100%, 100% 0, 65% 0, 0 35%, 0 100%); }
           .macro-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; pointer-events: none; }
           .macro-widget.macro-tl .macro-text { align-items: flex-start; padding: 10px 0 0 8px; }
           .macro-widget.macro-tr .macro-text { align-items: flex-end; padding: 10px 8px 0 0; }
@@ -5140,41 +5143,29 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </ResponsiveContainer>
               </div>
 
-              {/* TOP-LEFT (PRO) - SVG wedge */}
-              <div className="macro-widget macro-tl" style={{ top: 0, left: 0 }}>
-                <svg viewBox="0 0 90 90" preserveAspectRatio="none">
-                  <path fill="rgba(15,15,15,0.95)" stroke="#b388ff" strokeWidth="1" style={{ filter: 'drop-shadow(0 0 12px rgba(179,136,255,0.25))' }} d="M 0 0 L 90 0 L 90 80.72 A 134 134 0 0 1 80.72 90 L 0 90 Z" />
-                </svg>
+              {/* TOP-LEFT (PRO) - diagonal bottom-right toward radar */}
+              <div className="macro-widget macro-tl" style={{ top: 0, left: 0, border: '1px solid #b388ff', boxShadow: '0 0 12px rgba(179,136,255,0.25)' }}>
                 <div className="macro-text">
                   <span className="macro-label" style={{ color: '#b388ff' }}>PRO</span>
                   <span className="macro-value">{Math.round(totali?.prot || 0)}g</span>
                 </div>
               </div>
-              {/* TOP-RIGHT (CARB) - SVG wedge */}
-              <div className="macro-widget macro-tr" style={{ top: 0, right: 0 }}>
-                <svg viewBox="0 0 90 90" preserveAspectRatio="none">
-                  <path fill="rgba(15,15,15,0.95)" stroke="#00e676" strokeWidth="1" style={{ filter: 'drop-shadow(0 0 12px rgba(0,230,118,0.25))' }} d="M 90 0 L 0 0 L 0 80.72 A 134 134 0 0 0 9.28 90 L 90 90 Z" />
-                </svg>
+              {/* TOP-RIGHT (CARB) - diagonal bottom-left toward radar */}
+              <div className="macro-widget macro-tr" style={{ top: 0, right: 0, border: '1px solid #00e676', boxShadow: '0 0 12px rgba(0,230,118,0.25)' }}>
                 <div className="macro-text">
                   <span className="macro-label" style={{ color: '#00e676' }}>CARB</span>
                   <span className="macro-value">{Math.round(totali?.carb || 0)}g</span>
                 </div>
               </div>
-              {/* BOTTOM-LEFT (FAT) - SVG wedge */}
-              <div className="macro-widget macro-bl" style={{ bottom: 0, left: 0 }}>
-                <svg viewBox="0 0 90 90" preserveAspectRatio="none">
-                  <path fill="rgba(15,15,15,0.95)" stroke="#ffea00" strokeWidth="1" style={{ filter: 'drop-shadow(0 0 12px rgba(255,234,0,0.25))' }} d="M 0 90 L 90 90 L 90 9.28 A 134 134 0 0 1 80.72 0 L 0 0 Z" />
-                </svg>
+              {/* BOTTOM-LEFT (FAT) - diagonal top-right toward radar */}
+              <div className="macro-widget macro-bl" style={{ bottom: 0, left: 0, border: '1px solid #ffea00', boxShadow: '0 0 12px rgba(255,234,0,0.25)' }}>
                 <div className="macro-text">
                   <span className="macro-label" style={{ color: '#ffea00' }}>FAT</span>
                   <span className="macro-value">{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}g</span>
                 </div>
               </div>
-              {/* BOTTOM-RIGHT (FIBRE) - SVG wedge */}
-              <div className="macro-widget macro-br" style={{ bottom: 0, right: 0 }}>
-                <svg viewBox="0 0 90 90" preserveAspectRatio="none">
-                  <path fill="rgba(15,15,15,0.95)" stroke="#f97316" strokeWidth="1" style={{ filter: 'drop-shadow(0 0 12px rgba(249,115,22,0.25))' }} d="M 90 90 L 0 90 L 0 9.28 A 134 134 0 0 1 9.28 0 L 90 0 Z" />
-                </svg>
+              {/* BOTTOM-RIGHT (FIBRE) - diagonal top-left toward radar */}
+              <div className="macro-widget macro-br" style={{ bottom: 0, right: 0, border: '1px solid #f97316', boxShadow: '0 0 12px rgba(249,115,22,0.25)' }}>
                 <div className="macro-text">
                   <span className="macro-label" style={{ color: '#f97316' }}>FIBRE</span>
                   <span className="macro-value">{Math.round(totali?.fibre || 0)}g</span>
