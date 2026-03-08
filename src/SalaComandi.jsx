@@ -2656,8 +2656,25 @@ export default function SalaComandi() {
   };
 
   const handleNodeTap = useCallback((node) => () => {
-    if (Math.abs(dragOffsetYRef.current) < 10) setSelectedNodeReport(node);
-  }, []);
+    if (Math.abs(dragOffsetYRef.current) >= 10) return;
+    // Modifica rapida orario per energizzanti/caffè senza aprire il modale
+    if (node.type === 'stimulant' || node.type === 'energizer' || node.isEnergizer) {
+      const currentHH = Math.floor(node.time).toString().padStart(2, '0');
+      const currentMM = Math.round((node.time % 1) * 60).toString().padStart(2, '0');
+      const newTimeStr = window.prompt("Modifica rapida orario (HH:MM):", `${currentHH}:${currentMM}`);
+      if (newTimeStr && newTimeStr.includes(':')) {
+        const [h, m] = newTimeStr.split(':').map(Number);
+        if (!isNaN(h) && !isNaN(m)) {
+          const newTimeFloat = h + (m / 60);
+          const next = manualNodes.map(n => n.id === node.id ? { ...n, time: newTimeFloat, mealTime: newTimeFloat } : n);
+          setManualNodes(next);
+          syncDatiFirebase(dailyLog, next);
+        }
+      }
+      return;
+    }
+    setSelectedNodeReport(node);
+  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes]);
 
   const handleAddWater = (amount) => {
     if (amount > 0) {
@@ -6697,7 +6714,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div className="modal-overlay" onClick={() => setShowTelemetryPopup(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px' }}>
           
           {/* Contenitore Modale: 90vh di altezza, layout Flex a colonna */}
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: '#1e1e1e', color: '#fff', padding: '20px', borderRadius: '20px', width: '100%', maxWidth: '500px', height: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: '#1e1e1e', color: '#fff', padding: '20px', borderRadius: '20px', width: '100%', maxWidth: '500px', height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
             
             {/* Header Fisso */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #333', paddingBottom: '12px', flexShrink: 0 }}>
@@ -6705,8 +6722,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button type="button" onClick={() => setShowTelemetryPopup(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '1.5rem', cursor: 'pointer', padding: '0 10px' }}>✕</button>
             </div>
             
-            {/* Bottoni Navigazione Fissi */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px', flexShrink: 0 }}>
+            {/* Bottoni Navigazione Fissi - sticky per non essere coperti allo scroll */}
+            <div style={{ position: 'sticky', top: 0, zIndex: 50, background: '#1e1e1e', paddingBottom: '10px', flexShrink: 0, display: 'flex', gap: '8px', marginBottom: '5px', overflowX: 'auto' }}>
               {TELEMETRY_TABS.map(t => (
                 <button 
                   key={t} 
@@ -6719,8 +6736,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               ))}
             </div>
 
-            {/* Carosello Elastico: Prende tutto lo spazio verticale rimanente */}
-            <div className="telemetry-carousel" ref={popupTelemetryScrollRef} onScroll={handlePopupTelemetryScroll} style={{ flex: 1, minHeight: 0, margin: 0, paddingBottom: '10px' }}>
+            {/* Carosello Elastico: Prende tutto lo spazio verticale rimanente, solo quest'area scrolla */}
+            <div className="telemetry-carousel" ref={popupTelemetryScrollRef} onScroll={handlePopupTelemetryScroll} style={{ flex: 1, minHeight: 0, margin: 0, paddingBottom: '10px', overflowY: 'auto' }}>
               
               {/* Pagina MACRO */}
               <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
@@ -6767,6 +6784,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
                   {renderProgressBar('Grassi Totali', totali.fatTotal || totali.fat || 0, userTargets.fatTotal ?? userTargets.fat ?? 70, 'g', 'fatTotal')} 
                   {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))}
+                  {(() => {
+                    const omega3 = totali?.omega3 || 0;
+                    const omega6 = totali?.omega6 || 0;
+                    const omegaRatio = omega3 > 0 ? (omega6 / omega3).toFixed(1) : 'N/A';
+                    const ratioColor = omegaRatio !== 'N/A' && Number(omegaRatio) <= 4 ? '#00e676' : '#ef4444';
+                    return (
+                      <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', textAlign: 'center', border: `1px solid ${ratioColor}33` }}>
+                        <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Rapporto Omega-6 : Omega-3</div>
+                        <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: ratioColor }}>
+                          {omegaRatio} <span style={{ fontSize: '1rem', color: '#666' }}>: 1</span>
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '5px' }}>Target salute ideale: inferiore a 4:1</div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
