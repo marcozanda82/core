@@ -956,11 +956,14 @@ function buildAIPrompt(expandedChart, data) {
   };
   const nomeGrafico = chartNames[expandedChart] || expandedChart;
   const { displayTime = 12, energy = 50, cortisolo = 25, glicemia = 85, idratazione = 80, digestione = 0, neuro = 70 } = data || {};
-  return `Sei un assistente biochimico. Analizza in 3-4 righe la situazione attuale dell'utente guardando il grafico: ${nomeGrafico}.
+  return `Sei un assistente che spiega i grafici in modo chiaro e amichevole.
+
+Compito: genera una spiegazione del grafico "${nomeGrafico}" che sia educativa e comprensibile a un profano. Evita termini troppo tecnici. Spiega il "perché" dietro a un movimento del grafico (es: "Vedi quel calo? È perché il caffè ☕ ha finito il suo effetto"). L'utente deve poter dire: "Chi l'avrebbe mai detto!". Usa analogie semplici (es: il corpo come una batteria o un'auto). Puoi usare emoji per richiamare i nodi (🥗 pasto, ☕ caffè, ⚡ allenamento, 💼 lavoro).
+
 Dati attuali: orario ${Number(displayTime).toFixed(1)}h, energia ${Number(energy).toFixed(0)}, cortisolo ${Number(cortisolo).toFixed(0)}, glicemia ${Number(glicemia).toFixed(0)}, idratazione ${Number(idratazione).toFixed(0)}, digestione ${Number(digestione).toFixed(0)}, recupero neurologico ${Number(neuro).toFixed(0)}.
-Regola Tassativa: Se un valore non è disponibile per l'analisi, fai una stima e usa il valore medio.
-Regola Tassativa: Se l'analisi riguarda la cena, gli orari serali o il parametro 'Cortisolo', tieni conto che l'utente soffre di cortisolo alto la sera. Fornisci un'analisi mirata ad abbassarlo.
-Usa ESATTAMENTE le seguenti parole chiave nel tuo testo: Sveglia, Energia SNC, Finestra Anabolica, Cortisolo, Digestione, Glicemia. In particolare, spiega che il Cortisolo è rappresentato dalla linea tratteggiata magenta.`;
+Regola: se un valore non è disponibile, stima con un valore medio.
+Regola: se parli di cena o orari serali o Cortisolo, tieni conto che l'utente può avere cortisolo alto la sera; suggerisci come abbassarlo.
+Usa nel testo queste parole (anche in maiuscolo): Sveglia, Energia SNC, Finestra Anabolica, Cortisolo, Digestione, Glicemia. Il Cortisolo è la linea tratteggiata magenta.`;
 }
 
 /** Prompt per analisi AI globale (modale): un'unica analisi olistica con tutti i dati. */
@@ -1102,7 +1105,8 @@ const NODE_IMPORTANCE = {
 const MODAL_NODE_PRIMARY = {
   glicemia: ['meal', 'workout'],
   cortisolo: ['work', 'workout', 'stimulant'],
-  neuro: ['work', 'workout', 'stimulant']
+  neuro: ['work', 'workout', 'stimulant'],
+  calorieTimeline: ['meal']
 };
 
 function denormalizeLogForFirebase(flatLog) {
@@ -5326,7 +5330,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
-                  {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'calorieTimeline' ? '📈 Calorie cumulative' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : 'Calorie ingerite 0–24h'}
+                  {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'calorieTimeline' ? '📈 Calorie cumulative' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : expandedChart === 'neuro' ? 'Recupero Neurologico (Dopamina & Adrenalina)' : expandedChart === 'kcal' ? 'Calorie ingerite 0–24h' : 'Calorie ingerite 0–24h'}
                 </span>
                 <button type="button" onClick={() => { setExpandedChart(null); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi</button>
               </div>
@@ -5496,14 +5500,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   const idealKcalVal = idealDotY != null ? Math.round((idealDotY / 100) * targetKcalChart) : 0;
 
                   const descriptions = {
-                    percent: `Questa curva rappresenta la tua [Energia SNC]. Si rigenera durante la notte (partendo dalla [Sveglia]) e si esaurisce gradualmente. All'[Ora attuale] sei al ${Math.round(dotY ?? 0)}% (Ideale: ${Math.round(idealDotY ?? 0)}%). Se vuoi saperne di più, passa all'Analisi AI.`,
-                    calorieTimeline: `Questo grafico mostra l'accumulo delle [Calorie cumulative] durante la giornata in base ai pasti registrati. All'[Ora attuale] hai assunto ${Math.round(dotYCalorieTimeline ?? 0)} kcal in totale. Se vuoi saperne di più, passa all'Analisi AI.`,
-                    kcal: `Questo grafico mostra le [Calorie] ingerite nel corso della giornata. La [Finestra Anabolica] mostra il livello di sintesi proteica. All'[Ora attuale] le calorie sono a ${currentKcalVal} kcal (Target ideale: ${idealKcalVal} kcal). Se vuoi saperne di più, passa all'Analisi AI.`,
-                    neuro: `Il grafico mostra il tuo [Recupero Neurologico], ricaricato dal sonno fino alla [Sveglia]. All'[Ora attuale] il livello è al ${Math.round(dotNeuro ?? 0)}% (ideale mantenersi sopra il 40%). Se vuoi saperne di più, passa all'Analisi AI.`,
-                    cortisolo: `Il grafico mostra l'andamento del tuo [Cortisolo] dalla [Sveglia]. All'[Ora attuale] il livello stimato è ${Math.round(dotCortisolo ?? 0)}/100 (ottimale la sera è stare sotto 40). Se vuoi saperne di più, passa all'Analisi AI.`,
-                    glicemia: `La curva simula l'andamento della [Glicemia]. All'[Ora attuale] il valore stimato è ${Math.round(dotGlicemia ?? 0)} mg/dL (target basale a riposo ~85). Se vuoi saperne di più, passa all'Analisi AI.`,
-                    idratazione: `Mostra il livello di [Idratazione] dalla [Sveglia]. All'[Ora attuale] il serbatoio è al ${Math.round(dotIdratazione ?? 0)}% (ottimale restare sopra il 60%). Se vuoi saperne di più, passa all'Analisi AI.`,
-                    digestione: `Rappresenta il carico di [Digestione] in corso. All'[Ora attuale] l'impegno digestivo è al ${Math.round(dotDigestione ?? 0)}% (0% significa assorbimento completato). Se vuoi saperne di più, passa all'Analisi AI.`
+                    percent: `Quanto "carburante" ha il tuo cervello. Dopo la [Sveglia] 🌅 si ricarica, poi si consuma con la giornata. All'[Ora attuale] sei al ${Math.round(dotY ?? 0)}% (ideale intorno al ${Math.round(idealDotY ?? 0)}%). Pasti 🥗 e riposo lo fanno risalire.`,
+                    calorieTimeline: `Quante calorie hai assunto nel tempo. Ogni pasto 🥗 fa salire la linea. All'[Ora attuale] sei a ${Math.round(dotYCalorieTimeline ?? 0)} kcal in totale. Utile per capire se mangi abbastanza (o troppo) durante il giorno.`,
+                    kcal: `Le [Calorie] che assumi durante il giorno. La [Finestra Anabolica] indica quando il corpo è pronto a usare le proteine per i muscoli. Ora sei a ${currentKcalVal} kcal (target ideale ${idealKcalVal} kcal).`,
+                    neuro: `Quanto il tuo cervello è "stanco". Gli stimolanti ☕ lo caricano, ma il vero recupero arriva solo con il riposo. All'[Ora attuale] sei al ${Math.round(dotNeuro ?? 0)}% (meglio restare sopra il 40%). Allenamenti ⚡ e lavoro 💼 lo fanno scendere.`,
+                    cortisolo: `È l'ormone dello stress e dell'energia. Sale quando ti alleni ⚡ o lavori sodo 💼, scende quando ti rilassi. Se resta sempre alto, il corpo non recupera. Ora sei a ${Math.round(dotCortisolo ?? 0)}/100 (la sera è meglio sotto 40).`,
+                    glicemia: `Mostra quanto zucchero hai nel sangue. I picchi dopo i pasti 🥗 sono normali; se sono troppo alti o frequenti, ti sentirai stanco poco dopo. All'[Ora attuale] il valore stimato è ${Math.round(dotGlicemia ?? 0)} mg/dL (a riposo intorno a 85 è ok).`,
+                    idratazione: `Quanto sei idratato dalla [Sveglia] in poi. Bere 💧 fa salire la linea. All'[Ora attuale] sei al ${Math.round(dotIdratazione ?? 0)}% (meglio restare sopra il 60%). Poco acqua = meno energia e concentrazione.`,
+                    digestione: `Quanto il corpo è ancora impegnato a digerire. Dopo un pasto 🥗 la linea sale, poi scende. All'[Ora attuale] è al ${Math.round(dotDigestione ?? 0)}% (0% = digestione finita). In digestione è meglio non allenarsi subito.`
                   };
                   const text = descriptions[expandedChart] || descriptions.percent;
                   const parts = text.split(/(\[[^\]]+\])/g);
@@ -5518,7 +5522,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     transition: 'background 0.2s ease'
                   });
                   return (
-                    <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: '#b0b0b0', margin: 0 }}>
+                    <p style={{ fontSize: '1rem', lineHeight: 1.85, color: '#c8c8c8', margin: 0, letterSpacing: '0.02em' }}>
                       {parts.map((part, i) => {
                         const m = part.match(/^\[([^\]]+)\]$/);
                         if (m) {
