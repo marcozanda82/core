@@ -1559,6 +1559,71 @@ function predictEnergyIntervention(chartData, displayTime) {
   return null;
 }
 
+// ============================================================================
+// HELPER MEAL BUILDER — definiti prima del componente per evitare ReferenceError
+// ============================================================================
+
+/** Calcolo residui macro (target − già assunto). Safe se useBiochimico non ha ancora restituito dati. */
+function getRestantiMacro(userTargets, totali) {
+  const fallback = {
+    restantiPRO: 0, restantiCARB: 0, restantiFAT: 0, restantiFIBRE: 0,
+    eccessoPRO: 0, eccessoCARB: 0, eccessoFAT: 0, eccessoFIBRE: 0
+  };
+  if (userTargets == null || totali == null) return fallback;
+  const targetProt = Number(userTargets.prot) || 150;
+  const targetCarb = Number(userTargets.carb) || 200;
+  const targetFat = Number(userTargets.fatTotal ?? userTargets.fat) || 60;
+  const targetFibre = Number(userTargets.fibre) || 30;
+  const currentProt = Number(totali.prot) || 0;
+  const currentCarb = Number(totali.carb) || 0;
+  const currentFat = Number(totali.fatTotal ?? totali.fat) || 0;
+  const currentFibre = Number(totali.fibre) || 0;
+  return {
+    restantiPRO: Math.max(0, targetProt - currentProt),
+    restantiCARB: Math.max(0, targetCarb - currentCarb),
+    restantiFAT: Math.max(0, targetFat - currentFat),
+    restantiFIBRE: Math.max(0, targetFibre - currentFibre),
+    eccessoPRO: currentProt > targetProt ? currentProt - targetProt : 0,
+    eccessoCARB: currentCarb > targetCarb ? currentCarb - targetCarb : 0,
+    eccessoFAT: currentFat > targetFat ? currentFat - targetFat : 0,
+    eccessoFIBRE: currentFibre > targetFibre ? currentFibre - targetFibre : 0
+  };
+}
+
+/** Suggerimento target cena (Tetris). Restituisce null se non è cena o dati non pronti. */
+function getTargetMacrosPastoCena(mealType, dynamicDailyKcal, totali, restanti) {
+  if (mealType !== 'cena' || restanti == null) return null;
+  const dailyKcal = Number(dynamicDailyKcal) || 2000;
+  const currentKcal = totali != null ? (Number(totali.kcal) || 0) : 0;
+  return {
+    kcal: Math.max(0, dailyKcal - currentKcal),
+    prot: restanti.restantiPRO,
+    carb: restanti.restantiCARB,
+    fat: restanti.restantiFAT,
+    fibre: restanti.restantiFIBRE
+  };
+}
+
+/** Voto metabolico 1–10. Safe per mealTotaliFull null o pasto vuoto (nessuna divisione per zero). */
+function computeVotoMetabolicoSafe(mealTotaliFull) {
+  if (mealTotaliFull == null || typeof mealTotaliFull !== 'object') return 5;
+  const prot = Number(mealTotaliFull.prot) || 0;
+  const carb = Number(mealTotaliFull.carb) || 0;
+  const fat = Number(mealTotaliFull.fatTotal ?? mealTotaliFull.fat) || 0;
+  const fibre = Number(mealTotaliFull.fibre) || 0;
+  if (carb + prot + fibre === 0) return 5;
+  const safeCarb = carb > 0 ? carb : 1;
+  const fibreRatio = fibre / safeCarb;
+  const protRatio = prot / safeCarb;
+  let score = 5;
+  if (fibreRatio >= 0.15) score += 2;
+  else if (fibreRatio >= 0.08) score += 1;
+  if (protRatio >= 0.25) score += 2;
+  else if (protRatio >= 0.15) score += 1;
+  if (fat >= 5 && fat <= 40) score += 0.5;
+  return Math.max(1, Math.min(10, Math.round(score * 10) / 10));
+}
+
 export default function SalaComandi() {
   // AUTENTICAZIONE
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -4365,49 +4430,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     fibre: (userTargets.fibre ?? 30) * ratio
   };
 
-  const targetProt = userTargets?.prot ?? 150;
-  const targetCarb = userTargets?.carb ?? 200;
-  const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 60;
-  const targetFibre = userTargets?.fibre ?? 30;
-  const currentProt = totali?.prot ?? 0;
-  const currentCarb = totali?.carb ?? 0;
-  const currentFat = totali?.fatTotal ?? totali?.fat ?? 0;
-  const currentFibre = totali?.fibre ?? 0;
-  const restantiPRO = Math.max(0, targetProt - currentProt);
-  const restantiCARB = Math.max(0, targetCarb - currentCarb);
-  const restantiFAT = Math.max(0, targetFat - currentFat);
-  const restantiFIBRE = Math.max(0, targetFibre - currentFibre);
-  const eccessoPRO = currentProt > targetProt ? currentProt - targetProt : 0;
-  const eccessoCARB = currentCarb > targetCarb ? currentCarb - targetCarb : 0;
-  const eccessoFAT = currentFat > targetFat ? currentFat - targetFat : 0;
-  const eccessoFIBRE = currentFibre > targetFibre ? currentFibre - targetFibre : 0;
+  const restantiMacro = useMemo(
+    () => getRestantiMacro(userTargets, totali),
+    [userTargets, totali]
+  );
+  const { restantiPRO, restantiCARB, restantiFAT, restantiFIBRE, eccessoPRO, eccessoCARB, eccessoFAT, eccessoFIBRE } = restantiMacro;
 
-  const targetMacrosPastoCena = mealType === 'cena' ? {
-    kcal: Math.max(0, dynamicDailyKcal - (totali?.kcal || 0)),
-    prot: restantiPRO,
-    carb: restantiCARB,
-    fat: restantiFAT,
-    fibre: restantiFIBRE
-  } : null;
+  const targetMacrosPastoCena = useMemo(
+    () => getTargetMacrosPastoCena(mealType, dynamicDailyKcal, totali, restantiMacro),
+    [mealType, dynamicDailyKcal, totali, restantiMacro]
+  );
 
   const targetForMeal = (mealType === 'cena' && targetMacrosPastoCena) ? targetMacrosPastoCena : targetMacrosPasto;
 
-  const votoMetabolico = useMemo(() => {
-    const prot = mealTotaliFull.prot || 0;
-    const carb = mealTotaliFull.carb || 0;
-    const fat = mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0;
-    const fibre = mealTotaliFull.fibre || 0;
-    if (carb + prot + fibre === 0) return 5;
-    const fibreRatio = carb > 0 ? fibre / carb : (fibre > 0 ? 1 : 0);
-    const protRatio = carb > 0 ? prot / carb : (prot > 0 ? 1 : 0);
-    let score = 5;
-    if (fibreRatio >= 0.15) score += 2;
-    else if (fibreRatio >= 0.08) score += 1;
-    if (protRatio >= 0.25) score += 2;
-    else if (protRatio >= 0.15) score += 1;
-    if (fat >= 5 && fat <= 40) score += 0.5;
-    return Math.max(1, Math.min(10, Math.round(score * 10) / 10));
-  }, [mealTotaliFull?.prot, mealTotaliFull?.carb, mealTotaliFull?.fatTotal, mealTotaliFull?.fat, mealTotaliFull?.fibre]);
+  const votoMetabolico = useMemo(
+    () => computeVotoMetabolicoSafe(mealTotaliFull),
+    [mealTotaliFull]
+  );
 
   const isReadyToDelete = draggingNode && Math.abs(dragOffsetY) > 50;
 
