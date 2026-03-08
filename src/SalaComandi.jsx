@@ -3921,33 +3921,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [dailyLog]);
   const safeCalorieTimelineData = Array.isArray(calorieTimelineData) ? calorieTimelineData : [];
 
-  const forzaTiming = useMemo(() => {
-    if (!activeNodes || activeNodes.length === 0) return null;
-
-    const oraAttuale = new Date().getHours() + (new Date().getMinutes() / 60);
-
-    const pastiPassati = (dailyLog || [])
-      .filter(n => (n.type === 'food' || n.type === 'meal') && (n.mealTime ?? n.time ?? 0) <= oraAttuale && (Number(n.kcal ?? n.cal ?? 0) > 200))
-      .sort((a, b) => (b.mealTime ?? b.time ?? 0) - (a.mealTime ?? a.time ?? 0));
-
-    const ultimoPasto = pastiPassati[0];
-
-    if (ultimoPasto) {
-      const mealTime = ultimoPasto.mealTime ?? ultimoPasto.time ?? 0;
-      const tempoDallUltimoPasto = oraAttuale - mealTime;
-
-      if (tempoDallUltimoPasto < 1.5) {
-        const attesa = 1.5 - tempoDallUltimoPasto;
-        return { stato: 'wait', text: 'Digestione in corso', timer: Math.round(attesa * 60) + ' min', color: '#ffea00' };
-      } else if (tempoDallUltimoPasto >= 1.5 && tempoDallUltimoPasto <= 3.5) {
-        return { stato: 'optimal', text: 'FINESTRA DI FORZA APERTA', color: '#00e676' };
-      } else {
-        return { stato: 'late', text: 'Scorte in esaurimento', color: '#ff9800' };
-      }
-    }
-    return { stato: 'none', text: 'Alimentazione insufficiente', color: '#888' };
-  }, [dailyLog, activeNodes]);
-
   useEffect(() => {
     if (!simulationMode && currentTrackerDate === getTodayString() && energyChartResult?.nervousSystemLoad != null) {
       setNervousSystemLoad(energyChartResult.nervousSystemLoad);
@@ -5742,29 +5715,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <span key={i}>• {pt.trim()}</span>
               ))}
             </div>
-            {forzaTiming && (
-              <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', width: '100%' }}>
-                <div style={{ fontSize: '0.6rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px', textAlign: 'center' }}>
-                  Training Readiness (Strength)
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                  <span style={{ color: forzaTiming.color, fontWeight: 'bold', fontSize: '0.85rem', textAlign: 'center' }}>
-                    {forzaTiming.text}
-                  </span>
-                  {forzaTiming.stato === 'wait' && forzaTiming.timer && (
-                    <span style={{ fontSize: '0.7rem', color: '#aaa' }}>Inizio ottimale tra {forzaTiming.timer}</span>
-                  )}
-                  <div style={{ width: '100%', height: '4px', background: '#222', borderRadius: '2px', marginTop: '6px', overflow: 'hidden' }}>
-                    <div style={{
-                      width: forzaTiming.stato === 'optimal' ? '100%' : (forzaTiming.stato === 'wait' ? '40%' : '10%'),
-                      height: '100%',
-                      background: forzaTiming.color,
-                      transition: 'width 1s ease'
-                    }} />
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
             );
           })()}
