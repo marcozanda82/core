@@ -310,10 +310,17 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
   const out = [];
 
-  function carbAbsorption(t, carbs) {
-    if (t < 0 || t > 3) return 0;
-    const peak = Math.exp(-Math.pow((t - 1) / 0.8, 2));
-    return peak * (carbs * 2);
+  function carbAbsorption(t, carbs, fibre = 0, fat = 0) {
+    if (t < 0 || t > 4) return 0;
+
+    const peakTime = 1 + (fat * 0.015) + (fibre * 0.02);
+    const width = 0.8 + fibre * 0.015;
+
+    const fatReduction = Math.max(0.6, 1 - fat * 0.01);
+    const amplitude = carbs * fatReduction;
+
+    const peak = Math.exp(-Math.pow((t - peakTime) / width, 2));
+    return peak * amplitude;
   }
 
   function circadianEnergyModifier(h) {
@@ -400,7 +407,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const carb = Number(entry.carb) || 0;
           const fibre = Number(entry.fibre) || 0;
           const fat = Number(entry.fatTotal || entry.fat) || 0;
-          gl += carbAbsorption(diff, carb);
+          gl += carbAbsorption(diff, carb, fibre, fat);
           glycemicMemory += carb * 0.4;
           if (carb > 40 && fibre < 4 && fat < 10 && diff >= 1.5 && diff < 2.5) {
             gl -= 15 * model.carbCrashSensitivity;
