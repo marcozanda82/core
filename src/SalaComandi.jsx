@@ -790,7 +790,7 @@ function getWorkoutTrafficLight(currentTime, anabolicCurve, dailyLog, options) {
 function buildAIPrompt(expandedChart, data) {
   const chartNames = {
     percent: 'Energia SNC (%)',
-    kcal: 'Energia/Calorie 0-24h',
+    kcal: 'Calorie ingerite',
     glicemia: 'Simulatore Glicemico',
     idratazione: 'Idratazione',
     neuro: 'Recupero Neurologico',
@@ -1084,6 +1084,19 @@ function CustomChartTooltip({ active, payload, label }) {
               </div>
               <div style={{ fontSize: '0.75rem', color: '#ccc', marginTop: '2px' }}>{explanation}</div>
               <div style={{ fontSize: '0.7rem', color: '#888', fontStyle: 'italic' }}>Causa: {cause}</div>
+            </div>
+          );
+        }
+
+        if (entry.dataKey === 'kcalPast' || entry.dataKey === 'kcalFuture') {
+          const displayName = 'Calorie';
+          const val = entry.value != null && !Number.isNaN(Number(entry.value)) ? Math.round(Number(entry.value)) : entry.value;
+          return (
+            <div key={index} style={{ marginBottom: '10px' }}>
+              <div style={{ color: '#00e5ff', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00e5ff' }} />
+                {displayName}: {val} kcal
+              </div>
             </div>
           );
         }
@@ -4436,8 +4449,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ flexShrink: 0, marginBottom: '10px' }}>
           <div style={{ marginBottom: '8px' }}>
             <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
-              {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'kcal' ? 'Energia 0–24h' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia 0–24h'}
+              {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'kcal' ? 'Calorie ingerite 0–24h' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Calorie ingerite 0–24h'}
             </span>
+            {chartUnit === 'kcal' && (
+              <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Calorie ingerite nel corso della giornata in base ai pasti registrati.">
+                Calorie ingerite nel corso della giornata in base ai pasti registrati.
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
             <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
@@ -4894,13 +4912,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
-                  {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : 'Energia 0–24h'}
+                  {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : 'Calorie ingerite 0–24h'}
                 </span>
                 <button type="button" onClick={() => { setExpandedChart(null); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi</button>
               </div>
               {expandedChart === 'percent' && (
                 <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }} title="Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.">
                   Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.
+                </div>
+              )}
+              {expandedChart === 'kcal' && (
+                <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }} title="Calorie ingerite nel corso della giornata in base ai pasti registrati.">
+                  Calorie ingerite nel corso della giornata in base ai pasti registrati.
                 </div>
               )}
               <div style={{ flex: 1, minHeight: 120 }}>
@@ -4986,7 +5009,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   const termConfig = expandedChart === 'percent'
                     ? [{ key: 'energia', label: 'Energia SNC', color: '#00e676' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
                     : expandedChart === 'kcal'
-                      ? [{ key: 'energia', label: 'Energia', color: '#00e5ff' }, { key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
+                      ? [{ key: 'energia', label: 'Calorie', color: '#00e5ff' }, { key: 'anabolica', label: 'Finestra Anabolica', color: '#00e5ff' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
                       : expandedChart === 'neuro'
                       ? [{ key: 'neuro', label: 'Recupero Neurologico', color: '#6366f1' }, { key: 'sveglia', label: 'Sveglia', color: '#4ba3e3' }, { key: 'ora', label: 'Ora attuale', color: '#e0e0e0' }]
                       : expandedChart === 'cortisolo'
@@ -5003,7 +5026,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
                   const descriptions = {
                     percent: `Questa curva rappresenta la tua [Energia SNC]. Si rigenera durante la notte (partendo dalla [Sveglia]) e si esaurisce gradualmente. All'[Ora attuale] sei al ${Math.round(dotY ?? 0)}% (Ideale: ${Math.round(idealDotY ?? 0)}%). Se vuoi saperne di più, passa all'Analisi AI.`,
-                    kcal: `Questo grafico mostra il bilancio di [Energia] (Calorie). La [Finestra Anabolica] mostra il livello di sintesi proteica. All'[Ora attuale] l'energia è a ${currentKcalVal} kcal (Target ideale: ${idealKcalVal} kcal). Se vuoi saperne di più, passa all'Analisi AI.`,
+                    kcal: `Questo grafico mostra le [Calorie] ingerite nel corso della giornata. La [Finestra Anabolica] mostra il livello di sintesi proteica. All'[Ora attuale] le calorie sono a ${currentKcalVal} kcal (Target ideale: ${idealKcalVal} kcal). Se vuoi saperne di più, passa all'Analisi AI.`,
                     neuro: `Il grafico mostra il tuo [Recupero Neurologico], ricaricato dal sonno fino alla [Sveglia]. All'[Ora attuale] il livello è al ${Math.round(dotNeuro ?? 0)}% (ideale mantenersi sopra il 40%). Se vuoi saperne di più, passa all'Analisi AI.`,
                     cortisolo: `Il grafico mostra l'andamento del tuo [Cortisolo] dalla [Sveglia]. All'[Ora attuale] il livello stimato è ${Math.round(dotCortisolo ?? 0)}/100 (ottimale la sera è stare sotto 40). Se vuoi saperne di più, passa all'Analisi AI.`,
                     glicemia: `La curva simula l'andamento della [Glicemia]. All'[Ora attuale] il valore stimato è ${Math.round(dotGlicemia ?? 0)} mg/dL (target basale a riposo ~85). Se vuoi saperne di più, passa all'Analisi AI.`,
