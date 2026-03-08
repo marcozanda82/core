@@ -1342,6 +1342,49 @@ function buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, weekS
   };
 }
 
+/** Analyzes chartData for the next 2h and suggests a preventive intervention if energy is predicted to drop. */
+function predictEnergyIntervention(chartData, displayTime) {
+  if (!Array.isArray(chartData)) return null;
+
+  const future = chartData
+    .filter(p => p.time > displayTime && p.time <= displayTime + 2)
+    .filter(p => typeof (p.energy ?? p.energia) === "number");
+
+  if (!future.length) return null;
+
+  let lowestPoint = future[0];
+
+  future.forEach(p => {
+    const val = p.energy ?? p.energia ?? 100;
+    if (val < (lowestPoint.energy ?? lowestPoint.energia ?? 100)) {
+      lowestPoint = p;
+    }
+  });
+
+  const lowestEnergy = lowestPoint.energy ?? lowestPoint.energia ?? 100;
+
+  const minutesUntil =
+    Math.round((lowestPoint.time - displayTime) * 60);
+
+  if (lowestEnergy < 35) {
+    return {
+      type: "crash",
+      message: `Crash energetico previsto tra ${minutesUntil} min`,
+      suggestion: "Snack: 25g carbo + 10g proteine"
+    };
+  }
+
+  if (lowestEnergy < 45) {
+    return {
+      type: "dip",
+      message: `Calo energetico previsto tra ${minutesUntil} min`,
+      suggestion: "Snack leggero o idratazione"
+    };
+  }
+
+  return null;
+}
+
 export default function SalaComandi() {
   // AUTENTICAZIONE
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -3840,6 +3883,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const pt = chartData?.find(p => p.time === Math.round(displayTime));
     return explainEnergyState(pt);
   }, [chartData, displayTime]);
+  const energyIntervention = useMemo(() => {
+    return predictEnergyIntervention(chartData, displayTime);
+  }, [chartData, displayTime]);
   const energyAt20 = chartData[20]?.energy;
   const idealDotY = chartData.length > 0
     ? (chartData[currentH]?.idealEnergy ?? 0) + ((chartData[nextH]?.idealEnergy ?? 0) - (chartData[currentH]?.idealEnergy ?? 0)) * fraction
@@ -4565,6 +4611,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     {cause.direction === 'down' ? '↓' : '↑'} {cause.text}
                   </div>
                 ))}
+              </div>
+            )}
+            {energyIntervention && (
+              <div style={{
+                marginTop: '6px',
+                padding: '6px 10px',
+                background: 'rgba(255,152,0,0.1)',
+                border: '1px solid #ff9800',
+                borderRadius: '8px',
+                fontSize: '0.7rem',
+                color: '#ff9800'
+              }}>
+                ⚠️ {energyIntervention.message}<br />
+                → {energyIntervention.suggestion}
               </div>
             )}
           </div>
