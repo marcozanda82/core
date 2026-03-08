@@ -5569,8 +5569,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }}>
-          {/* Radar Container: Tachimetro centrale grande + widget corner */}
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }}>
+          {/* Radar Container: Tachimetro centrale + riga macro sotto */}
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto', overflow: 'visible' }}>
               {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
               <div
@@ -5642,46 +5642,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </PieChart>
                 </ResponsiveContainer>
               </div>
+            </div>
 
-              {/* TOP-LEFT (PRO) - assunto/obiettivo */}
-              <div className="macro-widget macro-tl" style={{ top: 0, left: 0, filter: 'drop-shadow(0 0 12px rgba(179,136,255,0.25))' }}>
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <polygon fill="rgba(15,15,15,0.95)" stroke="#b388ff" strokeWidth="1" points="0,0 100,0 100,55 55,100 0,100" />
-                </svg>
-                <div className="macro-text">
-                  <span className="macro-label" style={{ color: '#b388ff' }}>PRO</span>
-                  <span className="macro-value">{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.prot || 0)}g</span></span>
-                </div>
+            {/* Riga widget macro: layout fluido sotto il tachimetro */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', width: '100%', marginTop: '25px', padding: '0 10px', position: 'relative', zIndex: 10 }}>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(179,136,255,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
+                <span style={{ fontSize: '0.65rem', color: '#b388ff', fontWeight: 'bold', letterSpacing: '1px' }}>PRO</span>
+                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.prot || 0)}g</span></span>
               </div>
-              {/* TOP-RIGHT (CARB) - assunto/obiettivo */}
-              <div className="macro-widget macro-tr" style={{ top: 0, right: 0, filter: 'drop-shadow(0 0 12px rgba(0,230,118,0.25))' }}>
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <polygon fill="rgba(15,15,15,0.95)" stroke="#00e676" strokeWidth="1" points="100,0 100,100 45,100 0,55 0,0" />
-                </svg>
-                <div className="macro-text">
-                  <span className="macro-label" style={{ color: '#00e676' }}>CARB</span>
-                  <span className="macro-value">{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.carb || 0)}g</span></span>
-                </div>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(0,230,118,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
+                <span style={{ fontSize: '0.65rem', color: '#00e676', fontWeight: 'bold', letterSpacing: '1px' }}>CARB</span>
+                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.carb || 0)}g</span></span>
               </div>
-              {/* BOTTOM-LEFT (FAT) - assunto/obiettivo */}
-              <div className="macro-widget macro-bl" style={{ bottom: 0, left: 0, filter: 'drop-shadow(0 0 12px rgba(255,234,0,0.25))' }}>
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <polygon fill="rgba(15,15,15,0.95)" stroke="#ffea00" strokeWidth="1" points="0,100 0,0 45,0 100,55 100,100" />
-                </svg>
-                <div className="macro-text">
-                  <span className="macro-label" style={{ color: '#ffea00' }}>FAT</span>
-                  <span className="macro-value">{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 0)}g</span></span>
-                </div>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(255,234,0,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
+                <span style={{ fontSize: '0.65rem', color: '#ffea00', fontWeight: 'bold', letterSpacing: '1px' }}>FAT</span>
+                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 0)}g</span></span>
               </div>
-              {/* BOTTOM-RIGHT (FIBRE) - stesso stile ridotto */}
-              <div className="macro-widget macro-br" style={{ bottom: 0, right: 0, filter: 'drop-shadow(0 0 12px rgba(249,115,22,0.25))' }}>
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <polygon fill="rgba(15,15,15,0.95)" stroke="#f97316" strokeWidth="1" points="100,100 100,0 55,0 0,45 0,100" />
-                </svg>
-                <div className="macro-text">
-                  <span className="macro-label" style={{ color: '#f97316' }}>FIBRE</span>
-                  <span className="macro-value">{Math.round(totali?.fibre || 0)}g</span>
-                </div>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(249,115,22,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
+                <span style={{ fontSize: '0.65rem', color: '#f97316', fontWeight: 'bold', letterSpacing: '1px' }}>FIBRE</span>
+                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fibre || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fibre || 30)}g</span></span>
               </div>
             </div>
           </div>
