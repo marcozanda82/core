@@ -6120,13 +6120,60 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         )}
 
         {/* VISTA ARCHIVIO STORICO */}
-        {activeAction === 'storico' && (
+        {activeAction === 'storico' && (() => {
+          // Calcolo Bilancio Settimanale (ultimi 7 giorni utili)
+          const historyArray = pastDaysStorico || [];
+          const last7Days = historyArray.slice(0, 7);
+          let sumKcalIn = 0;
+          let sumKcalTarget = 0;
+          last7Days.forEach(day => {
+            const assunte = day.calorie ?? day.totali?.kcal ?? day.kcalAssunte ?? 0;
+            const target = (day.calorie != null && day.deficit != null) ? (day.calorie - day.deficit) : (day.userTargets?.kcal ?? day.targetKcal ?? 2500);
+            sumKcalIn += assunte;
+            sumKcalTarget += target;
+          });
+          const diffKcal = Math.round(sumKcalIn - sumKcalTarget);
+          const isSurplus = diffKcal > 0;
+          const avgDiffKcal = last7Days.length > 0 ? Math.round(diffKcal / last7Days.length) : 0;
+
+          return (
           <div className="view-animate">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
               <h2 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '2px', margin: 0 }}>📚 ARCHIVIO STORICO</h2>
               <div style={{ width: '70px' }}></div>
             </div>
+            {last7Days.length > 0 && (
+              <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '15px', padding: '20px', marginBottom: '25px', border: `1px solid ${isSurplus ? 'rgba(239, 68, 68, 0.4)' : 'rgba(0, 230, 118, 0.4)'}` }}>
+                <h3 style={{ color: '#fff', margin: '0 0 15px 0', fontSize: '1.1rem', textAlign: 'center' }}>
+                  ⚖️ Bilancio Ultimi 7 Giorni
+                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#aaa' }}>Totale Assunto</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(sumKcalIn)}</div>
+                  </div>
+                  <div style={{ textAlign: 'center', padding: '0 15px', borderLeft: '1px solid #333', borderRight: '1px solid #333' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Esito Settimanale</div>
+                    <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: isSurplus ? '#ef4444' : '#00e676' }}>
+                      {isSurplus ? '+' : ''}{diffKcal} <span style={{ fontSize: '0.9rem' }}>kcal</span>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: isSurplus ? '#ef4444' : '#00e676', marginTop: '5px' }}>
+                      Media: {isSurplus ? '+' : ''}{avgDiffKcal} kcal / giorno
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#aaa' }}>Totale Target</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(sumKcalTarget)}</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '0.8rem', color: '#888' }}>
+                  {isSurplus
+                    ? 'Sei in Surplus calorico. Ideale per la costruzione muscolare, attenzione all\'accumulo di grasso se eccessivo.'
+                    : 'Sei in Deficit calorico. Ideale per la definizione o perdita di peso.'}
+                </div>
+              </div>
+            )}
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', fontSize: '0.7rem', color: '#888', letterSpacing: '1px', marginBottom: '8px' }}>Cerca per data</label>
               <input
@@ -6290,7 +6337,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* VISTA ZEN */}
         {activeAction === 'focus' && (
