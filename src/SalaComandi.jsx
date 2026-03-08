@@ -1388,6 +1388,8 @@ export default function SalaComandi() {
   const [addedFoods, setAddedFoods] = useState([]);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
+  const [inspectedFood, setInspectedFood] = useState(null);
+  const [editFoodData, setEditFoodData] = useState(null);
   
   const [foodDropdownSuggestions, setFoodDropdownSuggestions] = useState([]);
   const [showFoodDropdown, setShowFoodDropdown] = useState(false);
@@ -6706,9 +6708,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       </div>
                       <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 25px 0', maxHeight: '200px', overflowY: 'auto' }}>
                         {items.map(item => (
-                          <li key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #333' }}>
+                          <li key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #333' }}>
                             <span>{item.name || item.desc}</span>
-                            <span style={{ color: '#aaa' }}>{item.qta || item.weight}g</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ color: '#aaa' }}>{item.qta || item.weight}g</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setInspectedFood(item);
+                                  setEditFoodData({ ...item });
+                                }}
+                                style={{ background: 'transparent', border: 'none', color: '#00e5ff', cursor: 'pointer', fontSize: '1.2rem', padding: '0 5px' }}
+                                title="Ispeziona/Modifica Nutrienti"
+                              >
+                                🔍
+                              </button>
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -6758,6 +6774,96 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         </div>
       )}
+
+      {/* MODALE ISPEZIONE E MODIFICA ALIMENTO */}
+      {inspectedFood && editFoodData && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px', backdropFilter: 'blur(5px)' }}>
+          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '20px', width: '100%', maxWidth: '400px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '5px', textAlign: 'center' }}>
+              {editFoodData.name || editFoodData.nome || editFoodData.desc || 'Alimento'}
+            </h3>
+            <div style={{ textAlign: 'center', color: '#888', fontSize: '0.8rem', marginBottom: '20px' }}>
+              Modifica i valori nutrizionali
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ color: '#aaa', fontSize: '0.8rem', marginBottom: '5px' }}>Quantità (g/ml)</label>
+                <input type="number" value={editFoodData.qty ?? editFoodData.quantita ?? editFoodData.weight ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, qty: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '8px' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ color: '#aaa', fontSize: '0.8rem', marginBottom: '5px' }}>Calorie (kcal)</label>
+                <input type="number" value={editFoodData.kcal ?? editFoodData.calorie ?? editFoodData.cal ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, kcal: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '8px' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ color: '#b388ff', fontSize: '0.8rem', marginBottom: '5px' }}>Proteine (g)</label>
+                <input type="number" value={editFoodData.prot ?? editFoodData.proteine ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, prot: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #b388ff55', color: '#fff', padding: '10px', borderRadius: '8px' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ color: '#00e676', fontSize: '0.8rem', marginBottom: '5px' }}>Carboidrati (g)</label>
+                <input type="number" value={editFoodData.carb ?? editFoodData.carboidrati ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, carb: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #00e67655', color: '#fff', padding: '10px', borderRadius: '8px' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ color: '#ffea00', fontSize: '0.8rem', marginBottom: '5px' }}>Grassi (g)</label>
+                <input type="number" value={editFoodData.fat ?? editFoodData.grassi ?? editFoodData.fatTotal ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, fat: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #ffea0055', color: '#fff', padding: '10px', borderRadius: '8px' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ color: '#f97316', fontSize: '0.8rem', marginBottom: '5px' }}>Fibre (g)</label>
+                <input type="number" value={editFoodData.fibre ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, fibre: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #f9731655', color: '#fff', padding: '10px', borderRadius: '8px' }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const qty = editFoodData.qty ?? editFoodData.quantita ?? editFoodData.weight ?? 0;
+                  const kcal = editFoodData.kcal ?? editFoodData.calorie ?? editFoodData.cal ?? 0;
+                  const prot = editFoodData.prot ?? editFoodData.proteine ?? 0;
+                  const carb = editFoodData.carb ?? editFoodData.carboidrati ?? 0;
+                  const fat = editFoodData.fat ?? editFoodData.grassi ?? editFoodData.fatTotal ?? 0;
+                  const updated = {
+                    ...inspectedFood,
+                    weight: qty,
+                    qta: qty,
+                    kcal,
+                    cal: kcal,
+                    prot,
+                    carb,
+                    fat,
+                    fatTotal: fat,
+                    fibre: editFoodData.fibre,
+                    name: editFoodData.name ?? editFoodData.nome ?? editFoodData.desc,
+                    desc: editFoodData.desc ?? editFoodData.name ?? editFoodData.nome
+                  };
+                  const nextLog = dailyLog.map(item => item.id === inspectedFood.id ? updated : item);
+                  setDailyLog(nextLog);
+                  syncDatiFirebase(nextLog, manualNodes);
+                  setInspectedFood(null);
+                  setEditFoodData(null);
+                }}
+                style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}
+              >
+                💾 Salva Modifiche
+              </button>
+              <button
+                type="button"
+                style={{ background: '#2a2a2a', color: '#00e5ff', border: '1px solid #00e5ff', padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', justifyContent: 'center', gap: '8px' }}
+              >
+                ✨ Verifica Correttezza (AI)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setInspectedFood(null); setEditFoodData(null); }}
+                style={{ background: 'transparent', color: '#888', border: 'none', padding: '12px', borderRadius: '10px', fontSize: '0.9rem', cursor: 'pointer', marginTop: '5px' }}
+              >
+                Annulla
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showTelemetryPopup && (
         <div className="modal-overlay" onClick={() => setShowTelemetryPopup(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px' }}>
           
