@@ -1390,6 +1390,7 @@ export default function SalaComandi() {
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
   const [inspectedFood, setInspectedFood] = useState(null);
   const [editFoodData, setEditFoodData] = useState(null);
+  const [isAIVerifying, setIsAIVerifying] = useState(false);
   
   const [foodDropdownSuggestions, setFoodDropdownSuggestions] = useState([]);
   const [showFoodDropdown, setShowFoodDropdown] = useState(false);
@@ -2894,6 +2895,34 @@ export default function SalaComandi() {
       }
     }
     throw new Error("Cluster API esaurito.");
+  };
+
+  const handleVerifyFoodAI = async () => {
+    if (!editFoodData || !(editFoodData.name || editFoodData.nome || editFoodData.desc)) return;
+    setIsAIVerifying(true);
+    try {
+      const prompt = `Agisci come un nutrizionista esperto. Verifica i seguenti valori nutrizionali per l'alimento "${editFoodData.name || editFoodData.nome || editFoodData.desc}" (Quantità: ${editFoodData.qty ?? editFoodData.weight ?? 100}g/ml).
+Valori attuali: Calorie: ${editFoodData.kcal ?? editFoodData.cal ?? 0}, Proteine: ${editFoodData.prot ?? editFoodData.proteine ?? 0}g, Carboidrati: ${editFoodData.carb ?? editFoodData.carboidrati ?? 0}g, Grassi: ${editFoodData.fat ?? editFoodData.fatTotal ?? 0}g, Fibre: ${editFoodData.fibre ?? 0}g.
+Controlla se i macro sono coerenti con le calorie (ricorda: 1g prot=4kcal, 1g carb=4kcal, 1g fat=9kcal). Se ci sono errori palesi o i valori sono implausibili per questa quantità, correggili con i valori medi reali.
+RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chiavi: {"kcal": numero, "prot": numero, "carb": numero, "fat": numero, "fibre": numero}`;
+      const aiResponseText = await callGeminiAPIWithRotation(prompt);
+      const cleanJsonStr = (aiResponseText || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+      const correctedValues = JSON.parse(cleanJsonStr);
+      setEditFoodData(prev => ({
+        ...prev,
+        kcal: typeof correctedValues.kcal === 'number' ? correctedValues.kcal : (prev.kcal ?? prev.calorie ?? prev.cal),
+        prot: typeof correctedValues.prot === 'number' ? correctedValues.prot : (prev.prot ?? prev.proteine),
+        carb: typeof correctedValues.carb === 'number' ? correctedValues.carb : (prev.carb ?? prev.carboidrati),
+        fat: typeof correctedValues.fat === 'number' ? correctedValues.fat : (prev.fat ?? prev.fatTotal ?? prev.grassi),
+        fibre: typeof correctedValues.fibre === 'number' ? correctedValues.fibre : (prev.fibre ?? 0)
+      }));
+      alert('Valori verificati e aggiornati dall\'AI. Controllali e premi "Salva Modifiche".');
+    } catch (error) {
+      console.error("Errore verifica AI:", error);
+      alert("Impossibile verificare con l'AI in questo momento.");
+    } finally {
+      setIsAIVerifying(false);
+    }
   };
 
   const handleChatSubmit = async (optionalReply) => {
@@ -6848,9 +6877,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
               <button
                 type="button"
-                style={{ background: '#2a2a2a', color: '#00e5ff', border: '1px solid #00e5ff', padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', justifyContent: 'center', gap: '8px' }}
+                onClick={handleVerifyFoodAI}
+                disabled={isAIVerifying}
+                style={{ background: '#2a2a2a', color: isAIVerifying ? '#888' : '#00e5ff', border: `1px solid ${isAIVerifying ? '#444' : '#00e5ff'}`, padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: isAIVerifying ? 'not-allowed' : 'pointer', display: 'flex', justifyContent: 'center', gap: '8px', transition: 'all 0.3s' }}
               >
-                ✨ Verifica Correttezza (AI)
+                {isAIVerifying ? '⏳ Analisi in corso...' : '✨ Verifica Correttezza (AI)'}
               </button>
               <button
                 type="button"
