@@ -5129,23 +5129,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </ResponsiveContainer>
               </div>
 
-              {/* TOP-LEFT (PRO) - Curva convessa concentrica a 135° */}
-              <div style={{ position: 'absolute', top: 0, left: 0, width: '90px', height: '90px', background: 'rgba(15,15,15,0.9)', border: '1px solid #222', zIndex: 10, clipPath: 'path("M 90 0 A 90 90 0 0 1 0 90 L 0 10 A 10 10 0 0 1 10 0 Z")', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: '8px', paddingTop: '10px' }}>
+              {/* TOP-LEFT (PRO) - Pinna: arco concentrico al radar (r=137), angolo esterno arrotondato */}
+              <div style={{ position: 'absolute', top: 0, left: 0, width: '90px', height: '90px', background: 'rgba(15,15,15,0.9)', border: '1px solid #b388ff', boxShadow: '0 0 12px rgba(179,136,255,0.25)', zIndex: 10, clipPath: 'path("M 10 0 L 90 0 L 90 76.7 A 137 137 0 0 1 76.7 90 L 0 90 L 0 10 A 10 10 0 0 1 10 0 Z")', WebkitClipPath: 'path("M 10 0 L 90 0 L 90 76.7 A 137 137 0 0 1 76.7 90 L 0 90 L 0 10 A 10 10 0 0 1 10 0 Z")', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: '8px', paddingTop: '10px' }}>
                 <div style={{ fontSize: '0.6rem', color: '#b388ff' }}>PRO</div>
                 <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.prot || 0)}g</div>
               </div>
-              {/* TOP-RIGHT (CARB) - Curva convessa concentrica a 45° */}
-              <div style={{ position: 'absolute', top: 0, right: 0, width: '90px', height: '90px', background: 'rgba(15,15,15,0.9)', border: '1px solid #222', zIndex: 10, clipPath: 'path("M 0 0 A 90 90 0 0 0 90 90 L 90 10 A 10 10 0 0 0 80 0 Z")', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', paddingRight: '8px', paddingTop: '10px' }}>
+              {/* TOP-RIGHT (CARB) - Pinna: arco concentrico, angolo esterno arrotondato */}
+              <div style={{ position: 'absolute', top: 0, right: 0, width: '90px', height: '90px', background: 'rgba(15,15,15,0.9)', border: '1px solid #00e676', boxShadow: '0 0 12px rgba(0,230,118,0.25)', zIndex: 10, clipPath: 'path("M 80 0 L 0 0 L 0 76.7 A 137 137 0 0 0 90 76.7 L 90 10 A 10 10 0 0 0 80 0 Z")', WebkitClipPath: 'path("M 80 0 L 0 0 L 0 76.7 A 137 137 0 0 0 90 76.7 L 90 10 A 10 10 0 0 0 80 0 Z")', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', paddingRight: '8px', paddingTop: '10px' }}>
                 <div style={{ fontSize: '0.6rem', color: '#00e676' }}>CARB</div>
                 <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.carb || 0)}g</div>
               </div>
-              {/* BOTTOM-LEFT (FAT) - Curva convessa concentrica a 225° */}
-              <div style={{ position: 'absolute', bottom: 0, left: 0, width: '90px', height: '90px', background: 'rgba(15,15,15,0.9)', border: '1px solid #222', zIndex: 10, clipPath: 'path("M 90 90 A 90 90 0 0 0 0 0 L 0 80 A 10 10 0 0 0 10 90 Z")', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: '8px', paddingBottom: '10px' }}>
+              {/* BOTTOM-LEFT (FAT) - Pinna: arco concentrico, angolo esterno arrotondato */}
+              <div style={{ position: 'absolute', bottom: 0, left: 0, width: '90px', height: '90px', background: 'rgba(15,15,15,0.9)', border: '1px solid #ffea00', boxShadow: '0 0 12px rgba(255,234,0,0.25)', zIndex: 10, clipPath: 'path("M 10 90 L 90 90 L 90 13.3 A 137 137 0 0 1 76.7 0 L 0 0 L 0 80 A 10 10 0 0 1 10 90 Z")', WebkitClipPath: 'path("M 10 90 L 90 90 L 90 13.3 A 137 137 0 0 1 76.7 0 L 0 0 L 0 80 A 10 10 0 0 1 10 90 Z")', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: '8px', paddingBottom: '10px' }}>
                 <div style={{ fontSize: '0.6rem', color: '#ffea00' }}>FAT</div>
                 <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}g</div>
               </div>
-              {/* BOTTOM-RIGHT (FIBRE) - Curva convessa concentrica a 315° */}
-              <div style={{ position: 'absolute', bottom: 0, right: 0, width: '90px', height: '90px', background: 'rgba(15,15,15,0.9)', border: '1px solid #222', zIndex: 10, clipPath: 'path("M 0 90 A 90 90 0 0 1 90 0 L 90 80 A 10 10 0 0 1 80 90 Z")', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', paddingRight: '8px', paddingBottom: '10px' }}>
+              {/* BOTTOM-RIGHT (FIBRE) - Pinna: arco concentrico, angolo esterno arrotondato */}
+              <div style={{ position: 'absolute', bottom: 0, right: 0, width: '90px', height: '90px', background: 'rgba(15,15,15,0.9)', border: '1px solid #f97316', boxShadow: '0 0 12px rgba(249,115,22,0.25)', zIndex: 10, clipPath: 'path("M 80 90 L 90 90 L 90 10 A 10 10 0 0 0 80 0 L 13.3 0 A 137 137 0 0 0 0 13.3 L 0 90 Z")', WebkitClipPath: 'path("M 80 90 L 90 90 L 90 10 A 10 10 0 0 0 80 0 L 13.3 0 A 137 137 0 0 0 0 13.3 L 0 90 Z")', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', paddingRight: '8px', paddingBottom: '10px' }}>
                 <div style={{ fontSize: '0.6rem', color: '#f97316' }}>FIBRE</div>
                 <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fibre || 0)}g</div>
               </div>
