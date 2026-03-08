@@ -530,6 +530,28 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk, hasCortisolRisk: globalCortisolRisk, hasDigestionRisk, nervousSystemLoad: load };
 }
 
+/** Analyzes the current chartData point and returns dominant factors affecting energy. */
+function explainEnergyState(point) {
+  const causes = [];
+  if (!point) return causes;
+  if (point.digestione > 60) {
+    causes.push({ type: 'digestione', direction: 'down', text: 'Digestione elevata' });
+  }
+  if (point.cortisolo > 65) {
+    causes.push({ type: 'stress', direction: 'down', text: 'Cortisolo alto' });
+  }
+  if (point.idratazione < 40) {
+    causes.push({ type: 'hydration', direction: 'down', text: 'Disidratazione' });
+  }
+  if (point.glicemia > 120) {
+    causes.push({ type: 'glycemia', direction: 'up', text: 'Glicemia elevata' });
+  }
+  if (point.neuro > 70) {
+    causes.push({ type: 'recovery', direction: 'up', text: 'Recupero neurologico buono' });
+  }
+  return causes;
+}
+
 /** Compute the lowest predicted energy point of the day from chartData. */
 function computeEnergyForecast(chartData) {
   if (!chartData || chartData.length === 0) return null;
@@ -3774,6 +3796,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const dotNeuro = chartData.length > 0 ? (chartData[currentH]?.neuro ?? 100) + ((chartData[nextH]?.neuro ?? 100) - (chartData[currentH]?.neuro ?? 100)) * fraction : 100;
   const currentMinutes = Math.round((displayTime % 1) * 60);
   const timeLabel = isViewingPastDate ? 'Fine giornata (24:00)' : `ORA (${currentH.toString().padStart(2, '0')}:${String(currentMinutes).padStart(2, '0')})`;
+  const energyExplanation = useMemo(() => {
+    const pt = chartData?.find(p => p.time === Math.round(displayTime));
+    return explainEnergyState(pt);
+  }, [chartData, displayTime]);
   const energyAt20 = chartData[20]?.energy;
   const idealDotY = chartData.length > 0
     ? (chartData[currentH]?.idealEnergy ?? 0) + ((chartData[nextH]?.idealEnergy ?? 0) - (chartData[currentH]?.idealEnergy ?? 0)) * fraction
@@ -4493,6 +4519,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             </div>
             <span style={{ fontSize: '0.5rem', textTransform: 'uppercase', color: '#888', marginTop: '2px' }}>Energia SNC</span>
+            {energyExplanation.length > 0 && (
+              <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
+                {energyExplanation.slice(0, 3).map(cause => (
+                  <div key={cause.type} style={{ fontSize: '0.55rem', color: cause.direction === 'down' ? '#ff9800' : '#00e676' }}>
+                    {cause.direction === 'down' ? '↓' : '↑'} {cause.text}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
