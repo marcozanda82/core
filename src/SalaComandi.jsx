@@ -590,6 +590,39 @@ function computeMetabolicStress(point) {
   return Math.max(0, Math.min(100, stress));
 }
 
+/** Metabolic Day Score (0–100): energy, stress, hydration, stability. */
+function computeMetabolicDayScore(chartData, metabolicStressIndex) {
+  if (!chartData || chartData.length === 0) return 0;
+
+  let energySum = 0;
+  let hydrationSum = 0;
+  let stabilityPenalty = 0;
+
+  for (let i = 0; i < chartData.length; i++) {
+    const p = chartData[i];
+
+    energySum += p.energy || 0;
+    hydrationSum += p.idratazione || 0;
+
+    if (i > 0) {
+      const delta = Math.abs((p.energy || 0) - (chartData[i - 1].energy || 0));
+      stabilityPenalty += delta;
+    }
+  }
+
+  const avgEnergy = energySum / chartData.length;
+  const avgHydration = hydrationSum / chartData.length;
+  const stability = Math.max(0, 100 - stabilityPenalty);
+
+  const score =
+    avgEnergy * 0.4 +
+    (100 - metabolicStressIndex) * 0.3 +
+    avgHydration * 0.2 +
+    stability * 0.1;
+
+  return Math.round(Math.max(0, Math.min(100, score)));
+}
+
 /** Analyzes the current chartData point and returns dominant factors affecting energy. */
 function explainEnergyState(point) {
   const causes = [];
@@ -3966,6 +3999,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
     return Math.round(avg);
   }, [chartData]);
+  const metabolicDayScore = useMemo(() => {
+    return computeMetabolicDayScore(chartData, metabolicStressIndex);
+  }, [chartData, metabolicStressIndex]);
   const energyAt20 = chartData[20]?.energy;
   const idealDotY = chartData.length > 0
     ? (chartData[currentH]?.idealEnergy ?? 0) + ((chartData[nextH]?.idealEnergy ?? 0) - (chartData[currentH]?.idealEnergy ?? 0)) * fraction
@@ -4722,6 +4758,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             )}
             <div style={{ fontSize: '0.65rem', opacity: 0.8 }}>
               Metabolic Stress: {metabolicStressIndex}
+            </div>
+            <div style={{ fontSize: '0.7rem', fontWeight: 'bold' }}>
+              Day Score: {metabolicDayScore}
             </div>
           </div>
         </div>
