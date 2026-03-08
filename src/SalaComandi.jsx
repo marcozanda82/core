@@ -491,7 +491,9 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     currentCortisol += (20 - currentCortisol) * 0.10;
     currentHydration += (80 - currentHydration) * 0.05;
 
-    currentEnergy += (70 - currentEnergy) * 0.05;
+    // Mild homeostatic stabilization toward the user's daily baseline energy
+    // baselineEnergy is derived from sleep and neurological recovery
+    currentEnergy += (baselineEnergy - currentEnergy) * 0.01;
 
     out.push({
       time: h,
