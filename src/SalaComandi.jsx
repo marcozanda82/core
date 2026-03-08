@@ -4050,7 +4050,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const dynamicDailyKcal = (userTargets?.kcal ?? 2000) + burnedKcal;
 
   const mealPieData = useMemo(() => {
-    const foodItems = (dailyLog || []).filter(item => item.type === 'food');
+    const foodItems = (dailyLog || []).filter(item => item.type === 'food' || item.type === 'meal');
     const colors = {
       merenda1: '#ffd700',
       colazione: '#ffd700',
@@ -4060,22 +4060,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       spuntino: '#4ba3e3',
       snack: '#4ba3e3'
     };
-    const byMeal = {};
-    foodItems.forEach(item => {
+    const getMealColor = (slot) => colors[slot] || '#9c27b0';
+    const data = foodItems.map((item, index) => {
       const slot = item.mealType ? (item.mealType.split('_')[0] || 'snack') : 'snack';
-      if (!byMeal[slot]) byMeal[slot] = { kcal: 0, carb: 0, pro: 0, fat: 0 };
       const kcal = Number(item.kcal ?? item.cal ?? 0) || 0;
-      byMeal[slot].kcal += kcal;
-      byMeal[slot].carb += Number(item.carb) || 0;
-      byMeal[slot].pro += Number(item.prot) || 0;
-      byMeal[slot].fat += Number(item.fatTotal ?? item.fat) || 0;
-    });
-    const data = Object.entries(byMeal).map(([slot, agg]) => ({
-      name: MEAL_LABELS_SAVE[slot] || (slot.charAt(0).toUpperCase() + slot.slice(1)),
-      value: agg.kcal,
-      macros: { carb: agg.carb, pro: agg.pro, fat: agg.fat },
-      color: colors[slot] || '#9c27b0'
-    })).filter(d => d.value > 0);
+      const carb = Number(item.carb) || 0;
+      const pro = Number(item.prot ?? item.proteine) || 0;
+      const fat = Number(item.fatTotal ?? item.fat ?? item.grassi) || 0;
+      const name = item.name || MEAL_LABELS_SAVE[slot] || (slot.charAt(0).toUpperCase() + slot.slice(1)) || `Pasto ${index + 1}`;
+      return {
+        name,
+        value: kcal,
+        macros: { carb, pro, fat },
+        id: item.id || `meal-${index}`,
+        fill: getMealColor(slot),
+        color: getMealColor(slot)
+      };
+    }).filter(d => d.value > 0);
     const currentTotal = data.reduce((s, d) => s + d.value, 0);
     const targetKcal = dynamicDailyKcal || (userTargets?.kcal ?? 2000);
     if (currentTotal < targetKcal) {
@@ -4083,14 +4084,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         name: 'Rimanenti',
         value: targetKcal - currentTotal,
         macros: null,
+        id: 'rimanenti',
+        fill: 'rgba(255, 255, 255, 0.05)',
         color: 'rgba(255, 255, 255, 0.05)'
       });
     }
     if (data.length === 0) {
-      data.push({ name: 'Rimanenti', value: userTargets?.kcal ?? 2000, macros: null, color: 'rgba(255,255,255,0.05)' });
+      data.push({
+        name: 'Rimanenti',
+        value: userTargets?.kcal ?? 2000,
+        macros: null,
+        id: 'rimanenti',
+        fill: 'rgba(255,255,255,0.05)',
+        color: 'rgba(255,255,255,0.05)'
+      });
     }
     return data;
-  }, [dailyLog, userTargets?.kcal]);
+  }, [dailyLog, userTargets?.kcal, dynamicDailyKcal]);
 
   const targetKcalChart = dynamicDailyKcal;
   const scale = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
@@ -4683,61 +4693,91 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div className="delete-text">RILASCIA PER ELIMINARE</div>
       </div>
 
-      {/* HEADER E GRAFICO */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', width: '100%', marginBottom: 'max(8px, 1.5vh)' }}>
-        <button type="button" onClick={() => { setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', justifySelf: 'start' }}>
-          <h1 style={{ fontSize: '1rem', letterSpacing: '4px', margin: 0 }}>CORE <span style={{color: '#00e5ff'}}>OS</span></h1>
-        </button>
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          {userProfile?.level === 'pro' ? (
-            <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))} style={{ padding: '6px 12px', fontSize: '0.7rem', fontWeight: 'bold', background: 'rgba(0,229,255,0.12)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', whiteSpace: 'nowrap' }}>🏠 HOME</button>
-          ) : (
-            <button type="button" onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))} style={{ padding: '6px 12px', fontSize: '0.7rem', fontWeight: 'bold', background: 'rgba(147,51,234,0.15)', border: '1px solid #9333ea', borderRadius: '10px', color: '#c084fc', cursor: 'pointer', whiteSpace: 'nowrap' }}>📊 ANALISI</button>
-          )}
-        </div>
-        <button className="btn-toggle" onClick={() => { auth.signOut(); }} style={{ justifySelf: 'end' }}>LOGOUT</button>
-      </div>
-
-      {/* Navigazione storica (Time-Travel) + Widget Energia + Toggle vista */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: 'max(6px, 1vh) 15px', borderRadius: '12px', border: '1px solid #222' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button type="button" onClick={() => changeDate(-1)} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>◀</button>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Diario</span>
-            <h2 style={{ color: '#fff', margin: 0, fontSize: '0.95rem' }}>
-              {currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
-            </h2>
+      {/* HEADER E GRAFICO - NUOVO LAYOUT A 3 ZONE */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '10px' }}>
+          
+          {/* SINISTRA: Titolo OS */}
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start' }}>
+            <button type="button" onClick={() => { setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
+              <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', letterSpacing: '2px', color: '#fff', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ color: '#00e5ff' }}>⚡</span> CORE <span style={{ color: '#888', fontWeight: 'normal' }}>OS</span>
+              </h1>
+            </button>
           </div>
-          <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
-          {/* Widget Energia Biologica (Arco) - compatto e cliccabile */}
-          <div
-            onClick={() => setShowEnergyPopup(true)}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', marginLeft: '8px', cursor: 'pointer', padding: '4px', borderRadius: '8px', transition: 'background 0.2s' }}
-            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-          >
-            <div style={{ position: 'relative', width: '56px', height: '28px' }}>
-              <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-                <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
-                <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData.color} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - (bodyBatteryData.level / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
-              </svg>
-              <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', fontSize: '0.8rem', fontWeight: 'bold', color: bodyBatteryData.color, textShadow: `0 0 10px ${bodyBatteryData.color}80`, paddingBottom: '2px' }}>
-                {bodyBatteryData.level}%
+
+          {/* CENTRO: Toggle HOME / ANALISI (Pillola) */}
+          <div style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '4px', border: '1px solid #333', flexShrink: 0 }}>
+            <button 
+              type="button"
+              onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))}
+              style={{ 
+                background: userProfile?.level !== 'pro' ? 'linear-gradient(135deg, #00e5ff 0%, #007bb5 100%)' : 'transparent', 
+                color: userProfile?.level !== 'pro' ? '#fff' : '#888', 
+                border: 'none', borderRadius: '20px', padding: '8px 16px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '6px',
+                boxShadow: userProfile?.level !== 'pro' ? '0 4px 10px rgba(0,229,255,0.4)' : 'none'
+              }}
+            >
+              <span style={{ fontSize: '1.1rem' }}>🏠</span> HOME
+            </button>
+            <button 
+              type="button"
+              onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
+              style={{ 
+                background: userProfile?.level === 'pro' ? 'linear-gradient(135deg, #b388ff 0%, #7c4dff 100%)' : 'transparent', 
+                color: userProfile?.level === 'pro' ? '#fff' : '#888', 
+                border: 'none', borderRadius: '20px', padding: '8px 16px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '6px',
+                boxShadow: userProfile?.level === 'pro' ? '0 4px 10px rgba(179,136,255,0.4)' : 'none'
+              }}
+            >
+              <span style={{ fontSize: '1.1rem' }}>📊</span> ANALISI
+            </button>
+          </div>
+
+          {/* DESTRA: Energia SNC e Logout */}
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
+            {/* Widget Energia Biologica (Arco) - Compatto */}
+            <div 
+              onClick={() => setShowEnergyPopup(true)}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer', padding: '4px 8px', borderRadius: '8px', transition: 'background 0.2s' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            >
+              <div style={{ position: 'relative', width: '56px', height: '28px' }}>
+                <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+                  <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
+                  <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData?.color || '#00e5ff'} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - ((bodyBatteryData?.level || 0) / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
+                </svg>
+                <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', fontSize: '0.8rem', fontWeight: 'bold', color: bodyBatteryData?.color || '#00e5ff', textShadow: `0 0 10px ${bodyBatteryData?.color || '#00e5ff'}80`, paddingBottom: '2px' }}>
+                  {bodyBatteryData?.level || 0}%
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                {(energyIntervention || (energyExplanation && energyExplanation.some(c => c.direction === 'down'))) && (
+                  <span style={{ fontSize: '0.7rem', filter: 'drop-shadow(0 0 5px rgba(255,152,0,0.8))' }}>⚠️</span>
+                )}
+                <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#00e5ff' }}>
+                  Score: {metabolicDayScore}
+                </span>
               </div>
             </div>
-            <span style={{ fontSize: '0.5rem', textTransform: 'uppercase', color: '#888', marginTop: '2px' }}>Energia SNC</span>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-              {(energyIntervention || (energyExplanation && energyExplanation.some(c => c.direction === 'down'))) && (
-                <span style={{ fontSize: '0.7rem', filter: 'drop-shadow(0 0 5px rgba(255,152,0,0.8))' }}>⚠️</span>
-              )}
-              <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#00e5ff' }}>
-                Score: {metabolicDayScore}
-              </span>
-            </div>
+            <button className="btn-toggle" onClick={() => auth.signOut()} style={{ padding: '8px 12px !important', minHeight: 'auto', fontSize: '0.7rem !important' }}>LOGOUT</button>
           </div>
         </div>
-      </div>
+
+        {/* Navigazione storica (PULITA) */}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '8px 15px', borderRadius: '12px', border: '1px solid #222' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <button type="button" onClick={() => changeDate(-1)} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>◀</button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Diario</span>
+              <h2 style={{ color: '#fff', margin: 0, fontSize: '0.95rem' }}>
+                {currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
+              </h2>
+            </div>
+            <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
+          </div>
+        </div>
 
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato */}
       <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(12px, 1.5vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
@@ -5544,15 +5584,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       stroke="none"
                       labelLine={false}
                       label={renderCustomizedLabel}
-                      onClick={(data) => setSelectedMealCenter({ name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
+                      onClick={(data) => setSelectedMealCenter({ id: data.id, name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
                       style={{ cursor: 'pointer', outline: 'none' }}
                     >
                       {mealPieData.map((entry, index) => {
-                        const isSelected = selectedMealCenter && entry.name === selectedMealCenter.name;
+                        const isSelected = selectedMealCenter && entry.id === selectedMealCenter.id;
                         const hasSelection = !!selectedMealCenter;
                         return (
                           <Cell
-                            key={`cell-${index}`}
+                            key={entry.id}
                             fill={entry.color}
                             style={{
                               filter: isSelected ? `drop-shadow(0 0 15px ${entry.color})` : 'none',
