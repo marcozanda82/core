@@ -4114,10 +4114,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
           /* Macro widgets: rectangular with diagonal inner edge (clip-path), gap from radar */
           .macro-widget { position: absolute; width: 90px; height: 90px; z-index: 10; pointer-events: none; background: rgba(15,15,15,0.95); }
-          .macro-widget.macro-tl { -webkit-clip-path: polygon(0 0, 100% 0, 100% 65%, 65% 100%, 0 100%); clip-path: polygon(0 0, 100% 0, 100% 65%, 65% 100%, 0 100%); }
-          .macro-widget.macro-tr { -webkit-clip-path: polygon(100% 0, 100% 100%, 0 100%, 0 65%, 35% 0); clip-path: polygon(100% 0, 100% 100%, 0 100%, 0 65%, 35% 0); }
-          .macro-widget.macro-bl { -webkit-clip-path: polygon(0 100%, 0 0, 35% 0, 100% 35%, 100% 100%); clip-path: polygon(0 100%, 0 0, 35% 0, 100% 35%, 100% 100%); }
-          .macro-widget.macro-br { -webkit-clip-path: polygon(100% 100%, 100% 0, 65% 0, 0 35%, 0 100%); clip-path: polygon(100% 100%, 100% 0, 65% 0, 0 35%, 0 100%); }
+          .macro-widget.macro-tl { -webkit-clip-path: polygon(0 0, 100% 0, 100% 55%, 55% 100%, 0 100%); clip-path: polygon(0 0, 100% 0, 100% 55%, 55% 100%, 0 100%); }
+          .macro-widget.macro-tr { -webkit-clip-path: polygon(100% 0, 100% 100%, 0 100%, 0 55%, 45% 0); clip-path: polygon(100% 0, 100% 100%, 0 100%, 0 55%, 45% 0); }
+          .macro-widget.macro-bl { -webkit-clip-path: polygon(0 100%, 0 0, 45% 0, 100% 55%, 100% 100%); clip-path: polygon(0 100%, 0 0, 45% 0, 100% 55%, 100% 100%); }
+          .macro-widget.macro-br { -webkit-clip-path: polygon(100% 100%, 100% 0, 55% 0, 0 45%, 0 100%); clip-path: polygon(100% 100%, 100% 0, 55% 0, 0 45%, 0 100%); }
           .macro-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; pointer-events: none; }
           .macro-widget.macro-tl .macro-text { align-items: flex-start; padding: 10px 0 0 8px; }
           .macro-widget.macro-tr .macro-text { align-items: flex-end; padding: 10px 8px 0 0; }
