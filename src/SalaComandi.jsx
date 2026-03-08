@@ -1692,6 +1692,7 @@ export default function SalaComandi() {
   const [showReport, setShowReport] = useState(false);
   const [showTelemetryPopup, setShowTelemetryPopup] = useState(false);
   const [showMetabolicPopup, setShowMetabolicPopup] = useState(false);
+  const [showEnergyPopup, setShowEnergyPopup] = useState(false);
   const [reportPeriod, setReportPeriod] = useState('7');
   const [currentDateObj, setCurrentDateObj] = useState(() => new Date());
 
@@ -4708,8 +4709,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </h2>
           </div>
           <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
-          {/* Widget Energia Biologica (Arco) - subito a destra della data */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', marginLeft: '8px' }}>
+          {/* Widget Energia Biologica (Arco) - compatto e cliccabile */}
+          <div
+            onClick={() => setShowEnergyPopup(true)}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', marginLeft: '8px', cursor: 'pointer', padding: '4px', borderRadius: '8px', transition: 'background 0.2s' }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
             <div style={{ position: 'relative', width: '56px', height: '28px' }}>
               <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
                 <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
@@ -4720,47 +4726,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             </div>
             <span style={{ fontSize: '0.5rem', textTransform: 'uppercase', color: '#888', marginTop: '2px' }}>Energia SNC</span>
-            {energyExplanation.length > 0 && (
-              <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
-                {energyExplanation.slice(0, 3).map(cause => (
-                  <div key={cause.type} style={{ fontSize: '0.55rem', color: cause.direction === 'down' ? '#ff9800' : '#00e676' }}>
-                    {cause.direction === 'down' ? '↓' : '↑'} {cause.text}
-                  </div>
-                ))}
-              </div>
-            )}
-            {energyIntervention && (
-              <div style={{
-                marginTop: '6px',
-                padding: '6px 10px',
-                background: 'rgba(255,152,0,0.1)',
-                border: '1px solid #ff9800',
-                borderRadius: '8px',
-                fontSize: '0.7rem',
-                color: '#ff9800'
-              }}>
-                ⚠️ {energyIntervention.message}<br />
-                → {energyIntervention.suggestion}
-              </div>
-            )}
-            {energyDrivers && (
-              <div style={{
-                marginTop: '6px',
-                fontSize: '0.6rem',
-                opacity: 0.8
-              }}>
-                <div>Drivers</div>
-                <div>Digestione {energyDrivers.digestion < 0 ? '↓' : '↑'}</div>
-                <div>Stress {energyDrivers.stress < 0 ? '↓' : '↑'}</div>
-                <div>Glicemia {energyDrivers.glycemia > 0 ? '↑' : '↓'}</div>
-                <div>Idratazione {energyDrivers.hydration > 0 ? '↑' : '↓'}</div>
-              </div>
-            )}
-            <div style={{ fontSize: '0.65rem', opacity: 0.8 }}>
-              Metabolic Stress: {metabolicStressIndex}
-            </div>
-            <div style={{ fontSize: '0.7rem', fontWeight: 'bold' }}>
-              Day Score: {metabolicDayScore}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+              {(energyIntervention || (energyExplanation && energyExplanation.some(c => c.direction === 'down'))) && (
+                <span style={{ fontSize: '0.7rem', filter: 'drop-shadow(0 0 5px rgba(255,152,0,0.8))' }}>⚠️</span>
+              )}
+              <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#00e5ff' }}>
+                Score: {metabolicDayScore}
+              </span>
             </div>
           </div>
         </div>
@@ -7393,6 +7366,63 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
 
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP DETTAGLIO ENERGIA E SCORE */}
+      {showEnergyPopup && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={() => setShowEnergyPopup(false)}>
+          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '25px', maxWidth: '400px', width: '100%', position: 'relative', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '15px', borderBottom: '1px solid #222', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>⚡ Stato Energetico</span>
+              <span style={{ fontSize: '1.2rem', color: '#00e5ff' }}>{metabolicDayScore}/100</span>
+            </h3>
+
+            {energyIntervention && (
+              <div style={{ marginBottom: '15px', padding: '12px', background: 'rgba(255,152,0,0.1)', border: '1px solid #ff9800', borderRadius: '10px', fontSize: '0.85rem', color: '#ff9800' }}>
+                <strong style={{ display: 'block', marginBottom: '4px' }}>⚠️ {energyIntervention.message}</strong>
+                → {energyIntervention.suggestion}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '10px' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '0.7rem', color: '#aaa', textTransform: 'uppercase' }}>Metabolic Stress</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: metabolicStressIndex > 60 ? '#ff4d4d' : '#00e676' }}>{metabolicStressIndex} <span style={{ fontSize: '0.7rem', color: '#666' }}>/100</span></div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '0.7rem', color: '#aaa', textTransform: 'uppercase' }}>Day Score</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#00e5ff' }}>{metabolicDayScore} <span style={{ fontSize: '0.7rem', color: '#666' }}>/100</span></div>
+              </div>
+            </div>
+
+            {energyExplanation && energyExplanation.length > 0 && (
+              <div style={{ marginBottom: '15px' }}>
+                <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '6px', fontWeight: 'bold' }}>Fattori d&apos;impatto attuali:</div>
+                {energyExplanation.map((cause, i) => (
+                  <div key={i} style={{ fontSize: '0.85rem', color: cause.direction === 'down' ? '#ff9800' : '#00e676', padding: '4px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '1.1rem' }}>{cause.direction === 'down' ? '📉' : '📈'}</span> {cause.text}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {energyDrivers && (
+              <div style={{ marginBottom: '15px' }}>
+                <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '6px', fontWeight: 'bold' }}>Variazioni (Drivers):</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem' }}>
+                  <div style={{ background: '#1a1a1a', padding: '8px', borderRadius: '8px', color: energyDrivers.digestion < 0 ? '#ff9800' : '#aaa' }}>⚙️ Digestione: {energyDrivers.digestion < 0 ? 'Alta (↓)' : 'Ok'}</div>
+                  <div style={{ background: '#1a1a1a', padding: '8px', borderRadius: '8px', color: energyDrivers.stress < 0 ? '#ff9800' : '#aaa' }}>🧠 Stress: {energyDrivers.stress < 0 ? 'Alto (↓)' : 'Ok'}</div>
+                  <div style={{ background: '#1a1a1a', padding: '8px', borderRadius: '8px', color: energyDrivers.glycemia > 0 ? '#00e676' : '#aaa' }}>🩸 Glicemia: {energyDrivers.glycemia > 0 ? 'Attiva (↑)' : 'Base'}</div>
+                  <div style={{ background: '#1a1a1a', padding: '8px', borderRadius: '8px', color: energyDrivers.hydration > 0 ? '#00e676' : '#ff9800' }}>💧 Idratazione: {energyDrivers.hydration > 0 ? 'Ok (↑)' : 'Bassa (↓)'}</div>
+                </div>
+              </div>
+            )}
+
+            <button onClick={() => setShowEnergyPopup(false)} style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>
+              Chiudi
+            </button>
           </div>
         </div>
       )}
