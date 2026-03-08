@@ -3736,6 +3736,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const hasCortisolRisk = energyChartResult?.hasCortisolRisk ?? false;
   const hasDigestionRisk = energyChartResult?.hasDigestionRisk ?? false;
 
+  const { calorieTimeline: calorieTimelineData, totalCalories: totalCaloriesTimeline } = useMemo(() => {
+    return generateCalorieTimeline(dailyLog);
+  }, [dailyLog]);
+  const safeCalorieTimelineData = Array.isArray(calorieTimelineData) ? calorieTimelineData : [];
+
   useEffect(() => {
     if (!simulationMode && currentTrackerDate === getTodayString() && energyChartResult?.nervousSystemLoad != null) {
       setNervousSystemLoad(energyChartResult.nervousSystemLoad);
@@ -3907,10 +3912,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         };
       })
     : renderDataWithSegments;
-  const mainChartData = chartUnit === 'calorieTimeline' ? calorieTimelineData : finalChartData;
+  const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : finalChartData;
   const dotYCalorieTimeline = (() => {
     if (chartUnit !== 'calorieTimeline' && expandedChart !== 'calorieTimeline') return null;
-    const tl = calorieTimelineData;
+    const tl = safeCalorieTimelineData;
     const idx = Math.floor(displayTime);
     const next = Math.min(24, idx + 1);
     const frac = displayTime - idx;
@@ -3919,7 +3924,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return a != null ? (b != null ? a + (b - a) * frac : a) : 0;
   })();
   const modalChartData = expandedChart === 'calorieTimeline'
-    ? calorieTimelineData
+    ? safeCalorieTimelineData
     : expandedChart === 'kcal'
     ? renderDataWithSegments.map(d => {
         const rawEnergy = d.energy ?? d.energia ?? 0;
@@ -4124,7 +4129,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return data;
   }, [dailyLog, fullHistory, currentTrackerDate]);
 
-  const { calorieTimeline: calorieTimelineData, totalCalories: totalCaloriesTimeline } = useMemo(() => generateCalorieTimeline(dailyLog), [dailyLog]);
   // --- FINE ZONA SICURA ---
 
   const renderEnergyPercentData = [];
@@ -5078,7 +5082,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
                     </div>
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={calorieTimelineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                      <ComposedChart data={safeCalorieTimelineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                         <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 6, 12, 18, 24]} tickFormatter={(val) => `${val}:00`} stroke="#666" fontSize={10} />
                         <YAxis domain={[0, Math.max(targetKcalChart, totalCaloriesTimeline || 0)]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={36} />
