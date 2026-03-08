@@ -1644,6 +1644,7 @@ export default function SalaComandi() {
   const [stimulantTime, setStimulantTime] = useState(8);
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
+  const [showTrainingPopup, setShowTrainingPopup] = useState(false);
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [userProfile, setUserProfile] = useState({
@@ -4865,7 +4866,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
             <span style={{ fontSize: '0.65rem', color: '#666' }}>🩸 {Math.round(gl)} · ⚙️ {Math.round(dig)}%</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', padding: '10px 15px', borderRadius: '12px', border: `1px solid ${trafficLight.color}`, marginTop: '8px' }}>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => { if (trafficLight.text === 'IN DIGESTIONE') setShowTrainingPopup(true); }}
+            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && trafficLight.text === 'IN DIGESTIONE') { e.preventDefault(); setShowTrainingPopup(true); } }}
+            style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', padding: '10px 15px', borderRadius: '12px', border: `1px solid ${trafficLight.color}`, marginTop: '8px', cursor: trafficLight.text === 'IN DIGESTIONE' ? 'pointer' : 'default' }}
+          >
             <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: trafficLight.color, boxShadow: `0 0 10px ${trafficLight.color}` }} />
             <div>
               <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: trafficLight.color }}>{trafficLight.text}</div>
@@ -5413,6 +5420,31 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ComposedChart>
                   </ResponsiveContainer>
                 )}
+              </div>
+              {/* Barra nodi universale (stessa scala 0-24h del grafico) */}
+              <div style={{ flexShrink: 0, height: '55px', marginTop: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', position: 'relative', overflow: 'hidden' }}>
+                {activeNodesWithStack.map((node) => {
+                  const isWork = node.type === 'work';
+                  const percent = (node.time / 24) * 100;
+                  const durationPercent = isWork ? ((node.duration || 1) / 24) * 100 : 0;
+                  const iconContent = node.type === 'stimulant' ? '☕' : (node.type === 'water' ? '💧' : (node.type === 'work' ? '💼' : (node.type === 'workout' ? '⚡' : '🥗')));
+                  const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : 'rgba(0,0,0,0.6)'));
+                  const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : '#00e5ff'));
+                  const timeLabelStr = `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
+                  if (isWork) {
+                    return (
+                      <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(255,234,0,0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', pointerEvents: 'none' }}>
+                        💼
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, transform: 'translateX(-50%)', top: '50%', marginTop: -18, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', pointerEvents: 'none' }}>
+                      <span style={{ color: borderColor, fontWeight: 'bold', marginBottom: '1px' }}>{timeLabelStr}</span>
+                      <span style={{ lineHeight: 1, fontSize: '1rem' }}>{iconContent}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div style={{ flex: '0 0 40%', overflow: 'auto', padding: '16px', borderTop: '1px solid #222', display: 'flex', flexDirection: 'column' }}>
@@ -7495,6 +7527,42 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         </div>
       )}
+
+      {/* POP-UP READY TO TRAIN (digestione) */}
+      {showTrainingPopup && (() => {
+        const pastoRecente = (dailyLog || []).find(item => item.type === 'food' && displayTime - item.mealTime >= 0 && displayTime - item.mealTime <= 1);
+        const mealTime = pastoRecente?.mealTime ?? 0;
+        const waitMinutesTotal = 90;
+        const elapsedMinutes = (displayTime - mealTime) * 60;
+        const residualMinutes = Math.max(0, Math.ceil(waitMinutesTotal - elapsedMinutes));
+        const startTime = displayTime + residualMinutes / 60;
+        const startHours = Math.floor(startTime) % 24;
+        const startMins = Math.round((startTime % 1) * 60);
+        const startStr = `${startHours}:${String(startMins).padStart(2, '0')}`;
+        return (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={() => setShowTrainingPopup(false)}>
+            <div style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '25px', maxWidth: '400px', width: '100%', position: 'relative', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
+              <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '15px', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
+                ⏱️ Ready to Train
+              </h3>
+              <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(245,158,11,0.12)', border: '1px solid #f59e0b', borderRadius: '10px', fontSize: '0.9rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#f59e0b', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 'bold' }}>Tempo di attesa residuo</div>
+                <div style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '1.1rem' }}>{residualMinutes} minuti</div>
+              </div>
+              <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(0,229,118,0.1)', border: '1px solid #00e676', borderRadius: '10px', fontSize: '0.9rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#00e676', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 'bold' }}>Orario stimato di inizio</div>
+                <div style={{ color: '#39ff14', fontWeight: 'bold', fontSize: '1.1rem' }}>Puoi iniziare alle {startStr}</div>
+              </div>
+              <p style={{ color: '#b0b0b0', fontSize: '0.85rem', lineHeight: 1.6, marginBottom: '18px', fontStyle: 'italic' }}>
+                In questa fase il sangue è concentrato nell&apos;area splancnica per la digestione. Allenarsi ora ridurrebbe la performance e causerebbe stress gastrointestinale.
+              </p>
+              <button type="button" onClick={() => setShowTrainingPopup(false)} style={{ background: '#333', color: '#fff', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
+                Chiudi
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
