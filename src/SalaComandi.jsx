@@ -416,6 +416,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const fat = Number(entry.fatTotal || entry.fat) || 0;
           gl += carbAbsorption(diff, carb, fibre, fat);
           glycemicMemory += carb * 0.4;
+          glycemicMemory *= 0.92;
           if (carb > 40 && fibre < 4 && fat < 10 && diff >= 1.5 && diff < 2.5) {
             gl -= 15 * model.carbCrashSensitivity;
             globalCrashRisk = true;
