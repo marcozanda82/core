@@ -2638,6 +2638,35 @@ export default function SalaComandi() {
   const openDrawer = () => { setActiveAction(null); setIsDrawerOpen(true); };
   const closeDrawer = () => { setIsDrawerOpen(false); setTimeout(() => setActiveAction(null), 400); };
 
+  // Dichiarate come function per hoisting: usate da predictMealType e loadMealToConstructor
+  function getCurrentTimeRoundedTo15Min() {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const decimal = h + m / 60;
+    return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
+  }
+  function getDefaultMealTime(mealTypeKey) {
+    const equivalents = getEquivalentMealTypes(mealTypeKey);
+    const first = (dailyLog || []).find(item =>
+      item.type === 'food' && equivalents.includes(item.mealType)
+    );
+    if (first != null && typeof first.mealTime === 'number') return first.mealTime;
+    if (!fullStorico) return getCurrentTimeRoundedTo15Min();
+    const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
+    keys.sort((a, b) => b.localeCompare(a));
+    const todayKey = TRACKER_STORICO_KEY(getTodayString());
+    for (const key of keys) {
+      if (key === todayKey) continue;
+      const dayData = fullStorico[key];
+      for (const eq of equivalents) {
+        const t = dayData?.mealTimes?.[eq];
+        if (typeof t === 'number') return t;
+      }
+    }
+    return getCurrentTimeRoundedTo15Min();
+  }
+
   // ============================================================================
   // FUNZIONI CRITICHE CON RETROCOMPATIBILITÀ
   // ============================================================================
@@ -2726,40 +2755,6 @@ export default function SalaComandi() {
       if (predicted !== mealType) setMealType(predicted);
     }
   }, [drawerMealTime, activeAction, editingMealId, addedFoods.length]);
-
-  const getCurrentTimeRoundedTo15Min = () => {
-    const now = new Date();
-    const h = now.getHours();
-    const m = now.getMinutes();
-    const decimal = h + m / 60;
-    return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
-  };
-
-  const getDefaultMealTime = (mealTypeKey) => {
-    const equivalents = getEquivalentMealTypes(mealTypeKey);
-    
-    // Cerca nel dailyLog corrente
-    const first = (dailyLog || []).find(item => 
-      item.type === 'food' && equivalents.includes(item.mealType)
-    );
-    if (first != null && typeof first.mealTime === 'number') return first.mealTime;
-    
-    if (!fullStorico) return getCurrentTimeRoundedTo15Min();
-    const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
-    keys.sort((a, b) => b.localeCompare(a));
-    const todayKey = TRACKER_STORICO_KEY(getTodayString());
-    
-    for (const key of keys) {
-      if (key === todayKey) continue;
-      const dayData = fullStorico[key];
-      // Cerca in mealTimes con qualsiasi equivalente
-      for (const eq of equivalents) {
-        const t = dayData?.mealTimes?.[eq];
-        if (typeof t === 'number') return t;
-      }
-    }
-    return getCurrentTimeRoundedTo15Min();
-  };
 
   const handleTimeInput = (value) => {
     const digits = (value || '').replace(/\D/g, '');
@@ -4144,18 +4139,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
   const cortisolCurve = useMemo(() => generateCortisolCurve(dailyLog, manualNodes), [dailyLog, manualNodes]);
-  const getAnabolicAtTime = (curve, t) => {
+  function getAnabolicAtTime(curve, t) {
     const i = t * 2;
     const idx = Math.min(Math.floor(i), 48);
     const pt = curve[idx];
     return pt ? pt.anabolicScore : 0;
-  };
-  const getCortisolAtTime = (curve, t) => {
+  }
+  function getCortisolAtTime(curve, t) {
     const i = t * 2;
     const idx = Math.min(Math.floor(i), 48);
     const pt = curve[idx];
     return pt ? pt.cortisolScore : 0;
-  };
+  }
 
   const isViewingPastDate = currentTrackerDate !== getTodayString();
   const displayTime = isViewingPastDate ? 24 : currentTime;
@@ -4306,11 +4301,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
     let data = calculatedPieData.filter(d => d.value > 0);
     const currentTotal = data.reduce((s, d) => s + d.value, 0);
-    const targetKcal = dynamicDailyKcal || (userTargets?.kcal ?? 2000);
-    if (currentTotal < targetKcal) {
+    const pieTargetKcal = dynamicDailyKcal || (userTargets?.kcal ?? 2000);
+    if (currentTotal < pieTargetKcal) {
       data = [...data, {
         name: 'Rimanenti',
-        value: targetKcal - currentTotal,
+        value: pieTargetKcal - currentTotal,
         macros: null,
         id: 'rimanenti',
         fill: 'rgba(255, 255, 255, 0.05)',
