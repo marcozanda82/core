@@ -567,6 +567,25 @@ function computeEnergyDrivers(point) {
   };
 }
 
+/** Metabolic Stress Index (0–100) from cortisol, digestion, glycemic deviation, dehydration. */
+function computeMetabolicStress(point) {
+  if (!point) return 0;
+
+  const cortisol = point.cortisolo || 0;
+  const digestion = point.digestione || 0;
+
+  const glycemicStress = Math.abs((point.glicemia || 90) - 90);
+  const dehydrationStress = Math.max(0, 60 - (point.idratazione || 60));
+
+  const stress =
+    cortisol * 0.35 +
+    digestion * 0.25 +
+    glycemicStress * 0.2 +
+    dehydrationStress * 0.2;
+
+  return Math.max(0, Math.min(100, stress));
+}
+
 /** Analyzes the current chartData point and returns dominant factors affecting energy. */
 function explainEnergyState(point) {
   const causes = [];
@@ -3935,6 +3954,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     () => computeEnergyDrivers(chartData?.find(p => p.time === Math.round(displayTime))),
     [chartData, displayTime]
   );
+  const metabolicStressIndex = useMemo(() => {
+    if (!chartData || chartData.length === 0) return 0;
+
+    const values = chartData.map(p => computeMetabolicStress(p));
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+
+    return Math.round(avg);
+  }, [chartData]);
   const energyAt20 = chartData[20]?.energy;
   const idealDotY = chartData.length > 0
     ? (chartData[currentH]?.idealEnergy ?? 0) + ((chartData[nextH]?.idealEnergy ?? 0) - (chartData[currentH]?.idealEnergy ?? 0)) * fraction
@@ -4689,6 +4716,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <div>Idratazione {energyDrivers.hydration > 0 ? '↑' : '↓'}</div>
               </div>
             )}
+            <div style={{ fontSize: '0.65rem', opacity: 0.8 }}>
+              Metabolic Stress: {metabolicStressIndex}
+            </div>
           </div>
         </div>
       </div>
