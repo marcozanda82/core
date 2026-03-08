@@ -5925,31 +5925,37 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         {/* VISTA MENU PRINCIPALE */}
         {(!activeAction || activeAction === 'home') && (
           <div className="view-animate">
-            <h2 style={{ fontSize: '0.7rem', textAlign: 'center', color: '#777', letterSpacing: '3px', marginBottom: '25px', fontWeight: 'normal' }}>MENU SISTEMA</h2>
-            <div className="action-grid">
-              <button className="action-btn" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }}><span className="action-icon">🍽️</span><span className="action-label">Pasto</span></button>
-              <button className="action-btn" onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>💧</span><span className="action-label" style={{ color: '#00e5ff' }}>Acqua</span></button>
-              <button className="action-btn" onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(255, 109, 0, 0.4))' }}>⚡</span><span className="action-label" style={{ color: '#ff6d00' }}>Attività</span></button>
-              <button className="action-btn" onClick={() => setActiveAction('diario_giornaliero')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 230, 118, 0.4))' }}>📓</span><span className="action-label" style={{ color: '#00e676' }}>Diario Giornaliero</span></button>
-              <button className="action-btn" onClick={() => setActiveAction('storico')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(176, 190, 197, 0.5))' }}>📚</span><span className="action-label" style={{ color: '#b0bec5' }}>Archivio Storico</span></button>
-              <button className="action-btn" onClick={() => setShowReport(true)}><span className="action-icon">📊</span><span className="action-label">Report</span></button>
-              <button className="action-btn" onClick={() => setShowProfile(true)}><span className="action-icon">⚙️</span><span className="action-label">Profilo & Target</span></button>
-              <button className="action-btn" onClick={() => setActiveAction('strategia')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>🎯</span><span className="action-label" style={{ color: '#00e5ff' }}>Protocollo</span></button>
-              <button className="action-btn" onClick={() => setActiveAction('focus')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 192, 45, 0.4))' }}>🧘</span><span className="action-label" style={{ color: '#fbc02d' }}>Neural Reset</span></button>
-              <button className="action-btn full-width" onClick={() => setActiveAction('ai_chat')} style={{ background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
-                <span className="action-icon" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.5))' }}>✨</span><span className="action-label" style={{ color: '#b388ff' }}>Core AI</span>
+            <h2 style={{ fontSize: '0.7rem', textAlign: 'center', color: '#777', letterSpacing: '3px', marginBottom: '20px', fontWeight: 'normal' }}>AGGIUNGI EVENTO</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px' }} onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }}>
+                <span className="action-icon" style={{ fontSize: '1.8rem' }}>🥗</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px' }}>PASTO</span>
+              </button>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(0,229,255,0.4)' }} onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); }}>
+                <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>💧</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#00e5ff' }}>ACQUA</span>
+              </button>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(255, 109, 0, 0.4)' }} onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }}>
+                <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(255, 109, 0, 0.4))' }}>⚡</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#ff6d00' }}>ALLENAMENTO</span>
+              </button>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(129,140,248,0.4)' }} onClick={() => { const t = getCurrentTimeRoundedTo15Min(); setDrawerFastChargeStart(t); setDrawerFastChargeEnd(Math.min(24, t + 0.5)); setActiveAction('fast_charge_nap'); }}>
+                <span className="action-icon" style={{ fontSize: '1.8rem' }}>😴</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#a5b4fc' }}>PISOLINO</span>
+              </button>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(34,197,94,0.4)' }} onClick={() => { const t = getCurrentTimeRoundedTo15Min(); setDrawerFastChargeStart(t); setDrawerFastChargeEnd(Math.min(24, t + 0.5)); setActiveAction('fast_charge_meditation'); }}>
+                <span className="action-icon" style={{ fontSize: '1.8rem' }}>🧘</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#4ade80' }}>MEDITAZIONE</span>
+              </button>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(251,191,36,0.4)' }} onClick={() => { setDrawerFastChargeTime(getCurrentTimeRoundedTo15Min()); setActiveAction('fast_charge_sunlight'); }}>
+                <span className="action-icon" style={{ fontSize: '1.8rem' }}>☀️</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#fcd34d' }}>LUCE SOLARE</span>
+              </button>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(168,85,247,0.4)' }} onClick={() => { setDrawerFastChargeTime(getCurrentTimeRoundedTo15Min()); setFastChargeSupplementName(''); setActiveAction('fast_charge_supplements'); }}>
+                <span className="action-icon" style={{ fontSize: '1.8rem' }}>💊</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#c084fc' }}>INTEGRAZIONE</span>
+              </button>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(0,230,118,0.4)' }} onClick={() => setActiveAction('diario_giornaliero')}>
+                <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(0, 230, 118, 0.4))' }}>📖</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#00e676' }}>DIARIO</span>
+              </button>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(176,190,197,0.3)' }} onClick={() => setActiveAction('menu_secondary')}>
+                <span className="action-icon" style={{ fontSize: '1.8rem' }}>☰</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#b0bec5' }}>MENU</span>
               </button>
             </div>
-            <div style={{ padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', marginTop: '16px', border: '1px solid #2a2a2a', backdropFilter: 'blur(12px)' }}>
-              <h4 style={{ margin: '0 0 12px 0', color: '#aaa', fontSize: '0.65rem', letterSpacing: '3px', textTransform: 'uppercase', fontWeight: 'normal' }}>FAST CHARGE ⚡</h4>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                <button type="button" onClick={() => { const t = getCurrentTimeRoundedTo15Min(); setDrawerFastChargeStart(t); setDrawerFastChargeEnd(Math.min(24, t + 0.5)); setActiveAction('fast_charge_nap'); }} style={{ flex: '1 1 45%', minWidth: '100px', padding: '12px', background: 'rgba(129,140,248,0.15)', border: '1px solid #818cf8', borderRadius: '12px', color: '#a5b4fc', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>😴 Pisolino</button>
-                <button type="button" onClick={() => { const t = getCurrentTimeRoundedTo15Min(); setDrawerFastChargeStart(t); setDrawerFastChargeEnd(Math.min(24, t + 0.5)); setActiveAction('fast_charge_meditation'); }} style={{ flex: '1 1 45%', minWidth: '100px', padding: '12px', background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e', borderRadius: '12px', color: '#4ade80', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>🧘 Meditazione</button>
-                <button type="button" onClick={() => { setDrawerFastChargeTime(getCurrentTimeRoundedTo15Min()); setActiveAction('fast_charge_sunlight'); }} style={{ flex: '1 1 45%', minWidth: '100px', padding: '12px', background: 'rgba(251,191,36,0.15)', border: '1px solid #fbbf24', borderRadius: '12px', color: '#fcd34d', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>☀️ Luce Solare</button>
-                <button type="button" onClick={() => { setDrawerFastChargeTime(getCurrentTimeRoundedTo15Min()); setFastChargeSupplementName(''); setActiveAction('fast_charge_supplements'); }} style={{ flex: '1 1 45%', minWidth: '100px', padding: '12px', background: 'rgba(168,85,247,0.15)', border: '1px solid #a855f7', borderRadius: '12px', color: '#c084fc', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>💊 Integrazione</button>
-              </div>
-            </div>
-            <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '20px' }}>
+            <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '0' }}>
               <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.8rem' }}>⚡ Inserimento Rapido / Output AI</h4>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <input
@@ -5978,6 +5984,27 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   Invia
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* VISTA MENU SECONDARIO (☰) */}
+        {activeAction === 'menu_secondary' && (
+          <div className="view-animate">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
+              <h2 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '2px', margin: 0 }}>☰ MENU</h2>
+              <div style={{ width: '70px' }}></div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <button className="action-btn" onClick={() => setActiveAction('storico')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(176, 190, 197, 0.5))' }}>📚</span><span className="action-label" style={{ color: '#b0bec5' }}>Archivio Storico</span></button>
+              <button className="action-btn" onClick={() => { setShowReport(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">📊</span><span className="action-label">Report</span></button>
+              <button className="action-btn" onClick={() => { setShowProfile(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">⚙️</span><span className="action-label">Profilo & Target</span></button>
+              <button className="action-btn" onClick={() => setActiveAction('strategia')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>🎯</span><span className="action-label" style={{ color: '#00e5ff' }}>Protocollo</span></button>
+              <button className="action-btn" onClick={() => setActiveAction('focus')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 192, 45, 0.4))' }}>🧘</span><span className="action-label" style={{ color: '#fbc02d' }}>Neural Reset</span></button>
+              <button className="action-btn" onClick={() => setActiveAction('ai_chat')} style={{ background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
+                <span className="action-icon" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.5))' }}>✨</span><span className="action-label" style={{ color: '#b388ff' }}>Core AI</span>
+              </button>
             </div>
           </div>
         )}
