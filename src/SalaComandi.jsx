@@ -1512,6 +1512,18 @@ export default function SalaComandi() {
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
+  const [isBottomMenuOpen, setIsBottomMenuOpen] = useState(false);
+  const [touchStartY, setTouchStartY] = useState(null);
+
+  const handleTouchStart = (e) => setTouchStartY(e.touches[0].clientY);
+  const handleTouchEnd = (e) => {
+    if (touchStartY === null) return;
+    const deltaY = e.changedTouches[0].clientY - touchStartY;
+    if (deltaY < -40) setIsBottomMenuOpen(true);
+    if (deltaY > 40) setIsBottomMenuOpen(false);
+    setTouchStartY(null);
+  };
+
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
   const [userModel, setUserModel] = useState(DEFAULT_USER_MODEL);
@@ -5718,14 +5730,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
             );
           })()}
-          {/* Fila 5 bottoni */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '320px', margin: '0 auto', flexShrink: 0 }}>
-            <button type="button" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: '#1a1a1a', border: '1px solid #333', borderRadius: '10px', color: '#fff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Pasto">🍽️<span>Pasto</span></button>
-            <button type="button" onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(0,229,255,0.08)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Acqua">💧<span>Acqua</span></button>
-            <button type="button" onClick={() => setIsDrawerOpen(true)} style={{ flex: '0 0 auto', width: '56px', height: '56px', padding: 0, fontSize: '1.4rem', fontWeight: 'bold', background: 'linear-gradient(180deg, #00e5ff 0%, #0097a7 100%)', border: '2px solid rgba(255,255,255,0.3)', borderRadius: '50%', color: '#000', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,229,255,0.4)' }} title="Menù">☰</button>
-            <button type="button" onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(255,109,0,0.08)', border: '1px solid #ff6d00', borderRadius: '10px', color: '#ff6d00', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Attività">⚡<span>Attività</span></button>
-            <button type="button" onClick={() => { setActiveAction('diario_giornaliero'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: 'rgba(0,230,118,0.08)', border: '1px solid #00e676', borderRadius: '10px', color: '#00e676', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Diario">📓<span>Diario</span></button>
-          </div>
         </div>
       )}
 
@@ -7503,6 +7507,56 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         </div>
       )}
+
+      {/* BOTTOM SHEET INTERATTIVO */}
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0,
+          background: 'rgba(15, 15, 15, 0.98)',
+          backdropFilter: 'blur(20px)',
+          borderTop: '1px solid #333',
+          borderTopLeftRadius: '25px', borderTopRightRadius: '25px',
+          padding: '10px 20px 40px 20px',
+          transform: isBottomMenuOpen ? 'translateY(0)' : 'translateY(calc(100% - 40px))',
+          transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          zIndex: 10000,
+          boxShadow: '0 -10px 30px rgba(0,0,0,0.8)'
+        }}
+      >
+        <div
+          onClick={() => setIsBottomMenuOpen(!isBottomMenuOpen)}
+          style={{ width: '50px', height: '5px', background: '#555', borderRadius: '10px', margin: '0 auto 25px auto', cursor: 'pointer' }}
+        />
+
+        <div style={{ display: 'flex', justifyContent: 'space-around', width: '100%', opacity: isBottomMenuOpen ? 1 : 0, transition: 'opacity 0.3s' }}>
+          <div onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); setIsBottomMenuOpen(false); }} style={{ textAlign: 'center', cursor: 'pointer' }}>
+            <div style={{ width: '55px', height: '55px', borderRadius: '50%', background: '#111', border: '1px solid #00e5ff', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem', marginBottom: '8px' }}>🥗</div>
+            <span style={{ fontSize: '0.7rem', color: '#00e5ff', fontWeight: 'bold' }}>PASTO</span>
+          </div>
+
+          <div onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); setIsDrawerOpen(true); setIsBottomMenuOpen(false); }} style={{ textAlign: 'center', cursor: 'pointer' }}>
+            <div style={{ width: '55px', height: '55px', borderRadius: '50%', background: '#111', border: '1px solid #4fc3f7', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem', marginBottom: '8px' }}>💧</div>
+            <span style={{ fontSize: '0.7rem', color: '#4fc3f7', fontWeight: 'bold' }}>ACQUA</span>
+          </div>
+
+          <div onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); setIsBottomMenuOpen(false); }} style={{ textAlign: 'center', cursor: 'pointer' }}>
+            <div style={{ width: '55px', height: '55px', borderRadius: '50%', background: '#111', border: '1px solid #ff9800', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem', marginBottom: '8px' }}>⚡</div>
+            <span style={{ fontSize: '0.7rem', color: '#ff9800', fontWeight: 'bold' }}>ATTIVITÀ</span>
+          </div>
+
+          <div onClick={() => { setActiveAction('diario_giornaliero'); setIsDrawerOpen(true); setIsBottomMenuOpen(false); }} style={{ textAlign: 'center', cursor: 'pointer' }}>
+            <div style={{ width: '55px', height: '55px', borderRadius: '50%', background: '#111', border: '1px solid #b388ff', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem', marginBottom: '8px' }}>📖</div>
+            <span style={{ fontSize: '0.7rem', color: '#b388ff', fontWeight: 'bold' }}>DIARIO</span>
+          </div>
+
+          <div onClick={() => { setIsDrawerOpen(true); setIsBottomMenuOpen(false); }} style={{ textAlign: 'center', cursor: 'pointer' }}>
+            <div style={{ width: '55px', height: '55px', borderRadius: '50%', background: '#111', border: '1px solid #aaa', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem', marginBottom: '8px' }}>☰</div>
+            <span style={{ fontSize: '0.7rem', color: '#aaa', fontWeight: 'bold' }}>MENU</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
