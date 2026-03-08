@@ -335,6 +335,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   let glycemicMemory = 0;
   let neuralFatigue = 0;
   let hoursSinceMeal = 0;
+  let previousEnergy = baselineEnergy;
 
   for (let h = 0; h <= 24; h++) {
     glycemicMemory *= 0.92;
@@ -476,6 +477,9 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     currentEnergy = Math.max(0, Math.min(100, currentEnergy));
     currentIdealEnergy = Math.max(0, Math.min(100, currentIdealEnergy));
+
+    currentEnergy = currentEnergy * 0.7 + previousEnergy * 0.3;
+    previousEnergy = currentEnergy;
 
     let cortisolBase = 20;
     if (h >= 6 && h <= 9) cortisolBase = 35 + (9 - h) * 5;
