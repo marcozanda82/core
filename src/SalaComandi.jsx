@@ -334,11 +334,13 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
   let glycemicMemory = 0;
   let neuralFatigue = 0;
+  let hoursSinceMeal = 0;
 
   for (let h = 0; h <= 24; h++) {
     glycemicMemory *= 0.92;
     neuralFatigue *= 0.96;
     let currentDigestione = 0;
+    let hadMealThisHour = false;
     const useContinuityAtZero = h === 0 && initialEnergy != null;
     if (!useContinuityAtZero) {
       metabolicEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
@@ -352,6 +354,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     (timelineNodes || []).forEach(node => {
       if (node.type === 'meal') {
+        if (node.time >= h && node.time < h + 1) hadMealThisHour = true;
         const timeSince = h - node.time;
         if (timeSince >= 0 && timeSince <= 3) {
           const mealEffect = responseCurve(timeSince, 1, 3);
@@ -398,7 +401,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const digestionFactor = 1 - diff / 3;
           const mealKcal = node.kcal ?? node.cal ?? 500;
           const mealLoad = Math.max(0, Math.min(3, mealKcal / 600));
-          metabolicEnergy -= mealLoad * PHYSIOLOGY_CONFIG.digestionEnergyImpact * digestionFactor;
+          const digestionPenalty =
+            mealLoad *
+            PHYSIOLOGY_CONFIG.digestionEnergyImpact *
+            Math.sqrt(digestionFactor);
+          metabolicEnergy -= digestionPenalty;
           const digestionSignal =
             100 * (1 - diff / 3) +
             mealLoad * 30 * (1 - diff / 3);
@@ -409,6 +416,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     log.forEach(entry => {
       if (entry.type === 'food') {
         const ft = typeof entry.mealTime === 'number' && !Number.isNaN(entry.mealTime) ? entry.mealTime : 12;
+        if (ft >= h && ft < h + 1) hadMealThisHour = true;
         const diff = h - ft;
         if (diff >= 0 && diff <= 3) {
           const carb = Number(entry.carb) || 0;
@@ -425,6 +433,12 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       }
     });
     currentDigestione = Math.max(0, Math.min(100, currentDigestione));
+
+    if (hadMealThisHour) hoursSinceMeal = 0; else hoursSinceMeal++;
+    if (hoursSinceMeal > 6) {
+      const fatBurnSupport = Math.min(4, (hoursSinceMeal - 6) * 0.8);
+      metabolicEnergy += fatBurnSupport;
+    }
 
     (timelineNodes || []).forEach(node => {
       if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
