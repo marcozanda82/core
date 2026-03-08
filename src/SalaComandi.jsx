@@ -17,6 +17,66 @@ import { getDatabase, ref, get, set, onValue, update } from 'firebase/database';
 
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 
+// ============================================================================
+// HELPER MEAL BUILDER — in cima al file, con protezione if (!data) return default
+// ============================================================================
+const RESTANTI_DEFAULT = { restantiPRO: 0, restantiCARB: 0, restantiFAT: 0, restantiFIBRE: 0, eccessoPRO: 0, eccessoCARB: 0, eccessoFAT: 0, eccessoFIBRE: 0 };
+
+function getRestantiMacro(userTargets, totali) {
+  if (!userTargets && !totali) return { ...RESTANTI_DEFAULT };
+  if (userTargets == null || totali == null) return { ...RESTANTI_DEFAULT };
+  const targetProt = Number(userTargets.prot) || 150;
+  const targetCarb = Number(userTargets.carb) || 200;
+  const targetFat = Number(userTargets.fatTotal ?? userTargets.fat) || 60;
+  const targetFibre = Number(userTargets.fibre) || 30;
+  const currentProt = Number(totali.prot) || 0;
+  const currentCarb = Number(totali.carb) || 0;
+  const currentFat = Number(totali.fatTotal ?? totali.fat) || 0;
+  const currentFibre = Number(totali.fibre) || 0;
+  return {
+    restantiPRO: Math.max(0, targetProt - currentProt),
+    restantiCARB: Math.max(0, targetCarb - currentCarb),
+    restantiFAT: Math.max(0, targetFat - currentFat),
+    restantiFIBRE: Math.max(0, targetFibre - currentFibre),
+    eccessoPRO: currentProt > targetProt ? currentProt - targetProt : 0,
+    eccessoCARB: currentCarb > targetCarb ? currentCarb - targetCarb : 0,
+    eccessoFAT: currentFat > targetFat ? currentFat - targetFat : 0,
+    eccessoFIBRE: currentFibre > targetFibre ? currentFibre - targetFibre : 0
+  };
+}
+
+function getTargetMacrosPastoCena(mealType, dynamicDailyKcal, totali, restanti) {
+  if (!restanti || mealType !== 'cena') return null;
+  const dailyKcal = Number(dynamicDailyKcal) || 2000;
+  const currentKcal = totali != null ? (Number(totali.kcal) || 0) : 0;
+  return {
+    kcal: Math.max(0, dailyKcal - currentKcal),
+    prot: restanti.restantiPRO ?? 0,
+    carb: restanti.restantiCARB ?? 0,
+    fat: restanti.restantiFAT ?? 0,
+    fibre: restanti.restantiFIBRE ?? 0
+  };
+}
+
+function computeVotoMetabolicoSafe(mealTotaliFull) {
+  if (!mealTotaliFull || typeof mealTotaliFull !== 'object') return 5;
+  const prot = Number(mealTotaliFull.prot) || 0;
+  const carb = Number(mealTotaliFull.carb) || 0;
+  const fat = Number(mealTotaliFull.fatTotal ?? mealTotaliFull.fat) || 0;
+  const fibre = Number(mealTotaliFull.fibre) || 0;
+  if (carb + prot + fibre === 0) return 5;
+  const safeCarb = carb > 0 ? carb : 1;
+  const fibreRatio = fibre / safeCarb;
+  const protRatio = prot / safeCarb;
+  let score = 5;
+  if (fibreRatio >= 0.15) score += 2;
+  else if (fibreRatio >= 0.08) score += 1;
+  if (protRatio >= 0.25) score += 2;
+  else if (protRatio >= 0.15) score += 1;
+  if (fat >= 5 && fat <= 40) score += 0.5;
+  return Math.max(1, Math.min(10, Math.round(score * 10) / 10));
+}
+
 const RADIAN = Math.PI / 180;
 
 const firebaseConfig = {
@@ -1559,71 +1619,6 @@ function predictEnergyIntervention(chartData, displayTime) {
   return null;
 }
 
-// ============================================================================
-// HELPER MEAL BUILDER — definiti prima del componente per evitare ReferenceError
-// ============================================================================
-
-/** Calcolo residui macro (target − già assunto). Safe se useBiochimico non ha ancora restituito dati. */
-function getRestantiMacro(userTargets, totali) {
-  const fallback = {
-    restantiPRO: 0, restantiCARB: 0, restantiFAT: 0, restantiFIBRE: 0,
-    eccessoPRO: 0, eccessoCARB: 0, eccessoFAT: 0, eccessoFIBRE: 0
-  };
-  if (userTargets == null || totali == null) return fallback;
-  const targetProt = Number(userTargets.prot) || 150;
-  const targetCarb = Number(userTargets.carb) || 200;
-  const targetFat = Number(userTargets.fatTotal ?? userTargets.fat) || 60;
-  const targetFibre = Number(userTargets.fibre) || 30;
-  const currentProt = Number(totali.prot) || 0;
-  const currentCarb = Number(totali.carb) || 0;
-  const currentFat = Number(totali.fatTotal ?? totali.fat) || 0;
-  const currentFibre = Number(totali.fibre) || 0;
-  return {
-    restantiPRO: Math.max(0, targetProt - currentProt),
-    restantiCARB: Math.max(0, targetCarb - currentCarb),
-    restantiFAT: Math.max(0, targetFat - currentFat),
-    restantiFIBRE: Math.max(0, targetFibre - currentFibre),
-    eccessoPRO: currentProt > targetProt ? currentProt - targetProt : 0,
-    eccessoCARB: currentCarb > targetCarb ? currentCarb - targetCarb : 0,
-    eccessoFAT: currentFat > targetFat ? currentFat - targetFat : 0,
-    eccessoFIBRE: currentFibre > targetFibre ? currentFibre - targetFibre : 0
-  };
-}
-
-/** Suggerimento target cena (Tetris). Restituisce null se non è cena o dati non pronti. */
-function getTargetMacrosPastoCena(mealType, dynamicDailyKcal, totali, restanti) {
-  if (mealType !== 'cena' || restanti == null) return null;
-  const dailyKcal = Number(dynamicDailyKcal) || 2000;
-  const currentKcal = totali != null ? (Number(totali.kcal) || 0) : 0;
-  return {
-    kcal: Math.max(0, dailyKcal - currentKcal),
-    prot: restanti.restantiPRO,
-    carb: restanti.restantiCARB,
-    fat: restanti.restantiFAT,
-    fibre: restanti.restantiFIBRE
-  };
-}
-
-/** Voto metabolico 1–10. Safe per mealTotaliFull null o pasto vuoto (nessuna divisione per zero). */
-function computeVotoMetabolicoSafe(mealTotaliFull) {
-  if (mealTotaliFull == null || typeof mealTotaliFull !== 'object') return 5;
-  const prot = Number(mealTotaliFull.prot) || 0;
-  const carb = Number(mealTotaliFull.carb) || 0;
-  const fat = Number(mealTotaliFull.fatTotal ?? mealTotaliFull.fat) || 0;
-  const fibre = Number(mealTotaliFull.fibre) || 0;
-  if (carb + prot + fibre === 0) return 5;
-  const safeCarb = carb > 0 ? carb : 1;
-  const fibreRatio = fibre / safeCarb;
-  const protRatio = prot / safeCarb;
-  let score = 5;
-  if (fibreRatio >= 0.15) score += 2;
-  else if (fibreRatio >= 0.08) score += 1;
-  if (protRatio >= 0.25) score += 2;
-  else if (protRatio >= 0.15) score += 1;
-  if (fat >= 5 && fat <= 40) score += 0.5;
-  return Math.max(1, Math.min(10, Math.round(score * 10) / 10));
-}
-
 export default function SalaComandi() {
   // AUTENTICAZIONE
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -1799,7 +1794,7 @@ export default function SalaComandi() {
 
   // Motore biochimico: dichiarato subito dopo le dipendenze per evitare TDZ / "Cannot access before initialization"
   const baseKcal = (userTargets?.kcal ?? STRATEGY_PROFILES[dayProfile]?.kcal ?? 2000) + calorieTuning;
-  const { totali, obiettiviPasti } = useBiochimico(dailyLog, baseKcal);
+  const { totali = {}, obiettiviPasti = {} } = useBiochimico(dailyLog, baseKcal) || {};
   const targetKcal = baseKcal + (totali?.workout ?? 0);
 
   const [workoutType, setWorkoutType] = useState('pesi');
@@ -4434,7 +4429,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     () => getRestantiMacro(userTargets, totali),
     [userTargets, totali]
   );
-  const { restantiPRO = 0, restantiCARB = 0, restantiFAT = 0, restantiFIBRE = 0, eccessoPRO = 0, eccessoCARB = 0, eccessoFAT = 0, eccessoFIBRE = 0 } = restantiMacro ?? {};
+  const safeRestanti = restantiMacro || {};
+  const { restantiPRO = 0, restantiCARB = 0, restantiFAT = 0, restantiFIBRE = 0, eccessoPRO = 0, eccessoCARB = 0, eccessoFAT = 0, eccessoFIBRE = 0 } = safeRestanti;
 
   const targetMacrosPastoCena = useMemo(
     () => getTargetMacrosPastoCena(mealType, dynamicDailyKcal, totali, restantiMacro),
@@ -4692,6 +4688,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }
 
   return (
+    (!dailyLog || !userTargets) ? (
+      <div style={{ color: 'white', padding: 20, textAlign: 'center', backgroundColor: '#000', minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Caricamento Sistemi...</div>
+    ) : (
     <div style={{ backgroundColor: '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '65px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
       <style>
@@ -7929,5 +7928,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         );
       })()}
     </div>
+    )
   );
 }
