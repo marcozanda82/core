@@ -1813,6 +1813,10 @@ export default function SalaComandi() {
   const miniTimelineActivityRef = useRef(null);
   const miniTimelineWaterRef = useRef(null);
   const [drawerWaterTime, setDrawerWaterTime] = useState(12);
+  const [drawerFastChargeStart, setDrawerFastChargeStart] = useState(12);
+  const [drawerFastChargeEnd, setDrawerFastChargeEnd] = useState(12.5);
+  const [drawerFastChargeTime, setDrawerFastChargeTime] = useState(12);
+  const [fastChargeSupplementName, setFastChargeSupplementName] = useState('');
   const currentTrackerDateRef = useRef(currentTrackerDate);
   useEffect(() => { currentTrackerDateRef.current = currentTrackerDate; }, [currentTrackerDate]);
 
@@ -3072,7 +3076,30 @@ export default function SalaComandi() {
       syncDatiFirebase(dailyLog, next);
     }
   };
-  
+
+  const handleSaveFastCharge = (chargeType) => {
+    const id = `${chargeType}_${Date.now()}`;
+    let node = { id, type: chargeType };
+    if (chargeType === 'nap' || chargeType === 'meditation') {
+      let duration = Number(drawerFastChargeEnd) - Number(drawerFastChargeStart);
+      if (duration < 0) duration += 24;
+      duration = Math.max(0.08, Math.min(24, duration));
+      node.time = Number(drawerFastChargeStart);
+      node.duration = Math.round(duration * 100) / 100;
+    } else if (chargeType === 'sunlight') {
+      node.time = Number(drawerFastChargeTime);
+    } else if (chargeType === 'supplements') {
+      node.time = Number(drawerFastChargeTime);
+      if (fastChargeSupplementName?.trim()) node.name = fastChargeSupplementName.trim();
+      if (fastChargeSupplementName?.trim()) node.subtype = fastChargeSupplementName.trim();
+    }
+    const next = [...manualNodes, node].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+    setManualNodes(next);
+    syncDatiFirebase(dailyLog, next);
+    setActiveAction(null);
+    setFastChargeSupplementName('');
+  };
+
   const handleSaveWorkout = () => {
     const isWork = workoutType === 'lavoro';
     const duration = Math.max(0.25, Number(workoutEndTime) - Number(workoutStartTime));
@@ -5913,6 +5940,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <span className="action-icon" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.5))' }}>✨</span><span className="action-label" style={{ color: '#b388ff' }}>Core AI</span>
               </button>
             </div>
+            <div style={{ padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', marginTop: '16px', border: '1px solid #2a2a2a', backdropFilter: 'blur(12px)' }}>
+              <h4 style={{ margin: '0 0 12px 0', color: '#aaa', fontSize: '0.65rem', letterSpacing: '3px', textTransform: 'uppercase', fontWeight: 'normal' }}>FAST CHARGE ⚡</h4>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                <button type="button" onClick={() => { const t = getCurrentTimeRoundedTo15Min(); setDrawerFastChargeStart(t); setDrawerFastChargeEnd(Math.min(24, t + 0.5)); setActiveAction('fast_charge_nap'); }} style={{ flex: '1 1 45%', minWidth: '100px', padding: '12px', background: 'rgba(129,140,248,0.15)', border: '1px solid #818cf8', borderRadius: '12px', color: '#a5b4fc', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>😴 Pisolino</button>
+                <button type="button" onClick={() => { const t = getCurrentTimeRoundedTo15Min(); setDrawerFastChargeStart(t); setDrawerFastChargeEnd(Math.min(24, t + 0.5)); setActiveAction('fast_charge_meditation'); }} style={{ flex: '1 1 45%', minWidth: '100px', padding: '12px', background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e', borderRadius: '12px', color: '#4ade80', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>🧘 Meditazione</button>
+                <button type="button" onClick={() => { setDrawerFastChargeTime(getCurrentTimeRoundedTo15Min()); setActiveAction('fast_charge_sunlight'); }} style={{ flex: '1 1 45%', minWidth: '100px', padding: '12px', background: 'rgba(251,191,36,0.15)', border: '1px solid #fbbf24', borderRadius: '12px', color: '#fcd34d', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>☀️ Luce Solare</button>
+                <button type="button" onClick={() => { setDrawerFastChargeTime(getCurrentTimeRoundedTo15Min()); setFastChargeSupplementName(''); setActiveAction('fast_charge_supplements'); }} style={{ flex: '1 1 45%', minWidth: '100px', padding: '12px', background: 'rgba(168,85,247,0.15)', border: '1px solid #a855f7', borderRadius: '12px', color: '#c084fc', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>💊 Integrazione</button>
+              </div>
+            </div>
             <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '20px' }}>
               <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.8rem' }}>⚡ Inserimento Rapido / Output AI</h4>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -6152,7 +6188,83 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           </div>
         )}
-        
+
+        {/* VISTA FAST CHARGE - PISOLINO */}
+        {activeAction === 'fast_charge_nap' && (
+          <div className="view-animate">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
+              <h2 style={{ fontSize: '0.8rem', color: '#818cf8', letterSpacing: '2px', margin: 0 }}>😴 PISOLINO</h2>
+              <div style={{ width: '70px' }}></div>
+            </div>
+            <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '16px', backdropFilter: 'blur(12px)' }}>
+              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '12px', textTransform: 'uppercase' }}>ORA INIZIO – ORA FINE</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <input type="time" value={decimalToTimeStr(drawerFastChargeStart)} onChange={(e) => setDrawerFastChargeStart(parseTimeStrToDecimal(e.target.value))} style={{ flex: 1, minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }} />
+                <span style={{ color: '#666' }}>–</span>
+                <input type="time" value={decimalToTimeStr(drawerFastChargeEnd)} onChange={(e) => setDrawerFastChargeEnd(parseTimeStrToDecimal(e.target.value))} style={{ flex: 1, minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }} />
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '10px' }}>Durata: {(() => { let d = drawerFastChargeEnd - drawerFastChargeStart; if (d < 0) d += 24; d = Math.max(0, d); return `${Math.floor(d * 60)} min`; })()}</div>
+            </div>
+            <button onClick={() => handleSaveFastCharge('nap')} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(129,140,248,0.4)' }}>SALVA</button>
+          </div>
+        )}
+
+        {/* VISTA FAST CHARGE - MEDITAZIONE */}
+        {activeAction === 'fast_charge_meditation' && (
+          <div className="view-animate">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
+              <h2 style={{ fontSize: '0.8rem', color: '#22c55e', letterSpacing: '2px', margin: 0 }}>🧘 MEDITAZIONE</h2>
+              <div style={{ width: '70px' }}></div>
+            </div>
+            <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '16px', backdropFilter: 'blur(12px)' }}>
+              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '12px', textTransform: 'uppercase' }}>ORA INIZIO – ORA FINE</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <input type="time" value={decimalToTimeStr(drawerFastChargeStart)} onChange={(e) => setDrawerFastChargeStart(parseTimeStrToDecimal(e.target.value))} style={{ flex: 1, minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #22c55e', borderRadius: '10px', color: '#4ade80', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }} />
+                <span style={{ color: '#666' }}>–</span>
+                <input type="time" value={decimalToTimeStr(drawerFastChargeEnd)} onChange={(e) => setDrawerFastChargeEnd(parseTimeStrToDecimal(e.target.value))} style={{ flex: 1, minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #22c55e', borderRadius: '10px', color: '#4ade80', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }} />
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '10px' }}>Durata: {(() => { let d = drawerFastChargeEnd - drawerFastChargeStart; if (d < 0) d += 24; return `${Math.floor(Math.max(0, d) * 60)} min`; })()}</div>
+            </div>
+            <button onClick={() => handleSaveFastCharge('meditation')} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #16a34a, #22c55e)', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(34,197,94,0.4)' }}>SALVA</button>
+          </div>
+        )}
+
+        {/* VISTA FAST CHARGE - LUCE SOLARE */}
+        {activeAction === 'fast_charge_sunlight' && (
+          <div className="view-animate">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
+              <h2 style={{ fontSize: '0.8rem', color: '#fbbf24', letterSpacing: '2px', margin: 0 }}>☀️ LUCE SOLARE</h2>
+              <div style={{ width: '70px' }}></div>
+            </div>
+            <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '16px', backdropFilter: 'blur(12px)' }}>
+              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '12px', textTransform: 'uppercase' }}>ORARIO ESPOSIZIONE</div>
+              <input type="time" value={decimalToTimeStr(drawerFastChargeTime)} onChange={(e) => setDrawerFastChargeTime(parseTimeStrToDecimal(e.target.value))} style={{ width: '100%', padding: '12px', background: '#1a1a1a', border: '1px solid #fbbf24', borderRadius: '10px', color: '#fcd34d', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
+            </div>
+            <button onClick={() => handleSaveFastCharge('sunlight')} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #d97706, #fbbf24)', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(251,191,36,0.4)' }}>SALVA</button>
+          </div>
+        )}
+
+        {/* VISTA FAST CHARGE - INTEGRAZIONE */}
+        {activeAction === 'fast_charge_supplements' && (
+          <div className="view-animate">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
+              <h2 style={{ fontSize: '0.8rem', color: '#a855f7', letterSpacing: '2px', margin: 0 }}>💊 INTEGRAZIONE</h2>
+              <div style={{ width: '70px' }}></div>
+            </div>
+            <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '12px', backdropFilter: 'blur(12px)' }}>
+              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '12px', textTransform: 'uppercase' }}>ORARIO</div>
+              <input type="time" value={decimalToTimeStr(drawerFastChargeTime)} onChange={(e) => setDrawerFastChargeTime(parseTimeStrToDecimal(e.target.value))} style={{ width: '100%', padding: '10px', background: '#1a1a1a', border: '1px solid #a855f7', borderRadius: '10px', color: '#c084fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center', marginBottom: '12px' }} />
+              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '8px', textTransform: 'uppercase' }}>Nome supplemento (opzionale)</div>
+              <input type="text" value={fastChargeSupplementName} onChange={(e) => setFastChargeSupplementName(e.target.value)} placeholder="Es. Magnesio, Vitamina D..." style={{ width: '100%', padding: '10px', background: '#1a1a1a', border: '1px solid #444', borderRadius: '10px', color: '#fff', fontSize: '0.9rem' }} />
+            </div>
+            <button onClick={() => handleSaveFastCharge('supplements')} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #7c3aed, #a855f7)', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(168,85,247,0.4)' }}>SALVA</button>
+          </div>
+        )}
+
         {/* VISTA ALLENAMENTO */}
         {activeAction === 'allenamento' && (
           <div className="view-animate">
