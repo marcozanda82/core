@@ -278,6 +278,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   });
   realTotals.allenamento = workoutKcal;
 
+  let metabolicEnergy = baselineEnergy;
+  let neuralEnergy = baselineEnergy;
   let currentEnergy = baselineEnergy;
   let currentIdealEnergy = initialIdealEnergy != null ? (initialIdealEnergy ?? initialEnergy) : 70;
   let globalCrashRisk = false;
@@ -339,11 +341,14 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     let currentDigestione = 0;
     const useContinuityAtZero = h === 0 && initialEnergy != null;
     if (!useContinuityAtZero) {
-      currentEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
+      metabolicEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
+      neuralEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
       currentIdealEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
     }
 
-    currentEnergy += circadianEnergyModifier(h);
+    const circadianMod = circadianEnergyModifier(h);
+    metabolicEnergy += circadianMod;
+    neuralEnergy += circadianMod;
 
     (timelineNodes || []).forEach(node => {
       if (node.type === 'meal') {
@@ -352,7 +357,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const mealEffect = responseCurve(timeSince, 1, 3);
           const realK = node.kcal || node.cal || 500;
           const idealK = Number(ideal[node.strategyKey]) || (node.strategyKey === 'spuntino' ? 250 : 500);
-          currentEnergy += mealEffect * (realK / 20);
+          metabolicEnergy += mealEffect * (realK / 20);
           currentIdealEnergy += mealEffect * (idealK / 20);
         }
       }
@@ -364,7 +369,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const fatigueEffect = responseCurve(timeSince, 0.5, fatigueWindow);
           const burnKcal = node.kcal || 300;
           const drain = (burnKcal / dur) / 10;
-          currentEnergy -= fatigueEffect * drain;
+          neuralEnergy -= fatigueEffect * drain;
           currentIdealEnergy -= fatigueEffect * drain;
         }
         if (node.time >= h && node.time < h + 1) {
@@ -379,7 +384,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         if (effect > 0) {
           const sub = (node.subtype || 'caffè').toLowerCase();
           const stimulantBoost = sub === 'energy drink' ? 12 : sub === 'caffè' ? 8 : 5;
-          currentEnergy += effect * stimulantBoost;
+          neuralEnergy += effect * stimulantBoost;
         }
       }
     });
@@ -393,7 +398,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const digestionFactor = 1 - diff / 3;
           const mealKcal = node.kcal ?? node.cal ?? 500;
           const mealLoad = Math.max(0, Math.min(3, mealKcal / 600));
-          currentEnergy -= mealLoad * PHYSIOLOGY_CONFIG.digestionEnergyImpact * digestionFactor;
+          metabolicEnergy -= mealLoad * PHYSIOLOGY_CONFIG.digestionEnergyImpact * digestionFactor;
           currentDigestione += 100 * (1 - diff / 3);
           currentDigestione += mealLoad * 30 * (1 - diff / 3);
         }
@@ -424,11 +429,13 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       }
     });
 
-    currentEnergy -= glycemicMemory * 0.05;
+    metabolicEnergy -= glycemicMemory * 0.05;
     glycemicMemory = Math.max(0, Math.min(100, glycemicMemory));
 
-    currentEnergy -= neuralFatigue * 0.08;
+    neuralEnergy -= neuralFatigue * 0.08;
     neuralFatigue = Math.max(0, Math.min(100, neuralFatigue));
+
+    currentEnergy = Math.min(metabolicEnergy, neuralEnergy);
 
     currentHydration -= PHYSIOLOGY_CONFIG.hydrationDecayPerHour;
     (timelineNodes || []).forEach(node => {
@@ -500,7 +507,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     // Mild homeostatic stabilization toward the user's daily baseline energy
     // baselineEnergy is derived from sleep and neurological recovery
-    currentEnergy += (baselineEnergy - currentEnergy) * 0.01;
+    metabolicEnergy += (baselineEnergy - metabolicEnergy) * 0.01;
+    neuralEnergy += (baselineEnergy - neuralEnergy) * 0.01;
 
     out.push({
       time: h,
@@ -513,6 +521,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       neuro: currentNeuro
     });
     if (useContinuityAtZero) {
+      metabolicEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
+      neuralEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
       currentEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
       currentIdealEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
     }
