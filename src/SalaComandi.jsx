@@ -17,66 +17,6 @@ import { getDatabase, ref, get, set, onValue, update } from 'firebase/database';
 
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 
-// ============================================================================
-// HELPER MEAL BUILDER — in cima al file, con protezione if (!data) return default
-// ============================================================================
-const RESTANTI_DEFAULT = { restantiPRO: 0, restantiCARB: 0, restantiFAT: 0, restantiFIBRE: 0, eccessoPRO: 0, eccessoCARB: 0, eccessoFAT: 0, eccessoFIBRE: 0 };
-
-function getRestantiMacro(userTargets, totali) {
-  if (!userTargets && !totali) return { ...RESTANTI_DEFAULT };
-  if (userTargets == null || totali == null) return { ...RESTANTI_DEFAULT };
-  const targetProt = Number(userTargets.prot) || 150;
-  const targetCarb = Number(userTargets.carb) || 200;
-  const targetFat = Number(userTargets.fatTotal ?? userTargets.fat) || 60;
-  const targetFibre = Number(userTargets.fibre) || 30;
-  const currentProt = Number(totali.prot) || 0;
-  const currentCarb = Number(totali.carb) || 0;
-  const currentFat = Number(totali.fatTotal ?? totali.fat) || 0;
-  const currentFibre = Number(totali.fibre) || 0;
-  return {
-    restantiPRO: Math.max(0, targetProt - currentProt),
-    restantiCARB: Math.max(0, targetCarb - currentCarb),
-    restantiFAT: Math.max(0, targetFat - currentFat),
-    restantiFIBRE: Math.max(0, targetFibre - currentFibre),
-    eccessoPRO: currentProt > targetProt ? currentProt - targetProt : 0,
-    eccessoCARB: currentCarb > targetCarb ? currentCarb - targetCarb : 0,
-    eccessoFAT: currentFat > targetFat ? currentFat - targetFat : 0,
-    eccessoFIBRE: currentFibre > targetFibre ? currentFibre - targetFibre : 0
-  };
-}
-
-function getTargetMacrosPastoCena(mealType, dynamicDailyKcal, totali, restanti) {
-  if (!restanti || mealType !== 'cena') return null;
-  const dailyKcal = Number(dynamicDailyKcal) || 2000;
-  const currentKcal = totali != null ? (Number(totali.kcal) || 0) : 0;
-  return {
-    kcal: Math.max(0, dailyKcal - currentKcal),
-    prot: restanti.restantiPRO ?? 0,
-    carb: restanti.restantiCARB ?? 0,
-    fat: restanti.restantiFAT ?? 0,
-    fibre: restanti.restantiFIBRE ?? 0
-  };
-}
-
-function computeVotoMetabolicoSafe(mealTotaliFull) {
-  if (!mealTotaliFull || typeof mealTotaliFull !== 'object') return 5;
-  const prot = Number(mealTotaliFull.prot) || 0;
-  const carb = Number(mealTotaliFull.carb) || 0;
-  const fat = Number(mealTotaliFull.fatTotal ?? mealTotaliFull.fat) || 0;
-  const fibre = Number(mealTotaliFull.fibre) || 0;
-  if (carb + prot + fibre === 0) return 5;
-  const safeCarb = carb > 0 ? carb : 1;
-  const fibreRatio = fibre / safeCarb;
-  const protRatio = prot / safeCarb;
-  let score = 5;
-  if (fibreRatio >= 0.15) score += 2;
-  else if (fibreRatio >= 0.08) score += 1;
-  if (protRatio >= 0.25) score += 2;
-  else if (protRatio >= 0.15) score += 1;
-  if (fat >= 5 && fat <= 40) score += 0.5;
-  return Math.max(1, Math.min(10, Math.round(score * 10) / 10));
-}
-
 const RADIAN = Math.PI / 180;
 
 const firebaseConfig = {
@@ -1792,11 +1732,6 @@ export default function SalaComandi() {
   });
   const [userTargets, setUserTargets] = useState({ ...DEFAULT_TARGETS });
 
-  // Motore biochimico: dichiarato subito dopo le dipendenze per evitare TDZ / "Cannot access before initialization"
-  const baseKcal = (userTargets?.kcal ?? STRATEGY_PROFILES[dayProfile]?.kcal ?? 2000) + calorieTuning;
-  const { totali = {}, obiettiviPasti = {} } = useBiochimico(dailyLog, baseKcal) || {};
-  const targetKcal = baseKcal + (totali?.workout ?? 0);
-
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(300);
   const [workoutStartTime, setWorkoutStartTime] = useState(18);
@@ -2635,37 +2570,13 @@ export default function SalaComandi() {
     if (isDrawerOpen && activeAction === 'pasto') setDrawerMealTimeStr(decimalToTimeStr(drawerMealTime));
   }, [isDrawerOpen, activeAction, drawerMealTime]);
 
+  // Motore biochimico
+  const baseKcal = (userTargets.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
+  const { totali, obiettiviPasti } = useBiochimico(dailyLog, baseKcal);
+  const targetKcal = baseKcal + (totali?.workout ?? 0);
+
   const openDrawer = () => { setActiveAction(null); setIsDrawerOpen(true); };
   const closeDrawer = () => { setIsDrawerOpen(false); setTimeout(() => setActiveAction(null), 400); };
-
-  // Dichiarate come function per hoisting: usate da predictMealType e loadMealToConstructor
-  function getCurrentTimeRoundedTo15Min() {
-    const now = new Date();
-    const h = now.getHours();
-    const m = now.getMinutes();
-    const decimal = h + m / 60;
-    return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
-  }
-  function getDefaultMealTime(mealTypeKey) {
-    const equivalents = getEquivalentMealTypes(mealTypeKey);
-    const first = (dailyLog || []).find(item =>
-      item.type === 'food' && equivalents.includes(item.mealType)
-    );
-    if (first != null && typeof first.mealTime === 'number') return first.mealTime;
-    if (!fullStorico) return getCurrentTimeRoundedTo15Min();
-    const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
-    keys.sort((a, b) => b.localeCompare(a));
-    const todayKey = TRACKER_STORICO_KEY(getTodayString());
-    for (const key of keys) {
-      if (key === todayKey) continue;
-      const dayData = fullStorico[key];
-      for (const eq of equivalents) {
-        const t = dayData?.mealTimes?.[eq];
-        if (typeof t === 'number') return t;
-      }
-    }
-    return getCurrentTimeRoundedTo15Min();
-  }
 
   // ============================================================================
   // FUNZIONI CRITICHE CON RETROCOMPATIBILITÀ
@@ -2755,6 +2666,40 @@ export default function SalaComandi() {
       if (predicted !== mealType) setMealType(predicted);
     }
   }, [drawerMealTime, activeAction, editingMealId, addedFoods.length]);
+
+  const getCurrentTimeRoundedTo15Min = () => {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const decimal = h + m / 60;
+    return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
+  };
+
+  const getDefaultMealTime = (mealTypeKey) => {
+    const equivalents = getEquivalentMealTypes(mealTypeKey);
+    
+    // Cerca nel dailyLog corrente
+    const first = (dailyLog || []).find(item => 
+      item.type === 'food' && equivalents.includes(item.mealType)
+    );
+    if (first != null && typeof first.mealTime === 'number') return first.mealTime;
+    
+    if (!fullStorico) return getCurrentTimeRoundedTo15Min();
+    const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
+    keys.sort((a, b) => b.localeCompare(a));
+    const todayKey = TRACKER_STORICO_KEY(getTodayString());
+    
+    for (const key of keys) {
+      if (key === todayKey) continue;
+      const dayData = fullStorico[key];
+      // Cerca in mealTimes con qualsiasi equivalente
+      for (const eq of equivalents) {
+        const t = dayData?.mealTimes?.[eq];
+        if (typeof t === 'number') return t;
+      }
+    }
+    return getCurrentTimeRoundedTo15Min();
+  };
 
   const handleTimeInput = (value) => {
     const digits = (value || '').replace(/\D/g, '');
@@ -3114,12 +3059,8 @@ export default function SalaComandi() {
       }
       return;
     }
-    if (node.type === 'meal') {
-      const entry = mealPieData.find(e => e.id === node.id || (typeof e.id === 'string' && e.id.startsWith(String(node.id) + '_')));
-      if (entry) setSelectedMealCenter({ id: entry.id, name: entry.name, value: entry.value, payload: { color: entry.color, macros: entry.macros } });
-    }
     setSelectedNodeReport(node);
-  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes, mealPieData]);
+  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes]);
 
   const handleAddWater = (amount) => {
     if (amount > 0) {
@@ -4139,18 +4080,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
   const cortisolCurve = useMemo(() => generateCortisolCurve(dailyLog, manualNodes), [dailyLog, manualNodes]);
-  function getAnabolicAtTime(curve, t) {
+  const getAnabolicAtTime = (curve, t) => {
     const i = t * 2;
     const idx = Math.min(Math.floor(i), 48);
     const pt = curve[idx];
     return pt ? pt.anabolicScore : 0;
-  }
-  function getCortisolAtTime(curve, t) {
+  };
+  const getCortisolAtTime = (curve, t) => {
     const i = t * 2;
     const idx = Math.min(Math.floor(i), 48);
     const pt = curve[idx];
     return pt ? pt.cortisolScore : 0;
-  }
+  };
 
   const isViewingPastDate = currentTrackerDate !== getTodayString();
   const displayTime = isViewingPastDate ? 24 : currentTime;
@@ -4301,11 +4242,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
     let data = calculatedPieData.filter(d => d.value > 0);
     const currentTotal = data.reduce((s, d) => s + d.value, 0);
-    const pieTargetKcal = dynamicDailyKcal || (userTargets?.kcal ?? 2000);
-    if (currentTotal < pieTargetKcal) {
+    const targetKcal = dynamicDailyKcal || (userTargets?.kcal ?? 2000);
+    if (currentTotal < targetKcal) {
       data = [...data, {
         name: 'Rimanenti',
-        value: pieTargetKcal - currentTotal,
+        value: targetKcal - currentTotal,
         macros: null,
         id: 'rimanenti',
         fill: 'rgba(255, 255, 255, 0.05)',
@@ -4419,25 +4360,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     fat: (userTargets.fatTotal ?? userTargets.fat ?? 60) * ratio,
     fibre: (userTargets.fibre ?? 30) * ratio
   };
-
-  const restantiMacro = useMemo(
-    () => getRestantiMacro(userTargets, totali),
-    [userTargets, totali]
-  );
-  const safeRestanti = restantiMacro || {};
-  const { restantiPRO = 0, restantiCARB = 0, restantiFAT = 0, restantiFIBRE = 0, eccessoPRO = 0, eccessoCARB = 0, eccessoFAT = 0, eccessoFIBRE = 0 } = safeRestanti;
-
-  const targetMacrosPastoCena = useMemo(
-    () => getTargetMacrosPastoCena(mealType, dynamicDailyKcal, totali, restantiMacro),
-    [mealType, dynamicDailyKcal, totali, restantiMacro]
-  );
-
-  const targetForMeal = (mealType === 'cena' && targetMacrosPastoCena) ? targetMacrosPastoCena : targetMacrosPasto;
-
-  const votoMetabolico = useMemo(
-    () => computeVotoMetabolicoSafe(mealTotaliFull),
-    [mealTotaliFull]
-  );
 
   const isReadyToDelete = draggingNode && Math.abs(dragOffsetY) > 50;
 
@@ -4683,9 +4605,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }
 
   return (
-    (!dailyLog || !userTargets) ? (
-      <div style={{ color: 'white', padding: 20, textAlign: 'center', backgroundColor: '#000', minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Caricamento Sistemi...</div>
-    ) : (
     <div style={{ backgroundColor: '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '65px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
       <style>
@@ -5000,17 +4919,33 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
           </div>
 
-          {/* DESTRA: Toggle HOME / ANALISI (intera pill cliccabile) */}
+          {/* DESTRA: Toggle HOME / ANALISI (Compatto) */}
           <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setUserProfile(prev => ({ ...prev, level: prev?.level === 'pro' ? 'base' : 'pro' }))}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setUserProfile(prev => ({ ...prev, level: prev?.level === 'pro' ? 'base' : 'pro' })); } }}
-              style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '3px', border: '1px solid #333', cursor: 'pointer', transition: 'all 0.3s ease' }}
-            >
-              <span style={{ background: userProfile?.level !== 'pro' ? 'linear-gradient(135deg, #00e5ff 0%, #007bb5 100%)' : 'transparent', color: userProfile?.level !== 'pro' ? '#fff' : '#888', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: userProfile?.level !== 'pro' ? '0 4px 10px rgba(0,229,255,0.4)' : 'none' }}>🏠 HOME</span>
-              <span style={{ background: userProfile?.level === 'pro' ? 'linear-gradient(135deg, #b388ff 0%, #7c4dff 100%)' : 'transparent', color: userProfile?.level === 'pro' ? '#fff' : '#888', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: userProfile?.level === 'pro' ? '0 4px 10px rgba(179,136,255,0.4)' : 'none' }}>📊 ANALISI</span>
+            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '3px', border: '1px solid #333' }}>
+              <button 
+                type="button"
+                onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))}
+                style={{ 
+                  background: userProfile?.level !== 'pro' ? 'linear-gradient(135deg, #00e5ff 0%, #007bb5 100%)' : 'transparent', 
+                  color: userProfile?.level !== 'pro' ? '#fff' : '#888', 
+                  border: 'none', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px',
+                  boxShadow: userProfile?.level !== 'pro' ? '0 4px 10px rgba(0,229,255,0.4)' : 'none'
+                }}
+              >
+                🏠 HOME
+              </button>
+              <button 
+                type="button"
+                onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
+                style={{ 
+                  background: userProfile?.level === 'pro' ? 'linear-gradient(135deg, #b388ff 0%, #7c4dff 100%)' : 'transparent', 
+                  color: userProfile?.level === 'pro' ? '#fff' : '#888', 
+                  border: 'none', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px',
+                  boxShadow: userProfile?.level === 'pro' ? '0 4px 10px rgba(179,136,255,0.4)' : 'none'
+                }}
+              >
+                📊 ANALISI
+              </button>
             </div>
           </div>
 
@@ -5816,14 +5751,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
-        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }} onClick={() => setSelectedMealCenter(null)}>
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }}>
           {/* Radar Container: Tachimetro centrale + riga macro sotto */}
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }} onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto', overflow: 'visible' }}>
               {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
               <div
                 className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
-                onClick={(e) => { e.stopPropagation(); if (selectedMealCenter) setSelectedNodeReport({ id: selectedMealCenter.id, type: 'meal' }); else setSelectedMealCenter(null); }}
+                onClick={() => setSelectedMealCenter(null)}
                 style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
               >
                 {!selectedMealCenter ? (
@@ -5892,21 +5827,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             </div>
 
-            {/* Riga widget macro: single line, no wrap; tap resetta quadrante */}
-            <div role="button" tabIndex={0} onClick={() => setSelectedMealCenter(null)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedMealCenter(null); } }} style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: '8px', width: '100%', marginTop: '25px', padding: '0 10px', position: 'relative', zIndex: 10, cursor: 'default' }}>
-              <div style={{ flex: '0 0 auto', minWidth: 'fit-content', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(179,136,255,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
+            {/* Riga widget macro: layout fluido sotto il tachimetro */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', width: '100%', marginTop: '25px', padding: '0 10px', position: 'relative', zIndex: 10 }}>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(179,136,255,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
                 <span style={{ fontSize: '0.65rem', color: '#b388ff', fontWeight: 'bold', letterSpacing: '1px' }}>PRO</span>
                 <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.prot || 0)}g</span></span>
               </div>
-              <div style={{ flex: '0 0 auto', minWidth: 'fit-content', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(0,230,118,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(0,230,118,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
                 <span style={{ fontSize: '0.65rem', color: '#00e676', fontWeight: 'bold', letterSpacing: '1px' }}>CARB</span>
                 <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.carb || 0)}g</span></span>
               </div>
-              <div style={{ flex: '0 0 auto', minWidth: 'fit-content', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(255,234,0,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(255,234,0,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
                 <span style={{ fontSize: '0.65rem', color: '#ffea00', fontWeight: 'bold', letterSpacing: '1px' }}>FAT</span>
                 <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 0)}g</span></span>
               </div>
-              <div style={{ flex: '0 0 auto', minWidth: 'fit-content', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(249,115,22,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(249,115,22,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
                 <span style={{ fontSize: '0.65rem', color: '#f97316', fontWeight: 'bold', letterSpacing: '1px' }}>FIBRE</span>
                 <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fibre || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fibre || 30)}g</span></span>
               </div>
@@ -5978,7 +5913,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <span style={{ fontSize: '1.2rem' }}>✨</span>
           <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
         </div>
-        <button type="button" onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
+        <button type="button" onClick={() => { setAddChoiceView('main'); setShowChoiceModal(true); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
       </div>
 
       {/* --- CASSETTO AZIONI --- */}
@@ -6514,72 +6449,46 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div className="pasto-container">
               <div className="pasto-telemetry-panel">
                 <h4 style={{ fontSize: '0.7rem', color: '#00e5ff', letterSpacing: '1px', marginBottom: '12px', textTransform: 'uppercase' }}>Telemetria live (oggi + pasto)</h4>
-                <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '8px', border: '1px solid #2a2a2a', background: 'rgba(0,0,0,0.2)', fontSize: '0.72rem' }}>
-                  <div style={{ color: '#888', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px' }}>Macro residui (giornata)</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px' }}>
-                    <span style={{ color: eccessoPRO > 0 ? '#ff1744' : '#b388ff' }}>P: {eccessoPRO > 0 ? `+${eccessoPRO.toFixed(0)}` : restantiPRO.toFixed(0)}g</span>
-                    <span style={{ color: eccessoCARB > 0 ? '#ff1744' : '#00e676' }}>C: {eccessoCARB > 0 ? `+${eccessoCARB.toFixed(0)}` : restantiCARB.toFixed(0)}g</span>
-                    <span style={{ color: eccessoFAT > 0 ? '#ff1744' : '#ffea00' }}>F: {eccessoFAT > 0 ? `+${eccessoFAT.toFixed(0)}` : restantiFAT.toFixed(0)}g</span>
-                    <span style={{ color: eccessoFIBRE > 0 ? '#ff1744' : '#aaa' }}>Fibre: {eccessoFIBRE > 0 ? `+${eccessoFIBRE.toFixed(0)}` : restantiFIBRE.toFixed(0)}g</span>
-                  </div>
-                  <p style={{ margin: '4px 0 0', fontSize: '0.6rem', color: '#666' }}>Residui = target − già assunto oggi. In rosso = eccesso.</p>
-                </div>
                 {renderLiveProgressBar('Kcal', totali?.kcal || 0, mealTotaliFull.kcal || 0, dynamicDailyKcal, 'kcal', '#00e5ff')}
                 {renderLiveProgressBar('Proteine', totali?.prot || 0, mealTotaliFull.prot || 0, userTargets?.prot ?? 150, 'g', '#b388ff')}
                 {renderLiveProgressBar('Carboidrati', totali?.carb || 0, mealTotaliFull.carb || 0, userTargets?.carb ?? 200, 'g', '#00e676')}
                 {renderLiveProgressBar('Grassi', totali?.fatTotal ?? totali?.fat ?? 0, mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, userTargets?.fatTotal ?? userTargets?.fat ?? 60, 'g', '#ffea00')}
-                {mealType === 'cena' && targetMacrosPastoCena && (() => {
+                {mealType === 'cena' && (() => {
+                  const targetKcal = dynamicDailyKcal;
+                  const targetProt = userTargets?.prot ?? 150;
+                  const targetCarb = userTargets?.carb ?? 200;
+                  const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 60;
                   const totalKcal = (totali?.kcal || 0) + (mealTotaliFull?.kcal || 0);
                   const totalProt = (totali?.prot || 0) + (mealTotaliFull?.prot || 0);
                   const totalCarb = (totali?.carb || 0) + (mealTotaliFull?.carb || 0);
                   const totalFat = (totali?.fatTotal ?? totali?.fat ?? 0) + (mealTotaliFull?.fatTotal ?? mealTotaliFull?.fat ?? 0);
-                  const totalFibre = (totali?.fibre ?? 0) + (mealTotaliFull?.fibre ?? 0);
-                  const targetFibreVal = userTargets?.fibre ?? 30;
-                  const deltaKcal = dynamicDailyKcal - totalKcal;
-                  const deltaProt = (userTargets?.prot ?? 150) - totalProt;
-                  const deltaCarb = (userTargets?.carb ?? 200) - totalCarb;
-                  const deltaFat = (userTargets?.fatTotal ?? userTargets?.fat ?? 60) - totalFat;
-                  const deltaFibre = targetFibreVal - totalFibre;
+                  const deltaKcal = targetKcal - totalKcal;
+                  const deltaProt = targetProt - totalProt;
+                  const deltaCarb = targetCarb - totalCarb;
+                  const deltaFat = targetFat - totalFat;
                   return (
-                    <>
-                      <div style={{ marginTop: '12px', padding: '12px', borderRadius: '10px', border: '1px solid #ffea00', background: 'rgba(255,234,0,0.08)' }}>
-                        <h4 style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '8px', textTransform: 'uppercase' }}>Suggerimento di composizione (Tetris)</h4>
-                        <p style={{ margin: '0 0 8px', fontSize: '0.68rem', color: '#ccc' }}>Per chiudere la giornata in target, comporre la cena circa con:</p>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', fontSize: '0.75rem' }}>
-                          <span style={{ color: '#00e5ff' }}>{Math.round(targetMacrosPastoCena.kcal)} kcal</span>
-                          <span style={{ color: '#b388ff' }}>P {Math.round(targetMacrosPastoCena.prot)}g</span>
-                          <span style={{ color: '#00e676' }}>C {Math.round(targetMacrosPastoCena.carb)}g</span>
-                          <span style={{ color: '#ffea00' }}>F {Math.round(targetMacrosPastoCena.fat)}g</span>
-                          <span style={{ color: '#aaa' }}>Fibre {Math.round(targetMacrosPastoCena.fibre)}g</span>
+                    <div style={{ marginTop: '16px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: 'rgba(0,0,0,0.2)' }}>
+                      <h4 style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>Bilancio di Fine Giornata</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaKcal >= 0 ? '#00e676' : '#ff1744' }}>
+                          <span>Kcal</span>
+                          <span>{deltaKcal >= 0 ? `Rimangono ${Math.round(deltaKcal)}` : `Eccesso ${Math.round(-deltaKcal)}`}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaProt >= 0 ? '#00e676' : '#ff1744' }}>
+                          <span>Proteine (g)</span>
+                          <span>{deltaProt >= 0 ? `Rimangono ${deltaProt.toFixed(0)}` : `Eccesso ${(-deltaProt).toFixed(0)}`}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaCarb >= 0 ? '#00e676' : '#ff1744' }}>
+                          <span>Carboidrati (g)</span>
+                          <span>{deltaCarb >= 0 ? `Rimangono ${deltaCarb.toFixed(0)}` : `Eccesso ${(-deltaCarb).toFixed(0)}`}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaFat >= 0 ? '#00e676' : '#ff1744' }}>
+                          <span>Grassi (g)</span>
+                          <span>{deltaFat >= 0 ? `Rimangono ${deltaFat.toFixed(0)}` : `Eccesso ${(-deltaFat).toFixed(0)}`}</span>
                         </div>
                       </div>
-                      <div style={{ marginTop: '10px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: 'rgba(0,0,0,0.2)' }}>
-                        <h4 style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>Bilancio di Fine Giornata</h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaKcal >= 0 ? '#00e676' : '#ff1744' }}>
-                            <span>Kcal</span>
-                            <span>{deltaKcal >= 0 ? `Rimangono ${Math.round(deltaKcal)}` : `Eccesso ${Math.round(-deltaKcal)}`}</span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaProt >= 0 ? '#00e676' : '#ff1744' }}>
-                            <span>Proteine (g)</span>
-                            <span>{deltaProt >= 0 ? `Rimangono ${deltaProt.toFixed(0)}` : `Eccesso ${(-deltaProt).toFixed(0)}`}</span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaCarb >= 0 ? '#00e676' : '#ff1744' }}>
-                            <span>Carboidrati (g)</span>
-                            <span>{deltaCarb >= 0 ? `Rimangono ${deltaCarb.toFixed(0)}` : `Eccesso ${(-deltaCarb).toFixed(0)}`}</span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaFat >= 0 ? '#00e676' : '#ff1744' }}>
-                            <span>Grassi (g)</span>
-                            <span>{deltaFat >= 0 ? `Rimangono ${deltaFat.toFixed(0)}` : `Eccesso ${(-deltaFat).toFixed(0)}`}</span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaFibre >= 0 ? '#00e676' : '#ff1744' }}>
-                            <span>Fibre (g)</span>
-                            <span>{deltaFibre >= 0 ? `Rimangono ${deltaFibre.toFixed(0)}` : `Eccesso ${(-deltaFibre).toFixed(0)}`}</span>
-                          </div>
-                        </div>
-                        <p style={{ margin: '8px 0 0', fontSize: '0.65rem', color: '#888' }}>Utile per bilanciare i carboidrati serali e supportare il cortisolo notturno.</p>
-                      </div>
-                    </>
+                      <p style={{ margin: '8px 0 0', fontSize: '0.65rem', color: '#888' }}>Utile per bilanciare i carboidrati serali e supportare il cortisolo notturno.</p>
+                    </div>
                   );
                 })()}
               </div>
@@ -6591,15 +6500,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               ) : (
                 <p style={{ margin: 0, fontSize: '0.7rem', color: '#86efac', lineHeight: 1.4 }}>✅ Equilibrio Serale Ottimale. La strategia attuale supporta bassi livelli di stress.</p>
               )}
-            </div>
-            <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', border: '1px solid #3b82f6', background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-              <div>
-                <div style={{ fontSize: '0.7rem', fontWeight: '600', color: '#93c5fd', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '1px' }}>Voto metabolico (1–10)</div>
-                <p style={{ margin: 0, fontSize: '0.65rem', color: '#94a3b8' }}>Rapporto carboidrati / fibre e proteine del pasto</p>
-              </div>
-              <div style={{ fontSize: '1.8rem', fontWeight: '900', color: votoMetabolico >= 7 ? '#22c55e' : votoMetabolico >= 5 ? '#eab308' : '#f87171', textShadow: '0 0 12px rgba(0,0,0,0.4)' }}>
-                {addedFoods.length > 0 ? votoMetabolico.toFixed(1) : '–'}
-              </div>
             </div>
             <div style={{ position: 'relative', marginBottom: '20px' }}>
               {isBarcodeScannerOpen && (
@@ -6703,10 +6603,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             {addedFoods.length > 0 && (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '12px', border: '1px solid #2a2a2a' }}>
-                  {renderMiniBar('KCAL', mealTotaliFull.kcal || 0, targetForMeal.kcal, '#00e5ff')}
-                  {renderMiniBar('PROTEINE (g)', mealTotaliFull.prot || 0, targetForMeal.prot, '#b388ff')}
-                  {renderMiniBar('CARBOIDRATI (g)', mealTotaliFull.carb || 0, targetForMeal.carb, '#00e676')}
-                  {renderMiniBar('GRASSI (g)', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetForMeal.fat, '#ffea00')}
+                  {renderMiniBar('KCAL', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, '#00e5ff')}
+                  {renderMiniBar('PROTEINE (g)', mealTotaliFull.prot || 0, targetMacrosPasto.prot, '#b388ff')}
+                  {renderMiniBar('CARBOIDRATI (g)', mealTotaliFull.carb || 0, targetMacrosPasto.carb, '#00e676')}
+                  {renderMiniBar('GRASSI (g)', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, '#ffea00')}
                 </div>
                 {userProfile?.level === 'pro' && (
                 <>
@@ -6733,11 +6633,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     <div className="telemetry-carousel" ref={mealCarouselRef} onScroll={handleMealCarouselScroll} style={{ height: '220px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none' }}>
                       <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                         <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                          {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, targetForMeal.kcal, 'kcal', 'kcal')}
-                          {renderProgressBar('PROTEINE', mealTotaliFull.prot || 0, targetForMeal.prot, 'g', 'prot')}
-                          {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, targetForMeal.carb, 'g', 'carb')}
-                          {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetForMeal.fat, 'g', 'fatTotal')}
-                          {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, targetForMeal.fibre, 'g', 'fibre')}
+                          {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, 'kcal', 'kcal')}
+                          {renderProgressBar('PROTEINE', mealTotaliFull.prot || 0, targetMacrosPasto.prot, 'g', 'prot')}
+                          {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, targetMacrosPasto.carb, 'g', 'carb')}
+                          {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
+                          {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, targetMacrosPasto.fibre, 'g', 'fibre')}
                         </div>
                       </div>
                       <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
@@ -6764,7 +6664,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       </div>
                       <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                         <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                          {renderProgressBar('Grassi tot.', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetForMeal.fat, 'g', 'fatTotal')}
+                          {renderProgressBar('Grassi tot.', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
                           {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.fat[k] || 0) * ratio, 'g', k))}
                         </div>
                       </div>
@@ -7491,6 +7391,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <button onClick={() => { setStimulantTime(getCurrentTimeRoundedTo15Min()); setStimulantSubtype('caffè'); setAddChoiceView('stimulant'); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #f59e0b', color: '#f59e0b', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
                   <span style={{ fontSize: '1.5rem' }}>☕</span> ENERGIZZANTE
                 </button>
+
+                <button onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #00e5ff', color: '#00e5ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+                  <span style={{ fontSize: '1.5rem' }}>⚙️</span> MENÙ PRINCIPALE
+                </button>
               </>
             )}
           </div>
@@ -7923,6 +7827,5 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         );
       })()}
     </div>
-    )
   );
 }
