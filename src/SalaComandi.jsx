@@ -4721,11 +4721,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div className="delete-text">RILASCIA PER ELIMINARE</div>
       </div>
 
-      {/* HEADER E GRAFICO - NUOVO LAYOUT A 3 ZONE */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '10px' }}>
+      {/* HEADER SUPERIORE - MINIMALE (2 ZONE) */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '5px' }}>
           
           {/* SINISTRA: Titolo OS */}
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
             <button type="button" onClick={() => { setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
               <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', letterSpacing: '2px', color: '#fff', display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <span style={{ color: '#00e5ff' }}>⚡</span> CORE <span style={{ color: '#888', fontWeight: 'normal' }}>OS</span>
@@ -4733,37 +4733,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </button>
           </div>
 
-          {/* CENTRO: Toggle HOME / ANALISI (Pillola) */}
-          <div style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '4px', border: '1px solid #333', flexShrink: 0 }}>
-            <button 
-              type="button"
-              onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))}
-              style={{ 
-                background: userProfile?.level !== 'pro' ? 'linear-gradient(135deg, #00e5ff 0%, #007bb5 100%)' : 'transparent', 
-                color: userProfile?.level !== 'pro' ? '#fff' : '#888', 
-                border: 'none', borderRadius: '20px', padding: '8px 16px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '6px',
-                boxShadow: userProfile?.level !== 'pro' ? '0 4px 10px rgba(0,229,255,0.4)' : 'none'
-              }}
-            >
-              <span style={{ fontSize: '1.1rem' }}>🏠</span> HOME
-            </button>
-            <button 
-              type="button"
-              onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
-              style={{ 
-                background: userProfile?.level === 'pro' ? 'linear-gradient(135deg, #b388ff 0%, #7c4dff 100%)' : 'transparent', 
-                color: userProfile?.level === 'pro' ? '#fff' : '#888', 
-                border: 'none', borderRadius: '20px', padding: '8px 16px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '6px',
-                boxShadow: userProfile?.level === 'pro' ? '0 4px 10px rgba(179,136,255,0.4)' : 'none'
-              }}
-            >
-              <span style={{ fontSize: '1.1rem' }}>📊</span> ANALISI
-            </button>
-          </div>
-
           {/* DESTRA: Energia SNC e Logout */}
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
-            {/* Widget Energia Biologica (Arco) - Compatto */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
+            {/* Widget Energia Biologica (Arco) */}
             <div 
               onClick={() => setShowEnergyPopup(true)}
               style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer', padding: '4px 8px', borderRadius: '8px', transition: 'background 0.2s' }}
@@ -4793,9 +4765,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         </div>
 
-        {/* Navigazione storica (PULITA) */}
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '8px 15px', borderRadius: '12px', border: '1px solid #222' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+        {/* BARRA DEGLI STRUMENTI: Data + Toggle Home/Analisi */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '6px 12px', borderRadius: '12px', border: '1px solid #222' }}>
+          
+          {/* SPAZIATORE SINISTRO (per centrare la data) */}
+          <div style={{ flex: 1 }}></div>
+
+          {/* CENTRO: Navigazione Data */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', justifyContent: 'center' }}>
             <button type="button" onClick={() => changeDate(-1)} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>◀</button>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <span style={{ fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Diario</span>
@@ -4805,6 +4782,37 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
             <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
           </div>
+
+          {/* DESTRA: Toggle HOME / ANALISI (Compatto) */}
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '3px', border: '1px solid #333' }}>
+              <button 
+                type="button"
+                onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))}
+                style={{ 
+                  background: userProfile?.level !== 'pro' ? 'linear-gradient(135deg, #00e5ff 0%, #007bb5 100%)' : 'transparent', 
+                  color: userProfile?.level !== 'pro' ? '#fff' : '#888', 
+                  border: 'none', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px',
+                  boxShadow: userProfile?.level !== 'pro' ? '0 4px 10px rgba(0,229,255,0.4)' : 'none'
+                }}
+              >
+                🏠 HOME
+              </button>
+              <button 
+                type="button"
+                onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
+                style={{ 
+                  background: userProfile?.level === 'pro' ? 'linear-gradient(135deg, #b388ff 0%, #7c4dff 100%)' : 'transparent', 
+                  color: userProfile?.level === 'pro' ? '#fff' : '#888', 
+                  border: 'none', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px',
+                  boxShadow: userProfile?.level === 'pro' ? '0 4px 10px rgba(179,136,255,0.4)' : 'none'
+                }}
+              >
+                📊 ANALISI
+              </button>
+            </div>
+          </div>
+
         </div>
 
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato */}
