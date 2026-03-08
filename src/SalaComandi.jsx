@@ -4112,11 +4112,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .zoom-btn { width: 44px; height: 44px; background: rgba(20, 20, 20, 0.8); border: 1px solid #333; color: #00e5ff; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; backdrop-filter: blur(5px); cursor: pointer; outline: none; }
           .tachimeter-center.tachimeter-center-reset:hover { filter: brightness(1.08); box-shadow: 0 0 45px rgba(255,255,255,0.12); }
 
-          /* Macro widget wedge mask: radar radius + gap ≈ 134px; circle center in widget coords */
-          .radar-widget-wedge-tl { -webkit-mask-image: radial-gradient(circle at 200% 200%, transparent 0, transparent 134px, black 134px); mask-image: radial-gradient(circle at 200% 200%, transparent 0, transparent 134px, black 134px); mask-size: 100% 100%; -webkit-mask-size: 100% 100%; }
-          .radar-widget-wedge-tr { -webkit-mask-image: radial-gradient(circle at -100% 200%, transparent 0, transparent 134px, black 134px); mask-image: radial-gradient(circle at -100% 200%, transparent 0, transparent 134px, black 134px); mask-size: 100% 100%; -webkit-mask-size: 100% 100%; }
-          .radar-widget-wedge-bl { -webkit-mask-image: radial-gradient(circle at 200% -100%, transparent 0, transparent 134px, black 134px); mask-image: radial-gradient(circle at 200% -100%, transparent 0, transparent 134px, black 134px); mask-size: 100% 100%; -webkit-mask-size: 100% 100%; }
-          .radar-widget-wedge-br { -webkit-mask-image: radial-gradient(circle at -100% -100%, transparent 0, transparent 134px, black 134px); mask-image: radial-gradient(circle at -100% -100%, transparent 0, transparent 134px, black 134px); mask-size: 100% 100%; -webkit-mask-size: 100% 100%; }
+          /* Macro widget wedge mask: radar center (180,180) in container; R=134px (radar ~122 + gap 12). Center in each widget’s local coords. */
+          .radar-widget-wedge-tl { -webkit-mask-image: radial-gradient(circle at 180px 180px, transparent 0, transparent 134px, black 134px); mask-image: radial-gradient(circle at 180px 180px, transparent 0, transparent 134px, black 134px); mask-origin: border-box; -webkit-mask-origin: border-box; }
+          .radar-widget-wedge-tr { -webkit-mask-image: radial-gradient(circle at -90px 180px, transparent 0, transparent 134px, black 134px); mask-image: radial-gradient(circle at -90px 180px, transparent 0, transparent 134px, black 134px); mask-origin: border-box; -webkit-mask-origin: border-box; }
+          .radar-widget-wedge-bl { -webkit-mask-image: radial-gradient(circle at 180px -90px, transparent 0, transparent 134px, black 134px); mask-image: radial-gradient(circle at 180px -90px, transparent 0, transparent 134px, black 134px); mask-origin: border-box; -webkit-mask-origin: border-box; }
+          .radar-widget-wedge-br { -webkit-mask-image: radial-gradient(circle at -90px -90px, transparent 0, transparent 134px, black 134px); mask-image: radial-gradient(circle at -90px -90px, transparent 0, transparent 134px, black 134px); mask-origin: border-box; -webkit-mask-origin: border-box; }
           
           /* Contenitore per lo scroll del grafico */
           .chart-scroll-container { width: 100%; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; cursor: grab; }
