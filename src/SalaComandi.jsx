@@ -4113,7 +4113,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .tachimeter-center.tachimeter-center-reset:hover { filter: brightness(1.08); box-shadow: 0 0 45px rgba(255,255,255,0.12); }
 
           /* Macro widgets: SVG polygon (closed shape + stroke border), text above */
-          .macro-widget { position: absolute; width: 90px; height: 90px; z-index: 10; pointer-events: none; }
+          .macro-widget { position: absolute; width: 90px; height: 90px; z-index: 10; pointer-events: none; border-radius: 18px; overflow: hidden; }
           .macro-widget svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
           .macro-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; pointer-events: none; }
           .macro-widget.macro-tl .macro-text { align-items: flex-start; padding: 10px 0 0 8px; }
@@ -5153,7 +5153,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {/* TOP-RIGHT (CARB) - mirror of PRO, diagonal bottom-left */}
               <div className="macro-widget macro-tr" style={{ top: 0, right: 0, filter: 'drop-shadow(0 0 12px rgba(0,230,118,0.25))' }}>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <polygon fill="rgba(15,15,15,0.95)" stroke="#00e676" strokeWidth="1" points="100,0 100,100 0,100 0,55 45,0" />
+                  <polygon fill="rgba(15,15,15,0.95)" stroke="#00e676" strokeWidth="1" points="100,0 100,100 45,100 0,55 0,0" />
                 </svg>
                 <div className="macro-text">
                   <span className="macro-label" style={{ color: '#00e676' }}>CARB</span>
