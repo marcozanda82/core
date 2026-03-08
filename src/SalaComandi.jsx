@@ -550,6 +550,23 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk, hasCortisolRisk: globalCortisolRisk, hasDigestionRisk, nervousSystemLoad: load };
 }
 
+/** Normalized driver signals for which physiological factors are pushing energy up or down. */
+function computeEnergyDrivers(point) {
+  if (!point) return null;
+
+  const digestion = -(point.digestione || 0) / 100;
+  const stress = -(point.cortisolo || 0) / 100;
+  const glycemia = ((point.glicemia || 90) - 90) / 60;
+  const hydration = ((point.idratazione || 50) - 50) / 50;
+
+  return {
+    digestion,
+    stress,
+    glycemia,
+    hydration
+  };
+}
+
 /** Analyzes the current chartData point and returns dominant factors affecting energy. */
 function explainEnergyState(point) {
   const causes = [];
@@ -1372,6 +1389,14 @@ function predictEnergyIntervention(chartData, displayTime) {
 
   if (!future.length) return null;
 
+  let slope = 0;
+  if (future.length >= 2) {
+    const first = future[0].energy ?? future[0].energia ?? 100;
+    const last = future[future.length - 1].energy ?? future[future.length - 1].energia ?? 100;
+    const dt = future.length;
+    slope = (last - first) / dt;
+  }
+
   let lowestPoint = future[0];
 
   future.forEach(p => {
@@ -1386,7 +1411,7 @@ function predictEnergyIntervention(chartData, displayTime) {
   const minutesUntil =
     Math.round((lowestPoint.time - displayTime) * 60);
 
-  if (lowestEnergy < 35) {
+  if (lowestEnergy < 35 || slope < -4) {
     return {
       type: "crash",
       message: `Crash energetico previsto tra ${minutesUntil} min`,
@@ -1394,7 +1419,7 @@ function predictEnergyIntervention(chartData, displayTime) {
     };
   }
 
-  if (lowestEnergy < 45) {
+  if (lowestEnergy < 45 || slope < -2) {
     return {
       type: "dip",
       message: `Calo energetico previsto tra ${minutesUntil} min`,
@@ -3906,6 +3931,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const energyIntervention = useMemo(() => {
     return predictEnergyIntervention(chartData, displayTime);
   }, [chartData, displayTime]);
+  const energyDrivers = useMemo(
+    () => computeEnergyDrivers(chartData?.find(p => p.time === Math.round(displayTime))),
+    [chartData, displayTime]
+  );
   const energyAt20 = chartData[20]?.energy;
   const idealDotY = chartData.length > 0
     ? (chartData[currentH]?.idealEnergy ?? 0) + ((chartData[nextH]?.idealEnergy ?? 0) - (chartData[currentH]?.idealEnergy ?? 0)) * fraction
@@ -4645,6 +4674,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               }}>
                 ⚠️ {energyIntervention.message}<br />
                 → {energyIntervention.suggestion}
+              </div>
+            )}
+            {energyDrivers && (
+              <div style={{
+                marginTop: '6px',
+                fontSize: '0.6rem',
+                opacity: 0.8
+              }}>
+                <div>Drivers</div>
+                <div>Digestione {energyDrivers.digestion < 0 ? '↓' : '↑'}</div>
+                <div>Stress {energyDrivers.stress < 0 ? '↓' : '↑'}</div>
+                <div>Glicemia {energyDrivers.glycemia > 0 ? '↑' : '↓'}</div>
+                <div>Idratazione {energyDrivers.hydration > 0 ? '↑' : '↓'}</div>
               </div>
             )}
           </div>
