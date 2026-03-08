@@ -217,7 +217,14 @@ const PHYSIOLOGY_CONFIG = {
   hydrationDecayPerHour: 2.0,
   workoutLoadImpact: 5,
   workLoadImpact: 0.5,
-  stimulantLoadImpact: 2
+  stimulantLoadImpact: 2,
+  napSncBoost: 18,
+  napCortisolReduction: 12,
+  meditationCortisolReduction: 20,
+  meditationNeuroStabilization: 6,
+  sunlightNeuroBoost: 8,
+  sunlightCortisolNormalize: 0.5,
+  supplementsRelaxCortisolReduction: 5
 };
 
 /**
@@ -391,6 +398,15 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           neuralEnergy += effect * stimulantBoost;
         }
       }
+      if (node.type === 'nap') {
+        const timeSince = h - node.time;
+        const duration = node.duration ?? 0.25;
+        const effectWindow = duration + 1.5;
+        if (timeSince >= 0 && timeSince <= effectWindow) {
+          const effect = responseCurve(timeSince, 0.3, effectWindow);
+          neuralEnergy += effect * PHYSIOLOGY_CONFIG.napSncBoost;
+        }
+      }
     });
     load = Math.max(0, Math.min(100, load));
 
@@ -501,6 +517,38 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const sub = (node.subtype || 'caffè').toLowerCase();
           const stimulantCortisolImpact = sub === 'energy drink' ? 25 : sub === 'caffè' ? 15 : 10;
           currentCortisol += effect * stimulantCortisolImpact * model.caffeineSensitivity;
+        }
+      }
+    });
+    (timelineNodes || []).forEach(node => {
+      if (node.type === 'nap') {
+        const timeSince = h - node.time;
+        const duration = node.duration ?? 0.25;
+        const effectWindow = duration + 1.5;
+        if (timeSince >= 0 && timeSince <= effectWindow) {
+          const effect = responseCurve(timeSince, 0.3, effectWindow);
+          neuralEnergy += effect * PHYSIOLOGY_CONFIG.napSncBoost;
+          currentCortisol -= effect * PHYSIOLOGY_CONFIG.napCortisolReduction;
+        }
+      }
+      if (node.type === 'meditation') {
+        if (node.time >= h && node.time < h + 1) {
+          currentCortisol -= PHYSIOLOGY_CONFIG.meditationCortisolReduction;
+          currentNeuro = Math.min(100, currentNeuro + PHYSIOLOGY_CONFIG.meditationNeuroStabilization);
+        }
+      }
+      if (node.type === 'supplements') {
+        if (node.time >= h && node.time < h + 1) {
+          const sub = (node.subtype || node.name || '').toLowerCase();
+          if (sub.includes('magnesio') || sub.includes('relax') || sub.includes('gaba')) {
+            currentCortisol -= PHYSIOLOGY_CONFIG.supplementsRelaxCortisolReduction;
+          }
+        }
+      }
+      if (node.type === 'sunlight') {
+        if (node.time >= h && node.time < h + 1) {
+          currentNeuro = Math.min(100, currentNeuro + PHYSIOLOGY_CONFIG.sunlightNeuroBoost);
+          currentCortisol = currentCortisol * (1 - PHYSIOLOGY_CONFIG.sunlightCortisolNormalize) + 20 * PHYSIOLOGY_CONFIG.sunlightCortisolNormalize;
         }
       }
     });
@@ -1092,21 +1140,35 @@ const MEAL_LABELS_SAVE = {
 
 /** Importanza dinamica dei nodi per vista grafico: quali tipi evidenziare. */
 const NODE_IMPORTANCE = {
-  percent: ['meal', 'workout', 'stimulant'],
+  percent: ['meal', 'workout', 'stimulant', 'nap', 'sunlight'],
   kcal: ['meal', 'workout'],
-  cortisolo: ['work', 'workout', 'stimulant'],
+  cortisolo: ['work', 'workout', 'stimulant', 'meditation'],
   glicemia: ['meal', 'workout', 'stimulant'],
   idratazione: ['water', 'workout', 'stimulant'],
   digestione: ['meal'],
-  neuro: ['sleep', 'work', 'workout', 'stimulant']
+  neuro: ['sleep', 'work', 'workout', 'stimulant', 'nap', 'meditation', 'sunlight']
 };
 
 /** Gerarchia nodi nel modale Spiegazione: primari (focus) vs secondari (sfondo) per grafico. */
 const MODAL_NODE_PRIMARY = {
   glicemia: ['meal', 'workout'],
-  cortisolo: ['work', 'workout', 'stimulant'],
-  neuro: ['work', 'workout', 'stimulant'],
-  calorieTimeline: ['meal']
+  cortisolo: ['work', 'workout', 'stimulant', 'meditation'],
+  neuro: ['work', 'workout', 'stimulant', 'nap', 'meditation', 'sunlight'],
+  calorieTimeline: ['meal'],
+  percent: ['meal', 'workout', 'stimulant', 'nap', 'sunlight']
+};
+
+/** Icona per tipo nodo (timeline e modale). */
+const NODE_TYPE_ICON = {
+  meal: '🥗',
+  work: '💼',
+  workout: '⚡',
+  water: '💧',
+  stimulant: '☕',
+  nap: '😴',
+  meditation: '🧘',
+  supplements: '💊',
+  sunlight: '☀️'
 };
 
 function denormalizeLogForFirebase(flatLog) {
@@ -1525,6 +1587,7 @@ export default function SalaComandi() {
   const [activeAction, setActiveAction] = useState('home');
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
+  const [isMealBuilderOpen, setIsMealBuilderOpen] = useState(false);
   const [userModel, setUserModel] = useState(DEFAULT_USER_MODEL);
   const [lastCalibrationWeek, setLastCalibrationWeek] = useState(null);
   const [nervousSystemLoad, setNervousSystemLoad] = useState(30);
@@ -1908,9 +1971,14 @@ export default function SalaComandi() {
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
   const allNodesWithStack = useMemo(() => {
+    const endTime = (n) => {
+      if (n.type === 'work') return n.time + (n.duration || 1);
+      if (n.type === 'nap' || n.type === 'meditation') return n.time + (n.duration ?? 0.25);
+      return n.time;
+    };
     const overlaps = (a, b) => {
-      const aEnd = a.type === 'work' ? a.time + (a.duration || 1) : a.time;
-      const bEnd = b.type === 'work' ? b.time + (b.duration || 1) : b.time;
+      const aEnd = endTime(a);
+      const bEnd = endTime(b);
       return a.time <= bEnd && b.time <= aEnd;
     };
     return allNodes.map((node, i) => {
@@ -1924,9 +1992,14 @@ export default function SalaComandi() {
 
   const activeNodesWithStack = useMemo(() => {
     const nodes = simulationMode ? simulationNodes : allNodes;
+    const endTime = (n) => {
+      if (n.type === 'work') return n.time + (n.duration || 1);
+      if (n.type === 'nap' || n.type === 'meditation') return n.time + (n.duration ?? 0.25);
+      return n.time;
+    };
     const overlaps = (a, b) => {
-      const aEnd = a.type === 'work' ? a.time + (a.duration || 1) : a.time;
-      const bEnd = b.type === 'work' ? b.time + (b.duration || 1) : b.time;
+      const aEnd = endTime(a);
+      const bEnd = endTime(b);
       return a.time <= bEnd && b.time <= aEnd;
     };
     return nodes.map((node, i) => {
@@ -2873,6 +2946,30 @@ export default function SalaComandi() {
     setEditingMealId(null);
     closeDrawer();
   };
+
+  /**
+   * Salvataggio dal costruttore pasti avanzato (macro, timing, impatto glicemico stimato).
+   * Predisposto per un futuro sistema modulare di creazione pasti.
+   * @param {Object} payload - { macro?, timing?, glycemicImpact?, mealType?, items? }
+   */
+  const handleMealBuilderSave = useCallback((payload = {}) => {
+    setIsMealBuilderOpen(false);
+    // TODO: integrare con diary (es. creare voci dailyLog da payload.macro/timing/glycemicImpact)
+    if (payload?.items?.length) {
+      const timeToUse = typeof payload.timing === 'number' ? payload.timing : (typeof drawerMealTime === 'number' ? drawerMealTime : 12);
+      const ourSlot = getGhostMealType(payload.mealType || mealType, dailyLog);
+      const mealItems = payload.items.map((f, index) => ({
+        ...f,
+        type: 'food',
+        mealType: ourSlot,
+        mealTime: timeToUse,
+        id: f.id || `f_${Date.now()}_${index}`
+      }));
+      const rest = dailyLog.filter(item => item.type !== 'food' || getSlotKey(item) !== ourSlot);
+      setDailyLog([...mealItems, ...rest]);
+      syncDatiFirebase([...mealItems, ...rest], manualNodes);
+    }
+  }, [dailyLog, manualNodes, mealType, drawerMealTime, syncDatiFirebase]);
 
   const handleNodeClick = (node) => {
     setSelectedNodeReport(node);
@@ -5172,7 +5269,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const realVal = (node.type === 'meal' || node.type === 'workout') ? (realTotals[node.strategyKey] ?? 0) : 0;
                     const ratio = idealVal > 0 ? realVal / idealVal : 1;
                     let borderColor = '#00e5ff';
-                    if (node.type === 'water') borderColor = '#00e5ff';
+                    if (node.type === 'nap') borderColor = '#818cf8';
+                    else if (node.type === 'meditation') borderColor = '#22c55e';
+                    else if (node.type === 'supplements') borderColor = '#a855f7';
+                    else if (node.type === 'sunlight') borderColor = '#fbbf24';
+                    else if (node.type === 'water') borderColor = '#00e5ff';
                     else if (ratio < 0.5) borderColor = '#ff3d00';
                     else if (ratio > 1.2) borderColor = '#ffea00';
                     const pointBorderColor = isWork ? '#ffea00' : borderColor;
@@ -5215,17 +5316,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
                     const isWater = node.type === 'water';
                     const isStimulant = node.type === 'stimulant';
-                    const iconContent = isStimulant ? '☕' : (isWater ? '💧' : (isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•')));
-                    const bgColor = isStimulant ? (isDragging ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.2)') : (isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)'));
-                    const nodeBorderColor = isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : pointBorderColor);
+                    const iconContent = NODE_TYPE_ICON[node.type] ?? (isStimulant ? '☕' : (isWater ? '💧' : (isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•'))));
+                    const bioTypeBg = { nap: 'rgba(129,140,248,0.2)', meditation: 'rgba(34,197,94,0.2)', supplements: 'rgba(168,85,247,0.2)', sunlight: 'rgba(251,191,36,0.2)' }[node.type];
+                    const bioTypeBorder = { nap: '#818cf8', meditation: '#22c55e', supplements: '#a855f7', sunlight: '#fbbf24' }[node.type];
+                    const bgColor = isStimulant ? (isDragging ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.2)') : isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : bioTypeBg ? (isDragging ? bioTypeBg.replace('0.2)', '0.35)') : bioTypeBg) : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
+                    const nodeBorderColor = isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (bioTypeBorder || pointBorderColor));
                     const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
                     const pointTransform = isDragging ? `translate(-50%, ${dragY - 45}px) scale(2)` : (isImportant ? 'translateX(-50%) scale(1)' : 'translateX(-50%) scale(0.8)');
                     return (
                       <div key={node.id} className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${displayPercent}%`, transform: pointTransform, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.15s, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', ...(isDragging ? {} : importanceStyle) }}>
-                        <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : pointBorderColor), marginBottom: '2px', transition: 'color 0.2s' }}>
+                        <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (bioTypeBorder || pointBorderColor)), marginBottom: '2px', transition: 'color 0.2s' }}>
                           {timeLabelStr}
                         </span>
-                        <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isPesi ? pointBorderColor : 'inherit')) }}>{iconContent}</span>
+                        <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (bioTypeBorder || (isPesi ? pointBorderColor : 'inherit'))) }}>{iconContent}</span>
                       </div>
                     );
                   })}
@@ -5440,9 +5543,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   const isWork = node.type === 'work';
                   const percent = (node.time / 24) * 100;
                   const durationPercent = isWork ? ((node.duration || 1) / 24) * 100 : 0;
-                  const iconContent = node.type === 'stimulant' ? '☕' : (node.type === 'water' ? '💧' : (node.type === 'work' ? '💼' : (node.type === 'workout' ? '⚡' : '🥗')));
-                  const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : 'rgba(0,0,0,0.6)'));
-                  const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : '#00e5ff'));
+                  const iconContent = NODE_TYPE_ICON[node.type] ?? (node.type === 'stimulant' ? '☕' : (node.type === 'water' ? '💧' : (node.type === 'work' ? '💼' : (node.type === 'workout' ? '⚡' : '🥗'))));
+                  const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : (node.type === 'nap' ? 'rgba(129,140,248,0.2)' : (node.type === 'meditation' ? 'rgba(34,197,94,0.2)' : (node.type === 'supplements' ? 'rgba(168,85,247,0.2)' : (node.type === 'sunlight' ? 'rgba(251,191,36,0.2)' : 'rgba(0,0,0,0.6)'))))));
+                  const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : (node.type === 'nap' ? '#818cf8' : (node.type === 'meditation' ? '#22c55e' : (node.type === 'supplements' ? '#a855f7' : (node.type === 'sunlight' ? '#fbbf24' : '#00e5ff'))))));
                   const timeLabelStr = `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
                   const nodeStyle = {
                     zIndex: isPrimary ? 10 : 1,
