@@ -789,7 +789,7 @@ function getWorkoutTrafficLight(currentTime, anabolicCurve, dailyLog, options) {
 /** Costruisce il prompt per l'analisi AI del grafico (nome grafico + dati attuali + direttive). */
 function buildAIPrompt(expandedChart, data) {
   const chartNames = {
-    percent: 'Livello Energia SNC (%)',
+    percent: 'Energia SNC (%)',
     kcal: 'Energia/Calorie 0-24h',
     glicemia: 'Simulatore Glicemico',
     idratazione: 'Idratazione',
@@ -4409,7 +4409,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 {bodyBatteryData.level}%
               </div>
             </div>
-            <span style={{ fontSize: '0.5rem', textTransform: 'uppercase', color: '#888', marginTop: '2px' }}>Energia corporea</span>
+            <span style={{ fontSize: '0.5rem', textTransform: 'uppercase', color: '#888', marginTop: '2px' }}>Energia SNC</span>
           </div>
         </div>
       </div>
@@ -4436,7 +4436,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ flexShrink: 0, marginBottom: '10px' }}>
           <div style={{ marginBottom: '8px' }}>
             <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
-              {chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia 0–24h'}
+              {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'kcal' ? 'Energia 0–24h' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia 0–24h'}
             </span>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
@@ -4490,10 +4490,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               >
                 {chartUnit === 'percent' ? (
               <div style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
-                <h3 style={{ margin: '0 0 15px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>⚡ Livello Energia (SNC)</span>
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>⚡ Energia SNC (%)</span>
                   <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
                 </h3>
+                <div style={{ fontSize: '0.65rem', color: '#666', marginBottom: '10px', lineHeight: 1.3 }} title="Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.">
+                  Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.
+                </div>
                 <div style={{ width: '100%', height: '220px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={finalEnergyPercentData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
@@ -4509,7 +4512,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <Tooltip
                         contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
                         itemStyle={{ color: '#00e676', fontWeight: 'bold' }}
-                        formatter={(value) => [`${value}%`, 'Energia Residua']}
+                        formatter={(value) => [`${value}%`, 'Energia SNC']}
                         labelFormatter={(label) => `Ore ${label}:00`}
                       />
                       {(dailyLog || []).filter(item => item.type === 'sleep').map((sleepItem, index) => (
@@ -4891,10 +4894,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
-                  {expandedChart === 'percent' ? '⚡ Livello Energia (SNC)' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : 'Energia 0–24h'}
+                  {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : 'Energia 0–24h'}
                 </span>
                 <button type="button" onClick={() => { setExpandedChart(null); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi</button>
               </div>
+              {expandedChart === 'percent' && (
+                <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }} title="Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.">
+                  Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.
+                </div>
+              )}
               <div style={{ flex: 1, minHeight: 120 }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -4912,7 +4920,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                       <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
                       <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
-                      <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${value}%`, 'Energia']} labelFormatter={(label) => `Ore ${label}:00`} />
+                      <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${value}%`, 'Energia SNC']} labelFormatter={(label) => `Ore ${label}:00`} />
                       {(dailyLog || []).filter(item => item.type === 'sleep').map((sleepItem, index) => (
                         <ReferenceLine key={`modal-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 4 : 1.5} strokeOpacity={activeHighlight === 'sveglia' ? 1 : 0.8} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
                       ))}
