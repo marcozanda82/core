@@ -1454,6 +1454,7 @@ export default function SalaComandi() {
   const [fullHistory, setFullHistory] = useState({});
   const [showReport, setShowReport] = useState(false);
   const [showTelemetryPopup, setShowTelemetryPopup] = useState(false);
+  const [showMetabolicPopup, setShowMetabolicPopup] = useState(false);
   const [reportPeriod, setReportPeriod] = useState('7');
   const [currentDateObj, setCurrentDateObj] = useState(() => new Date());
 
@@ -5184,13 +5185,38 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
 
           {/* Widget Orologio Metabolico (Digiuno) - compatto */}
-          <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '10px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)', flexShrink: 0 }}>
+          {(() => {
+            let faseText = fastingData.phaseName || 'Assorbimento';
+            let faseColor = '#00e5ff';
+            if (faseText.toLowerCase().includes('catabolismo')) {
+              const svegliaTime = userTargets?.sveglia || 7;
+              let oreDallaSveglia = displayTime - svegliaTime;
+              if (oreDallaSveglia < 0) oreDallaSveglia += 24;
+              if (oreDallaSveglia < 5) {
+                faseText = 'Lipolisi Basale (Digiuno Notturno)';
+                faseColor = '#00e5ff';
+              } else {
+                faseText = '⚠️ Rischio Catabolismo Attivo';
+                faseColor = '#ef4444';
+              }
+            } else if (faseText.toLowerCase().includes('lipolisi')) {
+              faseText = 'Bruciagrassi (Lipolisi)';
+              faseColor = '#00e5ff';
+            } else if (faseText.toLowerCase().includes('anaboli')) {
+              faseText = 'Sintesi Proteica (Anabolismo)';
+              faseColor = '#00e676';
+            } else {
+              faseText = 'Assorbimento / Neutra';
+              faseColor = '#ffea00';
+            }
+            return (
+          <div role="button" tabIndex={0} onClick={() => setShowMetabolicPopup(true)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowMetabolicPopup(true); } }} style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '10px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)', flexShrink: 0, cursor: 'pointer' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '1.1rem', filter: `drop-shadow(0 0 5px ${fastingData.phaseColor})` }}>⏳</span>
+                <span style={{ fontSize: '1.1rem', filter: `drop-shadow(0 0 5px ${faseColor})` }}>⏳</span>
                 <div>
                   <div style={{ fontSize: '0.55rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1px' }}>Fase Metabolica</div>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: fastingData.phaseColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{fastingData.phaseName}</div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: faseColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{faseText}</div>
                 </div>
               </div>
               <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -5201,7 +5227,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             </div>
             <div style={{ height: '3px', background: '#222', borderRadius: '2px', overflow: 'hidden' }}>
-              <div style={{ width: `${fastingData.progress}%`, height: '100%', background: fastingData.phaseColor, transition: 'width 1s ease-in-out', boxShadow: `0 0 10px ${fastingData.phaseColor}` }}></div>
+              <div style={{ width: `${fastingData.progress}%`, height: '100%', background: faseColor, transition: 'width 1s ease-in-out', boxShadow: `0 0 10px ${faseColor}` }}></div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: '#aaa', padding: '0 2px' }}>
               {fastingData.phaseDesc.split('•').map((pt, i) => (
@@ -5209,6 +5235,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               ))}
             </div>
           </div>
+            );
+          })()}
           {/* Fila 5 bottoni */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '320px', margin: '0 auto', flexShrink: 0 }}>
             <button type="button" onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ flex: 1, padding: '10px 8px', fontSize: '0.7rem', fontWeight: '600', background: '#1a1a1a', border: '1px solid #333', borderRadius: '10px', color: '#fff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: 0 }} title="Pasto">🍽️<span>Pasto</span></button>
@@ -6743,6 +6771,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
 
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP FASE METABOLICA */}
+      {showMetabolicPopup && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }}>
+          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '25px', maxWidth: '400px', width: '100%', position: 'relative', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '15px', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
+              🧬 Stato Metabolico
+            </h3>
+            <p style={{ color: '#aaa', fontSize: '0.9rem', lineHeight: 1.5 }}>
+              Il tuo corpo attraversa diverse fasi durante la giornata:
+            </p>
+            <ul style={{ color: '#ccc', fontSize: '0.85rem', lineHeight: 1.6, paddingLeft: '20px', marginBottom: '20px' }}>
+              <li><strong style={{ color: '#00e5ff' }}>Lipolisi Basale:</strong> Attiva al mattino o a digiuno. Il corpo usa i grassi per l'energia base. È sano e non intacca il muscolo.</li>
+              <li><strong style={{ color: '#00e676' }}>Anabolismo:</strong> Attiva dopo i pasti. Il corpo costruisce e ripara i tessuti muscolari (Fondamentale post-allenamento).</li>
+              <li><strong style={{ color: '#ef4444' }}>Catabolismo:</strong> Allarme rosso. L'energia è sotto la soglia critica; il corpo smonta le fibre muscolari per sopravvivere. Avviene dopo sforzi intensi senza nutrizione.</li>
+            </ul>
+            <button type="button" onClick={() => setShowMetabolicPopup(false)} style={{ background: '#333', color: '#fff', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
+              Ho capito
+            </button>
           </div>
         </div>
       )}
