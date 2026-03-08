@@ -5055,109 +5055,99 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }}>
-          {/* Griglia 3 colonne: macro sinistra | tachimetro centro | macro destra */}
-          <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 70px', alignItems: 'center', gap: '10px', width: '100%', maxWidth: '450px', margin: '0 auto', marginBottom: '8px', flex: 1, minHeight: 0 }}>
-            {/* Colonna Sinistra */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid #222', borderRadius: '10px', padding: '8px 5px' }}>
-                <div style={{ fontSize: '0.6rem', color: '#b388ff', marginBottom: '2px' }}>PRO</div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.prot || 0)}</div>
-                <div style={{ fontSize: '0.55rem', color: '#666' }}>/ {Math.round(userTargets?.prot ?? 150)}g</div>
-              </div>
-              <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid #222', borderRadius: '10px', padding: '8px 5px' }}>
-                <div style={{ fontSize: '0.6rem', color: '#ffea00', marginBottom: '2px' }}>FAT</div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}</div>
-                <div style={{ fontSize: '0.55rem', color: '#666' }}>/ {Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 60)}g</div>
-              </div>
-            </div>
-
-            {/* Colonna Centrale (Tachimetro) */}
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '180px' }}>
-              <div style={{ position: 'relative', width: '100%', aspectRatio: '1', maxHeight: '100%' }}>
-                {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
-                <div
-                  className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
-                  onClick={() => setSelectedMealCenter(null)}
-                  style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
-                >
-                  {!selectedMealCenter ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-10px)' }}>
-                      <span style={{ color: '#888', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
-                      <span style={{ fontSize: '2rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
-                      <span style={{ fontSize: '0.8rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-8px)', width: '80%', textAlign: 'center' }}>
-                      <span style={{ color: selectedMealCenter.payload?.color || '#fff', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '2px', borderBottom: `1px solid ${(selectedMealCenter.payload?.color || '#fff')}50`, paddingBottom: '2px' }}>
-                        {selectedMealCenter.name}
+          {/* Radar Container: Tachimetro centrale grande + widget corner */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }}>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto', overflow: 'visible' }}>
+              {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
+              <div
+                className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
+                onClick={() => setSelectedMealCenter(null)}
+                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
+              >
+                {!selectedMealCenter ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-14px)' }}>
+                    <span style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
+                    <span style={{ fontSize: '2.6rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-10px)', width: '80%', textAlign: 'center' }}>
+                    <span style={{ color: selectedMealCenter.payload?.color || '#fff', fontSize: '0.9rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', borderBottom: `1px solid ${(selectedMealCenter.payload?.color || '#fff')}50`, paddingBottom: '2px' }}>
+                      {selectedMealCenter.name}
+                    </span>
+                    <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(selectedMealCenter.value)} <span style={{ fontSize: '0.8rem', color: '#aaa' }}>kcal</span></span>
+                    {dynamicDailyKcal > 0 && (
+                      <span style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
+                        ({Math.round((selectedMealCenter.value / dynamicDailyKcal) * 100)}% del totale)
                       </span>
-                      <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(selectedMealCenter.value)} <span style={{ fontSize: '0.7rem', color: '#aaa' }}>kcal</span></span>
-                      {dynamicDailyKcal > 0 && (
-                        <span style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>
-                          ({Math.round((selectedMealCenter.value / dynamicDailyKcal) * 100)}% del totale)
-                        </span>
-                      )}
-                      {selectedMealCenter.payload?.macros && (
-                        <div style={{ display: 'flex', gap: '6px', fontSize: '0.7rem', marginTop: '2px', fontWeight: 'bold' }}>
-                          <span style={{ color: '#ffb74d' }}>C:{Math.round(selectedMealCenter.payload.macros.carb)}</span>
-                          <span style={{ color: '#64b5f6' }}>P:{Math.round(selectedMealCenter.payload.macros.pro)}</span>
-                          <span style={{ color: '#81c784' }}>F:{Math.round(selectedMealCenter.payload.macros.fat)}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                {/* Layer 2: Grafico a Torta */}
-                <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={mealPieData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius="68%"
-                        outerRadius="85%"
-                        paddingAngle={3}
-                        dataKey="value"
-                        stroke="none"
-                        labelLine={false}
-                        label={renderCustomizedLabel}
-                        onClick={(data) => setSelectedMealCenter({ name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
-                        style={{ cursor: 'pointer', outline: 'none' }}
-                      >
-                        {mealPieData.map((entry, index) => {
-                          const isSelected = selectedMealCenter && entry.name === selectedMealCenter.name;
-                          const hasSelection = !!selectedMealCenter;
-                          return (
-                            <Cell
-                              key={`cell-${index}`}
-                              fill={entry.color}
-                              style={{
-                                filter: isSelected ? `drop-shadow(0 0 15px ${entry.color})` : 'none',
-                                opacity: hasSelection && !isSelected ? 0.3 : 1,
-                                outline: 'none'
-                              }}
-                            />
-                          );
-                        })}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
+                    )}
+                    {selectedMealCenter.payload?.macros && (
+                      <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', marginTop: '4px', fontWeight: 'bold' }}>
+                        <span style={{ color: '#ffb74d' }}>C:{Math.round(selectedMealCenter.payload.macros.carb)}</span>
+                        <span style={{ color: '#64b5f6' }}>P:{Math.round(selectedMealCenter.payload.macros.pro)}</span>
+                        <span style={{ color: '#81c784' }}>F:{Math.round(selectedMealCenter.payload.macros.fat)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
+              {/* Layer 2: Grafico a Torta */}
+              <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={mealPieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="68%"
+                      outerRadius="85%"
+                      paddingAngle={3}
+                      dataKey="value"
+                      stroke="none"
+                      labelLine={false}
+                      label={renderCustomizedLabel}
+                      onClick={(data) => setSelectedMealCenter({ name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
+                      style={{ cursor: 'pointer', outline: 'none' }}
+                    >
+                      {mealPieData.map((entry, index) => {
+                        const isSelected = selectedMealCenter && entry.name === selectedMealCenter.name;
+                        const hasSelection = !!selectedMealCenter;
+                        return (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={entry.color}
+                            style={{
+                              filter: isSelected ? `drop-shadow(0 0 15px ${entry.color})` : 'none',
+                              opacity: hasSelection && !isSelected ? 0.3 : 1,
+                              outline: 'none'
+                            }}
+                          />
+                        );
+                      })}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
 
-            {/* Colonna Destra */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid #222', borderRadius: '10px', padding: '8px 5px' }}>
-                <div style={{ fontSize: '0.6rem', color: '#00e676', marginBottom: '2px' }}>CARB</div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.carb || 0)}</div>
-                <div style={{ fontSize: '0.55rem', color: '#666' }}>/ {Math.round(userTargets?.carb ?? 200)}g</div>
+              {/* TOP-LEFT: PROTEINE (Curve segue radar in basso-destra) */}
+              <div style={{ position: 'absolute', top: 0, left: 0, width: '70px', height: '70px', background: 'rgba(15,15,15,0.9)', border: '1px solid #222', borderTopLeftRadius: '10px', borderBottomRightRadius: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: '8px', zIndex: 10 }}>
+                <div style={{ fontSize: '0.6rem', color: '#b388ff' }}>PRO</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.prot || 0)}g</div>
               </div>
-              <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid #222', borderRadius: '10px', padding: '8px 5px' }}>
-                <div style={{ fontSize: '0.6rem', color: '#f97316', marginBottom: '2px' }}>FIBRE</div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fibre || 0)}</div>
-                <div style={{ fontSize: '0.55rem', color: '#666' }}>/ {Math.round(userTargets?.fibre ?? 30)}g</div>
+              {/* TOP-RIGHT: CARBOIDRATI (Curve segue radar in basso-sinistra) */}
+              <div style={{ position: 'absolute', top: 0, right: 0, width: '70px', height: '70px', background: 'rgba(15,15,15,0.9)', border: '1px solid #222', borderTopRightRadius: '10px', borderBottomLeftRadius: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', paddingRight: '8px', zIndex: 10 }}>
+                <div style={{ fontSize: '0.6rem', color: '#00e676' }}>CARB</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.carb || 0)}g</div>
+              </div>
+              {/* BOTTOM-LEFT: GRASSI (Curve segue radar in alto-destra) */}
+              <div style={{ position: 'absolute', bottom: 0, left: 0, width: '70px', height: '70px', background: 'rgba(15,15,15,0.9)', border: '1px solid #222', borderBottomLeftRadius: '10px', borderTopRightRadius: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: '8px', zIndex: 10 }}>
+                <div style={{ fontSize: '0.6rem', color: '#ffea00' }}>FAT</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}g</div>
+              </div>
+              {/* BOTTOM-RIGHT: FIBRE (Curve segue radar in alto-sinistra) */}
+              <div style={{ position: 'absolute', bottom: 0, right: 0, width: '70px', height: '70px', background: 'rgba(15,15,15,0.9)', border: '1px solid #222', borderBottomRightRadius: '10px', borderTopLeftRadius: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', paddingRight: '8px', zIndex: 10 }}>
+                <div style={{ fontSize: '0.6rem', color: '#f97316' }}>FIBRE</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(totali?.fibre || 0)}g</div>
               </div>
             </div>
           </div>
