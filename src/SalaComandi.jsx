@@ -1098,6 +1098,13 @@ const NODE_IMPORTANCE = {
   neuro: ['sleep', 'work', 'workout', 'stimulant']
 };
 
+/** Gerarchia nodi nel modale Spiegazione: primari (focus) vs secondari (sfondo) per grafico. */
+const MODAL_NODE_PRIMARY = {
+  glicemia: ['meal', 'workout'],
+  cortisolo: ['work', 'workout', 'stimulant'],
+  neuro: ['work', 'workout', 'stimulant']
+};
+
 function denormalizeLogForFirebase(flatLog) {
   if (!flatLog || !Array.isArray(flatLog)) return [];
   const meals = {};
@@ -5421,9 +5428,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </ResponsiveContainer>
                 )}
               </div>
-              {/* Barra nodi universale (stessa scala 0-24h del grafico) */}
+              {/* Barra nodi universale (stessa scala 0-24h del grafico) — gerarchia per tipo grafico */}
               <div style={{ flexShrink: 0, height: '55px', marginTop: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', position: 'relative', overflow: 'hidden' }}>
                 {activeNodesWithStack.map((node) => {
+                  const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];
+                  const isPrimary = primaryTypes.includes(node.type);
                   const isWork = node.type === 'work';
                   const percent = (node.time / 24) * 100;
                   const durationPercent = isWork ? ((node.duration || 1) / 24) * 100 : 0;
@@ -5431,15 +5440,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : 'rgba(0,0,0,0.6)'));
                   const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : '#00e5ff'));
                   const timeLabelStr = `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
+                  const nodeStyle = {
+                    zIndex: isPrimary ? 10 : 1,
+                    filter: isPrimary ? 'none' : 'grayscale(100%)',
+                    opacity: isPrimary ? 1 : 0.4,
+                    transform: isPrimary ? (isWork ? undefined : 'translateX(-50%)') : (isWork ? 'scale(0.8)' : 'translateX(-50%) scale(0.8)'),
+                    transition: 'all 0.3s ease',
+                    pointerEvents: 'none'
+                  };
                   if (isWork) {
                     return (
-                      <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(255,234,0,0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', pointerEvents: 'none' }}>
+                      <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(255,234,0,0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
                         💼
                       </div>
                     );
                   }
                   return (
-                    <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, transform: 'translateX(-50%)', top: '50%', marginTop: -18, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', pointerEvents: 'none' }}>
+                    <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, top: '50%', marginTop: -18, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', ...nodeStyle }}>
                       <span style={{ color: borderColor, fontWeight: 'bold', marginBottom: '1px' }}>{timeLabelStr}</span>
                       <span style={{ lineHeight: 1, fontSize: '1rem' }}>{iconContent}</span>
                     </div>
