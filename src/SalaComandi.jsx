@@ -3059,8 +3059,12 @@ export default function SalaComandi() {
       }
       return;
     }
+    if (node.type === 'meal') {
+      const entry = mealPieData.find(e => e.id === node.id || (typeof e.id === 'string' && e.id.startsWith(String(node.id) + '_')));
+      if (entry) setSelectedMealCenter({ id: entry.id, name: entry.name, value: entry.value, payload: { color: entry.color, macros: entry.macros } });
+    }
     setSelectedNodeReport(node);
-  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes]);
+  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes, mealPieData]);
 
   const handleAddWater = (amount) => {
     if (amount > 0) {
@@ -4919,33 +4923,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
           </div>
 
-          {/* DESTRA: Toggle HOME / ANALISI (Compatto) */}
+          {/* DESTRA: Toggle HOME / ANALISI (intera pill cliccabile) */}
           <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '3px', border: '1px solid #333' }}>
-              <button 
-                type="button"
-                onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))}
-                style={{ 
-                  background: userProfile?.level !== 'pro' ? 'linear-gradient(135deg, #00e5ff 0%, #007bb5 100%)' : 'transparent', 
-                  color: userProfile?.level !== 'pro' ? '#fff' : '#888', 
-                  border: 'none', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px',
-                  boxShadow: userProfile?.level !== 'pro' ? '0 4px 10px rgba(0,229,255,0.4)' : 'none'
-                }}
-              >
-                🏠 HOME
-              </button>
-              <button 
-                type="button"
-                onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
-                style={{ 
-                  background: userProfile?.level === 'pro' ? 'linear-gradient(135deg, #b388ff 0%, #7c4dff 100%)' : 'transparent', 
-                  color: userProfile?.level === 'pro' ? '#fff' : '#888', 
-                  border: 'none', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px',
-                  boxShadow: userProfile?.level === 'pro' ? '0 4px 10px rgba(179,136,255,0.4)' : 'none'
-                }}
-              >
-                📊 ANALISI
-              </button>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setUserProfile(prev => ({ ...prev, level: prev?.level === 'pro' ? 'base' : 'pro' }))}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setUserProfile(prev => ({ ...prev, level: prev?.level === 'pro' ? 'base' : 'pro' })); } }}
+              style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '3px', border: '1px solid #333', cursor: 'pointer', transition: 'all 0.3s ease' }}
+            >
+              <span style={{ background: userProfile?.level !== 'pro' ? 'linear-gradient(135deg, #00e5ff 0%, #007bb5 100%)' : 'transparent', color: userProfile?.level !== 'pro' ? '#fff' : '#888', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: userProfile?.level !== 'pro' ? '0 4px 10px rgba(0,229,255,0.4)' : 'none' }}>🏠 HOME</span>
+              <span style={{ background: userProfile?.level === 'pro' ? 'linear-gradient(135deg, #b388ff 0%, #7c4dff 100%)' : 'transparent', color: userProfile?.level === 'pro' ? '#fff' : '#888', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: userProfile?.level === 'pro' ? '0 4px 10px rgba(179,136,255,0.4)' : 'none' }}>📊 ANALISI</span>
             </div>
           </div>
 
@@ -5751,14 +5739,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
-        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }}>
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }} onClick={() => setSelectedMealCenter(null)}>
           {/* Radar Container: Tachimetro centrale + riga macro sotto */}
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }} onClick={e => e.stopPropagation()}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto', overflow: 'visible' }}>
               {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
               <div
                 className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
-                onClick={() => setSelectedMealCenter(null)}
+                onClick={(e) => { e.stopPropagation(); if (selectedMealCenter) setSelectedNodeReport({ id: selectedMealCenter.id, type: 'meal' }); else setSelectedMealCenter(null); }}
                 style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
               >
                 {!selectedMealCenter ? (
@@ -5827,21 +5815,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             </div>
 
-            {/* Riga widget macro: layout fluido sotto il tachimetro */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', width: '100%', marginTop: '25px', padding: '0 10px', position: 'relative', zIndex: 10 }}>
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(179,136,255,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
+            {/* Riga widget macro: single line, no wrap; tap resetta quadrante */}
+            <div role="button" tabIndex={0} onClick={() => setSelectedMealCenter(null)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedMealCenter(null); } }} style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: '8px', width: '100%', marginTop: '25px', padding: '0 10px', position: 'relative', zIndex: 10, cursor: 'default' }}>
+              <div style={{ flex: '0 0 auto', minWidth: 'fit-content', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(179,136,255,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
                 <span style={{ fontSize: '0.65rem', color: '#b388ff', fontWeight: 'bold', letterSpacing: '1px' }}>PRO</span>
                 <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.prot || 0)}g</span></span>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(0,230,118,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
+              <div style={{ flex: '0 0 auto', minWidth: 'fit-content', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(0,230,118,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
                 <span style={{ fontSize: '0.65rem', color: '#00e676', fontWeight: 'bold', letterSpacing: '1px' }}>CARB</span>
                 <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.carb || 0)}g</span></span>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(255,234,0,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
+              <div style={{ flex: '0 0 auto', minWidth: 'fit-content', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(255,234,0,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
                 <span style={{ fontSize: '0.65rem', color: '#ffea00', fontWeight: 'bold', letterSpacing: '1px' }}>FAT</span>
                 <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 0)}g</span></span>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(249,115,22,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 'fit-content', boxSizing: 'border-box', zIndex: 10 }}>
+              <div style={{ flex: '0 0 auto', minWidth: 'fit-content', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(249,115,22,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
                 <span style={{ fontSize: '0.65rem', color: '#f97316', fontWeight: 'bold', letterSpacing: '1px' }}>FIBRE</span>
                 <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fibre || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fibre || 30)}g</span></span>
               </div>
@@ -5913,7 +5901,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <span style={{ fontSize: '1.2rem' }}>✨</span>
           <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
         </div>
-        <button type="button" onClick={() => { setAddChoiceView('main'); setShowChoiceModal(true); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
+        <button type="button" onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
       </div>
 
       {/* --- CASSETTO AZIONI --- */}
@@ -7390,10 +7378,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
                 <button onClick={() => { setStimulantTime(getCurrentTimeRoundedTo15Min()); setStimulantSubtype('caffè'); setAddChoiceView('stimulant'); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #f59e0b', color: '#f59e0b', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
                   <span style={{ fontSize: '1.5rem' }}>☕</span> ENERGIZZANTE
-                </button>
-
-                <button onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #00e5ff', color: '#00e5ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-                  <span style={{ fontSize: '1.5rem' }}>⚙️</span> MENÙ PRINCIPALE
                 </button>
               </>
             )}
