@@ -399,8 +399,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const mealKcal = node.kcal ?? node.cal ?? 500;
           const mealLoad = Math.max(0, Math.min(3, mealKcal / 600));
           metabolicEnergy -= mealLoad * PHYSIOLOGY_CONFIG.digestionEnergyImpact * digestionFactor;
-          currentDigestione += 100 * (1 - diff / 3);
-          currentDigestione += mealLoad * 30 * (1 - diff / 3);
+          const digestionSignal =
+            100 * (1 - diff / 3) +
+            mealLoad * 30 * (1 - diff / 3);
+          currentDigestione = Math.max(currentDigestione, digestionSignal);
         }
       }
     });
@@ -435,7 +437,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     neuralEnergy -= neuralFatigue * 0.08;
     neuralFatigue = Math.max(0, Math.min(100, neuralFatigue));
 
-    currentEnergy = Math.min(metabolicEnergy, neuralEnergy);
+    let combinedEnergy =
+      neuralEnergy * 0.6 +
+      metabolicEnergy * 0.4;
+    currentEnergy = Math.min(combinedEnergy, neuralEnergy);
 
     currentHydration -= PHYSIOLOGY_CONFIG.hydrationDecayPerHour;
     (timelineNodes || []).forEach(node => {
