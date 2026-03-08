@@ -4050,54 +4050,82 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const dynamicDailyKcal = (userTargets?.kcal ?? 2000) + burnedKcal;
 
   const mealPieData = useMemo(() => {
-    const foodItems = (dailyLog || []).filter(item => item.type === 'food' || item.type === 'meal');
-    const colors = {
-      merenda1: '#ffd700',
-      colazione: '#ffd700',
-      pranzo: '#00e676',
-      merenda2: '#4ba3e3',
-      cena: '#ff4d4d',
-      spuntino: '#4ba3e3',
-      snack: '#4ba3e3'
-    };
-    const getMealColor = (slot) => colors[slot] || '#9c27b0';
-    const data = foodItems.map((item, index) => {
-      const slot = item.mealType ? (item.mealType.split('_')[0] || 'snack') : 'snack';
-      const kcal = Number(item.kcal ?? item.cal ?? 0) || 0;
-      const carb = Number(item.carb) || 0;
-      const pro = Number(item.prot ?? item.proteine) || 0;
-      const fat = Number(item.fatTotal ?? item.fat ?? item.grassi) || 0;
-      const name = item.name || MEAL_LABELS_SAVE[slot] || (slot.charAt(0).toUpperCase() + slot.slice(1)) || `Pasto ${index + 1}`;
-      return {
-        name,
-        value: kcal,
-        macros: { carb, pro, fat },
-        id: item.id || `meal-${index}`,
-        fill: getMealColor(slot),
-        color: getMealColor(slot)
-      };
-    }).filter(d => d.value > 0);
+    // Palette Sci-Fi per distinguere i vari pasti in modo univoco
+    const PIE_COLORS = ['#00e5ff', '#b388ff', '#00e676', '#ffea00', '#ff9800', '#f48fb1', '#4fc3f7', '#aed581', '#ffb74d'];
+
+    const mealsById = {};
+
+    (dailyLog || []).forEach(item => {
+      if (item.type !== 'food' && item.type !== 'meal') return;
+
+      // Chiave univoca basata sull'orario per raggruppare gli alimenti dello STESSO pasto
+      const timeKey = typeof item.mealTime === 'number' ? item.mealTime.toString() : 'unknown';
+      const typeKey = item.mealType || 'pasto';
+      const uniqueMealId = `${typeKey}_${timeKey}`;
+
+      if (!mealsById[uniqueMealId]) {
+        // Calcoliamo la label dell'orario (es. "10:30") per rendere chiara la fetta
+        let timeLabel = '';
+        if (typeof item.mealTime === 'number') {
+          const h = Math.floor(item.mealTime).toString().padStart(2, '0');
+          const m = Math.round((item.mealTime % 1) * 60).toString().padStart(2, '0');
+          timeLabel = ` (${h}:${m})`;
+        }
+
+        // Prova a usare MEAL_LABELS_SAVE se esiste nel file, altrimenti usa item.mealType
+        const slot = item.mealType ? (item.mealType.split('_')[0] || 'snack') : 'snack';
+        const baseName = typeof MEAL_LABELS_SAVE !== 'undefined' ? (MEAL_LABELS_SAVE[slot] || item.mealType || 'Pasto') : (item.mealType || 'Pasto');
+
+        mealsById[uniqueMealId] = {
+          id: uniqueMealId,
+          name: `${baseName}${timeLabel}`,
+          value: 0,
+          prot: 0,
+          carb: 0,
+          fat: 0,
+          timeValue: typeof item.mealTime === 'number' ? item.mealTime : 0
+        };
+      }
+
+      // Sommiamo i macro di tutti gli alimenti che fanno parte di QUESTO specifico pasto
+      mealsById[uniqueMealId].value += Number(item.kcal || item.cal || 0);
+      mealsById[uniqueMealId].prot += Number(item.prot || item.proteine || 0);
+      mealsById[uniqueMealId].carb += Number(item.carb || item.carboidrati || 0);
+      mealsById[uniqueMealId].fat += Number(item.fatTotal || item.fat || item.grassi || 0);
+    });
+
+    // Trasformiamo l'oggetto in array, lo ordiniamo cronologicamente e assegniamo i colori
+    const calculatedPieData = Object.values(mealsById)
+      .sort((a, b) => a.timeValue - b.timeValue)
+      .map((meal, index) => ({
+        ...meal,
+        macros: { pro: meal.prot, carb: meal.carb, fat: meal.fat },
+        color: PIE_COLORS[index % PIE_COLORS.length],
+        fill: PIE_COLORS[index % PIE_COLORS.length]
+      }));
+
+    let data = calculatedPieData.filter(d => d.value > 0);
     const currentTotal = data.reduce((s, d) => s + d.value, 0);
     const targetKcal = dynamicDailyKcal || (userTargets?.kcal ?? 2000);
     if (currentTotal < targetKcal) {
-      data.push({
+      data = [...data, {
         name: 'Rimanenti',
         value: targetKcal - currentTotal,
         macros: null,
         id: 'rimanenti',
         fill: 'rgba(255, 255, 255, 0.05)',
         color: 'rgba(255, 255, 255, 0.05)'
-      });
+      }];
     }
     if (data.length === 0) {
-      data.push({
+      data = [{
         name: 'Rimanenti',
         value: userTargets?.kcal ?? 2000,
         macros: null,
         id: 'rimanenti',
         fill: 'rgba(255,255,255,0.05)',
         color: 'rgba(255,255,255,0.05)'
-      });
+      }];
     }
     return data;
   }, [dailyLog, userTargets?.kcal, dynamicDailyKcal]);
