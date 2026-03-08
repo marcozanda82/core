@@ -4365,6 +4365,50 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     fibre: (userTargets.fibre ?? 30) * ratio
   };
 
+  const targetProt = userTargets?.prot ?? 150;
+  const targetCarb = userTargets?.carb ?? 200;
+  const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 60;
+  const targetFibre = userTargets?.fibre ?? 30;
+  const currentProt = totali?.prot ?? 0;
+  const currentCarb = totali?.carb ?? 0;
+  const currentFat = totali?.fatTotal ?? totali?.fat ?? 0;
+  const currentFibre = totali?.fibre ?? 0;
+  const restantiPRO = Math.max(0, targetProt - currentProt);
+  const restantiCARB = Math.max(0, targetCarb - currentCarb);
+  const restantiFAT = Math.max(0, targetFat - currentFat);
+  const restantiFIBRE = Math.max(0, targetFibre - currentFibre);
+  const eccessoPRO = currentProt > targetProt ? currentProt - targetProt : 0;
+  const eccessoCARB = currentCarb > targetCarb ? currentCarb - targetCarb : 0;
+  const eccessoFAT = currentFat > targetFat ? currentFat - targetFat : 0;
+  const eccessoFIBRE = currentFibre > targetFibre ? currentFibre - targetFibre : 0;
+
+  const targetMacrosPastoCena = mealType === 'cena' ? {
+    kcal: Math.max(0, dynamicDailyKcal - (totali?.kcal || 0)),
+    prot: restantiPRO,
+    carb: restantiCARB,
+    fat: restantiFAT,
+    fibre: restantiFIBRE
+  } : null;
+
+  const targetForMeal = (mealType === 'cena' && targetMacrosPastoCena) ? targetMacrosPastoCena : targetMacrosPasto;
+
+  const votoMetabolico = useMemo(() => {
+    const prot = mealTotaliFull.prot || 0;
+    const carb = mealTotaliFull.carb || 0;
+    const fat = mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0;
+    const fibre = mealTotaliFull.fibre || 0;
+    if (carb + prot + fibre === 0) return 5;
+    const fibreRatio = carb > 0 ? fibre / carb : (fibre > 0 ? 1 : 0);
+    const protRatio = carb > 0 ? prot / carb : (prot > 0 ? 1 : 0);
+    let score = 5;
+    if (fibreRatio >= 0.15) score += 2;
+    else if (fibreRatio >= 0.08) score += 1;
+    if (protRatio >= 0.25) score += 2;
+    else if (protRatio >= 0.15) score += 1;
+    if (fat >= 5 && fat <= 40) score += 0.5;
+    return Math.max(1, Math.min(10, Math.round(score * 10) / 10));
+  }, [mealTotaliFull?.prot, mealTotaliFull?.carb, mealTotaliFull?.fatTotal, mealTotaliFull?.fat, mealTotaliFull?.fibre]);
+
   const isReadyToDelete = draggingNode && Math.abs(dragOffsetY) > 50;
 
   const checkBilanciamentoPasto = () => {
@@ -6437,46 +6481,72 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div className="pasto-container">
               <div className="pasto-telemetry-panel">
                 <h4 style={{ fontSize: '0.7rem', color: '#00e5ff', letterSpacing: '1px', marginBottom: '12px', textTransform: 'uppercase' }}>Telemetria live (oggi + pasto)</h4>
+                <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '8px', border: '1px solid #2a2a2a', background: 'rgba(0,0,0,0.2)', fontSize: '0.72rem' }}>
+                  <div style={{ color: '#888', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px' }}>Macro residui (giornata)</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px' }}>
+                    <span style={{ color: eccessoPRO > 0 ? '#ff1744' : '#b388ff' }}>P: {eccessoPRO > 0 ? `+${eccessoPRO.toFixed(0)}` : restantiPRO.toFixed(0)}g</span>
+                    <span style={{ color: eccessoCARB > 0 ? '#ff1744' : '#00e676' }}>C: {eccessoCARB > 0 ? `+${eccessoCARB.toFixed(0)}` : restantiCARB.toFixed(0)}g</span>
+                    <span style={{ color: eccessoFAT > 0 ? '#ff1744' : '#ffea00' }}>F: {eccessoFAT > 0 ? `+${eccessoFAT.toFixed(0)}` : restantiFAT.toFixed(0)}g</span>
+                    <span style={{ color: eccessoFIBRE > 0 ? '#ff1744' : '#aaa' }}>Fibre: {eccessoFIBRE > 0 ? `+${eccessoFIBRE.toFixed(0)}` : restantiFIBRE.toFixed(0)}g</span>
+                  </div>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.6rem', color: '#666' }}>Residui = target − già assunto oggi. In rosso = eccesso.</p>
+                </div>
                 {renderLiveProgressBar('Kcal', totali?.kcal || 0, mealTotaliFull.kcal || 0, dynamicDailyKcal, 'kcal', '#00e5ff')}
                 {renderLiveProgressBar('Proteine', totali?.prot || 0, mealTotaliFull.prot || 0, userTargets?.prot ?? 150, 'g', '#b388ff')}
                 {renderLiveProgressBar('Carboidrati', totali?.carb || 0, mealTotaliFull.carb || 0, userTargets?.carb ?? 200, 'g', '#00e676')}
                 {renderLiveProgressBar('Grassi', totali?.fatTotal ?? totali?.fat ?? 0, mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, userTargets?.fatTotal ?? userTargets?.fat ?? 60, 'g', '#ffea00')}
-                {mealType === 'cena' && (() => {
-                  const targetKcal = dynamicDailyKcal;
-                  const targetProt = userTargets?.prot ?? 150;
-                  const targetCarb = userTargets?.carb ?? 200;
-                  const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 60;
+                {mealType === 'cena' && targetMacrosPastoCena && (() => {
                   const totalKcal = (totali?.kcal || 0) + (mealTotaliFull?.kcal || 0);
                   const totalProt = (totali?.prot || 0) + (mealTotaliFull?.prot || 0);
                   const totalCarb = (totali?.carb || 0) + (mealTotaliFull?.carb || 0);
                   const totalFat = (totali?.fatTotal ?? totali?.fat ?? 0) + (mealTotaliFull?.fatTotal ?? mealTotaliFull?.fat ?? 0);
-                  const deltaKcal = targetKcal - totalKcal;
-                  const deltaProt = targetProt - totalProt;
-                  const deltaCarb = targetCarb - totalCarb;
-                  const deltaFat = targetFat - totalFat;
+                  const totalFibre = (totali?.fibre ?? 0) + (mealTotaliFull?.fibre ?? 0);
+                  const targetFibreVal = userTargets?.fibre ?? 30;
+                  const deltaKcal = dynamicDailyKcal - totalKcal;
+                  const deltaProt = (userTargets?.prot ?? 150) - totalProt;
+                  const deltaCarb = (userTargets?.carb ?? 200) - totalCarb;
+                  const deltaFat = (userTargets?.fatTotal ?? userTargets?.fat ?? 60) - totalFat;
+                  const deltaFibre = targetFibreVal - totalFibre;
                   return (
-                    <div style={{ marginTop: '16px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: 'rgba(0,0,0,0.2)' }}>
-                      <h4 style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>Bilancio di Fine Giornata</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaKcal >= 0 ? '#00e676' : '#ff1744' }}>
-                          <span>Kcal</span>
-                          <span>{deltaKcal >= 0 ? `Rimangono ${Math.round(deltaKcal)}` : `Eccesso ${Math.round(-deltaKcal)}`}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaProt >= 0 ? '#00e676' : '#ff1744' }}>
-                          <span>Proteine (g)</span>
-                          <span>{deltaProt >= 0 ? `Rimangono ${deltaProt.toFixed(0)}` : `Eccesso ${(-deltaProt).toFixed(0)}`}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaCarb >= 0 ? '#00e676' : '#ff1744' }}>
-                          <span>Carboidrati (g)</span>
-                          <span>{deltaCarb >= 0 ? `Rimangono ${deltaCarb.toFixed(0)}` : `Eccesso ${(-deltaCarb).toFixed(0)}`}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaFat >= 0 ? '#00e676' : '#ff1744' }}>
-                          <span>Grassi (g)</span>
-                          <span>{deltaFat >= 0 ? `Rimangono ${deltaFat.toFixed(0)}` : `Eccesso ${(-deltaFat).toFixed(0)}`}</span>
+                    <>
+                      <div style={{ marginTop: '12px', padding: '12px', borderRadius: '10px', border: '1px solid #ffea00', background: 'rgba(255,234,0,0.08)' }}>
+                        <h4 style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '8px', textTransform: 'uppercase' }}>Suggerimento di composizione (Tetris)</h4>
+                        <p style={{ margin: '0 0 8px', fontSize: '0.68rem', color: '#ccc' }}>Per chiudere la giornata in target, comporre la cena circa con:</p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', fontSize: '0.75rem' }}>
+                          <span style={{ color: '#00e5ff' }}>{Math.round(targetMacrosPastoCena.kcal)} kcal</span>
+                          <span style={{ color: '#b388ff' }}>P {Math.round(targetMacrosPastoCena.prot)}g</span>
+                          <span style={{ color: '#00e676' }}>C {Math.round(targetMacrosPastoCena.carb)}g</span>
+                          <span style={{ color: '#ffea00' }}>F {Math.round(targetMacrosPastoCena.fat)}g</span>
+                          <span style={{ color: '#aaa' }}>Fibre {Math.round(targetMacrosPastoCena.fibre)}g</span>
                         </div>
                       </div>
-                      <p style={{ margin: '8px 0 0', fontSize: '0.65rem', color: '#888' }}>Utile per bilanciare i carboidrati serali e supportare il cortisolo notturno.</p>
-                    </div>
+                      <div style={{ marginTop: '10px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: 'rgba(0,0,0,0.2)' }}>
+                        <h4 style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>Bilancio di Fine Giornata</h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaKcal >= 0 ? '#00e676' : '#ff1744' }}>
+                            <span>Kcal</span>
+                            <span>{deltaKcal >= 0 ? `Rimangono ${Math.round(deltaKcal)}` : `Eccesso ${Math.round(-deltaKcal)}`}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaProt >= 0 ? '#00e676' : '#ff1744' }}>
+                            <span>Proteine (g)</span>
+                            <span>{deltaProt >= 0 ? `Rimangono ${deltaProt.toFixed(0)}` : `Eccesso ${(-deltaProt).toFixed(0)}`}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaCarb >= 0 ? '#00e676' : '#ff1744' }}>
+                            <span>Carboidrati (g)</span>
+                            <span>{deltaCarb >= 0 ? `Rimangono ${deltaCarb.toFixed(0)}` : `Eccesso ${(-deltaCarb).toFixed(0)}`}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaFat >= 0 ? '#00e676' : '#ff1744' }}>
+                            <span>Grassi (g)</span>
+                            <span>{deltaFat >= 0 ? `Rimangono ${deltaFat.toFixed(0)}` : `Eccesso ${(-deltaFat).toFixed(0)}`}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaFibre >= 0 ? '#00e676' : '#ff1744' }}>
+                            <span>Fibre (g)</span>
+                            <span>{deltaFibre >= 0 ? `Rimangono ${deltaFibre.toFixed(0)}` : `Eccesso ${(-deltaFibre).toFixed(0)}`}</span>
+                          </div>
+                        </div>
+                        <p style={{ margin: '8px 0 0', fontSize: '0.65rem', color: '#888' }}>Utile per bilanciare i carboidrati serali e supportare il cortisolo notturno.</p>
+                      </div>
+                    </>
                   );
                 })()}
               </div>
@@ -6488,6 +6558,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               ) : (
                 <p style={{ margin: 0, fontSize: '0.7rem', color: '#86efac', lineHeight: 1.4 }}>✅ Equilibrio Serale Ottimale. La strategia attuale supporta bassi livelli di stress.</p>
               )}
+            </div>
+            <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', border: '1px solid #3b82f6', background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', fontWeight: '600', color: '#93c5fd', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '1px' }}>Voto metabolico (1–10)</div>
+                <p style={{ margin: 0, fontSize: '0.65rem', color: '#94a3b8' }}>Rapporto carboidrati / fibre e proteine del pasto</p>
+              </div>
+              <div style={{ fontSize: '1.8rem', fontWeight: '900', color: votoMetabolico >= 7 ? '#22c55e' : votoMetabolico >= 5 ? '#eab308' : '#f87171', textShadow: '0 0 12px rgba(0,0,0,0.4)' }}>
+                {addedFoods.length > 0 ? votoMetabolico.toFixed(1) : '–'}
+              </div>
             </div>
             <div style={{ position: 'relative', marginBottom: '20px' }}>
               {isBarcodeScannerOpen && (
@@ -6591,10 +6670,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             {addedFoods.length > 0 && (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '12px', border: '1px solid #2a2a2a' }}>
-                  {renderMiniBar('KCAL', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, '#00e5ff')}
-                  {renderMiniBar('PROTEINE (g)', mealTotaliFull.prot || 0, targetMacrosPasto.prot, '#b388ff')}
-                  {renderMiniBar('CARBOIDRATI (g)', mealTotaliFull.carb || 0, targetMacrosPasto.carb, '#00e676')}
-                  {renderMiniBar('GRASSI (g)', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, '#ffea00')}
+                  {renderMiniBar('KCAL', mealTotaliFull.kcal || 0, targetForMeal.kcal, '#00e5ff')}
+                  {renderMiniBar('PROTEINE (g)', mealTotaliFull.prot || 0, targetForMeal.prot, '#b388ff')}
+                  {renderMiniBar('CARBOIDRATI (g)', mealTotaliFull.carb || 0, targetForMeal.carb, '#00e676')}
+                  {renderMiniBar('GRASSI (g)', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetForMeal.fat, '#ffea00')}
                 </div>
                 {userProfile?.level === 'pro' && (
                 <>
@@ -6621,11 +6700,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     <div className="telemetry-carousel" ref={mealCarouselRef} onScroll={handleMealCarouselScroll} style={{ height: '220px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none' }}>
                       <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                         <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                          {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, 'kcal', 'kcal')}
-                          {renderProgressBar('PROTEINE', mealTotaliFull.prot || 0, targetMacrosPasto.prot, 'g', 'prot')}
-                          {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, targetMacrosPasto.carb, 'g', 'carb')}
-                          {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
-                          {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, targetMacrosPasto.fibre, 'g', 'fibre')}
+                          {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, targetForMeal.kcal, 'kcal', 'kcal')}
+                          {renderProgressBar('PROTEINE', mealTotaliFull.prot || 0, targetForMeal.prot, 'g', 'prot')}
+                          {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, targetForMeal.carb, 'g', 'carb')}
+                          {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetForMeal.fat, 'g', 'fatTotal')}
+                          {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, targetForMeal.fibre, 'g', 'fibre')}
                         </div>
                       </div>
                       <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
@@ -6652,7 +6731,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       </div>
                       <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                         <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                          {renderProgressBar('Grassi tot.', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
+                          {renderProgressBar('Grassi tot.', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetForMeal.fat, 'g', 'fatTotal')}
                           {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.fat[k] || 0) * ratio, 'g', k))}
                         </div>
                       </div>
