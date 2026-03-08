@@ -1596,6 +1596,41 @@ export default function SalaComandi() {
   const currentTrackerDateRef = useRef(currentTrackerDate);
   useEffect(() => { currentTrackerDateRef.current = currentTrackerDate; }, [currentTrackerDate]);
 
+  // Weekly adaptive calibration of physiological coefficients
+  // The simulation gradually learns the user's metabolic responses.
+  useEffect(() => {
+    if (!fullHistory || !currentTrackerDate) return;
+
+    const date = new Date(currentTrackerDate + 'T12:00:00');
+    const monday = new Date(date);
+    const day = monday.getDay();
+    const diff = monday.getDate() - day + (day === 0 ? -6 : 1);
+    monday.setDate(diff);
+
+    const weekKey = monday.toISOString().slice(0, 10);
+
+    if (weekKey === lastCalibrationWeek) return;
+
+    try {
+      const weeklyData = buildWeeklyDataFromHistory(
+        fullHistory,
+        userModel,
+        idealStrategy,
+        weekKey
+      );
+
+      const newModel = calibrateUserModel(
+        weeklyData,
+        userModel
+      );
+
+      setUserModel(newModel);
+      setLastCalibrationWeek(weekKey);
+    } catch (err) {
+      console.warn('Weekly calibration skipped:', err);
+    }
+  }, [fullHistory, currentTrackerDate]);
+
   useEffect(() => {
     if (draggingNode) {
       document.body.style.overflow = 'hidden';
