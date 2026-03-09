@@ -7471,7 +7471,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <h3>Dati sonno mancanti</h3>
             <p>Per calcolare correttamente l'energia della giornata inserisci i dati del sonno.</p>
             <div className="sleepPromptActions">
-              <button onClick={() => openSleepForm?.()}>
+              <button onClick={() => {
+                setShowSleepPrompt(false);
+                setActiveSection("diario");
+              }}>
                 Inserisci sonno
               </button>
               <button onClick={() => {
