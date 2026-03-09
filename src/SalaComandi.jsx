@@ -4978,10 +4978,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
           {/* DESTRA: Toggle HOME / ANALISI (Compatto) */}
           <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '3px', border: '1px solid #333' }}>
+            <div
+              style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '3px', border: '1px solid #333', cursor: 'pointer' }}
+              onClick={() => setUserProfile(prev => ({ ...prev, level: prev?.level === 'pro' ? 'base' : 'pro' }))}
+            >
               <button 
                 type="button"
-                onClick={() => setUserProfile(prev => ({ ...prev, level: 'base' }))}
                 style={{ 
                   background: userProfile?.level !== 'pro' ? 'linear-gradient(135deg, #00e5ff 0%, #007bb5 100%)' : 'transparent', 
                   color: userProfile?.level !== 'pro' ? '#fff' : '#888', 
@@ -4993,7 +4995,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
               <button 
                 type="button"
-                onClick={() => setUserProfile(prev => ({ ...prev, level: 'pro' }))}
                 style={{ 
                   background: userProfile?.level === 'pro' ? 'linear-gradient(135deg, #b388ff 0%, #7c4dff 100%)' : 'transparent', 
                   color: userProfile?.level === 'pro' ? '#fff' : '#888', 
