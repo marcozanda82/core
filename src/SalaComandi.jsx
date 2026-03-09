@@ -45,6 +45,14 @@ const getYesterdayString = () => {
   return new Date(d.getTime() - offset).toISOString().split('T')[0];
 };
 
+function getSleepStatus(dailyLog) {
+  const hour = new Date().getHours();
+  const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
+  if (sleepEntry) return "OK";
+  if (hour < 3) return "NIGHT_PENDING";
+  return "SLEEP_MISSING";
+}
+
 /** Returns YYYY-MM-DD of Monday of the week containing dateStr. Week starts Monday. */
 function getMondayOfWeek(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
