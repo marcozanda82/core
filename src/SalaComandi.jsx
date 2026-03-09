@@ -4093,10 +4093,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [simulationMode, currentTrackerDate, energySimulation?.nervousSystemLoad]);
 
   useEffect(() => {
-    if (sleepStatus === "SLEEP_MISSING" && !showSleepPrompt) {
+    const hasSleep = (dailyLog || []).some(e =>
+      e.hours || e.sleepHours || e.deepMin || e.remMin
+    );
+    if (sleepStatus === "SLEEP_MISSING" && !hasSleep && !showSleepPrompt) {
       setShowSleepPrompt(true);
     }
-  }, [sleepStatus, showSleepPrompt]);
+  }, [sleepStatus, showSleepPrompt, dailyLog]);
 
   useEffect(() => {
     if (!chartData || chartData.length === 0) {
