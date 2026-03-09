@@ -566,8 +566,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     // Mild homeostatic stabilization toward the user's daily baseline energy
     // baselineEnergy is derived from sleep and neurological recovery
-    metabolicEnergy += (baselineEnergy - metabolicEnergy) * 0.01;
-    neuralEnergy += (baselineEnergy - neuralEnergy) * 0.01;
+    metabolicEnergy += (baselineEnergy - metabolicEnergy) * 0.05;
+    neuralEnergy += (baselineEnergy - neuralEnergy) * 0.05;
+    metabolicEnergy = Math.max(15, metabolicEnergy);
+    neuralEnergy = Math.max(15, neuralEnergy);
 
     out.push({
       time: h,

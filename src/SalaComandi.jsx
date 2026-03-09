@@ -2848,25 +2848,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const targetKcalChart = dynamicDailyKcal;
   const scale = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
-  const finalChartData = chartUnit === 'kcal'
-    ? renderDataWithSegments.map(d => {
-        const rawEnergy = d.energy ?? d.energia ?? 0;
-        const rawCortisolo = d.cortisolo ?? d.cortisol ?? 0;
-        return {
-          ...d,
-          energy: scale(rawEnergy),
-          idealEnergy: scale(d.idealEnergy ?? d.energiaIdeale ?? 0),
-          energyPast: d.time <= displayTime ? scale(rawEnergy) : null,
-          energyFuture: d.time >= displayTime ? scale(rawEnergy) : null,
-          kcalPast: d.time <= displayTime ? scale(rawEnergy) : null,
-          kcalFuture: d.time >= displayTime ? scale(rawEnergy) : null,
-          cortisolScaledToKcal: (Number(rawCortisolo) / 100) * targetKcalChart
-        };
-      })
-    : renderDataWithSegments;
-  const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : finalChartData;
+  const finalChartData = renderDataWithSegments;
+  const mainChartData = (chartUnit === 'calorieTimeline' || chartUnit === 'kcal') ? safeCalorieTimelineData : finalChartData;
   const dotYCalorieTimeline = (() => {
-    if (chartUnit !== 'calorieTimeline' && expandedChart !== 'calorieTimeline') return null;
+    if (chartUnit !== 'calorieTimeline' && chartUnit !== 'kcal' && expandedChart !== 'calorieTimeline' && expandedChart !== 'kcal') return null;
     const tl = safeCalorieTimelineData;
     const idx = Math.floor(displayTime);
     const next = Math.min(24, idx + 1);
@@ -2875,23 +2860,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const b = tl[next]?.kcal;
     return a != null ? (b != null ? a + (b - a) * frac : a) : 0;
   })();
-  const modalChartData = expandedChart === 'calorieTimeline'
+  const modalChartData = (expandedChart === 'calorieTimeline' || expandedChart === 'kcal')
     ? safeCalorieTimelineData
-    : expandedChart === 'kcal'
-    ? renderDataWithSegments.map(d => {
-        const rawEnergy = d.energy ?? d.energia ?? 0;
-        const rawCortisolo = d.cortisolo ?? d.cortisol ?? 0;
-        return {
-          ...d,
-          energy: scale(rawEnergy),
-          idealEnergy: scale(d.idealEnergy ?? d.energiaIdeale ?? 0),
-          kcalPast: d.time <= displayTime ? scale(rawEnergy) : null,
-          kcalFuture: d.time >= displayTime ? scale(rawEnergy) : null,
-          cortisolScaledToKcal: (Number(rawCortisolo) / 100) * targetKcalChart
-        };
-      })
     : finalChartData;
-  const finalDotY = chartUnit === 'calorieTimeline' ? (dotYCalorieTimeline ?? 0) : (chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'kcal' ? scale(dotY) : dotY))))));
+  const finalDotY = (chartUnit === 'calorieTimeline' || chartUnit === 'kcal') ? (dotYCalorieTimeline ?? 0) : (chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : dotY)))));
 
   const energyAt20Percent = energyAt20 ?? 50;
 
@@ -3036,70 +3008,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     else if (currentBattery <= 50) { batteryColor = '#ffea00'; }
     return { level: Math.round(currentBattery), color: batteryColor, icon: batteryIcon };
   }, [dailyLog, currentTime, fullHistory, currentTrackerDate]);
-
-  const energyChartData = useMemo(() => {
-    const log = dailyLog || [];
-    const sleepNode = log.find(i => i.type === 'sleep');
-    const wakeTime = sleepNode?.wakeTime ?? 7.5;
-    let startingBattery;
-    if (sleepNode?.hours != null) {
-      const sleepHours = sleepNode.hours ?? 8.0;
-      startingBattery = Math.min(100, Math.max(0, 100 - ((8 - sleepHours) * 10)));
-    } else {
-      const yesterday = new Date(currentTrackerDate + 'T12:00:00');
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().slice(0, 10);
-      const yesterdayNode = fullHistory?.[TRACKER_STORICO_KEY(yesterdayStr)];
-      const rawYesterday = yesterdayNode?.log;
-      const yesterdayLog = Array.isArray(rawYesterday) ? rawYesterday : Object.values(rawYesterday || {});
-      const yesterdaySleep = yesterdayLog.find(i => i?.type === 'sleep');
-      if (yesterdaySleep?.hours != null) {
-        const yWake = yesterdaySleep?.wakeTime ?? 7.5;
-        const ySleepHours = yesterdaySleep.hours ?? 8.0;
-        const yStart = Math.min(100, Math.max(0, 100 - ((8 - ySleepHours) * 10)));
-        let yHoursAwake = 24 - yWake;
-        if (yHoursAwake < 0) yHoursAwake = 0;
-        const yTimeDrain = yHoursAwake * 3.5;
-        const yWorkoutCount = yesterdayLog.filter(i => i?.type === 'workout' && (i.mealTime ?? i.time ?? 0) <= 24).length;
-        const yWorkoutDrain = yWorkoutCount * 15;
-        startingBattery = Math.max(0, Math.min(100, Math.round(yStart - yTimeDrain - yWorkoutDrain)));
-      } else {
-        startingBattery = 40;
-      }
-    }
-    const data = [];
-    for (let h = 0; h <= 24; h++) {
-      let hoursAwake = h - wakeTime;
-      if (hoursAwake < 0) hoursAwake = 0;
-      const timeDrain = hoursAwake * 3.5;
-      const workoutCount = log.filter(i => i.type === 'workout' && (i.mealTime ?? i.time ?? 0) <= h).length;
-      const workoutDrain = workoutCount * 15;
-      let currentBattery = startingBattery - timeDrain - workoutDrain;
-      currentBattery = Math.max(0, Math.min(100, currentBattery));
-      data.push({ ora: h, energia: Math.round(currentBattery) });
-    }
-    return data;
-  }, [dailyLog, fullHistory, currentTrackerDate]);
-
-  // --- FINE ZONA SICURA ---
-
-  const renderEnergyPercentData = [];
-  energyChartData.forEach((point, index) => {
-    renderEnergyPercentData.push(point);
-    if (index === currentH && fraction > 0) {
-      const nextVal = energyChartData[nextH]?.energia ?? point.energia;
-      const interpolated = point.energia + (nextVal - point.energia) * fraction;
-      renderEnergyPercentData.push({
-        ora: displayTime,
-        energia: interpolated
-      });
-    }
-  });
-  const finalEnergyPercentData = renderEnergyPercentData.map(d => ({
-    ...d,
-    energiaPast: d.ora <= displayTime ? d.energia : null,
-    energiaFuture: d.ora >= displayTime ? d.energia : null
-  }));
 
   const renderCustomizedLabel = (props) => {
     const { cx, cy, midAngle, outerRadius, value, name, fill, payload, macros } = props;
@@ -3675,7 +3583,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </div>
                 <div style={{ width: '100%', height: '220px' }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={finalEnergyPercentData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                    <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -3683,7 +3591,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
+                      <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
                       <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
                       <Tooltip
                         contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
@@ -3702,21 +3610,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         />
                       ))}
                       <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={1.5} isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 8 }} />
-                      <ReferenceDot x={displayTime} y={(() => { const idx = Math.floor(displayTime); const next = Math.min(24, idx + 1); const frac = displayTime - idx; const a = energyChartData[idx]?.energia; const b = energyChartData[next]?.energia; return a != null ? (b != null ? a + (b - a) * frac : a) : 50; })()} isFront shape={(props) => {
-                        const cx = props?.cx; const cy = props?.cy;
-                        if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') return <path d="M0 0" />;
-                        return (
-                          <g>
-                            <circle cx={cx} cy={cy} r={10} fill="#00e676" stroke="#fff" strokeWidth={2} />
-                            <circle cx={cx} cy={cy} r={10} fill="none" stroke="#00e676" strokeWidth={4}>
-                              <animate attributeName="r" values="10;24" dur="1.5s" repeatCount="indefinite" />
-                              <animate attributeName="opacity" values="0.8;0" dur="1.5s" repeatCount="indefinite" />
-                            </circle>
-                          </g>
-                        );
-                      }} />
-                      <Area type="monotone" dataKey="energiaPast" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
-                      <Area type="monotone" dataKey="energiaFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
+                      <ReferenceDot x={displayTime} y={dotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
+                      <Area type="monotone" dataKey="energyPast" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
+                      <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
                       <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
                     </ComposedChart>
@@ -3854,14 +3750,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </>
                   )}
                   <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                  {chartUnit === 'calorieTimeline' ? (
+                  {(chartUnit === 'calorieTimeline' || chartUnit === 'kcal') ? (
                     <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
-                  ) : chartUnit === 'kcal' ? (
-                    <>
-                      <Area type="monotone" dataKey="kcalPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorKcal)" connectNulls={false} isAnimationActive={!draggingNode} />
-                      <Area type="monotone" dataKey="kcalFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
-                      <Line type="monotone" dataKey="cortisolScaledToKcal" stroke="#9c27b0" strokeWidth={2} strokeDasharray="5 5" dot={false} isAnimationActive={!draggingNode} />
-                    </>
                   ) : (
                     <>
                       <Area type="monotone"
@@ -3880,7 +3770,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   )}
                   {chartUnit === 'glicemia' ? (
                     <ReferenceLine y={85} stroke="rgba(255, 255, 255, 0.2)" strokeDasharray="5 5" label={{ position: 'insideTopLeft', value: 'Basale', fill: '#555', fontSize: 10 }} />
-                  ) : chartUnit === 'calorieTimeline' ? null : (
+                  ) : (chartUnit === 'calorieTimeline' || chartUnit === 'kcal') ? null : (
                     <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255, 255, 255, 0.2)" strokeWidth={4} strokeDasharray="8 8" dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
                   )}
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 11, offset: 10 }} />
@@ -3888,7 +3778,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const cx = props?.cx;
                     const cy = props?.cy;
                     if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') return <path d="M0 0" />;
-                    const fillColor = chartUnit === 'glicemia' ? '#ef4444' : (chartUnit === 'cortisolo' ? '#f59e0b' : chartUnit === 'digestione' ? '#9333ea' : chartUnit === 'neuro' ? '#6366f1' : chartUnit === 'calorieTimeline' ? '#ff9800' : '#00e5ff');
+                    const fillColor = chartUnit === 'glicemia' ? '#ef4444' : (chartUnit === 'cortisolo' ? '#f59e0b' : chartUnit === 'digestione' ? '#9333ea' : chartUnit === 'neuro' ? '#6366f1' : (chartUnit === 'calorieTimeline' || chartUnit === 'kcal') ? '#ff9800' : '#00e5ff');
                     return (
                       <g>
                         <circle cx={cx} cy={cy} r={10} fill={fillColor} />
@@ -4100,7 +3990,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ flex: 1, minHeight: 120 }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={finalEnergyPercentData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <ComposedChart data={renderDataWithSegments} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorEnergiaModal" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -4112,16 +4002,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         </filter>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
+                      <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
                       <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
                       <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${value}%`, 'Energia SNC']} labelFormatter={(label) => `Ore ${label}:00`} />
                       {(dailyLog || []).filter(item => item.type === 'sleep').map((sleepItem, index) => (
                         <ReferenceLine key={`modal-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 4 : 1.5} strokeOpacity={activeHighlight === 'sveglia' ? 1 : 0.8} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
                       ))}
                       <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 4 : 1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
-                      <ReferenceDot x={displayTime} y={(() => { const idx = Math.floor(displayTime); const next = Math.min(24, idx + 1); const frac = displayTime - idx; const a = energyChartData[idx]?.energia; const b = energyChartData[next]?.energia; return a != null ? (b != null ? a + (b - a) * frac : a) : 50; })()} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
-                      <Area type="monotone" dataKey="energiaPast" stroke="#00e676" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} connectNulls={false} />
-                      <Area type="monotone" dataKey="energiaFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.6} connectNulls={false} />
+                      <ReferenceDot x={displayTime} y={dotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
+                      <Area type="monotone" dataKey="energyPast" stroke="#00e676" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} connectNulls={false} />
+                      <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.6} connectNulls={false} />
                       <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
                     </ComposedChart>
