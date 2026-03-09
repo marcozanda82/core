@@ -48,6 +48,7 @@ const getYesterdayString = () => {
 function getSleepStatus(dailyLog) {
   const hour = new Date().getHours();
   const sleepEntry = (dailyLog || []).find(e =>
+    e.hours ||
     e.duration ||
     e.sleepHours ||
     e.deep ||
