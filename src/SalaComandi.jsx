@@ -7187,7 +7187,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   const newItem = { ...estraiDatiFoodDb(food.desc || food.name, qta, food.mealType), id: food.id };
                   if (source === 'queue') setAddedFoods(prev => prev.map(f => f.id === food.id ? newItem : f));
                   else if (source === 'diary') setDailyLog(prev => {
-                    const newLog = prev.map(f => f.id === food.id ? newItem : f);
+                    const newLog = prev.map(f => {
+                      if (f.id !== food.id) return f;
+                      return { ...newItem, mealTime: f.mealTime };
+                    });
                     syncDatiFirebase(newLog, manualNodes);
                     return newLog;
                   });
