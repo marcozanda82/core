@@ -21,12 +21,3 @@ export const MESSAGES = {
   moderate: ['Piccolo aggiustamento e sei a posto.', 'Quasi in scia!'],
   critical: ['Recupera il Ghost!', 'Ricalibra al prossimo pasto.'],
 };
-
-export const AMINO_KEYS = ['leucina', 'isoleucina', 'valina'];
-
-export const INITIAL_MEALS_DATA = {
-  merenda1: { target: {}, real: {} },
-  pranzo: { target: {}, real: {} },
-  merenda2: { target: {}, real: {} },
-  cena: { target: {}, real: {} },
-};
