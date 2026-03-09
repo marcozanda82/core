@@ -4053,12 +4053,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [currentTrackerDate, fullHistory, idealStrategy, userModel]);
 
   const activeWaterIntake = simulationMode ? activeNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0) : waterIntake;
-  const energyChartResult = generateRealEnergyData(activeNodes, dailyLog || [], idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
-  const chartData = energyChartResult?.chartData ?? [];
-  const realTotals = energyChartResult?.realTotals ?? {};
-  const hasCrashRisk = energyChartResult?.hasCrashRisk ?? false;
-  const hasCortisolRisk = energyChartResult?.hasCortisolRisk ?? false;
-  const hasDigestionRisk = energyChartResult?.hasDigestionRisk ?? false;
+  let energySimulation;
+  if (sleepStatus === "NIGHT_PENDING") {
+    energySimulation = {
+      chartData: [],
+      realTotals: {},
+      hasCrashRisk: false,
+      hasCortisolRisk: false,
+      hasDigestionRisk: false
+    };
+  } else {
+    energySimulation = generateRealEnergyData(activeNodes, dailyLog || [], idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
+  }
+  const chartData = energySimulation?.chartData ?? [];
+  const realTotals = energySimulation?.realTotals ?? {};
+  const hasCrashRisk = energySimulation?.hasCrashRisk ?? false;
+  const hasCortisolRisk = energySimulation?.hasCortisolRisk ?? false;
+  const hasDigestionRisk = energySimulation?.hasDigestionRisk ?? false;
 
   const { calorieTimeline: calorieTimelineData, totalCalories: totalCaloriesTimeline } = useMemo(() => {
     return generateCalorieTimeline(dailyLog);
@@ -4066,10 +4077,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const safeCalorieTimelineData = Array.isArray(calorieTimelineData) ? calorieTimelineData : [];
 
   useEffect(() => {
-    if (!simulationMode && currentTrackerDate === getTodayString() && energyChartResult?.nervousSystemLoad != null) {
-      setNervousSystemLoad(energyChartResult.nervousSystemLoad);
+    if (!simulationMode && currentTrackerDate === getTodayString() && energySimulation?.nervousSystemLoad != null) {
+      setNervousSystemLoad(energySimulation.nervousSystemLoad);
     }
-  }, [simulationMode, currentTrackerDate, energyChartResult?.nervousSystemLoad]);
+  }, [simulationMode, currentTrackerDate, energySimulation?.nervousSystemLoad]);
 
   useEffect(() => {
     if (!chartData || chartData.length === 0) {
