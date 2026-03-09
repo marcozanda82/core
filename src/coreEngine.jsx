@@ -1242,7 +1242,9 @@ function getLogFromStoricoTree(tree, dateStr) {
   if (!tree || !dateStr) return [];
   const node = tree[TRACKER_STORICO_KEY(dateStr)];
   const log = node?.log ?? node?.dati?.log;
-  return normalizeLogData(log ?? []);
+  const raw = log ?? [];
+  const asArray = Array.isArray(raw) ? raw : Object.values(raw || {});
+  return normalizeLogData(asArray);
 }
 
 const STRATEGY_PROFILES = {

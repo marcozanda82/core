@@ -673,6 +673,18 @@ export default function SalaComandi() {
     return () => { unsubAuth(); unsubToday?.(); };
   }, []);
 
+  // Fallback: quando fullHistory è popolato ma dailyLog è ancora vuoto (es. primo caricamento), sincronizza il log del giorno corrente
+  useEffect(() => {
+    if (!fullHistory || typeof fullHistory !== 'object' || !currentTrackerDate) return;
+    if (Object.keys(fullHistory).length === 0) return;
+    setDailyLog(prev => {
+      if (prev && prev.length > 0) return prev;
+      const node = fullHistory[TRACKER_STORICO_KEY(currentTrackerDate)];
+      const initialLog = getLogFromStoricoTree(fullHistory, currentTrackerDate);
+      return applyMealTimes(initialLog, node?.mealTimes ?? {});
+    });
+  }, [fullHistory, currentTrackerDate]);
+
   // Weekly calibration: at start of new week (Monday), adjust userModel from last week's data and persist.
   useEffect(() => {
     if (!userUid || !isAuthenticated || typeof fullHistory !== 'object') return;
@@ -2306,9 +2318,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     if (!selectedHistoryDate || !fullStorico) return null;
     const node = fullStorico[TRACKER_STORICO_KEY(selectedHistoryDate)];
     if (!node) return null;
-    const log = node.log ?? [];
+    const raw = node.log ?? [];
+    const log = Array.isArray(raw) ? raw : Object.values(raw || {});
     let calorie = 0, proteine = 0, workoutKcal = 0;
-    (log || []).forEach(entry => {
+    log.forEach(entry => {
       if (entry.type === 'meal' && entry.items) {
         entry.items.forEach(item => { 
           proteine += item.prot || 0; 
@@ -2335,9 +2348,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     dates.sort((a, b) => new Date(b) - new Date(a));
     return dates.map(dataStr => {
       const node = fullStorico[TRACKER_STORICO_KEY(dataStr)];
-      const log = node?.log ?? [];
+      const raw = node?.log ?? [];
+      const log = Array.isArray(raw) ? raw : Object.values(raw || {});
       let calorie = 0, proteine = 0, workoutKcal = 0;
-      (log || []).forEach(entry => {
+      log.forEach(entry => {
         if (entry.type === 'meal' && entry.items) {
           entry.items.forEach(item => { 
             proteine += item.prot || 0; 
@@ -2365,8 +2379,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().slice(0, 10);
     const node = fullStorico[TRACKER_STORICO_KEY(yesterdayStr)];
-    const log = node?.log ?? node?.dati?.log;
-    const normalized = normalizeLogData(log ?? []);
+    const raw = node?.log ?? node?.dati?.log ?? [];
+    const logArr = Array.isArray(raw) ? raw : Object.values(raw || {});
+    const normalized = normalizeLogData(logArr);
     const equivalents = getEquivalentMealTypes(mealType);
     return normalized.filter(item => item.type === 'food' && equivalents.includes(item.mealType));
   }, [fullStorico, mealType]);
