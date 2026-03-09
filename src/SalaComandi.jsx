@@ -1727,6 +1727,7 @@ export default function SalaComandi() {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [showTrainingPopup, setShowTrainingPopup] = useState(false);
+  const [showSleepPrompt, setShowSleepPrompt] = useState(false);
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [userProfile, setUserProfile] = useState({
