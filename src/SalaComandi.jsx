@@ -4086,10 +4086,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [simulationMode, currentTrackerDate, energySimulation?.nervousSystemLoad]);
 
   useEffect(() => {
-    if (sleepStatus === "SLEEP_MISSING") {
+    if (sleepStatus === "SLEEP_MISSING" && !showSleepPrompt) {
       setShowSleepPrompt(true);
     }
-  }, [sleepStatus]);
+  }, [sleepStatus, showSleepPrompt]);
 
   useEffect(() => {
     if (!chartData || chartData.length === 0) {
