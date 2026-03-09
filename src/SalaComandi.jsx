@@ -7486,7 +7486,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div className="sleepPromptActions">
               <button onClick={() => {
                 setShowSleepPrompt(false);
-                setActiveSection("diario");
               }}>
                 Inserisci sonno
               </button>
