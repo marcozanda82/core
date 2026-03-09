@@ -4052,6 +4052,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return { energy: last.energy, idealEnergy: last.idealEnergy };
   }, [currentTrackerDate, fullHistory, idealStrategy, userModel]);
 
+  const sleepStatus = getSleepStatus(dailyLog);
   const activeWaterIntake = simulationMode ? activeNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0) : waterIntake;
   let energySimulation;
   if (sleepStatus === "NIGHT_PENDING") {
@@ -4204,7 +4205,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   // Calcolo Budget Dinamico (Base + Bruciate oggi)
   const burnedKcal = dailyLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
   const dynamicDailyKcal = (userTargets?.kcal ?? 2000) + burnedKcal;
-  const sleepStatus = getSleepStatus(dailyLog);
 
   const mealPieData = useMemo(() => {
     // Palette Sci-Fi per distinguere i vari pasti in modo univoco
