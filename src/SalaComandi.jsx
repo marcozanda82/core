@@ -9,7 +9,7 @@
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell } from 'recharts';
+import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
@@ -4593,6 +4593,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     );
   };
 
+  const renderActiveMealShape = (props) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius}
+        outerRadius={outerRadius + 6}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        stroke="#00e5ff"
+        strokeWidth={2}
+      />
+    );
+  };
+
+  const selectedMealCenterIndex = selectedMealCenter ? mealPieData.findIndex(e => e.id === selectedMealCenter.id) : -1;
+
   // ========================================================
   // SCHERMATA DI LOGIN
   // ========================================================
@@ -5872,6 +5891,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       stroke="none"
                       labelLine={false}
                       label={renderCustomizedLabel}
+                      activeShape={renderActiveMealShape}
+                      activeIndex={selectedMealCenterIndex}
                       onClick={(data) => {
                         const isSame = selectedMealCenter && selectedMealCenter.id === data.id;
                         if (isSame && data.id !== 'rimanenti') {
