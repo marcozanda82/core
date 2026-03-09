@@ -4060,7 +4060,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       realTotals: {},
       hasCrashRisk: false,
       hasCortisolRisk: false,
-      hasDigestionRisk: false
+      hasDigestionRisk: false,
+      nervousSystemLoad: 0
     };
   } else {
     energySimulation = generateRealEnergyData(activeNodes, dailyLog || [], idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
