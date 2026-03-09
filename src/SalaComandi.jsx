@@ -7454,6 +7454,39 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         </div>
       )}
+
+      {showSleepPrompt && (
+        <div className="sleepPromptModal">
+          <div className="sleepPromptCard">
+            <h3>Dati sonno mancanti</h3>
+            <p>Per calcolare correttamente l'energia della giornata inserisci i dati del sonno.</p>
+            <div className="sleepPromptActions">
+              <button onClick={() => openSleepForm?.()}>
+                Inserisci sonno
+              </button>
+              <button onClick={() => {
+                setDailyLog(prev => [
+                  ...prev,
+                  {
+                    type: "sleep",
+                    hours: 7,
+                    deepMin: 60,
+                    remMin: 60,
+                    wakeTime: 7.5
+                  }
+                ]);
+                setShowSleepPrompt(false);
+              }}>
+                Usa valori medi
+              </button>
+              <button onClick={() => setShowSleepPrompt(false)}>
+                Dopo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedNodeReport && (
         <div className="modal-overlay" onClick={() => setSelectedNodeReport(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: '#1e1e1e', color: '#fff', padding: '25px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
