@@ -4717,6 +4717,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           /* Contenitore per lo scroll del grafico */
           .chart-scroll-container { width: 100%; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; cursor: grab; }
           .chart-scroll-container::-webkit-scrollbar { display: none; }
+
+          .chartTitle {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            background: #0f1115;
+            padding: 6px 0;
+            font-weight: 600;
+          }
           
           /* Super FAB Menu */
           .fab-container { position: fixed; bottom: 25px; right: 25px; z-index: 1000; }
@@ -5029,20 +5038,22 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto energetico giornaliero 0-24h */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
         <div style={{ flexShrink: 0, marginBottom: '10px' }}>
-          <div style={{ marginBottom: '8px' }}>
-            <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
-              {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'kcal' ? 'Calorie ingerite 0–24h' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Calorie ingerite 0–24h'}
-            </span>
-            {chartUnit === 'calorieTimeline' && (
-              <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
-                Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
-              </div>
-            )}
-            {chartUnit === 'kcal' && (
-              <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Calorie ingerite nel corso della giornata in base ai pasti registrati.">
-                Calorie ingerite nel corso della giornata in base ai pasti registrati.
-              </div>
-            )}
+          <div className="chartTitle">
+            <div style={{ marginBottom: '8px' }}>
+              <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
+                {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'kcal' ? 'Calorie ingerite 0–24h' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Calorie ingerite 0–24h'}
+              </span>
+              {chartUnit === 'calorieTimeline' && (
+                <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
+                  Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
+                </div>
+              )}
+              {chartUnit === 'kcal' && (
+                <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Calorie ingerite nel corso della giornata in base ai pasti registrati.">
+                  Calorie ingerite nel corso della giornata in base ai pasti registrati.
+                </div>
+              )}
+            </div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
             <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
