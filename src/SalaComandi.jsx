@@ -5057,23 +5057,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto energetico giornaliero 0-24h */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
         <div style={{ flexShrink: 0, marginBottom: '10px' }}>
-          <div className="chartTitle">
-            <div style={{ marginBottom: '8px' }}>
-              <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
-                {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'kcal' ? 'Calorie ingerite 0–24h' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Calorie ingerite 0–24h'}
-              </span>
-              {chartUnit === 'calorieTimeline' && (
-                <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
-                  Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
-                </div>
-              )}
-              {chartUnit === 'kcal' && (
-                <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Calorie ingerite nel corso della giornata in base ai pasti registrati.">
-                  Calorie ingerite nel corso della giornata in base ai pasti registrati.
-                </div>
-              )}
-            </div>
-          </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
             <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
             <button type="button" onClick={() => setChartUnit('kcal')} className={`telemetry-btn ${chartUnit === 'kcal' ? 'active' : ''}`}>⚡ KCAL</button>
@@ -5103,14 +5086,32 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           </div>
         </div>
-        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <div className="zoom-controls">
-            <button type="button" className="zoom-btn" onClick={() => setShowTelemetryPopup(true)} title="Stats" style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊</button>
-            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
-            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
-            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
+        <div className="chart-wrapper" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div className="chartTitle">
+            <div style={{ marginBottom: '8px' }}>
+              <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
+                {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'kcal' ? 'Calorie ingerite 0–24h' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Calorie ingerite 0–24h'}
+              </span>
+              {chartUnit === 'calorieTimeline' && (
+                <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
+                  Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
+                </div>
+              )}
+              {chartUnit === 'kcal' && (
+                <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Calorie ingerite nel corso della giornata in base ai pasti registrati.">
+                  Calorie ingerite nel corso della giornata in base ai pasti registrati.
+                </div>
+              )}
+            </div>
           </div>
-          <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
+          <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div className="zoom-controls">
+              <button type="button" className="zoom-btn" onClick={() => setShowTelemetryPopup(true)} title="Stats" style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊</button>
+              <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
+              <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
+              <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
+            </div>
+            <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
             <div
               className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
               onTouchStart={() => { chartTouchTimerRef.current = setTimeout(() => setIsChartTooltipActive(true), 400); }}
@@ -5452,6 +5453,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             {/* SPACER PER PULSANTIERA: Permette di scrollare oltre la fine del grafico per non coprire le 24:00 */}
             <div style={{ width: '80px', flexShrink: 0 }}></div>
           </div>
+        </div>
         </div>
         </div>
 
@@ -5849,30 +5851,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 onClick={() => setSelectedMealCenter(null)}
                 style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
               >
-                {!selectedMealCenter ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-14px)' }}>
-                    <span style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px' }}>KCAL</span>
-                    <span style={{ fontSize: '2.6rem', fontWeight: '900', color: '#fff', lineHeight: '1.1', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>{Math.round(totali?.kcal || 0)}</span>
-                    <span style={{ fontSize: '0.9rem', color: '#666' }}>/ {Math.round(dynamicDailyKcal)}</span>
+                {selectedMealCenter ? (
+                  <div className="pieCenterInfo">
+                    <div className="pieMealTitle">
+                      {selectedMealCenter.name || selectedMealCenter.label}
+                    </div>
+                    <div className="pieMealKcal">
+                      {Math.round(selectedMealCenter.kcal ?? selectedMealCenter.value ?? 0)} kcal
+                    </div>
+                    <div className="pieMealMacros">
+                      P {Math.round(selectedMealCenter.prot ?? selectedMealCenter.payload?.macros?.pro ?? 0)}g
+                      C {Math.round(selectedMealCenter.carb ?? selectedMealCenter.payload?.macros?.carb ?? 0)}g
+                      F {Math.round(selectedMealCenter.fat ?? selectedMealCenter.payload?.macros?.fat ?? 0)}g
+                    </div>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-10px)', width: '80%', textAlign: 'center' }}>
-                    <span style={{ color: selectedMealCenter.payload?.color || '#fff', fontSize: '0.9rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', borderBottom: `1px solid ${(selectedMealCenter.payload?.color || '#fff')}50`, paddingBottom: '2px' }}>
-                      {selectedMealCenter.name}
-                    </span>
-                    <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(selectedMealCenter.value)} <span style={{ fontSize: '0.8rem', color: '#aaa' }}>kcal</span></span>
-                    {dynamicDailyKcal > 0 && (
-                      <span style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
-                        ({Math.round((selectedMealCenter.value / dynamicDailyKcal) * 100)}% del totale)
-                      </span>
-                    )}
-                    {selectedMealCenter.payload?.macros && (
-                      <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', marginTop: '4px', fontWeight: 'bold' }}>
-                        <span style={{ color: '#ffb74d' }}>C:{Math.round(selectedMealCenter.payload.macros.carb)}</span>
-                        <span style={{ color: '#64b5f6' }}>P:{Math.round(selectedMealCenter.payload.macros.pro)}</span>
-                        <span style={{ color: '#81c784' }}>F:{Math.round(selectedMealCenter.payload.macros.fat)}</span>
-                      </div>
-                    )}
+                  <div className="pieCenterGoal">
+                    <div>OBIETTIVO</div>
+                    <div>{Math.round(dynamicDailyKcal || 0)} kcal</div>
                   </div>
                 )}
               </div>
