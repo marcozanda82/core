@@ -5872,7 +5872,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       stroke="none"
                       labelLine={false}
                       label={renderCustomizedLabel}
-                      onClick={(data) => setSelectedMealCenter({ id: data.id, name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } })}
+                      onClick={(data) => {
+                        const isSame = selectedMealCenter && selectedMealCenter.id === data.id;
+                        if (isSame && data.id !== 'rimanenti') {
+                          loadMealToConstructor(data.id);
+                        } else {
+                          setSelectedMealCenter({ id: data.id, name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } });
+                        }
+                      }}
                       style={{ cursor: 'pointer', outline: 'none' }}
                     >
                       {mealPieData.map((entry, index) => {
