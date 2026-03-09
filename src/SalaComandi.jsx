@@ -4096,16 +4096,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [simulationMode, currentTrackerDate, energySimulation?.nervousSystemLoad]);
 
   useEffect(() => {
-    const hasSleep = (dailyLog || []).some(e =>
-      e.type?.includes("sleep") ||
-      e.category === "sleep" ||
+    if (!dailyLog || dailyLog.length === 0) {
+      return;
+    }
+    const hasSleep = dailyLog.some(e =>
+      e.type === "sleep" ||
       e.hours ||
-      e.sleepHours ||
-      e.duration ||
       e.deepMin ||
-      e.deep ||
-      e.remMin ||
-      e.rem
+      e.remMin
     );
     if (sleepStatus === "SLEEP_MISSING" && !hasSleep && !showSleepPrompt) {
       setShowSleepPrompt(true);
