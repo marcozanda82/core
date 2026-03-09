@@ -47,7 +47,12 @@ const getYesterdayString = () => {
 
 function getSleepStatus(dailyLog) {
   const hour = new Date().getHours();
-  const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
+  const sleepEntry = (dailyLog || []).find(e =>
+    e.type === "sleep" ||
+    e.type === "night_sleep" ||
+    e.type === "sleep_session" ||
+    e.type === "sleep_main"
+  );
   if (sleepEntry) return "OK";
   if (hour < 3) return "NIGHT_PENDING";
   return "SLEEP_MISSING";

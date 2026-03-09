@@ -7,3 +7,26 @@ body {
   background: #121212;
   color: #e4e6eb;
 }
+
+.sleepPromptModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.sleepPromptCard {
+  background: #0f1115;
+  border-radius: 16px;
+  padding: 24px;
+  width: min(420px, 90%);
+}
+
+.sleepPromptActions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
