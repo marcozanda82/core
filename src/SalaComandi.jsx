@@ -4094,7 +4094,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   useEffect(() => {
     const hasSleep = (dailyLog || []).some(e =>
-      e.hours || e.sleepHours || e.deepMin || e.remMin
+      e.type?.includes("sleep") ||
+      e.category === "sleep" ||
+      e.hours ||
+      e.sleepHours ||
+      e.duration ||
+      e.deepMin ||
+      e.deep ||
+      e.remMin ||
+      e.rem
     );
     if (sleepStatus === "SLEEP_MISSING" && !hasSleep && !showSleepPrompt) {
       setShowSleepPrompt(true);
