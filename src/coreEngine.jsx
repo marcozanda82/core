@@ -592,7 +592,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       cortisolBase = 100 - ((h - wake - 1) / 0.5) * 20;
     } else if (h < 18) {
       const t0 = wake + 1.5;
-      cortisolBase = 80 - ((h - t0) / (18 - t0)) * (80 - 50);
+      cortisolBase = 80 - ((h - t0) / (18 - t0)) * 40;
     } else {
       cortisolBase = Math.max(40, 50 - (h - 18) * (10 / 6));
     }
@@ -1005,7 +1005,7 @@ function generateCortisolCurve(dailyLog, manualNodes = []) {
       cortisolScore = 100 - ((h - wakeTime - 1) / 0.5) * 20;
     } else if (h < 18) {
       const t0 = wakeTime + 1.5;
-      cortisolScore = 80 - ((h - t0) / (18 - t0)) * (80 - 50);
+      cortisolScore = 80 - ((h - t0) / (18 - t0)) * 40;
     } else {
       cortisolScore = 50 - (h - 18) * (10 / 6);
       cortisolScore = Math.max(40, cortisolScore);
