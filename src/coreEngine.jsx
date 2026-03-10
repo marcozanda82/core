@@ -600,9 +600,13 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     if (currentEnergy < 35) { currentCortisol += 18; globalCortisolRisk = true; }
     if (currentHydration < 45) { currentCortisol += 15 * model.hydrationSensitivity; globalCortisolRisk = true; }
     (timelineNodes || []).forEach(node => {
-      if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
-        currentCortisol += 5 * model.stressSensitivity;
-        globalCortisolRisk = true;
+      if (h >= node.time && h < node.time + (node.duration || 1)) {
+        if (node.type === 'workout') {
+          currentCortisol += 5 * model.stressSensitivity;
+          globalCortisolRisk = true;
+        } else if (node.type === 'work') {
+          currentCortisol += 1.5 * model.stressSensitivity;
+        }
       }
     });
     (timelineNodes || []).forEach(node => {
