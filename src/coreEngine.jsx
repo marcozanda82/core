@@ -637,6 +637,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     out.push({
       time: h,
+      hour: h,
       energy: useContinuityAtZero ? initialEnergy : currentEnergy,
       idealEnergy: useContinuityAtZero ? (initialIdealEnergy ?? initialEnergy) : currentIdealEnergy,
       glicemia: Math.max(55, Math.min(250, gl)),
