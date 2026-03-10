@@ -583,15 +583,25 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     console.log("Simulated energy:", currentEnergy);
 
-    let cortisolBase = 20;
-    if (h >= 6 && h <= 9) cortisolBase = 35 + (9 - h) * 5;
-    else if (h > 9) cortisolBase = Math.max(18, 55 - (h - 9) * 2.5);
+    let cortisolBase;
+    if (h < wake) {
+      cortisolBase = 25 + (h / Math.max(0.1, wake)) * (58 - 25);
+    } else if (h <= wake + 1) {
+      cortisolBase = 58 + ((h - wake) / 1) * (100 - 58);
+    } else if (h <= wake + 1.5) {
+      cortisolBase = 100 - ((h - wake - 1) / 0.5) * 20;
+    } else if (h < 18) {
+      const t0 = wake + 1.5;
+      cortisolBase = 80 - ((h - t0) / (18 - t0)) * (80 - 50);
+    } else {
+      cortisolBase = Math.max(40, 50 - (h - 18) * (10 / 6));
+    }
     currentCortisol += (cortisolBase - currentCortisol) * 0.3;
     if (currentEnergy < 35) { currentCortisol += 18; globalCortisolRisk = true; }
     if (currentHydration < 45) { currentCortisol += 15 * model.hydrationSensitivity; globalCortisolRisk = true; }
     (timelineNodes || []).forEach(node => {
       if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
-        currentCortisol += 12 * model.stressSensitivity;
+        currentCortisol += 5 * model.stressSensitivity;
         globalCortisolRisk = true;
       }
     });
