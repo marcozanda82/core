@@ -393,21 +393,30 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         ? (h >= sleepStart || h < wake)
         : (h >= sleepStart && h < wake);
     if (isSleeping) {
-      // Fase di SONNO: Ricarica progressiva verso la baseline (proportional recovery)
+      // Fase di SONNO: Ricarica progressiva verso la baseline (proportional recovery). Solo in finestra sonno.
       const rechargeRate = (baselineEnergy - metabolicEnergy) * 0.25;
       metabolicEnergy += rechargeRate;
       neuralEnergy += rechargeRate;
       currentIdealEnergy += rechargeRate;
-    } else if (!useContinuityAtZero) {
-      // Fase di VEGLIA: Decadimento fisiologico normale (anche per chi fa le ore piccole prima di dormire)
-      metabolicEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
-      neuralEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
-      currentIdealEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
+    } else {
+      // Fase di VEGLIA: niente più ricarica; solo decadimento (salvo continuity a h=0).
+      if (!useContinuityAtZero) {
+        metabolicEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
+        neuralEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
+        currentIdealEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
+      }
     }
 
     const circadianMod = circadianEnergyModifier(h);
-    metabolicEnergy += circadianMod;
-    neuralEnergy += circadianMod;
+    if (isSleeping) {
+      metabolicEnergy += circadianMod;
+      neuralEnergy += circadianMod;
+    } else {
+      // Di giorno non far salire l'energia con il picco circadiano: solo effetti negativi o nulli.
+      const circadianAwake = Math.min(0, circadianMod);
+      metabolicEnergy += circadianAwake;
+      neuralEnergy += circadianAwake;
+    }
 
     (timelineNodes || []).forEach(node => {
       if (node.type === 'meal') {
@@ -628,10 +637,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     currentCortisol += (20 - currentCortisol) * 0.10;
     currentHydration += (80 - currentHydration) * 0.05;
 
-    // Mild homeostatic stabilization toward the user's daily baseline energy
-    // baselineEnergy is derived from sleep and neurological recovery
-    metabolicEnergy += (baselineEnergy - metabolicEnergy) * 0.05;
-    neuralEnergy += (baselineEnergy - neuralEnergy) * 0.05;
+    // Mild homeostatic stabilization toward baseline only during sleep (after wake, no pull-up)
+    if (isSleeping) {
+      metabolicEnergy += (baselineEnergy - metabolicEnergy) * 0.05;
+      neuralEnergy += (baselineEnergy - neuralEnergy) * 0.05;
+    }
     metabolicEnergy = Math.max(15, metabolicEnergy);
     neuralEnergy = Math.max(15, neuralEnergy);
 
