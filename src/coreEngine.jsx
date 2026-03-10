@@ -152,24 +152,28 @@ function decimalToTimeStr(dec) {
 
 /**
  * Baseline energetica giornaliera in base a sonno e recupero neurologico.
- * Giornate con buon sonno partono con energia più alta (70–85), con sonno scarso più bassa (45–60).
+ * Bilanciamento orientato alla qualità: ore totali (fino a 50 pt), profondità SNC (30 pt), REM cognitiva (20 pt).
+ * Con ~7h e ottima efficienza (2h profondo, 1.5h REM) la batteria si ricarica all'85–90%.
  */
 function computeBaselineEnergy(dailyLog) {
   const log = dailyLog || [];
-  let sleepEntry = log.find(e => e.type === 'sleep');
-  let sleepScore = 0;
-  let neuroScore = 0;
+  const sleepEntry = log.find(e => e.type === 'sleep');
+  if (!sleepEntry) return 50;
 
-  if (sleepEntry) {
-    const hours = sleepEntry.hours || 7;
-    const deep = sleepEntry.deepMin || 60;
-    const rem = sleepEntry.remMin || 60;
+  const sleepHours = typeof sleepEntry.hours === 'number' ? sleepEntry.hours : 7;
+  const deepSleepHours = typeof sleepEntry.deepMin === 'number'
+    ? sleepEntry.deepMin / 60
+    : (typeof sleepEntry.deepHours === 'number' ? sleepEntry.deepHours : 1);
+  const remSleepHours = typeof sleepEntry.remMin === 'number'
+    ? sleepEntry.remMin / 60
+    : (typeof sleepEntry.remHours === 'number' ? sleepEntry.remHours : 1);
 
-    sleepScore = (hours / 8) * 20;
-    neuroScore = ((deep + rem) / 180) * 20;
-  }
+  const basePoints = Math.min(50, (sleepHours / 7.5) * 50);
+  const deepPoints = Math.min(30, (deepSleepHours / 1.5) * 30);
+  const remPoints = Math.min(20, (remSleepHours / 1.5) * 20);
 
-  let baseline = 50 + sleepScore + neuroScore;
+  let baseline = basePoints + deepPoints + remPoints;
+  baseline = Math.min(100, baseline);
   baseline = Math.max(40, Math.min(90, baseline));
   return baseline;
 }
