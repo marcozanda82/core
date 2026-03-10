@@ -275,16 +275,16 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   });
   load = Math.max(0, Math.min(100, load));
 
-  let baselineEnergy = initialEnergy != null ? initialEnergy : computeBaselineEnergy(log, timelineNodes);
+  const realBaseline = computeBaselineEnergy(log, timelineNodes);
+  let baselineEnergy = initialEnergy != null ? initialEnergy : realBaseline;
   baselineEnergy -= load * PHYSIOLOGY_CONFIG.nervousSystemImpact;
   baselineEnergy = Math.max(40, Math.min(90, baselineEnergy));
-  console.log('Baseline energy:', baselineEnergy);
 
   const sleepNode =
     log.find(e => e.type === 'sleep') ||
     (timelineNodes || []).find(n => n.type === 'sleep');
   const wakeTime = sleepNode?.wakeTime ?? 7.5;
-  const nightStartEnergy = initialEnergy != null ? initialEnergy : 25;
+  const nightStartEnergy = initialEnergy != null ? initialEnergy : baselineEnergy;
   const sleepStartRaw = sleepNode?.sleepStart ?? 0;
   const effectiveSleepStart = sleepStartRaw > wakeTime ? 0 : sleepStartRaw;
 
@@ -372,6 +372,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   let neuralFatigue = 0;
   let hoursSinceMeal = 0;
   let previousEnergy = baselineEnergy;
+
+  console.log("REAL baseline energy:", realBaseline);
 
   for (let h = 0; h <= 24; h++) {
     glycemicMemory *= 0.92;
@@ -535,6 +537,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     currentEnergy = currentEnergy * 0.7 + previousEnergy * 0.3;
     previousEnergy = currentEnergy;
+
+    console.log("Simulated energy:", currentEnergy);
 
     let cortisolBase = 20;
     if (h >= 6 && h <= 9) cortisolBase = 35 + (9 - h) * 5;
