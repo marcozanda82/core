@@ -276,7 +276,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   load = Math.max(0, Math.min(100, load));
 
   const realBaseline = computeBaselineEnergy(log, timelineNodes);
-  let baselineEnergy = initialEnergy != null ? initialEnergy : realBaseline;
+  let baselineEnergy = realBaseline;
   baselineEnergy -= load * PHYSIOLOGY_CONFIG.nervousSystemImpact;
   baselineEnergy = Math.max(40, Math.min(90, baselineEnergy));
 
