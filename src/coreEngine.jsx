@@ -186,6 +186,8 @@ function computeBaselineEnergy(dailyLog, timelineNodes) {
     sleepEntry.sleepHours ??
     7;
 
+  console.log("Sleep entry detected:", sleepEntry);
+
   const deepMinutes =
     sleepEntry.deepMin ??
     sleepEntry.deepMinutes ??
