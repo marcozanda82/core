@@ -276,9 +276,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   load = Math.max(0, Math.min(100, load));
 
   const realBaseline = computeBaselineEnergy(log, timelineNodes);
-  let baselineEnergy = realBaseline;
-  baselineEnergy -= load * PHYSIOLOGY_CONFIG.nervousSystemImpact;
-  baselineEnergy = Math.max(40, Math.min(90, baselineEnergy));
+  let baselineEnergy = Math.max(55, Math.min(95, realBaseline));
 
   const sleepNode =
     log.find(e => e.type === 'sleep') ||
@@ -288,8 +286,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     initialEnergy != null
       ? Math.max(initialEnergy, baselineEnergy * 0.7)
       : baselineEnergy;
-  const sleepStartRaw = sleepNode?.sleepStart ?? 0;
-  const effectiveSleepStart = sleepStartRaw > wakeTime ? 0 : sleepStartRaw;
+  const sleepStart = sleepNode?.sleepStart ?? 0;
+  const wake = wakeTime;
 
   // Mappa da canonical strategy key a array di mealType equivalenti
   const strategyToMealTypes = {
@@ -321,6 +319,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
   let metabolicEnergy = baselineEnergy * 0.45;
   let neuralEnergy = baselineEnergy * 0.45;
+  metabolicEnergy -= load * PHYSIOLOGY_CONFIG.nervousSystemImpact;
+  neuralEnergy -= load * PHYSIOLOGY_CONFIG.nervousSystemImpact;
   let currentEnergy = metabolicEnergy;
   let currentIdealEnergy = initialIdealEnergy != null ? (initialIdealEnergy ?? initialEnergy) : 70;
   let globalCrashRisk = false;
@@ -388,7 +388,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     let currentDigestione = 0;
     let hadMealThisHour = false;
     const useContinuityAtZero = h === 0 && initialEnergy != null;
-    if (h >= effectiveSleepStart && h < wakeTime) {
+    const isSleeping =
+      sleepStart > wake
+        ? (h >= sleepStart || h < wake)
+        : (h >= sleepStart && h < wake);
+    if (isSleeping) {
       // Fase di SONNO: Ricarica progressiva verso la baseline (proportional recovery)
       const rechargeRate = (baselineEnergy - metabolicEnergy) * 0.25;
       metabolicEnergy += rechargeRate;
