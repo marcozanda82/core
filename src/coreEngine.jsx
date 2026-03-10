@@ -973,34 +973,38 @@ function generateAnabolicCurve(dailyLog) {
 }
 
 /**
- * Curva del cortisolo 0-24h (slot ogni 0.5h). Base circadiana (alto al mattino, basso la sera)
- * più picchi da lavoro (work) e allenamento (workout).
+ * Curva del cortisolo 0-24h (slot ogni 0.5h). State machine a 4 fasi basata su wakeTime:
+ * 1) Notte: minimo a mezzanotte, lieve salita fino al risveglio.
+ * 2) CAR: picco 100% al risveglio, max 1h poi inizia la discesa.
+ * 3) Discesa diurna fino a ~50% alle 18:00.
+ * 4) Serale (Cortisolo Alto Serale): non sotto 40.
  */
 function generateCortisolCurve(dailyLog, manualNodes = []) {
-  const timeline = Array.from({ length: 49 }, (_, i) => ({
-    time: i * 0.5,
-    cortisolScore: 0
-  }));
+  const sleepEntry = (dailyLog || []).find(n => n.type === 'sleep' && (typeof n.wakeTime === 'number' || typeof n.sleepEnd === 'number'));
+  const wakeTime = sleepEntry?.wakeTime ?? sleepEntry?.sleepEnd ?? 8;
 
-  // 1. Base circadiana: alto al mattino, basso la sera. Se c'è un log sonno con wakeTime, centra il picco sull'ora di risveglio.
-  const sleepEntry = (dailyLog || []).find(n => n.type === 'sleep' && typeof n.wakeTime === 'number');
-  const wakeCenter = sleepEntry != null ? sleepEntry.wakeTime : 8;
-  const peakStart = Math.max(0, wakeCenter - 2);
-  const peakEnd = Math.min(24, wakeCenter + 2);
-  const riseLen = Math.max(0.5, wakeCenter - peakStart);
-  const fallLen = Math.max(0.5, peakEnd - wakeCenter);
-  timeline.forEach(point => {
-    let base = 20;
-    if (point.time >= peakStart && point.time <= peakEnd) {
-      if (point.time <= wakeCenter) base = 20 + ((point.time - peakStart) / riseLen) * 60;
-      else base = 80 - (((point.time - wakeCenter) / fallLen) * 70);
-    } else if (point.time > peakEnd && point.time <= 24) base = 80 - (((point.time - peakEnd) / (24 - peakEnd)) * 70);
-    point.cortisolScore = Math.max(0, Math.min(100, base));
+  const timeline = Array.from({ length: 49 }, (_, i) => {
+    const h = i * 0.5;
+    let cortisolScore;
+
+    if (h < wakeTime) {
+      cortisolScore = 25 + (h / Math.max(0.1, wakeTime)) * (58 - 25);
+    } else if (h <= wakeTime + 1) {
+      cortisolScore = 58 + ((h - wakeTime) / 1) * (100 - 58);
+    } else if (h <= wakeTime + 1.5) {
+      cortisolScore = 100 - ((h - wakeTime - 1) / 0.5) * 20;
+    } else if (h < 18) {
+      const t0 = wakeTime + 1.5;
+      cortisolScore = 80 - ((h - t0) / (18 - t0)) * (80 - 50);
+    } else {
+      cortisolScore = 50 - (h - 18) * (10 / 6);
+      cortisolScore = Math.max(40, cortisolScore);
+    }
+
+    return { time: h, cortisolScore: Math.max(0, Math.min(100, cortisolScore)) };
   });
 
-  // 2. Impatto nodi manuali (lavoro e allenamento)
   const stressEvents = [...(dailyLog || []), ...(manualNodes || [])].filter(n => n.type === 'work' || n.type === 'workout');
-
   stressEvents.forEach(event => {
     const start = event.time ?? event.mealTime ?? 0;
     const end = event.end ?? (start + (event.duration ?? 1));
@@ -1010,7 +1014,6 @@ function generateCortisolCurve(dailyLog, manualNodes = []) {
       if (point.time >= start && point.time <= end + (isWorkout ? 3 : 1)) {
         const timeAfterStart = point.time - start;
         let stressSpike = 0;
-
         if (isWorkout) {
           if (point.time <= end) stressSpike = (timeAfterStart / Math.max(0.01, end - start)) * 40;
           else stressSpike = 40 - (((point.time - end) / 3) * 40);
@@ -1018,7 +1021,6 @@ function generateCortisolCurve(dailyLog, manualNodes = []) {
           if (point.time <= end) stressSpike = 20;
           else stressSpike = 20 - (((point.time - end) / 1) * 20);
         }
-
         point.cortisolScore = Math.min(100, point.cortisolScore + stressSpike);
       }
     });
