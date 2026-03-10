@@ -2713,27 +2713,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     ? (chartData[currentH]?.idealEnergy ?? 0) + ((chartData[nextH]?.idealEnergy ?? 0) - (chartData[currentH]?.idealEnergy ?? 0)) * fraction
     : 0;
 
-  const currentEnergyPercent = chartData[0]?.energy ?? 70;
-  const energyChartData = useMemo(() => {
-    const data = [];
-    const tdee = userTargets?.kcal || 2000;
-    for (let h = 0; h <= 24; h++) {
-      const drop = h * (currentEnergyPercent / 24);
-      const val = Math.max(0, currentEnergyPercent - drop);
-      const past = h <= displayTime;
-      data.push({
-        ora: h,
-        energiaPast: past ? val : null,
-        energiaFuture: !past ? val : null,
-        kcalPast: past ? (val / 100) * tdee : null,
-        kcalFuture: !past ? (val / 100) * tdee : null,
-      });
-    }
-    return data;
-  }, [currentEnergyPercent, userTargets?.kcal, displayTime]);
-
-  const linearDotY = currentEnergyPercent * Math.max(0, 1 - displayTime / 24);
-
   const renderData = [];
   chartData.forEach((point, index) => {
     renderData.push(point);
@@ -2861,7 +2840,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [dailyLog, userTargets?.kcal, dynamicDailyKcal]);
 
   const finalChartData = renderDataWithSegments;
-  const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : (chartUnit === 'kcal' ? energyChartData : finalChartData);
+  const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : finalChartData;
   const dotYCalorieTimeline = (() => {
     if (chartUnit !== 'calorieTimeline' && expandedChart !== 'calorieTimeline') return null;
     const tl = safeCalorieTimelineData;
@@ -2872,8 +2851,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const b = tl[next]?.kcal;
     return a != null ? (b != null ? a + (b - a) * frac : a) : 0;
   })();
-  const modalChartData = expandedChart === 'calorieTimeline' ? safeCalorieTimelineData : (expandedChart === 'percent' || expandedChart === 'kcal' ? energyChartData : finalChartData);
-  const finalDotY = chartUnit === 'calorieTimeline' ? (dotYCalorieTimeline ?? 0) : (chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'percent' ? linearDotY : (chartUnit === 'kcal' ? scale(linearDotY) : dotY)))))));
+  const modalChartData = expandedChart === 'calorieTimeline' ? safeCalorieTimelineData : finalChartData;
+  const finalDotY = chartUnit === 'calorieTimeline' ? (dotYCalorieTimeline ?? 0) : (chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'percent' ? dotY : (chartUnit === 'kcal' ? scale(dotY) : dotY)))))));
 
   const energyAt20Percent = energyAt20 ?? 50;
 
@@ -3593,7 +3572,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </div>
                 <div style={{ width: '100%', height: '220px' }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                    <ComposedChart data={mainChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -3601,7 +3580,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
+                      <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
                       <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
                       <Tooltip
                         contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
@@ -3620,9 +3599,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         />
                       ))}
                       <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={1.5} isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 8 }} />
-                      <ReferenceDot x={displayTime} y={linearDotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
-                      <Area type="monotone" dataKey="energiaPast" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
-                      <Area type="monotone" dataKey="energiaFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
+                      <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
+                      <Area type="monotone" dataKey="energyPast" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
+                      <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
                       <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
                     </ComposedChart>
@@ -3726,7 +3705,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       </feMerge>
                     </filter>
                   </defs>
-                  <XAxis dataKey={chartUnit === 'kcal' ? 'ora' : 'time'} type="number" domain={[0, 24]} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 13 }} />
+                  <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 13 }} />
                   <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' || chartUnit === 'calorieTimeline' ? [0, Math.max(targetKcalChart, totalCaloriesTimeline || 0)] : [0, 100])} tickFormatter={(val) => (chartUnit === 'kcal' || chartUnit === 'calorieTimeline') ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
                   <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} hide />
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
@@ -4000,7 +3979,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ flex: 1, minHeight: 120 }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <ComposedChart data={modalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorEnergiaModal" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -4012,32 +3991,32 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         </filter>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
+                      <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
                       <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
                       <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${value}%`, 'Energia SNC']} labelFormatter={(label) => `Ore ${label}:00`} />
                       {(dailyLog || []).filter(item => item.type === 'sleep').map((sleepItem, index) => (
                         <ReferenceLine key={`modal-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 4 : 1.5} strokeOpacity={activeHighlight === 'sveglia' ? 1 : 0.8} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
                       ))}
                       <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 4 : 1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
-                      <ReferenceDot x={displayTime} y={linearDotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
-                      <Area type="monotone" dataKey="energiaPast" stroke="#00e676" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} connectNulls={false} />
-                      <Area type="monotone" dataKey="energiaFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.6} connectNulls={false} />
+                      <ReferenceDot x={displayTime} y={dotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
+                      <Area type="monotone" dataKey="energyPast" stroke="#00e676" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} connectNulls={false} />
+                      <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.6} connectNulls={false} />
                       <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 ) : expandedChart === 'kcal' ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={energyChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <ComposedChart data={modalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                       <defs>
                         <linearGradient id="modalColorEnergyKcal" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9}/><stop offset="50%" stopColor="#047857" stopOpacity={0.7}/><stop offset="100%" stopColor="#dc2626" stopOpacity={0.6}/></linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="ora" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
-                      <YAxis domain={[0, Math.max(targetKcalChart, (currentEnergyPercent / 100) * (userTargets?.kcal || 2000))]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={36} />
+                      <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
+                      <YAxis domain={[0, Math.max(targetKcalChart, 1)]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={36} />
                       <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${Math.round(Number(value))} kcal`, 'Energia scalata']} labelFormatter={(label) => `Ore ${label}:00`} />
                       <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
-                      <ReferenceDot x={displayTime} y={scale(linearDotY)} isFront r={8} fill="#00e5ff" stroke="#fff" strokeWidth={2} />
+                      <ReferenceDot x={displayTime} y={scale(dotY)} isFront r={8} fill="#00e5ff" stroke="#fff" strokeWidth={2} />
                       <Area type="monotone" dataKey="kcalPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#modalColorEnergyKcal)" connectNulls={false} />
                       <Area type="monotone" dataKey="kcalFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} />
                     </ComposedChart>
