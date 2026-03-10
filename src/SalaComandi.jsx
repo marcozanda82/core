@@ -4334,21 +4334,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         };
       })
     : renderDataWithSegments;
-  const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : (chartUnit === 'percent' ? energyChartData : finalChartData);
-  const dotYCalorieTimeline = (() => {
-    if (chartUnit !== 'calorieTimeline' && expandedChart !== 'calorieTimeline') return null;
-    const tl = safeCalorieTimelineData;
-    const idx = Math.floor(displayTime);
-    const next = Math.min(24, idx + 1);
-    const frac = displayTime - idx;
-    const a = tl[idx]?.kcal;
-    const b = tl[next]?.kcal;
-    return a != null ? (b != null ? a + (b - a) * frac : a) : 0;
-  })();
-  const modalChartData = expandedChart === 'calorieTimeline'
-    ? safeCalorieTimelineData
-    : (expandedChart === 'percent' ? energyChartData : finalChartData);
-  const finalDotY = chartUnit === 'calorieTimeline' ? (dotYCalorieTimeline ?? 0) : (chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'kcal' ? scale(dotY) : dotY))))));
 
   const energyAt20Percent = energyAt20 ?? 50;
 
@@ -4641,6 +4626,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     );
   }
 
+  const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : (chartUnit === 'percent' ? energyChartData : finalChartData);
+  const dotYCalorieTimeline = (() => {
+    if (chartUnit !== 'calorieTimeline' && expandedChart !== 'calorieTimeline') return null;
+    const tl = safeCalorieTimelineData;
+    const idx = Math.floor(displayTime);
+    const next = Math.min(24, idx + 1);
+    const frac = displayTime - idx;
+    const a = tl[idx]?.kcal;
+    const b = tl[next]?.kcal;
+    return a != null ? (b != null ? a + (b - a) * frac : a) : 0;
+  })();
+  const modalChartData = expandedChart === 'calorieTimeline'
+    ? safeCalorieTimelineData
+    : (expandedChart === 'percent' ? energyChartData : finalChartData);
+  const finalDotY = chartUnit === 'calorieTimeline' ? (dotYCalorieTimeline ?? 0) : (chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'kcal' ? scale(dotY) : dotY))))));
   return (
     <div style={{ backgroundColor: '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '65px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
