@@ -155,10 +155,14 @@ function decimalToTimeStr(dec) {
  * Bilanciamento orientato alla qualità: ore totali (fino a 50 pt), profondità SNC (30 pt), REM cognitiva (20 pt).
  * Con ~7h e ottima efficienza (2h profondo, 1.5h REM) la batteria si ricarica all'85–90%.
  * Supporta più formati di import (wearable: duration, deep, rem in minuti; o hours, deepMin, remMin).
+ * Cerca il sonno in dailyLog e in timelineNodes (nodi timeline).
  */
-function computeBaselineEnergy(dailyLog) {
+function computeBaselineEnergy(dailyLog, timelineNodes) {
   const log = dailyLog || [];
-  const sleepEntry = log.find(e => e.type === 'sleep');
+  const nodes = timelineNodes || [];
+  const sleepEntry =
+    log.find(e => e.type === 'sleep') ||
+    nodes.find(n => n.type === 'sleep');
   if (!sleepEntry) return 50;
 
   const sleepHours =
@@ -260,12 +264,14 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   });
   load = Math.max(0, Math.min(100, load));
 
-  let baselineEnergy = initialEnergy != null ? initialEnergy : computeBaselineEnergy(log);
+  let baselineEnergy = initialEnergy != null ? initialEnergy : computeBaselineEnergy(log, timelineNodes);
   baselineEnergy -= load * PHYSIOLOGY_CONFIG.nervousSystemImpact;
   baselineEnergy = Math.max(40, Math.min(90, baselineEnergy));
   console.log('Baseline energy:', baselineEnergy);
 
-  const sleepNode = log.find(e => e.type === 'sleep');
+  const sleepNode =
+    log.find(e => e.type === 'sleep') ||
+    (timelineNodes || []).find(n => n.type === 'sleep');
   const wakeTime = sleepNode?.wakeTime ?? 7.5;
   const nightStartEnergy = initialEnergy != null ? initialEnergy : 25;
   const sleepStartRaw = sleepNode?.sleepStart ?? 0;
