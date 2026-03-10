@@ -206,7 +206,7 @@ function computeBaselineEnergy(dailyLog, timelineNodes) {
 
   let baseline = basePoints + deepPoints + remPoints;
   baseline = Math.min(100, baseline);
-  baseline = Math.max(40, Math.min(90, baseline));
+  baseline = Math.max(55, Math.min(95, baseline));
   return baseline;
 }
 
@@ -319,8 +319,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   });
   realTotals.allenamento = workoutKcal;
 
-  let metabolicEnergy = nightStartEnergy;
-  let neuralEnergy = nightStartEnergy;
+  let metabolicEnergy = baselineEnergy * 0.45;
+  let neuralEnergy = baselineEnergy * 0.45;
   let currentEnergy = metabolicEnergy;
   let currentIdealEnergy = initialIdealEnergy != null ? (initialIdealEnergy ?? initialEnergy) : 70;
   let globalCrashRisk = false;
@@ -389,14 +389,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     let hadMealThisHour = false;
     const useContinuityAtZero = h === 0 && initialEnergy != null;
     if (h >= effectiveSleepStart && h < wakeTime) {
-      // Fase di SONNO: Ricarica progressiva verso la baseline
-      const remainingHours = wakeTime - h;
-      if (remainingHours > 0) {
-        const rechargeRate = (baselineEnergy - metabolicEnergy) / remainingHours;
-        metabolicEnergy += rechargeRate;
-        neuralEnergy += rechargeRate;
-        currentIdealEnergy += rechargeRate;
-      }
+      // Fase di SONNO: Ricarica progressiva verso la baseline (proportional recovery)
+      const rechargeRate = (baselineEnergy - metabolicEnergy) * 0.25;
+      metabolicEnergy += rechargeRate;
+      neuralEnergy += rechargeRate;
+      currentIdealEnergy += rechargeRate;
     } else if (!useContinuityAtZero) {
       // Fase di VEGLIA: Decadimento fisiologico normale (anche per chi fa le ore piccole prima di dormire)
       metabolicEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
