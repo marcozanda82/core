@@ -166,6 +166,29 @@ function parseMinutes(value) {
 }
 
 /**
+ * Converts various time strings to decimal hours (0–24).
+ * Handles: "1h 23m" -> ~1.38, "01:21" -> ~1.35, "45m" -> 0.75, "1h" -> 1, and numeric fallback.
+ */
+function parseToDecimalHours(val) {
+  if (val == null) return null;
+  if (typeof val === 'number' && !Number.isNaN(val)) return val;
+  if (typeof val !== 'string') return null;
+  const s = val.trim();
+  if (!s) return null;
+  const hM = s.match(/(\d+)\s*h\s*(\d+)\s*m/i);
+  if (hM) return Number(hM[1]) + Number(hM[2]) / 60;
+  const onlyH = s.match(/(\d+)\s*h/i);
+  if (onlyH) return Number(onlyH[1]);
+  const onlyM = s.match(/(\d+)\s*m/i);
+  if (onlyM) return Number(onlyM[1]) / 60;
+  const clock = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (clock) return Number(clock[1]) + Number(clock[2]) / 60;
+  const num = parseFloat(s);
+  if (!Number.isNaN(num)) return num;
+  return null;
+}
+
+/**
  * Baseline energetica giornaliera in base a sonno e recupero neurologico.
  * Bilanciamento orientato alla qualità: ore totali (fino a 50 pt), profondità SNC (30 pt), REM cognitiva (20 pt).
  * Con ~7h e ottima efficienza (2h profondo, 1.5h REM) la batteria si ricarica all'85–90%.
@@ -1087,6 +1110,9 @@ Valuta il recupero neurologico, l'energia, la glicemia e il cortisolo (ricorda c
 Usa ESATTAMENTE le seguenti parole chiave testuali in maiuscolo o normale: [Energia SNC, Recupero Neurologico, Finestra Anabolica, Cortisolo, Digestione, Glicemia].`;
 }
 
+/** Istruzioni per l’AI che elabora screenshot/dati Mi Fitness: mappatura Fell asleep / Woke up e stime. */
+const SLEEP_AI_MI_FITNESS_INSTRUCTIONS = `Mappatura obbligatoria da Mi Fitness: "Fell asleep" (o equivalente "Addormentato", "Inizio sonno") va SEMPRE nella chiave JSON sleepStart (ore decimali 0-24, es. 23.5 per 23:30). "Woke up" (o "Sveglia", "Woke up") va SEMPRE nella chiave sleepEnd oppure wakeTime (ore decimali, es. 6.3 per 06:18). Se un valore non è leggibile o non è disponibile, stima con un valore medio ragionevole (es. sleepStart 23, wakeTime 6.5, hours 7) e compila comunque il JSON.`;
+
 /** Mappa keyword testuale -> chiave activeHighlight per il grafico. */
 const AI_KEYWORD_TO_HIGHLIGHT = {
   'Sveglia': 'sveglia',
@@ -1163,6 +1189,34 @@ function inferMealType(entry) {
   return DESC_TO_MEAL_ID[key] || (key ? key.replace(/\s+/g, '_') : null) || 'pranzo';
 }
 
+/** Indica se un entry è un log sonno (per normalizzazione Mi Fitness / wearable). */
+function isSleepEntry(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (entry.type === 'sleep') return true;
+  if (entry.id === 'sonno') return true;
+  const hasSleepKeys = 'sleepStart' in entry || 'sleepEnd' in entry || 'deep' in entry || 'rem' in entry;
+  if (hasSleepKeys) return true;
+  return false;
+}
+
+/** Normalizza i campi tempo/minuti di un entry sonno in numeri decimali per il motore. */
+function normalizeSleepEntry(entry) {
+  const out = { ...entry, type: 'sleep', kcal: entry.kcal ?? entry.cal ?? 0 };
+  const toHours = (v) => (v != null ? parseToDecimalHours(v) : undefined);
+  const toMinutes = (v) => (v != null ? parseMinutes(v) : undefined);
+  if (entry.sleepStart != null) out.sleepStart = toHours(entry.sleepStart) ?? entry.sleepStart;
+  if (entry.sleepEnd != null) out.sleepEnd = toHours(entry.sleepEnd) ?? entry.sleepEnd;
+  if (entry.wakeTime != null) out.wakeTime = toHours(entry.wakeTime) ?? entry.wakeTime;
+  if (entry.hours != null) out.hours = toHours(entry.hours) ?? (typeof entry.hours === 'number' ? entry.hours : undefined);
+  if (entry.duration != null) out.duration = toHours(entry.duration) ?? (typeof entry.duration === 'number' ? entry.duration : undefined);
+  if (entry.sleepHours != null) out.sleepHours = toHours(entry.sleepHours) ?? (typeof entry.sleepHours === 'number' ? entry.sleepHours : undefined);
+  const deepMin = toMinutes(entry.deep) ?? toMinutes(entry.deepMin) ?? entry.deepMinutes ?? (typeof entry.deep === 'number' ? entry.deep : undefined) ?? (typeof entry.deepMin === 'number' ? entry.deepMin : undefined);
+  if (deepMin != null) out.deepMin = deepMin;
+  const remMin = toMinutes(entry.rem) ?? toMinutes(entry.remMin) ?? entry.remMinutes ?? (typeof entry.rem === 'number' ? entry.rem : undefined) ?? (typeof entry.remMin === 'number' ? entry.remMin : undefined);
+  if (remMin != null) out.remMin = remMin;
+  return out;
+}
+
 /** Normalizza log da formato vecchio (meal/items, single, workout) a lista piatta. */
 function normalizeLogData(rawLog) {
   const out = [];
@@ -1183,6 +1237,8 @@ function normalizeLogData(rawLog) {
         id: entry.id || Date.now() + Math.random(),
         kcal: entry.kcal ?? entry.cal ?? 0
       });
+    } else if (isSleepEntry(entry)) {
+      out.push(normalizeSleepEntry(entry));
     } else {
       out.push({ ...entry, kcal: entry.kcal ?? entry.cal ?? 0 });
     }
@@ -1247,6 +1303,8 @@ function denormalizeLogForFirebase(flatLog) {
         type: 'sleep',
         id: entry.id,
         wakeTime: entry.wakeTime,
+        sleepStart: entry.sleepStart,
+        sleepEnd: entry.sleepEnd,
         hours: entry.hours,
         deepMin: entry.deepMin,
         remMin: entry.remMin,
@@ -1664,6 +1722,8 @@ export {
   generateCalorieTimeline,
   buildAIPrompt,
   buildGlobalAIPrompt,
+  SLEEP_AI_MI_FITNESS_INSTRUCTIONS,
+  parseToDecimalHours,
   AI_KEYWORD_TO_HIGHLIGHT,
   AI_KEYWORDS_ORDERED,
   InteractiveAIText,
