@@ -305,12 +305,13 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     log.find(e => e.type === 'sleep') ||
     (timelineNodes || []).find(n => n.type === 'sleep');
   const wakeTime = sleepNode?.wakeTime ?? 7.5;
+  const sleepEnd = sleepNode?.sleepEnd != null ? sleepNode.sleepEnd : wakeTime;
   const nightStartEnergy =
     initialEnergy != null
       ? Math.max(initialEnergy, baselineEnergy * 0.7)
       : baselineEnergy;
   const sleepStart = sleepNode?.sleepStart ?? 0;
-  const wake = wakeTime;
+  const wake = sleepEnd;
 
   // Mappa da canonical strategy key a array di mealType equivalenti
   const strategyToMealTypes = {
@@ -398,6 +399,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   let neuralFatigue = 0;
   let hoursSinceMeal = 0;
   let previousEnergy = baselineEnergy;
+  let peakEnergyAtWake = null;
+  let peakNeuroAtWake = null;
 
   console.log("initialEnergy:", initialEnergy);
   console.log("realBaseline:", realBaseline);
@@ -638,8 +641,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     if (globalCrashRisk && h >= 14 && h <= 20) currentCortisol += 10;
     currentCortisol = Math.max(0, Math.min(100, currentCortisol));
 
-    if (h <= wakeTime) {
-      currentNeuro = Math.max(0, maxNeuro - (wakeTime - h) * 8);
+    if (isSleeping) {
+      currentNeuro = Math.max(0, Math.min(100, maxNeuro - (wake - h) * 8));
     } else {
       currentNeuro -= 1.2;
     }
@@ -667,6 +670,14 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     }
     metabolicEnergy = Math.max(15, metabolicEnergy);
     neuralEnergy = Math.max(15, neuralEnergy);
+
+    if (isSleeping) {
+      peakEnergyAtWake = Math.max(peakEnergyAtWake ?? 0, currentEnergy);
+      peakNeuroAtWake = Math.max(peakNeuroAtWake ?? 0, currentNeuro);
+    } else {
+      if (peakEnergyAtWake != null) currentEnergy = Math.min(currentEnergy, peakEnergyAtWake);
+      if (peakNeuroAtWake != null) currentNeuro = Math.min(currentNeuro, peakNeuroAtWake);
+    }
 
     out.push({
       time: h,
