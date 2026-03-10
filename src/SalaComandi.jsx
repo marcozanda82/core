@@ -476,6 +476,19 @@ export default function SalaComandi() {
 
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
+  const effectiveWakeTimeForSleep = useMemo(() => {
+    const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
+    if (!sleepEntry) return null;
+    let wt = sleepEntry.wakeTime;
+    if (wt == null || typeof wt !== 'number') {
+      const start = sleepEntry.sleepStart ?? 0;
+      const duration = sleepEntry.duration ?? sleepEntry.hours ?? sleepEntry.sleepHours ?? 7;
+      wt = start + duration;
+      if (wt >= 24) wt -= 24;
+    }
+    return Number(wt);
+  }, [dailyLog]);
+
   const nodesForEnergySimulation = useMemo(() => {
     const base = activeNodes || [];
     const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
@@ -483,19 +496,26 @@ export default function SalaComandi() {
     const sleepHours = sleepEntry.hours ?? sleepEntry.duration ?? sleepEntry.sleepHours ?? 7;
     const deepMin = sleepEntry.deepMin ?? sleepEntry.deepMinutes ?? (typeof sleepEntry.deep === 'number' ? sleepEntry.deep : 60);
     const remMin = sleepEntry.remMin ?? sleepEntry.remMinutes ?? (typeof sleepEntry.rem === 'number' ? sleepEntry.rem : 60);
+    const wakeTime = effectiveWakeTimeForSleep != null ? effectiveWakeTimeForSleep : 7;
     const sleepNode = {
       id: 'sleep',
       type: 'sleep',
-      time: sleepEntry.wakeTime ?? 7,
+      time: wakeTime,
       duration: sleepHours,
       hours: sleepHours,
-      wakeTime: sleepEntry.wakeTime ?? 7,
+      wakeTime,
       deepMin,
       remMin,
-      sleepStart: sleepEntry.sleepStart
+      sleepStart: sleepEntry.sleepStart ?? 0
     };
     return [...base, sleepNode].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
-  }, [activeNodes, dailyLog]);
+  }, [activeNodes, dailyLog, effectiveWakeTimeForSleep]);
+
+  const dailyLogForEnergy = useMemo(() => {
+    const log = dailyLog || [];
+    if (effectiveWakeTimeForSleep == null) return log;
+    return log.map(e => e.type === 'sleep' ? { ...e, wakeTime: effectiveWakeTimeForSleep } : e);
+  }, [dailyLog, effectiveWakeTimeForSleep]);
 
   const allNodesWithStack = useMemo(() => {
     const endTime = (n) => {
@@ -1954,7 +1974,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
     try {
       const foodDbNames = Object.keys(foodDb || {}).map(k => foodDb[k]?.desc || foodDb[k]?.name || k).filter(Boolean).slice(0, 150);
-      const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLog || [], idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad);
+      const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
       const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
@@ -2619,7 +2639,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       nervousSystemLoad: 0
     };
   } else {
-    energySimulation = generateRealEnergyData(nodesForEnergySimulation, dailyLog || [], idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
+    energySimulation = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
   }
   const chartData = energySimulation?.chartData ?? [];
   const realTotals = energySimulation?.realTotals ?? {};
@@ -3609,11 +3629,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         formatter={(value) => [`${value}%`, 'Energia SNC']}
                         labelFormatter={(label) => `Ore ${label}:00`}
                       />
-                      {(dailyLog || []).filter(item => item.type === 'sleep').map((sleepItem, index) => (
+                      {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
                         <ReferenceLine
-                          key={`snc-sleep-${sleepItem.id ?? index}`}
-                          x={sleepItem.wakeTime ?? 7.5}
-                          stroke="#4ba3e3"
+                          key={`snc-sleep-${node.id ?? index}`}
+                          x={node.wakeTime ?? 7.5}
+                          stroke="#00e5ff"
                           strokeDasharray="3 3"
                           strokeWidth={1.5}
                           label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11, fontWeight: 'bold' }}
@@ -3730,11 +3750,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' || chartUnit === 'calorieTimeline' ? [0, Math.max(targetKcalChart, totalCaloriesTimeline || 0)] : [0, 100])} tickFormatter={(val) => (chartUnit === 'kcal' || chartUnit === 'calorieTimeline') ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={40} />
                   <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} hide />
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
-                  {dailyLog.filter(item => item.type === 'sleep').map((sleepItem, index) => (
+                  {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
                     <ReferenceLine
-                      key={`sleep-ref-${sleepItem.id ?? index}`}
-                      x={sleepItem.wakeTime}
-                      stroke="#4ba3e3"
+                      key={`sleep-ref-${node.id ?? index}`}
+                      x={node.wakeTime ?? 7.5}
+                      stroke="#00e5ff"
                       strokeDasharray="3 3"
                       strokeWidth={1.5}
                       label={{
