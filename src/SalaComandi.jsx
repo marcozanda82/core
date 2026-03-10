@@ -476,6 +476,27 @@ export default function SalaComandi() {
 
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
+  const nodesForEnergySimulation = useMemo(() => {
+    const base = activeNodes || [];
+    const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
+    if (!sleepEntry) return base;
+    const sleepHours = sleepEntry.hours ?? sleepEntry.duration ?? sleepEntry.sleepHours ?? 7;
+    const deepMin = sleepEntry.deepMin ?? sleepEntry.deepMinutes ?? (typeof sleepEntry.deep === 'number' ? sleepEntry.deep : 60);
+    const remMin = sleepEntry.remMin ?? sleepEntry.remMinutes ?? (typeof sleepEntry.rem === 'number' ? sleepEntry.rem : 60);
+    const sleepNode = {
+      id: 'sleep',
+      type: 'sleep',
+      time: sleepEntry.wakeTime ?? 7,
+      duration: sleepHours,
+      hours: sleepHours,
+      wakeTime: sleepEntry.wakeTime ?? 7,
+      deepMin,
+      remMin,
+      sleepStart: sleepEntry.sleepStart
+    };
+    return [...base, sleepNode].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+  }, [activeNodes, dailyLog]);
+
   const allNodesWithStack = useMemo(() => {
     const endTime = (n) => {
       if (n.type === 'work') return n.time + (n.duration || 1);
@@ -1933,7 +1954,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
     try {
       const foodDbNames = Object.keys(foodDb || {}).map(k => foodDb[k]?.desc || foodDb[k]?.name || k).filter(Boolean).slice(0, 150);
-      const energyResult = generateRealEnergyData(activeNodes, dailyLog || [], idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad);
+      const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLog || [], idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
       const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
@@ -2562,6 +2583,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         yesterdayNodes.push({ type: 'workout', time: entry.time ?? entry.mealTime ?? 12, duration: entry.duration ?? 1, kcal: entry.kcal ?? entry.cal ?? 300 });
       }
     });
+    const yesterdaySleep = yesterdayLog.find(e => e?.type === 'sleep');
+    if (yesterdaySleep) {
+      const sleepHours = yesterdaySleep.hours ?? yesterdaySleep.duration ?? yesterdaySleep.sleepHours ?? 7;
+      const deepMin = yesterdaySleep.deepMin ?? yesterdaySleep.deepMinutes ?? (typeof yesterdaySleep.deep === 'number' ? yesterdaySleep.deep : 60);
+      const remMin = yesterdaySleep.remMin ?? yesterdaySleep.remMinutes ?? (typeof yesterdaySleep.rem === 'number' ? yesterdaySleep.rem : 60);
+      yesterdayNodes.push({
+        id: 'sleep',
+        type: 'sleep',
+        time: yesterdaySleep.wakeTime ?? 7,
+        duration: sleepHours,
+        hours: sleepHours,
+        wakeTime: yesterdaySleep.wakeTime ?? 7,
+        deepMin,
+        remMin,
+        sleepStart: yesterdaySleep.sleepStart
+      });
+    }
     const result = generateRealEnergyData(yesterdayNodes, yesterdayLog, idealStrategy, 0, 2500, null, null, userModel, 30);
     const last = result?.chartData?.[24];
     if (!last) return null;
@@ -2581,7 +2619,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       nervousSystemLoad: 0
     };
   } else {
-    energySimulation = generateRealEnergyData(activeNodes, dailyLog || [], idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
+    energySimulation = generateRealEnergyData(nodesForEnergySimulation, dailyLog || [], idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
   }
   const chartData = energySimulation?.chartData ?? [];
   const realTotals = energySimulation?.realTotals ?? {};
