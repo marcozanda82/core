@@ -284,7 +284,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     log.find(e => e.type === 'sleep') ||
     (timelineNodes || []).find(n => n.type === 'sleep');
   const wakeTime = sleepNode?.wakeTime ?? 7.5;
-  const nightStartEnergy = initialEnergy != null ? initialEnergy : baselineEnergy;
+  const nightStartEnergy =
+    initialEnergy != null
+      ? Math.max(initialEnergy, baselineEnergy * 0.7)
+      : baselineEnergy;
   const sleepStartRaw = sleepNode?.sleepStart ?? 0;
   const effectiveSleepStart = sleepStartRaw > wakeTime ? 0 : sleepStartRaw;
 
@@ -373,6 +376,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   let hoursSinceMeal = 0;
   let previousEnergy = baselineEnergy;
 
+  console.log("initialEnergy:", initialEnergy);
+  console.log("realBaseline:", realBaseline);
+  console.log("baselineEnergy:", baselineEnergy);
+  console.log("nightStartEnergy:", nightStartEnergy);
   console.log("REAL baseline energy:", realBaseline);
 
   for (let h = 0; h <= 24; h++) {
