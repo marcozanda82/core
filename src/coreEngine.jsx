@@ -244,6 +244,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   baselineEnergy = Math.max(40, Math.min(90, baselineEnergy));
   console.log('Baseline energy:', baselineEnergy);
 
+  const sleepNode = log.find(e => e.type === 'sleep');
+  const wakeTime = sleepNode?.wakeTime ?? 7.5;
+  const nightStartEnergy = 25; // Energia residua della sera prima
+
   // Mappa da canonical strategy key a array di mealType equivalenti
   const strategyToMealTypes = {
     colazione: ['merenda1', 'colazione'],
@@ -272,9 +276,9 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   });
   realTotals.allenamento = workoutKcal;
 
-  let metabolicEnergy = baselineEnergy;
-  let neuralEnergy = baselineEnergy;
-  let currentEnergy = baselineEnergy;
+  let metabolicEnergy = wakeTime > 0 ? nightStartEnergy : baselineEnergy;
+  let neuralEnergy = wakeTime > 0 ? nightStartEnergy : baselineEnergy;
+  let currentEnergy = metabolicEnergy;
   let currentIdealEnergy = initialIdealEnergy != null ? (initialIdealEnergy ?? initialEnergy) : 70;
   let globalCrashRisk = false;
 
@@ -293,8 +297,6 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     if (hasDigestionRisk) break;
   }
 
-  const sleepNode = log.find(e => e.type === 'sleep');
-  const wakeTime = sleepNode?.wakeTime ?? 7.5;
   let maxNeuro = 70;
   if (sleepNode) {
     const hScore = Math.min(40, ((sleepNode.hours || 7) / 8) * 40);
@@ -337,7 +339,14 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     let currentDigestione = 0;
     let hadMealThisHour = false;
     const useContinuityAtZero = h === 0 && initialEnergy != null;
-    if (!useContinuityAtZero) {
+    if (h < wakeTime) {
+      // Fase di SONNO: Ricarica progressiva delle batterie
+      const rechargeRate = (baselineEnergy - nightStartEnergy) / Math.max(1, wakeTime);
+      metabolicEnergy += rechargeRate;
+      neuralEnergy += rechargeRate;
+      currentIdealEnergy += rechargeRate;
+    } else if (!useContinuityAtZero) {
+      // Fase di VEGLIA: Decadimento fisiologico normale
       metabolicEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
       neuralEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
       currentIdealEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
