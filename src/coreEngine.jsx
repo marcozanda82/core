@@ -154,19 +154,36 @@ function decimalToTimeStr(dec) {
  * Baseline energetica giornaliera in base a sonno e recupero neurologico.
  * Bilanciamento orientato alla qualità: ore totali (fino a 50 pt), profondità SNC (30 pt), REM cognitiva (20 pt).
  * Con ~7h e ottima efficienza (2h profondo, 1.5h REM) la batteria si ricarica all'85–90%.
+ * Supporta più formati di import (wearable: duration, deep, rem in minuti; o hours, deepMin, remMin).
  */
 function computeBaselineEnergy(dailyLog) {
   const log = dailyLog || [];
   const sleepEntry = log.find(e => e.type === 'sleep');
   if (!sleepEntry) return 50;
 
-  const sleepHours = typeof sleepEntry.hours === 'number' ? sleepEntry.hours : 7;
-  const deepSleepHours = typeof sleepEntry.deepMin === 'number'
-    ? sleepEntry.deepMin / 60
-    : (typeof sleepEntry.deepHours === 'number' ? sleepEntry.deepHours : 1);
-  const remSleepHours = typeof sleepEntry.remMin === 'number'
-    ? sleepEntry.remMin / 60
-    : (typeof sleepEntry.remHours === 'number' ? sleepEntry.remHours : 1);
+  const sleepHours =
+    sleepEntry.hours ??
+    sleepEntry.duration ??
+    sleepEntry.sleepHours ??
+    7;
+
+  const deepMinutes =
+    sleepEntry.deepMin ??
+    sleepEntry.deepMinutes ??
+    sleepEntry.deep;
+  const deepSleepHours =
+    typeof deepMinutes === 'number'
+      ? deepMinutes / 60
+      : (typeof sleepEntry.deepHours === 'number' ? sleepEntry.deepHours : 1);
+
+  const remMinutes =
+    sleepEntry.remMin ??
+    sleepEntry.remMinutes ??
+    sleepEntry.rem;
+  const remSleepHours =
+    typeof remMinutes === 'number'
+      ? remMinutes / 60
+      : (typeof sleepEntry.remHours === 'number' ? sleepEntry.remHours : 1);
 
   const basePoints = Math.min(50, (sleepHours / 7.5) * 50);
   const deepPoints = Math.min(30, (deepSleepHours / 1.5) * 30);
