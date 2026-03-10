@@ -11,10 +11,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
 
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
-import { getDatabase, ref, get, set, onValue, update } from 'firebase/database';
+import { ref, get, set, onValue, update } from 'firebase/database';
 
+import { useFirebase } from './useFirebase';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
   RADIAN,
@@ -81,24 +80,12 @@ import {
   predictEnergyIntervention
 } from './coreEngine';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyA5pSzpfq1aGZ1wjNV5-eXnIqWL6brl424",
-  authDomain: "mio-tracker.firebaseapp.com",
-  databaseURL: "https://mio-tracker-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "mio-tracker",
-  storageBucket: "mio-tracker.firebasestorage.app",
-  messagingSenderId: "382993217593",
-  appId: "1:382993217593:web:f0780aa061c23f9503f5e8"
-};
-
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
-const db = getDatabase(app);
-
 export default function SalaComandi() {
-  // AUTENTICAZIONE
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userUid, setUserUid] = useState(null);
+  const { db, auth, user, handleLogin: firebaseLogin } = useFirebase();
+  const isAuthenticated = !!user;
+  const userUid = user?.uid ?? null;
+
+  // Form di login (stato locale)
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [isBooting, setIsBooting] = useState(false);
@@ -606,72 +593,68 @@ export default function SalaComandi() {
     localStorage.setItem('vyta_idealStrategy', JSON.stringify(idealStrategy));
   }, [idealStrategy]);
 
+  // Caricamento dati al login (user da useFirebase); onValue/set restano qui
   useEffect(() => {
-    let unsubToday = null;
-    const unsubAuth = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        unsubToday?.();
-        setIsInitialLoadComplete(false);
-        return;
-      }
-      setUserUid(user.uid);
-      setIsAuthenticated(true);
+    if (!user) {
       setIsInitialLoadComplete(false);
-      const today = getTodayString();
-      const basePath = `users/${user.uid}/tracker_data`;
+      return;
+    }
+    let unsubToday = null;
+    const today = getTodayString();
+    const basePath = `users/${user.uid}/tracker_data`;
 
-      get(ref(db, basePath)).then(snap => {
-        const tree = snap.exists() ? snap.val() : null;
-        setFullStorico(tree);
-        setFullHistory(tree || {});
-        const todayNode = tree?.[TRACKER_STORICO_KEY(today)];
-        const initialLog = getLogFromStoricoTree(tree, today);
-        setDailyLog(applyMealTimes(initialLog, todayNode?.mealTimes ?? {}));
-        unsubToday = onValue(ref(db, `${basePath}/${TRACKER_STORICO_KEY(today)}`), (liveSnap) => {
-          if (liveSnap.exists() && currentTrackerDateRef.current === getTodayString()) {
-            const val = liveSnap.val();
-            const incomingLog = val?.log ?? [];
-            const normalized = normalizeLogData(Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}));
-            const mealTimes = val?.mealTimes ?? {};
-            lastLogFromFirebaseRef.current = JSON.stringify(normalized);
-            setDailyLog(applyMealTimes(normalized, mealTimes));
-          }
-        });
-        setActiveAction('home');
-        setIsInitialLoadComplete(true);
-      });
-
-      get(ref(db, `users/${user.uid}/profile_targets`)).then(profileSnap => {
-        if (profileSnap.exists()) {
-          const data = profileSnap.val();
-          if (data.profile) setUserProfile(prev => ({ ...prev, ...data.profile }));
-          if (data.targets) setUserTargets(prev => ({ ...prev, ...data.targets }));
+    get(ref(db, basePath)).then(snap => {
+      const tree = snap.exists() ? snap.val() : null;
+      setFullStorico(tree);
+      setFullHistory(tree || {});
+      const todayNode = tree?.[TRACKER_STORICO_KEY(today)];
+      const initialLog = getLogFromStoricoTree(tree, today);
+      setDailyLog(applyMealTimes(initialLog, todayNode?.mealTimes ?? {}));
+      unsubToday = onValue(ref(db, `${basePath}/${TRACKER_STORICO_KEY(today)}`), (liveSnap) => {
+        if (liveSnap.exists() && currentTrackerDateRef.current === getTodayString()) {
+          const val = liveSnap.val();
+          const incomingLog = val?.log ?? [];
+          const normalized = normalizeLogData(Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}));
+          const mealTimes = val?.mealTimes ?? {};
+          lastLogFromFirebaseRef.current = JSON.stringify(normalized);
+          setDailyLog(applyMealTimes(normalized, mealTimes));
         }
       });
-
-      get(ref(db, `users/${user.uid}/physiology_model`)).then(physSnap => {
-        if (physSnap.exists()) {
-          const data = physSnap.val();
-          const { lastCalibrationWeek: savedCalWeek, ...model } = data;
-          if (savedCalWeek) setLastCalibrationWeek(savedCalWeek);
-          if (model && typeof model === 'object') {
-            setUserModel(prev => ({
-              ...DEFAULT_USER_MODEL,
-              ...model,
-              caffeineSensitivity: clampModelValue(model.caffeineSensitivity ?? 1),
-              carbCrashSensitivity: clampModelValue(model.carbCrashSensitivity ?? 1),
-              stressSensitivity: clampModelValue(model.stressSensitivity ?? 1),
-              hydrationSensitivity: clampModelValue(model.hydrationSensitivity ?? 1),
-              recoveryRate: clampModelValue(model.recoveryRate ?? 1)
-            }));
-          }
-        }
-      });
-
-      get(ref(db, `${basePath}/trackerFoodDatabase`)).then(s => { if (s.exists()) setFoodDb(s.val()); });
+      setActiveAction('home');
+      setIsInitialLoadComplete(true);
     });
-    return () => { unsubAuth(); unsubToday?.(); };
-  }, []);
+
+    get(ref(db, `users/${user.uid}/profile_targets`)).then(profileSnap => {
+      if (profileSnap.exists()) {
+        const data = profileSnap.val();
+        if (data.profile) setUserProfile(prev => ({ ...prev, ...data.profile }));
+        if (data.targets) setUserTargets(prev => ({ ...prev, ...data.targets }));
+      }
+    });
+
+    get(ref(db, `users/${user.uid}/physiology_model`)).then(physSnap => {
+      if (physSnap.exists()) {
+        const data = physSnap.val();
+        const { lastCalibrationWeek: savedCalWeek, ...model } = data;
+        if (savedCalWeek) setLastCalibrationWeek(savedCalWeek);
+        if (model && typeof model === 'object') {
+          setUserModel(prev => ({
+            ...DEFAULT_USER_MODEL,
+            ...model,
+            caffeineSensitivity: clampModelValue(model.caffeineSensitivity ?? 1),
+            carbCrashSensitivity: clampModelValue(model.carbCrashSensitivity ?? 1),
+            stressSensitivity: clampModelValue(model.stressSensitivity ?? 1),
+            hydrationSensitivity: clampModelValue(model.hydrationSensitivity ?? 1),
+            recoveryRate: clampModelValue(model.recoveryRate ?? 1)
+          }));
+        }
+      }
+    });
+
+    get(ref(db, `${basePath}/trackerFoodDatabase`)).then(s => { if (s.exists()) setFoodDb(s.val()); });
+
+    return () => { unsubToday?.(); };
+  }, [user]);
 
   // Fallback: quando fullHistory è popolato ma dailyLog è ancora vuoto (es. primo caricamento), sincronizza il log del giorno corrente
   useEffect(() => {
@@ -705,9 +688,10 @@ export default function SalaComandi() {
     e.preventDefault();
     setIsBooting(true);
     try {
-      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+      await firebaseLogin(loginEmail, loginPassword);
     } catch (error) {
       alert("ACCESSO NEGATO: Controlla le credenziali.");
+    } finally {
       setIsBooting(false);
     }
   };
