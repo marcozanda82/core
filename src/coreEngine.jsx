@@ -487,7 +487,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     let cortisolBase = 20;
     if (h >= 6 && h <= 9) cortisolBase = 35 + (9 - h) * 5;
     else if (h > 9) cortisolBase = Math.max(18, 55 - (h - 9) * 2.5);
-    currentCortisol = cortisolBase;
+    currentCortisol += (cortisolBase - currentCortisol) * 0.3;
     if (currentEnergy < 35) { currentCortisol += 18; globalCortisolRisk = true; }
     if (currentHydration < 45) { currentCortisol += 15 * model.hydrationSensitivity; globalCortisolRisk = true; }
     (timelineNodes || []).forEach(node => {

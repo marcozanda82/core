@@ -4208,12 +4208,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     }
   });
 
+  const _tdeeForSegments = (userTargets?.kcal ?? 2000) + (dailyLog || []).filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
   const renderDataWithSegments = renderData.map(d => ({
     ...d,
     anabolicScore: getAnabolicAtTime(anabolicCurve, d.time),
     cortisolScore: getCortisolAtTime(cortisolCurve, d.time),
     energyPast: d.time <= displayTime ? d.energy : null,
     energyFuture: d.time >= displayTime ? d.energy : null,
+    kcalPast: d.time <= displayTime ? (d.energy != null ? (Number(d.energy) / 100) * _tdeeForSegments : null) : null,
+    kcalFuture: d.time >= displayTime ? (d.energy != null ? (Number(d.energy) / 100) * _tdeeForSegments : null) : null,
     glicemiaPast: d.time <= displayTime ? d.glicemia : null,
     glicemiaFuture: d.time >= displayTime ? d.glicemia : null,
     idratazionePast: d.time <= displayTime ? d.idratazione : null,
@@ -4331,7 +4334,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         };
       })
     : renderDataWithSegments;
-  const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : finalChartData;
+  const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : (chartUnit === 'percent' ? energyChartData : finalChartData);
   const dotYCalorieTimeline = (() => {
     if (chartUnit !== 'calorieTimeline' && expandedChart !== 'calorieTimeline') return null;
     const tl = safeCalorieTimelineData;
@@ -4344,20 +4347,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   })();
   const modalChartData = expandedChart === 'calorieTimeline'
     ? safeCalorieTimelineData
-    : expandedChart === 'kcal'
-    ? renderDataWithSegments.map(d => {
-        const rawEnergy = d.energy ?? d.energia ?? 0;
-        const rawCortisolo = d.cortisolo ?? d.cortisol ?? 0;
-        return {
-          ...d,
-          energy: scale(rawEnergy),
-          idealEnergy: scale(d.idealEnergy ?? d.energiaIdeale ?? 0),
-          kcalPast: d.time <= displayTime ? scale(rawEnergy) : null,
-          kcalFuture: d.time >= displayTime ? scale(rawEnergy) : null,
-          cortisolScaledToKcal: (Number(rawCortisolo) / 100) * targetKcalChart
-        };
-      })
-    : finalChartData;
+    : (expandedChart === 'percent' ? energyChartData : finalChartData);
   const finalDotY = chartUnit === 'calorieTimeline' ? (dotYCalorieTimeline ?? 0) : (chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'kcal' ? scale(dotY) : dotY))))));
 
   const energyAt20Percent = energyAt20 ?? 50;
