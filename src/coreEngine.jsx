@@ -684,9 +684,9 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       metabolicEnergy += (baselineEnergy - metabolicEnergy) * 0.05;
       neuralEnergy += (baselineEnergy - neuralEnergy) * 0.05;
     }
-    metabolicEnergy = Math.max(15, metabolicEnergy);
-    neuralEnergy = Math.max(15, neuralEnergy);
-
+    metabolicEnergy = Math.max(15, Math.min(100, metabolicEnergy));
+    neuralEnergy = Math.max(15, Math.min(100, neuralEnergy));
+    
 if (isSleeping) {
       peakEnergyAtWake = Math.max(peakEnergyAtWake ?? 0, currentEnergy);
       peakNeuroAtWake = Math.max(peakNeuroAtWake ?? 0, currentNeuro);
