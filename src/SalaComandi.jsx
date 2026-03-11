@@ -3667,17 +3667,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
-                <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #333' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.95rem' }}>📊 Come leggere questo grafico</h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: '#aaa', lineHeight: '1.4' }}>
-                    <div>
-                      <strong style={{ color: '#00e5ff' }}>⚡ Stimolazione Nervosa (Linea Azzurra):</strong> Il tuo attuale livello di lucidità e reattività. Reagisce istantaneamente a pasti e caffeina. Se è molto più alta della Riserva, stai usando stimolanti per mascherare la stanchezza.
-                    </div>
-                    <div>
-                      <strong style={{ color: '#00e676' }}>🔋 Riserva Fisica (Area Verde):</strong> Il vero serbatoio biologico del tuo corpo. Raggiunge il picco al risveglio e si consuma inesorabilmente col passare delle ore di veglia.
-                    </div>
-                  </div>
-                </div>
               </div>
                 ) : (
                 <ResponsiveContainer width="100%" height="100%">

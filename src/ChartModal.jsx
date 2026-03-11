@@ -177,12 +177,17 @@ export default function ChartModal({
         )}
         <div style={{ flex: 1, minHeight: 120 }}>
           {expandedChart === 'percent' ? (
+            <>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={modalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorEnergiaModal" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
                     <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
+                  </linearGradient>
+                  <linearGradient id="colorRiservaModal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#00e676" stopOpacity={0.4}/>
+                    <stop offset="95%" stopColor="#00e676" stopOpacity={0}/>
                   </linearGradient>
                   <filter id="modalGlowEnergia" x="-20%" y="-20%" width="140%" height="140%">
                     <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
@@ -198,12 +203,25 @@ export default function ChartModal({
                 ))}
                 <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 4 : 1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
                 <ReferenceDot x={displayTime} y={dotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
-                <Area type="monotone" dataKey="energyPast" stroke="#00e676" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} connectNulls={false} />
+                <Area type="monotone" dataKey="riservaFisica" stroke="#00e676" fill="url(#colorRiservaModal)" fillOpacity={1} strokeWidth={2} dot={false} isAnimationActive={false} />
+                <Area type="monotone" dataKey="energyPast" stroke="#00e5ff" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} connectNulls={false} />
                 <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.6} connectNulls={false} />
                 <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                 <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
               </ComposedChart>
             </ResponsiveContainer>
+            <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid #333' }}>
+              <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.95rem' }}>📊 Come leggere questo grafico</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: '#aaa', lineHeight: '1.4' }}>
+                <div>
+                  <strong style={{ color: '#00e5ff' }}>⚡ Stimolazione Nervosa (Linea Azzurra):</strong> Il tuo attuale livello di lucidità e reattività. Reagisce istantaneamente a pasti e caffeina. Se è molto più alta della Riserva, stai usando stimolanti per mascherare la stanchezza.
+                </div>
+                <div>
+                  <strong style={{ color: '#00e676' }}>🔋 Riserva Fisica (Area Verde):</strong> Il vero serbatoio biologico del tuo corpo. Raggiunge il picco al risveglio e si consuma inesorabilmente col passare delle ore di veglia.
+                </div>
+              </div>
+            </div>
+            </>
           ) : expandedChart === 'kcal' ? (
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={modalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
