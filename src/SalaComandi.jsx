@@ -118,8 +118,6 @@ export default function SalaComandi() {
   const [simulationNodes, setSimulationNodes] = useState([]);
   const [isSimulationMode, setIsSimulationMode] = useState(false);
   const [simulatedLog, setSimulatedLog] = useState(null);
-  const pressTimer = useRef(null);
-  const sandboxLongPressFired = useRef(false);
   const [dailyInsights, setDailyInsights] = useState([]);
   const [energyForecast, setEnergyForecast] = useState(null);
   const [crashExplanation, setCrashExplanation] = useState(null);
@@ -576,27 +574,6 @@ export default function SalaComandi() {
     setSimulationNodes([]);
   };
 
-  const startPress = () => {
-    sandboxLongPressFired.current = false;
-    pressTimer.current = setTimeout(() => {
-      sandboxLongPressFired.current = true;
-      setIsSimulationMode(true);
-      setSimulatedLog(JSON.parse(JSON.stringify(dailyLog || [])));
-    }, 1200);
-  };
-
-  const cancelPress = () => {
-    if (pressTimer.current) {
-      clearTimeout(pressTimer.current);
-      pressTimer.current = null;
-    }
-  };
-
-  const exitSimulation = () => {
-    setIsSimulationMode(false);
-    setSimulatedLog(null);
-  };
-
   const addSimulationEvent = (event) => {
     setSimulationNodes(prev => [...prev, event].sort((a, b) => (a.time ?? 0) - (b.time ?? 0)));
   };
@@ -774,8 +751,9 @@ export default function SalaComandi() {
     return obj;
   };
 
-  /** Sincronizzazione esplicita su Firebase. Legge uid da auth.currentUser per evitare stale closures. */
+  /** Sincronizzazione esplicita su Firebase. Legge uid da auth.currentUser per evitare stale closures. In modalità simulazione non scrive mai. */
   const syncDatiFirebase = useCallback((nuovoLog, nuoviNodi) => {
+    if (isSimulationMode) return;
     const currentUser = auth.currentUser;
     if (!currentUser) {
       console.warn("⚠️ Firebase Sync interrotto: Nessun utente loggato rilevato da auth.currentUser");
@@ -815,7 +793,7 @@ export default function SalaComandi() {
     } catch (error) {
       console.error("❌ Errore durante la preparazione del payload Firebase:", error);
     }
-  }, [currentTrackerDate]);
+  }, [currentTrackerDate, isSimulationMode]);
 
   const saveProfileToFirebase = (newProfile, newTargets) => {
     const currentUser = auth.currentUser;
@@ -1050,6 +1028,14 @@ export default function SalaComandi() {
     };
 
     const onUp = () => {
+      if (isSimulationMode) {
+        dragEngine.current.isActive = false;
+        setDragLiveTime(null);
+        setDragOffsetY(0);
+        dragOffsetYRef.current = 0;
+        setDraggingNode(null);
+        return;
+      }
       const isOutside = Math.abs(dragOffsetYRef.current) > 50;
       const finalTimeRaw = dragEngine.current.currentLiveTime;
       const finalTimeRounded = Math.round(finalTimeRaw * 12) / 12;
@@ -1139,7 +1125,7 @@ export default function SalaComandi() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [draggingNode]);
+  }, [draggingNode, isSimulationMode]);
 
   useEffect(() => { if (!isDrawerOpen) setIsZenActive(false); }, [isDrawerOpen]);
 
@@ -1641,6 +1627,13 @@ export default function SalaComandi() {
       });
 
       const nuovoLog = [...mealItems, ...rest];
+      if (isSimulationMode) {
+        setSimulatedLog(prev => [...(prev || []).filter(item => item.type !== 'food' || getSlotKey(item) !== ourSlot), ...mealItems]);
+        setAddedFoods([]);
+        setEditingMealId(null);
+        closeDrawer();
+        return;
+      }
       setDailyLog(nuovoLog);
       syncDatiFirebase(nuovoLog, manualNodes || []);
     } catch (error) {
@@ -1659,10 +1652,10 @@ export default function SalaComandi() {
    */
   const handleMealBuilderSave = useCallback((payload = {}) => {
     setIsMealBuilderOpen(false);
-    // TODO: integrare con diary (es. creare voci dailyLog da payload.macro/timing/glycemicImpact)
     if (payload?.items?.length) {
       const timeToUse = typeof payload.timing === 'number' ? payload.timing : (typeof drawerMealTime === 'number' ? drawerMealTime : 12);
-      const ourSlot = getGhostMealType(payload.mealType || mealType, dailyLog);
+      const logToUse = isSimulationMode ? (simulatedLog || []) : dailyLog;
+      const ourSlot = getGhostMealType(payload.mealType || mealType, logToUse);
       const mealItems = payload.items.map((f, index) => ({
         ...f,
         type: 'food',
@@ -1670,11 +1663,17 @@ export default function SalaComandi() {
         mealTime: timeToUse,
         id: f.id || `f_${Date.now()}_${index}`
       }));
-      const rest = dailyLog.filter(item => item.type !== 'food' || getSlotKey(item) !== ourSlot);
-      setDailyLog([...mealItems, ...rest]);
-      syncDatiFirebase([...mealItems, ...rest], manualNodes);
+      const rest = logToUse.filter(item => item.type !== 'food' || getSlotKey(item) !== ourSlot);
+      const nextLog = [...mealItems, ...rest];
+      if (isSimulationMode) {
+        setSimulatedLog(nextLog);
+        return;
+      }
+      const dailyLogRest = dailyLog.filter(item => item.type !== 'food' || getSlotKey(item) !== ourSlot);
+      setDailyLog([...mealItems, ...dailyLogRest]);
+      syncDatiFirebase([...mealItems, ...dailyLogRest], manualNodes);
     }
-  }, [dailyLog, manualNodes, mealType, drawerMealTime, syncDatiFirebase]);
+  }, [dailyLog, simulatedLog, isSimulationMode, manualNodes, mealType, drawerMealTime, syncDatiFirebase]);
 
   const handleNodeClick = (node) => {
     setSelectedNodeReport(node);
@@ -1744,6 +1743,7 @@ export default function SalaComandi() {
 
   const handleNodeTap = useCallback((node) => () => {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
+    if (isSimulationMode) return;
     // Modifica rapida orario per energizzanti/caffè senza aprire il modale
     if (node.type === 'stimulant' || node.type === 'energizer' || node.isEnergizer) {
       const currentHH = Math.floor(node.time).toString().padStart(2, '0');
@@ -1761,9 +1761,10 @@ export default function SalaComandi() {
       return;
     }
     setSelectedNodeReport(node);
-  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes]);
+  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes, isSimulationMode]);
 
   const handleAddWater = (amount) => {
+    if (isSimulationMode) return;
     if (amount > 0) {
       const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: drawerWaterTime, ml: amount }];
       setManualNodes(next);
@@ -1779,6 +1780,7 @@ export default function SalaComandi() {
   };
 
   const handleSaveFastCharge = (chargeType) => {
+    if (isSimulationMode) return;
     const id = `${chargeType}_${Date.now()}`;
     let node = { id, type: chargeType };
     if (chargeType === 'nap' || chargeType === 'meditation') {
@@ -1814,9 +1816,17 @@ export default function SalaComandi() {
     const nodeData = { id: finalId, type: isWork ? 'work' : 'workout', time: Number(workoutStartTime), duration, kcal: workoutKcal, icon: isWork ? '💼' : '🏋️', subType: workoutType, muscles: workoutMuscles };
     const logData = { id: finalId, type: 'workout', workoutType, desc, name: isWork ? 'Lavoro' : desc, kcal: workoutKcal, cal: workoutKcal, duration };
 
-    const newLog = dailyLog.some(n => n.id === finalId) ? dailyLog.map(n => n.id === finalId ? logData : n) : [logData, ...dailyLog];
+    const baseLog = isSimulationMode ? (simulatedLog || []) : dailyLog;
+    const newLog = baseLog.some(n => n.id === finalId) ? baseLog.map(n => n.id === finalId ? logData : n) : [logData, ...baseLog];
     const newNodes = manualNodes.some(n => n.id === finalId) ? manualNodes.map(n => n.id === finalId ? nodeData : n) : [...manualNodes, nodeData];
 
+    if (isSimulationMode) {
+      setSimulatedLog(newLog);
+      setEditingWorkoutId(null);
+      setWorkoutMuscles([]);
+      closeDrawer();
+      return;
+    }
     setDailyLog(newLog);
     setManualNodes(newNodes);
     syncDatiFirebase(newLog, newNodes);
@@ -1873,11 +1883,15 @@ export default function SalaComandi() {
     }
 
     if (trovati > 0) {
-      setDailyLog(prev => {
-        const nextLog = [...nuoviAlimenti, ...nuoviWorkout, ...prev];
-        syncDatiFirebase(nextLog, manualNodes);
-        return nextLog;
-      });
+      const prev = isSimulationMode ? (simulatedLog || []) : dailyLog;
+      const nextLog = [...nuoviAlimenti, ...nuoviWorkout, ...prev];
+      if (isSimulationMode) {
+        setSimulatedLog(nextLog);
+        alert(`✅ Inseriti ${trovati} elementi (sandbox).`);
+        return;
+      }
+      setDailyLog(nextLog);
+      syncDatiFirebase(nextLog, manualNodes);
       alert(`✅ Inseriti ${trovati} elementi dal comando testuale!`);
     } else {
       alert("❌ Nessun comando compatibile trovato nel testo.");
@@ -1885,8 +1899,13 @@ export default function SalaComandi() {
   };
 
   const removeLogItem = (id) => {
-    const newLog = dailyLog.filter(item => item.id !== id);
+    const source = isSimulationMode ? (simulatedLog || []) : dailyLog;
+    const newLog = source.filter(item => item.id !== id);
     const newNodes = manualNodes.filter(n => n.id !== id);
+    if (isSimulationMode) {
+      setSimulatedLog(newLog);
+      return;
+    }
     setDailyLog(newLog);
     setManualNodes(newNodes);
     syncDatiFirebase(newLog, newNodes);
@@ -2052,7 +2071,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           remMin: d.remMin,
           hr: d.hr
         };
-        const nuovoLog = [...(dailyLog || []), sleepEntry];
+        const base = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
+        const nuovoLog = [...base, sleepEntry];
+        if (isSimulationMode) {
+          setSimulatedLog(nuovoLog);
+          setPendingAiBatch(null);
+          setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Ho registrato i dati del sonno (sandbox).' }]);
+          if (optionalReply == null) setChatInput('');
+          return;
+        }
         setDailyLog(nuovoLog);
         syncDatiFirebase(nuovoLog, manualNodes);
         setPendingAiBatch(null);
@@ -2090,7 +2117,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             };
           })
           .filter(Boolean);
-        const nuovoLog = [...alimentiProcessati, ...(dailyLog || [])];
+        const base = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
+        const nuovoLog = [...alimentiProcessati, ...base];
+        if (isSimulationMode) {
+          setSimulatedLog(nuovoLog);
+          setPendingAiBatch(null);
+          setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Perfetto, ho salvato tutto (sandbox). 📝' }]);
+          if (optionalReply == null) setChatInput('');
+          return;
+        }
         setDailyLog(nuovoLog);
         syncDatiFirebase(nuovoLog, manualNodes);
         setPendingAiBatch(null);
@@ -2309,11 +2344,15 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}`;
       while ((matchWorkout = regexWorkout.exec(responseText)) !== null) {
         const kcal = Math.max(0, parseFloat((matchWorkout[2] || '').replace(',', '.')) || 300);
         const newItem = { id: Date.now() + Math.random(), type: 'workout', workoutType: 'misto', desc: (matchWorkout[1] || '').trim().toUpperCase(), kcal, duration: Math.floor(kcal / 6) };
-        setDailyLog(prev => {
-          const newLog = [newItem, ...(prev || [])];
-          syncDatiFirebase(newLog, manualNodes);
-          return newLog;
-        });
+        if (isSimulationMode) {
+          setSimulatedLog(prev => [newItem, ...(prev || [])]);
+        } else {
+          setDailyLog(prev => {
+            const newLog = [newItem, ...(prev || [])];
+            syncDatiFirebase(newLog, manualNodes);
+            return newLog;
+          });
+        }
       }
 
       let cleanText = responseText;
@@ -3685,20 +3724,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             textAlign: 'center',
             fontWeight: 'bold',
             fontSize: '0.9rem',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
             boxShadow: '0 4px 15px rgba(98, 0, 234, 0.4)',
             zIndex: 100
           }}>
-            <span>🧪 MODALITÀ SIMULAZIONE ATTIVA</span>
-            <button
-              type="button"
-              onClick={exitSimulation}
-              style={{ background: 'rgba(0,0,0,0.3)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
-            >
-              ESCI ✖
-            </button>
+            🧪 MODALITÀ SIMULAZIONE ATTIVA
           </div>
         )}
 
@@ -3720,41 +3749,59 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
           </div>
 
-          {/* DESTRA: Toggle HOME / ANALISI (Compatto) - Long-press 1.2s attiva Sandbox */}
+          {/* DESTRA: Switch a 3 vie Diario / Analisi / Simulazione */}
           <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-            <div
-              style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '3px', border: '1px solid #333', cursor: 'pointer' }}
-              onTouchStart={startPress}
-              onTouchEnd={cancelPress}
-              onMouseDown={startPress}
-              onMouseUp={cancelPress}
-              onMouseLeave={cancelPress}
-              onClick={() => {
-                if (sandboxLongPressFired.current) { sandboxLongPressFired.current = false; return; }
-                setUserProfile(prev => ({ ...prev, level: prev?.level === 'pro' ? 'base' : 'pro' }));
-              }}
-            >
-              <button 
+            <div style={{ display: 'flex', background: '#222', borderRadius: '12px', padding: '4px', marginBottom: 0 }}>
+              <button
                 type="button"
-                style={{ 
-                  background: userProfile?.level !== 'pro' ? 'linear-gradient(135deg, #00e5ff 0%, #007bb5 100%)' : 'transparent', 
-                  color: userProfile?.level !== 'pro' ? '#fff' : '#888', 
-                  border: 'none', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px',
-                  boxShadow: userProfile?.level !== 'pro' ? '0 4px 10px rgba(0,229,255,0.4)' : 'none'
+                onClick={() => { setIsSimulationMode(false); setSimulatedLog(null); setUserProfile(prev => ({ ...prev, level: 'base' })); }}
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  background: !isSimulationMode && userProfile?.level !== 'pro' ? '#333' : 'transparent',
+                  color: !isSimulationMode && userProfile?.level !== 'pro' ? '#00e5ff' : '#888',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer'
                 }}
               >
-                🏠 HOME
+                🏠 Diario
               </button>
-              <button 
+              <button
                 type="button"
-                style={{ 
-                  background: userProfile?.level === 'pro' ? 'linear-gradient(135deg, #b388ff 0%, #7c4dff 100%)' : 'transparent', 
-                  color: userProfile?.level === 'pro' ? '#fff' : '#888', 
-                  border: 'none', borderRadius: '20px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', gap: '4px',
-                  boxShadow: userProfile?.level === 'pro' ? '0 4px 10px rgba(179,136,255,0.4)' : 'none'
+                onClick={() => { setIsSimulationMode(false); setSimulatedLog(null); setUserProfile(prev => ({ ...prev, level: 'pro' })); }}
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  background: !isSimulationMode && userProfile?.level === 'pro' ? '#333' : 'transparent',
+                  color: !isSimulationMode && userProfile?.level === 'pro' ? '#00e5ff' : '#888',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer'
                 }}
               >
-                📊 ANALISI
+                📊 Analisi
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsSimulationMode(true); setSimulatedLog(JSON.parse(JSON.stringify(dailyLog || []))); }}
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  background: isSimulationMode ? '#6200ea' : 'transparent',
+                  color: isSimulationMode ? '#fff' : '#888',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer'
+                }}
+              >
+                🧪 Simula
               </button>
             </div>
           </div>
@@ -4567,7 +4614,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <button onClick={() => handleAddWater(-250)} className="water-rectify-btn">− 250</button>
               <button onClick={() => handleAddWater(-500)} className="water-rectify-btn">− 500</button>
-              <button onClick={() => { const next = manualNodes.filter(n => n.type !== 'water'); setManualNodes(next); syncDatiFirebase(dailyLog, next); }} className="water-rectify-btn" style={{ borderColor: 'rgba(255, 77, 77, 0.4)', color: '#ff4d4d' }}>Azzera</button>
+              <button onClick={() => { if (isSimulationMode) return; const next = manualNodes.filter(n => n.type !== 'water'); setManualNodes(next); syncDatiFirebase(dailyLog, next); }} className="water-rectify-btn" style={{ borderColor: 'rgba(255, 77, 77, 0.4)', color: '#ff4d4d' }}>Azzera</button>
             </div>
           </div>
         )}
@@ -5268,14 +5315,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   const { food, source } = selectedFoodForEdit;
                   const newItem = { ...estraiDatiFoodDb(food.desc || food.name, qta, food.mealType), id: food.id };
                   if (source === 'queue') setAddedFoods(prev => prev.map(f => f.id === food.id ? newItem : f));
-                  else if (source === 'diary') setDailyLog(prev => {
+                  else if (source === 'diary') {
+                    const prev = isSimulationMode ? (simulatedLog || []) : dailyLog;
                     const newLog = prev.map(f => {
                       if (f.id !== food.id) return f;
                       return { ...newItem, mealTime: f.mealTime };
                     });
-                    syncDatiFirebase(newLog, manualNodes);
-                    return newLog;
-                  });
+                    if (isSimulationMode) {
+                      setSimulatedLog(newLog);
+                    } else {
+                      setDailyLog(newLog);
+                      syncDatiFirebase(newLog, manualNodes);
+                    }
+                  }
                   setSelectedFoodForEdit(null);
                 }}>Salva</button>
               </div>
@@ -5559,16 +5611,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 Inserisci sonno
               </button>
               <button onClick={() => {
-                setDailyLog(prev => [
-                  ...prev,
-                  {
-                    type: "sleep",
-                    hours: 7,
-                    deepMin: 60,
-                    remMin: 60,
-                    wakeTime: 7.5
-                  }
-                ]);
+                const sleepEntry = { type: 'sleep', hours: 7, deepMin: 60, remMin: 60, wakeTime: 7.5 };
+                if (isSimulationMode) {
+                  setSimulatedLog(prev => [...(prev || []), sleepEntry]);
+                } else {
+                  setDailyLog(prev => [...prev, sleepEntry]);
+                }
                 setShowSleepPrompt(false);
               }}>
                 Usa valori medi
@@ -5740,7 +5788,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     name: editFoodData.name ?? editFoodData.nome ?? editFoodData.desc,
                     desc: editFoodData.desc ?? editFoodData.name ?? editFoodData.nome
                   };
-                  const nextLog = dailyLog.map(item => item.id === inspectedFood.id ? updated : item);
+                  const sourceLog = isSimulationMode ? (simulatedLog || []) : dailyLog;
+                  const nextLog = sourceLog.map(item => item.id === inspectedFood.id ? updated : item);
+                  if (isSimulationMode) {
+                    setSimulatedLog(nextLog);
+                    setInspectedFood(null);
+                    setEditFoodData(null);
+                    return;
+                  }
                   setDailyLog(nextLog);
                   syncDatiFirebase(nextLog, manualNodes);
                   setInspectedFood(null);
