@@ -232,6 +232,7 @@ export default function SalaComandi() {
   const [showTrainingPopup, setShowTrainingPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
+  const [editingNapNode, setEditingNapNode] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [userProfile, setUserProfile] = useState({
     gender: 'M',
@@ -1803,6 +1804,10 @@ export default function SalaComandi() {
   const handleNodeTap = useCallback((node) => () => {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
     if (isSimulationMode) return;
+    if (node.name?.toLowerCase().includes('pisolino') || node.type === 'nap') {
+      setEditingNapNode(node);
+      return;
+    }
     // Modifica rapida orario per energizzanti/caffè senza aprire il modale
     if (node.type === 'stimulant' || node.type === 'energizer' || node.isEnergizer) {
       const currentHH = Math.floor(node.time).toString().padStart(2, '0');
@@ -2722,7 +2727,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#aaa', marginBottom: '4px' }}>
           <span>{label}</span>
-          <span>{c.toFixed(1)} / {t} {unit}</span>
+          <span>{Math.round(c)} / {Math.round(t)} {unit}</span>
         </div>
         <div style={{ height: '12px', background: '#333', borderRadius: '6px', overflow: 'hidden' }}>
           <div style={{ width: `${p}%`, height: '100%', background: color, borderRadius: '6px', transition: 'width 0.5s' }}></div>
@@ -3755,6 +3760,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               role="button"
               tabIndex={0}
               onClick={() => {
+                const isToday = currentTrackerDate === getTodayString();
+                if (isToday) {
+                  alert('Il report non è pronto, perché mancano i dati di tutta la giornata.');
+                  return;
+                }
                 if (dailyReport?.ready) {
                   setShowReportModal(true);
                   setReportViewedDates(prev => {
@@ -3762,11 +3772,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {}
                     return newState;
                   });
-                } else if (currentTrackerDate === getTodayString()) {
+                } else {
                   changeDate(-1);
                 }
               }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (dailyReport?.ready) { setShowReportModal(true); setReportViewedDates(prev => { const newState = { ...prev, [currentTrackerDate]: true }; try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {} return newState; }); } else if (currentTrackerDate === getTodayString()) changeDate(-1); } }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  const isToday = currentTrackerDate === getTodayString();
+                  if (isToday) {
+                    alert('Il report non è pronto, perché mancano i dati di tutta la giornata.');
+                    return;
+                  }
+                  if (dailyReport?.ready) {
+                    setShowReportModal(true);
+                    setReportViewedDates(prev => { const newState = { ...prev, [currentTrackerDate]: true }; try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {} return newState; });
+                  } else changeDate(-1);
+                }
+              }}
               title={dailyReport?.ready ? 'Report giornaliero a 5 stelle' : currentTrackerDate === getTodayString() && yesterdayReportReady ? 'Report di ieri pronto: vai al giorno precedente' : 'Disponibile solo per giornate passate con dati'}
               style={{
                 position: 'relative',
@@ -5742,6 +5765,62 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
               <button onClick={() => setShowSleepPrompt(false)}>
                 Dopo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingNapNode && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setEditingNapNode(null)}>
+          <div style={{ background: '#1e1e1e', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '350px', border: '1px solid #333' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '20px', textAlign: 'center' }}>Modifica Pisolino</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <div style={{ width: '45%' }}>
+                <label style={{ display: 'block', color: '#aaa', fontSize: '0.8rem', marginBottom: '5px' }}>Ora Inizio</label>
+                <input
+                  type="time"
+                  defaultValue={decimalToTimeStr(editingNapNode.time ?? editingNapNode.startTime ?? 14)}
+                  id="nap-start-time"
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', background: '#333', color: '#fff', border: 'none' }}
+                />
+              </div>
+              <div style={{ width: '45%' }}>
+                <label style={{ display: 'block', color: '#aaa', fontSize: '0.8rem', marginBottom: '5px' }}>Ora Fine</label>
+                <input
+                  type="time"
+                  defaultValue={decimalToTimeStr((editingNapNode.time ?? editingNapNode.startTime ?? 14) + (editingNapNode.duration ?? 0.25))}
+                  id="nap-end-time"
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', background: '#333', color: '#fff', border: 'none' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setEditingNapNode(null)}
+                style={{ flex: 1, padding: '12px', background: '#333', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
+              >
+                Annulla
+              </button>
+              <button
+                onClick={() => {
+                  const newStart = document.getElementById('nap-start-time')?.value;
+                  const newEnd = document.getElementById('nap-end-time')?.value;
+                  if (newStart != null && newEnd != null && newStart !== '' && newEnd !== '') {
+                    const startDec = parseTimeStrToDecimal(newStart);
+                    const endDec = parseTimeStrToDecimal(newEnd);
+                    let duration = endDec - startDec;
+                    if (duration <= 0) duration += 24;
+                    duration = Math.max(0.08, Math.min(24, duration));
+                    const next = manualNodes.map(n => n.id === editingNapNode.id ? { ...n, time: startDec, startTime: startDec, endTime: endDec, duration } : n);
+                    setManualNodes(next);
+                    syncDatiFirebase(dailyLog, next);
+                  }
+                  setEditingNapNode(null);
+                }}
+                style={{ flex: 1, padding: '12px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
+              >
+                Salva
               </button>
             </div>
           </div>
