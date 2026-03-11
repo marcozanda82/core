@@ -2,7 +2,7 @@
  * ChartModal.jsx — Modale fullscreen per grafici con glossario e carosello swipe.
  * Estratto da SalaComandi.jsx per refactoring UI.
  */
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ComposedChart,
   Line,
@@ -147,36 +147,6 @@ export default function ChartModal({
 
   const safeDailyLog = dailyLog || [];
 
-  const timeToMinutes = (t) => {
-    if (t == null) return 0;
-    if (typeof t === 'number') return Math.max(0, Math.min(1439, Math.round(t * 60)));
-    if (typeof t === 'string') {
-      const parts = t.split(':');
-      const h = parseInt(parts[0], 10) || 0;
-      const m = parseInt(parts[1], 10) || 0;
-      return Math.max(0, Math.min(1439, h * 60 + m));
-    }
-    return 0;
-  };
-
-  const formatTimeForDisplay = (t) => {
-    if (t == null) return '00:00';
-    if (typeof t === 'number') return `${String(Math.floor(t)).padStart(2, '0')}:${String(Math.round((t % 1) * 60)).padStart(2, '0')}`;
-    if (typeof t === 'string') return t;
-    return '00:00';
-  };
-
-  const editableEvents = useMemo(() => {
-    if (!isSimulationMode || !dailyLog || !Array.isArray(dailyLog)) return [];
-    return dailyLog
-      .filter(item => item.type === 'food' || item.type === 'stimulant' || item.type === 'workout')
-      .sort((a, b) => {
-        const tA = a.time ?? a.mealTime ?? 0;
-        const tB = b.time ?? b.mealTime ?? 0;
-        return timeToMinutes(tA) - timeToMinutes(tB);
-      });
-  }, [dailyLog, isSimulationMode]);
-
   return (
     <div
       style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000, background: '#050505', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
@@ -318,75 +288,6 @@ export default function ChartModal({
           )}
         </div>
 
-        {isSimulationMode && (
-          <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid #333' }}>
-            <div style={{ color: '#fff', fontSize: '0.95rem', marginBottom: '10px', fontWeight: 'bold' }}>
-              👇 Seleziona l'evento da spostare:
-            </div>
-            <div style={{ display: 'flex', overflowX: 'auto', gap: '10px', paddingBottom: '10px', WebkitOverflowScrolling: 'touch' }}>
-              {editableEvents.length === 0 ? (
-                <span style={{ color: '#888', fontStyle: 'italic' }}>Nessun evento in questa giornata. Aggiungine uno dalla Home.</span>
-              ) : (
-                editableEvents.map(ev => {
-                  const evTime = formatTimeForDisplay(ev.time ?? ev.mealTime);
-                  const isSelected = selectedSimNode?.id === ev.id;
-                  let icon = '⚡';
-                  if (ev.type === 'food') icon = '🍽️';
-                  if (ev.type === 'stimulant') icon = '☕';
-                  if (ev.type === 'workout') icon = '💪';
-                  return (
-                    <button
-                      key={ev.id}
-                      type="button"
-                      onClick={() => setSelectedSimNode(ev)}
-                      style={{
-                        padding: '8px 16px', borderRadius: '20px',
-                        background: isSelected ? '#6200ea' : '#222',
-                        border: `1px solid ${isSelected ? '#00e5ff' : '#444'}`,
-                        color: '#fff', whiteSpace: 'nowrap', cursor: 'pointer',
-                        boxShadow: isSelected ? '0 0 10px rgba(98,0,234,0.5)' : 'none',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      {icon} {evTime} - {ev.name || ev.desc || ev.type}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-            {selectedSimNode && (
-              <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #444' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
-                  <span style={{ color: '#aaa', fontSize: '0.9rem' }}>Nuovo Orario:</span>
-                  <span style={{ color: '#00e5ff', fontWeight: 'bold', fontSize: '1.2rem' }}>
-                    {formatTimeForDisplay(selectedSimNode.time ?? selectedSimNode.mealTime)}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1439}
-                  value={timeToMinutes(selectedSimNode.time ?? selectedSimNode.mealTime)}
-                  onChange={(e) => {
-                    const mins = parseInt(e.target.value, 10);
-                    const ore = String(Math.floor(mins / 60)).padStart(2, '0');
-                    const minuti = String(mins % 60).padStart(2, '0');
-                    const newTimeStr = `${ore}:${minuti}`;
-                    setSelectedSimNode(prev => prev ? { ...prev, time: newTimeStr, mealTime: newTimeStr } : null);
-                    if (onTimeChange) onTimeChange(selectedSimNode.id, newTimeStr);
-                  }}
-                  style={{ width: '100%', accentColor: '#00e5ff', height: '6px' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#888', marginTop: '8px' }}>
-                  <span>00:00</span>
-                  <span>12:00</span>
-                  <span>23:59</span>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         <div style={{ flexShrink: 0, height: '55px', marginTop: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', position: 'relative', overflow: 'hidden' }}>
           {activeNodesWithStack.map((node) => {
             const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];
@@ -398,7 +299,27 @@ export default function ChartModal({
             const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : (node.type === 'nap' ? 'rgba(129,140,248,0.2)' : (node.type === 'meditation' ? 'rgba(34,197,94,0.2)' : (node.type === 'supplements' ? 'rgba(168,85,247,0.2)' : (node.type === 'sunlight' ? 'rgba(251,191,36,0.2)' : 'rgba(0,0,0,0.6)'))))));
             const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : (node.type === 'nap' ? '#818cf8' : (node.type === 'meditation' ? '#22c55e' : (node.type === 'supplements' ? '#a855f7' : (node.type === 'sunlight' ? '#fbbf24' : '#00e5ff'))))));
             const timeLabelStr = `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
-            const nodeStyle = { zIndex: isPrimary ? 10 : 1, filter: isPrimary ? 'none' : 'grayscale(100%)', opacity: isPrimary ? 1 : 0.4, transform: isPrimary ? (isWork ? undefined : 'translateX(-50%)') : (isWork ? 'scale(0.8)' : 'translateX(-50%) scale(0.8)'), transition: 'all 0.3s ease', pointerEvents: 'none' };
+            const logItemForNode = isSimulationMode && safeDailyLog.length > 0
+              ? (node.type === 'meal' ? safeDailyLog.find(item => item.type === 'food' && item.mealType === node.id)
+                : node.type === 'workout' ? safeDailyLog.find(item => item.type === 'workout' && item.id === node.id)
+                : node.type === 'stimulant' ? safeDailyLog.find(item => item.type === 'stimulant' && item.id === node.id)
+                : null)
+              : null;
+            const isSelected = isSimulationMode && selectedSimNode && logItemForNode && selectedSimNode.id === logItemForNode.id;
+            const nodeStyle = {
+              zIndex: isPrimary ? 10 : 1,
+              filter: isPrimary ? 'none' : 'grayscale(100%)',
+              opacity: isPrimary ? 1 : 0.4,
+              transform: isPrimary ? (isWork ? undefined : 'translateX(-50%)') : (isWork ? 'scale(0.8)' : 'translateX(-50%) scale(0.8)'),
+              transition: 'all 0.3s ease',
+              pointerEvents: isSimulationMode && (node.type === 'meal' || node.type === 'workout' || node.type === 'stimulant') ? 'auto' : 'none',
+              cursor: isSimulationMode && logItemForNode ? 'pointer' : 'default'
+            };
+            const handleNodeClick = () => {
+              if (isSimulationMode && logItemForNode) {
+                setSelectedSimNode(prev => prev?.id === logItemForNode.id ? null : logItemForNode);
+              }
+            };
             if (isWork) {
               return (
                 <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(255,234,0,0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
@@ -407,13 +328,83 @@ export default function ChartModal({
               );
             }
             return (
-              <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, top: '50%', marginTop: -18, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', ...nodeStyle }}>
-                <span style={{ color: borderColor, fontWeight: 'bold', marginBottom: '1px' }}>{timeLabelStr}</span>
+              <div
+                key={node.id}
+                role={isSimulationMode && logItemForNode ? 'button' : undefined}
+                tabIndex={isSimulationMode && logItemForNode ? 0 : undefined}
+                onClick={handleNodeClick}
+                onKeyDown={isSimulationMode && logItemForNode ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleNodeClick(); } } : undefined}
+                style={{
+                  position: 'absolute',
+                  left: `${percent}%`,
+                  top: '50%',
+                  marginTop: -18,
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: isSelected ? 'rgba(98,0,234,0.4)' : bgColor,
+                  border: `2px solid ${isSelected ? '#00e5ff' : borderColor}`,
+                  boxShadow: isSelected ? '0 0 12px rgba(0,229,255,0.6)' : 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.65rem',
+                  ...nodeStyle
+                }}
+              >
+                <span style={{ color: isSelected ? '#00e5ff' : borderColor, fontWeight: 'bold', marginBottom: '1px' }}>{timeLabelStr}</span>
                 <span style={{ lineHeight: 1, fontSize: '1rem' }}>{iconContent}</span>
               </div>
             );
           })}
         </div>
+
+        {isSimulationMode && selectedSimNode && (
+          <div style={{
+            marginTop: '15px', padding: '15px', background: 'rgba(98, 0, 234, 0.15)',
+            borderRadius: '12px', border: '1px solid #6200ea'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <strong style={{ color: '#fff', fontSize: '1.1rem' }}>
+                ⏱ Sposta: {selectedSimNode.name || selectedSimNode.desc || selectedSimNode.type || 'Evento'}
+              </strong>
+              <span style={{ color: '#00e5ff', fontWeight: 'bold', fontSize: '1.2rem', background: '#222', padding: '4px 10px', borderRadius: '8px' }}>
+                {typeof (selectedSimNode.time ?? selectedSimNode.mealTime) === 'number'
+                  ? `${String(Math.floor(selectedSimNode.time ?? selectedSimNode.mealTime)).padStart(2, '0')}:${String(Math.round(((selectedSimNode.time ?? selectedSimNode.mealTime) % 1) * 60)).padStart(2, '0')}`
+                  : (selectedSimNode.time ?? selectedSimNode.mealTime ?? '00:00')}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={1439}
+              value={
+                typeof (selectedSimNode.time ?? selectedSimNode.mealTime) === 'number'
+                  ? Math.round((selectedSimNode.time ?? selectedSimNode.mealTime) * 60)
+                  : (() => {
+                      const t = selectedSimNode.time ?? selectedSimNode.mealTime ?? '00:00';
+                      const parts = String(t).split(':');
+                      return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+                    })()
+              }
+              onChange={(e) => {
+                const mins = parseInt(e.target.value, 10);
+                const ore = String(Math.floor(mins / 60)).padStart(2, '0');
+                const minuti = String(mins % 60).padStart(2, '0');
+                const newTimeStr = `${ore}:${minuti}`;
+                setSelectedSimNode(prev => prev ? { ...prev, time: mins / 60, mealTime: mins / 60 } : null);
+                if (onTimeChange) onTimeChange(selectedSimNode.id || selectedSimNode.idLog, newTimeStr);
+              }}
+              style={{ width: '100%', accentColor: '#00e5ff', height: '6px', outline: 'none' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#aaa', marginTop: '8px' }}>
+              <span>00:00</span>
+              <span>12:00</span>
+              <span>23:59</span>
+            </div>
+          </div>
+        )}
       </div>
       <div style={{ flex: '0 0 40%', overflow: 'auto', padding: '16px', borderTop: '1px solid #222', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', background: '#222', borderRadius: '20px', padding: '4px', marginBottom: '15px', flexShrink: 0 }}>
