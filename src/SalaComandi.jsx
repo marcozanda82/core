@@ -228,6 +228,7 @@ export default function SalaComandi() {
   const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
   const [stimulantTime, setStimulantTime] = useState(8);
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
+  const [isLandscape, setIsLandscape] = useState(typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : false);
   const [showTrainingPopup, setShowTrainingPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
@@ -645,6 +646,13 @@ export default function SalaComandi() {
     const suggested = minGap < 0.35 ? 1.5 : minGap < 0.6 ? 1.3 : minGap < 1 ? 1.1 : minGap < 2 ? 0.9 : 0.65;
     setZoomLevel(prev => Math.max(0.45, Math.min(1.5, suggested)));
   }, [simulationMode, simulationNodes, allNodes, currentTrackerDate]);
+
+  useEffect(() => {
+    const handleResize = () => setIsLandscape(window.innerWidth > window.innerHeight);
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('vyta_timeline', JSON.stringify(manualNodes));
@@ -3397,6 +3405,61 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div className="spinner-sync"></div>
           <div style={{ letterSpacing: '4px', fontWeight: 'bold' }}>CORE <span style={{ color: '#00e5ff' }}>OS</span></div>
           <div style={{ fontSize: '0.6rem', color: '#444', marginTop: '10px' }}>INITIALIZING CORE...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLandscape) {
+    return (
+      <div style={{
+        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+        backgroundColor: '#121212', zIndex: 99999, padding: '10px 20px',
+        display: 'flex', flexDirection: 'column', boxSizing: 'border-box'
+      }}>
+        <div style={{ color: '#888', textAlign: 'center', marginBottom: '5px', fontSize: '0.8rem', letterSpacing: '1px' }}>
+          🔄 Ruota il dispositivo in verticale per uscire
+        </div>
+        <div style={{ flex: 1, width: '100%', minHeight: 0 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={finalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
+              <defs>
+                <linearGradient id="colorEnergiaLandscape" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
+                  <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
+                </linearGradient>
+                <linearGradient id="colorRiservaLandscape" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#00e676" stopOpacity={0.5}/>
+                  <stop offset="100%" stopColor="#00e676" stopOpacity={0.0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+              <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} />
+              <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
+                formatter={(value) => [`${value}%`, 'Energia SNC']}
+                labelFormatter={(label) => `Ore ${label}:00`}
+              />
+              {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
+                <ReferenceLine
+                  key={`landscape-sleep-${node.id ?? index}`}
+                  x={node.wakeTime ?? 7.5}
+                  stroke="#00e5ff"
+                  strokeDasharray="3 3"
+                  strokeWidth={1.5}
+                  label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }}
+                />
+              ))}
+              <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
+              <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} />
+              <Area type="monotone" dataKey="riservaFisica" stroke="#00e676" fill="url(#colorRiservaLandscape)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Area type="monotone" dataKey="energyPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergiaLandscape)" connectNulls={false} isAnimationActive={false} />
+              <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
+              <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
+              <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
       </div>
     );
