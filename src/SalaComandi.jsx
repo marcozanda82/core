@@ -4292,19 +4292,30 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }}>
           {/* Radar Container: Tachimetro centrale + riga macro sotto */}
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }}>
-            <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto', overflow: 'visible' }}>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto', overflow: 'visible' }} onClick={() => setSelectedMealCenter(null)}>
               {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
               <div
                 className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
-                onClick={() => setSelectedMealCenter(null)}
-                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (selectedMealCenter) {
+                    const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === selectedMealCenter.id || n.id === (selectedMealCenter.id && String(selectedMealCenter.id).split('_')[0])));
+                    if (mealNode) handleNodeTap(mealNode)();
+                  }
+                }}
+                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease', pointerEvents: selectedMealCenter ? 'auto' : 'none' }}
               >
                 {selectedMealCenter ? (
-                  <div className="pieCenterInfo">
-                    <div className="pieMealTitle">
+                  <div className="pieCenterInfo" style={{ textAlign: 'center', cursor: 'pointer' }}>
+                    <div className="pieMealTitle" style={{ fontSize: '1rem', fontWeight: 'bold', color: selectedMealCenter.color ?? selectedMealCenter.fill ?? '#00e5ff' }}>
                       {selectedMealCenter.name || selectedMealCenter.label}
                     </div>
-                    <div className="pieMealKcal">
+                    {selectedMealCenter.timeValue != null && (
+                      <div style={{ fontSize: '0.85rem', color: '#aaa' }}>
+                        {`${String(Math.floor(selectedMealCenter.timeValue)).padStart(2, '0')}:${String(Math.round((selectedMealCenter.timeValue % 1) * 60)).padStart(2, '0')}`}
+                      </div>
+                    )}
+                    <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
                       {Math.round(selectedMealCenter.kcal ?? selectedMealCenter.value ?? 0)} kcal
                     </div>
                     <div className="pieMealMacros">
@@ -4314,9 +4325,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </div>
                   </div>
                 ) : (
-                  <div className="pieCenterGoal">
-                    <div>Kcal Assunte / Obiettivo</div>
-                    <div>{Math.round(totali?.kcal || 0)} / {Math.round(baseKcal || 0)} kcal</div>
+                  <div style={{ textAlign: 'center', pointerEvents: 'none' }}>
+                    <div style={{ fontSize: '0.9rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Bilancio</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>
+                      {Math.round(totali?.kcal || 0)} <span style={{ fontSize: '0.9rem', color: '#aaa', fontWeight: 'normal' }}>/ {Math.round(baseKcal || 0)}</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -4337,12 +4350,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       label={renderCustomizedLabel}
                       activeShape={renderActiveMealShape}
                       activeIndex={selectedMealCenterIndex}
-                      onClick={(data) => {
+                      onClick={(data, index, e) => {
+                        if (e && e.stopPropagation) e.stopPropagation();
                         if (data.id === 'rimanenti') return;
-                        const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === data.id || n.id === (data.id && data.id.split('_')[0])));
-                        if (mealNode) {
-                          setSelectedNodeReport(mealNode);
-                          setSelectedMealCenter(null);
+                        if (selectedMealCenter && selectedMealCenter.id === data.id) {
+                          const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === data.id || n.id === (data.id && data.id.split('_')[0])));
+                          if (mealNode) handleNodeTap(mealNode)();
+                        } else {
+                          setSelectedMealCenter({ id: data.id, name: data.name, value: data.value, color: data.color, fill: data.fill, timeValue: data.timeValue, payload: { color: data.color, macros: data.macros }, prot: data.prot, carb: data.carb, fat: data.fat });
                         }
                       }}
                       style={{ cursor: 'pointer', outline: 'none' }}
@@ -4454,7 +4469,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <span style={{ fontSize: '1.2rem' }}>✨</span>
           <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
         </div>
-        <button type="button" onClick={() => { setAddChoiceView('main'); setShowChoiceModal(true); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
+        <button type="button" onClick={() => { setShowChoiceModal(false); setIsDrawerOpen(true); setActiveAction(null); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
       </div>
 
       {/* --- CASSETTO AZIONI --- */}
@@ -4492,7 +4507,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(0,230,118,0.4)' }} onClick={() => setActiveAction('diario_giornaliero')}>
                 <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(0, 230, 118, 0.4))' }}>📖</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#00e676' }}>DIARIO</span>
               </button>
-              {/* Menu secondario rimosso: unico ingresso "Aggiungi Evento" è il tasto + in basso a destra */}
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(176,190,197,0.3)' }} onClick={() => setActiveAction('menu_secondary')}>
+                <span className="action-icon" style={{ fontSize: '1.8rem' }}>☰</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#b0bec5' }}>MENU</span>
+              </button>
             </div>
             <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '0' }}>
               <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.8rem' }}>⚡ Inserimento Rapido / Output AI</h4>
