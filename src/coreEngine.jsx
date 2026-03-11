@@ -597,8 +597,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       cortisolBase = Math.max(40, 50 - (h - 18) * (10 / 6));
     }
     currentCortisol += (cortisolBase - currentCortisol) * 0.3;
-    if (currentEnergy < 35) { currentCortisol += 18; globalCortisolRisk = true; }
-    if (currentHydration < 45) { currentCortisol += 15 * model.hydrationSensitivity; globalCortisolRisk = true; }
+    if (currentEnergy < 35) { currentCortisol += 8; globalCortisolRisk = true; }
+    if (currentHydration < 45) { currentCortisol += 6 * model.hydrationSensitivity; globalCortisolRisk = true; }
     (timelineNodes || []).forEach(node => {
       if (h >= node.time && h < node.time + (node.duration || 1)) {
         if (node.type === 'workout') {
