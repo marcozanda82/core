@@ -1,3 +1,5 @@
+
+
 import React from 'react';
 
 const RADIAN = Math.PI / 180;
@@ -685,12 +687,9 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     metabolicEnergy = Math.max(15, metabolicEnergy);
     neuralEnergy = Math.max(15, neuralEnergy);
 
-    if (isSleeping) {
+if (isSleeping) {
       peakEnergyAtWake = Math.max(peakEnergyAtWake ?? 0, currentEnergy);
       peakNeuroAtWake = Math.max(peakNeuroAtWake ?? 0, currentNeuro);
-    } else {
-      if (peakEnergyAtWake != null) currentEnergy = Math.min(currentEnergy, peakEnergyAtWake);
-      if (peakNeuroAtWake != null) currentNeuro = Math.min(currentNeuro, peakNeuroAtWake);
     }
 
     out.push({
