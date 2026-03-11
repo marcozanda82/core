@@ -1663,7 +1663,8 @@ export default function SalaComandi() {
       const uniqueBatchId = Date.now();
       const timeToUse = typeof drawerMealTime === 'number' ? drawerMealTime : 12;
       const safeDailyLog = dailyLog || [];
-      const ourSlot = editingMealId || getGhostMealType(currentTargetType, safeDailyLog);
+      const ourSlot = getGhostMealType(currentTargetType, safeDailyLog);
+      const slotToReplace = editingMealId || ourSlot;
 
       const mealItems = (addedFoods || []).map((f, index) => ({
         ...f,
@@ -1675,12 +1676,12 @@ export default function SalaComandi() {
 
       const rest = safeDailyLog.filter(item => {
         if (item.type !== 'food') return true;
-        return getSlotKey(item) !== ourSlot;
+        return getSlotKey(item) !== slotToReplace;
       });
 
       const nuovoLog = [...mealItems, ...rest];
       if (isSimulationMode) {
-        setSimulatedLog(prev => [...(prev || []).filter(item => item.type !== 'food' || getSlotKey(item) !== ourSlot), ...mealItems]);
+        setSimulatedLog(prev => [...(prev || []).filter(item => item.type !== 'food' || getSlotKey(item) !== slotToReplace), ...mealItems]);
         setAddedFoods([]);
         setEditingMealId(null);
         closeDrawer();
@@ -3903,7 +3904,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
           </div>
 
-          {/* DESTRA: Switch a 2 vie (Home / Analisi). Long-press 1.2s sul contenitore = Easter Egg Simulazione */}
+          {/* DESTRA: Switch a 2 vie (Home / Analisi). Click ovunque sul contenitore = toggle. Long-press = Easter Egg Simulazione */}
           <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
             <div
               onMouseDown={handleSwitchTouchStart}
@@ -3911,22 +3912,22 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               onMouseLeave={handleSwitchTouchEnd}
               onTouchStart={handleSwitchTouchStart}
               onTouchEnd={handleSwitchTouchEnd}
-              style={{ display: 'flex', background: '#222', borderRadius: '12px', padding: '4px', marginBottom: 0, userSelect: 'none' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                const currentIsPro = userProfile?.level === 'pro';
+                setUserProfile(prev => ({ ...prev, level: currentIsPro ? 'base' : 'pro' }));
+                handleSwitchTouchEnd();
+                setIsSimulationMode(false);
+                setSimulatedLog(null);
+              }}
+              style={{ display: 'flex', background: '#222', borderRadius: '12px', padding: '4px', marginBottom: 0, userSelect: 'none', cursor: 'pointer' }}
             >
-              <button
-                type="button"
-                onClick={() => { handleSwitchTouchEnd(); setIsSimulationMode(false); setSimulatedLog(null); setUserProfile(prev => ({ ...prev, level: 'base' })); }}
-                style={{ flex: 1, padding: '8px', background: !isSimulationMode && userProfile?.level !== 'pro' ? '#333' : 'transparent', color: !isSimulationMode && userProfile?.level !== 'pro' ? '#00e5ff' : '#888', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer' }}
-              >
+              <div style={{ flex: 1, padding: '8px', background: !isSimulationMode && userProfile?.level !== 'pro' ? '#333' : 'transparent', color: !isSimulationMode && userProfile?.level !== 'pro' ? '#00e5ff' : '#888', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 🏠 Home
-              </button>
-              <button
-                type="button"
-                onClick={() => { handleSwitchTouchEnd(); setIsSimulationMode(false); setSimulatedLog(null); setUserProfile(prev => ({ ...prev, level: 'pro' })); }}
-                style={{ flex: 1, padding: '8px', background: !isSimulationMode && userProfile?.level === 'pro' ? '#333' : 'transparent', color: !isSimulationMode && userProfile?.level === 'pro' ? '#00e5ff' : '#888', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer' }}
-              >
+              </div>
+              <div style={{ flex: 1, padding: '8px', background: !isSimulationMode && userProfile?.level === 'pro' ? '#333' : 'transparent', color: !isSimulationMode && userProfile?.level === 'pro' ? '#00e5ff' : '#888', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 📊 Analisi
-              </button>
+              </div>
             </div>
           </div>
 
