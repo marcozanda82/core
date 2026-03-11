@@ -605,8 +605,7 @@ export default function SalaComandi() {
       sandboxLongPressFired.current = false;
       return;
     }
-    setIsSimulationMode(false);
-    setSimulatedLog(null);
+    // Solo toggle vista Home <-> Analisi; non uscire dalla simulazione (esci dal banner ESCI)
     const currentIsPro = userProfile?.level === 'pro';
     setUserProfile(prev => ({ ...prev, level: currentIsPro ? 'base' : 'pro' }));
   };
@@ -1758,7 +1757,7 @@ export default function SalaComandi() {
         edge
       });
     }, 350);
-  }, [dailyLog]);
+  }, [activeLog]);
 
   const releaseNodePointer = (e) => {
     longPressMoveCleanupRef.current?.();
@@ -1932,6 +1931,7 @@ export default function SalaComandi() {
 
   const removeLogItem = (id) => {
     if (isSimulationMode) {
+      // Stessa chiave della logica reale: item.id (non idLog)
       setSimulatedLog(prev => (prev || []).filter(item => item.id !== id));
       return;
     }
@@ -3750,13 +3750,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             background: 'linear-gradient(90deg, #6200ea, #b388ff)',
             color: '#fff',
             padding: '8px 15px',
-            textAlign: 'center',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
             fontWeight: 'bold',
             fontSize: '0.9rem',
             boxShadow: '0 4px 15px rgba(98, 0, 234, 0.4)',
             zIndex: 100
           }}>
-            🧪 MODALITÀ SIMULAZIONE ATTIVA
+            <span>🧪 MODALITÀ SIMULAZIONE ATTIVA</span>
+            <button
+              type="button"
+              onClick={() => {
+                setIsSimulationMode(false);
+                setSimulatedLog(null);
+              }}
+              style={{ background: 'rgba(0,0,0,0.3)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              ESCI ✖
+            </button>
           </div>
         )}
 
