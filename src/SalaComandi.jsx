@@ -610,6 +610,26 @@ export default function SalaComandi() {
     setUserProfile(prev => ({ ...prev, level: currentIsPro ? 'base' : 'pro' }));
   };
 
+  const handleSimulatedTimeChange = (itemId, newTimeStr) => {
+    if (!isSimulationMode) return;
+    const parts = (newTimeStr || '00:00').split(':');
+    const h = parseInt(parts[0], 10) || 0;
+    const m = parseInt(parts[1], 10) || 0;
+    const timeDecimal = Math.min(24, Math.max(0, h + m / 60));
+    setSimulatedLog(prev => {
+      const logCopy = [...(prev || [])];
+      const index = logCopy.findIndex(item => item.id === itemId || item.idLog === itemId);
+      if (index !== -1) {
+        logCopy[index] = {
+          ...logCopy[index],
+          time: timeDecimal,
+          ...(logCopy[index].mealTime !== undefined && { mealTime: timeDecimal })
+        };
+      }
+      return logCopy;
+    });
+  };
+
   useEffect(() => {
     if (currentTrackerDate !== getTodayString()) {
       setZoomLevel(0.45);
@@ -4253,6 +4273,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             setIsAiLoading={setIsAiLoading}
             callGeminiAPIWithRotation={callGeminiAPIWithRotation}
             totalCaloriesTimeline={totalCaloriesTimeline}
+            isSimulationMode={isSimulationMode}
+            onTimeChange={handleSimulatedTimeChange}
           />
         )}
       </>

@@ -2,7 +2,7 @@
  * ChartModal.jsx — Modale fullscreen per grafici con glossario e carosello swipe.
  * Estratto da SalaComandi.jsx per refactoring UI.
  */
-import React, { useRef } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import {
   ComposedChart,
   Line,
@@ -58,8 +58,11 @@ export default function ChartModal({
   isAiLoading,
   setIsAiLoading,
   callGeminiAPIWithRotation,
-  totalCaloriesTimeline = 0
+  totalCaloriesTimeline = 0,
+  isSimulationMode = false,
+  onTimeChange
 }) {
+  const [selectedSimNode, setSelectedSimNode] = useState(null);
   const modalSwipeStartXRef = useRef(null);
   const bottomTouchStartX = useRef(null);
   const highlightResetTimeoutRef = useRef(null);
@@ -143,6 +146,36 @@ export default function ChartModal({
   };
 
   const safeDailyLog = dailyLog || [];
+
+  const timeToMinutes = (t) => {
+    if (t == null) return 0;
+    if (typeof t === 'number') return Math.max(0, Math.min(1439, Math.round(t * 60)));
+    if (typeof t === 'string') {
+      const parts = t.split(':');
+      const h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      return Math.max(0, Math.min(1439, h * 60 + m));
+    }
+    return 0;
+  };
+
+  const formatTimeForDisplay = (t) => {
+    if (t == null) return '00:00';
+    if (typeof t === 'number') return `${String(Math.floor(t)).padStart(2, '0')}:${String(Math.round((t % 1) * 60)).padStart(2, '0')}`;
+    if (typeof t === 'string') return t;
+    return '00:00';
+  };
+
+  const editableEvents = useMemo(() => {
+    if (!isSimulationMode || !dailyLog || !Array.isArray(dailyLog)) return [];
+    return dailyLog
+      .filter(item => item.type === 'food' || item.type === 'stimulant' || item.type === 'workout')
+      .sort((a, b) => {
+        const tA = a.time ?? a.mealTime ?? 0;
+        const tB = b.time ?? b.mealTime ?? 0;
+        return timeToMinutes(tA) - timeToMinutes(tB);
+      });
+  }, [dailyLog, isSimulationMode]);
 
   return (
     <div
@@ -284,6 +317,76 @@ export default function ChartModal({
             </ResponsiveContainer>
           )}
         </div>
+
+        {isSimulationMode && (
+          <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid #333' }}>
+            <div style={{ color: '#fff', fontSize: '0.95rem', marginBottom: '10px', fontWeight: 'bold' }}>
+              👇 Seleziona l'evento da spostare:
+            </div>
+            <div style={{ display: 'flex', overflowX: 'auto', gap: '10px', paddingBottom: '10px', WebkitOverflowScrolling: 'touch' }}>
+              {editableEvents.length === 0 ? (
+                <span style={{ color: '#888', fontStyle: 'italic' }}>Nessun evento in questa giornata. Aggiungine uno dalla Home.</span>
+              ) : (
+                editableEvents.map(ev => {
+                  const evTime = formatTimeForDisplay(ev.time ?? ev.mealTime);
+                  const isSelected = selectedSimNode?.id === ev.id;
+                  let icon = '⚡';
+                  if (ev.type === 'food') icon = '🍽️';
+                  if (ev.type === 'stimulant') icon = '☕';
+                  if (ev.type === 'workout') icon = '💪';
+                  return (
+                    <button
+                      key={ev.id}
+                      type="button"
+                      onClick={() => setSelectedSimNode(ev)}
+                      style={{
+                        padding: '8px 16px', borderRadius: '20px',
+                        background: isSelected ? '#6200ea' : '#222',
+                        border: `1px solid ${isSelected ? '#00e5ff' : '#444'}`,
+                        color: '#fff', whiteSpace: 'nowrap', cursor: 'pointer',
+                        boxShadow: isSelected ? '0 0 10px rgba(98,0,234,0.5)' : 'none',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {icon} {evTime} - {ev.name || ev.desc || ev.type}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            {selectedSimNode && (
+              <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #444' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                  <span style={{ color: '#aaa', fontSize: '0.9rem' }}>Nuovo Orario:</span>
+                  <span style={{ color: '#00e5ff', fontWeight: 'bold', fontSize: '1.2rem' }}>
+                    {formatTimeForDisplay(selectedSimNode.time ?? selectedSimNode.mealTime)}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={1439}
+                  value={timeToMinutes(selectedSimNode.time ?? selectedSimNode.mealTime)}
+                  onChange={(e) => {
+                    const mins = parseInt(e.target.value, 10);
+                    const ore = String(Math.floor(mins / 60)).padStart(2, '0');
+                    const minuti = String(mins % 60).padStart(2, '0');
+                    const newTimeStr = `${ore}:${minuti}`;
+                    setSelectedSimNode(prev => prev ? { ...prev, time: newTimeStr, mealTime: newTimeStr } : null);
+                    if (onTimeChange) onTimeChange(selectedSimNode.id, newTimeStr);
+                  }}
+                  style={{ width: '100%', accentColor: '#00e5ff', height: '6px' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#888', marginTop: '8px' }}>
+                  <span>00:00</span>
+                  <span>12:00</span>
+                  <span>23:59</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ flexShrink: 0, height: '55px', marginTop: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', position: 'relative', overflow: 'hidden' }}>
           {activeNodesWithStack.map((node) => {
             const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];
