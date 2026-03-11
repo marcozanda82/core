@@ -228,11 +228,11 @@ export default function SalaComandi() {
   const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
   const [stimulantTime, setStimulantTime] = useState(8);
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
-  const [isLandscape, setIsLandscape] = useState(typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : false);
+  const [isFullScreenGraph, setIsFullScreenGraph] = useState(false);
   const [showTrainingPopup, setShowTrainingPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
-  const [editingNapNode, setEditingNapNode] = useState(null);
+  const [editingQuickNode, setEditingQuickNode] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [userProfile, setUserProfile] = useState({
     gender: 'M',
@@ -647,13 +647,6 @@ export default function SalaComandi() {
     const suggested = minGap < 0.35 ? 1.5 : minGap < 0.6 ? 1.3 : minGap < 1 ? 1.1 : minGap < 2 ? 0.9 : 0.65;
     setZoomLevel(prev => Math.max(0.45, Math.min(1.5, suggested)));
   }, [simulationMode, simulationNodes, allNodes, currentTrackerDate]);
-
-  useEffect(() => {
-    const handleResize = () => setIsLandscape(window.innerWidth > window.innerHeight);
-    window.addEventListener('resize', handleResize);
-    handleResize();
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   useEffect(() => {
     localStorage.setItem('vyta_timeline', JSON.stringify(manualNodes));
@@ -1804,8 +1797,11 @@ export default function SalaComandi() {
   const handleNodeTap = useCallback((node) => () => {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
     if (isSimulationMode) return;
-    if (node.name?.toLowerCase().includes('pisolino') || node.type === 'nap') {
-      setEditingNapNode(node);
+    if (
+      node.type === 'nap' || node.name?.toLowerCase().includes('pisolino') ||
+      node.type === 'meditation' || node.name?.toLowerCase().includes('meditazion')
+    ) {
+      setEditingQuickNode(node);
       return;
     }
     // Modifica rapida orario per energizzanti/caffè senza aprire il modale
@@ -3415,15 +3411,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     );
   }
 
-  if (isLandscape) {
+  if (isFullScreenGraph) {
     return (
       <div style={{
         position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
         backgroundColor: '#121212', zIndex: 99999, padding: '10px 20px',
         display: 'flex', flexDirection: 'column', boxSizing: 'border-box'
       }}>
-        <div style={{ color: '#888', textAlign: 'center', marginBottom: '5px', fontSize: '0.8rem', letterSpacing: '1px' }}>
-          🔄 Ruota il dispositivo in verticale per uscire
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px' }}>
+          <button
+            onClick={() => setIsFullScreenGraph(false)}
+            style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #444', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold' }}
+          >
+            ✖ Chiudi Schermo Intero
+          </button>
         </div>
         <div style={{ flex: 1, width: '100%', minHeight: 0 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -4328,6 +4329,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             {/* SPACER PER PULSANTIERA: Permette di scrollare oltre la fine del grafico per non coprire le 24:00 */}
             <div style={{ width: '80px', flexShrink: 0 }}></div>
           </div>
+            <button
+              type="button"
+              onClick={() => setIsFullScreenGraph(true)}
+              style={{ width: '100%', padding: '12px', background: '#2c2c2e', color: '#00e5ff', border: '1px solid #00e5ff', borderRadius: '8px', fontWeight: 'bold', marginTop: '10px', marginBottom: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
+            >
+              <span>⛶</span> Espandi Grafico a Tutto Schermo
+            </button>
         </div>
         </div>
         </div>
@@ -5771,17 +5779,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
 
-      {editingNapNode && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setEditingNapNode(null)}>
+      {editingQuickNode && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setEditingQuickNode(null)}>
           <div style={{ background: '#1e1e1e', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '350px', border: '1px solid #333' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '20px', textAlign: 'center' }}>Modifica Pisolino</h3>
+            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '20px', textAlign: 'center' }}>Modifica {editingQuickNode.name || (editingQuickNode.type === 'nap' ? 'Pisolino' : editingQuickNode.type === 'meditation' ? 'Meditazione' : 'Attività')}</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
               <div style={{ width: '45%' }}>
                 <label style={{ display: 'block', color: '#aaa', fontSize: '0.8rem', marginBottom: '5px' }}>Ora Inizio</label>
                 <input
                   type="time"
-                  defaultValue={decimalToTimeStr(editingNapNode.time ?? editingNapNode.startTime ?? 14)}
-                  id="nap-start-time"
+                  defaultValue={decimalToTimeStr(editingQuickNode.time ?? editingQuickNode.startTime ?? 14)}
+                  id="quick-start-time"
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', background: '#333', color: '#fff', border: 'none' }}
                 />
               </div>
@@ -5789,34 +5797,47 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <label style={{ display: 'block', color: '#aaa', fontSize: '0.8rem', marginBottom: '5px' }}>Ora Fine</label>
                 <input
                   type="time"
-                  defaultValue={decimalToTimeStr((editingNapNode.time ?? editingNapNode.startTime ?? 14) + (editingNapNode.duration ?? 0.25))}
-                  id="nap-end-time"
+                  defaultValue={decimalToTimeStr((editingQuickNode.time ?? editingQuickNode.startTime ?? 14) + (editingQuickNode.duration ?? 0.25))}
+                  id="quick-end-time"
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', background: '#333', color: '#fff', border: 'none' }}
                 />
               </div>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
-                onClick={() => setEditingNapNode(null)}
+                onClick={() => {
+                  if (window.confirm('Vuoi eliminare questa attività?')) {
+                    const next = manualNodes.filter(n => n.id !== editingQuickNode.id);
+                    setManualNodes(next);
+                    syncDatiFirebase(dailyLog, next);
+                    setEditingQuickNode(null);
+                  }
+                }}
+                style={{ flex: 1, padding: '12px', background: '#ff3b30', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
+              >
+                Elimina
+              </button>
+              <button
+                onClick={() => setEditingQuickNode(null)}
                 style={{ flex: 1, padding: '12px', background: '#333', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
               >
                 Annulla
               </button>
               <button
                 onClick={() => {
-                  const newStart = document.getElementById('nap-start-time')?.value;
-                  const newEnd = document.getElementById('nap-end-time')?.value;
+                  const newStart = document.getElementById('quick-start-time')?.value;
+                  const newEnd = document.getElementById('quick-end-time')?.value;
                   if (newStart != null && newEnd != null && newStart !== '' && newEnd !== '') {
                     const startDec = parseTimeStrToDecimal(newStart);
                     const endDec = parseTimeStrToDecimal(newEnd);
                     let duration = endDec - startDec;
                     if (duration <= 0) duration += 24;
                     duration = Math.max(0.08, Math.min(24, duration));
-                    const next = manualNodes.map(n => n.id === editingNapNode.id ? { ...n, time: startDec, startTime: startDec, endTime: endDec, duration } : n);
+                    const next = manualNodes.map(n => n.id === editingQuickNode.id ? { ...n, time: startDec, startTime: startDec, endTime: endDec, duration } : n);
                     setManualNodes(next);
                     syncDatiFirebase(dailyLog, next);
                   }
-                  setEditingNapNode(null);
+                  setEditingQuickNode(null);
                 }}
                 style={{ flex: 1, padding: '12px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
               >
