@@ -177,7 +177,6 @@ export default function ChartModal({
         )}
         <div style={{ flex: 1, minHeight: 120 }}>
           {expandedChart === 'percent' ? (
-            <>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={modalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                 <defs>
@@ -210,18 +209,6 @@ export default function ChartModal({
                 <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
               </ComposedChart>
             </ResponsiveContainer>
-            <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid #333' }}>
-              <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.95rem' }}>📊 Come leggere questo grafico</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: '#aaa', lineHeight: '1.4' }}>
-                <div>
-                  <strong style={{ color: '#00e5ff' }}>⚡ Stimolazione Nervosa (Linea Azzurra):</strong> Il tuo attuale livello di lucidità e reattività. Reagisce istantaneamente a pasti e caffeina. Se è molto più alta della Riserva, stai usando stimolanti per mascherare la stanchezza.
-                </div>
-                <div>
-                  <strong style={{ color: '#00e676' }}>🔋 Riserva Fisica (Area Verde):</strong> Il vero serbatoio biologico del tuo corpo. Raggiunge il picco al risveglio e si consuma inesorabilmente col passare delle ore di veglia.
-                </div>
-              </div>
-            </div>
-            </>
           ) : expandedChart === 'kcal' ? (
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={modalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
@@ -356,7 +343,7 @@ export default function ChartModal({
             const currentKcalVal = dotY != null ? Math.round((dotY / 100) * targetKcalChart) : 0;
             const idealKcalVal = idealDotY != null ? Math.round((idealDotY / 100) * targetKcalChart) : 0;
             const descriptions = {
-              percent: `Quanto "carburante" ha il tuo cervello. Dopo la [Sveglia] 🌅 si ricarica, poi si consuma con la giornata. All'[Ora attuale] sei al ${Math.round(dotY ?? 0)}% (ideale intorno al ${Math.round(idealDotY ?? 0)}%). Pasti 🥗 e riposo lo fanno risalire.`,
+              percent: `Quanto "carburante" ha il tuo cervello. Dopo la [Sveglia] 🌅 si ricarica, poi si consuma con la giornata. All'[Ora attuale] sei al ${Math.round(dotY ?? 0)}% (ideale intorno al ${Math.round(idealDotY ?? 0)}%). Pasti 🥗 e riposo lo fanno risalire. La Linea Azzurra indica la Stimolazione Nervosa (SNC), ovvero il tuo attuale livello di lucidità influenzato da pasti e stimolanti. L'Area Verde indica la Riserva Fisica, il serbatoio biologico profondo che si consuma con le ore di veglia.`,
               calorieTimeline: `Quante calorie hai assunto nel tempo. Ogni pasto 🥗 fa salire la linea. All'[Ora attuale] sei a ${Math.round(dotYCalorieTimeline ?? 0)} kcal in totale. Utile per capire se mangi abbastanza (o troppo) durante il giorno.`,
               kcal: `Le [Calorie] che assumi durante il giorno. La [Finestra Anabolica] indica quando il corpo è pronto a usare le proteine per i muscoli. Ora sei a ${currentKcalVal} kcal (target ideale ${idealKcalVal} kcal).`,
               neuro: `Quanto il tuo cervello è "stanco". Gli stimolanti ☕ lo caricano, ma il vero recupero arriva solo con il riposo. All'[Ora attuale] sei al ${Math.round(dotNeuro ?? 0)}% (meglio restare sopra il 40%). Allenamenti ⚡ e lavoro 💼 lo fanno scendere.`,

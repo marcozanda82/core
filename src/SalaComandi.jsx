@@ -3442,8 +3442,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </button>
           </div>
 
-          {/* DESTRA: Energia SNC e Logout */}
+          {/* DESTRA: Logout e Widget Energia */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
+            <button className="btn-toggle" onClick={() => auth.signOut()} style={{ padding: '8px 12px !important', minHeight: 'auto', fontSize: '0.7rem !important' }}>LOGOUT</button>
             {/* Widget Energia Biologica (Arco) */}
             <div 
               onClick={() => setShowEnergyPopup(true)}
@@ -3456,8 +3457,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
                   <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData?.color || '#00e5ff'} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - ((bodyBatteryData?.level || 0) / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
                 </svg>
-                <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: '2px' }}>
-                  <span style={{ fontSize: '0.5rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '-2px' }}>Riserva Fisica</span>
+                <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', paddingBottom: '2px' }}>
                   <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: bodyBatteryData?.color || '#00e5ff', textShadow: `0 0 10px ${bodyBatteryData?.color || '#00e5ff'}80` }}>
                     {bodyBatteryData?.level || 0}%
                   </span>
@@ -3472,8 +3472,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </span>
               </div>
             </div>
-
-            <button className="btn-toggle" onClick={() => auth.signOut()} style={{ padding: '8px 12px !important', minHeight: 'auto', fontSize: '0.7rem !important' }}>LOGOUT</button>
           </div>
         </div>
 
