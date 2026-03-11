@@ -2,7 +2,7 @@
  * MealBuilder.jsx — Costruttore pasti (drawer): ricerca alimenti, coda, telemetria, SALVA NEL DIARIO.
  * Estratto da SalaComandi.jsx. La logica saveMealToDiary resta nel genitore; qui solo rendering e onClick.
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 
 const MEAL_BUTTONS = [
   { label: 'Colazione', id: 'merenda1' },
@@ -85,6 +85,46 @@ export default function MealBuilder({
     }
   };
 
+  const currentMealMacros = {
+    kcal: mealTotaliFull?.kcal ?? 0,
+    prot: mealTotaliFull?.prot ?? 0,
+    carb: mealTotaliFull?.carb ?? 0,
+    fat: mealTotaliFull?.fatTotal ?? mealTotaliFull?.fat ?? 0
+  };
+
+  const isCena = mealType === 'cena';
+  const dailyGoals = useMemo(() => ({
+    kcal: dynamicDailyKcal ?? userTargets?.kcal ?? 2000,
+    prot: userTargets?.prot ?? 150,
+    carb: userTargets?.carb ?? 200,
+    fat: userTargets?.fatTotal ?? userTargets?.fat ?? 60
+  }), [dynamicDailyKcal, userTargets]);
+  const consumedSoFar = useMemo(() => ({
+    kcal: totali?.kcal ?? 0,
+    prot: totali?.prot ?? 0,
+    carb: totali?.carb ?? 0,
+    fat: totali?.fatTotal ?? totali?.fat ?? 0
+  }), [totali]);
+
+  const targetMacros = useMemo(() => {
+    if (isCena) {
+      return {
+        kcal: Math.max(0, dailyGoals.kcal - consumedSoFar.kcal),
+        prot: Math.max(0, dailyGoals.prot - consumedSoFar.prot),
+        carb: Math.max(0, dailyGoals.carb - consumedSoFar.carb),
+        fat: Math.max(0, dailyGoals.fat - consumedSoFar.fat),
+        fibre: Math.max(0, (userTargets?.fibre ?? 30) - (totali?.fibre ?? 0))
+      };
+    }
+    return {
+      kcal: targetMacrosPasto?.kcal ?? dailyGoals.kcal * 0.25,
+      prot: targetMacrosPasto?.prot ?? dailyGoals.prot * 0.25,
+      carb: targetMacrosPasto?.carb ?? dailyGoals.carb * 0.25,
+      fat: targetMacrosPasto?.fat ?? dailyGoals.fat * 0.25,
+      fibre: targetMacrosPasto?.fibre ?? (userTargets?.fibre ?? 30) * 0.25
+    };
+  }, [isCena, dailyGoals, consumedSoFar, targetMacrosPasto, userTargets?.fibre, totali?.fibre]);
+
   return (
     <div className="view-animate">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
@@ -159,40 +199,18 @@ export default function MealBuilder({
           </div>
         </div>
       </div>
-      <div className="pasto-container">
-        <div className="pasto-telemetry-panel">
-          <h4 style={{ fontSize: '0.7rem', color: '#00e5ff', letterSpacing: '1px', marginBottom: '12px', textTransform: 'uppercase' }}>Telemetria live (oggi + pasto)</h4>
-          {renderLiveProgressBar('Kcal', totali?.kcal || 0, mealTotaliFull.kcal || 0, dynamicDailyKcal, 'kcal', '#00e5ff')}
-          {renderLiveProgressBar('Proteine', totali?.prot || 0, mealTotaliFull.prot || 0, userTargets?.prot ?? 150, 'g', '#b388ff')}
-          {renderLiveProgressBar('Carboidrati', totali?.carb || 0, mealTotaliFull.carb || 0, userTargets?.carb ?? 200, 'g', '#00e676')}
-          {renderLiveProgressBar('Grassi', totali?.fatTotal ?? totali?.fat ?? 0, mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, userTargets?.fatTotal ?? userTargets?.fat ?? 60, 'g', '#ffea00')}
-          {mealType === 'cena' && (() => {
-            const targetKcal = dynamicDailyKcal;
-            const targetProt = userTargets?.prot ?? 150;
-            const targetCarb = userTargets?.carb ?? 200;
-            const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 60;
-            const totalKcal = (totali?.kcal || 0) + (mealTotaliFull?.kcal || 0);
-            const totalProt = (totali?.prot || 0) + (mealTotaliFull?.prot || 0);
-            const totalCarb = (totali?.carb || 0) + (mealTotaliFull?.carb || 0);
-            const totalFat = (totali?.fatTotal ?? totali?.fat ?? 0) + (mealTotaliFull?.fatTotal ?? mealTotaliFull?.fat ?? 0);
-            const deltaKcal = targetKcal - totalKcal;
-            const deltaProt = targetProt - totalProt;
-            const deltaCarb = targetCarb - totalCarb;
-            const deltaFat = targetFat - totalFat;
-            return (
-              <div style={{ marginTop: '16px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: 'rgba(0,0,0,0.2)' }}>
-                <h4 style={{ fontSize: '0.7rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>Bilancio di Fine Giornata</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaKcal >= 0 ? '#00e676' : '#ff1744' }}><span>Kcal</span><span>{deltaKcal >= 0 ? `Rimangono ${Math.round(deltaKcal)}` : `Eccesso ${Math.round(-deltaKcal)}`}</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaProt >= 0 ? '#00e676' : '#ff1744' }}><span>Proteine (g)</span><span>{deltaProt >= 0 ? `Rimangono ${deltaProt.toFixed(0)}` : `Eccesso ${(-deltaProt).toFixed(0)}`}</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaCarb >= 0 ? '#00e676' : '#ff1744' }}><span>Carboidrati (g)</span><span>{deltaCarb >= 0 ? `Rimangono ${deltaCarb.toFixed(0)}` : `Eccesso ${(-deltaCarb).toFixed(0)}`}</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: deltaFat >= 0 ? '#00e676' : '#ff1744' }}><span>Grassi (g)</span><span>{deltaFat >= 0 ? `Rimangono ${deltaFat.toFixed(0)}` : `Eccesso ${(-deltaFat).toFixed(0)}`}</span></div>
-                </div>
-                <p style={{ margin: '8px 0 0', fontSize: '0.65rem', color: '#888' }}>Utile per bilanciare i carboidrati serali e supportare il cortisolo notturno.</p>
-              </div>
-            );
-          })()}
+      <div style={{ marginBottom: '20px' }}>
+        <h4 style={{ fontSize: '0.7rem', color: '#00e5ff', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>
+          {isCena ? 'Rimanenza Giornaliera' : 'Quota Prevista Pasto'}
+        </h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {renderProgressBar('Kcal', currentMealMacros.kcal, targetMacros.kcal, 'kcal', 'kcal')}
+          {renderProgressBar('Proteine', currentMealMacros.prot, targetMacros.prot, 'g', 'prot')}
+          {renderProgressBar('Carboidrati', currentMealMacros.carb, targetMacros.carb, 'g', 'carb')}
+          {renderProgressBar('Grassi', currentMealMacros.fat, targetMacros.fat, 'g', 'fatTotal')}
         </div>
+      </div>
+      <div className="pasto-container">
         <div className="pasto-builder-panel">
           <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: energyAt20Percent < 40 ? 'rgba(220, 38, 38, 0.12)' : 'rgba(34, 197, 94, 0.1)', borderColor: energyAt20Percent < 40 ? 'rgba(220, 38, 38, 0.4)' : 'rgba(34, 197, 94, 0.35)' }}>
             <div style={{ fontSize: '0.7rem', fontWeight: '600', color: energyAt20Percent < 40 ? '#f87171' : '#4ade80', marginBottom: '4px' }}>Analisi Bio-Feedback</div>
@@ -293,12 +311,6 @@ export default function MealBuilder({
           </div>
           {addedFoods.length > 0 && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '12px', border: '1px solid #2a2a2a' }}>
-                {renderMiniBar('KCAL', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, '#00e5ff')}
-                {renderMiniBar('PROTEINE (g)', mealTotaliFull.prot || 0, targetMacrosPasto.prot, '#b388ff')}
-                {renderMiniBar('CARBOIDRATI (g)', mealTotaliFull.carb || 0, targetMacrosPasto.carb, '#00e676')}
-                {renderMiniBar('GRASSI (g)', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, '#ffea00')}
-              </div>
               {userProfile?.level === 'pro' && (
                 <>
                   <button type="button" onClick={() => setIsAdvancedPastoMode(prev => !prev)} style={{ width: '100%', marginBottom: '16px', padding: '10px 14px', fontSize: '0.8rem', background: isAdvancedPastoMode ? 'rgba(0, 229, 255, 0.15)' : '#1a1a1a', border: '1px solid #333', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer', textAlign: 'center' }}>
