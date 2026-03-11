@@ -1188,6 +1188,17 @@ export default function SalaComandi() {
     };
   }, [dailyLog, currentTrackerDate, totali, userTargets]);
 
+  const yesterdayReportReady = useMemo(() => {
+    if (currentTrackerDate !== getTodayString() || !fullHistory || typeof fullHistory !== 'object') return false;
+    const yesterday = new Date(getTodayString() + 'T12:00:00');
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+    const log = getLogFromStoricoTree(fullHistory, yesterdayStr) || [];
+    const hasFood = log.some(e => e.type === 'food');
+    const hasSleepOrWorkout = log.some(e => e.type === 'sleep' || e.type === 'workout');
+    return hasFood || hasSleepOrWorkout;
+  }, [currentTrackerDate, fullHistory]);
+
   const openDrawer = () => { setActiveAction(null); setIsDrawerOpen(true); };
   const closeDrawer = () => { setIsDrawerOpen(false); setTimeout(() => setActiveAction(null), 400); };
 
@@ -3508,23 +3519,48 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
           {/* DESTRA: Report stella, Logout, Widget Energia */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
-            <button
-              type="button"
-              onClick={() => dailyReport?.ready && setShowReportModal(true)}
-              disabled={!dailyReport?.ready}
-              title={dailyReport?.ready ? 'Report giornaliero a 5 stelle' : 'Disponibile solo per giornate passate con dati'}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (dailyReport?.ready) {
+                  setShowReportModal(true);
+                } else if (currentTrackerDate === getTodayString()) {
+                  changeDate(-1);
+                }
+              }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (dailyReport?.ready) setShowReportModal(true); else if (currentTrackerDate === getTodayString()) changeDate(-1); } }}
+              title={dailyReport?.ready ? 'Report giornaliero a 5 stelle' : currentTrackerDate === getTodayString() && yesterdayReportReady ? 'Report di ieri pronto: vai al giorno precedente' : 'Disponibile solo per giornate passate con dati'}
               style={{
-                background: 'none',
-                border: 'none',
-                padding: '4px 6px',
-                cursor: dailyReport?.ready ? 'pointer' : 'default',
-                opacity: dailyReport?.ready ? 1 : 0.45,
-                fontSize: '1.1rem',
-                lineHeight: 1
+                position: 'relative',
+                marginLeft: '15px',
+                fontSize: '1.4rem',
+                cursor: 'pointer',
+                color: dailyReport?.ready ? '#ffd700' : '#444',
+                textShadow: dailyReport?.ready ? '0 0 10px rgba(255, 215, 0, 0.6)' : 'none',
+                transition: 'all 0.3s ease',
+                lineHeight: 1,
+                padding: '2px 4px'
               }}
             >
-              <span style={{ color: dailyReport?.ready ? '#ffc107' : '#666' }}>★</span>
-            </button>
+              ★
+              {currentTrackerDate === getTodayString() && yesterdayReportReady && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '-2px',
+                    right: '-4px',
+                    width: '10px',
+                    height: '10px',
+                    background: '#ff4444',
+                    borderRadius: '50%',
+                    border: '2px solid #000',
+                    boxShadow: '0 0 5px #ff4444'
+                  }}
+                  aria-hidden
+                />
+              )}
+            </div>
             <button className="btn-toggle" onClick={() => auth.signOut()} style={{ padding: '8px 12px !important', minHeight: 'auto', fontSize: '0.7rem !important' }}>LOGOUT</button>
             {/* Widget Energia Biologica (Arco) */}
             <div 
