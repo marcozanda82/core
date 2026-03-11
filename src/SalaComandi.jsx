@@ -3443,8 +3443,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
                   <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData?.color || '#00e5ff'} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - ((bodyBatteryData?.level || 0) / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
                 </svg>
-                <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', fontSize: '0.8rem', fontWeight: 'bold', color: bodyBatteryData?.color || '#00e5ff', textShadow: `0 0 10px ${bodyBatteryData?.color || '#00e5ff'}80`, paddingBottom: '2px' }}>
-                  {bodyBatteryData?.level || 0}%
+                <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: '2px' }}>
+                  <span style={{ fontSize: '0.5rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '-2px' }}>Riserva Fisica</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: bodyBatteryData?.color || '#00e5ff', textShadow: `0 0 10px ${bodyBatteryData?.color || '#00e5ff'}80` }}>
+                    {bodyBatteryData?.level || 0}%
+                  </span>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
