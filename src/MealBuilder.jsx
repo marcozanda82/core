@@ -97,12 +97,7 @@ export default function MealBuilder({
           <button
             key={id}
             className={`type-btn ${mealType === id ? 'active' : ''}`}
-            onClick={() => {
-              setMealType(id);
-              const t = getDefaultMealTime(id);
-              setDrawerMealTime(t);
-              setDrawerMealTimeStr(decimalToTimeStr(t));
-            }}
+            onClick={() => setMealType(id)}
             style={{ whiteSpace: 'nowrap', padding: '12px 15px' }}
           >
             {label}
@@ -118,7 +113,24 @@ export default function MealBuilder({
       <div style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px' }}>
           <span>0:00</span>
-          <input type="time" value={decimalToTimeStr(drawerMealTime)} onChange={(e) => { const v = parseTimeStrToDecimal(e.target.value); setDrawerMealTime(v); setDrawerMealTimeStr(decimalToTimeStr(v)); }} style={{ width: '130px', minWidth: '110px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
+          <input
+          type="time"
+          value={decimalToTimeStr(drawerMealTime)}
+          onChange={(e) => {
+            const newTimeStr = e.target.value;
+            const v = parseTimeStrToDecimal(newTimeStr);
+            setDrawerMealTime(v);
+            setDrawerMealTimeStr(decimalToTimeStr(v));
+            if (newTimeStr) {
+              const hour = parseInt(newTimeStr.split(':')[0], 10);
+              if (hour >= 5 && hour < 11) setMealType('merenda1');
+              else if (hour >= 11 && hour < 15) setMealType('pranzo');
+              else if (hour >= 19 && hour <= 22) setMealType('cena');
+              else setMealType('snack');
+            }
+          }}
+          style={{ width: '130px', minWidth: '110px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }}
+        />
           <span>24:00</span>
         </div>
         <div ref={miniTimelinePastoRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
