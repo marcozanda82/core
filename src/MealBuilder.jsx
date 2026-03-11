@@ -199,17 +199,6 @@ export default function MealBuilder({
           </div>
         </div>
       </div>
-      <div style={{ marginBottom: '20px' }}>
-        <h4 style={{ fontSize: '0.7rem', color: '#00e5ff', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>
-          {isCena ? 'Rimanenza Giornaliera' : 'Quota Prevista Pasto'}
-        </h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {renderProgressBar('Kcal', currentMealMacros.kcal, targetMacros.kcal, 'kcal', 'kcal')}
-          {renderProgressBar('Proteine', currentMealMacros.prot, targetMacros.prot, 'g', 'prot')}
-          {renderProgressBar('Carboidrati', currentMealMacros.carb, targetMacros.carb, 'g', 'carb')}
-          {renderProgressBar('Grassi', currentMealMacros.fat, targetMacros.fat, 'g', 'fatTotal')}
-        </div>
-      </div>
       <div className="pasto-container">
         <div className="pasto-builder-panel">
           <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: energyAt20Percent < 40 ? 'rgba(220, 38, 38, 0.12)' : 'rgba(34, 197, 94, 0.1)', borderColor: energyAt20Percent < 40 ? 'rgba(220, 38, 38, 0.4)' : 'rgba(34, 197, 94, 0.35)' }}>
@@ -232,13 +221,18 @@ export default function MealBuilder({
             )}
             <div style={{ position: 'sticky', top: '-20px', zIndex: 50, background: '#111', paddingTop: '20px', paddingBottom: '10px', borderBottom: '1px solid #333', margin: '0 -15px 20px -15px', paddingLeft: '15px', paddingRight: '15px' }}>
               <div className="quick-add-bar">
-                <input ref={foodInputRef} type="text" className="quick-input input-name" placeholder="Es. Pollo" value={foodNameInput} onChange={(e) => setFoodNameInput(e.target.value)} onFocus={() => setShowFoodDropdown(true)} onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)} onKeyDown={(e) => { if (e.key === 'Enter') document.getElementById('weight-input')?.focus(); }} />
+                <div style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+                  <input ref={foodInputRef} type="text" className="quick-input input-name" placeholder="Es. Pollo" value={foodNameInput} onChange={(e) => setFoodNameInput(e.target.value)} onFocus={() => setShowFoodDropdown(true)} onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)} onKeyDown={(e) => { if (e.key === 'Enter') document.getElementById('weight-input')?.focus(); }} style={{ paddingRight: foodNameInput ? '36px' : undefined }} />
+                  {foodNameInput ? (
+                    <button type="button" onClick={() => setFoodNameInput('')} aria-label="Cancella ricerca" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', width: '28px', height: '28px', minWidth: 28, minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', color: '#888', fontSize: '1rem', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+                  ) : null}
+                </div>
                 <input id="weight-input" type="number" inputMode="decimal" className="quick-input input-weight" placeholder="g" value={foodWeightInput} onChange={(e) => setFoodWeightInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()} />
                 <button type="button" title="Scansiona barcode" onClick={() => setIsBarcodeScannerOpen(prev => !prev)} style={{ padding: '10px 12px', background: isBarcodeScannerOpen ? '#00e5ff' : 'rgba(255,255,255,0.08)', border: '1px solid #333', borderRadius: '10px', cursor: 'pointer', fontSize: '1.1rem' }}>📷</button>
                 <button type="button" className="quick-add-btn" onClick={handleAddFoodManual}>+</button>
               </div>
             </div>
-            {abitudiniIeri.length > 0 && (
+            {foodNameInput.trim() === '' && abitudiniIeri.length > 0 && (
               <div style={{ marginBottom: '16px' }}>
                 <button type="button" onClick={() => setIsAbitudiniOpen(prev => !prev)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid #333', borderRadius: '10px', color: '#888', fontSize: '0.7rem', letterSpacing: '1px', cursor: 'pointer', textAlign: 'left' }}>
                   <span>Abitudini di ieri</span>
@@ -256,14 +250,22 @@ export default function MealBuilder({
               </div>
             )}
             {showFoodDropdown && (foodNameInput.trim() || foodDropdownSuggestions.length > 0) && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#1a1a1a', border: '1px solid #333', borderRadius: '0 0 12px 12px', maxHeight: '220px', overflowY: 'auto', zIndex: 50, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#1e1e1e', border: '1px solid #333', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '250px', overflowY: 'auto', zIndex: 1000, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', margin: 0, padding: 0 }}>
                 {foodDropdownSuggestions.map(s => (
-                  <button key={s.key} type="button" style={{ width: '100%', padding: '12px 16px', textAlign: 'left', background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '0.9rem', borderBottom: '1px solid #2a2a2a' }} onClick={() => { setFoodNameInput(s.desc); setFoodWeightInput(getLastQuantityForFood(s.desc) || ''); setShowFoodDropdown(false); setTimeout(() => document.getElementById('weight-input')?.focus(), 50); }}>
-                    {s.desc}
-                  </button>
+                  <div
+                    key={s.key}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { setFoodNameInput(s.desc); setFoodWeightInput(getLastQuantityForFood(s.desc) || ''); setShowFoodDropdown(false); setTimeout(() => document.getElementById('weight-input')?.focus(), 50); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFoodNameInput(s.desc); setFoodWeightInput(getLastQuantityForFood(s.desc) || ''); setShowFoodDropdown(false); setTimeout(() => document.getElementById('weight-input')?.focus(), 50); } }}
+                    style={{ padding: '14px 16px', borderBottom: '1px solid #2a2a2a', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', minHeight: '48px', boxSizing: 'border-box' }}
+                  >
+                    <span style={{ fontWeight: '500', fontSize: '1rem' }}>{s.desc}</span>
+                    <span style={{ fontSize: '0.85rem', color: '#00e5ff' }}>{s.kcal != null ? `${Math.round(s.kcal)} kcal` : (s.kcalPer100 != null ? `${Math.round(s.kcalPer100)} kcal/100g` : '')}</span>
+                  </div>
                 ))}
                 {foodNameInput.trim() && (
-                  <button type="button" style={{ width: '100%', padding: '12px 16px', textAlign: 'left', background: 'rgba(179, 136, 255, 0.15)', border: 'none', color: '#b388ff', cursor: isGeneratingFood ? 'wait' : 'pointer', fontSize: '0.9rem', fontWeight: '600' }} onClick={() => generateFoodWithAI(foodNameInput.trim())} disabled={isGeneratingFood}>
+                  <button type="button" style={{ width: '100%', padding: '14px 16px', minHeight: '48px', boxSizing: 'border-box', textAlign: 'left', background: 'rgba(179, 136, 255, 0.15)', border: 'none', borderBottom: '1px solid #2a2a2a', color: '#b388ff', cursor: isGeneratingFood ? 'wait' : 'pointer', fontSize: '1rem', fontWeight: '600', display: 'flex', alignItems: 'center' }} onClick={() => generateFoodWithAI(foodNameInput.trim())} disabled={isGeneratingFood}>
                     {isGeneratingFood ? '⏳ Generazione in corso...' : `✨ Genera con AI: "${foodNameInput.trim()}"`}
                   </button>
                 )}
@@ -375,9 +377,20 @@ export default function MealBuilder({
                     </div>
                   )}
                 </>
-              )}
-            </>
           )}
+        </>
+          )}
+          <div style={{ marginBottom: '20px' }}>
+            <h4 style={{ fontSize: '0.7rem', color: '#00e5ff', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>
+              {isCena ? 'Rimanenza Giornaliera' : 'Quota Prevista Pasto'}
+            </h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {renderProgressBar('Kcal', currentMealMacros.kcal, targetMacros.kcal, 'kcal', 'kcal')}
+              {renderProgressBar('Proteine', currentMealMacros.prot, targetMacros.prot, 'g', 'prot')}
+              {renderProgressBar('Carboidrati', currentMealMacros.carb, targetMacros.carb, 'g', 'carb')}
+              {renderProgressBar('Grassi', currentMealMacros.fat, targetMacros.fat, 'g', 'fatTotal')}
+            </div>
+          </div>
           <button type="button" onClick={saveMealToDiary} style={{ width: '100%', padding: '18px', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', opacity: addedFoods.length > 0 ? 1 : 0.5 }}>SALVA NEL DIARIO</button>
         </div>
       </div>
