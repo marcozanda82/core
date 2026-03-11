@@ -119,7 +119,8 @@ export default function SalaComandi() {
   const [isSimulationMode, setIsSimulationMode] = useState(false);
   const [simulatedLog, setSimulatedLog] = useState(null);
   const pressTimer = useRef(null);
-  const sandboxLongPressFired = useRef(false);
+  const coreOsClickCount = useRef(0);
+  const coreOsClickTimer = useRef(null);
   const [dailyInsights, setDailyInsights] = useState([]);
   const [energyForecast, setEnergyForecast] = useState(null);
   const [crashExplanation, setCrashExplanation] = useState(null);
@@ -277,7 +278,9 @@ export default function SalaComandi() {
   const [showMetabolicPopup, setShowMetabolicPopup] = useState(false);
   const [showEnergyPopup, setShowEnergyPopup] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [reportViewedDates, setReportViewedDates] = useState({});
+  const [reportViewedDates, setReportViewedDates] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('reportViewedDates')) || {}; } catch { return {}; }
+  });
   const [reportPeriod, setReportPeriod] = useState('7');
   const [currentDateObj, setCurrentDateObj] = useState(() => new Date());
 
@@ -585,12 +588,10 @@ export default function SalaComandi() {
   };
 
   const handleSwitchTouchStart = () => {
-    sandboxLongPressFired.current = false;
     pressTimer.current = setTimeout(() => {
-      sandboxLongPressFired.current = true;
       setIsSimulationMode(true);
       setSimulatedLog(JSON.parse(JSON.stringify(dailyLog || [])));
-    }, 1000);
+    }, 1200);
   };
 
   const handleSwitchTouchEnd = () => {
@@ -600,14 +601,15 @@ export default function SalaComandi() {
     }
   };
 
-  const handleSwitchClick = () => {
-    if (sandboxLongPressFired.current) {
-      sandboxLongPressFired.current = false;
-      return;
+  const handleCoreOsClick = () => {
+    coreOsClickCount.current += 1;
+    if (coreOsClickCount.current === 3) {
+      setIsSimulationMode(true);
+      setSimulatedLog(JSON.parse(JSON.stringify(dailyLog || [])));
+      coreOsClickCount.current = 0;
     }
-    // Solo toggle vista Home <-> Analisi; non uscire dalla simulazione (esci dal banner ESCI)
-    const currentIsPro = userProfile?.level === 'pro';
-    setUserProfile(prev => ({ ...prev, level: currentIsPro ? 'base' : 'pro' }));
+    if (coreOsClickTimer.current) clearTimeout(coreOsClickTimer.current);
+    coreOsClickTimer.current = setTimeout(() => { coreOsClickCount.current = 0; }, 1000);
   };
 
   const handleSimulatedTimeChange = (itemId, newTimeStr) => {
@@ -3677,7 +3679,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           
           {/* SINISTRA: Titolo OS */}
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <button type="button" onClick={() => { setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
+            <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
               <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', letterSpacing: '2px', color: '#fff', display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <span style={{ color: '#00e5ff' }}>⚡</span> CORE <span style={{ color: '#888', fontWeight: 'normal' }}>OS</span>
               </h1>
@@ -3692,12 +3694,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               onClick={() => {
                 if (dailyReport?.ready) {
                   setShowReportModal(true);
-                  setReportViewedDates(prev => ({ ...prev, [currentTrackerDate]: true }));
+                  setReportViewedDates(prev => {
+                    const newState = { ...prev, [currentTrackerDate]: true };
+                    try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {}
+                    return newState;
+                  });
                 } else if (currentTrackerDate === getTodayString()) {
                   changeDate(-1);
                 }
               }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (dailyReport?.ready) { setShowReportModal(true); setReportViewedDates(prev => ({ ...prev, [currentTrackerDate]: true })); } else if (currentTrackerDate === getTodayString()) changeDate(-1); } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (dailyReport?.ready) { setShowReportModal(true); setReportViewedDates(prev => { const newState = { ...prev, [currentTrackerDate]: true }; try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {} return newState; }); } else if (currentTrackerDate === getTodayString()) changeDate(-1); } }}
               title={dailyReport?.ready ? 'Report giornaliero a 5 stelle' : currentTrackerDate === getTodayString() && yesterdayReportReady ? 'Report di ieri pronto: vai al giorno precedente' : 'Disponibile solo per giornate passate con dati'}
               style={{
                 position: 'relative',
@@ -3810,29 +3816,30 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
           </div>
 
-          {/* DESTRA: Switch a 3 vie (Tap = toggle Home/Analisi, Long-press 1s = Simula) */}
+          {/* DESTRA: Switch a 2 vie (Home / Analisi). Long-press 1.2s sul contenitore = Easter Egg Simulazione */}
           <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
             <div
-              role="button"
-              tabIndex={0}
               onMouseDown={handleSwitchTouchStart}
               onMouseUp={handleSwitchTouchEnd}
               onMouseLeave={handleSwitchTouchEnd}
               onTouchStart={handleSwitchTouchStart}
               onTouchEnd={handleSwitchTouchEnd}
-              onClick={handleSwitchClick}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSwitchClick(); } }}
-              style={{ display: 'flex', background: '#222', borderRadius: '12px', padding: '4px', marginBottom: 0, cursor: 'pointer', userSelect: 'none' }}
+              style={{ display: 'flex', background: '#222', borderRadius: '12px', padding: '4px', marginBottom: 0, userSelect: 'none' }}
             >
-              <div style={{ flex: 1, textAlign: 'center', padding: '8px', background: !isSimulationMode && userProfile?.level !== 'pro' ? '#333' : 'transparent', color: !isSimulationMode && userProfile?.level !== 'pro' ? '#00e5ff' : '#888', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', transition: 'all 0.3s' }}>
+              <button
+                type="button"
+                onClick={() => { handleSwitchTouchEnd(); setIsSimulationMode(false); setSimulatedLog(null); setUserProfile(prev => ({ ...prev, level: 'base' })); }}
+                style={{ flex: 1, padding: '8px', background: !isSimulationMode && userProfile?.level !== 'pro' ? '#333' : 'transparent', color: !isSimulationMode && userProfile?.level !== 'pro' ? '#00e5ff' : '#888', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer' }}
+              >
                 🏠 Home
-              </div>
-              <div style={{ flex: 1, textAlign: 'center', padding: '8px', background: !isSimulationMode && userProfile?.level === 'pro' ? '#333' : 'transparent', color: !isSimulationMode && userProfile?.level === 'pro' ? '#00e5ff' : '#888', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', transition: 'all 0.3s' }}>
+              </button>
+              <button
+                type="button"
+                onClick={() => { handleSwitchTouchEnd(); setIsSimulationMode(false); setSimulatedLog(null); setUserProfile(prev => ({ ...prev, level: 'pro' })); }}
+                style={{ flex: 1, padding: '8px', background: !isSimulationMode && userProfile?.level === 'pro' ? '#333' : 'transparent', color: !isSimulationMode && userProfile?.level === 'pro' ? '#00e5ff' : '#888', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer' }}
+              >
                 📊 Analisi
-              </div>
-              <div style={{ flex: 1, textAlign: 'center', padding: '8px', background: isSimulationMode ? '#6200ea' : 'transparent', color: isSimulationMode ? '#fff' : '#888', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', transition: 'all 0.3s' }}>
-                🧪 Simula
-              </div>
+              </button>
             </div>
           </div>
 
@@ -4308,8 +4315,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 ) : (
                   <div className="pieCenterGoal">
-                    <div>OBIETTIVO</div>
-                    <div>{Math.round(dynamicDailyKcal || 0)} kcal</div>
+                    <div>Kcal Assunte / Obiettivo</div>
+                    <div>{Math.round(totali?.kcal || 0)} / {Math.round(baseKcal || 0)} kcal</div>
                   </div>
                 )}
               </div>
@@ -4331,11 +4338,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       activeShape={renderActiveMealShape}
                       activeIndex={selectedMealCenterIndex}
                       onClick={(data) => {
-                        const isSame = selectedMealCenter && selectedMealCenter.id === data.id;
-                        if (isSame && data.id !== 'rimanenti') {
-                          loadMealToConstructor(data.id);
-                        } else {
-                          setSelectedMealCenter({ id: data.id, name: data.name, value: data.value, payload: { color: data.color, macros: data.macros } });
+                        if (data.id === 'rimanenti') return;
+                        const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === data.id || n.id === (data.id && data.id.split('_')[0])));
+                        if (mealNode) {
+                          setSelectedNodeReport(mealNode);
+                          setSelectedMealCenter(null);
                         }
                       }}
                       style={{ cursor: 'pointer', outline: 'none' }}
@@ -4485,9 +4492,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(0,230,118,0.4)' }} onClick={() => setActiveAction('diario_giornaliero')}>
                 <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(0, 230, 118, 0.4))' }}>📖</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#00e676' }}>DIARIO</span>
               </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(176,190,197,0.3)' }} onClick={() => setActiveAction('menu_secondary')}>
-                <span className="action-icon" style={{ fontSize: '1.8rem' }}>☰</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#b0bec5' }}>MENU</span>
-              </button>
+              {/* Menu secondario rimosso: unico ingresso "Aggiungi Evento" è il tasto + in basso a destra */}
             </div>
             <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '0' }}>
               <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.8rem' }}>⚡ Inserimento Rapido / Output AI</h4>
