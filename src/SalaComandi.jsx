@@ -116,6 +116,10 @@ export default function SalaComandi() {
   const [nervousSystemLoad, setNervousSystemLoad] = useState(30);
   const [simulationMode, setSimulationMode] = useState(false);
   const [simulationNodes, setSimulationNodes] = useState([]);
+  const [isSimulationMode, setIsSimulationMode] = useState(false);
+  const [simulatedLog, setSimulatedLog] = useState(null);
+  const pressTimer = useRef(null);
+  const sandboxLongPressFired = useRef(false);
   const [dailyInsights, setDailyInsights] = useState([]);
   const [energyForecast, setEnergyForecast] = useState(null);
   const [crashExplanation, setCrashExplanation] = useState(null);
@@ -192,7 +196,8 @@ export default function SalaComandi() {
   const [calorieTuning, setCalorieTuning] = useState(0);
   const [foodDb, setFoodDb] = useState({});
   const [dailyLog, setDailyLog] = useState([]);
-  
+  const activeLog = isSimulationMode && simulatedLog != null ? simulatedLog : dailyLog;
+
   // STATI MODULI (Pasti, Acqua, Allenamento, Zen)
   const [mealType, setMealType] = useState('cena');
   const [drawerMealTime, setDrawerMealTime] = useState(12);
@@ -443,7 +448,7 @@ export default function SalaComandi() {
 
   const computedMealNodes = useMemo(() => {
     const bySlot = {};
-    (dailyLog || []).forEach(f => {
+    (activeLog || []).forEach(f => {
       const slotKey = getSlotKey(f);
       if (slotKey) {
         const foodKcal = Number(f.kcal ?? f.cal ?? 0) || 0;
@@ -471,7 +476,7 @@ export default function SalaComandi() {
       originalTypes: Array.from(m.originalTypes),
       icon: getMealIcon(m.mealType.split('_')[0])
     }));
-  }, [dailyLog]);
+  }, [activeLog]);
 
   const allNodes = useMemo(() => {
     return [...computedMealNodes, ...manualNodes].sort((a, b) => a.time - b.time);
@@ -480,7 +485,7 @@ export default function SalaComandi() {
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
   const effectiveWakeTimeForSleep = useMemo(() => {
-    const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
+    const sleepEntry = (activeLog || []).find(e => e.type === 'sleep');
     if (!sleepEntry) return null;
     let wt = sleepEntry.wakeTime;
     if (wt == null || typeof wt !== 'number') {
@@ -490,11 +495,11 @@ export default function SalaComandi() {
       if (wt >= 24) wt -= 24;
     }
     return Number(wt);
-  }, [dailyLog]);
+  }, [activeLog]);
 
   const nodesForEnergySimulation = useMemo(() => {
     const base = activeNodes || [];
-    const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
+    const sleepEntry = (activeLog || []).find(e => e.type === 'sleep');
     if (!sleepEntry) return base;
     const sleepHours = sleepEntry.hours ?? sleepEntry.duration ?? sleepEntry.sleepHours ?? 7;
     const deepMin = sleepEntry.deepMin ?? sleepEntry.deepMinutes ?? (typeof sleepEntry.deep === 'number' ? sleepEntry.deep : 60);
@@ -512,13 +517,13 @@ export default function SalaComandi() {
       sleepStart: sleepEntry.sleepStart ?? 0
     };
     return [...base, sleepNode].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
-  }, [activeNodes, dailyLog, effectiveWakeTimeForSleep]);
+  }, [activeNodes, activeLog, effectiveWakeTimeForSleep]);
 
   const dailyLogForEnergy = useMemo(() => {
-    const log = dailyLog || [];
+    const log = activeLog || [];
     if (effectiveWakeTimeForSleep == null) return log;
     return log.map(e => e.type === 'sleep' ? { ...e, wakeTime: effectiveWakeTimeForSleep } : e);
-  }, [dailyLog, effectiveWakeTimeForSleep]);
+  }, [activeLog, effectiveWakeTimeForSleep]);
 
   const allNodesWithStack = useMemo(() => {
     const endTime = (n) => {
@@ -569,6 +574,27 @@ export default function SalaComandi() {
   const exitSimulationMode = () => {
     setSimulationMode(false);
     setSimulationNodes([]);
+  };
+
+  const startPress = () => {
+    sandboxLongPressFired.current = false;
+    pressTimer.current = setTimeout(() => {
+      sandboxLongPressFired.current = true;
+      setIsSimulationMode(true);
+      setSimulatedLog(JSON.parse(JSON.stringify(dailyLog || [])));
+    }, 1200);
+  };
+
+  const cancelPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+
+  const exitSimulation = () => {
+    setIsSimulationMode(false);
+    setSimulatedLog(null);
   };
 
   const addSimulationEvent = (event) => {
@@ -1123,18 +1149,18 @@ export default function SalaComandi() {
 
   // Motore biochimico
   const baseKcal = (userTargets.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
-  const { totali, obiettiviPasti } = useBiochimico(dailyLog, baseKcal);
+  const { totali, obiettiviPasti } = useBiochimico(activeLog, baseKcal);
   const targetKcal = baseKcal + (totali?.workout ?? 0);
 
   const dailyReport = useMemo(() => {
-    if (!dailyLog || currentTrackerDate === getTodayString()) return null;
-    const foods = (dailyLog || []).filter(e => e.type === 'food');
-    const hasStrengthWorkout = (dailyLog || []).some(t => {
+    if (!activeLog || currentTrackerDate === getTodayString()) return null;
+    const foods = (activeLog || []).filter(e => e.type === 'food');
+    const hasStrengthWorkout = (activeLog || []).some(t => {
       if (t.type !== 'workout') return false;
       const sub = (t.subType ?? t.workoutType ?? '').toLowerCase();
       return sub === 'pesi' || sub === 'hiit';
     });
-    if (foods.length === 0 && !(dailyLog || []).some(e => e.type === 'sleep' || e.type === 'workout')) return null;
+    if (foods.length === 0 && !(activeLog || []).some(e => e.type === 'sleep' || e.type === 'workout')) return null;
 
     const proTotal = totali?.prot ?? 0;
     const proTarget = userTargets?.prot ?? 150;
@@ -1173,7 +1199,7 @@ export default function SalaComandi() {
 
     let fatStars = 1;
     if (kcalTotal <= kcalTarget) fatStars += 2;
-    if ((dailyLog || []).some(t => t.type === 'workout')) fatStars += 1;
+    if ((activeLog || []).some(t => t.type === 'workout')) fatStars += 1;
     if (choTotal <= choTarget * 1.1) fatStars += 1;
     fatStars = Math.min(5, fatStars);
     let fatReason = '';
@@ -1181,9 +1207,9 @@ export default function SalaComandi() {
     else if (choTotal > choTarget * 1.1) fatReason = 'Picchi insulinici eccessivi hanno bloccato l\'accesso alle riserve di grasso.';
     else fatReason = 'Calorie e carboidrati sotto controllo: condizioni ideali per la perdita di grasso.';
 
-    const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
+    const sleepEntry = (activeLog || []).find(e => e.type === 'sleep');
     const sleepHours = sleepEntry?.duration ?? sleepEntry?.hours ?? 0;
-    const lateCaffeine = (dailyLog || []).some(t => t.type === 'stimulant' && (parseFloat(t.time ?? t.mealTime ?? 0) >= 16));
+    const lateCaffeine = (activeLog || []).some(t => t.type === 'stimulant' && (parseFloat(t.time ?? t.mealTime ?? 0) >= 16));
     const cenaEquiv = getEquivalentMealTypes('cena');
     const dinnerCho = foods.filter(f => cenaEquiv.includes(f.mealType)).reduce((acc, item) => acc + (Number(item.carb ?? item.cho ?? 0) || 0), 0);
 
@@ -1223,7 +1249,7 @@ export default function SalaComandi() {
       neuro: { score: neuroStars, reason: neuroReason || 'Sonno e abitudini serali da ottimizzare.' },
       fast: { score: fastStars, reason: fastReason }
     };
-  }, [dailyLog, currentTrackerDate, totali, userTargets]);
+  }, [activeLog, currentTrackerDate, totali, userTargets]);
 
   const yesterdayReportReady = useMemo(() => {
     if (currentTrackerDate !== getTodayString() || !fullHistory || typeof fullHistory !== 'object') return false;
@@ -1301,12 +1327,12 @@ export default function SalaComandi() {
   const loadMealToConstructor = (mTypeOrId) => {
     setAddedFoods([]);
     setEditingMealId(mTypeOrId);
-    let items = (dailyLog || []).filter(item => getSlotKey(item) === String(mTypeOrId));
+    let items = (activeLog || []).filter(item => getSlotKey(item) === String(mTypeOrId));
 
     if (items.length === 0) {
       const canonical = toCanonicalMealType(String(mTypeOrId).split('_')[0]);
       const equivalents = getEquivalentMealTypes(canonical);
-      items = (dailyLog || []).filter(item => item.type === 'food' && equivalents.includes(item.mealType));
+      items = (activeLog || []).filter(item => item.type === 'food' && equivalents.includes(item.mealType));
     }
 
     items = items.map(f => ({ ...f }));
@@ -1340,7 +1366,7 @@ export default function SalaComandi() {
     const equivalents = getEquivalentMealTypes(mealTypeKey);
     
     // Cerca nel dailyLog corrente
-    const first = (dailyLog || []).find(item => 
+    const first = (activeLog || []).find(item => 
       item.type === 'food' && equivalents.includes(item.mealType)
     );
     if (first != null && typeof first.mealTime === 'number') return first.mealTime;
@@ -1692,7 +1718,7 @@ export default function SalaComandi() {
       target.setPointerCapture(e.pointerId);
       dragOffsetYRef.current = 0;
       const itemIds = node.type === 'meal'
-        ? (dailyLog || []).filter(item => getSlotKey(item) === String(node.id)).map(i => i.id)
+        ? (activeLog || []).filter(item => getSlotKey(item) === String(node.id)).map(i => i.id)
         : [];
       setDraggingNode({
         id: node.id,
@@ -2428,7 +2454,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const waterProgress = Math.min((waterIntake / dailyWaterGoal) * 100, 100);
   
-  const foodsLog = dailyLog.filter(item => item.type === 'food');
+  const foodsLog = activeLog.filter(item => item.type === 'food');
   const groupedFoods = foodsLog.reduce((acc, food) => {
     const slotKey = getSlotKey(food);
     if (slotKey) {
@@ -2437,7 +2463,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return acc;
   }, {});
   
-  const workoutsLog = dailyLog.filter(item => item.type === 'workout');
+  const workoutsLog = activeLog.filter(item => item.type === 'workout');
 
   const todayStr = getTodayString();
 
@@ -2568,7 +2594,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     };
     const logsToProcess = isWeekly
       ? pastDaysStorico.slice(0, 7).flatMap(d => d.log || [])
-      : dailyLog;
+      : activeLog;
     logsToProcess.forEach(entry => {
       if (entry.type === 'meal' && entry.items) {
         entry.items.forEach(processEntry);
@@ -2740,7 +2766,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return { energy: last.energy, idealEnergy: last.idealEnergy };
   }, [currentTrackerDate, fullHistory, idealStrategy, userModel]);
 
-  const sleepStatus = getSleepStatus(dailyLog);
+  const sleepStatus = getSleepStatus(activeLog);
   const activeWaterIntake = simulationMode ? activeNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0) : waterIntake;
   let energySimulation;
   if (sleepStatus === "NIGHT_PENDING") {
@@ -2778,8 +2804,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const hasDigestionRisk = energySimulation?.hasDigestionRisk ?? false;
 
   const { calorieTimeline: calorieTimelineData, totalCalories: totalCaloriesTimeline } = useMemo(() => {
-    return generateCalorieTimeline(dailyLog);
-  }, [dailyLog]);
+    return generateCalorieTimeline(activeLog);
+  }, [activeLog]);
   const safeCalorieTimelineData = Array.isArray(calorieTimelineData) ? calorieTimelineData : [];
 
   useEffect(() => {
@@ -2789,10 +2815,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [simulationMode, currentTrackerDate, energySimulation?.nervousSystemLoad]);
 
   useEffect(() => {
-    if (!dailyLog || dailyLog.length === 0) {
+    if (!activeLog || activeLog.length === 0) {
       return;
     }
-    const hasSleep = dailyLog.some(e =>
+    const hasSleep = activeLog.some(e =>
       e.type === "sleep" ||
       e.hours ||
       e.deepMin ||
@@ -2801,7 +2827,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     if (sleepStatus === "SLEEP_MISSING" && !hasSleep && !showSleepPrompt) {
       setShowSleepPrompt(true);
     }
-  }, [sleepStatus, showSleepPrompt, dailyLog]);
+  }, [sleepStatus, showSleepPrompt, activeLog]);
 
   useEffect(() => {
     if (!chartData || chartData.length === 0) {
@@ -2818,8 +2844,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     setDailyInsights(insights);
   }, [chartData]);
 
-  const anabolicCurve = useMemo(() => generateAnabolicCurve(dailyLog), [dailyLog]);
-  const cortisolCurve = useMemo(() => generateCortisolCurve(dailyLog, manualNodes), [dailyLog, manualNodes]);
+  const anabolicCurve = useMemo(() => generateAnabolicCurve(activeLog), [activeLog]);
+  const cortisolCurve = useMemo(() => generateCortisolCurve(activeLog, manualNodes), [activeLog, manualNodes]);
   const getAnabolicAtTime = (curve, t) => {
     const i = t * 2;
     const idx = Math.min(Math.floor(i), 48);
@@ -2904,13 +2930,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   });
 
   // Calcolo Budget Dinamico (Base + Bruciate oggi) — prima di renderDataWithSegments per usare scale nel map
-  const burnedKcal = dailyLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
+  const burnedKcal = activeLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
   const dynamicDailyKcal = (userTargets?.kcal ?? 2000) + burnedKcal;
   const targetKcalChart = dynamicDailyKcal;
   const scale = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
 
   const wakeHourForRiserva = (() => {
-    const sleepEntry = (dailyLog || []).find(i => i.type === 'sleep');
+    const sleepEntry = (activeLog || []).find(i => i.type === 'sleep');
     return sleepEntry?.wakeTime ?? sleepEntry?.sleepEnd ?? 7.5;
   })();
   const piccoMattutinoRiserva = 85;
@@ -2942,7 +2968,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   };
   });
 
-  const trafficLight = getWorkoutTrafficLight(displayTime, anabolicCurve, dailyLog, { fullHistory, currentTrackerDate, userTargets });
+  const trafficLight = getWorkoutTrafficLight(displayTime, anabolicCurve, activeLog, { fullHistory, currentTrackerDate, userTargets });
 
   const mealPieData = useMemo(() => {
     // Palette Sci-Fi per distinguere i vari pasti in modo univoco
@@ -2950,7 +2976,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
     const mealsById = {};
 
-    (dailyLog || []).forEach(item => {
+    (activeLog || []).forEach(item => {
       if (item.type !== 'food' && item.type !== 'meal') return;
 
       // Chiave univoca basata sull'orario per raggruppare gli alimenti dello STESSO pasto
@@ -3023,7 +3049,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       }];
     }
     return data;
-  }, [dailyLog, userTargets?.kcal, dynamicDailyKcal]);
+  }, [activeLog, userTargets?.kcal, dynamicDailyKcal]);
 
   const finalChartData = renderDataWithSegments;
   const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : finalChartData;
@@ -3108,7 +3134,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const fastingData = useMemo(() => {
     let lastMealTime = null;
     let lastMealDate = null;
-    const todayMeals = (dailyLog || []).filter(i => i.type === 'food' && typeof i.mealTime === 'number' && i.mealTime <= currentTime).sort((a, b) => b.mealTime - a.mealTime);
+    const todayMeals = (activeLog || []).filter(i => i.type === 'food' && typeof i.mealTime === 'number' && i.mealTime <= currentTime).sort((a, b) => b.mealTime - a.mealTime);
     if (todayMeals.length > 0) { lastMealTime = todayMeals[0].mealTime; lastMealDate = 'today'; }
     if (lastMealDate === null && fullHistory) {
       const yesterdayObj = new Date(currentDateObj);
@@ -3139,10 +3165,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     else if (hoursFasted >= 12) { phaseName = 'CHETOSI / LIPOLISI'; phaseColor = '#ffea00'; phaseDesc = 'Uso intensivo grassi • Chetoni attivi'; progress = ((hoursFasted - 12) / 4) * 100; }
     else if (hoursFasted >= 4) { phaseName = 'DIGIUNO / CATABOLISMO'; phaseColor = '#00e5ff'; phaseDesc = 'Esaurimento scorte • Calo insulina'; progress = ((hoursFasted - 4) / 8) * 100; }
     return { hoursFasted, timeString, phaseName, phaseColor, phaseDesc, progress };
-  }, [dailyLog, currentTime, fullHistory, currentDateObj]);
+  }, [activeLog, currentTime, fullHistory, currentDateObj]);
 
   const bodyBatteryData = useMemo(() => {
-    const log = dailyLog || [];
+    const log = activeLog || [];
     const sleepNode = log.find(i => i.type === 'sleep');
     const wakeTime = sleepNode?.wakeTime ?? 7.5;
     let startingBattery;
@@ -3182,7 +3208,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     if (currentBattery <= 20) { batteryColor = '#ff4d4d'; batteryIcon = '🪫'; }
     else if (currentBattery <= 50) { batteryColor = '#ffea00'; }
     return { level: Math.round(currentBattery), color: batteryColor, icon: batteryIcon };
-  }, [dailyLog, currentTime, fullHistory, currentTrackerDate]);
+  }, [activeLog, currentTime, fullHistory, currentTrackerDate]);
 
   const renderCustomizedLabel = (props) => {
     const { cx, cy, midAngle, outerRadius, value, name, fill, payload, macros } = props;
@@ -3287,7 +3313,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }
 
   return (
-    <div style={{ backgroundColor: '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '65px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+    <div style={{ backgroundColor: isSimulationMode ? '#1a1625' : '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '65px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
       <style>
         {`
@@ -3651,6 +3677,31 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         </div>
 
+        {isSimulationMode && (
+          <div style={{
+            background: 'linear-gradient(90deg, #6200ea, #b388ff)',
+            color: '#fff',
+            padding: '8px 15px',
+            textAlign: 'center',
+            fontWeight: 'bold',
+            fontSize: '0.9rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            boxShadow: '0 4px 15px rgba(98, 0, 234, 0.4)',
+            zIndex: 100
+          }}>
+            <span>🧪 MODALITÀ SIMULAZIONE ATTIVA</span>
+            <button
+              type="button"
+              onClick={exitSimulation}
+              style={{ background: 'rgba(0,0,0,0.3)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              ESCI ✖
+            </button>
+          </div>
+        )}
+
         {/* BARRA DEGLI STRUMENTI: Data + Toggle Home/Analisi */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '6px 12px', borderRadius: '12px', border: '1px solid #222' }}>
           
@@ -3669,11 +3720,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
           </div>
 
-          {/* DESTRA: Toggle HOME / ANALISI (Compatto) */}
+          {/* DESTRA: Toggle HOME / ANALISI (Compatto) - Long-press 1.2s attiva Sandbox */}
           <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
             <div
               style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', borderRadius: '25px', padding: '3px', border: '1px solid #333', cursor: 'pointer' }}
-              onClick={() => setUserProfile(prev => ({ ...prev, level: prev?.level === 'pro' ? 'base' : 'pro' }))}
+              onTouchStart={startPress}
+              onTouchEnd={cancelPress}
+              onMouseDown={startPress}
+              onMouseUp={cancelPress}
+              onMouseLeave={cancelPress}
+              onClick={() => {
+                if (sandboxLongPressFired.current) { sandboxLongPressFired.current = false; return; }
+                setUserProfile(prev => ({ ...prev, level: prev?.level === 'pro' ? 'base' : 'pro' }));
+              }}
             >
               <button 
                 type="button"
@@ -4124,7 +4183,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             idealDotY={idealDotY}
             targetKcalChart={targetKcalChart}
             scale={scale}
-            dailyLog={dailyLog}
+            dailyLog={activeLog}
             activeHighlight={activeHighlight}
             activeNodesWithStack={activeNodesWithStack}
             bottomTab={bottomTab}
@@ -4753,7 +4812,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
             {diarioTab === 'storico' && (
               <div style={{ minHeight: '200px' }}>
-                {(dailyLog || []).filter(item => item.type === 'sleep').map(item => (
+                {(activeLog || []).filter(item => item.type === 'sleep').map(item => (
                   <div
                     key={item.id}
                     style={{
@@ -4818,7 +4877,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     ))}
                   </div>
                 )}
-                {Object.keys(groupedFoods).length === 0 && workoutsLog.length === 0 && !(dailyLog || []).some(i => i.type === 'sleep') ? (
+                {Object.keys(groupedFoods).length === 0 && workoutsLog.length === 0 && !(activeLog || []).some(i => i.type === 'sleep') ? (
                   <p style={{ textAlign: 'center', color: '#444', fontSize: '0.8rem', fontStyle: 'italic' }}>Nessuna traccia registrata oggi.</p>
                 ) : (
                   Object.keys(groupedFoods).map(slotKey => {
@@ -5532,7 +5591,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             {selectedNodeReport.type === 'meal' ? (
               <div>
                 {(() => {
-                  const items = (dailyLog || []).filter(item => getSlotKey(item) === String(selectedNodeReport.id));
+                  const items = (activeLog || []).filter(item => getSlotKey(item) === String(selectedNodeReport.id));
                   if (items.length === 0) return <p>Nessun alimento trovato.</p>;
 
                   const totals = items.reduce((acc, item) => {
@@ -5933,7 +5992,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {/* POP-UP READY TO TRAIN (digestione) */}
       {showTrainingPopup && (() => {
-        const pastoRecente = (dailyLog || []).find(item => item.type === 'food' && displayTime - item.mealTime >= 0 && displayTime - item.mealTime <= 1);
+        const pastoRecente = (activeLog || []).find(item => item.type === 'food' && displayTime - item.mealTime >= 0 && displayTime - item.mealTime <= 1);
         const mealTime = pastoRecente?.mealTime ?? 0;
         const waitMinutesTotal = 90;
         const elapsedMinutes = (displayTime - mealTime) * 60;
