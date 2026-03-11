@@ -271,6 +271,7 @@ export default function SalaComandi() {
   const [showTelemetryPopup, setShowTelemetryPopup] = useState(false);
   const [showMetabolicPopup, setShowMetabolicPopup] = useState(false);
   const [showEnergyPopup, setShowEnergyPopup] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [reportPeriod, setReportPeriod] = useState('7');
   const [currentDateObj, setCurrentDateObj] = useState(() => new Date());
 
@@ -1123,6 +1124,69 @@ export default function SalaComandi() {
   const baseKcal = (userTargets.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
   const { totali, obiettiviPasti } = useBiochimico(dailyLog, baseKcal);
   const targetKcal = baseKcal + (totali?.workout ?? 0);
+
+  const dailyReport = useMemo(() => {
+    if (!dailyLog || currentTrackerDate === getTodayString()) return null;
+    const foods = (dailyLog || []).filter(e => e.type === 'food');
+    const hasWorkout = (dailyLog || []).some(t => t.type === 'workout');
+    if (foods.length === 0 && !(dailyLog || []).some(e => e.type === 'sleep' || e.type === 'workout')) return null;
+
+    const proTotal = totali?.prot ?? 0;
+    const proTarget = userTargets?.prot ?? 150;
+    const kcalTotal = totali?.kcal ?? 0;
+    const kcalTarget = userTargets?.kcal ?? 2000;
+    const choTotal = totali?.carb ?? 0;
+    const choTarget = userTargets?.carb ?? 200;
+
+    let muscleStars = 1;
+    if (hasWorkout) muscleStars += 1;
+    if (proTotal >= proTarget * 0.9) muscleStars += 1;
+    const bySlot = {};
+    foods.forEach(f => {
+      const slot = getSlotKey(f) || f.mealType || 'other';
+      if (!bySlot[slot]) bySlot[slot] = 0;
+      bySlot[slot] += Number(f.prot ?? f.pro ?? 0) || 0;
+    });
+    const highProMeals = Object.values(bySlot).filter(sum => sum >= 20).length;
+    if (highProMeals >= 3) muscleStars += 2;
+    else if (highProMeals === 2) muscleStars += 1;
+
+    let fatStars = 1;
+    if (kcalTotal <= kcalTarget) fatStars += 2;
+    if (hasWorkout) fatStars += 1;
+    if (choTotal <= choTarget * 1.1) fatStars += 1;
+
+    let neuroStars = 1;
+    const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
+    const sleepHours = sleepEntry?.duration ?? sleepEntry?.hours ?? 0;
+    if (sleepHours >= 7) neuroStars += 2;
+    else if (sleepHours >= 6) neuroStars += 1;
+    const lateCoffee = (dailyLog || []).some(t => t.type === 'stimulant' && (parseFloat(t.time ?? t.mealTime ?? 0) >= 17));
+    if (!lateCoffee) neuroStars += 1;
+    const cenaEquiv = getEquivalentMealTypes('cena');
+    const dinnerCho = foods.filter(f => cenaEquiv.includes(f.mealType)).reduce((acc, item) => acc + (Number(item.carb ?? item.cho ?? 0) || 0), 0);
+    if (dinnerCho >= 30) neuroStars += 1;
+
+    let fastStars = 1;
+    let firstMealTime = 24;
+    let lastMealTime = 0;
+    foods.forEach(f => {
+      const t = parseFloat(f.mealTime ?? f.time ?? 12);
+      if (!Number.isNaN(t)) { if (t < firstMealTime) firstMealTime = t; if (t > lastMealTime) lastMealTime = t; }
+    });
+    const fastingHours = (24 - lastMealTime) + firstMealTime;
+    if (fastingHours >= 16) fastStars += 4;
+    else if (fastingHours >= 14) fastStars += 3;
+    else if (fastingHours >= 12) fastStars += 1;
+
+    return {
+      ready: true,
+      muscle: Math.min(5, muscleStars),
+      fat: Math.min(5, fatStars),
+      neuro: Math.min(5, neuroStars),
+      fast: Math.min(5, fastStars)
+    };
+  }, [dailyLog, currentTrackerDate, totali, userTargets]);
 
   const openDrawer = () => { setActiveAction(null); setIsDrawerOpen(true); };
   const closeDrawer = () => { setIsDrawerOpen(false); setTimeout(() => setActiveAction(null), 400); };
@@ -3435,15 +3499,32 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           
           {/* SINISTRA: Titolo OS */}
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <button type="button" onClick={() => { setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
+            <button type="button" onClick={() => { setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
               <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', letterSpacing: '2px', color: '#fff', display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <span style={{ color: '#00e5ff' }}>⚡</span> CORE <span style={{ color: '#888', fontWeight: 'normal' }}>OS</span>
               </h1>
             </button>
           </div>
 
-          {/* DESTRA: Logout e Widget Energia */}
+          {/* DESTRA: Report stella, Logout, Widget Energia */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
+            <button
+              type="button"
+              onClick={() => dailyReport?.ready && setShowReportModal(true)}
+              disabled={!dailyReport?.ready}
+              title={dailyReport?.ready ? 'Report giornaliero a 5 stelle' : 'Disponibile solo per giornate passate con dati'}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '4px 6px',
+                cursor: dailyReport?.ready ? 'pointer' : 'default',
+                opacity: dailyReport?.ready ? 1 : 0.45,
+                fontSize: '1.1rem',
+                lineHeight: 1
+              }}
+            >
+              <span style={{ color: dailyReport?.ready ? '#ffc107' : '#666' }}>★</span>
+            </button>
             <button className="btn-toggle" onClick={() => auth.signOut()} style={{ padding: '8px 12px !important', minHeight: 'auto', fontSize: '0.7rem !important' }}>LOGOUT</button>
             {/* Widget Energia Biologica (Arco) */}
             <div 
@@ -5683,6 +5764,40 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             )}
 
             <button onClick={() => setShowEnergyPopup(false)} style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>
+              Chiudi
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REPORT GIORNALIERO A 5 STELLE */}
+      {showReportModal && dailyReport?.ready && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={() => setShowReportModal(false)}>
+          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '25px', maxWidth: '380px', width: '100%', position: 'relative', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '8px', borderBottom: '1px solid #222', paddingBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#ffc107' }}>★</span> Report Giornaliero
+            </h3>
+            <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '20px' }}>
+              {currentDateObj.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </p>
+            {[
+              { key: 'muscle', label: 'Crescita Muscolare', emoji: '💪' },
+              { key: 'fat', label: 'Perdita di Grasso', emoji: '🔥' },
+              { key: 'neuro', label: 'Recupero Neurologico', emoji: '🧠' },
+              { key: 'fast', label: 'Pulizia Cellulare (Digiuno)', emoji: '🕐' }
+            ].map(({ key, label, emoji }) => (
+              <div key={key} style={{ marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#aaa', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {emoji} {label}
+                </div>
+                <div style={{ display: 'flex', gap: '2px' }}>
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <span key={n} style={{ color: n <= dailyReport[key] ? '#ffc107' : '#333', fontSize: '1.1rem' }}>★</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <button onClick={() => setShowReportModal(false)} style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}>
               Chiudi
             </button>
           </div>
