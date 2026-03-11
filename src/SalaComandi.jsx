@@ -1152,14 +1152,22 @@ export default function SalaComandi() {
     const highProMeals = Object.values(bySlot).filter(sum => sum >= 20).length;
 
     let muscleStars = 0;
+    let muscleReason = '';
     if (!hasStrengthWorkout) {
       muscleStars = proTotal >= proTarget * 0.9 ? 2 : highProMeals >= 2 ? 1 : 0;
+      muscleReason = proTotal >= proTarget * 0.9
+        ? 'Pasto proteico ottimo per il mantenimento, ma senza stimolo meccanico (pesi/HIIT) non c\'è crescita.'
+        : 'Mancano proteine e stimolo di forza per la crescita muscolare.';
     } else {
       muscleStars = 1;
       if (proTotal >= proTarget) muscleStars += 2;
       else if (proTotal >= proTarget * 0.9) muscleStars += 1;
       if (highProMeals >= 4) muscleStars += 2;
       else if (highProMeals >= 3) muscleStars += 1;
+      muscleStars = Math.min(5, Math.max(0, muscleStars));
+      if (proTotal < proTarget * 0.9) muscleReason = 'Allenamento intenso, ma mancano i mattoni (proteine) per riparare e costruire le fibre.';
+      else if (highProMeals < 4) muscleReason = 'Potenziale alto, ma le proteine sono troppo concentrate. Distribuiscile in 4 pasti per la sintesi costante.';
+      else muscleReason = 'Sinergia perfetta tra stimolo meccanico e timing proteico. Crescita massimizzata!';
     }
     muscleStars = Math.min(5, Math.max(0, muscleStars));
 
@@ -1168,6 +1176,10 @@ export default function SalaComandi() {
     if ((dailyLog || []).some(t => t.type === 'workout')) fatStars += 1;
     if (choTotal <= choTarget * 1.1) fatStars += 1;
     fatStars = Math.min(5, fatStars);
+    let fatReason = '';
+    if (kcalTotal > kcalTarget) fatReason = 'Lieve surplus calorico: la lipolisi è stata inibita per favorire l\'accumulo.';
+    else if (choTotal > choTarget * 1.1) fatReason = 'Picchi insulinici eccessivi hanno bloccato l\'accesso alle riserve di grasso.';
+    else fatReason = 'Calorie e carboidrati sotto controllo: condizioni ideali per la perdita di grasso.';
 
     const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
     const sleepHours = sleepEntry?.duration ?? sleepEntry?.hours ?? 0;
@@ -1176,7 +1188,11 @@ export default function SalaComandi() {
     const dinnerCho = foods.filter(f => cenaEquiv.includes(f.mealType)).reduce((acc, item) => acc + (Number(item.carb ?? item.cho ?? 0) || 0), 0);
 
     let neuroStars = 0;
-    if (sleepHours >= 8 && !lateCaffeine && dinnerCho >= 40) neuroStars = 5;
+    let neuroReason = '';
+    if (sleepHours < 7) neuroReason = 'Il riposo breve ha impedito la ricarica completa dei neurotrasmettitori.';
+    else if (lateCaffeine) neuroReason = 'La caffeina dopo le 16:00 ha frammentato l\'architettura del tuo sonno profondo.';
+    else if (dinnerCho < 40) neuroReason = 'Mancata soppressione del cortisolo serale: il sistema nervoso è rimasto in allerta.';
+    if (sleepHours >= 8 && !lateCaffeine && dinnerCho >= 40) { neuroStars = 5; neuroReason = 'Sonno, timing caffeina e CHO a cena ottimali. Recupero neurologico completo.'; }
     else if (sleepHours >= 7) {
       neuroStars = !lateCaffeine ? 4 : 3;
       if (dinnerCho >= 40) neuroStars = Math.min(5, neuroStars + 1);
@@ -1184,6 +1200,7 @@ export default function SalaComandi() {
     } else if (sleepHours >= 6) neuroStars = Math.min(3, (lateCaffeine ? 2 : 3));
     else if (sleepHours > 0) neuroStars = 1;
     neuroStars = Math.min(5, Math.max(0, neuroStars));
+    if (!neuroReason) neuroReason = 'Sonno e abitudini serali da ottimizzare.';
 
     let firstMealTime = 24;
     let lastMealTime = 0;
@@ -1193,17 +1210,18 @@ export default function SalaComandi() {
     });
     const fastingHours = foods.length === 0 ? 24 : (24 - lastMealTime) + firstMealTime;
     let fastStars = 0;
-    if (fastingHours < 12) fastStars = 0;
-    else if (fastingHours < 14) fastStars = 1;
-    else if (fastingHours < 16) fastStars = 3;
-    else fastStars = 5;
+    let fastReason = '';
+    if (fastingHours < 12) { fastStars = 0; fastReason = 'Finestra di alimentazione troppo ampia. L\'autofagia (pulizia cellulare) non si è attivata.'; }
+    else if (fastingHours < 14) { fastStars = 1; fastReason = 'Finestra di alimentazione troppo ampia. L\'autofagia (pulizia cellulare) non si è attivata.'; }
+    else if (fastingHours < 16) { fastStars = 3; fastReason = 'Buon inizio di riciclo cellulare. Il sistema ha iniziato a eliminare le proteine danneggiate.'; }
+    else { fastStars = 5; fastReason = 'Protocollo Gold: 16+ ore di digiuno hanno garantito una rigenerazione cellulare profonda.'; }
 
     return {
       ready: true,
-      muscle: muscleStars,
-      fat: fatStars,
-      neuro: neuroStars,
-      fast: fastStars
+      muscle: { score: muscleStars, reason: muscleReason || 'Stimolo e nutrizione non allineati per la crescita.' },
+      fat: { score: fatStars, reason: fatReason },
+      neuro: { score: neuroStars, reason: neuroReason || 'Sonno e abitudini serali da ottimizzare.' },
+      fast: { score: fastStars, reason: fastReason }
     };
   }, [dailyLog, currentTrackerDate, totali, userTargets]);
 
@@ -2740,10 +2758,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const chartData = energySimulation?.chartData ?? [];
   const dailyReportDisplay = useMemo(() => {
     if (!dailyReport) return null;
+    const neuroVal = dailyReport.neuro;
+    const neuroScore = typeof neuroVal === 'object' ? neuroVal.score : neuroVal;
+    const neuroReasonBase = typeof neuroVal === 'object' ? neuroVal.reason : '';
     if (!chartData || chartData.length === 0) return dailyReport;
     const minIdr = Math.min(...chartData.map(p => p.idratazione ?? 100));
     const neuroMalus = minIdr < 45 ? 1 : 0;
-    return { ...dailyReport, neuro: Math.max(0, (dailyReport.neuro ?? 0) - neuroMalus) };
+    const neuroReason = neuroMalus
+      ? (neuroReasonBase ? `${neuroReasonBase} DISIDRATAZIONE: Il cervello ha lavorato in condizioni di stress osmotico.` : 'DISIDRATAZIONE: Il cervello ha lavorato in condizioni di stress osmotico.')
+      : neuroReasonBase;
+    return {
+      ...dailyReport,
+      neuro: { score: Math.max(0, neuroScore - neuroMalus), reason: neuroReason }
+    };
   }, [dailyReport, chartData]);
   const realTotals = energySimulation?.realTotals ?? {};
   const hasCrashRisk = energySimulation?.hasCrashRisk ?? false;
@@ -5853,18 +5880,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               { key: 'fat', label: 'Perdita di Grasso', emoji: '🔥' },
               { key: 'neuro', label: 'Recupero Neurologico', emoji: '🧠' },
               { key: 'fast', label: 'Pulizia Cellulare (Digiuno)', emoji: '🕐' }
-            ].map(({ key, label, emoji }) => (
-              <div key={key} style={{ marginBottom: '16px' }}>
-                <div style={{ fontSize: '0.75rem', color: '#aaa', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {emoji} {label}
+            ].map(({ key, label, emoji }) => {
+              const item = dailyReportDisplay[key];
+              const score = typeof item === 'object' && item != null && 'score' in item ? item.score : (Number(item) || 0);
+              const reason = typeof item === 'object' && item != null && 'reason' in item ? item.reason : '';
+              return (
+                <div key={key} style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#aaa', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {emoji} {label}
+                  </div>
+                  <div style={{ display: 'flex', gap: '2px' }}>
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <span key={n} style={{ color: n <= score ? '#ffc107' : '#333', fontSize: '1.1rem' }}>★</span>
+                    ))}
+                  </div>
+                  {reason ? (
+                    <div style={{ fontSize: '0.85rem', color: '#888', fontStyle: 'italic', marginTop: '4px', lineHeight: '1.2' }}>
+                      {reason}
+                    </div>
+                  ) : null}
                 </div>
-                <div style={{ display: 'flex', gap: '2px' }}>
-                  {[1, 2, 3, 4, 5].map(n => (
-                    <span key={n} style={{ color: n <= (dailyReportDisplay[key] ?? 0) ? '#ffc107' : '#333', fontSize: '1.1rem' }}>★</span>
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
             <button onClick={() => setShowReportModal(false)} style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}>
               Chiudi
             </button>
