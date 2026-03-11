@@ -2781,8 +2781,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const targetKcalChart = dynamicDailyKcal;
   const scale = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
 
-  const renderDataWithSegments = renderData.map(d => ({
+  const wakeHourForRiserva = (() => {
+    const sleepEntry = (dailyLog || []).find(i => i.type === 'sleep');
+    return sleepEntry?.wakeTime ?? sleepEntry?.sleepEnd ?? 7.5;
+  })();
+  const piccoMattutinoRiserva = 85;
+
+  const renderDataWithSegments = renderData.map(d => {
+    const h = d.time ?? d.hour ?? 0;
+    const riservaFisica = h < wakeHourForRiserva
+      ? Math.min(100, 25 + (h / Math.max(0.1, wakeHourForRiserva)) * (piccoMattutinoRiserva - 25))
+      : Math.max(0, piccoMattutinoRiserva - (h - wakeHourForRiserva) * 3.5);
+    return {
     ...d,
+    riservaFisica,
     anabolicScore: getAnabolicAtTime(anabolicCurve, d.time),
     cortisolScore: getCortisolAtTime(cortisolCurve, d.time),
     energyPast: d.time <= displayTime ? d.energy : null,
@@ -2799,7 +2811,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     digestioneFuture: d.time >= displayTime ? d.digestione : null,
     neuroPast: d.time <= displayTime ? d.neuro : null,
     neuroFuture: d.time >= displayTime ? d.neuro : null
-  }));
+  };
+  });
 
   const trafficLight = getWorkoutTrafficLight(displayTime, anabolicCurve, dailyLog, { fullHistory, currentTrackerDate, userTargets });
 
@@ -3537,7 +3550,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ flexShrink: 0, marginBottom: '10px' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
             <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
-            <button type="button" onClick={() => setChartUnit('kcal')} className={`telemetry-btn ${chartUnit === 'kcal' ? 'active' : ''}`}>⚡ KCAL</button>
             <button type="button" onClick={() => setChartUnit('calorieTimeline')} className={`telemetry-btn ${chartUnit === 'calorieTimeline' ? 'active' : ''}`} style={chartUnit === 'calorieTimeline' ? { color: '#ff9800', borderColor: '#ff9800' } : undefined}>📈 CUMUL</button>
             <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEM</button>
             <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`}>💧 IDRAT</button>
@@ -3568,16 +3580,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div className="chartTitle">
             <div style={{ marginBottom: '8px' }}>
               <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
-                {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'kcal' ? 'Calorie ingerite 0–24h' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Calorie ingerite 0–24h'}
+                {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia SNC (%)'}
               </span>
               {chartUnit === 'calorieTimeline' && (
                 <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
                   Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
-                </div>
-              )}
-              {chartUnit === 'kcal' && (
-                <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Calorie ingerite nel corso della giornata in base ai pasti registrati.">
-                  Calorie ingerite nel corso della giornata in base ai pasti registrati.
                 </div>
               )}
             </div>
@@ -3626,6 +3633,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
                           <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
                         </linearGradient>
+                        <linearGradient id="colorRiserva" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#00e676" stopOpacity={0.5}/>
+                          <stop offset="100%" stopColor="#00e676" stopOpacity={0.0}/>
+                        </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                       <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} />
@@ -3648,12 +3659,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       ))}
                       <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={1.5} isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 8 }} />
                       <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
-                      <Area type="monotone" dataKey="energyPast" stroke="#00e676" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
+                      <Area type="monotone" dataKey="riservaFisica" stroke="#00e676" fill="url(#colorRiserva)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
+                      <Area type="monotone" dataKey="energyPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
                       <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
                       <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
                     </ComposedChart>
                   </ResponsiveContainer>
+                </div>
+                <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #333' }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.95rem' }}>📊 Come leggere questo grafico</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: '#aaa', lineHeight: '1.4' }}>
+                    <div>
+                      <strong style={{ color: '#00e5ff' }}>⚡ Stimolazione Nervosa (Linea Azzurra):</strong> Il tuo attuale livello di lucidità e reattività. Reagisce istantaneamente a pasti e caffeina. Se è molto più alta della Riserva, stai usando stimolanti per mascherare la stanchezza.
+                    </div>
+                    <div>
+                      <strong style={{ color: '#00e676' }}>🔋 Riserva Fisica (Area Verde):</strong> Il vero serbatoio biologico del tuo corpo. Raggiunge il picco al risveglio e si consuma inesorabilmente col passare delle ore di veglia.
+                    </div>
+                  </div>
                 </div>
               </div>
                 ) : (
