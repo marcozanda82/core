@@ -272,6 +272,7 @@ export default function SalaComandi() {
   const [showMetabolicPopup, setShowMetabolicPopup] = useState(false);
   const [showEnergyPopup, setShowEnergyPopup] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [reportViewedDates, setReportViewedDates] = useState({});
   const [reportPeriod, setReportPeriod] = useState('7');
   const [currentDateObj, setCurrentDateObj] = useState(() => new Date());
 
@@ -1128,7 +1129,11 @@ export default function SalaComandi() {
   const dailyReport = useMemo(() => {
     if (!dailyLog || currentTrackerDate === getTodayString()) return null;
     const foods = (dailyLog || []).filter(e => e.type === 'food');
-    const hasWorkout = (dailyLog || []).some(t => t.type === 'workout');
+    const hasStrengthWorkout = (dailyLog || []).some(t => {
+      if (t.type !== 'workout') return false;
+      const sub = (t.subType ?? t.workoutType ?? '').toLowerCase();
+      return sub === 'pesi' || sub === 'hiit';
+    });
     if (foods.length === 0 && !(dailyLog || []).some(e => e.type === 'sleep' || e.type === 'workout')) return null;
 
     const proTotal = totali?.prot ?? 0;
@@ -1138,9 +1143,6 @@ export default function SalaComandi() {
     const choTotal = totali?.carb ?? 0;
     const choTarget = userTargets?.carb ?? 200;
 
-    let muscleStars = 1;
-    if (hasWorkout) muscleStars += 1;
-    if (proTotal >= proTarget * 0.9) muscleStars += 1;
     const bySlot = {};
     foods.forEach(f => {
       const slot = getSlotKey(f) || f.mealType || 'other';
@@ -1148,43 +1150,60 @@ export default function SalaComandi() {
       bySlot[slot] += Number(f.prot ?? f.pro ?? 0) || 0;
     });
     const highProMeals = Object.values(bySlot).filter(sum => sum >= 20).length;
-    if (highProMeals >= 3) muscleStars += 2;
-    else if (highProMeals === 2) muscleStars += 1;
+
+    let muscleStars = 0;
+    if (!hasStrengthWorkout) {
+      muscleStars = proTotal >= proTarget * 0.9 ? 2 : highProMeals >= 2 ? 1 : 0;
+    } else {
+      muscleStars = 1;
+      if (proTotal >= proTarget) muscleStars += 2;
+      else if (proTotal >= proTarget * 0.9) muscleStars += 1;
+      if (highProMeals >= 4) muscleStars += 2;
+      else if (highProMeals >= 3) muscleStars += 1;
+    }
+    muscleStars = Math.min(5, Math.max(0, muscleStars));
 
     let fatStars = 1;
     if (kcalTotal <= kcalTarget) fatStars += 2;
-    if (hasWorkout) fatStars += 1;
+    if ((dailyLog || []).some(t => t.type === 'workout')) fatStars += 1;
     if (choTotal <= choTarget * 1.1) fatStars += 1;
+    fatStars = Math.min(5, fatStars);
 
-    let neuroStars = 1;
     const sleepEntry = (dailyLog || []).find(e => e.type === 'sleep');
     const sleepHours = sleepEntry?.duration ?? sleepEntry?.hours ?? 0;
-    if (sleepHours >= 7) neuroStars += 2;
-    else if (sleepHours >= 6) neuroStars += 1;
-    const lateCoffee = (dailyLog || []).some(t => t.type === 'stimulant' && (parseFloat(t.time ?? t.mealTime ?? 0) >= 17));
-    if (!lateCoffee) neuroStars += 1;
+    const lateCaffeine = (dailyLog || []).some(t => t.type === 'stimulant' && (parseFloat(t.time ?? t.mealTime ?? 0) >= 16));
     const cenaEquiv = getEquivalentMealTypes('cena');
     const dinnerCho = foods.filter(f => cenaEquiv.includes(f.mealType)).reduce((acc, item) => acc + (Number(item.carb ?? item.cho ?? 0) || 0), 0);
-    if (dinnerCho >= 30) neuroStars += 1;
 
-    let fastStars = 1;
+    let neuroStars = 0;
+    if (sleepHours >= 8 && !lateCaffeine && dinnerCho >= 40) neuroStars = 5;
+    else if (sleepHours >= 7) {
+      neuroStars = !lateCaffeine ? 4 : 3;
+      if (dinnerCho >= 40) neuroStars = Math.min(5, neuroStars + 1);
+      neuroStars = Math.min(4, neuroStars);
+    } else if (sleepHours >= 6) neuroStars = Math.min(3, (lateCaffeine ? 2 : 3));
+    else if (sleepHours > 0) neuroStars = 1;
+    neuroStars = Math.min(5, Math.max(0, neuroStars));
+
     let firstMealTime = 24;
     let lastMealTime = 0;
     foods.forEach(f => {
       const t = parseFloat(f.mealTime ?? f.time ?? 12);
       if (!Number.isNaN(t)) { if (t < firstMealTime) firstMealTime = t; if (t > lastMealTime) lastMealTime = t; }
     });
-    const fastingHours = (24 - lastMealTime) + firstMealTime;
-    if (fastingHours >= 16) fastStars += 4;
-    else if (fastingHours >= 14) fastStars += 3;
-    else if (fastingHours >= 12) fastStars += 1;
+    const fastingHours = foods.length === 0 ? 24 : (24 - lastMealTime) + firstMealTime;
+    let fastStars = 0;
+    if (fastingHours < 12) fastStars = 0;
+    else if (fastingHours < 14) fastStars = 1;
+    else if (fastingHours < 16) fastStars = 3;
+    else fastStars = 5;
 
     return {
       ready: true,
-      muscle: Math.min(5, muscleStars),
-      fat: Math.min(5, fatStars),
-      neuro: Math.min(5, neuroStars),
-      fast: Math.min(5, fastStars)
+      muscle: muscleStars,
+      fat: fatStars,
+      neuro: neuroStars,
+      fast: fastStars
     };
   }, [dailyLog, currentTrackerDate, totali, userTargets]);
 
@@ -2719,6 +2738,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     energySimulation = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad);
   }
   const chartData = energySimulation?.chartData ?? [];
+  const dailyReportDisplay = useMemo(() => {
+    if (!dailyReport) return null;
+    if (!chartData || chartData.length === 0) return dailyReport;
+    const minIdr = Math.min(...chartData.map(p => p.idratazione ?? 100));
+    const neuroMalus = minIdr < 45 ? 1 : 0;
+    return { ...dailyReport, neuro: Math.max(0, (dailyReport.neuro ?? 0) - neuroMalus) };
+  }, [dailyReport, chartData]);
   const realTotals = energySimulation?.realTotals ?? {};
   const hasCrashRisk = energySimulation?.hasCrashRisk ?? false;
   const hasCortisolRisk = energySimulation?.hasCortisolRisk ?? false;
@@ -3525,11 +3551,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               onClick={() => {
                 if (dailyReport?.ready) {
                   setShowReportModal(true);
+                  setReportViewedDates(prev => ({ ...prev, [currentTrackerDate]: true }));
                 } else if (currentTrackerDate === getTodayString()) {
                   changeDate(-1);
                 }
               }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (dailyReport?.ready) setShowReportModal(true); else if (currentTrackerDate === getTodayString()) changeDate(-1); } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (dailyReport?.ready) { setShowReportModal(true); setReportViewedDates(prev => ({ ...prev, [currentTrackerDate]: true })); } else if (currentTrackerDate === getTodayString()) changeDate(-1); } }}
               title={dailyReport?.ready ? 'Report giornaliero a 5 stelle' : currentTrackerDate === getTodayString() && yesterdayReportReady ? 'Report di ieri pronto: vai al giorno precedente' : 'Disponibile solo per giornate passate con dati'}
               style={{
                 position: 'relative',
@@ -3544,7 +3571,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               }}
             >
               ★
-              {currentTrackerDate === getTodayString() && yesterdayReportReady && (
+              {currentTrackerDate === getTodayString() && yesterdayReportReady && (() => {
+                const y = new Date(getTodayString() + 'T12:00:00');
+                y.setDate(y.getDate() - 1);
+                const yesterdayStr = y.toISOString().slice(0, 10);
+                return !reportViewedDates[yesterdayStr];
+              })() && (
                 <span
                   style={{
                     position: 'absolute',
@@ -5807,7 +5839,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       )}
 
       {/* MODAL REPORT GIORNALIERO A 5 STELLE */}
-      {showReportModal && dailyReport?.ready && (
+      {showReportModal && dailyReport?.ready && dailyReportDisplay && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={() => setShowReportModal(false)}>
           <div style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '25px', maxWidth: '380px', width: '100%', position: 'relative', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '8px', borderBottom: '1px solid #222', paddingBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -5828,7 +5860,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </div>
                 <div style={{ display: 'flex', gap: '2px' }}>
                   {[1, 2, 3, 4, 5].map(n => (
-                    <span key={n} style={{ color: n <= dailyReport[key] ? '#ffc107' : '#333', fontSize: '1.1rem' }}>★</span>
+                    <span key={n} style={{ color: n <= (dailyReportDisplay[key] ?? 0) ? '#ffc107' : '#333', fontSize: '1.1rem' }}>★</span>
                   ))}
                 </div>
               </div>
