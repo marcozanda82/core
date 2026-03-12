@@ -3411,7 +3411,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         ) : (
           <form className="login-box" onSubmit={handleLogin}>
-            <div className="sys-title">ReadyCore</div>
+            <h1 style={{ margin: 0, fontSize: '2rem', color: '#00e5ff', letterSpacing: '1px', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', marginBottom: '20px' }}>
+              ReadyCore
+              <span style={{ fontSize: '0.5em', verticalAlign: 'super', marginLeft: '4px', color: '#888', letterSpacing: '0px', fontWeight: 'normal' }}>
+                OS
+              </span>
+            </h1>
             <p style={{textAlign: 'center', fontSize: '0.65rem', color: '#666', marginBottom: '20px'}}>SYSTEM ENCRYPTED. REQUIRE AUTHENTICATION.</p>
             <input type="email" placeholder="USER ID (EMAIL)" className="login-input" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
             <input type="password" placeholder="PASSWORD" className="login-input" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
@@ -3433,7 +3438,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </style>
         <div style={{ textAlign: 'center' }}>
           <div className="spinner-sync"></div>
-          <div style={{ letterSpacing: '4px', fontWeight: 'bold' }}>ReadyCore</div>
+          <div style={{ letterSpacing: '4px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'flex-start' }}>
+            ReadyCore
+            <span style={{ fontSize: '0.5em', verticalAlign: 'super', marginLeft: '4px', color: '#888', letterSpacing: '0px', fontWeight: 'normal' }}>OS</span>
+          </div>
           <div style={{ fontSize: '0.6rem', color: '#444', marginTop: '10px' }}>INITIALIZING...</div>
         </div>
       </div>
@@ -3904,15 +3912,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '6px 12px', borderRadius: '12px', border: '1px solid #222' }}>
           
           {/* 1. SELETTORE DATA (A sinistra) */}
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '15px', paddingLeft: '15px' }}>
-            <button type="button" onClick={() => changeDate(-1)} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>◀</button>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '5px', paddingLeft: '15px', flexWrap: 'nowrap' }}>
+            <button type="button" onClick={() => changeDate(-1)} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: 'pointer', padding: '5px', flexShrink: 0 }}>◀</button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', minWidth: 0, flex: 1 }}>
               <span style={{ fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Diario</span>
-              <h2 style={{ color: '#fff', margin: 0, fontSize: '0.95rem' }}>
+              <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
-              </h2>
+              </span>
             </div>
-            <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
+            <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px', flexShrink: 0 }}>▶</button>
           </div>
 
           {/* 2. STELLA / REPORT (Al centro) */}
