@@ -1656,6 +1656,23 @@ export default function SalaComandi() {
     setAddedFoods(prev => prev.map(f => f.id === foodId ? { ...updated, id: foodId } : f));
   };
 
+  const enterFullscreen = async () => {
+    try {
+      const el = document.documentElement;
+      if (el.requestFullscreen) await el.requestFullscreen();
+      if (window.screen?.orientation?.lock) await window.screen.orientation.lock('landscape');
+    } catch (err) { console.warn('Landscape lock non supportato', err); }
+    setIsFullScreenGraph(true);
+  };
+
+  const exitFullscreen = async () => {
+    try {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      if (window.screen?.orientation?.unlock) window.screen.orientation.unlock();
+    } catch (err) { console.warn('Exit fullscreen fallito', err); }
+    setIsFullScreenGraph(false);
+  };
+
   const saveMealToDiary = () => {
     if (!isInitialLoadComplete) return;
     try {
@@ -3148,7 +3165,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         color: 'rgba(255,255,255,0.05)'
       }];
     }
-    return data;
+    const sortedPieData = [...data].sort((a, b) => {
+      if (a.id === 'rimanenti') return 1;
+      if (b.id === 'rimanenti') return -1;
+      const tA = a.timeValue ?? a.time ?? 0;
+      const tB = b.timeValue ?? b.time ?? 0;
+      return (Number(tA) || 0) - (Number(tB) || 0);
+    });
+    return sortedPieData;
   }, [activeLog, userTargets?.kcal, dynamicDailyKcal]);
 
   const finalChartData = renderDataWithSegments;
@@ -3421,15 +3445,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       }}>
         <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px' }}>
           <button
-            onClick={() => setIsFullScreenGraph(false)}
+            onClick={exitFullscreen}
             style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #444', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold' }}
           >
             ✖ Chiudi Schermo Intero
           </button>
         </div>
-        <div style={{ flex: 1, width: '100%', minHeight: 0 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={finalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
+        <div style={{ flex: 1, width: '100%', minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ width: '200vw', height: '100%', minHeight: '300px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={finalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
               <defs>
                 <linearGradient id="colorEnergiaLandscape" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -3465,8 +3490,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
               <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
               <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
-            </ComposedChart>
-          </ResponsiveContainer>
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
     );
@@ -3996,6 +4022,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
           <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <div className="zoom-controls">
+              <button type="button" className="zoom-btn" onClick={enterFullscreen} title="Grafico a tutto schermo" style={{ borderColor: '#00e5ff', color: '#00e5ff' }}>⛶</button>
               <button type="button" className="zoom-btn" onClick={() => setShowTelemetryPopup(true)} title="Stats" style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊</button>
               <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
               <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
@@ -4330,13 +4357,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             {/* SPACER PER PULSANTIERA: Permette di scrollare oltre la fine del grafico per non coprire le 24:00 */}
             <div style={{ width: '80px', flexShrink: 0 }}></div>
           </div>
-            <button
-              type="button"
-              onClick={() => setIsFullScreenGraph(true)}
-              style={{ width: '100%', padding: '12px', background: '#2c2c2e', color: '#00e5ff', border: '1px solid #00e5ff', borderRadius: '8px', fontWeight: 'bold', marginTop: '10px', marginBottom: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
-            >
-              <span>⛶</span> Espandi Grafico a Tutto Schermo
-            </button>
         </div>
         </div>
         </div>
@@ -4439,6 +4459,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       innerRadius="68%"
                       outerRadius="85%"
                       paddingAngle={3}
+                      startAngle={90}
+                      endAngle={-270}
                       dataKey="value"
                       stroke="none"
                       labelLine={false}

@@ -85,12 +85,15 @@ export default function MealBuilder({
     }
   };
 
-  const currentMealMacros = {
-    kcal: mealTotaliFull?.kcal ?? 0,
-    prot: mealTotaliFull?.prot ?? 0,
-    carb: mealTotaliFull?.carb ?? 0,
-    fat: mealTotaliFull?.fatTotal ?? mealTotaliFull?.fat ?? 0
-  };
+  const currentMealMacros = useMemo(() => {
+    const items = addedFoods || [];
+    return {
+      kcal: items.reduce((acc, item) => acc + (Number(item.kcal) || Number(item.cal) || 0), 0),
+      prot: items.reduce((acc, item) => acc + (Number(item.prot) || Number(item.proteine) || 0), 0),
+      carb: items.reduce((acc, item) => acc + (Number(item.carb) || Number(item.carboidrati) || 0), 0),
+      fat: items.reduce((acc, item) => acc + (Number(item.fat) || Number(item.fatTotal) || Number(item.grassi) || 0), 0)
+    };
+  }, [addedFoods]);
 
   const isCena = mealType === 'cena';
   const dailyGoals = useMemo(() => ({
@@ -297,9 +300,13 @@ export default function MealBuilder({
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, -10)} title="-10g" aria-label="-10g">−</button>
-                      <span style={{ fontSize: '0.8rem', fontWeight: '600', color: '#00e5ff', minWidth: '42px', textAlign: 'center' }}>{qta}g</span>
-                      <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, 10)} title="+10g" aria-label="+10g">+</button>
+                      {(() => { const step = Number(food.unitStep) || 10; return (
+                        <>
+                          <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, -step)} title={`-${step}g`} aria-label={`-${step}g`}>−</button>
+                          <span style={{ fontSize: '0.8rem', fontWeight: '600', color: '#00e5ff', minWidth: '42px', textAlign: 'center' }}>{qta}g</span>
+                          <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, step)} title={`+${step}g`} aria-label={`+${step}g`}>+</button>
+                        </>
+                      ); })()}
                       <div className="food-pill-actions" style={{ marginLeft: '4px' }}>
                         <button type="button" className="food-pill-btn" onClick={() => setSelectedFoodForInfo(food)} title="Info macro/micro">ℹ️</button>
                         <button type="button" className="food-pill-btn" onClick={() => { setSelectedFoodForEdit({ food, source: 'queue' }); setEditQuantityValue(String(qta)); }} title="Modifica quantità">✏️</button>
