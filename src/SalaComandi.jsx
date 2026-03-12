@@ -229,6 +229,8 @@ export default function SalaComandi() {
   const [stimulantTime, setStimulantTime] = useState(8);
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [isFullScreenGraph, setIsFullScreenGraph] = useState(false);
+  const availableFullscreenCharts = ['percent', 'cortisolo', 'calorieTimeline'];
+  const [fullscreenChartIndex, setFullscreenChartIndex] = useState(0);
   const [showTrainingPopup, setShowTrainingPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
@@ -1657,6 +1659,8 @@ export default function SalaComandi() {
   };
 
   const enterFullscreen = async () => {
+    const idx = availableFullscreenCharts.indexOf(chartUnit);
+    setFullscreenChartIndex(idx >= 0 ? idx : 0);
     try {
       const el = document.documentElement;
       if (el.requestFullscreen) await el.requestFullscreen();
@@ -3437,61 +3441,113 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }
 
   if (isFullScreenGraph) {
+    const currentChartType = availableFullscreenCharts[fullscreenChartIndex] || 'percent';
+    const fullscreenChartLabel = currentChartType === 'percent' ? 'Energia SNC %' : currentChartType === 'cortisolo' ? 'Cortisolo' : 'Bilancio Calorico';
+
     return (
-      <div style={{
-        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-        backgroundColor: '#121212', zIndex: 99999, padding: '10px 20px',
-        display: 'flex', flexDirection: 'column', boxSizing: 'border-box'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px' }}>
-          <button
-            onClick={exitFullscreen}
-            style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #444', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold' }}
-          >
-            ✖ Chiudi Schermo Intero
-          </button>
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: '#121212', zIndex: 99999, display: 'flex', flexDirection: 'column' }}>
+        {/* 1. HEADER FISSO */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#1e1e1e', borderBottom: '1px solid #333', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <button type="button" onClick={() => setFullscreenChartIndex(prev => prev > 0 ? prev - 1 : availableFullscreenCharts.length - 1)} style={{ background: '#333', color: '#00e5ff', border: 'none', width: '40px', height: '40px', borderRadius: '50%', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer' }}>◀</button>
+            <h2 style={{ color: '#fff', margin: 0, fontSize: '1.2rem', textTransform: 'uppercase' }}>{fullscreenChartLabel}</h2>
+            <button type="button" onClick={() => setFullscreenChartIndex(prev => prev < availableFullscreenCharts.length - 1 ? prev + 1 : 0)} style={{ background: '#333', color: '#00e5ff', border: 'none', width: '40px', height: '40px', borderRadius: '50%', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer' }}>▶</button>
+          </div>
+          <button type="button" onClick={exitFullscreen} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>✖ Chiudi</button>
         </div>
-        <div style={{ flex: 1, width: '100%', minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}>
-          <div style={{ width: '200vw', height: '100%', minHeight: '300px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={finalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
-              <defs>
-                <linearGradient id="colorEnergiaLandscape" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
-                  <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
-                </linearGradient>
-                <linearGradient id="colorRiservaLandscape" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00e676" stopOpacity={0.5}/>
-                  <stop offset="100%" stopColor="#00e676" stopOpacity={0.0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-              <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} />
-              <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
-                formatter={(value) => [`${value}%`, 'Energia SNC']}
-                labelFormatter={(label) => `Ore ${label}:00`}
-              />
-              {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
-                <ReferenceLine
-                  key={`landscape-sleep-${node.id ?? index}`}
-                  x={node.wakeTime ?? 7.5}
-                  stroke="#00e5ff"
-                  strokeDasharray="3 3"
-                  strokeWidth={1.5}
-                  label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }}
-                />
-              ))}
-              <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
-              <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} />
-              <Area type="monotone" dataKey="riservaFisica" stroke="#00e676" fill="url(#colorRiservaLandscape)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={false} />
-              <Area type="monotone" dataKey="energyPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergiaLandscape)" connectNulls={false} isAnimationActive={false} />
-              <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
-              <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
-              <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
-              </ComposedChart>
-            </ResponsiveContainer>
+
+        {/* 2. CORPO SCORREVOLE (GRAFICO) */}
+        <div style={{ flex: 1, width: '100%', minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
+          <div style={{ width: '200vw', height: '100%', padding: '10px 0', minHeight: '280px' }}>
+            {currentChartType === 'percent' && (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={finalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
+                  <defs>
+                    <linearGradient id="colorEnergiaFullscreen" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
+                      <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
+                    </linearGradient>
+                    <linearGradient id="colorRiservaFullscreen" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#00e676" stopOpacity={0.5}/>
+                      <stop offset="100%" stopColor="#00e676" stopOpacity={0.0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} />
+                  <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${value}%`, 'Energia SNC']} labelFormatter={(label) => `Ore ${label}:00`} />
+                  {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
+                    <ReferenceLine key={`fs-sleep-${node.id ?? index}`} x={node.wakeTime ?? 7.5} stroke="#00e5ff" strokeDasharray="3 3" strokeWidth={1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
+                  ))}
+                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
+                  <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} />
+                  <Area type="monotone" dataKey="riservaFisica" stroke="#00e676" fill="url(#colorRiservaFullscreen)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Area type="monotone" dataKey="energyPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergiaFullscreen)" connectNulls={false} isAnimationActive={false} />
+                  <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
+                  <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
+                  <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+            {currentChartType === 'cortisolo' && (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={finalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
+                  <defs>
+                    <linearGradient id="colorCortisoloFullscreen" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#9c27b0" stopOpacity={0.8}/>
+                      <stop offset="100%" stopColor="#9c27b0" stopOpacity={0.2}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} />
+                  <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [value, 'Cortisolo']} labelFormatter={(label) => `Ore ${label}:00`} />
+                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
+                  <ReferenceDot x={displayTime} y={dotCortisolo} isFront r={10} fill="#9c27b0" stroke="#fff" strokeWidth={2} />
+                  <Area type="monotone" dataKey="cortisoloPast" stroke="#9c27b0" fill="url(#colorCortisoloFullscreen)" strokeWidth={2} connectNulls={false} isAnimationActive={false} />
+                  <Area type="monotone" dataKey="cortisoloFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+            {currentChartType === 'calorieTimeline' && (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={safeCalorieTimelineData} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                  <XAxis dataKey="time" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} />
+                  <YAxis domain={[0, 'auto']} stroke="#666" fontSize={11} tickFormatter={(v) => Math.round(v)} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [Math.round(value), 'kcal']} labelFormatter={(label) => `Ore ${label}:00`} />
+                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
+                  <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={3} dot={false} connectNulls isAnimationActive={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* 3. FOOTER FISSO (BARRA NODI) */}
+        <div style={{ padding: '10px', background: '#1a1a1c', borderTop: '1px solid #333', zIndex: 10, flexShrink: 0 }}>
+          <div style={{ position: 'relative', height: '48px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222' }}>
+            {(activeNodesWithStack || []).map((node) => {
+              const pct = ((node.time ?? 0) / 24) * 100;
+              const isWork = node.type === 'work';
+              const isWater = node.type === 'water';
+              const isStimulant = node.type === 'stimulant';
+              const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
+              const icon = NODE_TYPE_ICON[node.type] ?? (isStimulant ? '☕' : isWater ? '💧' : (isPesi ? (node.muscles || []).map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•')));
+              const borderColor = node.type === 'nap' ? '#818cf8' : node.type === 'meditation' ? '#22c55e' : node.type === 'water' ? '#00e5ff' : isStimulant ? '#f59e0b' : '#00e5ff';
+              const timeStr = `${Math.floor(node.time ?? 0)}:${String(Math.round(((node.time ?? 0) % 1) * 60)).padStart(2, '0')}`;
+              if (isWork) {
+                const dur = (node.duration || 1) / 24 * 100;
+                return (
+                  <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(255, 234, 0, 0.2)', border: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#ffea00' }}>💼</div>
+                );
+              }
+              return (
+                <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: `2px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: borderColor }} title={timeStr}>
+                  <span style={{ lineHeight: 1, fontSize: '0.85rem' }}>{icon}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -4054,9 +4110,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <span>⚡ Energia SNC (%)</span>
                   <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
                 </h3>
-                <div style={{ fontSize: '0.65rem', color: '#666', marginBottom: '10px', lineHeight: 1.3 }} title="Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.">
-                  Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.
-                </div>
                 <div style={{ width: '100%', height: '220px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={mainChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
@@ -4609,6 +4662,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(255, 109, 0, 0.4)' }} onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }}>
                 <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(255, 109, 0, 0.4))' }}>⚡</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#ff6d00' }}>ALLENAMENTO</span>
               </button>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(180,120,60,0.5)' }} onClick={() => { closeDrawer(); setStimulantTime(getCurrentTimeRoundedTo15Min()); setStimulantSubtype('caffè'); setAddChoiceView('stimulant'); setShowChoiceModal(true); }}>
+                <span className="action-icon" style={{ fontSize: '1.8rem' }}>☕</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#d4a574' }}>CAFFÈ</span>
+              </button>
               <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(129,140,248,0.4)' }} onClick={() => { const t = getCurrentTimeRoundedTo15Min(); setDrawerFastChargeStart(t); setDrawerFastChargeEnd(Math.min(24, t + 0.5)); setActiveAction('fast_charge_nap'); }}>
                 <span className="action-icon" style={{ fontSize: '1.8rem' }}>😴</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#a5b4fc' }}>PISOLINO</span>
               </button>
@@ -4942,8 +4998,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             )}
             <div className="burn-slider-container">
               <span className="burn-label" style={{color: '#ff6d00'}}>OUTPUT ENERGETICO STIMATO</span>
-              <div className="burn-value workout">{workoutKcal}</div>
-              <input type="range" min="50" max="1500" step="10" value={workoutKcal} onChange={(e) => setWorkoutKcal(Number(e.target.value))} className="custom-range orange" style={{ marginTop: '20px' }} />
+              <div className="burn-value workout">{Math.min(750, workoutKcal)}</div>
+              <input type="range" min="50" max="750" step="10" value={Math.min(750, workoutKcal)} onChange={(e) => setWorkoutKcal(Math.min(750, Number(e.target.value)))} className="custom-range orange" style={{ marginTop: '20px' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#666', marginTop: '6px' }}>
+                <span>0</span><span>375</span><span>750</span>
+              </div>
             </div>
             <button onClick={handleSaveWorkout} style={{ width: '100%', padding: '18px', backgroundColor: '#ff6d00', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 0 20px rgba(255, 109, 0, 0.4)' }}>SALVA ATTIVITÀ</button>
             <div style={{ marginTop: '30px' }}>
