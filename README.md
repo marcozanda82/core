@@ -1,4 +1,4 @@
-# Ghost Mode Dashboard
+# ReadyCore
 
 Modulo React gamificato per la visualizzazione dell’aderenza nutrizionale giornaliera con focus sul controllo del cortisolo.
 

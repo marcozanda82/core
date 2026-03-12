@@ -155,7 +155,7 @@ export default function SalaComandi() {
         setActiveAction('home');
         window.history.pushState({ noExit: true }, '');
       } else {
-        const confirmExit = window.confirm('Vuoi uscire da CORE OS?');
+        const confirmExit = window.confirm('Vuoi uscire da ReadyCore?');
         if (!confirmExit) {
           window.history.pushState({ noExit: true }, '');
         }
@@ -265,7 +265,7 @@ export default function SalaComandi() {
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
   const [chatHistory, setChatHistory] = useState([
-    { sender: 'ai', text: 'CORE OS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
+    { sender: 'ai', text: 'ReadyCore ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
   ]);
   const CHAT_HISTORY_WINDOW = 10;
   const lastLogFromFirebaseRef = useRef(null);
@@ -2242,7 +2242,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const piccoAnabolico = Math.max(0, ...(anabolicCurve?.map(c => c.anabolicScore) ?? [0]));
       const piccoCortisolo = Math.max(0, ...(cortisolCurve?.map(c => c.cortisolScore) ?? [0]));
 
-      const baseSystemPrompt = `Sei l'assistente di CORE OS. Il tuo scopo è dialogare con l'utente in italiano.
+      const baseSystemPrompt = `Sei l'assistente di ReadyCore. Il tuo scopo è dialogare con l'utente in italiano.
 
 Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino"), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
 
@@ -3411,7 +3411,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         ) : (
           <form className="login-box" onSubmit={handleLogin}>
-            <div className="sys-title">CORE <span style={{color: '#00e5ff'}}>OS</span></div>
+            <div className="sys-title">ReadyCore</div>
             <p style={{textAlign: 'center', fontSize: '0.65rem', color: '#666', marginBottom: '20px'}}>SYSTEM ENCRYPTED. REQUIRE AUTHENTICATION.</p>
             <input type="email" placeholder="USER ID (EMAIL)" className="login-input" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
             <input type="password" placeholder="PASSWORD" className="login-input" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
@@ -3433,8 +3433,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </style>
         <div style={{ textAlign: 'center' }}>
           <div className="spinner-sync"></div>
-          <div style={{ letterSpacing: '4px', fontWeight: 'bold' }}>CORE <span style={{ color: '#00e5ff' }}>OS</span></div>
-          <div style={{ fontSize: '0.6rem', color: '#444', marginTop: '10px' }}>INITIALIZING CORE...</div>
+          <div style={{ letterSpacing: '4px', fontWeight: 'bold' }}>ReadyCore</div>
+          <div style={{ fontSize: '0.6rem', color: '#444', marginTop: '10px' }}>INITIALIZING...</div>
         </div>
       </div>
     );
@@ -3831,8 +3831,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           {/* SINISTRA: Titolo OS */}
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
             <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
-              <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', letterSpacing: '2px', color: '#fff', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ color: '#00e5ff' }}>⚡</span> CORE <span style={{ color: '#888', fontWeight: 'normal' }}>OS</span>
+              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', letterSpacing: '2px', color: '#00e5ff', textTransform: 'uppercase' }}>
+                ReadyCore
               </h1>
             </button>
           </div>

@@ -1,6 +1,6 @@
 {
-  "name": "CORE OS",
-  "short_name": "CORE",
+  "name": "ReadyCore",
+  "short_name": "ReadyCore",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
