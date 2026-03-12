@@ -3456,12 +3456,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <button type="button" onClick={exitFullscreen} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>✖ Chiudi</button>
         </div>
 
-        {/* 2. CORPO SCORREVOLE (GRAFICO) */}
+        {/* 2. CORPO SCORREVOLE (GRAFICO E NODI IN SOLIDO) */}
         <div style={{ flex: 1, width: '100%', minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
-          <div style={{ width: '200vw', height: '100%', padding: '10px 0', minHeight: '280px' }}>
+          <div style={{ width: '200vw', height: '100%', minHeight: '100%', display: 'flex', flexDirection: 'column', paddingBottom: '20px' }}>
+            <div style={{ flex: 1, minHeight: '280px' }}>
             {currentChartType === 'percent' && (
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
+                <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
                   <defs>
                     <linearGradient id="colorEnergiaFullscreen" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -3479,7 +3480,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
                     <ReferenceLine key={`fs-sleep-${node.id ?? index}`} x={node.wakeTime ?? 7.5} stroke="#00e5ff" strokeDasharray="3 3" strokeWidth={1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
                   ))}
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
+                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} />
                   <Area type="monotone" dataKey="riservaFisica" stroke="#00e676" fill="url(#colorRiservaFullscreen)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="energyPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergiaFullscreen)" connectNulls={false} isAnimationActive={false} />
@@ -3491,7 +3492,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             )}
             {currentChartType === 'cortisolo' && (
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
+                <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
                   <defs>
                     <linearGradient id="colorCortisoloFullscreen" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#9c27b0" stopOpacity={0.8}/>
@@ -3502,7 +3503,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} />
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [value, 'Cortisolo']} labelFormatter={(label) => `Ore ${label}:00`} />
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
+                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={dotCortisolo} isFront r={10} fill="#9c27b0" stroke="#fff" strokeWidth={2} />
                   <Area type="monotone" dataKey="cortisoloPast" stroke="#9c27b0" fill="url(#colorCortisoloFullscreen)" strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="cortisoloFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
@@ -3511,43 +3512,41 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             )}
             {currentChartType === 'calorieTimeline' && (
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={safeCalorieTimelineData} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
+                <ComposedChart data={safeCalorieTimelineData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                   <XAxis dataKey="time" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} />
                   <YAxis domain={[0, 'auto']} stroke="#666" fontSize={11} tickFormatter={(v) => Math.round(v)} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [Math.round(value), 'kcal']} labelFormatter={(label) => `Ore ${label}:00`} />
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
+                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={3} dot={false} connectNulls isAnimationActive={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             )}
-          </div>
-        </div>
-
-        {/* 3. FOOTER FISSO (BARRA NODI) */}
-        <div style={{ padding: '10px', background: '#1a1a1c', borderTop: '1px solid #333', zIndex: 10, flexShrink: 0 }}>
-          <div style={{ position: 'relative', height: '48px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222' }}>
-            {(activeNodesWithStack || []).map((node) => {
-              const pct = ((node.time ?? 0) / 24) * 100;
-              const isWork = node.type === 'work';
-              const isWater = node.type === 'water';
-              const isStimulant = node.type === 'stimulant';
-              const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
-              const icon = NODE_TYPE_ICON[node.type] ?? (isStimulant ? '☕' : isWater ? '💧' : (isPesi ? (node.muscles || []).map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•')));
-              const borderColor = node.type === 'nap' ? '#818cf8' : node.type === 'meditation' ? '#22c55e' : node.type === 'water' ? '#00e5ff' : isStimulant ? '#f59e0b' : '#00e5ff';
-              const timeStr = `${Math.floor(node.time ?? 0)}:${String(Math.round(((node.time ?? 0) % 1) * 60)).padStart(2, '0')}`;
-              if (isWork) {
-                const dur = (node.duration || 1) / 24 * 100;
+            </div>
+            {/* Barra Nodi solidale al grafico (stessa larghezza 200vw) */}
+            <div style={{ height: '60px', marginTop: '10px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0 }}>
+              {(activeNodesWithStack || []).map((node) => {
+                const pct = ((node.time ?? 0) / 24) * 100;
+                const isWork = node.type === 'work';
+                const isWater = node.type === 'water';
+                const isStimulant = node.type === 'stimulant';
+                const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
+                const icon = NODE_TYPE_ICON[node.type] ?? (isStimulant ? '☕' : isWater ? '💧' : (isPesi ? (node.muscles || []).map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•')));
+                const borderColor = node.type === 'nap' ? '#818cf8' : node.type === 'meditation' ? '#22c55e' : node.type === 'water' ? '#00e5ff' : isStimulant ? '#f59e0b' : '#00e5ff';
+                const timeStr = `${Math.floor(node.time ?? 0)}:${String(Math.round(((node.time ?? 0) % 1) * 60)).padStart(2, '0')}`;
+                if (isWork) {
+                  const dur = (node.duration || 1) / 24 * 100;
+                  return (
+                    <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(255, 234, 0, 0.2)', border: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#ffea00' }}>💼</div>
+                  );
+                }
                 return (
-                  <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(255, 234, 0, 0.2)', border: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#ffea00' }}>💼</div>
+                  <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: `2px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: borderColor }} title={timeStr}>
+                    <span style={{ lineHeight: 1, fontSize: '0.85rem' }}>{icon}</span>
+                  </div>
                 );
-              }
-              return (
-                <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: `2px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: borderColor }} title={timeStr}>
-                  <span style={{ lineHeight: 1, fontSize: '0.85rem' }}>{icon}</span>
-                </div>
-              );
-            })}
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -3971,13 +3970,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         {/* BARRA DEGLI STRUMENTI: Data + Toggle Home/Analisi */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '6px 12px', borderRadius: '12px', border: '1px solid #222' }}>
           
-          {/* SPAZIATORE SINISTRO (per centrare la data) */}
-          <div style={{ flex: 1 }}></div>
-
-          {/* CENTRO: Navigazione Data */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', justifyContent: 'center' }}>
+          {/* SINISTRA: Navigazione Data (allineata a sinistra) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', justifyContent: 'flex-start', paddingLeft: '15px', flex: 1 }}>
             <button type="button" onClick={() => changeDate(-1)} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>◀</button>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
               <span style={{ fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Diario</span>
               <h2 style={{ color: '#fff', margin: 0, fontSize: '0.95rem' }}>
                 {currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
@@ -4112,7 +4108,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </h3>
                 <div style={{ width: '100%', height: '220px' }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={mainChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                    <ComposedChart data={mainChartData} margin={{ top: 35, right: 0, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -4142,7 +4138,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11, fontWeight: 'bold' }}
                         />
                       ))}
-                      <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={1.5} isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 8 }} />
+                      <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={1.5} isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                       <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
                       <Area type="monotone" dataKey="riservaFisica" stroke="#00e676" fill="url(#colorRiserva)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
                       <Area type="monotone" dataKey="energyPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
@@ -4155,7 +4151,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
                 ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={mainChartData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
+                <ComposedChart data={mainChartData} margin={{ top: 35, right: 30, left: -10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorEnergy" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
