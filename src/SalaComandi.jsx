@@ -3911,16 +3911,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         {/* BARRA DEGLI STRUMENTI: Data + Stella Report + Toggle Home/Analisi */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '6px 12px', borderRadius: '12px', border: '1px solid #222' }}>
           
-          {/* 1. SELETTORE DATA (A sinistra) */}
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '5px', paddingLeft: '15px', flexWrap: 'nowrap' }}>
-            <button type="button" onClick={() => changeDate(-1)} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: 'pointer', padding: '5px', flexShrink: 0 }}>◀</button>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', minWidth: 0, flex: 1 }}>
-              <span style={{ fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Diario</span>
-              <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {/* 1. SELETTORE DATA (Estrema Sinistra) */}
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
+              <button
+                type="button"
+                onClick={() => changeDate(-1)}
+                style={{ background: 'none', border: 'none', color: '#00e5ff', fontSize: '1.2rem', padding: 0, flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              >
+                ◀
+              </button>
+              <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
                 {currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
               </span>
+              <button
+                type="button"
+                onClick={() => changeDate(1)}
+                disabled={currentTrackerDate === getTodayString()}
+                style={{ background: 'none', border: 'none', color: '#00e5ff', fontSize: '1.2rem', padding: 0, flexShrink: 0, cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, display: 'flex', alignItems: 'center' }}
+              >
+                ▶
+              </button>
             </div>
-            <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px', flexShrink: 0 }}>▶</button>
           </div>
 
           {/* 2. STELLA / REPORT (Al centro) */}
