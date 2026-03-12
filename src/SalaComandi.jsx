@@ -3837,78 +3837,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </button>
           </div>
 
-          {/* DESTRA: Report stella, Logout, Widget Energia */}
+          {/* DESTRA: Logout, Widget Energia */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => {
-                const isToday = currentTrackerDate === getTodayString();
-                if (isToday) {
-                  alert('Il report non è pronto, perché mancano i dati di tutta la giornata.');
-                  return;
-                }
-                if (dailyReport?.ready) {
-                  setShowReportModal(true);
-                  setReportViewedDates(prev => {
-                    const newState = { ...prev, [currentTrackerDate]: true };
-                    try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {}
-                    return newState;
-                  });
-                } else {
-                  changeDate(-1);
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  const isToday = currentTrackerDate === getTodayString();
-                  if (isToday) {
-                    alert('Il report non è pronto, perché mancano i dati di tutta la giornata.');
-                    return;
-                  }
-                  if (dailyReport?.ready) {
-                    setShowReportModal(true);
-                    setReportViewedDates(prev => { const newState = { ...prev, [currentTrackerDate]: true }; try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {} return newState; });
-                  } else changeDate(-1);
-                }
-              }}
-              title={dailyReport?.ready ? 'Report giornaliero a 5 stelle' : currentTrackerDate === getTodayString() && yesterdayReportReady ? 'Report di ieri pronto: vai al giorno precedente' : 'Disponibile solo per giornate passate con dati'}
-              style={{
-                position: 'relative',
-                marginLeft: '15px',
-                fontSize: '1.4rem',
-                cursor: 'pointer',
-                color: dailyReport?.ready ? '#ffd700' : '#444',
-                textShadow: dailyReport?.ready ? '0 0 10px rgba(255, 215, 0, 0.6)' : 'none',
-                transition: 'all 0.3s ease',
-                lineHeight: 1,
-                padding: '2px 4px'
-              }}
-            >
-              ★
-              {currentTrackerDate === getTodayString() && yesterdayReportReady && (() => {
-                const y = new Date(getTodayString() + 'T12:00:00');
-                y.setDate(y.getDate() - 1);
-                const yesterdayStr = y.toISOString().slice(0, 10);
-                return !reportViewedDates[yesterdayStr];
-              })() && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '-2px',
-                    right: '-4px',
-                    width: '10px',
-                    height: '10px',
-                    background: '#ff4444',
-                    borderRadius: '50%',
-                    border: '2px solid #000',
-                    boxShadow: '0 0 5px #ff4444'
-                  }}
-                  aria-hidden
-                />
-              )}
-            </div>
             <button className="btn-toggle" onClick={() => auth.signOut()} style={{ padding: '8px 12px !important', minHeight: 'auto', fontSize: '0.7rem !important' }}>LOGOUT</button>
             {/* Widget Energia Biologica (Arco) */}
             <div 
@@ -3967,11 +3897,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         )}
 
-        {/* BARRA DEGLI STRUMENTI: Data + Toggle Home/Analisi */}
+        {/* BARRA DEGLI STRUMENTI: Data + Stella Report + Toggle Home/Analisi */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '6px 12px', borderRadius: '12px', border: '1px solid #222' }}>
           
-          {/* SINISTRA: Navigazione Data (allineata a sinistra) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', justifyContent: 'flex-start', paddingLeft: '15px', flex: 1 }}>
+          {/* 1. SELETTORE DATA (A sinistra) */}
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '15px', paddingLeft: '15px' }}>
             <button type="button" onClick={() => changeDate(-1)} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>◀</button>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
               <span style={{ fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Diario</span>
@@ -3982,7 +3912,80 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => changeDate(1)} disabled={currentTrackerDate === getTodayString()} style={{ background: 'transparent', color: '#00e5ff', border: 'none', fontSize: '1.2rem', cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, padding: '5px' }}>▶</button>
           </div>
 
-          {/* DESTRA: Switch a 2 vie (Home / Analisi). Click ovunque sul contenitore = toggle. Long-press = Easter Egg Simulazione */}
+          {/* 2. STELLA / REPORT (Al centro) */}
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                const isToday = currentTrackerDate === getTodayString();
+                if (isToday) {
+                  alert('Il report non è pronto, perché mancano i dati di tutta la giornata.');
+                  return;
+                }
+                if (dailyReport?.ready) {
+                  setShowReportModal(true);
+                  setReportViewedDates(prev => {
+                    const newState = { ...prev, [currentTrackerDate]: true };
+                    try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {}
+                    return newState;
+                  });
+                } else {
+                  changeDate(-1);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  const isToday = currentTrackerDate === getTodayString();
+                  if (isToday) {
+                    alert('Il report non è pronto, perché mancano i dati di tutta la giornata.');
+                    return;
+                  }
+                  if (dailyReport?.ready) {
+                    setShowReportModal(true);
+                    setReportViewedDates(prev => { const newState = { ...prev, [currentTrackerDate]: true }; try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {} return newState; });
+                  } else changeDate(-1);
+                }
+              }}
+              title={dailyReport?.ready ? 'Report giornaliero a 5 stelle' : currentTrackerDate === getTodayString() && yesterdayReportReady ? 'Report di ieri pronto: vai al giorno precedente' : 'Disponibile solo per giornate passate con dati'}
+              style={{
+                position: 'relative',
+                fontSize: '1.4rem',
+                cursor: 'pointer',
+                color: dailyReport?.ready ? '#ffd700' : '#444',
+                textShadow: dailyReport?.ready ? '0 0 10px rgba(255, 215, 0, 0.6)' : 'none',
+                transition: 'all 0.3s ease',
+                lineHeight: 1,
+                padding: '2px 4px'
+              }}
+            >
+              ★
+              {currentTrackerDate === getTodayString() && yesterdayReportReady && (() => {
+                const y = new Date(getTodayString() + 'T12:00:00');
+                y.setDate(y.getDate() - 1);
+                const yesterdayStr = y.toISOString().slice(0, 10);
+                return !reportViewedDates[yesterdayStr];
+              })() && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '-2px',
+                    right: '-4px',
+                    width: '10px',
+                    height: '10px',
+                    background: '#ff4444',
+                    borderRadius: '50%',
+                    border: '2px solid #000',
+                    boxShadow: '0 0 5px #ff4444'
+                  }}
+                  aria-hidden
+                />
+              )}
+            </div>
+          </div>
+
+          {/* 3. SWITCH HOME/ANALISI (A destra) */}
           <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
             <div
               onMouseDown={handleSwitchTouchStart}
