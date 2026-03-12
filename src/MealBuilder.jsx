@@ -68,6 +68,8 @@ export default function MealBuilder({
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
   const [mealCarouselTab, setMealCarouselTab] = useState('macro');
+  const [numpadFoodId, setNumpadFoodId] = useState(null);
+  const [numpadValue, setNumpadValue] = useState('');
   const mealCarouselRef = useRef(null);
 
   const handleMealCarouselScroll = (e) => {
@@ -303,7 +305,12 @@ export default function MealBuilder({
                       {(() => { const step = Number(food.unitStep) || 10; return (
                         <>
                           <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, -step)} title={`-${step}g`} aria-label={`-${step}g`}>−</button>
-                          <span style={{ fontSize: '0.8rem', fontWeight: '600', color: '#00e5ff', minWidth: '42px', textAlign: 'center' }}>{qta}g</span>
+                          <div
+                            onClick={() => { setNumpadValue(String(qta)); setNumpadFoodId(food.id); }}
+                            style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#00e5ff', minWidth: '60px', textAlign: 'center', cursor: 'pointer', background: '#222', padding: '5px 10px', borderRadius: '8px', border: '1px solid #333' }}
+                          >
+                            {qta}g
+                          </div>
                           <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, step)} title={`+${step}g`} aria-label={`+${step}g`}>+</button>
                         </>
                       ); })()}
@@ -401,6 +408,39 @@ export default function MealBuilder({
           <button type="button" onClick={saveMealToDiary} style={{ width: '100%', padding: '18px', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', opacity: addedFoods.length > 0 ? 1 : 0.5 }}>SALVA NEL DIARIO</button>
         </div>
       </div>
+      {numpadFoodId && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 10000, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+          <div style={{ background: '#1a1a1c', padding: '20px', borderTopLeftRadius: '20px', borderTopRightRadius: '20px', boxShadow: '0 -10px 40px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <span style={{ color: '#888', fontSize: '1rem' }}>Quantità (g)</span>
+              <span style={{ color: '#fff', fontSize: '2rem', fontWeight: 'bold' }}>{numpadValue || '0'}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+                <button key={num} type="button" onClick={() => setNumpadValue(prev => (prev === '0' ? String(num) : prev + num))} style={{ padding: '15px', fontSize: '1.5rem', fontWeight: 'bold', background: '#2c2c2e', color: '#fff', border: 'none', borderRadius: '12px' }}>
+                  {num}
+                </button>
+              ))}
+              <button type="button" onClick={() => setNumpadValue('0')} style={{ padding: '15px', fontSize: '1.5rem', fontWeight: 'bold', background: '#333', color: '#ff4444', border: 'none', borderRadius: '12px' }}>C</button>
+              <button type="button" onClick={() => setNumpadValue(prev => (prev === '0' ? '0' : prev + '0'))} style={{ padding: '15px', fontSize: '1.5rem', fontWeight: 'bold', background: '#2c2c2e', color: '#fff', border: 'none', borderRadius: '12px' }}>0</button>
+              <button type="button" onClick={() => setNumpadValue(prev => (prev.slice(0, -1) || '0'))} style={{ padding: '15px', fontSize: '1.5rem', fontWeight: 'bold', background: '#333', color: '#fff', border: 'none', borderRadius: '12px' }}>⌫</button>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+              <button type="button" onClick={() => setNumpadFoodId(null)} style={{ flex: 1, padding: '15px', background: '#333', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '1.1rem', fontWeight: 'bold' }}>Annulla</button>
+              <button type="button" onClick={() => {
+                const newWeight = Math.max(5, Math.min(5000, Number(numpadValue) || 0));
+                const food = addedFoods.find(f => f.id === numpadFoodId);
+                if (food && newWeight >= 5) {
+                  const currentQta = Number(food.qta ?? food.weight ?? 100) || 100;
+                  const delta = newWeight - currentQta;
+                  handleCalibrateFoodWeight(numpadFoodId, delta);
+                }
+                setNumpadFoodId(null);
+              }} style={{ flex: 1, padding: '15px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '12px', fontSize: '1.1rem', fontWeight: 'bold' }}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

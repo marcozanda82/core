@@ -3458,7 +3458,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
         {/* 2. CORPO SCORREVOLE (GRAFICO E NODI IN SOLIDO) */}
         <div style={{ flex: 1, width: '100%', minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
-          <div style={{ width: '200vw', height: '100%', minHeight: '100%', display: 'flex', flexDirection: 'column', paddingBottom: '20px' }}>
+          <div style={{ width: '200vw', height: '100%', minHeight: '100%', display: 'flex', flexDirection: 'column', paddingBottom: '30px' }}>
             <div style={{ flex: 1, minHeight: '280px' }}>
             {currentChartType === 'percent' && (
               <ResponsiveContainer width="100%" height="100%">
@@ -3524,7 +3524,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             )}
             </div>
             {/* Barra Nodi solidale al grafico (stessa larghezza 200vw) */}
-            <div style={{ height: '60px', marginTop: '10px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0 }}>
+            <div style={{ height: '70px', marginTop: '-10px', paddingBottom: '25px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
               {(activeNodesWithStack || []).map((node) => {
                 const pct = ((node.time ?? 0) / 24) * 100;
                 const isWork = node.type === 'work';
