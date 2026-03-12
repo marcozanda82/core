@@ -3831,8 +3831,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           {/* SINISTRA: Titolo OS */}
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
             <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
-              <h1 style={{ margin: 0, fontSize: '1.5rem', color: '#00e5ff', letterSpacing: '1px', fontWeight: 'bold' }}>
+              <h1 style={{ margin: 0, fontSize: '1.5rem', color: '#00e5ff', letterSpacing: '1px', fontWeight: 'bold', display: 'flex', alignItems: 'flex-start' }}>
                 ReadyCore
+                <span style={{ fontSize: '0.5em', verticalAlign: 'super', marginLeft: '4px', color: '#888', letterSpacing: '0px', fontWeight: 'normal' }}>
+                  OS
+                </span>
               </h1>
             </button>
           </div>
