@@ -307,6 +307,8 @@ export default function SalaComandi() {
   const [draggingNode, setDraggingNode] = useState(null);
   const [touchingNodeId, setTouchingNodeId] = useState(null);
   const [timelineBackup, setTimelineBackup] = useState(null);
+  const [hasUnsavedFullscreenChanges, setHasUnsavedFullscreenChanges] = useState(false);
+  const fullscreenEntryBackupRef = useRef(null);
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const [dragLiveTime, setDragLiveTime] = useState(null);
   const dragEngine = useRef({
@@ -1101,7 +1103,7 @@ export default function SalaComandi() {
             const { itemIds } = draggingNode;
             setDailyLog(prev => {
               const next = prev.filter(item => !(itemIds && itemIds.includes(item.id)));
-              syncDatiFirebase(next, manualNodes);
+              if (isFullScreenGraph) setHasUnsavedFullscreenChanges(true); else syncDatiFirebase(next, manualNodes);
               return next;
             });
           } else {
@@ -1109,7 +1111,7 @@ export default function SalaComandi() {
               const newLog = prev.filter(item => item.id !== dragId);
               setManualNodes(prevN => {
                 const newNodes = prevN.filter(n => n.id !== dragId);
-                syncDatiFirebase(newLog, newNodes);
+                if (isFullScreenGraph) setHasUnsavedFullscreenChanges(true); else syncDatiFirebase(newLog, newNodes);
                 return newNodes;
               });
               return newLog;
@@ -1122,7 +1124,7 @@ export default function SalaComandi() {
               const next = prev.map(item =>
                 itemIds && itemIds.includes(item.id) ? { ...item, mealTime: origTime } : item
               );
-              syncDatiFirebase(next, manualNodes);
+              if (isFullScreenGraph) setHasUnsavedFullscreenChanges(true); else syncDatiFirebase(next, manualNodes);
               return next;
             });
           } else {
@@ -1130,7 +1132,7 @@ export default function SalaComandi() {
               const next = prev.map(n =>
                 n.id === dragId ? { ...n, time: originalTime, duration: originalDuration ?? n.duration } : n
               );
-              syncDatiFirebase(dailyLog, next);
+              if (isFullScreenGraph) setHasUnsavedFullscreenChanges(true); else syncDatiFirebase(dailyLog, next);
               return next;
             });
           }
@@ -1142,7 +1144,7 @@ export default function SalaComandi() {
             itemIds && itemIds.includes(item.id) ? { ...item, mealTime: finalTimeRounded } : item
           );
           setDailyLog(nextLog);
-          syncDatiFirebase(nextLog, manualNodes);
+          if (isFullScreenGraph) setHasUnsavedFullscreenChanges(true); else syncDatiFirebase(nextLog, manualNodes);
         } else {
           setManualNodes(prev => {
             const next = prev.map(n => {
@@ -1161,7 +1163,7 @@ export default function SalaComandi() {
               }
               return { ...n, time: finalTimeRounded };
             });
-            syncDatiFirebase(dailyLog, next);
+            if (isFullScreenGraph) setHasUnsavedFullscreenChanges(true); else syncDatiFirebase(dailyLog, next);
             return next;
           });
         }
@@ -1180,7 +1182,7 @@ export default function SalaComandi() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [draggingNode, isSimulationMode]);
+  }, [draggingNode, isSimulationMode, isFullScreenGraph]);
 
   useEffect(() => { if (!isDrawerOpen) setIsZenActive(false); }, [isDrawerOpen]);
 
@@ -1650,10 +1652,16 @@ export default function SalaComandi() {
     return foodItem;
   }, [foodDb, getAverageEstimate]);
 
+  const addFoodCallbackRef = useRef(null);
+  const registerAddFoodCallback = useCallback((cb) => { addFoodCallbackRef.current = cb; }, []);
+
   const handleAddFoodManual = () => {
     if (!foodNameInput || !foodWeightInput) return;
-    const item = estraiDatiFoodDb(foodNameInput.trim(), parseFloat(foodWeightInput), mealType);
+    const nome = foodNameInput.trim();
+    const item = estraiDatiFoodDb(nome, parseFloat(foodWeightInput), mealType);
     setAddedFoods([item, ...addedFoods]);
+    const dbKey = Object.keys(foodDb || {}).find(k => (foodDb[k]?.desc || foodDb[k]?.name || '').toLowerCase().includes(nome.toLowerCase()));
+    if (addFoodCallbackRef.current) addFoodCallbackRef.current(dbKey || item.id);
     setFoodNameInput('');
     setFoodWeightInput('');
     setTimeout(() => foodInputRef.current?.focus(), 100);
@@ -1669,6 +1677,7 @@ export default function SalaComandi() {
   };
 
   const enterFullscreen = async () => {
+    fullscreenEntryBackupRef.current = { manualNodes: JSON.parse(JSON.stringify(manualNodes)), dailyLog: JSON.parse(JSON.stringify(dailyLog || [])) };
     const idx = availableFullscreenCharts.indexOf(chartUnit);
     setFullscreenChartIndex(idx >= 0 ? idx : 0);
     try {
@@ -1680,12 +1689,25 @@ export default function SalaComandi() {
   };
 
   const exitFullscreen = async () => {
-    try {
-      if (document.exitFullscreen) await document.exitFullscreen();
-      if (window.screen?.orientation?.unlock) window.screen.orientation.unlock();
-    } catch (err) { console.warn('Exit fullscreen fallito', err); }
-    setIsFullScreenGraph(false);
-  };
+      if (hasUnsavedFullscreenChanges) {
+        const wantsToSave = window.confirm('Hai modificato la timeline. Vuoi salvare queste modifiche prima di uscire?');
+        if (wantsToSave) {
+          await syncDatiFirebase(dailyLog, manualNodes);
+        } else {
+          const toRestore = fullscreenEntryBackupRef.current || timelineBackup;
+          if (toRestore) {
+            setManualNodes(toRestore.manualNodes);
+            setDailyLog(toRestore.dailyLog);
+          }
+        }
+      }
+      setHasUnsavedFullscreenChanges(false);
+      fullscreenEntryBackupRef.current = null;
+      setTimelineBackup(null);
+      try { if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen(); } catch (e) {}
+      try { if (window.screen?.orientation?.unlock) window.screen.orientation.unlock(); } catch (e) {}
+      setIsFullScreenGraph(false);
+    };
 
   const saveMealToDiary = () => {
     if (!isInitialLoadComplete) return;
@@ -5209,6 +5231,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             TARGETS={TARGETS}
             MEAL_LABELS_SAVE={MEAL_LABELS_SAVE}
             saveMealToDiary={saveMealToDiary}
+            registerAddFoodCallback={registerAddFoodCallback}
           />
         )}
 

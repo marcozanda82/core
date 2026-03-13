@@ -2,7 +2,7 @@
  * MealBuilder.jsx — Costruttore pasti (drawer): ricerca alimenti, coda, telemetria, SALVA NEL DIARIO.
  * Estratto da SalaComandi.jsx. La logica saveMealToDiary resta nel genitore; qui solo rendering e onClick.
  */
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 
 const MEAL_BUTTONS = [
   { label: 'Colazione', id: 'merenda1' },
@@ -63,7 +63,8 @@ export default function MealBuilder({
   TELEMETRY_TABS,
   TARGETS,
   MEAL_LABELS_SAVE,
-  saveMealToDiary
+  saveMealToDiary,
+  registerAddFoodCallback
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -71,6 +72,38 @@ export default function MealBuilder({
   const [numpadFoodId, setNumpadFoodId] = useState(null);
   const [numpadValue, setNumpadValue] = useState('');
   const mealCarouselRef = useRef(null);
+
+  const [recentFoodIds, setRecentFoodIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('readycore_recentFoods')) || []; }
+    catch { return []; }
+  });
+
+  const recentFoodIdsRef = useRef(recentFoodIds);
+  recentFoodIdsRef.current = recentFoodIds;
+  useEffect(() => {
+    if (typeof registerAddFoodCallback !== 'function') return;
+    registerAddFoodCallback((foodId) => {
+      if (!foodId) return;
+      const updatedRecents = [foodId, ...recentFoodIdsRef.current.filter(id => id !== foodId)].slice(0, 20);
+      setRecentFoodIds(updatedRecents);
+      try { localStorage.setItem('readycore_recentFoods', JSON.stringify(updatedRecents)); } catch (_) {}
+    });
+    return () => registerAddFoodCallback(null);
+  }, [registerAddFoodCallback]);
+
+  const sortedSuggestions = useMemo(() => {
+    const list = foodDropdownSuggestions || [];
+    if (list.length === 0 || recentFoodIds.length === 0) return list;
+    return [...list].sort((a, b) => {
+      const aId = a.id ?? a.key;
+      const bId = b.id ?? b.key;
+      const aRecent = recentFoodIds.includes(aId);
+      const bRecent = recentFoodIds.includes(bId);
+      if (aRecent && !bRecent) return -1;
+      if (!aRecent && bRecent) return 1;
+      return 0;
+    });
+  }, [foodDropdownSuggestions, recentFoodIds]);
 
   const handleMealCarouselScroll = (e) => {
     const { scrollLeft, clientWidth } = e.target;
@@ -255,9 +288,9 @@ export default function MealBuilder({
                 )}
               </div>
             )}
-            {showFoodDropdown && (foodNameInput.trim() || foodDropdownSuggestions.length > 0) && (
+            {showFoodDropdown && (foodNameInput.trim() || sortedSuggestions.length > 0) && (
               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#1e1e1e', border: '1px solid #333', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '250px', overflowY: 'auto', zIndex: 1000, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', margin: 0, padding: 0 }}>
-                {foodDropdownSuggestions.map(s => (
+                {sortedSuggestions.map(s => (
                   <div
                     key={s.key}
                     role="button"
