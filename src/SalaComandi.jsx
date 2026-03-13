@@ -1376,7 +1376,16 @@ export default function SalaComandi() {
       items = (activeLog || []).filter(item => item.type === 'food' && equivalents.includes(item.mealType));
     }
 
-    items = items.map(f => ({ ...f }));
+    const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (Number(v) || 0);
+    items = items.map(f => ({
+      ...f,
+      kcal: toNum(f.kcal) || toNum(f.cal) || 0,
+      prot: toNum(f.prot) || toNum(f.proteine) || 0,
+      carb: toNum(f.carb) || toNum(f.carboidrati) || 0,
+      fat: toNum(f.fat) || toNum(f.fatTotal) || toNum(f.grassi) || 0,
+      qta: toNum(f.qta) || toNum(f.weight) || 100,
+      weight: toNum(f.weight) || toNum(f.qta) || 100
+    }));
     const canonical = items.length > 0 ? toCanonicalMealType(items[0].mealType) : toCanonicalMealType(String(mTypeOrId).split('_')[0]);
 
     setMealType(canonical);
@@ -4787,7 +4796,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(0,229,255,0.4)' }} onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); }}>
                 <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>💧</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#00e5ff' }}>ACQUA</span>
               </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(255, 109, 0, 0.4)' }} onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }}>
+              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(255, 109, 0, 0.4)' }} onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutEndTime(now); setWorkoutStartTime(Math.max(0, now - 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }}>
                 <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(255, 109, 0, 0.4))' }}>⚡</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#ff6d00' }}>ALLENAMENTO</span>
               </button>
               <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(180,120,60,0.5)' }} onClick={() => { closeDrawer(); setStimulantTime(getCurrentTimeRoundedTo15Min()); setStimulantSubtype('caffè'); setAddChoiceView('stimulant'); setShowChoiceModal(true); }}>
@@ -5148,7 +5157,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         {/* VISTA PASTO RAPIDO - CON BOTTONI CANONICI */}
         {activeAction === 'pasto' && (
           <MealBuilder
-            onClose={() => setActiveAction(null)}
+            onClose={() => {
+              setActiveAction(null);
+              setEditingMealId(null);
+              setAddedFoods([]);
+              setSelectedMealCenter(null);
+            }}
             mealType={mealType}
             setMealType={setMealType}
             drawerMealTime={drawerMealTime}
@@ -5912,7 +5926,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <span style={{ fontSize: '1.5rem' }}>🍎</span> PASTO
                 </button>
 
-                <button onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutStartTime(now); setWorkoutEndTime(Math.min(24, now + 0.5)); setShowChoiceModal(false); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+                <button onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutEndTime(now); setWorkoutStartTime(Math.max(0, now - 0.5)); setShowChoiceModal(false); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
                   <span style={{ fontSize: '1.5rem' }}>💪</span> ALLENAMENTO
                 </button>
 

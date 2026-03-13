@@ -89,11 +89,12 @@ export default function MealBuilder({
 
   const currentMealMacros = useMemo(() => {
     const items = addedFoods || [];
+    const num = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (Number(v) || 0);
     return {
-      kcal: items.reduce((acc, item) => acc + (Number(item.kcal) || Number(item.cal) || 0), 0),
-      prot: items.reduce((acc, item) => acc + (Number(item.prot) || Number(item.proteine) || 0), 0),
-      carb: items.reduce((acc, item) => acc + (Number(item.carb) || Number(item.carboidrati) || 0), 0),
-      fat: items.reduce((acc, item) => acc + (Number(item.fat) || Number(item.fatTotal) || Number(item.grassi) || 0), 0)
+      kcal: items.reduce((acc, item) => acc + (num(item.kcal) || num(item.cal) || 0), 0),
+      prot: items.reduce((acc, item) => acc + (num(item.prot) || num(item.proteine) || 0), 0),
+      carb: items.reduce((acc, item) => acc + (num(item.carb) || num(item.carboidrati) || 0), 0),
+      fat: items.reduce((acc, item) => acc + (num(item.fat) || num(item.fatTotal) || num(item.grassi) || 0), 0)
     };
   }, [addedFoods]);
 
@@ -232,7 +233,7 @@ export default function MealBuilder({
                     <button type="button" onClick={() => setFoodNameInput('')} aria-label="Cancella ricerca" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', width: '28px', height: '28px', minWidth: 28, minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', color: '#888', fontSize: '1rem', cursor: 'pointer', lineHeight: 1 }}>✕</button>
                   ) : null}
                 </div>
-                <input id="weight-input" type="number" inputMode="decimal" className="quick-input input-weight" placeholder="g" value={foodWeightInput} onChange={(e) => setFoodWeightInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()} />
+                <input id="weight-input" type="number" inputMode="decimal" className="quick-input input-weight" placeholder="g" value={foodWeightInput} onChange={(e) => setFoodWeightInput(e.target.value)} onFocus={(e) => { if (numpadFoodId) e.target.blur(); }} onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()} />
                 <button type="button" title="Scansiona barcode" onClick={() => setIsBarcodeScannerOpen(prev => !prev)} style={{ padding: '10px 12px', background: isBarcodeScannerOpen ? '#00e5ff' : 'rgba(255,255,255,0.08)', border: '1px solid #333', borderRadius: '10px', cursor: 'pointer', fontSize: '1.1rem' }}>📷</button>
                 <button type="button" className="quick-add-btn" onClick={handleAddFoodManual}>+</button>
               </div>
@@ -409,8 +410,8 @@ export default function MealBuilder({
         </div>
       </div>
       {numpadFoodId && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 10000, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-          <div style={{ background: '#1a1a1c', padding: '20px', borderTopLeftRadius: '20px', borderTopRightRadius: '20px', boxShadow: '0 -10px 40px rgba(0,0,0,0.5)' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 999999, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'stretch' }}>
+          <div style={{ marginTop: 'auto', background: '#1a1a1c', padding: '20px', paddingBottom: 'max(20px, env(safe-area-inset-bottom))', borderTopLeftRadius: '20px', borderTopRightRadius: '20px', boxShadow: '0 -10px 40px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <span style={{ color: '#888', fontSize: '1rem' }}>Quantità (g)</span>
               <span style={{ color: '#fff', fontSize: '2rem', fontWeight: 'bold' }}>{numpadValue || '0'}</span>
