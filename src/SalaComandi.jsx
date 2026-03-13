@@ -3474,7 +3474,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <h2 style={{ color: '#fff', margin: 0, fontSize: '1.2rem', textTransform: 'uppercase' }}>{fullscreenChartLabel}</h2>
             <button type="button" onClick={() => setFullscreenChartIndex(prev => prev < availableFullscreenCharts.length - 1 ? prev + 1 : 0)} style={{ background: '#333', color: '#00e5ff', border: 'none', width: '40px', height: '40px', borderRadius: '50%', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer' }}>▶</button>
           </div>
-          <button type="button" onClick={exitFullscreen} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>✖ Chiudi</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
+            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Ripristina">🎯</button>
+            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
+            <button type="button" onClick={exitFullscreen} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>✖ Chiudi</button>
+          </div>
         </div>
 
         {/* 2. CORPO SCORREVOLE (GRAFICO E NODI IN SOLIDO) */}
@@ -3517,7 +3522,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     <ReferenceLine key={`fs-sleep-${node.id ?? index}`} x={node.wakeTime ?? 7.5} stroke="#00e5ff" strokeDasharray="3 3" strokeWidth={1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
                   ))}
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
-                  <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} />
+                  <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiservaFullscreen)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergiaFullscreen)" connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="energyFuture" name="Previsione" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
@@ -3540,7 +3545,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [value, 'Cortisolo']} labelFormatter={(label) => `Ore ${label}:00`} />
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
-                  <ReferenceDot x={displayTime} y={dotCortisolo} isFront r={10} fill="#9c27b0" stroke="#fff" strokeWidth={2} />
+                  <ReferenceDot x={displayTime} y={dotCortisolo} isFront r={10} fill="#9c27b0" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="cortisoloPast" stroke="#9c27b0" fill="url(#colorCortisoloFullscreen)" strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="cortisoloFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
                 </ComposedChart>
@@ -3566,7 +3571,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <YAxis domain={[40, 220]} stroke="#666" fontSize={11} tickFormatter={(tick) => tick} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [value != null ? Number(value).toFixed(0) : '—', 'Glicemia']} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
-                  <ReferenceDot x={displayTime} y={dotGlicemia} isFront r={10} fill="#ef4444" stroke="#fff" strokeWidth={2} />
+                  <ReferenceDot x={displayTime} y={dotGlicemia} isFront r={10} fill="#ef4444" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="glicemiaPast" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="glicemiaFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
                 </ComposedChart>
@@ -3580,7 +3585,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—'), name === 'idratazionePast' ? 'Idratazione' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
-                  <ReferenceDot x={displayTime} y={dotIdratazione} isFront r={10} fill="#00e5ff" stroke="#fff" strokeWidth={2} />
+                  <ReferenceDot x={displayTime} y={dotIdratazione} isFront r={10} fill="#00e5ff" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="idratazionePast" stroke="#00e5ff" fill="#00e5ff" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="idratazioneFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
                 </ComposedChart>
@@ -3594,7 +3599,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—'), name === 'neuroPast' ? 'Neuro' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
-                  <ReferenceDot x={displayTime} y={dotNeuro} isFront r={10} fill="#6366f1" stroke="#fff" strokeWidth={2} />
+                  <ReferenceDot x={displayTime} y={dotNeuro} isFront r={10} fill="#6366f1" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="neuroPast" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="neuroFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
                 </ComposedChart>
@@ -3608,7 +3613,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—'), name === 'digestionePast' ? 'Digestione' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
-                  <ReferenceDot x={displayTime} y={dotDigestione} isFront r={10} fill="#9333ea" stroke="#fff" strokeWidth={2} />
+                  <ReferenceDot x={displayTime} y={dotDigestione} isFront r={10} fill="#9333ea" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="digestionePast" stroke="#9333ea" fill="#9333ea" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="digestioneFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
                 </ComposedChart>
@@ -3622,7 +3627,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <YAxis domain={[0, Math.max(targetKcalChart || 2500, totalCaloriesTimeline || 0)]} stroke="#666" fontSize={11} tickFormatter={(v) => Math.round(v)} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [value != null ? Math.round(Number(value)) : '—', name === 'kcalPast' ? 'Kcal' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
-                  <ReferenceDot x={displayTime} y={scale(dotY)} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} />
+                  <ReferenceDot x={displayTime} y={scale(dotY)} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="kcalPast" stroke="#00e676" fill="#00e676" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="kcalFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
                 </ComposedChart>
@@ -3696,9 +3701,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .drawer-content { position: fixed; bottom: -100%; left: 0; right: 0; background: rgba(15, 15, 15, 0.95); border-top: 1px solid #2a2a2a; border-radius: 25px 25px 0 0 !important; padding: 30px 20px !important; padding-bottom: max(20px, env(safe-area-inset-bottom)); transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.05); z-index: 101; box-shadow: 0 -10px 50px rgba(0,0,0,0.9); max-height: 92vh !important; overflow-y: auto; backdrop-filter: blur(25px); -webkit-overflow-scrolling: touch; }
           .drawer-content.open { bottom: 0; }
           
-          /* Navigator Zoom Controls */
+          /* Navigator Zoom Controls (solo in fullscreen) */
           .zoom-controls { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 10; }
           .zoom-btn { width: 44px; height: 44px; background: rgba(20, 20, 20, 0.8); border: 1px solid #333; color: #00e5ff; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; backdrop-filter: blur(5px); cursor: pointer; outline: none; }
+          @keyframes pulseDot {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.8); opacity: 0.6; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          .pulsing-dot { animation: pulseDot 2s infinite ease-in-out; transform-origin: center; }
           .tachimeter-center.tachimeter-center-reset:hover { filter: brightness(1.08); box-shadow: 0 0 45px rgba(255,255,255,0.12); }
 
           /* Macro widgets: ~30% più piccoli, formato assunto/obiettivo */
@@ -4155,7 +4166,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto energetico giornaliero 0-24h */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
         <div style={{ flexShrink: 0, marginBottom: '10px' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
+          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '10px', alignItems: 'center' }}>
             <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
             <button type="button" onClick={() => setChartUnit('calorieTimeline')} className={`telemetry-btn ${chartUnit === 'calorieTimeline' ? 'active' : ''}`} style={chartUnit === 'calorieTimeline' ? { color: '#ff9800', borderColor: '#ff9800' } : undefined}>📈 CUMUL</button>
             <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEM</button>
@@ -4189,21 +4200,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
                 {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia SNC (%)'}
               </span>
-              {chartUnit === 'calorieTimeline' && (
-                <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
-                  Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
-                </div>
-              )}
             </div>
           </div>
           <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div className="zoom-controls">
-              <button type="button" className="zoom-btn" onClick={enterFullscreen} title="Grafico a tutto schermo" style={{ borderColor: '#00e5ff', color: '#00e5ff' }}>⛶</button>
-              <button type="button" className="zoom-btn" onClick={() => setShowTelemetryPopup(true)} title="Stats" style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊</button>
-              <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
-              <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
-              <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
-            </div>
             <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
             <div
               className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
@@ -4226,10 +4225,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               >
                 {chartUnit === 'percent' ? (
               <div style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>⚡ Energia SNC (%)</span>
-                  <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
-                </h3>
                 <div style={{ width: '100%', height: '220px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={mainChartData} margin={{ top: 35, right: 0, left: -20, bottom: 0 }}>
@@ -4274,7 +4269,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         />
                       ))}
                       <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={1.5} isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
-                      <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
+                      <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                       <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiserva)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
                       <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
                       <Area type="monotone" dataKey="energyFuture" name="Previsione" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
@@ -4445,7 +4440,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') return <path d="M0 0" />;
                     const fillColor = chartUnit === 'glicemia' ? '#ef4444' : (chartUnit === 'cortisolo' ? '#f59e0b' : chartUnit === 'digestione' ? '#9333ea' : chartUnit === 'neuro' ? '#6366f1' : chartUnit === 'calorieTimeline' ? '#ff9800' : '#00e5ff');
                     return (
-                      <g>
+                      <g className="pulsing-dot">
                         <circle cx={cx} cy={cy} r={10} fill={fillColor} />
                         <circle cx={cx} cy={cy} r={10} fill="none" stroke={fillColor} strokeWidth={4}>
                           <animate attributeName="r" values="10;28" dur="1.5s" repeatCount="indefinite" />
