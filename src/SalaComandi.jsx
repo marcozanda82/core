@@ -3689,9 +3689,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           
           /* Navigator Zoom Controls */
           .zoom-controls { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 10; }
-          .zoom-btn { width: 44px; height: 44px; background: rgba(20, 20, 20, 0.8); border: 1px solid #333; color: #a1a1aa; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; backdrop-filter: blur(5px); cursor: pointer; outline: none; }
-          .zoom-btn-toolbar { width: 40px; height: 40px; background: #18181b; border: 1px solid #27272a; color: #e5e5e5; border-radius: 10px; font-size: 1rem; }
-          .zoom-btn-toolbar:active { background: #27272a; }
+          .zoom-btn { width: 44px; height: 44px; background: rgba(20, 20, 20, 0.8); border: 1px solid #333; color: #00e5ff; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; backdrop-filter: blur(5px); cursor: pointer; outline: none; }
           .tachimeter-center.tachimeter-center-reset:hover { filter: brightness(1.08); box-shadow: 0 0 45px rgba(255,255,255,0.12); }
 
           /* Macro widgets: ~30% più piccoli, formato assunto/obiettivo */
@@ -3878,8 +3876,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .show-tooltip .recharts-tooltip-wrapper { visibility: visible !important; opacity: 1 !important; transition: opacity 0.2s ease; }
 
           /* Console di Telemetria */
-          .telemetry-btn { padding: 6px 12px; font-size: 0.7rem; border-radius: 8px; border: 1px solid #27272a; background: #111; color: #71717a; cursor: pointer; transition: 0.2s; font-weight: 500; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
-          .telemetry-btn.active { background: #27272a; border-color: #52525b; color: #e5e5e5; font-weight: 600; }
+          .telemetry-btn { padding: 4px 10px; font-size: 0.7rem; border-radius: 8px; border: 1px solid #333; background: transparent; color: #666; cursor: pointer; transition: 0.3s; font-weight: normal; -webkit-tap-highlight-color: transparent; }
+          .telemetry-btn.active { background: rgba(0, 229, 255, 0.15); border-color: #00e5ff; color: #00e5ff; font-weight: bold; }
           .telemetry-btn.active.blood { background: rgba(239, 68, 68, 0.15); border-color: #ef4444; color: #ef4444; }
           .pulse-alert { animation: pulseAlert 1.5s infinite; color: #ef4444; border-color: #ef4444; font-weight: bold; }
           @keyframes pulseAlert { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
@@ -3924,8 +3922,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div className="delete-text">RILASCIA PER ELIMINARE</div>
       </div>
 
-      {/* WRAPPER PRINCIPALE: sfondo nero Dark Premium */}
-      <div style={{ backgroundColor: '#000', minHeight: '100vh', padding: '0 12px 12px', display: 'flex', flexDirection: 'column' }}>
       {/* HEADER SUPERIORE - MINIMALE (2 ZONE) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '5px' }}>
           
@@ -3941,33 +3937,34 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </button>
           </div>
 
-          {/* DESTRA: Logout + Readiness Score (card prioritaria) */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px' }}>
-            <button className="btn-toggle" onClick={() => auth.signOut()} style={{ padding: '8px 12px !important', minHeight: 'auto', fontSize: '0.7rem !important', color: '#a1a1aa' }}>LOGOUT</button>
-            {/* Readiness Score - card dedicata, dato principale */}
-            <div
+          {/* DESTRA: Logout, Widget Energia */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
+            <button className="btn-toggle" onClick={() => auth.signOut()} style={{ padding: '8px 12px !important', minHeight: 'auto', fontSize: '0.7rem !important' }}>LOGOUT</button>
+            {/* Widget Energia Biologica (Arco) */}
+            <div 
               onClick={() => setShowEnergyPopup(true)}
-              style={{ backgroundColor: '#111', border: '1px solid #27272a', borderRadius: '16px', padding: '12px 16px', minWidth: '100px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer', transition: 'border-color 0.2s' }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#3f3f46'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#27272a'; }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer', padding: '4px 8px', borderRadius: '8px', transition: 'background 0.2s' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
             >
-              <span style={{ fontSize: '0.6rem', color: '#71717a', textTransform: 'uppercase', letterSpacing: '1px' }}>Readiness</span>
-              <div style={{ position: 'relative', width: '52px', height: '26px' }}>
+              <div style={{ position: 'relative', width: '56px', height: '28px' }}>
                 <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-                  <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#27272a" strokeWidth="10" strokeLinecap="round" />
-                  <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData?.color || '#e5e5e5'} strokeWidth="10" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - ((bodyBatteryData?.level || 0) / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out' }} />
+                  <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
+                  <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData?.color || '#00e5ff'} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - ((bodyBatteryData?.level || 0) / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
                 </svg>
                 <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', paddingBottom: '2px' }}>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 'bold', color: bodyBatteryData?.color || '#fff' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: bodyBatteryData?.color || '#00e5ff', textShadow: `0 0 10px ${bodyBatteryData?.color || '#00e5ff'}80` }}>
                     {bodyBatteryData?.level || 0}%
                   </span>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
                 {(energyIntervention || (energyExplanation && energyExplanation.some(c => c.direction === 'down'))) && (
-                  <span style={{ fontSize: '0.7rem' }}>⚠️</span>
+                  <span style={{ fontSize: '0.7rem', filter: 'drop-shadow(0 0 5px rgba(255,152,0,0.8))' }}>⚠️</span>
                 )}
-                <span style={{ fontSize: '0.65rem', color: '#71717a' }}>Score {metabolicDayScore}</span>
+                <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#00e5ff' }}>
+                  Score: {metabolicDayScore}
+                </span>
               </div>
             </div>
           </div>
@@ -4000,8 +3997,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         )}
 
-        {/* BARRA DEGLI STRUMENTI: Data + Stella Report + Toggle Home/Analisi (card) */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', width: '100%', gap: '10px', backgroundColor: '#111', padding: '12px 16px', borderRadius: '16px', border: '1px solid #27272a' }}>
+        {/* BARRA DEGLI STRUMENTI: Data + Stella Report + Toggle Home/Analisi */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', width: '100%', gap: '10px', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '6px 12px', borderRadius: '12px', border: '1px solid #222' }}>
           
           {/* 1. SELETTORE DATA (A sinistra, dimensioni naturali) */}
           <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-start', maxWidth: '50%' }}>
@@ -4129,78 +4126,76 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
         </div>
 
-      {/* Card: Telemetria Rapida (stati solo per alert; resto neutro) */}
-      <div onClick={() => setShowSpieInfo(true)} style={{ marginBottom: 'max(12px, 1.5vh)', backgroundColor: '#111', border: '1px solid #27272a', borderRadius: '16px', padding: '12px 16px', cursor: 'pointer' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <span style={{ backgroundColor: '#18181b', border: `1px solid ${((Number(totali?.omega3) ?? 0) < 1) ? '#dc2626' : '#27272a'}`, padding: '8px 12px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: '600', color: ((Number(totali?.omega3) ?? 0) < 1) ? '#ef4444' : '#a1a1aa', whiteSpace: 'nowrap' }}>
-            {((Number(totali?.omega3) ?? 0) < 1) ? 'Carenza Micro' : 'Micro OK'}
+      {/* Barra Telemetria Rapida Premium - wrap attivato e centrato */}
+      <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(12px, 1.5vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
+          <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676'}`, padding: '8px 12px', borderRadius: '20px', color: ((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676', boxShadow: `0 0 10px ${((Number(totali?.omega3) ?? 0) < 1) ? 'rgba(255,85,85,0.2)' : 'rgba(0,230,118,0.1)'}`, whiteSpace: 'nowrap' }}>
+            {((Number(totali?.omega3) ?? 0) < 1) ? '🔴 Carenza Micro' : '🟢 Micro OK'}
           </span>
-          <span style={{ backgroundColor: '#18181b', border: `1px solid ${energyAt20Percent < 40 ? '#ea580c' : '#27272a'}`, padding: '8px 12px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: '600', color: energyAt20Percent < 40 ? '#f97316' : '#a1a1aa', whiteSpace: 'nowrap' }}>
-            {energyAt20Percent < 40 ? 'Rischio Serali' : 'Serali OK'}
-          </span>
-          <span style={{ backgroundColor: '#18181b', border: `1px solid ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#27272a' : '#dc2626'}`, padding: '8px 12px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: '600', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#a1a1aa' : '#ef4444', whiteSpace: 'nowrap', marginLeft: 'auto' }}>
-            {(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? `Rimangono ${Math.round(dynamicDailyKcal - (totali?.kcal || 0))} kcal` : `Surplus +${Math.abs(Math.round(dynamicDailyKcal - (totali?.kcal || 0)))} kcal`}
+          <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${energyAt20Percent < 40 ? '#ff9800' : '#00e676'}`, padding: '8px 12px', borderRadius: '20px', color: energyAt20Percent < 40 ? '#ff9800' : '#00e676', boxShadow: `0 0 10px ${energyAt20Percent < 40 ? 'rgba(255,152,0,0.2)' : 'rgba(0,230,118,0.1)'}`, whiteSpace: 'nowrap' }}>
+            {energyAt20Percent < 40 ? '🟠 Rischio Serali' : '🟢 Serali OK'}
           </span>
         </div>
+        <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#333' : '#ff4d4d'}`, padding: '8px 12px', borderRadius: '20px', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#aaa' : '#ff4d4d', boxShadow: (dynamicDailyKcal - (totali?.kcal || 0)) < 0 ? '0 0 10px rgba(255,77,77,0.3)' : 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? `🎯 Rimangono ${Math.round(dynamicDailyKcal - (totali?.kcal || 0))} kcal` : `🔥 Surplus calorico +${Math.abs(Math.round(dynamicDailyKcal - (totali?.kcal || 0)))} kcal`}
+        </span>
       </div>
 
       {userProfile?.level === 'pro' && (
       <>
-      {/* Cruscotto energetico giornaliero 0-24h - card Dark Premium */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', backgroundColor: '#111', border: '1px solid #27272a', borderRadius: '16px', padding: 'max(12px, 1.5vh) 14px' }}>
-        {/* Card: Pills telemetria in scroll orizzontale */}
-        <div style={{ flexShrink: 0, marginBottom: '12px', backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '10px 12px' }}>
-          <div style={{ overflowX: 'auto', overflowY: 'hidden', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', paddingBottom: '2px' }}>
+      {/* Cruscotto energetico giornaliero 0-24h */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
+        <div style={{ flexShrink: 0, marginBottom: '10px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', paddingBottom: '4px' }}>
             <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''}`}>⚡ %</button>
-            <button type="button" onClick={() => setChartUnit('calorieTimeline')} className={`telemetry-btn ${chartUnit === 'calorieTimeline' ? 'active' : ''}`} style={chartUnit === 'calorieTimeline' ? { color: '#a1a1aa', borderColor: '#52525b' } : undefined}>📈 CUMUL</button>
+            <button type="button" onClick={() => setChartUnit('calorieTimeline')} className={`telemetry-btn ${chartUnit === 'calorieTimeline' ? 'active' : ''}`} style={chartUnit === 'calorieTimeline' ? { color: '#ff9800', borderColor: '#ff9800' } : undefined}>📈 CUMUL</button>
             <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert' : ''}`}>🩸 GLICEM</button>
             <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water' : ''}`}>💧 IDRAT</button>
-            <button type="button" onClick={() => setChartUnit('neuro')} className={`telemetry-btn ${chartUnit === 'neuro' ? 'active' : ''}`} style={chartUnit === 'neuro' ? { color: '#a1a1aa', borderColor: '#52525b' } : undefined}>🧠 NEURO</button>
+            <button type="button" onClick={() => setChartUnit('neuro')} className={`telemetry-btn ${chartUnit === 'neuro' ? 'active' : ''}`} style={chartUnit === 'neuro' ? { color: '#6366f1', borderColor: '#6366f1' } : undefined}>🧠 NEURO</button>
             <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol' : ''}`}>🧠 CORTISOL</button>
-            <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert' : ''}`} style={chartUnit === 'digestione' ? { color: '#a1a1aa', borderColor: '#52525b' } : undefined}>⚙️ DIGEST</button>
+            <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGEST</button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', marginTop: '8px', backgroundColor: '#111', borderRadius: '8px', border: '1px solid #27272a' }}>
-            <span style={{ fontSize: '0.7rem', color: '#71717a' }}>Radar metabolico:</span>
-            <span style={{ fontSize: '0.8rem', fontWeight: '600', color: metabolicState.color }}>{metabolicState.label}</span>
-            <span style={{ fontSize: '0.65rem', color: '#52525b' }}>🩸 {Math.round(gl)} · ⚙️ {Math.round(dig)}%</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', marginTop: '6px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: `1px solid ${metabolicState.color}40` }}>
+            <span style={{ fontSize: '0.7rem', color: '#888' }}>Radar metabolico:</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
+            <span style={{ fontSize: '0.65rem', color: '#666' }}>🩸 {Math.round(gl)} · ⚙️ {Math.round(dig)}%</span>
           </div>
           <div
             role="button"
             tabIndex={0}
             onClick={() => { if (trafficLight.text === 'IN DIGESTIONE') setShowTrainingPopup(true); }}
             onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && trafficLight.text === 'IN DIGESTIONE') { e.preventDefault(); setShowTrainingPopup(true); } }}
-            style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: '#111', padding: '10px 12px', borderRadius: '10px', border: `1px solid ${trafficLight.color === '#ef4444' ? '#7f1d1d' : '#27272a'}`, marginTop: '8px', cursor: trafficLight.text === 'IN DIGESTIONE' ? 'pointer' : 'default' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', padding: '10px 15px', borderRadius: '12px', border: `1px solid ${trafficLight.color}`, marginTop: '8px', cursor: trafficLight.text === 'IN DIGESTIONE' ? 'pointer' : 'default' }}
           >
-            <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: trafficLight.color }} />
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: trafficLight.color, boxShadow: `0 0 10px ${trafficLight.color}` }} />
             <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: trafficLight.color }}>{trafficLight.text}</div>
-              <div style={{ fontSize: '0.65rem', color: '#a1a1aa' }}>{trafficLight.msg}</div>
+              <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: trafficLight.color }}>{trafficLight.text}</div>
+              <div style={{ fontSize: '0.65rem', color: '#aaa' }}>{trafficLight.msg}</div>
             </div>
           </div>
         </div>
         <div className="chart-wrapper" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <div className="chartTitle" style={{ background: '#111' }}>
-            <div style={{ marginBottom: '6px' }}>
-              <span style={{ fontSize: '0.7rem', color: '#71717a', letterSpacing: '1px', textTransform: 'uppercase' }}>
+          <div className="chartTitle">
+            <div style={{ marginBottom: '8px' }}>
+              <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
                 {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia SNC (%)'}
               </span>
               {chartUnit === 'calorieTimeline' && (
-                <div style={{ fontSize: '0.65rem', color: '#52525b', marginTop: '4px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
+                <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '4px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
                   Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
                 </div>
               )}
             </div>
           </div>
-          {/* Toolbar grafico: azioni fuori dal chart (no overlap) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginBottom: '8px', padding: '8px 0' }}>
-            <button type="button" className="zoom-btn zoom-btn-toolbar" onClick={enterFullscreen} title="Grafico a tutto schermo">⛶</button>
-            <button type="button" className="zoom-btn zoom-btn-toolbar" onClick={() => setShowTelemetryPopup(true)} title="Stats">📊</button>
-            <button type="button" className="zoom-btn zoom-btn-toolbar" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
-            <button type="button" className="zoom-btn zoom-btn-toolbar" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
-            <button type="button" className="zoom-btn zoom-btn-toolbar" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
-          </div>
           <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, backgroundColor: '#000', borderRadius: '12px' }}>
+            <div className="zoom-controls">
+              <button type="button" className="zoom-btn" onClick={enterFullscreen} title="Grafico a tutto schermo" style={{ borderColor: '#00e5ff', color: '#00e5ff' }}>⛶</button>
+              <button type="button" className="zoom-btn" onClick={() => setShowTelemetryPopup(true)} title="Stats" style={{ background: 'rgba(0, 230, 118, 0.15)', borderColor: '#00e676', color: '#00e676' }}>📊</button>
+              <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))}>+</button>
+              <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Centra">🎯</button>
+              <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))}>−</button>
+            </div>
+            <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
             <div
               className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
               onTouchStart={() => { chartTouchTimerRef.current = setTimeout(() => setIsChartTooltipActive(true), 400); }}
@@ -4221,10 +4216,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 aria-label="Apri grafico a tutto schermo"
               >
                 {chartUnit === 'percent' ? (
-              <div style={{ background: '#111', padding: '15px', borderRadius: '12px', border: '1px solid #27272a' }}>
+              <div style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
                 <h3 style={{ margin: '0 0 4px 0', fontSize: '1rem', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
                   <span>⚡ Energia SNC (%)</span>
-                  <span style={{ color: '#71717a', fontSize: '0.8rem' }}>0-100%</span>
+                  <span style={{ color: '#00e676', fontSize: '0.8rem' }}>0-100%</span>
                 </h3>
                 <div style={{ width: '100%', height: '220px' }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -4591,9 +4586,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }}>
-          {/* Radar Container: Tachimetro centrale (ridotto) + riga macro sotto */}
+          {/* Radar Container: Tachimetro centrale + riga macro sotto */}
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }}>
-            <div style={{ position: 'relative', width: '100%', maxWidth: '300px', aspectRatio: '1', margin: '0 auto', overflow: 'visible' }} onClick={() => setSelectedMealCenter(null)}>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto', overflow: 'visible' }} onClick={() => setSelectedMealCenter(null)}>
               {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
               <div
                 className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
@@ -4604,7 +4599,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     if (mealNode) handleNodeTap(mealNode)();
                   }
                 }}
-                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#111', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '1px solid #27272a', zIndex: 15, boxShadow: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'none' : '0 0 20px rgba(239,68,68,0.2)', cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease', pointerEvents: selectedMealCenter ? 'auto' : 'none' }}
+                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease', pointerEvents: selectedMealCenter ? 'auto' : 'none' }}
               >
                 {selectedMealCenter ? (
                   <div className="pieCenterInfo" style={{ textAlign: 'center', cursor: 'pointer' }}>
@@ -4642,8 +4637,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       data={mealPieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius="70%"
-                      outerRadius="88%"
+                      innerRadius="68%"
+                      outerRadius="85%"
                       paddingAngle={3}
                       startAngle={90}
                       endAngle={-270}
@@ -4686,23 +4681,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             </div>
 
-            {/* Card macro: contenitore unico, stile uniforme (colori solo per alert se necessario) */}
-            <div className="macrosRow" style={{ width: '100%', marginTop: '20px', padding: '14px', backgroundColor: '#111', border: '1px solid #27272a', borderRadius: '16px', position: 'relative', zIndex: 10, gap: '10px' }}>
-              <div className="macroBox" style={{ background: '#18181b', padding: '10px 12px', borderRadius: '12px', border: '1px solid #27272a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-                <span style={{ fontSize: '0.65rem', color: '#71717a', fontWeight: '600', letterSpacing: '1px' }}>PRO</span>
-                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.7rem', color: '#71717a' }}>/{Math.round(userTargets?.prot || 0)}g</span></span>
+            {/* Riga widget macro: griglia 4 colonne fissa */}
+            <div className="macrosRow" style={{ width: '100%', marginTop: '25px', padding: '0 10px', position: 'relative', zIndex: 10 }}>
+              <div className="macroBox" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(179,136,255,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
+                <span style={{ fontSize: '0.65rem', color: '#b388ff', fontWeight: 'bold', letterSpacing: '1px' }}>PRO</span>
+                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.prot || 0)}g</span></span>
               </div>
-              <div className="macroBox" style={{ background: '#18181b', padding: '10px 12px', borderRadius: '12px', border: '1px solid #27272a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-                <span style={{ fontSize: '0.65rem', color: '#71717a', fontWeight: '600', letterSpacing: '1px' }}>CARB</span>
-                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.7rem', color: '#71717a' }}>/{Math.round(userTargets?.carb || 0)}g</span></span>
+              <div className="macroBox" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(0,230,118,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
+                <span style={{ fontSize: '0.65rem', color: '#00e676', fontWeight: 'bold', letterSpacing: '1px' }}>CARB</span>
+                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.carb || 0)}g</span></span>
               </div>
-              <div className="macroBox" style={{ background: '#18181b', padding: '10px 12px', borderRadius: '12px', border: '1px solid #27272a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-                <span style={{ fontSize: '0.65rem', color: '#71717a', fontWeight: '600', letterSpacing: '1px' }}>FAT</span>
-                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.7rem', color: '#71717a' }}>/{Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 0)}g</span></span>
+              <div className="macroBox" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(255,234,0,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
+                <span style={{ fontSize: '0.65rem', color: '#ffea00', fontWeight: 'bold', letterSpacing: '1px' }}>FAT</span>
+                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 0)}g</span></span>
               </div>
-              <div className="macroBox" style={{ background: '#18181b', padding: '10px 12px', borderRadius: '12px', border: '1px solid #27272a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-                <span style={{ fontSize: '0.65rem', color: '#71717a', fontWeight: '600', letterSpacing: '1px' }}>FIBRE</span>
-                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fibre || 0)}<span style={{ fontSize: '0.7rem', color: '#71717a' }}>/{Math.round(userTargets?.fibre || 30)}g</span></span>
+              <div className="macroBox" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(249,115,22,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
+                <span style={{ fontSize: '0.65rem', color: '#f97316', fontWeight: 'bold', letterSpacing: '1px' }}>FIBRE</span>
+                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fibre || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fibre || 30)}g</span></span>
               </div>
             </div>
           </div>
@@ -4732,9 +4727,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               faseText = 'Assorbimento / Neutra';
               faseColor = '#ffea00';
             }
-            const isCatabolismo = faseColor === '#ef4444';
             return (
-          <div role="button" tabIndex={0} onClick={() => setShowMetabolicPopup(true)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowMetabolicPopup(true); } }} style={{ width: '100%', maxWidth: '400px', margin: '0 auto', backgroundColor: isCatabolismo ? 'rgba(127,29,29,0.25)' : '#111', border: `1px solid ${isCatabolismo ? '#991b1b' : '#27272a'}`, borderRadius: '12px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0, cursor: 'pointer' }}>
+          <div role="button" tabIndex={0} onClick={() => setShowMetabolicPopup(true)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowMetabolicPopup(true); } }} style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '10px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)', flexShrink: 0, cursor: 'pointer' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '1.1rem', filter: `drop-shadow(0 0 5px ${faseColor})` }}>⏳</span>
@@ -4764,19 +4758,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
 
-      </div>
-      {/* Fine wrapper principale - sfondo nero */}
-
       {/* Barra trigger AI persistente (fixed in fondo) - Apre la chat reale */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: 'max(12px, env(safe-area-inset-bottom))', backgroundColor: '#111', borderTop: '1px solid #27272a', zIndex: 90 }}>
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: 'max(12px, env(safe-area-inset-bottom))', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid #222', zIndex: 90 }}>
         <div
           onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
-          style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: '#18181b', borderRadius: '24px', padding: '12px 20px', border: '1px solid #27272a', cursor: 'pointer' }}
+          style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '12px 20px', border: '1px solid #333', cursor: 'pointer' }}
         >
           <span style={{ fontSize: '1.2rem' }}>✨</span>
-          <span style={{ color: '#a1a1aa', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
+          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
         </div>
-        <button type="button" onClick={() => { setShowChoiceModal(false); setIsDrawerOpen(true); setActiveAction(null); }} style={{ width: 50, height: 50, minWidth: 50, backgroundColor: '#18181b', color: '#e5e5e5', border: '1px solid #27272a', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.2s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
+        <button type="button" onClick={() => { setShowChoiceModal(false); setIsDrawerOpen(true); setActiveAction(null); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
       </div>
 
       {/* --- CASSETTO AZIONI --- */}
