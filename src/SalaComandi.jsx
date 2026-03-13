@@ -3998,10 +3998,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         )}
 
         {/* BARRA DEGLI STRUMENTI: Data + Stella Report + Toggle Home/Analisi */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'max(6px, 1vh)', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '6px 12px', borderRadius: '12px', border: '1px solid #222' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', width: '100%', gap: '10px', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '6px 12px', borderRadius: '12px', border: '1px solid #222' }}>
           
-          {/* 1. SELETTORE DATA (Estrema Sinistra) */}
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start', minWidth: 0 }}>
+          {/* 1. SELETTORE DATA (A sinistra, dimensioni naturali) */}
+          <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-start', maxWidth: '50%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
               <button
                 type="button"
@@ -4024,8 +4024,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           </div>
 
-          {/* 2. STELLA / REPORT (Al centro) */}
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+          {/* 2. STELLA / REPORT (Al centro esatto dello spazio rimanente) */}
+          <div style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center' }}>
             <div
               role="button"
               tabIndex={0}
@@ -4097,8 +4097,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           </div>
 
-          {/* 3. SWITCH HOME/ANALISI (A destra) */}
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+          {/* 3. SWITCH HOME/ANALISI (A destra, dimensioni naturali) */}
+          <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end' }}>
             <div
               onMouseDown={handleSwitchTouchStart}
               onMouseUp={handleSwitchTouchEnd}
