@@ -148,6 +148,12 @@ export default function ChartModal({
   const safeDailyLog = dailyLog || [];
 
   return (
+    <>
+    <style>{`
+      .zoom-vertical-bar { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 1000; background: rgba(0, 0, 0, 0.4); padding: 8px; border-radius: 30px; backdrop-filter: blur(5px); border: 1px solid rgba(255, 255, 255, 0.1); }
+      .zoom-btn-vertical { width: 40px; height: 40px; border-radius: 50%; background: #2c2c2e; color: white; border: 1px solid #444; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; }
+      .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
+    `}</style>
     <div
       style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000, background: '#050505', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
       role="dialog"
@@ -510,5 +516,6 @@ export default function ChartModal({
         )}
       </div>
     </div>
+    </>
   );
 }
