@@ -3508,13 +3508,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <button type="button" onClick={exitFullscreen} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>✖ Chiudi</button>
         </div>
 
-        {/* 2. CORPO SCORREVOLE (GRAFICO E NODI IN SOLIDO) */}
+        {/* 2. CORPO SCORREVOLE (GRAFICO E NODI IN SOLIDO) - pulsantiera zoom è fuori, ancorata a fixed */}
         <div ref={fullscreenChartScrollRef} style={{ flex: 1, width: '100%', minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
-          <div className="zoom-vertical-bar" aria-label="Controlli zoom fullscreen">
-            <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
-            <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
-            <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
-          </div>
           <div style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', minHeight: '100%', display: 'flex', flexDirection: 'column', paddingBottom: '30px', transition: 'width 0.3s ease' }}>
             <div style={{ flex: 1, minHeight: '280px' }}>
             {currentChartType === 'percent' && (
@@ -3690,6 +3685,30 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               })}
             </div>
           </div>
+        </div>
+        {/* Pulsantiera Zoom ancorata al bordo destro, indipendente dallo scroll (position: fixed) */}
+        <div
+          role="group"
+          aria-label="Controlli zoom fullscreen"
+          style={{
+            position: 'fixed',
+            right: '15px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 2000,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '15px',
+            background: 'rgba(20, 20, 20, 0.7)',
+            padding: '10px',
+            borderRadius: '30px',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.15)'
+          }}
+        >
+          <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
+          <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
+          <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
         </div>
       </div>
     );
@@ -4236,7 +4255,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button type="button" onClick={enterFullscreen} title="Fullscreen" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label="Apri a tutto schermo">⛶</button>
             </div>
           </div>
-          <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', transform: 'none' }}>
             <div className="zoom-vertical-bar" aria-label="Controlli zoom">
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
               <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>

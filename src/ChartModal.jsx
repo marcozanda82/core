@@ -150,7 +150,7 @@ export default function ChartModal({
   return (
     <>
     <style>{`
-      .zoom-vertical-bar { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 1000; background: rgba(0, 0, 0, 0.4); padding: 8px; border-radius: 30px; backdrop-filter: blur(5px); border: 1px solid rgba(255, 255, 255, 0.1); }
+      .zoom-vertical-bar { position: fixed; right: 15px; top: 50%; transform: translateY(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 15px; background: rgba(20, 20, 20, 0.7); padding: 10px; border-radius: 30px; backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.15); }
       .zoom-btn-vertical { width: 40px; height: 40px; border-radius: 50%; background: #2c2c2e; color: white; border: 1px solid #444; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; }
       .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
     `}</style>
