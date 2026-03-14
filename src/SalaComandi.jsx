@@ -3701,15 +3701,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .drawer-content { position: fixed; bottom: -100%; left: 0; right: 0; background: rgba(15, 15, 15, 0.95); border-top: 1px solid #2a2a2a; border-radius: 25px 25px 0 0 !important; padding: 30px 20px !important; padding-bottom: max(20px, env(safe-area-inset-bottom)); transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.05); z-index: 101; box-shadow: 0 -10px 50px rgba(0,0,0,0.9); max-height: 92vh !important; overflow-y: auto; backdrop-filter: blur(25px); -webkit-overflow-scrolling: touch; }
           .drawer-content.open { bottom: 0; }
           
-          /* Navigator Zoom Controls (solo in fullscreen) */
+          /* Navigator Zoom Controls (fullscreen + Analisi) */
           .zoom-controls { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 10; }
           .zoom-btn { width: 44px; height: 44px; background: rgba(20, 20, 20, 0.8); border: 1px solid #333; color: #00e5ff; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; backdrop-filter: blur(5px); cursor: pointer; outline: none; }
+          .analisi-zoom-row .zoom-btn { width: 36px; height: 36px; font-size: 1rem; }
           @keyframes pulseDot {
             0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.8); opacity: 0.6; }
+            50% { transform: scale(1.6); opacity: 0.5; }
             100% { transform: scale(1); opacity: 1; }
           }
-          .pulsing-dot { animation: pulseDot 2s infinite ease-in-out; transform-origin: center; }
+          .pulsing-dot { animation: pulseDot 2s infinite ease-in-out; transform-box: fill-box; transform-origin: center; }
           .tachimeter-center.tachimeter-center-reset:hover { filter: brightness(1.08); box-shadow: 0 0 45px rgba(255,255,255,0.12); }
 
           /* Macro widgets: ~30% più piccoli, formato assunto/obiettivo */
@@ -4175,6 +4176,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol' : ''}`}>🧠 CORTISOL</button>
             <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGEST</button>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }} className="analisi-zoom-row">
+            <span style={{ fontSize: '0.65rem', color: '#666', marginRight: '4px' }}>Zoom:</span>
+            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
+            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(1)} title="Ripristina">⟲</button>
+            <button type="button" className="zoom-btn" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', marginTop: '6px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: `1px solid ${metabolicState.color}40` }}>
             <span style={{ fontSize: '0.7rem', color: '#888' }}>Radar metabolico:</span>
             <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
@@ -4195,11 +4202,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         </div>
         <div className="chart-wrapper" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <div className="chartTitle">
-            <div style={{ marginBottom: '8px' }}>
-              <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
-                {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia SNC (%)'}
-              </span>
+          <div className="chartTitle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
+              {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia SNC (%)'}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <button type="button" onClick={() => { setExpandedChart(chartUnit); setActiveHighlight(null); }} title="Dettagli / Telemetria" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label="Dettagli grafico">🎯</button>
+              <button type="button" onClick={enterFullscreen} title="Fullscreen" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label="Apri a tutto schermo">⛶</button>
             </div>
           </div>
           <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
