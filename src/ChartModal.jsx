@@ -204,7 +204,7 @@ export default function ChartModal({
                   <ReferenceLine key={`modal-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 4 : 1.5} strokeOpacity={activeHighlight === 'sveglia' ? 1 : 0.8} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
                 ))}
                 <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 4 : 1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
-                <ReferenceDot x={displayTime} y={dotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} />
+                <ReferenceDot x={displayTime} y={dotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                 <Area type="monotone" dataKey="riservaFisica" stroke="#00e676" fill="url(#colorRiservaModal)" fillOpacity={1} strokeWidth={2} dot={false} isAnimationActive={false} />
                 <Area type="monotone" dataKey="energyPast" stroke="#00e5ff" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} connectNulls={false} />
                 <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.6} connectNulls={false} />
@@ -223,7 +223,7 @@ export default function ChartModal({
                 <YAxis domain={[0, Math.max(targetKcalChart, 1)]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={36} />
                 <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${Math.round(Number(value))} kcal`, 'Energia scalata']} labelFormatter={(label) => `Ore ${label}:00`} />
                 <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
-                <ReferenceDot x={displayTime} y={scale(dotY)} isFront r={8} fill="#00e5ff" stroke="#fff" strokeWidth={2} />
+                <ReferenceDot x={displayTime} y={scale(dotY)} isFront r={8} fill="#00e5ff" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                 <Area type="monotone" dataKey="kcalPast" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#modalColorEnergyKcal)" connectNulls={false} />
                 <Area type="monotone" dataKey="kcalFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} />
               </ComposedChart>
@@ -243,7 +243,7 @@ export default function ChartModal({
                     <ReferenceLine key={`modal-ctl-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 10 }} />
                   ))}
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
-                  <ReferenceDot x={displayTime} y={dotYCalorieTimeline ?? 0} isFront r={8} fill="#ff9800" stroke="#fff" strokeWidth={2} />
+                  <ReferenceDot x={displayTime} y={dotYCalorieTimeline ?? 0} isFront r={8} fill="#ff9800" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -282,7 +282,7 @@ export default function ChartModal({
                 {expandedChart === 'glicemia' && <ReferenceLine y={85} stroke="rgba(255,255,255,0.2)" strokeDasharray="5 5" />}
                 {expandedChart !== 'glicemia' && <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255,255,255,0.2)" strokeWidth={2} strokeDasharray="8 8" dot={false} />}
                 <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={activeHighlight === 'ora' ? 4 : 1} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
-                <ReferenceDot x={displayTime} y={expandedChart === 'glicemia' ? dotGlicemia : (expandedChart === 'idratazione' ? dotIdratazione : (expandedChart === 'cortisolo' ? dotCortisolo : (expandedChart === 'digestione' ? dotDigestione : (expandedChart === 'neuro' ? dotNeuro : (expandedChart === 'kcal' ? (dotY != null ? (dotY / 100) * targetKcalChart : 0) : dotY)))))} isFront r={8} fill={expandedChart === 'neuro' ? '#6366f1' : '#00e5ff'} stroke="#fff" strokeWidth={2} />
+                <ReferenceDot x={displayTime} y={expandedChart === 'glicemia' ? dotGlicemia : (expandedChart === 'idratazione' ? dotIdratazione : (expandedChart === 'cortisolo' ? dotCortisolo : (expandedChart === 'digestione' ? dotDigestione : (expandedChart === 'neuro' ? dotNeuro : (expandedChart === 'kcal' ? (dotY != null ? (dotY / 100) * targetKcalChart : 0) : dotY)))))} isFront r={8} fill={expandedChart === 'glicemia' ? '#ef4444' : expandedChart === 'idratazione' ? '#00e5ff' : expandedChart === 'cortisolo' ? '#9c27b0' : expandedChart === 'digestione' ? '#9333ea' : expandedChart === 'neuro' ? '#6366f1' : expandedChart === 'kcal' ? '#00e5ff' : '#00e676'} stroke="#fff" strokeWidth={2} className="pulsing-dot" />
               </ComposedChart>
             </ResponsiveContainer>
           )}
