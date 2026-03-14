@@ -383,6 +383,8 @@ export default function SalaComandi() {
     return () => { document.body.style.overflow = ''; };
   }, [draggingNode]);
 
+  const CURRENT_TIME_VIEW_OFFSET = 0.3; // ora attuale al 30% da sinistra (più spazio a destra per la proiezione)
+
   const centerCurrentTime = useCallback(() => {
     if (!chartScrollRef.current) return;
     const container = chartScrollRef.current;
@@ -392,12 +394,41 @@ export default function SalaComandi() {
     if (currentTrackerDate === getTodayString()) {
       const chartWidth = scrollWidth - 80;
       const timePos = (currentTime / 24) * chartWidth;
-      const targetScroll = timePos - (clientWidth / 2);
+      const targetScroll = timePos - (clientWidth * CURRENT_TIME_VIEW_OFFSET);
       container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
     } else {
       container.scrollLeft = scrollWidth;
     }
   }, [currentTime, currentTrackerDate, zoomLevel]);
+
+  const fullscreenChartScrollRef = useRef(null);
+
+  const centerCurrentTimeFullscreen = useCallback(() => {
+    if (!fullscreenChartScrollRef.current) return;
+    const container = fullscreenChartScrollRef.current;
+    const scrollWidth = container.scrollWidth;
+    const clientWidth = container.clientWidth;
+    if (currentTrackerDate === getTodayString()) {
+      const chartWidth = Math.max(scrollWidth - 80, 1);
+      const timePos = (currentTime / 24) * chartWidth;
+      const targetScroll = timePos - (clientWidth * CURRENT_TIME_VIEW_OFFSET);
+      container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
+    } else {
+      container.scrollLeft = Math.max(0, scrollWidth - clientWidth);
+    }
+  }, [currentTime, currentTrackerDate, zoomLevel]);
+
+  const handleCenterZoomAndPan = useCallback(() => {
+    setZoomLevel(1);
+    const runPan = () => {
+      if (isFullScreenGraph && fullscreenChartScrollRef.current) {
+        centerCurrentTimeFullscreen();
+      } else if (chartScrollRef.current) {
+        centerCurrentTime();
+      }
+    };
+    setTimeout(runPan, 120);
+  }, [isFullScreenGraph, centerCurrentTime, centerCurrentTimeFullscreen]);
 
   useEffect(() => {
     const timer = setTimeout(centerCurrentTime, 50);
@@ -3478,13 +3509,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
 
         {/* 2. CORPO SCORREVOLE (GRAFICO E NODI IN SOLIDO) */}
-        <div style={{ flex: 1, width: '100%', minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
-          <div className="zoom-vertical-bar" aria-label="Controlli zoom">
+        <div ref={fullscreenChartScrollRef} style={{ flex: 1, width: '100%', minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
+          <div className="zoom-vertical-bar" aria-label="Controlli zoom fullscreen">
             <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
-            <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(1)} title="Ripristina / Centra">🎯</button>
+            <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
             <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
           </div>
-          <div style={{ width: '200vw', height: '100%', minHeight: '100%', display: 'flex', flexDirection: 'column', paddingBottom: '30px' }}>
+          <div style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', minHeight: '100%', display: 'flex', flexDirection: 'column', paddingBottom: '30px', transition: 'width 0.3s ease' }}>
             <div style={{ flex: 1, minHeight: '280px' }}>
             {currentChartType === 'percent' && (
               <ResponsiveContainer width="100%" height="100%">
@@ -3701,8 +3732,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .drawer-content { position: fixed; bottom: -100%; left: 0; right: 0; background: rgba(15, 15, 15, 0.95); border-top: 1px solid #2a2a2a; border-radius: 25px 25px 0 0 !important; padding: 30px 20px !important; padding-bottom: max(20px, env(safe-area-inset-bottom)); transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.05); z-index: 101; box-shadow: 0 -10px 50px rgba(0,0,0,0.9); max-height: 92vh !important; overflow-y: auto; backdrop-filter: blur(25px); -webkit-overflow-scrolling: touch; }
           .drawer-content.open { bottom: 0; }
           
-          /* Barra zoom verticale (pollice-friendly) - stessa definizione in index.css */
-          .zoom-vertical-bar { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 1000; background: rgba(0, 0, 0, 0.4); padding: 8px; border-radius: 30px; backdrop-filter: blur(5px); border: 1px solid rgba(255, 255, 255, 0.1); }
+          /* Barra zoom verticale (pollice-friendly, bordo destro) - stessa definizione in index.css */
+          .zoom-vertical-bar { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 14px; z-index: 1100; background: rgba(0, 0, 0, 0.5); padding: 10px 6px; border-radius: 30px; backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.12); pointer-events: auto; }
           .zoom-btn-vertical { width: 40px; height: 40px; border-radius: 50%; background: #2c2c2e; color: white; border: 1px solid #444; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; }
           .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
           @keyframes pulseDot {
@@ -4208,7 +4239,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <div className="zoom-vertical-bar" aria-label="Controlli zoom">
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
-              <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(1)} title="Ripristina / Centra">🎯</button>
+              <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
             </div>
             <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
