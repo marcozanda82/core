@@ -63,9 +63,45 @@ export default function ChartModal({
   onTimeChange
 }) {
   const [selectedSimNode, setSelectedSimNode] = useState(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
   const modalSwipeStartXRef = useRef(null);
   const bottomTouchStartX = useRef(null);
   const highlightResetTimeoutRef = useRef(null);
+  const initialPinchDistanceRef = useRef(null);
+
+  const getDistance = (touch1, touch2) =>
+    Math.sqrt(
+      Math.pow(touch2.clientX - touch1.clientX, 2) +
+      Math.pow(touch2.clientY - touch1.clientY, 2)
+    );
+
+  const handleChartTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      e.stopPropagation();
+      initialPinchDistanceRef.current = getDistance(e.touches[0], e.touches[1]);
+    }
+  };
+
+  const handleChartTouchMove = (e) => {
+    if (e.touches.length === 2 && initialPinchDistanceRef.current != null) {
+      e.preventDefault();
+      e.stopPropagation();
+      const currentDistance = getDistance(e.touches[0], e.touches[1]);
+      const diff = currentDistance - initialPinchDistanceRef.current;
+      if (Math.abs(diff) > 10) {
+        if (diff > 0) {
+          setZoomLevel((prev) => Math.min(prev + 0.05, 5));
+        } else {
+          setZoomLevel((prev) => Math.max(prev - 0.05, 0.5));
+        }
+        initialPinchDistanceRef.current = currentDistance;
+      }
+    }
+  };
+
+  const handleChartTouchEnd = (e) => {
+    if (e.touches.length < 2) initialPinchDistanceRef.current = null;
+  };
 
   const currentIndex = CHART_VIEWS_CAROUSEL.indexOf(expandedChart);
   const safeIndex = currentIndex >= 0 ? currentIndex : 0;
@@ -184,7 +220,13 @@ export default function ChartModal({
             Calorie ingerite nel corso della giornata in base ai pasti registrati.
           </div>
         )}
-        <div style={{ flex: 1, minHeight: 120 }}>
+        <div
+          style={{ flex: 1, minHeight: 120, overflow: 'hidden', touchAction: 'none' }}
+          onTouchStart={handleChartTouchStart}
+          onTouchMove={handleChartTouchMove}
+          onTouchEnd={handleChartTouchEnd}
+        >
+          <div style={{ width: '100%', height: '100%', transform: `scale(${zoomLevel})`, transformOrigin: 'center center', transition: 'transform 0.05s ease-out' }}>
           {expandedChart === 'percent' ? (
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={modalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
@@ -292,6 +334,7 @@ export default function ChartModal({
               </ComposedChart>
             </ResponsiveContainer>
           )}
+          </div>
         </div>
 
         <div style={{ flexShrink: 0, height: '55px', marginTop: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', position: 'relative', overflow: 'hidden' }}>
