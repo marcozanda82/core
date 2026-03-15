@@ -47,7 +47,8 @@ export default function AiCluster({
       }, null);
     let lastMealHoursAgo = 24;
     if (lastMeal) {
-      let diff = (displayTime ?? 12) - (Number(lastMeal.mealTime) ?? Number(lastMeal.time) ?? 0);
+      // Usa || così se Number(lastMeal.mealTime) è NaN, passa a Number(lastMeal.time)
+      let diff = (displayTime ?? 12) - (Number(lastMeal.mealTime) || Number(lastMeal.time) || 0);
       if (diff < 0) diff += 24;
       lastMealHoursAgo = diff;
     }

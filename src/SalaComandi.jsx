@@ -3688,7 +3688,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 if (isCognitive) {
                   const dur = (node.duration || 1) / 24 * 100;
                   return (
-                    <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(0, 229, 255, 0.2)', border: '2px solid #00e5ff', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#00e5ff' }}>{node.subType === 'studio' ? '📚' : '💻'}</div>
+                    <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(182,102,210,0.2)', border: '2px solid #b666d2', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#b666d2', boxShadow: '0 0 8px rgba(182,102,210,0.3)' }}>{node.subType === 'studio' ? '📚' : '💻'}</div>
                   );
                 }
                 return (
@@ -4639,11 +4639,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const iconContent = NODE_TYPE_ICON[node.type] ?? (isStimulant ? '☕' : (isWater ? '💧' : (isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•'))));
                     const bioTypeBg = { nap: 'rgba(129,140,248,0.2)', meditation: 'rgba(34,197,94,0.2)', supplements: 'rgba(168,85,247,0.2)', sunlight: 'rgba(251,191,36,0.2)', cognitive: 'rgba(182,102,210,0.2)' }[node.type];
                     const bioTypeBorder = { nap: '#818cf8', meditation: '#22c55e', supplements: '#a855f7', sunlight: '#fbbf24', cognitive: '#b666d2' }[node.type];
-                    const bgColor = isStimulant ? (isDragging ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.2)') : isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : isCognitivePoint ? (isDragging ? 'rgba(182,102,210,0.35)' : 'rgba(182,102,210,0.2)') : bioTypeBg ? (isDragging ? bioTypeBg.replace('0.2)', '0.35)') : bioTypeBg) : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
-                    const nodeBorderColor = isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor)));
+                    const isWorkoutPoint = node.type === 'workout';
+                    const isMealPoint = node.type === 'meal';
+                    let bgColor = node.color;
+                    if (!bgColor) {
+                      if (isTouchingOrDragging) {
+                        bgColor = isWorkoutPoint ? 'rgba(255,68,68,0.4)' : isMealPoint ? 'rgba(0,229,255,0.4)' : isCognitivePoint ? 'rgba(182,102,210,0.4)' : isStimulant ? 'rgba(245,158,11,0.35)' : isWater ? 'rgba(0,229,255,0.35)' : '#888';
+                      } else {
+                        bgColor = isCognitivePoint ? 'rgba(182,102,210,0.2)' : isWorkoutPoint ? 'rgba(255,68,68,0.2)' : isMealPoint ? 'rgba(0,229,255,0.15)' : isStimulant ? 'rgba(245,158,11,0.2)' : isWater ? 'rgba(0, 229, 255, 0.15)' : (bioTypeBg || 'rgba(0,0,0,0.6)');
+                      }
+                    }
+                    const nodeBorderColor = node.color || (isCognitivePoint ? '#b666d2' : isWorkoutPoint ? '#ff4444' : isMealPoint ? '#00e5ff' : (isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (bioTypeBorder || pointBorderColor))));
                     const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
                     const pointTransform = isDragging ? `translate(-50%, ${dragY - 45}px) scale(2)` : `translateX(-50%) scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`;
-                    const pointBoxShadow = isTouchingOrDragging ? (isStimulant ? '0 0 15px #f59e0b' : isWater ? '0 0 15px #00e5ff' : isCognitivePoint ? '0 0 15px #b666d2' : (bioTypeBorder ? `0 0 15px ${bioTypeBorder}` : '0 0 15px #00e5ff')) : 'none';
+                    let pointBoxShadow = 'none';
+                    if (isTouchingOrDragging) {
+                      pointBoxShadow = isWorkoutPoint ? '0 0 15px #ff4444' : isMealPoint ? '0 0 15px #00e5ff' : isCognitivePoint ? '0 0 15px #b666d2' : isStimulant ? '0 0 15px #f59e0b' : isWater ? '0 0 15px #00e5ff' : (bioTypeBorder ? `0 0 15px ${bioTypeBorder}` : 'none');
+                    } else if (isCognitivePoint) {
+                      pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
+                    }
                     return (
                       <div key={node.id} className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${displayPercent}%`, transform: pointTransform, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, boxShadow: pointBoxShadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
                         <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor))), marginBottom: '2px', transition: 'color 0.2s' }}>
