@@ -1708,6 +1708,7 @@ export default function SalaComandi() {
       if (window.screen?.orientation?.lock) await window.screen.orientation.lock('landscape');
     } catch (err) { console.warn('Landscape lock non supportato', err); }
     setIsFullScreenGraph(true);
+    setTimeout(() => centerCurrentTimeFullscreen(), 180);
   };
 
   const exitFullscreen = async () => {
@@ -3660,8 +3661,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </ResponsiveContainer>
             )}
             </div>
-            {/* Barra Nodi solidale al grafico (stessa larghezza 200vw) */}
-            <div style={{ height: '70px', marginTop: '-10px', paddingBottom: '25px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
+            {/* Barra Nodi solidale al grafico (stessa larghezza) - marginTop per non sovrapporre al grafico */}
+            <div style={{ height: '70px', marginTop: '12px', paddingBottom: '25px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
               {(activeNodesWithStack || []).map((node) => {
                 const pct = ((node.time ?? 0) / 24) * 100;
                 const isWork = node.type === 'work';
@@ -3693,7 +3694,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           style={{
             position: 'fixed',
             right: '15px',
-            top: '50%',
+            top: '40%',
             transform: 'translateY(-50%)',
             zIndex: 2000,
             display: 'flex',
@@ -4256,11 +4257,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           </div>
           <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', transform: 'none' }}>
+            {(!activeAction || activeAction === 'home') && (
             <div className="zoom-vertical-bar" aria-label="Controlli zoom">
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
               <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
             </div>
+            )}
             <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
             <div
               className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
@@ -5211,10 +5214,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         {activeAction === 'pasto' && (
           <MealBuilder
             onClose={() => {
-              setActiveAction(null);
+              setActiveAction('home');
               setEditingMealId(null);
               setAddedFoods([]);
               setSelectedMealCenter(null);
+              setIsDrawerOpen(false);
             }}
             mealType={mealType}
             setMealType={setMealType}
@@ -5352,7 +5356,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 {Object.keys(groupedFoods).length === 0 && workoutsLog.length === 0 && !(activeLog || []).some(i => i.type === 'sleep') ? (
                   <p style={{ textAlign: 'center', color: '#444', fontSize: '0.8rem', fontStyle: 'italic' }}>Nessuna traccia registrata oggi.</p>
                 ) : (
-                  Object.keys(groupedFoods).map(slotKey => {
+                  Object.keys(groupedFoods)
+                    .sort((a, b) => {
+                      const timeA = Math.min(...(groupedFoods[a] || []).map(f => Number(f.mealTime ?? f.time ?? 12) || 0));
+                      const timeB = Math.min(...(groupedFoods[b] || []).map(f => Number(f.mealTime ?? f.time ?? 12) || 0));
+                      return timeA - timeB;
+                    })
+                    .map(slotKey => {
                     const items = groupedFoods[slotKey];
                     const mType = items[0]?.mealType || slotKey.split('_')[0];
                     const baseType = mType.split('_')[0];

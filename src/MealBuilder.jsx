@@ -120,14 +120,15 @@ export default function MealBuilder({
     }
   };
 
+  const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (typeof v === 'string' ? Number(v) : v) != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
+
   const currentMealMacros = useMemo(() => {
     const items = addedFoods || [];
-    const num = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (Number(v) || 0);
     return {
-      kcal: items.reduce((acc, item) => acc + (num(item.kcal) || num(item.cal) || 0), 0),
-      prot: items.reduce((acc, item) => acc + (num(item.prot) || num(item.proteine) || 0), 0),
-      carb: items.reduce((acc, item) => acc + (num(item.carb) || num(item.carboidrati) || 0), 0),
-      fat: items.reduce((acc, item) => acc + (num(item.fat) || num(item.fatTotal) || num(item.grassi) || 0), 0)
+      kcal: items.reduce((acc, item) => acc + toNum(item.kcal ?? item.cal), 0),
+      prot: items.reduce((acc, item) => acc + toNum(item.prot ?? item.proteine), 0),
+      carb: items.reduce((acc, item) => acc + toNum(item.carb ?? item.carboidrati), 0),
+      fat: items.reduce((acc, item) => acc + toNum(item.fat ?? item.fatTotal ?? item.grassi), 0)
     };
   }, [addedFoods]);
 
@@ -387,7 +388,7 @@ export default function MealBuilder({
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                           <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
                             {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, 'kcal', 'kcal')}
-                            {renderProgressBar('PROTEINE', mealTotaliFull.prot || 0, targetMacrosPasto.prot, 'g', 'prot')}
+                            {renderProgressBar('PROTEINE', toNum(mealTotaliFull?.prot), toNum(targetMacrosPasto?.prot), 'g', 'prot')}
                             {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, targetMacrosPasto.carb, 'g', 'carb')}
                             {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
                             {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, targetMacrosPasto.fibre, 'g', 'fibre')}
@@ -434,7 +435,7 @@ export default function MealBuilder({
             </h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {renderProgressBar('Kcal', currentMealMacros.kcal, targetMacros.kcal, 'kcal', 'kcal')}
-              {renderProgressBar('Proteine', currentMealMacros.prot, targetMacros.prot, 'g', 'prot')}
+              {renderProgressBar('Proteine', toNum(currentMealMacros.prot), toNum(targetMacros.prot), 'g', 'prot')}
               {renderProgressBar('Carboidrati', currentMealMacros.carb, targetMacros.carb, 'g', 'carb')}
               {renderProgressBar('Grassi', currentMealMacros.fat, targetMacros.fat, 'g', 'fatTotal')}
             </div>
