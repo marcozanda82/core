@@ -4727,10 +4727,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }}>
           {/* --- CRUSCOTTO BIOLOGICO: Anello Calorie + Box Macro Neon + Fase Metabolica --- */}
           {(() => {
-            const targetKcalRing = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
-            const kcalPercent = targetKcalRing > 0 ? Math.min(100, (totalCaloriesTimeline || 0) / targetKcalRing * 100) : 0;
-            const circumference = 2 * Math.PI * 90;
-            const dashProgress = (kcalPercent / 100) * circumference;
             const lastMealHours = Math.floor(fastingData.hoursFasted);
             const lastMealMinutes = Math.round((fastingData.hoursFasted % 1) * 60);
             const isAssorbimento = fastingData.hoursFasted < 3;
@@ -4741,18 +4737,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', marginBottom: '16px', flexShrink: 0 }}>
-                {/* Anello circolare calorie */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '20px 0', position: 'relative' }}>
-                  <svg viewBox="0 0 200 200" style={{ width: '240px', height: '240px', filter: 'drop-shadow(0 0 15px rgba(0, 229, 255, 0.3))' }}>
-                    <circle cx="100" cy="100" r="90" fill="none" stroke="#2c2c2e" strokeWidth="12" />
-                    <circle cx="100" cy="100" r="90" fill="none" stroke="#00e5ff" strokeWidth="12" strokeDasharray={`${dashProgress} ${circumference}`} strokeLinecap="round" transform="rotate(-90 100 100)" style={{ transition: 'stroke-dasharray 1s ease-out' }} />
-                  </svg>
-                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#ff6b00', textShadow: '0 0 10px rgba(255, 107, 0, 0.5)' }}>{Math.round(totalCaloriesTimeline || 0)}</div>
-                    <div style={{ color: '#888', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>kcal</div>
-                    <div style={{ color: '#555', fontSize: '0.8rem', marginTop: '5px' }}>obiettivo {Math.round(targetKcalRing)}</div>
-                  </div>
-                </div>
+                {/* ClockQuadrant: posizione centrale Home, sopra la griglia macro (da ripristinare quando il componente sarà disponibile) */}
                 {/* Box macronutrienti neon (3 colonne) */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', width: '100%', marginBottom: '16px', padding: '0 4px' }}>
                   <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
