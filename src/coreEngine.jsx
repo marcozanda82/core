@@ -1152,6 +1152,25 @@ Usa ESATTAMENTE le seguenti parole chiave testuali in maiuscolo o normale: [Ener
 REGOLA PREDITTIVA: Distingui i nodi con orario <= ${oraAttuale}h (STORICO) dai nodi con orario > ${oraAttuale}h (PIANIFICAZIONE). Per i nodi STORICI esegui un'analisi. Per i nodi di PIANIFICAZIONE (es. un allenamento o lavoro al PC previsto tra alcune ore) genera consigli di OTTIMIZZAZIONE PREVENTIVA: timing dei nutrienti, pre-workout, sonno richiesto, idratazione e tutto ciò che massimizza la performance all'arrivo di quell'evento.`;
 }
 
+// LOCAL KNOWLEDGE BASE — Casistiche Note (cache risposte AI)
+const KNOWLEDGE_BASE_KEY = 'readycore_knowledge_base';
+const KNOWLEDGE_BASE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 giorni
+function getLocalKnowledgeBase() {
+  try { return JSON.parse(localStorage.getItem(KNOWLEDGE_BASE_KEY)) || {}; } catch { return {}; }
+}
+function saveToKnowledgeBase(hashKey, aiResponseText) {
+  const kb = getLocalKnowledgeBase();
+  kb[hashKey] = { text: aiResponseText, timestamp: Date.now() };
+  try { localStorage.setItem(KNOWLEDGE_BASE_KEY, JSON.stringify(kb)); } catch (_) {}
+}
+function generateStateHash(energyLevel, cortisolLevel, activeAlerts, lastMealHoursAgo) {
+  const energyBucket = Math.floor(Number(energyLevel) / 10) * 10;
+  const cortisolBucket = Math.floor(Number(cortisolLevel) / 10) * 10;
+  const mealBucket = Math.min(Math.floor(Number(lastMealHoursAgo) || 0), 8);
+  const alertsString = (Array.isArray(activeAlerts) ? activeAlerts : []).slice().sort().join('_');
+  return `E${energyBucket}_C${cortisolBucket}_M${mealBucket}_A[${alertsString}]`;
+}
+
 /** Istruzioni per l’AI che elabora screenshot/dati Mi Fitness: mappatura Fell asleep / Woke up e stime. */
 const SLEEP_AI_MI_FITNESS_INSTRUCTIONS = `Mappatura obbligatoria da Mi Fitness: "Fell asleep" (o equivalente "Addormentato", "Inizio sonno") va SEMPRE nella chiave JSON sleepStart (ore decimali 0-24, es. 23.5 per 23:30). "Woke up" (o "Sveglia", "Woke up") va SEMPRE nella chiave sleepEnd oppure wakeTime (ore decimali, es. 6.3 per 06:18). Se un valore non è leggibile o non è disponibile, stima con un valore medio ragionevole (es. sleepStart 23, wakeTime 6.5, hours 7) e compila comunque il JSON.`;
 
@@ -1791,5 +1810,9 @@ export {
   clampModelValue,
   calibrateUserModel,
   buildWeeklyDataFromHistory,
-  predictEnergyIntervention
+  predictEnergyIntervention,
+  getLocalKnowledgeBase,
+  saveToKnowledgeBase,
+  generateStateHash,
+  KNOWLEDGE_BASE_MAX_AGE_MS
 }

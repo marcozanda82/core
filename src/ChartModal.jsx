@@ -20,7 +20,11 @@ import {
   NODE_IMPORTANCE,
   NODE_TYPE_ICON,
   buildGlobalAIPrompt,
-  InteractiveAIText
+  InteractiveAIText,
+  getLocalKnowledgeBase,
+  saveToKnowledgeBase,
+  generateStateHash,
+  KNOWLEDGE_BASE_MAX_AGE_MS
 } from './coreEngine';
 
 const CHART_VIEWS_CAROUSEL = ['percent', 'kcal', 'calorieTimeline', 'glicemia', 'idratazione', 'neuro', 'cortisolo', 'digestione'];
@@ -60,7 +64,8 @@ export default function ChartModal({
   callGeminiAPIWithRotation,
   totalCaloriesTimeline = 0,
   isSimulationMode = false,
-  onTimeChange
+  onTimeChange,
+  activeAlerts = []
 }) {
   const [selectedSimNode, setSelectedSimNode] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -150,6 +155,28 @@ export default function ChartModal({
 
   const runGenerateGlobalAI = () => {
     setIsAiLoading(true);
+    const timeStr = `${String(Math.floor(displayTime)).padStart(2, '0')}:${String(Math.round((displayTime % 1) * 60)).padStart(2, '0')}`;
+
+    // Ore dall'ultimo pasto (per hash stato)
+    const lastMealTime = (dailyLog || [])
+      .filter(e => e.type === 'food' && typeof e.mealTime === 'number' && e.mealTime <= displayTime)
+      .reduce((max, e) => Math.max(max, e.mealTime), -1);
+    const lastMealHoursAgo = lastMealTime >= 0 ? displayTime - lastMealTime : 24;
+
+    const currentHash = generateStateHash(dotY ?? 50, dotCortisolo ?? 25, activeAlerts, lastMealHoursAgo);
+
+    const kb = getLocalKnowledgeBase();
+    if (kb[currentHash] && (Date.now() - (kb[currentHash].timestamp || 0) < KNOWLEDGE_BASE_MAX_AGE_MS)) {
+      const cachedText = kb[currentHash].text + "\n\n*(Risposta caricata istantaneamente dalla memoria locale dell'app)*";
+      setAiInsightsList(prev => {
+        const next = [...prev, { time: timeStr, text: cachedText }];
+        setCurrentAiIndex(next.length - 1);
+        return next;
+      });
+      setIsAiLoading(false);
+      return;
+    }
+
     const prompt = buildGlobalAIPrompt({
       displayTime,
       energy: dotY,
@@ -159,9 +186,9 @@ export default function ChartModal({
       digestione: dotDigestione,
       neuro: dotNeuro
     });
-    const timeStr = `${String(Math.floor(displayTime)).padStart(2, '0')}:${String(Math.round((displayTime % 1) * 60)).padStart(2, '0')}`;
     callGeminiAPIWithRotation(prompt)
       .then((result) => {
+        saveToKnowledgeBase(currentHash, result);
         const newInsight = { time: timeStr, text: result };
         setAiInsightsList(prev => {
           const next = [...prev, newInsight];

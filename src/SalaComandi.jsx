@@ -4700,6 +4700,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             totalCaloriesTimeline={totalCaloriesTimeline}
             isSimulationMode={isSimulationMode}
             onTimeChange={handleSimulatedTimeChange}
+            activeAlerts={[ hasCrashRisk && 'glicemia', hasCortisolRisk && 'cortisolo', hasWaterRisk && 'idratazione', hasDigestionRisk && 'digestione' ].filter(Boolean)}
           />
         )}
       </>
