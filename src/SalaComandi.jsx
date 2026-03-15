@@ -4738,7 +4738,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', marginBottom: '16px', flexShrink: 0 }}>
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
-                <div style={{ position: 'relative', width: '320px', height: '320px', margin: '20px auto 30px auto', zIndex: 10, flexShrink: 0 }} onClick={() => setSelectedMealCenter(null)}>
+                <div style={{ position: 'relative', width: '320px', height: '320px', margin: '10px auto 30px auto', zIndex: 10, flexShrink: 0 }} onClick={() => setSelectedMealCenter(null)}>
                   <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'visible' }}>
                     {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
                     <div
@@ -4836,22 +4836,22 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 </div>
                 {/* Box macronutrienti neon (3 colonne) */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', width: '100%', marginBottom: '16px', padding: '0 4px' }}>
-                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', width: '100%', marginBottom: '10px', padding: '0 4px' }}>
+                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '10px 12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
                     <div style={{ color: '#b666d2', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Proteine</div>
                     <div style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{Math.round(totali?.prot || 0)} <span style={{ color: '#555', fontSize: '0.8rem' }}>/ {Math.round(targetProt)} g</span></div>
                   </div>
-                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '10px 12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
                     <div style={{ color: '#00ff88', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Carboidrati</div>
                     <div style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{Math.round(totali?.carb || 0)} <span style={{ color: '#555', fontSize: '0.8rem' }}>/ {Math.round(targetCarb)} g</span></div>
                   </div>
-                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '10px 12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
                     <div style={{ color: '#ffd700', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Grassi</div>
                     <div style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)} <span style={{ color: '#555', fontSize: '0.8rem' }}>/ {Math.round(targetFat)} g</span></div>
                   </div>
                 </div>
                 {/* Widget Fase Metabolica */}
-                <div style={{ background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '400px' }}>
+                <div style={{ background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '10px 15px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '400px', marginBottom: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span>⏳</span>
