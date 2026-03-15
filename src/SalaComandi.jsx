@@ -4737,7 +4737,101 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', marginBottom: '16px', flexShrink: 0 }}>
-                {/* ClockQuadrant: posizione centrale Home, sopra la griglia macro (da ripristinare quando il componente sarà disponibile) */}
+                {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
+                <div style={{ display: 'flex', justifyContent: 'center', margin: '20px auto', position: 'relative', width: '100%' }}>
+                  <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', overflow: 'visible' }} onClick={() => setSelectedMealCenter(null)}>
+                    {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
+                    <div
+                      className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedMealCenter) {
+                          const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === selectedMealCenter.id || n.id === (selectedMealCenter.id && String(selectedMealCenter.id).split('_')[0])));
+                          if (mealNode) handleNodeTap(mealNode)();
+                        }
+                      }}
+                      style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease', pointerEvents: selectedMealCenter ? 'auto' : 'none' }}
+                    >
+                      {selectedMealCenter ? (
+                        <div className="pieCenterInfo" style={{ textAlign: 'center', cursor: 'pointer' }}>
+                          <div className="pieMealTitle" style={{ fontSize: '1rem', fontWeight: 'bold', color: selectedMealCenter.color ?? selectedMealCenter.fill ?? '#00e5ff' }}>
+                            {selectedMealCenter.name || selectedMealCenter.label}
+                          </div>
+                          {selectedMealCenter.timeValue != null && (
+                            <div style={{ fontSize: '0.85rem', color: '#aaa' }}>
+                              {`${String(Math.floor(selectedMealCenter.timeValue)).padStart(2, '0')}:${String(Math.round((selectedMealCenter.timeValue % 1) * 60)).padStart(2, '0')}`}
+                            </div>
+                          )}
+                          <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
+                            {Math.round(selectedMealCenter.kcal ?? selectedMealCenter.value ?? 0)} kcal
+                          </div>
+                          <div className="pieMealMacros">
+                            P {Math.round(selectedMealCenter.prot ?? selectedMealCenter.payload?.macros?.pro ?? 0)}g
+                            C {Math.round(selectedMealCenter.carb ?? selectedMealCenter.payload?.macros?.carb ?? 0)}g
+                            F {Math.round(selectedMealCenter.fat ?? selectedMealCenter.payload?.macros?.fat ?? 0)}g
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ textAlign: 'center', pointerEvents: 'none' }}>
+                          <div style={{ fontSize: '0.9rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Bilancio</div>
+                          <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>
+                            {Math.round(totali?.kcal || 0)} <span style={{ fontSize: '0.9rem', color: '#aaa', fontWeight: 'normal' }}>/ {Math.round(baseKcal || 0)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {/* Layer 2: Grafico a Torta */}
+                    <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={mealPieData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius="68%"
+                            outerRadius="85%"
+                            paddingAngle={3}
+                            startAngle={90}
+                            endAngle={-270}
+                            dataKey="value"
+                            stroke="none"
+                            labelLine={false}
+                            label={renderCustomizedLabel}
+                            activeShape={renderActiveMealShape}
+                            activeIndex={selectedMealCenterIndex}
+                            onClick={(data, index, e) => {
+                              if (e && e.stopPropagation) e.stopPropagation();
+                              if (data.id === 'rimanenti') return;
+                              if (selectedMealCenter && selectedMealCenter.id === data.id) {
+                                const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === data.id || n.id === (data.id && data.id.split('_')[0])));
+                                if (mealNode) handleNodeTap(mealNode)();
+                              } else {
+                                setSelectedMealCenter({ id: data.id, name: data.name, value: data.value, color: data.color, fill: data.fill, timeValue: data.timeValue, payload: { color: data.color, macros: data.macros }, prot: data.prot, carb: data.carb, fat: data.fat });
+                              }
+                            }}
+                            style={{ cursor: 'pointer', outline: 'none' }}
+                          >
+                            {mealPieData.map((entry, index) => {
+                              const isSelected = selectedMealCenter && entry.id === selectedMealCenter.id;
+                              const hasSelection = !!selectedMealCenter;
+                              return (
+                                <Cell
+                                  key={entry.id}
+                                  fill={entry.color}
+                                  style={{
+                                    filter: isSelected ? `drop-shadow(0 0 15px ${entry.color})` : 'none',
+                                    opacity: hasSelection && !isSelected ? 0.3 : 1,
+                                    outline: 'none'
+                                  }}
+                                />
+                              );
+                            })}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
                 {/* Box macronutrienti neon (3 colonne) */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', width: '100%', marginBottom: '16px', padding: '0 4px' }}>
                   <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
@@ -4772,102 +4866,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             );
           })()}
-          {/* Radar Container: Tachimetro centrale + riga macro sotto */}
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }}>
-            <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto', overflow: 'visible' }} onClick={() => setSelectedMealCenter(null)}>
-              {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
-              <div
-                className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (selectedMealCenter) {
-                    const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === selectedMealCenter.id || n.id === (selectedMealCenter.id && String(selectedMealCenter.id).split('_')[0])));
-                    if (mealNode) handleNodeTap(mealNode)();
-                  }
-                }}
-                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease', pointerEvents: selectedMealCenter ? 'auto' : 'none' }}
-              >
-                {selectedMealCenter ? (
-                  <div className="pieCenterInfo" style={{ textAlign: 'center', cursor: 'pointer' }}>
-                    <div className="pieMealTitle" style={{ fontSize: '1rem', fontWeight: 'bold', color: selectedMealCenter.color ?? selectedMealCenter.fill ?? '#00e5ff' }}>
-                      {selectedMealCenter.name || selectedMealCenter.label}
-                    </div>
-                    {selectedMealCenter.timeValue != null && (
-                      <div style={{ fontSize: '0.85rem', color: '#aaa' }}>
-                        {`${String(Math.floor(selectedMealCenter.timeValue)).padStart(2, '0')}:${String(Math.round((selectedMealCenter.timeValue % 1) * 60)).padStart(2, '0')}`}
-                      </div>
-                    )}
-                    <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
-                      {Math.round(selectedMealCenter.kcal ?? selectedMealCenter.value ?? 0)} kcal
-                    </div>
-                    <div className="pieMealMacros">
-                      P {Math.round(selectedMealCenter.prot ?? selectedMealCenter.payload?.macros?.pro ?? 0)}g
-                      C {Math.round(selectedMealCenter.carb ?? selectedMealCenter.payload?.macros?.carb ?? 0)}g
-                      F {Math.round(selectedMealCenter.fat ?? selectedMealCenter.payload?.macros?.fat ?? 0)}g
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ textAlign: 'center', pointerEvents: 'none' }}>
-                    <div style={{ fontSize: '0.9rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Bilancio</div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>
-                      {Math.round(totali?.kcal || 0)} <span style={{ fontSize: '0.9rem', color: '#aaa', fontWeight: 'normal' }}>/ {Math.round(baseKcal || 0)}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-              {/* Layer 2: Grafico a Torta */}
-              <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={mealPieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="68%"
-                      outerRadius="85%"
-                      paddingAngle={3}
-                      startAngle={90}
-                      endAngle={-270}
-                      dataKey="value"
-                      stroke="none"
-                      labelLine={false}
-                      label={renderCustomizedLabel}
-                      activeShape={renderActiveMealShape}
-                      activeIndex={selectedMealCenterIndex}
-                      onClick={(data, index, e) => {
-                        if (e && e.stopPropagation) e.stopPropagation();
-                        if (data.id === 'rimanenti') return;
-                        if (selectedMealCenter && selectedMealCenter.id === data.id) {
-                          const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === data.id || n.id === (data.id && data.id.split('_')[0])));
-                          if (mealNode) handleNodeTap(mealNode)();
-                        } else {
-                          setSelectedMealCenter({ id: data.id, name: data.name, value: data.value, color: data.color, fill: data.fill, timeValue: data.timeValue, payload: { color: data.color, macros: data.macros }, prot: data.prot, carb: data.carb, fat: data.fat });
-                        }
-                      }}
-                      style={{ cursor: 'pointer', outline: 'none' }}
-                    >
-                      {mealPieData.map((entry, index) => {
-                        const isSelected = selectedMealCenter && entry.id === selectedMealCenter.id;
-                        const hasSelection = !!selectedMealCenter;
-                        return (
-                          <Cell
-                            key={entry.id}
-                            fill={entry.color}
-                            style={{
-                              filter: isSelected ? `drop-shadow(0 0 15px ${entry.color})` : 'none',
-                              opacity: hasSelection && !isSelected ? 0.3 : 1,
-                              outline: 'none'
-                            }}
-                          />
-                        );
-                      })}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Riga widget macro: griglia 4 colonne (nascosta - sostituita da Cruscotto Biologico) */}
+          {/* Riga widget macro: griglia 4 colonne (nascosta - sostituita da Cruscotto Biologico) */}
             <div className="macrosRow" style={{ display: 'none', width: '100%', marginTop: '25px', padding: '0 10px', position: 'relative', zIndex: 10 }}>
               <div className="macroBox" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(179,136,255,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
                 <span style={{ fontSize: '0.65rem', color: '#b388ff', fontWeight: 'bold', letterSpacing: '1px' }}>PRO</span>
@@ -4886,7 +4885,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fibre || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fibre || 30)}g</span></span>
               </div>
             </div>
-          </div>
 
           {/* Widget Orologio Metabolico (Digiuno) - nascosto, sostituito da Fase nel Cruscotto Biologico */}
           {false && (() => {
