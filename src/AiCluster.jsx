@@ -2,7 +2,8 @@
  * AiCluster.jsx — Interfaccia Assistente AI (chat, prompt rapidi, input, impostazioni API).
  * Estratto da SalaComandi.jsx per smembramento UI. Lo stato globale (chatHistory, invio) resta nel genitore.
  */
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
+import { getLocalKnowledgeBase, saveToKnowledgeBase, generateStateHash, KNOWLEDGE_BASE_MAX_AGE_MS } from './coreEngine';
 
 export default function AiCluster({
   chatHistory,
@@ -18,10 +19,65 @@ export default function AiCluster({
   onRemoveKey,
   onAddKey,
   onSaveApiCluster,
-  onBack
+  onBack,
+  displayTime,
+  energy,
+  cortisolo,
+  activeAlerts,
+  dailyLog,
+  buildGlobalAIPrompt,
+  callGeminiAPIWithRotation,
+  onAnalysisResult
 }) {
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
+
+  const handleAnalyze = useCallback(async () => {
+    if (!onAnalysisResult || !buildGlobalAIPrompt || !callGeminiAPIWithRotation) return;
+    const energiaVal = energy ?? 50;
+    const cortisoloVal = cortisolo ?? 25;
+    const lastMeal = (dailyLog || [])
+      .filter(e => e.type === 'food' && (typeof e.mealTime === 'number' || typeof e.time === 'number'))
+      .reduce((best, e) => {
+        const t = Number(e.mealTime ?? e.time ?? 0);
+        if (t > (displayTime ?? 12)) return best;
+        if (!best) return e;
+        const bestTime = Number(best.mealTime ?? best.time ?? 0);
+        return t > bestTime ? e : best;
+      }, null);
+    let lastMealHoursAgo = 24;
+    if (lastMeal) {
+      let diff = (displayTime ?? 12) - (Number(lastMeal.mealTime) ?? Number(lastMeal.time) ?? 0);
+      if (diff < 0) diff += 24;
+      lastMealHoursAgo = diff;
+    }
+    const currentHash = generateStateHash(energiaVal, cortisoloVal, activeAlerts || [], lastMealHoursAgo);
+    const kb = getLocalKnowledgeBase();
+    if (kb[currentHash] && (Date.now() - (kb[currentHash].timestamp || 0) < KNOWLEDGE_BASE_MAX_AGE_MS)) {
+      if (typeof console !== 'undefined' && console.log) {
+        console.log('CACHE HIT! Utilizzo la risposta salvata in AiCluster per:', currentHash);
+      }
+      onAnalysisResult(kb[currentHash].text + '\n\n*(Risposta istantanea dalla memoria locale)*');
+      return;
+    }
+    const prompt = buildGlobalAIPrompt({
+      displayTime: displayTime ?? 12,
+      energy: energiaVal,
+      cortisolo: cortisoloVal,
+      glicemia: 85,
+      idratazione: 80,
+      digestione: 0,
+      neuro: 70
+    });
+    try {
+      const result = await callGeminiAPIWithRotation(prompt);
+      saveToKnowledgeBase(currentHash, result);
+      onAnalysisResult(result);
+    } catch (err) {
+      console.error('Errore AI Analisi in AiCluster:', err);
+      onAnalysisResult('❌ Connessione con Core AI fallita. Verifica le API Key.');
+    }
+  }, [displayTime, energy, cortisolo, activeAlerts, dailyLog, buildGlobalAIPrompt, callGeminiAPIWithRotation, onAnalysisResult]);
 
   useEffect(() => {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -34,6 +90,11 @@ export default function AiCluster({
         <h2 style={{ fontSize: '0.8rem', color: '#b388ff', letterSpacing: '2px', margin: 0 }}>✨ ReadyCore AI</h2>
         <button type="button" onClick={() => setShowAiSettings(!showAiSettings)} style={{ background: 'none', border: 'none', color: '#b388ff', fontSize: '1.2rem', cursor: 'pointer', filter: 'drop-shadow(0 0 5px rgba(179, 136, 255, 0.5))' }}>⚙️</button>
       </div>
+      {onAnalysisResult && buildGlobalAIPrompt && callGeminiAPIWithRotation && (
+        <button type="button" onClick={handleAnalyze} style={{ width: '100%', marginBottom: '12px', padding: '12px', background: 'linear-gradient(135deg, rgba(182,102,210,0.2), rgba(0,229,255,0.1))', border: '1px solid #b666d2', borderRadius: '12px', color: '#b388ff', fontSize: '0.8rem', fontWeight: 'bold', letterSpacing: '1px', cursor: 'pointer' }}>
+          🔮 Analizza situazione (cache locale)
+        </button>
+      )}
 
       {showAiSettings && (
         <div style={{ background: '#111', padding: '20px', borderRadius: '15px', marginBottom: '15px', border: '1px solid #333' }}>

@@ -4635,19 +4635,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
                     const isWater = node.type === 'water';
                     const isStimulant = node.type === 'stimulant';
+                    const isCognitivePoint = node.type === 'cognitive';
                     const iconContent = NODE_TYPE_ICON[node.type] ?? (isStimulant ? '☕' : (isWater ? '💧' : (isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•'))));
-                    const bioTypeBg = { nap: 'rgba(129,140,248,0.2)', meditation: 'rgba(34,197,94,0.2)', supplements: 'rgba(168,85,247,0.2)', sunlight: 'rgba(251,191,36,0.2)' }[node.type];
-                    const bioTypeBorder = { nap: '#818cf8', meditation: '#22c55e', supplements: '#a855f7', sunlight: '#fbbf24' }[node.type];
-                    const bgColor = isStimulant ? (isDragging ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.2)') : isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : bioTypeBg ? (isDragging ? bioTypeBg.replace('0.2)', '0.35)') : bioTypeBg) : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
-                    const nodeBorderColor = isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (bioTypeBorder || pointBorderColor));
+                    const bioTypeBg = { nap: 'rgba(129,140,248,0.2)', meditation: 'rgba(34,197,94,0.2)', supplements: 'rgba(168,85,247,0.2)', sunlight: 'rgba(251,191,36,0.2)', cognitive: 'rgba(182,102,210,0.2)' }[node.type];
+                    const bioTypeBorder = { nap: '#818cf8', meditation: '#22c55e', supplements: '#a855f7', sunlight: '#fbbf24', cognitive: '#b666d2' }[node.type];
+                    const bgColor = isStimulant ? (isDragging ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.2)') : isWater ? (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0, 229, 255, 0.15)') : isCognitivePoint ? (isDragging ? 'rgba(182,102,210,0.35)' : 'rgba(182,102,210,0.2)') : bioTypeBg ? (isDragging ? bioTypeBg.replace('0.2)', '0.35)') : bioTypeBg) : (isDragging ? 'rgba(0,229,255,0.35)' : 'rgba(0,0,0,0.6)');
+                    const nodeBorderColor = isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor)));
                     const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
                     const pointTransform = isDragging ? `translate(-50%, ${dragY - 45}px) scale(2)` : `translateX(-50%) scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`;
+                    const pointBoxShadow = isTouchingOrDragging ? (isStimulant ? '0 0 15px #f59e0b' : isWater ? '0 0 15px #00e5ff' : isCognitivePoint ? '0 0 15px #b666d2' : (bioTypeBorder ? `0 0 15px ${bioTypeBorder}` : '0 0 15px #00e5ff')) : 'none';
                     return (
-                      <div key={node.id} className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${displayPercent}%`, transform: pointTransform, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
-                        <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (bioTypeBorder || pointBorderColor)), marginBottom: '2px', transition: 'color 0.2s' }}>
+                      <div key={node.id} className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${displayPercent}%`, transform: pointTransform, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, boxShadow: pointBoxShadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
+                        <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor))), marginBottom: '2px', transition: 'color 0.2s' }}>
                           {timeLabelStr}
                         </span>
-                        <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (bioTypeBorder || (isPesi ? pointBorderColor : 'inherit'))) }}>{iconContent}</span>
+                        <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || (isPesi ? pointBorderColor : 'inherit')))) }}>{iconContent}</span>
                       </div>
                     );
                   })}
@@ -4709,6 +4711,68 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && (
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }}>
+          {/* --- CRUSCOTTO BIOLOGICO: Anello Calorie + Box Macro Neon + Fase Metabolica --- */}
+          {(() => {
+            const targetKcalRing = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
+            const kcalPercent = targetKcalRing > 0 ? Math.min(100, (totalCaloriesTimeline || 0) / targetKcalRing * 100) : 0;
+            const circumference = 2 * Math.PI * 90;
+            const dashProgress = (kcalPercent / 100) * circumference;
+            const lastMealHours = Math.floor(fastingData.hoursFasted);
+            const lastMealMinutes = Math.round((fastingData.hoursFasted % 1) * 60);
+            const isAssorbimento = fastingData.hoursFasted < 3;
+            const faseLabel = isAssorbimento ? 'ASSORBIMENTO' : (fastingData.phaseName || 'DIGIUNO');
+            const faseColor = isAssorbimento ? '#00ff88' : (fastingData.hoursFasted >= 12 ? '#00e5ff' : '#ff9800');
+            const targetProt = userTargets?.prot ?? 150;
+            const targetCarb = userTargets?.carb ?? 200;
+            const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', marginBottom: '16px', flexShrink: 0 }}>
+                {/* Anello circolare calorie */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '20px 0', position: 'relative' }}>
+                  <svg viewBox="0 0 200 200" style={{ width: '240px', height: '240px', filter: 'drop-shadow(0 0 15px rgba(0, 229, 255, 0.3))' }}>
+                    <circle cx="100" cy="100" r="90" fill="none" stroke="#2c2c2e" strokeWidth="12" />
+                    <circle cx="100" cy="100" r="90" fill="none" stroke="#00e5ff" strokeWidth="12" strokeDasharray={`${dashProgress} ${circumference}`} strokeLinecap="round" transform="rotate(-90 100 100)" style={{ transition: 'stroke-dasharray 1s ease-out' }} />
+                  </svg>
+                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#ff6b00', textShadow: '0 0 10px rgba(255, 107, 0, 0.5)' }}>{Math.round(totalCaloriesTimeline || 0)}</div>
+                    <div style={{ color: '#888', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>kcal</div>
+                    <div style={{ color: '#555', fontSize: '0.8rem', marginTop: '5px' }}>obiettivo {Math.round(targetKcalRing)}</div>
+                  </div>
+                </div>
+                {/* Box macronutrienti neon (3 colonne) */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', width: '100%', marginBottom: '16px', padding: '0 4px' }}>
+                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+                    <div style={{ color: '#b666d2', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Proteine</div>
+                    <div style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{Math.round(totali?.prot || 0)} <span style={{ color: '#555', fontSize: '0.8rem' }}>/ {Math.round(targetProt)} g</span></div>
+                  </div>
+                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+                    <div style={{ color: '#00ff88', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Carboidrati</div>
+                    <div style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{Math.round(totali?.carb || 0)} <span style={{ color: '#555', fontSize: '0.8rem' }}>/ {Math.round(targetCarb)} g</span></div>
+                  </div>
+                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '12px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+                    <div style={{ color: '#ffd700', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Grassi</div>
+                    <div style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)} <span style={{ color: '#555', fontSize: '0.8rem' }}>/ {Math.round(targetFat)} g</span></div>
+                  </div>
+                </div>
+                {/* Widget Fase Metabolica */}
+                <div style={{ background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '400px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>⏳</span>
+                      <div>
+                        <div style={{ color: '#888', fontSize: '0.7rem', textTransform: 'uppercase' }}>Fase Metabolica</div>
+                        <div style={{ color: faseColor, fontSize: '1rem', fontWeight: 'bold', letterSpacing: '1px' }}>{faseLabel}</div>
+                      </div>
+                    </div>
+                    <div style={{ color: '#aaa', fontSize: '0.85rem' }}>⏱ Da {lastMealHours}h {lastMealMinutes}m</div>
+                  </div>
+                  <div style={{ height: '4px', background: '#333', borderRadius: '2px', overflow: 'hidden' }}>
+                    <div style={{ width: `${isAssorbimento ? 40 : Math.min(100, (fastingData.hoursFasted / 16) * 100)}%`, height: '100%', background: faseColor, boxShadow: `0 0 8px ${faseColor}` }}></div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {/* Radar Container: Tachimetro centrale + riga macro sotto */}
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginBottom: '12px', flex: 1, minHeight: 0 }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', margin: '0 auto', overflow: 'visible' }} onClick={() => setSelectedMealCenter(null)}>
@@ -4804,8 +4868,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             </div>
 
-            {/* Riga widget macro: griglia 4 colonne fissa */}
-            <div className="macrosRow" style={{ width: '100%', marginTop: '25px', padding: '0 10px', position: 'relative', zIndex: 10 }}>
+            {/* Riga widget macro: griglia 4 colonne (nascosta - sostituita da Cruscotto Biologico) */}
+            <div className="macrosRow" style={{ display: 'none', width: '100%', marginTop: '25px', padding: '0 10px', position: 'relative', zIndex: 10 }}>
               <div className="macroBox" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(179,136,255,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
                 <span style={{ fontSize: '0.65rem', color: '#b388ff', fontWeight: 'bold', letterSpacing: '1px' }}>PRO</span>
                 <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.prot || 0)}g</span></span>
@@ -4825,8 +4889,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           </div>
 
-          {/* Widget Orologio Metabolico (Digiuno) - compatto */}
-          {(() => {
+          {/* Widget Orologio Metabolico (Digiuno) - nascosto, sostituito da Fase nel Cruscotto Biologico */}
+          {false && (() => {
             let faseText = fastingData.phaseName || 'Assorbimento';
             let faseColor = '#00e5ff';
             if (faseText.toLowerCase().includes('catabolismo')) {
@@ -5030,6 +5094,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             onAddKey={handleAddKey}
             onSaveApiCluster={saveApiCluster}
             onBack={() => setActiveAction(null)}
+            displayTime={displayTime ?? currentTime}
+            energy={chartData?.find(p => p.time === Math.floor(displayTime ?? currentTime))?.energy ?? 50}
+            cortisolo={chartData?.find(p => p.time === Math.floor(displayTime ?? currentTime))?.cortisolo ?? 25}
+            activeAlerts={[ hasCrashRisk && 'glicemia', hasCortisolRisk && 'cortisolo', hasWaterRisk && 'idratazione', hasDigestionRisk && 'digestione' ].filter(Boolean)}
+            dailyLog={activeLog}
+            buildGlobalAIPrompt={buildGlobalAIPrompt}
+            callGeminiAPIWithRotation={callGeminiAPIWithRotation}
+            onAnalysisResult={(text) => setChatHistory(prev => [...prev, { sender: 'ai', text }])}
           />
         )}
 

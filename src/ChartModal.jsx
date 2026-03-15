@@ -157,11 +157,22 @@ export default function ChartModal({
     setIsAiLoading(true);
     const timeStr = `${String(Math.floor(displayTime)).padStart(2, '0')}:${String(Math.round((displayTime % 1) * 60)).padStart(2, '0')}`;
 
-    // Ore dall'ultimo pasto (per hash stato)
-    const lastMealTime = (dailyLog || [])
-      .filter(e => e.type === 'food' && typeof e.mealTime === 'number' && e.mealTime <= displayTime)
-      .reduce((max, e) => Math.max(max, e.mealTime), -1);
-    const lastMealHoursAgo = lastMealTime >= 0 ? displayTime - lastMealTime : 24;
+    // Ore dall'ultimo pasto (per hash stato) — fix mezzanotte: diff < 0 => diff += 24
+    const lastMeal = (dailyLog || [])
+      .filter(e => e.type === 'food' && (typeof e.mealTime === 'number' || typeof e.time === 'number'))
+      .reduce((best, e) => {
+        const t = Number(e.mealTime ?? e.time ?? 0);
+        if (t > displayTime) return best; // solo pasti nel passato
+        if (!best) return e;
+        const bestTime = Number(best.mealTime ?? best.time ?? 0);
+        return t > bestTime ? e : best;
+      }, null);
+    let lastMealHoursAgo = 24;
+    if (lastMeal) {
+      let diff = displayTime - (Number(lastMeal.mealTime) ?? Number(lastMeal.time) ?? 0);
+      if (diff < 0) diff += 24;
+      lastMealHoursAgo = diff;
+    }
 
     const currentHash = generateStateHash(dotY ?? 50, dotCortisolo ?? 25, activeAlerts, lastMealHoursAgo);
 
@@ -369,11 +380,12 @@ export default function ChartModal({
             const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];
             const isPrimary = primaryTypes.includes(node.type);
             const isWork = node.type === 'work';
+            const isCognitive = node.type === 'cognitive';
             const percent = (node.time / 24) * 100;
-            const durationPercent = isWork ? ((node.duration || 1) / 24) * 100 : 0;
-            const iconContent = NODE_TYPE_ICON[node.type] ?? (node.type === 'stimulant' ? '☕' : (node.type === 'water' ? '💧' : (node.type === 'work' ? '💼' : (node.type === 'workout' ? '⚡' : '🥗'))));
-            const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : (node.type === 'nap' ? 'rgba(129,140,248,0.2)' : (node.type === 'meditation' ? 'rgba(34,197,94,0.2)' : (node.type === 'supplements' ? 'rgba(168,85,247,0.2)' : (node.type === 'sunlight' ? 'rgba(251,191,36,0.2)' : 'rgba(0,0,0,0.6)'))))));
-            const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : (node.type === 'nap' ? '#818cf8' : (node.type === 'meditation' ? '#22c55e' : (node.type === 'supplements' ? '#a855f7' : (node.type === 'sunlight' ? '#fbbf24' : '#00e5ff'))))));
+            const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
+            const iconContent = NODE_TYPE_ICON[node.type] ?? (node.type === 'stimulant' ? '☕' : (node.type === 'water' ? '💧' : (node.type === 'work' ? '💼' : (node.type === 'workout' ? '⚡' : (node.type === 'cognitive' ? (node.subType === 'studio' ? '📚' : '💻') : '🥗')))));
+            const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : (node.type === 'cognitive' ? 'rgba(182,102,210,0.2)' : (node.type === 'nap' ? 'rgba(129,140,248,0.2)' : (node.type === 'meditation' ? 'rgba(34,197,94,0.2)' : (node.type === 'supplements' ? 'rgba(168,85,247,0.2)' : (node.type === 'sunlight' ? 'rgba(251,191,36,0.2)' : 'rgba(0,0,0,0.6)')))))));
+            const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : (node.type === 'cognitive' ? '#b666d2' : (node.type === 'nap' ? '#818cf8' : (node.type === 'meditation' ? '#22c55e' : (node.type === 'supplements' ? '#a855f7' : (node.type === 'sunlight' ? '#fbbf24' : '#00e5ff')))))));
             const timeLabelStr = `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
             const logItemForNode = isSimulationMode && safeDailyLog.length > 0
               ? (node.type === 'meal' ? safeDailyLog.find(item => item.type === 'food' && item.mealType === node.id)
@@ -386,7 +398,7 @@ export default function ChartModal({
               zIndex: isPrimary ? 10 : 1,
               filter: isPrimary ? 'none' : 'grayscale(100%)',
               opacity: isPrimary ? 1 : 0.4,
-              transform: isPrimary ? (isWork ? undefined : 'translateX(-50%)') : (isWork ? 'scale(0.8)' : 'translateX(-50%) scale(0.8)'),
+              transform: isPrimary ? (isWork || isCognitive ? undefined : 'translateX(-50%)') : (isWork || isCognitive ? 'scale(0.8)' : 'translateX(-50%) scale(0.8)'),
               transition: 'all 0.3s ease',
               pointerEvents: isSimulationMode && (node.type === 'meal' || node.type === 'workout' || node.type === 'stimulant') ? 'auto' : 'none',
               cursor: isSimulationMode && logItemForNode ? 'pointer' : 'default'
@@ -400,6 +412,13 @@ export default function ChartModal({
               return (
                 <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(255,234,0,0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
                   💼
+                </div>
+              );
+            }
+            if (isCognitive) {
+              return (
+                <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(182,102,210,0.2)', borderLeft: '2px solid #b666d2', borderRight: '2px solid #b666d2', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
+                  {node.subType === 'studio' ? '📚' : '💻'}
                 </div>
               );
             }
