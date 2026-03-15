@@ -568,7 +568,7 @@ export default function SalaComandi() {
 
   const allNodesWithStack = useMemo(() => {
     const endTime = (n) => {
-      if (n.type === 'work') return n.time + (n.duration || 1);
+      if (n.type === 'work' || n.type === 'cognitive') return n.time + (n.duration || 1);
       if (n.type === 'nap' || n.type === 'meditation') return n.time + (n.duration ?? 0.25);
       return n.time;
     };
@@ -589,7 +589,7 @@ export default function SalaComandi() {
   const activeNodesWithStack = useMemo(() => {
     const nodes = simulationMode ? simulationNodes : allNodes;
     const endTime = (n) => {
-      if (n.type === 'work') return n.time + (n.duration || 1);
+      if (n.type === 'work' || n.type === 'cognitive') return n.time + (n.duration || 1);
       if (n.type === 'nap' || n.type === 'meditation') return n.time + (n.duration ?? 0.25);
       return n.time;
     };
@@ -1179,7 +1179,7 @@ export default function SalaComandi() {
           setManualNodes(prev => {
             const next = prev.map(n => {
               if (n.id !== dragId) return n;
-              if (n.type === 'work') {
+              if (n.type === 'work' || n.type === 'cognitive') {
                 if (dragEdge === 'start') {
                   const end = n.time + (n.duration || 1);
                   const newTime = Math.min(finalTimeRounded, end - 0.25);
@@ -1933,16 +1933,21 @@ export default function SalaComandi() {
 
   const handleSaveWorkout = () => {
     const isWork = workoutType === 'lavoro';
+    const isCognitive = workoutType === 'studio' || workoutType === 'lavoro_pc';
     const duration = Math.max(0.25, Number(workoutEndTime) - Number(workoutStartTime));
-    const finalId = editingWorkoutId || (isWork ? 'work_' : 'workout_') + Date.now();
+    const finalId = editingWorkoutId || (isWork ? 'work_' : isCognitive ? 'cognitive_' : 'workout_') + Date.now();
 
     const descMuscles = workoutMuscles.length > 0 ? ` (${workoutMuscles.join(' + ')})` : '';
     const desc = workoutType === 'pesi' ? `Sollevamento Pesi${descMuscles}` :
                  workoutType === 'cardio' ? 'Cardio / Corsa' :
-                 workoutType === 'hiit' ? 'HIIT / Circuito' : 'Attività Lavorativa';
+                 workoutType === 'hiit' ? 'HIIT / Circuito' :
+                 workoutType === 'studio' ? 'Studio' :
+                 workoutType === 'lavoro_pc' ? 'Lavoro PC' : 'Attività Lavorativa';
 
-    const nodeData = { id: finalId, type: isWork ? 'work' : 'workout', time: Number(workoutStartTime), duration, kcal: workoutKcal, icon: isWork ? '💼' : '🏋️', subType: workoutType, muscles: workoutMuscles };
-    const logData = { id: finalId, type: 'workout', workoutType, desc, name: isWork ? 'Lavoro' : desc, kcal: workoutKcal, cal: workoutKcal, duration };
+    const COGNITIVE_MET = { studio: 1.3, lavoro_pc: 1.5 };
+    const cognitiveKcal = isCognitive ? Math.round((COGNITIVE_MET[workoutType] || 1.4) * 70 * duration) : workoutKcal;
+    const nodeData = { id: finalId, type: isCognitive ? 'cognitive' : (isWork ? 'work' : 'workout'), time: Number(workoutStartTime), duration, kcal: isCognitive ? cognitiveKcal : workoutKcal, icon: isCognitive ? (workoutType === 'studio' ? '📚' : '💻') : (isWork ? '💼' : '🏋️'), subType: workoutType, muscles: workoutMuscles };
+    const logData = { id: finalId, type: 'workout', workoutType, desc, name: isCognitive ? desc : (isWork ? 'Lavoro' : desc), kcal: isCognitive ? cognitiveKcal : workoutKcal, cal: isCognitive ? cognitiveKcal : workoutKcal, duration };
 
     if (isSimulationMode) {
       setSimulatedLog(prev => {
@@ -2276,7 +2281,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
     try {
       const foodDbNames = Object.keys(foodDb || {}).map(k => foodDb[k]?.desc || foodDb[k]?.name || k).filter(Boolean).slice(0, 150);
-      const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad);
+      const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad, false, currentTime);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
       const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
@@ -2946,7 +2951,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       nervousSystemLoad: 0
     };
   } else {
-    energySimulation = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad, isWaterAutopilot);
+    energySimulation = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad, isWaterAutopilot, currentTime);
   }
   const chartData = energySimulation?.chartData ?? [];
   const dailyReportDisplay = useMemo(() => {
@@ -3667,6 +3672,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {(activeNodesWithStack || []).map((node) => {
                 const pct = ((node.time ?? 0) / 24) * 100;
                 const isWork = node.type === 'work';
+                const isCognitive = node.type === 'cognitive';
                 const isWater = node.type === 'water';
                 const isStimulant = node.type === 'stimulant';
                 const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
@@ -3677,6 +3683,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   const dur = (node.duration || 1) / 24 * 100;
                   return (
                     <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(255, 234, 0, 0.2)', border: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#ffea00' }}>💼</div>
+                  );
+                }
+                if (isCognitive) {
+                  const dur = (node.duration || 1) / 24 * 100;
+                  return (
+                    <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(0, 229, 255, 0.2)', border: '2px solid #00e5ff', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#00e5ff' }}>{node.subType === 'studio' ? '📚' : '💻'}</div>
                   );
                 }
                 return (
@@ -4539,12 +4551,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     const effectiveNodeType = node.type === 'meal' ? 'meal' : node.type;
                     const isImportant = NODE_IMPORTANCE[currentChartUnit]?.includes(effectiveNodeType);
                     const importanceStyle = isImportant ? { filter: 'none', opacity: 1, zIndex: 10 } : { filter: 'grayscale(100%)', opacity: 0.35, zIndex: 1 };
-                    const isNodeFocused = (!activeAction || activeAction === 'home') || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout')) || (activeAction === 'acqua' && node.type === 'water');
+                    const isNodeFocused = (!activeAction || activeAction === 'home') || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive')) || (activeAction === 'acqua' && node.type === 'water');
                     const isWork = node.type === 'work';
+                    const isCognitive = node.type === 'cognitive';
                     const percent = (node.time / 24) * 100;
                     const startPercent = percent;
-                    const durationPercent = isWork ? ((node.duration || 1) / 24) * 100 : 0;
-                    const idealVal = node.type === 'meal' ? (idealStrategy[node.strategyKey] ?? 400) : (node.type === 'workout' ? (idealStrategy.allenamento ?? 300) : (node.type === 'water' ? 100 : (node.kcal ?? 400)));
+                    const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
+                    const idealVal = node.type === 'meal' ? (idealStrategy[node.strategyKey] ?? 400) : (node.type === 'workout' || node.type === 'cognitive' ? (idealStrategy.allenamento ?? 300) : (node.type === 'water' ? 100 : (node.kcal ?? 400)));
                     const realVal = (node.type === 'meal' || node.type === 'workout') ? (realTotals[node.strategyKey] ?? 0) : 0;
                     const ratio = idealVal > 0 ? realVal / idealVal : 1;
                     let borderColor = '#00e5ff';
@@ -4555,19 +4568,22 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     else if (node.type === 'water') borderColor = '#00e5ff';
                     else if (ratio < 0.5) borderColor = '#ff3d00';
                     else if (ratio > 1.2) borderColor = '#ffea00';
-                    const pointBorderColor = isWork ? '#ffea00' : borderColor;
+                    const pointBorderColor = isWork ? '#ffea00' : (isCognitive ? '#00e5ff' : borderColor);
                     const isDragging = draggingNode?.id === node.id;
                     const isTouchingOrDragging = isDragging || (touchingNodeId === node.id);
                     const dragY = isDragging ? dragOffsetY : 0;
                     const displayTimeVal = (isDragging && dragLiveTime != null) ? dragLiveTime : node.time;
                     const displayPercent = (displayTimeVal / 24) * 100;
                     const workEndTime = node.time + (node.duration || 1);
-                    const displayDurationPercent = isWork && isDragging && dragLiveTime != null && draggingNode?.edge === 'start'
+                    const displayDurationPercent = (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'start'
                       ? ((workEndTime - dragLiveTime) / 24) * 100
-                      : isWork && isDragging && dragLiveTime != null && draggingNode?.edge === 'end'
+                      : (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'end'
                         ? ((dragLiveTime - node.time) / 24) * 100
                         : durationPercent;
-                    const workBarLeftPercent = isWork && isDragging && dragLiveTime != null && draggingNode?.edge === 'end' ? percent : displayPercent;
+                    const workBarLeftPercent = (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'end' ? percent : displayPercent;
+                    const cognitiveIcon = node.subType === 'studio' ? '📚' : '💻';
+                    const cognitiveBg = 'rgba(0, 229, 255, 0.15)';
+                    const cognitiveBorder = '#00e5ff';
 
                     if (isWork) {
                       const dragEdge = isDragging ? draggingNode?.edge : null;
@@ -4584,6 +4600,29 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                             {(dragEdge === 'end' || dragEdge === 'all') && (
                               <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
+                                {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
+                              </div>
+                            )}
+                            🏁
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (isCognitive) {
+                      const dragEdge = isDragging ? draggingNode?.edge : null;
+                      return (
+                        <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(0, 229, 255, 0.3)' : cognitiveBg, borderLeft: `2px solid ${cognitiveBorder}`, borderRight: `2px solid ${cognitiveBorder}`, borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
+                          <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                            {(dragEdge === 'start' || dragEdge === 'all') && (
+                              <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
+                                {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
+                              </div>
+                            )}
+                            {cognitiveIcon}
+                          </div>
+                          <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                            {(dragEdge === 'end' || dragEdge === 'all') && (
+                              <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                                 {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
                               </div>
                             )}
@@ -5141,10 +5180,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <h2 style={{ fontSize: '0.8rem', color: '#ff6d00', letterSpacing: '2px', margin: 0 }}>⚡ ATTIVITÀ</h2>
               <div style={{ width: '70px' }}></div>
             </div>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '30px' }}>
-              {['pesi', 'cardio', 'hiit', 'lavoro'].map(type => (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '30px', flexWrap: 'wrap' }}>
+              {['pesi', 'cardio', 'hiit', 'lavoro', 'studio', 'lavoro_pc'].map(type => (
                 <button key={type} className={`type-btn ${workoutType === type ? 'active orange' : ''}`} onClick={() => setWorkoutType(type)}>
-                  {type === 'pesi' ? '🏋️ PESI' : type === 'cardio' ? '🏃 CARDIO' : type === 'hiit' ? '🔥 HIIT' : '💼 LAVORO'}
+                  {type === 'pesi' ? '🏋️ PESI' : type === 'cardio' ? '🏃 CARDIO' : type === 'hiit' ? '🔥 HIIT' : type === 'lavoro' ? '💼 LAVORO' : type === 'studio' ? '📚 STUDIO' : '💻 LAVORO PC'}
                 </button>
               ))}
             </div>
@@ -5161,13 +5200,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div ref={miniTimelineActivityRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
                 {allNodes.filter(n => n.id !== editingWorkoutId).map(n => {
                   const isWork = n.type === 'work';
+                  const isCognitive = n.type === 'cognitive';
                   const startP = (n.time / 24) * 100;
-                  const durP = isWork ? ((n.duration || 1) / 24) * 100 : 0;
+                  const durP = (isWork || isCognitive) ? ((n.duration || 1) / 24) * 100 : 0;
                   const isPesi = n.type === 'workout' && n.subType === 'pesi' && n.muscles?.length > 0;
                   const iconContent = isPesi ? n.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (n.icon || '•');
                   if (isWork) {
                     return (
                       <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, width: `${durP}%`, top: '50%', transform: 'translateY(-50%)', height: '20px', background: 'rgba(255, 234, 0, 0.2)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }}></div>
+                    );
+                  }
+                  if (isCognitive) {
+                    return (
+                      <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, width: `${durP}%`, top: '50%', transform: 'translateY(-50%)', height: '20px', background: 'rgba(0, 229, 255, 0.2)', borderLeft: '2px solid #00e5ff', borderRight: '2px solid #00e5ff', borderRadius: '4px', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }}></div>
                     );
                   }
                   return (
@@ -6159,7 +6204,22 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <h2 style={{ margin: '0 0 20px 0', borderBottom: '1px solid #333', paddingBottom: '10px', color: '#00e5ff' }}>
               {selectedNodeReport.type === 'meal' ? '🍽️ Dettaglio Pasto' : '💪 Dettaglio Attività'}
             </h2>
-
+            {(() => {
+              const nodeTime = selectedNodeReport.type === 'meal'
+                ? ((activeLog || []).find(item => getSlotKey(item) === String(selectedNodeReport.id))?.mealTime) ?? 12
+                : (selectedNodeReport.time ?? 12);
+              const currentHour = displayTime ?? currentTime;
+              const isFuture = nodeTime > currentHour;
+              return (
+                <div style={{ marginBottom: '16px' }}>
+                  {isFuture ? (
+                    <span style={{ display: 'inline-block', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px', background: 'rgba(0, 229, 255, 0.15)', color: '#00e5ff', border: '1px solid #00e5ff' }}>🔮 PIANIFICAZIONE (Futuro)</span>
+                  ) : (
+                    <span style={{ display: 'inline-block', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px', background: '#2c2c2c', color: '#9e9e9e', border: '1px solid #555' }}>⏳ STORICO (Avvenuto)</span>
+                  )}
+                </div>
+              );
+            })()}
             {selectedNodeReport.type === 'meal' ? (
               <div>
                 {(() => {

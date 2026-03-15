@@ -281,7 +281,7 @@ const PHYSIOLOGY_CONFIG = {
  * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
  * Restituisce { chartData, realTotals } per grafico doppia curva e semafori.
  */
-function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, waterAutopilot = false) {
+function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, waterAutopilot = false, currentTime = null) {
   const log = dailyLog || [];
   const ideal = idealStrategy || {};
   const model = {
@@ -458,7 +458,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           currentIdealEnergy += mealEffect * (idealK / 20);
         }
       }
-      if (node.type === 'work' || node.type === 'workout') {
+      if (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') {
         const dur = Math.max(0.5, node.duration || 1);
         const timeSince = h - node.time;
         const fatigueWindow = dur + 2;
@@ -472,6 +472,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         if (node.time >= h && node.time < h + 1) {
           if (node.type === 'workout') { load += PHYSIOLOGY_CONFIG.workoutLoadImpact; neuralFatigue += 3; }
           else if (node.type === 'work') { load += (node.duration ?? 1) * PHYSIOLOGY_CONFIG.workLoadImpact; neuralFatigue += 2; }
+          else if (node.type === 'cognitive') { load += (node.duration ?? 1) * PHYSIOLOGY_CONFIG.workLoadImpact * 0.8; neuralFatigue += 1.5; }
         }
       }
       if (node.type === 'stimulant') {
@@ -544,7 +545,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     }
 
     (timelineNodes || []).forEach(node => {
-      if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
+      if ((node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') && h >= node.time && h <= node.time + (node.duration || 1)) {
         gl -= 15 * model.carbCrashSensitivity;
       }
     });
@@ -566,7 +567,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         const ml = node.ml ?? node.amount ?? 250;
         currentHydration += (ml / (dailyWaterGoal || 2500)) * 45;
       }
-      if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
+      if ((node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') && h >= node.time && h <= node.time + (node.duration || 1)) {
         currentHydration -= 8.0;
       }
       if (node.type === 'stimulant' && node.time >= h && node.time < h + 1) {
@@ -609,6 +610,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           globalCortisolRisk = true;
         } else if (node.type === 'work') {
           currentCortisol += 1.5 * model.stressSensitivity;
+        } else if (node.type === 'cognitive') {
+          currentCortisol += 2 * model.stressSensitivity;
         }
       }
     });
@@ -664,8 +667,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       currentNeuro -= 1.2;
     }
     (timelineNodes || []).forEach(node => {
-      if ((node.type === 'work' || node.type === 'workout') && h >= node.time && h <= node.time + (node.duration || 1)) {
-        const drain = node.type === 'workout' ? 12 : 6;
+      if ((node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') && h >= node.time && h <= node.time + (node.duration || 1)) {
+        const drain = node.type === 'workout' ? 12 : (node.type === 'cognitive' ? 5 : 6);
         currentNeuro -= (drain / Math.max(0.5, (node.duration || 1)));
       }
       if (node.type === 'stimulant' && node.time >= h && node.time < h + 1) {
@@ -709,6 +712,15 @@ if (isSleeping) {
       neuralEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
       currentEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
       currentIdealEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
+    }
+  }
+  // Filtro allarmi obsoleti: se all'ora attuale energia/cortisolo sono rientrati (es. pasto inserito nel passato), spegni l'allarme
+  if (currentTime != null && typeof currentTime === 'number' && out.length > 0) {
+    const idx = Math.min(Math.floor(currentTime), out.length - 1);
+    const pt = out[Math.max(0, idx)];
+    if (pt) {
+      if ((pt.energy ?? 0) >= 40) globalCrashRisk = false;
+      if ((pt.cortisolo ?? 0) < 70) globalCortisolRisk = false;
     }
   }
   return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk, hasCortisolRisk: globalCortisolRisk, hasDigestionRisk, nervousSystemLoad: load };
@@ -1131,10 +1143,13 @@ Usa nel testo queste parole (anche in maiuscolo): Sveglia, Energia SNC, Finestra
 /** Prompt per analisi AI globale (modale): un'unica analisi olistica con tutti i dati. */
 function buildGlobalAIPrompt(data) {
   const { displayTime = 12, energy = 50, cortisolo = 25, glicemia = 85, idratazione = 80, digestione = 0, neuro = 70 } = data || {};
+  const oraAttuale = Number(displayTime).toFixed(1);
   return `Sei un assistente biochimico. Fornisci un'UNICA analisi olistica di 4-5 righe della situazione attuale dell'utente.
-Dati attuali: orario ${Number(displayTime).toFixed(1)}h, energia ${Number(energy).toFixed(0)}, recupero neurologico ${Number(neuro).toFixed(0)}, cortisolo ${Number(cortisolo).toFixed(0)}, glicemia ${Number(glicemia).toFixed(0)}, idratazione ${Number(idratazione).toFixed(0)}, digestione ${Number(digestione).toFixed(0)}.
+Dati attuali: orario ${oraAttuale}h, energia ${Number(energy).toFixed(0)}, recupero neurologico ${Number(neuro).toFixed(0)}, cortisolo ${Number(cortisolo).toFixed(0)}, glicemia ${Number(glicemia).toFixed(0)}, idratazione ${Number(idratazione).toFixed(0)}, digestione ${Number(digestione).toFixed(0)}.
 Valuta il recupero neurologico, l'energia, la glicemia e il cortisolo (ricorda che l'utente soffre di cortisolo serale alto).
-Usa ESATTAMENTE le seguenti parole chiave testuali in maiuscolo o normale: [Energia SNC, Recupero Neurologico, Finestra Anabolica, Cortisolo, Digestione, Glicemia].`;
+Usa ESATTAMENTE le seguenti parole chiave testuali in maiuscolo o normale: [Energia SNC, Recupero Neurologico, Finestra Anabolica, Cortisolo, Digestione, Glicemia].
+
+REGOLA PREDITTIVA: Distingui i nodi con orario <= ${oraAttuale}h (STORICO) dai nodi con orario > ${oraAttuale}h (PIANIFICAZIONE). Per i nodi STORICI esegui un'analisi. Per i nodi di PIANIFICAZIONE (es. un allenamento o lavoro al PC previsto tra alcune ore) genera consigli di OTTIMIZZAZIONE PREVENTIVA: timing dei nutrienti, pre-workout, sonno richiesto, idratazione e tutto ciò che massimizza la performance all'arrivo di quell'evento.`;
 }
 
 /** Istruzioni per l’AI che elabora screenshot/dati Mi Fitness: mappatura Fell asleep / Woke up e stime. */
@@ -1287,22 +1302,22 @@ const MEAL_LABELS_SAVE = {
 
 /** Importanza dinamica dei nodi per vista grafico: quali tipi evidenziare. */
 const NODE_IMPORTANCE = {
-  percent: ['meal', 'workout', 'stimulant', 'nap', 'sunlight'],
-  kcal: ['meal', 'workout'],
-  cortisolo: ['work', 'workout', 'stimulant', 'meditation'],
-  glicemia: ['meal', 'workout', 'stimulant'],
-  idratazione: ['water', 'workout', 'stimulant'],
+  percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'sunlight'],
+  kcal: ['meal', 'workout', 'cognitive'],
+  cortisolo: ['work', 'workout', 'cognitive', 'stimulant', 'meditation'],
+  glicemia: ['meal', 'workout', 'cognitive', 'stimulant'],
+  idratazione: ['water', 'workout', 'cognitive', 'stimulant'],
   digestione: ['meal'],
-  neuro: ['sleep', 'work', 'workout', 'stimulant', 'nap', 'meditation', 'sunlight']
+  neuro: ['sleep', 'work', 'workout', 'cognitive', 'stimulant', 'nap', 'meditation', 'sunlight']
 };
 
 /** Gerarchia nodi nel modale Spiegazione: primari (focus) vs secondari (sfondo) per grafico. */
 const MODAL_NODE_PRIMARY = {
-  glicemia: ['meal', 'workout'],
-  cortisolo: ['work', 'workout', 'stimulant', 'meditation'],
-  neuro: ['work', 'workout', 'stimulant', 'nap', 'meditation', 'sunlight'],
+  glicemia: ['meal', 'workout', 'cognitive'],
+  cortisolo: ['work', 'workout', 'cognitive', 'stimulant', 'meditation'],
+  neuro: ['work', 'workout', 'cognitive', 'stimulant', 'nap', 'meditation', 'sunlight'],
   calorieTimeline: ['meal'],
-  percent: ['meal', 'workout', 'stimulant', 'nap', 'sunlight']
+  percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'sunlight']
 };
 
 /** Icona per tipo nodo (timeline e modale). */
@@ -1310,6 +1325,7 @@ const NODE_TYPE_ICON = {
   meal: '🥗',
   work: '💼',
   workout: '⚡',
+  cognitive: '📚',
   water: '💧',
   stimulant: '☕',
   nap: '😴',
@@ -1632,7 +1648,8 @@ function buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, weekS
         const strategyKey = mealTypesToStrategy[entry.mealType?.split('_')[0]] || 'cena';
         timelineNodes.push({ type: 'meal', time: t, strategyKey, kcal: entry.kcal ?? entry.cal ?? 0 });
       } else if (entry?.type === 'workout' || entry?.type === 'work') {
-        timelineNodes.push({ type: 'workout', time: entry.time ?? entry.mealTime ?? 12, duration: entry.duration ?? 1, kcal: entry.kcal ?? entry.cal ?? 300 });
+        const isCognitive = entry.type === 'workout' && (entry.workoutType === 'studio' || entry.workoutType === 'lavoro_pc');
+        timelineNodes.push({ type: isCognitive ? 'cognitive' : 'workout', time: entry.time ?? entry.mealTime ?? 12, duration: entry.duration ?? 1, kcal: entry.kcal ?? entry.cal ?? 300 });
       }
     });
     timelineNodes.push(...manualNodes);
