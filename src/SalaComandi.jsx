@@ -4736,9 +4736,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             const targetCarb = userTargets?.carb ?? 200;
             const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', marginBottom: '16px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
-                <div style={{ position: 'relative', width: '320px', height: '320px', margin: '0 auto 8px auto', zIndex: 10, flexShrink: 0 }} onClick={() => setSelectedMealCenter(null)}>
+                <div style={{ position: 'relative', width: '336px', height: '336px', margin: '0 auto 12px auto', zIndex: 10, flexShrink: 0 }} onClick={() => setSelectedMealCenter(null)}>
                   <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'visible' }}>
                     {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
                     <div
@@ -4836,7 +4836,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 </div>
                 {/* Box macronutrienti neon (3 colonne) */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', width: '100%', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', width: '100%', marginBottom: '12px' }}>
                   <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
                     <div style={{ color: '#b666d2', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Proteine</div>
                     <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
@@ -4857,7 +4857,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 </div>
                 {/* Widget Fase Metabolica */}
-                <div style={{ background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '10px 15px', display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', maxWidth: '400px', marginBottom: '10px' }}>
+                <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '400px', minHeight: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span>⏳</span>
