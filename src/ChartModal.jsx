@@ -229,7 +229,7 @@ export default function ChartModal({
       .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
     `}</style>
     <div
-      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000, background: '#050505', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, height: '100dvh', zIndex: 100000, background: '#050505', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
       role="dialog"
       aria-modal="true"
       aria-label="Grafico a tutto schermo"
@@ -283,8 +283,8 @@ export default function ChartModal({
                   </filter>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
-                <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} />
+                <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} padding={{ left: 0, right: 0 }} />
+                <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} width={35} />
                 <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${value}%`, 'Energia SNC']} labelFormatter={(label) => `Ore ${label}:00`} />
                 {safeDailyLog.filter(item => item.type === 'sleep').map((sleepItem, index) => (
                   <ReferenceLine key={`modal-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 4 : 1.5} strokeOpacity={activeHighlight === 'sveglia' ? 1 : 0.8} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
@@ -305,8 +305,8 @@ export default function ChartModal({
                   <linearGradient id="modalColorEnergyKcal" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9}/><stop offset="50%" stopColor="#047857" stopOpacity={0.7}/><stop offset="100%" stopColor="#dc2626" stopOpacity={0.6}/></linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} />
-                <YAxis domain={[0, Math.max(targetKcalChart, 1)]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={36} />
+                <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} padding={{ left: 0, right: 0 }} />
+                <YAxis domain={[0, Math.max(targetKcalChart, 1)]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={35} />
                 <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${Math.round(Number(value))} kcal`, 'Energia scalata']} labelFormatter={(label) => `Ore ${label}:00`} />
                 <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10 }} />
                 <ReferenceDot x={displayTime} y={scale(dotY)} isFront r={8} fill="#00e5ff" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
@@ -322,8 +322,8 @@ export default function ChartModal({
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={safeCalorieTimelineData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                  <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 6, 12, 18, 24]} tickFormatter={(val) => `${val}:00`} stroke="#666" fontSize={10} />
-                  <YAxis domain={[0, Math.max(targetKcalChart, totalCaloriesTimeline || 0)]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={36} />
+                  <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 6, 12, 18, 24]} tickFormatter={(val) => `${val}:00`} stroke="#666" fontSize={10} padding={{ left: 0, right: 0 }} />
+                  <YAxis domain={[0, Math.max(targetKcalChart, totalCaloriesTimeline || 0)]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={35} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${Math.round(Number(value))} kcal`, 'Calorie cumulative']} labelFormatter={(label) => `Ore ${label}:00`} />
                   {safeDailyLog.filter(item => item.type === 'sleep').map((sleepItem, index) => (
                     <ReferenceLine key={`modal-ctl-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 10 }} />
@@ -349,9 +349,9 @@ export default function ChartModal({
                   <filter id="modalGlowMulti" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
                   <filter id="modalGlowCortisol" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
                 </defs>
-                <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 6, 12, 18, 24]} tickFormatter={(val) => `${val}:00`} tick={{ fill: '#666', fontSize: 11 }} />
-                <YAxis domain={expandedChart === 'glicemia' ? [40, 220] : (expandedChart === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => expandedChart === 'kcal' ? Math.round(Number(val)) : (expandedChart === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 11 }} width={36} />
-                <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} hide />
+                <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 6, 12, 18, 24]} tickFormatter={(val) => `${val}:00`} tick={{ fill: '#666', fontSize: 11 }} padding={{ left: 0, right: 0 }} />
+                <YAxis domain={expandedChart === 'glicemia' ? [40, 220] : (expandedChart === 'kcal' ? [0, targetKcalChart] : [0, 100])} tickFormatter={(val) => expandedChart === 'kcal' ? Math.round(Number(val)) : (expandedChart === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 11 }} width={35} />
+                <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} width={0} hide />
                 <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
                 {safeDailyLog.filter(item => item.type === 'sleep').map((sleepItem, index) => (
                   <ReferenceLine key={`modal-sleep2-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 4 : 1.5} strokeOpacity={activeHighlight === 'sveglia' ? 1 : 0.8} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 10 }} />
@@ -376,8 +376,8 @@ export default function ChartModal({
         </div>
 
         {/* STRISCIA TIMELINE INFERIORE (A filo pavimento) */}
-        <div style={{ width: '100%', minHeight: '50px', paddingBottom: 'env(safe-area-inset-bottom, 0px)', background: '#0a0a12', borderTop: '1px solid #333', position: 'relative', flexShrink: 0 }}>
-          <div style={{ position: 'absolute', left: '15px', right: '15px', top: 0, height: '50px' }}>
+        <div style={{ width: '100%', minHeight: '50px', paddingBottom: '24px', background: '#0a0a12', borderTop: '1px solid #333', position: 'relative', flexShrink: 0 }}>
+          <div style={{ position: 'absolute', left: '50px', right: '15px', top: 0, height: '50px' }}>
           {activeNodesWithStack.map((node) => {
             const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];
             const isPrimary = primaryTypes.includes(node.type);
