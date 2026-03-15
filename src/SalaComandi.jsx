@@ -3667,8 +3667,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </ResponsiveContainer>
             )}
             </div>
-            {/* Barra Nodi solidale al grafico (stessa larghezza) - marginTop per non sovrapporre al grafico */}
+            {/* STRISCIA TIMELINE NODI (Sopra il grafico) */}
             <div style={{ height: '70px', marginTop: '12px', paddingBottom: '25px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
+              <div style={{ position: 'absolute', left: '15px', right: '15px', top: 0, bottom: 0 }}>
               {(activeNodesWithStack || []).map((node) => {
                 const pct = ((node.time ?? 0) / 24) * 100;
                 const isWork = node.type === 'work';
@@ -3697,6 +3698,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 );
               })}
+              </div>
             </div>
           </div>
         </div>
@@ -4318,7 +4320,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
                 <div style={{ width: '100%', height: '220px' }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={mainChartData} margin={{ top: 35, right: 0, left: -20, bottom: 0 }}>
+                    <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -4372,7 +4374,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
                 ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={mainChartData} margin={{ top: 35, right: 30, left: -10, bottom: 0 }}>
+                <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorEnergy" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
@@ -4544,7 +4546,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </ResponsiveContainer>
                 )}
               </div>
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* TIMELINE NODI DRAGGABILI (Sovrapposta) - allineata ai margini 15px del grafico */}
+              <div style={{ position: 'absolute', top: 0, bottom: 0, left: '15px', right: '15px', pointerEvents: 'none' }} aria-hidden="true" />
+              <div style={{ position: 'absolute', bottom: 0, left: '15px', right: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div ref={timelineContainerRef} style={{ flex: 1, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', position: 'relative' }}>
                   {activeNodesWithStack.map((node) => {
                     const currentChartUnit = chartUnit;

@@ -267,7 +267,7 @@ export default function ChartModal({
           <div style={{ width: '100%', height: '100%', transform: `scale(${zoomLevel})`, transformOrigin: 'center center', transition: 'transform 0.05s ease-out' }}>
           {expandedChart === 'percent' ? (
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={modalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+              <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorEnergiaModal" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -300,7 +300,7 @@ export default function ChartModal({
             </ResponsiveContainer>
           ) : expandedChart === 'kcal' ? (
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={modalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+              <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
                 <defs>
                   <linearGradient id="modalColorEnergyKcal" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9}/><stop offset="50%" stopColor="#047857" stopOpacity={0.7}/><stop offset="100%" stopColor="#dc2626" stopOpacity={0.6}/></linearGradient>
                 </defs>
@@ -320,7 +320,7 @@ export default function ChartModal({
                 Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
               </div>
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={safeCalorieTimelineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <ComposedChart data={safeCalorieTimelineData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                   <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 6, 12, 18, 24]} tickFormatter={(val) => `${val}:00`} stroke="#666" fontSize={10} />
                   <YAxis domain={[0, Math.max(targetKcalChart, totalCaloriesTimeline || 0)]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={36} />
@@ -336,7 +336,7 @@ export default function ChartModal({
             </>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={modalChartData} margin={{ top: 15, right: 25, left: -10, bottom: 0 }}>
+              <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
                 <defs>
                   <linearGradient id="modalColorAnabolic" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00e5ff" stopOpacity={0.6}/><stop offset="95%" stopColor="#00e5ff" stopOpacity={0}/></linearGradient>
                   <linearGradient id="modalColorCortisol" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#9c27b0" stopOpacity={0.4}/><stop offset="95%" stopColor="#9c27b0" stopOpacity={0}/></linearGradient>
@@ -375,7 +375,9 @@ export default function ChartModal({
           </div>
         </div>
 
-        <div style={{ flexShrink: 0, height: '55px', marginTop: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', position: 'relative', overflow: 'hidden' }}>
+        {/* STRISCIA TIMELINE INFERIORE (A filo pavimento) */}
+        <div style={{ width: '100%', minHeight: '50px', paddingBottom: 'env(safe-area-inset-bottom, 0px)', background: '#0a0a12', borderTop: '1px solid #333', position: 'relative', flexShrink: 0 }}>
+          <div style={{ position: 'absolute', left: '15px', right: '15px', top: 0, height: '50px' }}>
           {activeNodesWithStack.map((node) => {
             const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];
             const isPrimary = primaryTypes.includes(node.type);
@@ -453,6 +455,7 @@ export default function ChartModal({
               </div>
             );
           })}
+          </div>
         </div>
 
         {isSimulationMode && selectedSimNode && (
