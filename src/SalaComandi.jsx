@@ -4738,7 +4738,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', marginBottom: '16px', flexShrink: 0 }}>
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
-                <div style={{ display: 'flex', justifyContent: 'center', margin: '20px auto', position: 'relative', width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', margin: '20px auto 30px auto', position: 'relative', width: '100%' }}>
                   <div style={{ position: 'relative', width: '100%', maxWidth: '360px', aspectRatio: '1', overflow: 'visible' }} onClick={() => setSelectedMealCenter(null)}>
                     {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
                     <div
@@ -4772,12 +4772,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           </div>
                         </div>
                       ) : (
-                        <div style={{ textAlign: 'center', pointerEvents: 'none' }}>
-                          <div style={{ fontSize: '0.9rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Bilancio</div>
-                          <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>
-                            {Math.round(totali?.kcal || 0)} <span style={{ fontSize: '0.9rem', color: '#aaa', fontWeight: 'normal' }}>/ {Math.round(baseKcal || 0)}</span>
-                          </div>
-                        </div>
+                        <svg viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                          {/* Calorie Attuali (Arancio Neon) */}
+                          <text x="100" y="95" textAnchor="middle" fill="#ff6b00" fontSize="38" fontWeight="bold" style={{ textShadow: '0 0 15px rgba(255, 107, 0, 0.6)' }}>
+                            {Math.round(totalCaloriesTimeline || 0)}
+                          </text>
+                          {/* Etichetta KCAL */}
+                          <text x="100" y="115" textAnchor="middle" fill="#888" fontSize="12" letterSpacing="2" style={{ textTransform: 'uppercase' }}>
+                            kcal
+                          </text>
+                          {/* Obiettivo Calorico */}
+                          <text x="100" y="132" textAnchor="middle" fill="#555" fontSize="10">
+                            obiettivo {Math.round(dynamicDailyKcal || baseKcal || userTargets?.kcal ?? 2500)}
+                          </text>
+                        </svg>
                       )}
                     </div>
                     {/* Layer 2: Grafico a Torta */}
