@@ -281,7 +281,7 @@ const PHYSIOLOGY_CONFIG = {
  * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
  * Restituisce { chartData, realTotals } per grafico doppia curva e semafori.
  */
-function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30) {
+function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, waterAutopilot = false) {
   const log = dailyLog || [];
   const ideal = idealStrategy || {};
   const model = {
@@ -576,6 +576,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       }
     });
     currentHydration = Math.max(0, Math.min(100, currentHydration));
+    if (waterAutopilot) currentHydration = Math.max(currentHydration, 87);
 
     currentEnergy = Math.max(0, Math.min(100, currentEnergy));
     currentIdealEnergy = Math.max(0, Math.min(100, currentIdealEnergy));
