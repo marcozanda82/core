@@ -3684,37 +3684,71 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </ResponsiveContainer>
             )}
             </div>
-            {/* STRISCIA TIMELINE NODI (Sopra il grafico) - left = margin.left(15) + YAxis.width(35) = 50px */}
-            <div style={{ height: '70px', marginTop: '12px', paddingBottom: '25px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
-              <div style={{ position: 'absolute', left: '50px', right: '15px', top: 0, bottom: 0 }}>
-              {(activeNodesWithStack || []).map((node) => {
-                const pct = ((node.time ?? 0) / 24) * 100;
-                const isWork = node.type === 'work';
-                const isCognitive = node.type === 'cognitive';
-                const isWater = node.type === 'water';
-                const isStimulant = node.type === 'stimulant';
-                const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
-                const icon = NODE_TYPE_ICON[node.type] ?? (isStimulant ? '☕' : isWater ? '💧' : (isPesi ? (node.muscles || []).map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•')));
-                const borderColor = node.type === 'nap' ? '#818cf8' : node.type === 'meditation' ? '#22c55e' : node.type === 'water' ? '#00e5ff' : isStimulant ? '#f59e0b' : '#00e5ff';
-                const timeStr = `${Math.floor(node.time ?? 0)}:${String(Math.round(((node.time ?? 0) % 1) * 60)).padStart(2, '0')}`;
-                if (isWork) {
-                  const dur = (node.duration || 1) / 24 * 100;
-                  return (
-                    <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(255, 234, 0, 0.2)', border: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#ffea00' }}>💼</div>
-                  );
-                }
-                if (isCognitive) {
-                  const dur = (node.duration || 1) / 24 * 100;
-                  return (
-                    <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(182,102,210,0.2)', border: '2px solid #b666d2', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#b666d2', boxShadow: '0 0 8px rgba(182,102,210,0.3)' }}>{node.subType === 'studio' ? '📚' : '💻'}</div>
-                  );
-                }
-                return (
-                  <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: `2px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: borderColor }} title={timeStr}>
-                    <span style={{ lineHeight: 1, fontSize: '0.85rem' }}>{icon}</span>
-                  </div>
-                );
-              })}
+            {/* STRISCIA TIMELINE NODI (Sopra il grafico) - due corsie Output/Input - left = margin.left(15) + YAxis.width(35) = 50px */}
+            <div style={{ height: '84px', marginTop: '12px', paddingBottom: '25px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
+              <div style={{ position: 'absolute', left: '50px', right: '15px', top: 0, bottom: 0, display: 'flex', flexDirection: 'column' }}>
+                {/* Corsia Superiore: OUTPUT (Workout, Cognitive, Sleep) */}
+                <div style={{ flex: 1, position: 'relative', minHeight: '42px' }}>
+                  {(activeNodesWithStack || []).filter(n => n.type === 'workout' || n.type === 'cognitive' || n.type === 'sleep').map((node) => {
+                    const pct = ((node.time ?? 0) / 24) * 100;
+                    const isWork = node.type === 'work';
+                    const isCognitive = node.type === 'cognitive';
+                    const isWater = node.type === 'water';
+                    const isStimulant = node.type === 'stimulant';
+                    const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
+                    const icon = NODE_TYPE_ICON[node.type] ?? (isStimulant ? '☕' : isWater ? '💧' : (isPesi ? (node.muscles || []).map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•')));
+                    const borderColor = node.type === 'nap' ? '#818cf8' : node.type === 'meditation' ? '#22c55e' : node.type === 'water' ? '#00e5ff' : isStimulant ? '#f59e0b' : '#00e5ff';
+                    const timeStr = `${Math.floor(node.time ?? 0)}:${String(Math.round(((node.time ?? 0) % 1) * 60)).padStart(2, '0')}`;
+                    if (isWork) {
+                      const dur = (node.duration || 1) / 24 * 100;
+                      return (
+                        <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(255, 234, 0, 0.2)', border: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#ffea00' }}>💼</div>
+                      );
+                    }
+                    if (isCognitive) {
+                      const dur = (node.duration || 1) / 24 * 100;
+                      return (
+                        <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(182,102,210,0.2)', border: '2px solid #b666d2', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#b666d2', boxShadow: '0 0 8px rgba(182,102,210,0.3)' }}>{node.subType === 'studio' ? '📚' : '💻'}</div>
+                      );
+                    }
+                    return (
+                      <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: `2px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: borderColor }} title={timeStr}>
+                        <span style={{ lineHeight: 1, fontSize: '0.85rem' }}>{icon}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Corsia Inferiore: INPUT (Meals, Water, Stimulants, ecc.) */}
+                <div style={{ flex: 1, position: 'relative', minHeight: '42px', borderTop: '1px dashed rgba(255,255,255,0.05)' }}>
+                  {(activeNodesWithStack || []).filter(n => n.type !== 'workout' && n.type !== 'cognitive' && n.type !== 'sleep').map((node) => {
+                    const pct = ((node.time ?? 0) / 24) * 100;
+                    const isWork = node.type === 'work';
+                    const isCognitive = node.type === 'cognitive';
+                    const isWater = node.type === 'water';
+                    const isStimulant = node.type === 'stimulant';
+                    const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
+                    const icon = NODE_TYPE_ICON[node.type] ?? (isStimulant ? '☕' : isWater ? '💧' : (isPesi ? (node.muscles || []).map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•')));
+                    const borderColor = node.type === 'nap' ? '#818cf8' : node.type === 'meditation' ? '#22c55e' : node.type === 'water' ? '#00e5ff' : isStimulant ? '#f59e0b' : '#00e5ff';
+                    const timeStr = `${Math.floor(node.time ?? 0)}:${String(Math.round(((node.time ?? 0) % 1) * 60)).padStart(2, '0')}`;
+                    if (isWork) {
+                      const dur = (node.duration || 1) / 24 * 100;
+                      return (
+                        <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(255, 234, 0, 0.2)', border: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#ffea00' }}>💼</div>
+                      );
+                    }
+                    if (isCognitive) {
+                      const dur = (node.duration || 1) / 24 * 100;
+                      return (
+                        <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, width: `${Math.max(4, dur)}%`, top: '50%', marginTop: -14, height: '28px', background: 'rgba(182,102,210,0.2)', border: '2px solid #b666d2', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: '#b666d2', boxShadow: '0 0 8px rgba(182,102,210,0.3)' }}>{node.subType === 'studio' ? '📚' : '💻'}</div>
+                      );
+                    }
+                    return (
+                      <div key={node.id} style={{ position: 'absolute', left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: `2px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: borderColor }} title={timeStr}>
+                        <span style={{ lineHeight: 1, fontSize: '0.85rem' }}>{icon}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -4895,6 +4929,32 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     <div style={{ width: `${isAssorbimento ? 40 : Math.min(100, (fastingData.hoursFasted / 16) * 100)}%`, height: '100%', background: faseColor, boxShadow: `0 0 8px ${faseColor}` }}></div>
                   </div>
                 </div>
+                {/* Pulsante Telemetria Avanzata */}
+                <button
+                  type="button"
+                  onClick={() => { if (typeof setExpandedChart === 'function') setExpandedChart('percent'); }}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    marginTop: 'auto',
+                    background: 'linear-gradient(90deg, #1a1a1c 0%, #2a2a2d 100%)',
+                    border: '1px solid #333',
+                    borderRadius: '16px',
+                    color: '#00e5ff',
+                    fontSize: '0.9rem',
+                    fontWeight: 'bold',
+                    letterSpacing: '1px',
+                    textTransform: 'uppercase',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 15px rgba(0, 0, 0, 0.4)',
+                    flexShrink: 0
+                  }}
+                >
+                  <span style={{ fontSize: '1.2rem' }}>⚗️</span> Analisi Telemetrica
+                </button>
               </div>
             );
           })()}
