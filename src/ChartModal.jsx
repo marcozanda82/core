@@ -229,13 +229,13 @@ export default function ChartModal({
       .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
     `}</style>
     <div
-      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, height: '100dvh', zIndex: 100000, background: '#050505', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', background: '#050508', zIndex: 100000, overflow: 'hidden' }}
       role="dialog"
       aria-modal="true"
       aria-label="Grafico a tutto schermo"
     >
       <div
-        style={{ flex: '0 0 60%', minHeight: 0, padding: '16px', display: 'flex', flexDirection: 'column' }}
+        style={{ flex: 1, position: 'relative', minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', padding: '16px' }}
         onTouchStart={handleModalSwipeStart}
         onTouchEnd={handleModalSwipeEnd}
         onMouseDown={handleModalSwipeStartMouse}
@@ -259,7 +259,7 @@ export default function ChartModal({
           </div>
         )}
         <div
-          style={{ flex: 1, minHeight: 120, overflow: 'hidden', touchAction: 'none' }}
+          style={{ flex: 1, position: 'relative', minHeight: 0, width: '100%', overflow: 'hidden', touchAction: 'none' }}
           onTouchStart={handleChartTouchStart}
           onTouchMove={handleChartTouchMove}
           onTouchEnd={handleChartTouchEnd}
@@ -375,8 +375,8 @@ export default function ChartModal({
           </div>
         </div>
 
-        {/* STRISCIA TIMELINE INFERIORE (A filo pavimento) */}
-        <div style={{ width: '100%', minHeight: '50px', paddingBottom: '24px', background: '#0a0a12', borderTop: '1px solid #333', position: 'relative', flexShrink: 0 }}>
+        {/* STRISCIA TIMELINE INFERIORE (ultimo elemento colonna Flexbox, non absolute) */}
+        <div style={{ width: '100%', minHeight: '60px', paddingBottom: 'max(env(safe-area-inset-bottom), 20px)', background: '#0a0a12', borderTop: '1px solid #333', position: 'relative', flexShrink: 0 }}>
           <div style={{ position: 'absolute', left: '50px', right: '15px', top: 0, height: '50px' }}>
           {activeNodesWithStack.map((node) => {
             const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];

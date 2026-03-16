@@ -4809,11 +4809,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                             onClick={(data, index, e) => {
                               if (e && e.stopPropagation) e.stopPropagation();
                               if (data.id === 'rimanenti') return;
+                              const pastoCorrente = mealPieData.find(m => m.id === data.id);
+                              if (!pastoCorrente) return;
                               if (selectedMealCenter && selectedMealCenter.id === data.id) {
-                                const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === data.id || n.id === (data.id && data.id.split('_')[0])));
+                                const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === data.id || n.id === (data.id && String(data.id).split('_')[0])));
                                 if (mealNode) handleNodeTap(mealNode)();
                               } else {
-                                setSelectedMealCenter({ id: data.id, name: data.name, value: data.value, color: data.color, fill: data.fill, timeValue: data.timeValue, payload: { color: data.color, macros: data.macros }, prot: data.prot, carb: data.carb, fat: data.fat });
+                                setSelectedMealCenter(pastoCorrente);
                               }
                             }}
                             style={{ cursor: 'pointer', outline: 'none' }}
