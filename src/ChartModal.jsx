@@ -468,7 +468,7 @@ export default function ChartModal({
             marginTop: '5px'
           }}
         >
-          <div style={{ position: 'absolute', left: '45px', right: '15px', top: 0, bottom: 0 }}>
+          <div className="timeline-nodes-strip" style={{ position: 'absolute', left: '45px', right: '15px', top: 0, bottom: 0 }}>
             {!isTimelineSplit ? (
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}>
                 {activeNodesWithStack.map(node => renderTimelineNode(node))}

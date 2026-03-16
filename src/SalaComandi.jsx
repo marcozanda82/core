@@ -1083,33 +1083,39 @@ export default function SalaComandi() {
     };
     setDragLiveTime(initialTime);
 
+    const VELOCITY_THRESHOLD_PX_MS = 0.4;
+    const FRICTION_MULTIPLIER = 0.3;
+
     const onMove = (e) => {
-      if (!el || !draggingNode) return;
-      const rect = el.getBoundingClientRect();
-      const centerY = rect.top + rect.height / 2;
-      const offsetY = e.clientY - centerY;
-      dragOffsetYRef.current = offsetY;
-      setDragOffsetY(offsetY);
+        if (!el || !draggingNode) return;
+        const rect = el.getBoundingClientRect();
+        const centerY = rect.top + rect.height / 2;
+        const offsetY = e.clientY - centerY;
+        dragOffsetYRef.current = offsetY;
+        setDragOffsetY(offsetY);
 
-      const currentX = e.clientX;
-      const currentT = performance.now();
-      const { lastX, lastTime, currentLiveTime } = dragEngine.current;
-      const pixelsPerHour = rect.width / 24;
+        const currentX = e.clientX;
+        const currentT = performance.now();
+        const { lastX, lastTime, currentLiveTime } = dragEngine.current;
+        const pixelsPerHour = rect.width / 24;
 
-      if (dragEngine.current.lastTime === 0) {
+        if (dragEngine.current.lastTime === 0) {
+          dragEngine.current.lastX = currentX;
+          dragEngine.current.lastTime = currentT;
+          return;
+        }
+        const dx = currentX - lastX;
+        const dtMs = currentT - lastTime;
+        const velocityPxMs = dtMs > 0 ? Math.abs(dx) / dtMs : 0;
+        const effectiveDx = velocityPxMs < VELOCITY_THRESHOLD_PX_MS ? dx * FRICTION_MULTIPLIER : dx;
+        const deltaHours = effectiveDx / pixelsPerHour;
+        let newTime = currentLiveTime + deltaHours;
+        if (newTime < 0) newTime = 0;
+        if (newTime > 24) newTime = 24;
+        dragEngine.current.currentLiveTime = newTime;
         dragEngine.current.lastX = currentX;
         dragEngine.current.lastTime = currentT;
-        return;
-      }
-      const dx = currentX - lastX;
-      const deltaHours = dx / pixelsPerHour;
-      let newTime = currentLiveTime + deltaHours;
-      if (newTime < 0) newTime = 0;
-      if (newTime > 24) newTime = 24;
-      dragEngine.current.currentLiveTime = newTime;
-      dragEngine.current.lastX = currentX;
-      dragEngine.current.lastTime = currentT;
-      setDragLiveTime(Math.round(newTime * 60) / 60);
+        setDragLiveTime(Math.round(newTime * 60) / 60);
     };
 
     const onUp = () => {
@@ -1847,7 +1853,7 @@ export default function SalaComandi() {
         originalDuration: node.duration,
         edge
       });
-    }, 350);
+    }, 200);
   }, [activeLog, manualNodes, dailyLog]);
 
   const releaseNodePointer = (e) => {

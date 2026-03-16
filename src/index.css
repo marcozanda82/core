@@ -79,6 +79,20 @@ body {
   transform: scale(0.9);
 }
 
+/* Timeline nodi (SalaComandi + ChartModal): no selezione testo, swipe orizzontale senza interferenza */
+.timeline-node,
+.meal-node,
+.node-time-label,
+.mini-timeline-hitbox,
+.mini-timeline-bar-wrap,
+.mini-timeline-point-bubble,
+.timeline-nodes-strip,
+.timeline-nodes-strip * {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
 /* Dashboard Allarmi: pulsazione per pill in stato critico */
 @keyframes pulseAlertOpacity {
   0% { opacity: 1; }
