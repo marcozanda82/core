@@ -307,10 +307,7 @@ export default function SalaComandi() {
   const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
   const [draggingNode, setDraggingNode] = useState(null);
   const [touchingNodeId, setTouchingNodeId] = useState(null);
-  const [historyStack, setHistoryStack] = useState([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const [showUndoToast, setShowUndoToast] = useState(false);
-  const historyIndexRef = useRef(-1);
+  const [timelineBackup, setTimelineBackup] = useState(null);
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const [dragLiveTime, setDragLiveTime] = useState(null);
   const dragEngine = useRef({
@@ -1086,39 +1083,33 @@ export default function SalaComandi() {
     };
     setDragLiveTime(initialTime);
 
-    const VELOCITY_THRESHOLD_PX_MS = 0.4;
-    const FRICTION_MULTIPLIER = 0.3;
-
     const onMove = (e) => {
-        if (!el || !draggingNode) return;
-        const rect = el.getBoundingClientRect();
-        const centerY = rect.top + rect.height / 2;
-        const offsetY = e.clientY - centerY;
-        dragOffsetYRef.current = offsetY;
-        setDragOffsetY(offsetY);
+      if (!el || !draggingNode) return;
+      const rect = el.getBoundingClientRect();
+      const centerY = rect.top + rect.height / 2;
+      const offsetY = e.clientY - centerY;
+      dragOffsetYRef.current = offsetY;
+      setDragOffsetY(offsetY);
 
-        const currentX = e.clientX;
-        const currentT = performance.now();
-        const { lastX, lastTime, currentLiveTime } = dragEngine.current;
-        const pixelsPerHour = rect.width / 24;
+      const currentX = e.clientX;
+      const currentT = performance.now();
+      const { lastX, lastTime, currentLiveTime } = dragEngine.current;
+      const pixelsPerHour = rect.width / 24;
 
-        if (dragEngine.current.lastTime === 0) {
-          dragEngine.current.lastX = currentX;
-          dragEngine.current.lastTime = currentT;
-          return;
-        }
-        const dx = currentX - lastX;
-        const dtMs = currentT - lastTime;
-        const velocityPxMs = dtMs > 0 ? Math.abs(dx) / dtMs : 0;
-        const effectiveDx = velocityPxMs < VELOCITY_THRESHOLD_PX_MS ? dx * FRICTION_MULTIPLIER : dx;
-        const deltaHours = effectiveDx / pixelsPerHour;
-        let newTime = currentLiveTime + deltaHours;
-        if (newTime < 0) newTime = 0;
-        if (newTime > 24) newTime = 24;
-        dragEngine.current.currentLiveTime = newTime;
+      if (dragEngine.current.lastTime === 0) {
         dragEngine.current.lastX = currentX;
         dragEngine.current.lastTime = currentT;
-        setDragLiveTime(Math.round(newTime * 60) / 60);
+        return;
+      }
+      const dx = currentX - lastX;
+      const deltaHours = dx / pixelsPerHour;
+      let newTime = currentLiveTime + deltaHours;
+      if (newTime < 0) newTime = 0;
+      if (newTime > 24) newTime = 24;
+      dragEngine.current.currentLiveTime = newTime;
+      dragEngine.current.lastX = currentX;
+      dragEngine.current.lastTime = currentT;
+      setDragLiveTime(Math.round(newTime * 60) / 60);
     };
 
     const onUp = () => {
@@ -1138,18 +1129,23 @@ export default function SalaComandi() {
       if (isOutside) {
         const confirmDelete = window.confirm('Vuoi eliminare questo elemento?');
         if (confirmDelete) {
-          pushHistoryAndShowToast(dailyLog, manualNodes);
           if (dragType === 'meal') {
             const { itemIds } = draggingNode;
-            const nextLog = dailyLog.filter(item => !(itemIds && itemIds.includes(item.id)));
-            setDailyLog(nextLog);
-            syncDatiFirebase(nextLog, manualNodes);
+            setDailyLog(prev => {
+              const next = prev.filter(item => !(itemIds && itemIds.includes(item.id)));
+              syncDatiFirebase(next, manualNodes);
+              return next;
+            });
           } else {
-            const newLog = dailyLog.filter(item => item.id !== dragId);
-            const newNodes = manualNodes.filter(n => n.id !== dragId);
-            setDailyLog(newLog);
-            setManualNodes(newNodes);
-            syncDatiFirebase(newLog, newNodes);
+            setDailyLog(prev => {
+              const newLog = prev.filter(item => item.id !== dragId);
+              setManualNodes(prevN => {
+                const newNodes = prevN.filter(n => n.id !== dragId);
+                syncDatiFirebase(newLog, newNodes);
+                return newNodes;
+              });
+              return newLog;
+            });
           }
         } else {
           if (dragType === 'meal') {
@@ -1172,7 +1168,6 @@ export default function SalaComandi() {
           }
         }
       } else {
-        pushHistoryAndShowToast(dailyLog, manualNodes);
         if (dragType === 'meal') {
           const { itemIds } = draggingNode;
           const nextLog = dailyLog.map(item =>
@@ -1181,24 +1176,26 @@ export default function SalaComandi() {
           setDailyLog(nextLog);
           syncDatiFirebase(nextLog, manualNodes);
         } else {
-          const next = manualNodes.map(n => {
-            if (n.id !== dragId) return n;
-            if (n.type === 'work' || n.type === 'cognitive') {
-              if (dragEdge === 'start') {
-                const end = n.time + (n.duration || 1);
-                const newTime = Math.min(finalTimeRounded, end - 0.25);
-                return { ...n, time: newTime, duration: end - newTime };
-              }
-              if (dragEdge === 'end') {
-                const newEnd = Math.max(finalTimeRounded, n.time + 0.25);
-                return { ...n, duration: newEnd - n.time };
+          setManualNodes(prev => {
+            const next = prev.map(n => {
+              if (n.id !== dragId) return n;
+              if (n.type === 'work' || n.type === 'cognitive') {
+                if (dragEdge === 'start') {
+                  const end = n.time + (n.duration || 1);
+                  const newTime = Math.min(finalTimeRounded, end - 0.25);
+                  return { ...n, time: newTime, duration: end - newTime };
+                }
+                if (dragEdge === 'end') {
+                  const newEnd = Math.max(finalTimeRounded, n.time + 0.25);
+                  return { ...n, duration: newEnd - n.time };
+                }
+                return { ...n, time: finalTimeRounded };
               }
               return { ...n, time: finalTimeRounded };
-            }
-            return { ...n, time: finalTimeRounded };
+            });
+            syncDatiFirebase(dailyLog, next);
+            return next;
           });
-          setManualNodes(next);
-          syncDatiFirebase(dailyLog, next);
         }
       }
       dragEngine.current.isActive = false;
@@ -1215,39 +1212,7 @@ export default function SalaComandi() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [draggingNode, isSimulationMode, pushHistoryAndShowToast, dailyLog, manualNodes]);
-
-  useEffect(() => { historyIndexRef.current = historyIndex; }, [historyIndex]);
-
-  const pushHistoryAndShowToast = useCallback((dailyLogSnapshot, manualNodesSnapshot) => {
-    const snapshot = { dailyLog: JSON.parse(JSON.stringify(dailyLogSnapshot)), manualNodes: JSON.parse(JSON.stringify(manualNodesSnapshot)) };
-    setHistoryStack(prev => [...prev.slice(0, historyIndexRef.current + 1), snapshot]);
-    setHistoryIndex(prev => prev + 1);
-    setShowUndoToast(true);
-    setTimeout(() => setShowUndoToast(false), 4000);
-  }, []);
-
-  const handleUndo = useCallback(() => {
-    if (historyIndex <= 0) return;
-    const prev = historyStack[historyIndex - 1];
-    if (!prev) return;
-    setDailyLog(prev.dailyLog);
-    setManualNodes(prev.manualNodes);
-    syncDatiFirebase(prev.dailyLog, prev.manualNodes);
-    setHistoryIndex(prevIdx => prevIdx - 1);
-    setShowUndoToast(false);
-  }, [historyIndex, historyStack, syncDatiFirebase]);
-
-  const handleRedo = useCallback(() => {
-    if (historyIndex >= historyStack.length - 1) return;
-    const next = historyStack[historyIndex + 1];
-    if (!next) return;
-    setDailyLog(next.dailyLog);
-    setManualNodes(next.manualNodes);
-    syncDatiFirebase(next.dailyLog, next.manualNodes);
-    setHistoryIndex(prevIdx => prevIdx + 1);
-    setShowUndoToast(false);
-  }, [historyIndex, historyStack, syncDatiFirebase]);
+  }, [draggingNode, isSimulationMode]);
 
   useEffect(() => { if (!isDrawerOpen) setIsZenActive(false); }, [isDrawerOpen]);
 
@@ -1870,6 +1835,7 @@ export default function SalaComandi() {
       longPressMoveCleanupRef.current = null;
       target.setPointerCapture(e.pointerId);
       dragOffsetYRef.current = 0;
+      setTimelineBackup({ manualNodes: JSON.parse(JSON.stringify(manualNodes)), dailyLog: JSON.parse(JSON.stringify(dailyLog || [])) });
       const itemIds = node.type === 'meal'
         ? (activeLog || []).filter(item => getSlotKey(item) === String(node.id)).map(i => i.id)
         : [];
@@ -1881,7 +1847,7 @@ export default function SalaComandi() {
         originalDuration: node.duration,
         edge
       });
-    }, 200);
+    }, 350);
   }, [activeLog, manualNodes, dailyLog]);
 
   const releaseNodePointer = (e) => {
@@ -4332,8 +4298,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia SNC (%)'}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              <button type="button" onClick={handleUndo} disabled={historyIndex <= 0} title="Annulla" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: historyIndex <= 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: historyIndex <= 0 ? '#444' : '#00e5ff', fontSize: '1.1rem', cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer' }} aria-label="Annulla">↩</button>
-              <button type="button" onClick={handleRedo} disabled={historyIndex >= historyStack.length - 1} title="Ripeti" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: historyIndex >= historyStack.length - 1 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: historyIndex >= historyStack.length - 1 ? '#444' : '#00e5ff', fontSize: '1.1rem', cursor: historyIndex >= historyStack.length - 1 ? 'not-allowed' : 'pointer' }} aria-label="Ripeti">↪</button>
               {chartUnit === 'idratazione' && (
                 <button type="button" onClick={() => setIsWaterAutopilot(prev => !prev)} title={isWaterAutopilot ? 'Disattiva Pilota Automatico Idratazione' : 'Attiva Pilota Automatico Idratazione'} style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isWaterAutopilot ? 'rgba(0, 229, 255, 0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${isWaterAutopilot ? '#00e5ff' : '#333'}`, borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label={isWaterAutopilot ? 'Pilota idratazione ON' : 'Pilota idratazione OFF'}>🤖💧</button>
               )}
@@ -4725,6 +4689,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     );
                   })}
                 </div>
+                {timelineBackup != null && (
+                  <button type="button" onClick={() => { setManualNodes(timelineBackup.manualNodes); setDailyLog(timelineBackup.dailyLog); syncDatiFirebase(timelineBackup.dailyLog, timelineBackup.manualNodes); setTimelineBackup(null); }} style={{ flexShrink: 0, padding: '8px 12px', fontSize: '0.75rem', fontWeight: 'bold', background: '#333', color: '#00e5ff', border: '1px solid #00e5ff', borderRadius: '8px', cursor: 'pointer' }}>↩ Annulla</button>
+                )}
               </div>
             </div>
             {/* SPACER PER PULSANTIERA: Permette di scrollare oltre la fine del grafico per non coprire le 24:00 */}
@@ -6810,16 +6777,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         );
       })()}
-
-      {/* Toast Undo: fisso in basso al centro */}
-      {showUndoToast && (
-        <div style={{ position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)', zIndex: 10001, display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px', background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-          <span style={{ color: '#e0e0e0', fontSize: '0.9rem' }}>Orario modificato</span>
-          <button type="button" onClick={handleUndo} style={{ padding: '8px 16px', fontSize: '0.8rem', fontWeight: 'bold', background: 'rgba(0, 229, 255, 0.15)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>
-            ANNULLA
-          </button>
-        </div>
-      )}
     </div>
   );
 }
