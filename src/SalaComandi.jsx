@@ -1103,7 +1103,12 @@ export default function SalaComandi() {
         return;
       }
       const dx = currentX - lastX;
-      const deltaHours = dx / pixelsPerHour;
+      const deltaT = currentT - lastTime;
+      const velocity = deltaT > 0 ? Math.abs(dx) / deltaT : 0;
+      const VELOCITY_THRESHOLD = 0.4;
+      const FRICTION = 0.3;
+      const effectiveDx = velocity > VELOCITY_THRESHOLD ? dx : dx * FRICTION;
+      const deltaHours = effectiveDx / pixelsPerHour;
       let newTime = currentLiveTime + deltaHours;
       if (newTime < 0) newTime = 0;
       if (newTime > 24) newTime = 24;
@@ -1848,7 +1853,7 @@ export default function SalaComandi() {
         originalDuration: node.duration,
         edge
       });
-    }, 350);
+    }, 200);
   }, [activeLog, manualNodes, dailyLog]);
 
   const releaseNodePointer = (e) => {

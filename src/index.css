@@ -87,7 +87,9 @@ body {
 .mini-timeline-bar-wrap,
 .mini-timeline-point-bubble,
 .timeline-nodes-strip,
-.timeline-nodes-strip * {
+.timeline-nodes-strip *,
+.chart-scroll-container,
+.chart-scroll-container * {
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
