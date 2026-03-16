@@ -109,6 +109,80 @@ export default function ChartModal({
     if (e.touches.length < 2) initialPinchDistanceRef.current = null;
   };
 
+  const renderTimelineNode = (node) => {
+    const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];
+    const isPrimary = primaryTypes.includes(node.type);
+    const isWork = node.type === 'work';
+    const isCognitive = node.type === 'cognitive';
+    const percent = (node.time / 24) * 100;
+    const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
+    const iconContent = NODE_TYPE_ICON[node.type] ?? (node.type === 'stimulant' ? '☕' : (node.type === 'water' ? '💧' : (node.type === 'work' ? '💼' : (node.type === 'workout' ? '⚡' : (node.type === 'cognitive' ? (node.subType === 'studio' ? '📚' : '💻') : '🥗')))));
+    const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : (node.type === 'cognitive' ? 'rgba(182,102,210,0.2)' : (node.type === 'nap' ? 'rgba(129,140,248,0.2)' : (node.type === 'meditation' ? 'rgba(34,197,94,0.2)' : (node.type === 'supplements' ? 'rgba(168,85,247,0.2)' : (node.type === 'sunlight' ? 'rgba(251,191,36,0.2)' : 'rgba(0,0,0,0.6)')))))));
+    const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : (node.type === 'cognitive' ? '#b666d2' : (node.type === 'nap' ? '#818cf8' : (node.type === 'meditation' ? '#22c55e' : (node.type === 'supplements' ? '#a855f7' : (node.type === 'sunlight' ? '#fbbf24' : '#00e5ff')))))));
+    const timeLabelStr = `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
+    const logItemForNode = isSimulationMode && safeDailyLog.length > 0
+      ? (node.type === 'meal' ? safeDailyLog.find(item => item.type === 'food' && item.mealType === node.id)
+        : node.type === 'workout' ? safeDailyLog.find(item => item.type === 'workout' && item.id === node.id)
+        : node.type === 'stimulant' ? safeDailyLog.find(item => item.type === 'stimulant' && item.id === node.id)
+        : null)
+      : null;
+    const isSelected = isSimulationMode && selectedSimNode && logItemForNode && selectedSimNode.id === logItemForNode.id;
+    const nodeStyle = {
+      zIndex: isPrimary ? 10 : 1,
+      filter: isPrimary ? 'none' : 'grayscale(100%)',
+      opacity: isPrimary ? 1 : 0.4,
+      transform: isPrimary ? (isWork || isCognitive ? undefined : 'translateX(-50%)') : (isWork || isCognitive ? 'scale(0.8)' : 'translateX(-50%) scale(0.8)'),
+      transition: 'all 0.3s ease',
+      pointerEvents: isSimulationMode && (node.type === 'meal' || node.type === 'workout' || node.type === 'stimulant') ? 'auto' : 'none',
+      cursor: isSimulationMode && logItemForNode ? 'pointer' : 'default'
+    };
+    const handleNodeClick = (e) => { e.stopPropagation(); if (isSimulationMode && logItemForNode) setSelectedSimNode(prev => prev?.id === logItemForNode.id ? null : logItemForNode); };
+    if (isWork) {
+      return (
+        <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(255,234,0,0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
+          💼
+        </div>
+      );
+    }
+    if (isCognitive) {
+      return (
+        <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(182,102,210,0.2)', borderLeft: '2px solid #b666d2', borderRight: '2px solid #b666d2', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
+          {node.subType === 'studio' ? '📚' : '💻'}
+        </div>
+      );
+    }
+    return (
+      <div
+        key={node.id}
+        role={isSimulationMode && logItemForNode ? 'button' : undefined}
+        tabIndex={isSimulationMode && logItemForNode ? 0 : undefined}
+        onClick={handleNodeClick}
+        onKeyDown={isSimulationMode && logItemForNode ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleNodeClick(e); } } : undefined}
+        style={{
+          position: 'absolute',
+          left: `${percent}%`,
+          top: '50%',
+          marginTop: -18,
+          width: '36px',
+          height: '36px',
+          borderRadius: '50%',
+          background: isSelected ? 'rgba(98,0,234,0.4)' : bgColor,
+          border: `2px solid ${isSelected ? '#00e5ff' : borderColor}`,
+          boxShadow: isSelected ? '0 0 12px rgba(0,229,255,0.6)' : 'none',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '0.65rem',
+          ...nodeStyle
+        }}
+      >
+        <span style={{ color: isSelected ? '#00e5ff' : borderColor, fontWeight: 'bold', marginBottom: '1px' }}>{timeLabelStr}</span>
+        <span style={{ lineHeight: 1, fontSize: '1rem' }}>{iconContent}</span>
+      </div>
+    );
+  };
+
   const currentIndex = CHART_VIEWS_CAROUSEL.indexOf(expandedChart);
   const safeIndex = currentIndex >= 0 ? currentIndex : 0;
 
@@ -385,231 +459,15 @@ export default function ChartModal({
           <div style={{ position: 'absolute', left: '50px', right: '15px', top: 0, bottom: 0 }}>
             {!isTimelineSplit ? (
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}>
-                {activeNodesWithStack.map((node) => {
-                  const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];
-                  const isPrimary = primaryTypes.includes(node.type);
-                  const isWork = node.type === 'work';
-                  const isCognitive = node.type === 'cognitive';
-                  const percent = (node.time / 24) * 100;
-                  const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
-                  const iconContent = NODE_TYPE_ICON[node.type] ?? (node.type === 'stimulant' ? '☕' : (node.type === 'water' ? '💧' : (node.type === 'work' ? '💼' : (node.type === 'workout' ? '⚡' : (node.type === 'cognitive' ? (node.subType === 'studio' ? '📚' : '💻') : '🥗')))));
-                  const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : (node.type === 'cognitive' ? 'rgba(182,102,210,0.2)' : (node.type === 'nap' ? 'rgba(129,140,248,0.2)' : (node.type === 'meditation' ? 'rgba(34,197,94,0.2)' : (node.type === 'supplements' ? 'rgba(168,85,247,0.2)' : (node.type === 'sunlight' ? 'rgba(251,191,36,0.2)' : 'rgba(0,0,0,0.6)')))))));
-                  const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : (node.type === 'cognitive' ? '#b666d2' : (node.type === 'nap' ? '#818cf8' : (node.type === 'meditation' ? '#22c55e' : (node.type === 'supplements' ? '#a855f7' : (node.type === 'sunlight' ? '#fbbf24' : '#00e5ff')))))));
-                  const timeLabelStr = `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
-                  const logItemForNode = isSimulationMode && safeDailyLog.length > 0
-                    ? (node.type === 'meal' ? safeDailyLog.find(item => item.type === 'food' && item.mealType === node.id)
-                      : node.type === 'workout' ? safeDailyLog.find(item => item.type === 'workout' && item.id === node.id)
-                      : node.type === 'stimulant' ? safeDailyLog.find(item => item.type === 'stimulant' && item.id === node.id)
-                      : null)
-                    : null;
-                  const isSelected = isSimulationMode && selectedSimNode && logItemForNode && selectedSimNode.id === logItemForNode.id;
-                  const nodeStyle = {
-                    zIndex: isPrimary ? 10 : 1,
-                    filter: isPrimary ? 'none' : 'grayscale(100%)',
-                    opacity: isPrimary ? 1 : 0.4,
-                    transform: isPrimary ? (isWork || isCognitive ? undefined : 'translateX(-50%)') : (isWork || isCognitive ? 'scale(0.8)' : 'translateX(-50%) scale(0.8)'),
-                    transition: 'all 0.3s ease',
-                    pointerEvents: isSimulationMode && (node.type === 'meal' || node.type === 'workout' || node.type === 'stimulant') ? 'auto' : 'none',
-                    cursor: isSimulationMode && logItemForNode ? 'pointer' : 'default'
-                  };
-                  const handleNodeClick = (e) => { e.stopPropagation(); if (isSimulationMode && logItemForNode) setSelectedSimNode(prev => prev?.id === logItemForNode.id ? null : logItemForNode); };
-                  if (isWork) {
-                    return (
-                      <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(255,234,0,0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
-                        💼
-                      </div>
-                    );
-                  }
-                  if (isCognitive) {
-                    return (
-                      <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(182,102,210,0.2)', borderLeft: '2px solid #b666d2', borderRight: '2px solid #b666d2', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
-                        {node.subType === 'studio' ? '📚' : '💻'}
-                      </div>
-                    );
-                  }
-                  return (
-                    <div
-                      key={node.id}
-                      role={isSimulationMode && logItemForNode ? 'button' : undefined}
-                      tabIndex={isSimulationMode && logItemForNode ? 0 : undefined}
-                      onClick={handleNodeClick}
-                      onKeyDown={isSimulationMode && logItemForNode ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleNodeClick(e); } } : undefined}
-                      style={{
-                        position: 'absolute',
-                        left: `${percent}%`,
-                        top: '50%',
-                        marginTop: -18,
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '50%',
-                        background: isSelected ? 'rgba(98,0,234,0.4)' : bgColor,
-                        border: `2px solid ${isSelected ? '#00e5ff' : borderColor}`,
-                        boxShadow: isSelected ? '0 0 12px rgba(0,229,255,0.6)' : 'none',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.65rem',
-                        ...nodeStyle
-                      }}
-                    >
-                      <span style={{ color: isSelected ? '#00e5ff' : borderColor, fontWeight: 'bold', marginBottom: '1px' }}>{timeLabelStr}</span>
-                      <span style={{ lineHeight: 1, fontSize: '1rem' }}>{iconContent}</span>
-                    </div>
-                  );
-                })}
+                {activeNodesWithStack.map(node => renderTimelineNode(node))}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                 <div style={{ flex: 1, position: 'relative' }}>
-                  {activeNodesWithStack.filter(n => n.type === 'workout' || n.type === 'cognitive' || n.type === 'sleep').map((node) => {
-                    const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];
-                    const isPrimary = primaryTypes.includes(node.type);
-                    const isWork = node.type === 'work';
-                    const isCognitive = node.type === 'cognitive';
-                    const percent = (node.time / 24) * 100;
-                    const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
-                    const iconContent = NODE_TYPE_ICON[node.type] ?? (node.type === 'stimulant' ? '☕' : (node.type === 'water' ? '💧' : (node.type === 'work' ? '💼' : (node.type === 'workout' ? '⚡' : (node.type === 'cognitive' ? (node.subType === 'studio' ? '📚' : '💻') : '🥗')))));
-                    const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : (node.type === 'cognitive' ? 'rgba(182,102,210,0.2)' : (node.type === 'nap' ? 'rgba(129,140,248,0.2)' : (node.type === 'meditation' ? 'rgba(34,197,94,0.2)' : (node.type === 'supplements' ? 'rgba(168,85,247,0.2)' : (node.type === 'sunlight' ? 'rgba(251,191,36,0.2)' : 'rgba(0,0,0,0.6)')))))));
-                    const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : (node.type === 'cognitive' ? '#b666d2' : (node.type === 'nap' ? '#818cf8' : (node.type === 'meditation' ? '#22c55e' : (node.type === 'supplements' ? '#a855f7' : (node.type === 'sunlight' ? '#fbbf24' : '#00e5ff')))))));
-                    const timeLabelStr = `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
-                    const logItemForNode = isSimulationMode && safeDailyLog.length > 0
-                      ? (node.type === 'meal' ? safeDailyLog.find(item => item.type === 'food' && item.mealType === node.id)
-                        : node.type === 'workout' ? safeDailyLog.find(item => item.type === 'workout' && item.id === node.id)
-                        : node.type === 'stimulant' ? safeDailyLog.find(item => item.type === 'stimulant' && item.id === node.id)
-                        : null)
-                      : null;
-                    const isSelected = isSimulationMode && selectedSimNode && logItemForNode && selectedSimNode.id === logItemForNode.id;
-                    const nodeStyle = {
-                      zIndex: isPrimary ? 10 : 1,
-                      filter: isPrimary ? 'none' : 'grayscale(100%)',
-                      opacity: isPrimary ? 1 : 0.4,
-                      transform: isPrimary ? (isWork || isCognitive ? undefined : 'translateX(-50%)') : (isWork || isCognitive ? 'scale(0.8)' : 'translateX(-50%) scale(0.8)'),
-                      transition: 'all 0.3s ease',
-                      pointerEvents: isSimulationMode && (node.type === 'meal' || node.type === 'workout' || node.type === 'stimulant') ? 'auto' : 'none',
-                      cursor: isSimulationMode && logItemForNode ? 'pointer' : 'default'
-                    };
-                    const handleNodeClick = (e) => { e.stopPropagation(); if (isSimulationMode && logItemForNode) setSelectedSimNode(prev => prev?.id === logItemForNode.id ? null : logItemForNode); };
-                    if (isWork) {
-                      return (
-                        <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(255,234,0,0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
-                          💼
-                        </div>
-                      );
-                    }
-                    if (isCognitive) {
-                      return (
-                        <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(182,102,210,0.2)', borderLeft: '2px solid #b666d2', borderRight: '2px solid #b666d2', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
-                          {node.subType === 'studio' ? '📚' : '💻'}
-                        </div>
-                      );
-                    }
-                    return (
-                      <div
-                        key={node.id}
-                        role={isSimulationMode && logItemForNode ? 'button' : undefined}
-                        tabIndex={isSimulationMode && logItemForNode ? 0 : undefined}
-                        onClick={handleNodeClick}
-                        onKeyDown={isSimulationMode && logItemForNode ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleNodeClick(e); } } : undefined}
-                        style={{
-                          position: 'absolute',
-                          left: `${percent}%`,
-                          top: '50%',
-                          marginTop: -18,
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '50%',
-                          background: isSelected ? 'rgba(98,0,234,0.4)' : bgColor,
-                          border: `2px solid ${isSelected ? '#00e5ff' : borderColor}`,
-                          boxShadow: isSelected ? '0 0 12px rgba(0,229,255,0.6)' : 'none',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.65rem',
-                          ...nodeStyle
-                        }}
-                      >
-                        <span style={{ color: isSelected ? '#00e5ff' : borderColor, fontWeight: 'bold', marginBottom: '1px' }}>{timeLabelStr}</span>
-                        <span style={{ lineHeight: 1, fontSize: '1rem' }}>{iconContent}</span>
-                      </div>
-                    );
-                  })}
+                  {activeNodesWithStack.filter(n => n.type === 'workout' || n.type === 'cognitive' || n.type === 'sleep').map(node => renderTimelineNode(node))}
                 </div>
                 <div style={{ flex: 1, position: 'relative', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
-                  {activeNodesWithStack.filter(n => n.type !== 'workout' && n.type !== 'cognitive' && n.type !== 'sleep').map((node) => {
-                    const primaryTypes = MODAL_NODE_PRIMARY[expandedChart] ?? NODE_IMPORTANCE[expandedChart] ?? [];
-                    const isPrimary = primaryTypes.includes(node.type);
-                    const isWork = node.type === 'work';
-                    const isCognitive = node.type === 'cognitive';
-                    const percent = (node.time / 24) * 100;
-                    const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
-                    const iconContent = NODE_TYPE_ICON[node.type] ?? (node.type === 'stimulant' ? '☕' : (node.type === 'water' ? '💧' : (node.type === 'work' ? '💼' : (node.type === 'workout' ? '⚡' : (node.type === 'cognitive' ? (node.subType === 'studio' ? '📚' : '💻') : '🥗')))));
-                    const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : (node.type === 'water' ? 'rgba(0,229,255,0.15)' : (node.type === 'work' ? 'rgba(255,234,0,0.15)' : (node.type === 'cognitive' ? 'rgba(182,102,210,0.2)' : (node.type === 'nap' ? 'rgba(129,140,248,0.2)' : (node.type === 'meditation' ? 'rgba(34,197,94,0.2)' : (node.type === 'supplements' ? 'rgba(168,85,247,0.2)' : (node.type === 'sunlight' ? 'rgba(251,191,36,0.2)' : 'rgba(0,0,0,0.6)')))))));
-                    const borderColor = node.type === 'stimulant' ? '#f59e0b' : (node.type === 'water' ? '#00e5ff' : (node.type === 'work' ? '#ffea00' : (node.type === 'cognitive' ? '#b666d2' : (node.type === 'nap' ? '#818cf8' : (node.type === 'meditation' ? '#22c55e' : (node.type === 'supplements' ? '#a855f7' : (node.type === 'sunlight' ? '#fbbf24' : '#00e5ff')))))));
-                    const timeLabelStr = `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
-                    const logItemForNode = isSimulationMode && safeDailyLog.length > 0
-                      ? (node.type === 'meal' ? safeDailyLog.find(item => item.type === 'food' && item.mealType === node.id)
-                        : node.type === 'workout' ? safeDailyLog.find(item => item.type === 'workout' && item.id === node.id)
-                        : node.type === 'stimulant' ? safeDailyLog.find(item => item.type === 'stimulant' && item.id === node.id)
-                        : null)
-                      : null;
-                    const isSelected = isSimulationMode && selectedSimNode && logItemForNode && selectedSimNode.id === logItemForNode.id;
-                    const nodeStyle = {
-                      zIndex: isPrimary ? 10 : 1,
-                      filter: isPrimary ? 'none' : 'grayscale(100%)',
-                      opacity: isPrimary ? 1 : 0.4,
-                      transform: isPrimary ? (isWork || isCognitive ? undefined : 'translateX(-50%)') : (isWork || isCognitive ? 'scale(0.8)' : 'translateX(-50%) scale(0.8)'),
-                      transition: 'all 0.3s ease',
-                      pointerEvents: isSimulationMode && (node.type === 'meal' || node.type === 'workout' || node.type === 'stimulant') ? 'auto' : 'none',
-                      cursor: isSimulationMode && logItemForNode ? 'pointer' : 'default'
-                    };
-                    const handleNodeClick = (e) => { e.stopPropagation(); if (isSimulationMode && logItemForNode) setSelectedSimNode(prev => prev?.id === logItemForNode.id ? null : logItemForNode); };
-                    if (isWork) {
-                      return (
-                        <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(255,234,0,0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
-                          💼
-                        </div>
-                      );
-                    }
-                    if (isCognitive) {
-                      return (
-                        <div key={node.id} style={{ position: 'absolute', left: `${percent}%`, width: `${durationPercent}%`, top: '50%', marginTop: -18, height: '36px', background: 'rgba(182,102,210,0.2)', borderLeft: '2px solid #b666d2', borderRight: '2px solid #b666d2', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', ...nodeStyle }}>
-                          {node.subType === 'studio' ? '📚' : '💻'}
-                        </div>
-                      );
-                    }
-                    return (
-                      <div
-                        key={node.id}
-                        role={isSimulationMode && logItemForNode ? 'button' : undefined}
-                        tabIndex={isSimulationMode && logItemForNode ? 0 : undefined}
-                        onClick={handleNodeClick}
-                        onKeyDown={isSimulationMode && logItemForNode ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleNodeClick(e); } } : undefined}
-                        style={{
-                          position: 'absolute',
-                          left: `${percent}%`,
-                          top: '50%',
-                          marginTop: -18,
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '50%',
-                          background: isSelected ? 'rgba(98,0,234,0.4)' : bgColor,
-                          border: `2px solid ${isSelected ? '#00e5ff' : borderColor}`,
-                          boxShadow: isSelected ? '0 0 12px rgba(0,229,255,0.6)' : 'none',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.65rem',
-                          ...nodeStyle
-                        }}
-                      >
-                        <span style={{ color: isSelected ? '#00e5ff' : borderColor, fontWeight: 'bold', marginBottom: '1px' }}>{timeLabelStr}</span>
-                        <span style={{ lineHeight: 1, fontSize: '1rem' }}>{iconContent}</span>
-                      </div>
-                    );
-                  })}
+                  {activeNodesWithStack.filter(n => n.type !== 'workout' && n.type !== 'cognitive' && n.type !== 'sleep').map(node => renderTimelineNode(node))}
                 </div>
               </div>
             )}

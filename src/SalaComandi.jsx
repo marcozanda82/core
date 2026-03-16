@@ -99,7 +99,7 @@ export default function SalaComandi() {
   const [chartUnit, setChartUnit] = useState('percent'); // 'percent' | 'kcal'
   const [expandedChart, setExpandedChart] = useState(null); // 'percent' | 'kcal' | 'glicemia' | ... per modale fullscreen
   const [activeHighlight, setActiveHighlight] = useState(null); // glossario: 'energia' | 'anabolica' | 'cortisolo' | 'sveglia' | 'digestione' | 'ora'
-  const [bottomTab, setBottomTab] = useState('desc'); // 'desc' | 'ai' (metà inferiore modale)
+  const [bottomTab, setBottomTab] = useState('ai'); // 'desc' | 'ai' (metà inferiore modale)
   const [aiInsightsList, setAiInsightsList] = useState([]); // Array di { time: string, text: string }
   const [currentAiIndex, setCurrentAiIndex] = useState(0);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -4880,13 +4880,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 </div>
                 {/* Widget Fase Metabolica */}
-                <div
-                  style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '400px', minHeight: 0, cursor: 'pointer', position: 'relative' }}
-                  onClick={() => { if (typeof setExpandedChart === 'function') setExpandedChart('percent'); }}
-                >
-                  <div style={{ position: 'absolute', top: '12px', right: '15px', opacity: 0.4, fontSize: '1.2rem' }}>
-                    ⚗️
-                  </div>
+                <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '400px', minHeight: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span>⏳</span>
@@ -4901,6 +4895,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     <div style={{ width: `${isAssorbimento ? 40 : Math.min(100, (fastingData.hoursFasted / 16) * 100)}%`, height: '100%', background: faseColor, boxShadow: `0 0 8px ${faseColor}` }}></div>
                   </div>
                 </div>
+                <button type="button" onClick={() => { if (typeof setExpandedChart === 'function') setExpandedChart('percent'); }} style={{ width: '100%', padding: '12px', marginTop: '10px', background: 'rgba(0, 229, 255, 0.05)', border: '1px solid rgba(0, 229, 255, 0.2)', borderRadius: '12px', color: '#00e5ff', fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', cursor: 'pointer' }}>
+                  📊 Apri Telemetria
+                </button>
               </div>
             );
           })()}
