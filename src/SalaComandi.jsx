@@ -4895,9 +4895,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     <div style={{ width: `${isAssorbimento ? 40 : Math.min(100, (fastingData.hoursFasted / 16) * 100)}%`, height: '100%', background: faseColor, boxShadow: `0 0 8px ${faseColor}` }}></div>
                   </div>
                 </div>
-                <button type="button" onClick={() => { if (typeof setExpandedChart === 'function') setExpandedChart('percent'); }} style={{ width: '100%', padding: '12px', marginTop: '10px', background: 'rgba(0, 229, 255, 0.05)', border: '1px solid rgba(0, 229, 255, 0.2)', borderRadius: '12px', color: '#00e5ff', fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', cursor: 'pointer' }}>
-                  📊 Apri Telemetria
-                </button>
               </div>
             );
           })()}
@@ -5111,30 +5108,42 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
         {/* VISTA CHAT AI */}
         {activeAction === 'ai_chat' && (
-          <AiCluster
-            chatHistory={chatHistory}
-            chatInput={chatInput}
-            setChatInput={setChatInput}
-            chatImages={chatImages}
-            setChatImages={setChatImages}
-            onSendMessage={handleChatSubmit}
-            showAiSettings={showAiSettings}
-            setShowAiSettings={setShowAiSettings}
-            apiKeys={apiKeys}
-            onKeyChange={handleKeyChange}
-            onRemoveKey={handleRemoveKey}
-            onAddKey={handleAddKey}
-            onSaveApiCluster={saveApiCluster}
-            onBack={() => setActiveAction(null)}
-            displayTime={displayTime ?? currentTime}
-            energy={chartData?.find(p => p.time === Math.floor(displayTime ?? currentTime))?.energy ?? 50}
-            cortisolo={chartData?.find(p => p.time === Math.floor(displayTime ?? currentTime))?.cortisolo ?? 25}
-            activeAlerts={activeAlertsArray}
-            dailyLog={activeLog}
-            buildGlobalAIPrompt={buildGlobalAIPrompt}
-            callGeminiAPIWithRotation={callGeminiAPIWithRotation}
-            onAnalysisResult={(text) => setChatHistory(prev => [...prev, { sender: 'ai', text }])}
-          />
+          <>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', paddingRight: '15px' }}>
+              <button
+                type="button"
+                onClick={() => { if (typeof setExpandedChart === 'function') setExpandedChart('percent'); }}
+                style={{ background: 'rgba(0, 229, 255, 0.1)', border: '1px solid #00e5ff', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title="Apri Telemetria Avanzata"
+              >
+                ⚗️
+              </button>
+            </div>
+            <AiCluster
+              chatHistory={chatHistory}
+              chatInput={chatInput}
+              setChatInput={setChatInput}
+              chatImages={chatImages}
+              setChatImages={setChatImages}
+              onSendMessage={handleChatSubmit}
+              showAiSettings={showAiSettings}
+              setShowAiSettings={setShowAiSettings}
+              apiKeys={apiKeys}
+              onKeyChange={handleKeyChange}
+              onRemoveKey={handleRemoveKey}
+              onAddKey={handleAddKey}
+              onSaveApiCluster={saveApiCluster}
+              onBack={() => setActiveAction(null)}
+              displayTime={displayTime ?? currentTime}
+              energy={chartData?.find(p => p.time === Math.floor(displayTime ?? currentTime))?.energy ?? 50}
+              cortisolo={chartData?.find(p => p.time === Math.floor(displayTime ?? currentTime))?.cortisolo ?? 25}
+              activeAlerts={activeAlertsArray}
+              dailyLog={activeLog}
+              buildGlobalAIPrompt={buildGlobalAIPrompt}
+              callGeminiAPIWithRotation={callGeminiAPIWithRotation}
+              onAnalysisResult={(text) => setChatHistory(prev => [...prev, { sender: 'ai', text }])}
+            />
+          </>
         )}
 
         {/* VISTA ACQUA */}

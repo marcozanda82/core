@@ -454,9 +454,21 @@ export default function ChartModal({
         {/* STRISCIA TIMELINE INFERIORE (Cliccabile per sdoppiare) */}
         <div
           onClick={() => setIsTimelineSplit(!isTimelineSplit)}
-          style={{ width: '100%', minHeight: isTimelineSplit ? '90px' : '60px', paddingBottom: '24px', background: '#0a0a12', borderTop: '1px solid #333', position: 'relative', flexShrink: 0, cursor: 'pointer', transition: 'min-height 0.3s ease' }}
+          style={{
+            width: '100%',
+            height: isTimelineSplit ? '90px' : '60px',
+            background: '#111',
+            borderTop: '1px solid #333',
+            borderBottom: '1px solid #333',
+            position: 'relative',
+            flexShrink: 0,
+            cursor: 'pointer',
+            transition: 'height 0.3s ease',
+            overflow: 'visible',
+            marginTop: '5px'
+          }}
         >
-          <div style={{ position: 'absolute', left: '50px', right: '15px', top: 0, bottom: 0 }}>
+          <div style={{ position: 'absolute', left: '45px', right: '15px', top: 0, bottom: 0 }}>
             {!isTimelineSplit ? (
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}>
                 {activeNodesWithStack.map(node => renderTimelineNode(node))}
