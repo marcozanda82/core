@@ -68,7 +68,8 @@ export default function AiCluster({
       glicemia: 85,
       idratazione: 80,
       digestione: 0,
-      neuro: 70
+      neuro: 70,
+      activeAlerts: activeAlerts || []
     });
     try {
       const result = await callGeminiAPIWithRotation(prompt);

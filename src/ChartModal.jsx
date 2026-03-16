@@ -195,7 +195,8 @@ export default function ChartModal({
       glicemia: dotGlicemia,
       idratazione: dotIdratazione,
       digestione: dotDigestione,
-      neuro: dotNeuro
+      neuro: dotNeuro,
+      activeAlerts: activeAlerts || []
     });
     callGeminiAPIWithRotation(prompt)
       .then((result) => {

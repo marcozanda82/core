@@ -3105,6 +3105,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const burnedKcal = activeLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
   const dynamicDailyKcal = (userTargets?.kcal ?? 2000) + burnedKcal;
   const targetKcalChart = dynamicDailyKcal;
+  // --- NUOVI ALLARMI PREDITTIVI PERCENTUALI ---
+  const targetKcalForAlerts = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
+  const targetMacros = { prot: userTargets?.prot ?? 150, carb: userTargets?.carb ?? 200, fat: userTargets?.fatTotal ?? userTargets?.fat ?? 65 };
+  const totalMacrosTimeline = { prot: totali?.prot ?? 0, carb: totali?.carb ?? 0, fat: totali?.fatTotal ?? totali?.fat ?? 0 };
+  const isNightDeficit = displayTime >= 20 && targetKcalForAlerts > 0 && ((totalCaloriesTimeline || 0) / targetKcalForAlerts) <= 0.60;
+  const isProteinSaturated = displayTime <= 15 && (targetMacros?.prot ?? 0) > 0 && ((totalMacrosTimeline.prot || 0) / (targetMacros.prot || 1)) >= 0.90;
+  const upcomingWorkout = allNodes.find(n => (n.type === 'workout' || n.type === 'work') && n.time > displayTime && n.time <= displayTime + 2);
+  const isWorkoutCrash = !!upcomingWorkout && (dotY ?? 50) <= 40;
+  const activeAlertsArray = [
+    hasCrashRisk && 'glicemia',
+    hasCortisolRisk && 'cortisolo',
+    hasWaterRisk && 'idratazione',
+    hasDigestionRisk && 'digestione',
+    isNightDeficit && 'deficit_serale',
+    isProteinSaturated && 'proteine_sature',
+    isWorkoutCrash && 'workout_crash'
+  ].filter(Boolean);
   const scale = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
 
   const wakeHourForRiserva = (() => {
@@ -4720,7 +4737,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             totalCaloriesTimeline={totalCaloriesTimeline}
             isSimulationMode={isSimulationMode}
             onTimeChange={handleSimulatedTimeChange}
-            activeAlerts={[ hasCrashRisk && 'glicemia', hasCortisolRisk && 'cortisolo', hasWaterRisk && 'idratazione', hasDigestionRisk && 'digestione' ].filter(Boolean)}
+            activeAlerts={activeAlertsArray}
           />
         )}
       </>
@@ -5109,7 +5126,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             displayTime={displayTime ?? currentTime}
             energy={chartData?.find(p => p.time === Math.floor(displayTime ?? currentTime))?.energy ?? 50}
             cortisolo={chartData?.find(p => p.time === Math.floor(displayTime ?? currentTime))?.cortisolo ?? 25}
-            activeAlerts={[ hasCrashRisk && 'glicemia', hasCortisolRisk && 'cortisolo', hasWaterRisk && 'idratazione', hasDigestionRisk && 'digestione' ].filter(Boolean)}
+            activeAlerts={activeAlertsArray}
             dailyLog={activeLog}
             buildGlobalAIPrompt={buildGlobalAIPrompt}
             callGeminiAPIWithRotation={callGeminiAPIWithRotation}

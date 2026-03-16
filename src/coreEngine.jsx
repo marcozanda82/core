@@ -1142,12 +1142,21 @@ Usa nel testo queste parole (anche in maiuscolo): Sveglia, Energia SNC, Finestra
 
 /** Prompt per analisi AI globale (modale): un'unica analisi olistica con tutti i dati. */
 function buildGlobalAIPrompt(data) {
-  const { displayTime = 12, energy = 50, cortisolo = 25, glicemia = 85, idratazione = 80, digestione = 0, neuro = 70 } = data || {};
+  const { displayTime = 12, energy = 50, cortisolo = 25, glicemia = 85, idratazione = 80, digestione = 0, neuro = 70, activeAlerts = [] } = data || {};
   const oraAttuale = Number(displayTime).toFixed(1);
+  const alertsList = Array.isArray(activeAlerts) ? activeAlerts : [];
+  const alertsText = alertsList.length > 0 ? `ALLARMI ATTIVI: ${alertsList.join(', ')}.` : '';
+  const rulesParts = [
+    alertsList.includes('deficit_serale') ? 'Se "deficit_serale" è attivo: Avvisa l\'utente del rischio di catabolismo notturno e insonnia da cortisolo. Ha assunto meno del 60% delle calorie e sono già le 20:00. Consiglia un pasto denso.' : '',
+    alertsList.includes('proteine_sature') ? 'Se "proteine_sature" è attivo: Avvisa che ha consumato oltre il 90% del budget proteico troppo presto (prima delle 15:00). Consiglia di preservare le proteine rimanenti per la cena per evitare di esaurire i recettori della sintesi proteica.' : '',
+    alertsList.includes('workout_crash') ? 'Se "workout_crash" è attivo: ALLARME ROSSO. C\'è un allenamento nelle prossime 2 ore ma l\'energia è sotto il 40%. Consiglia ASSOLUTAMENTE un pre-workout glicemico rapido per evitare lo schianto.' : ''
+  ].filter(Boolean);
+  const rulesText = rulesParts.length > 0 ? `\nREGOLE DI OTTIMIZZAZIONE (applica in base agli allarmi attivi): ${rulesParts.join(' ')}` : '';
   return `Sei un assistente biochimico. Fornisci un'UNICA analisi olistica di 4-5 righe della situazione attuale dell'utente.
 Dati attuali: orario ${oraAttuale}h, energia ${Number(energy).toFixed(0)}, recupero neurologico ${Number(neuro).toFixed(0)}, cortisolo ${Number(cortisolo).toFixed(0)}, glicemia ${Number(glicemia).toFixed(0)}, idratazione ${Number(idratazione).toFixed(0)}, digestione ${Number(digestione).toFixed(0)}.
 Valuta il recupero neurologico, l'energia, la glicemia e il cortisolo (ricorda che l'utente soffre di cortisolo serale alto).
 Usa ESATTAMENTE le seguenti parole chiave testuali in maiuscolo o normale: [Energia SNC, Recupero Neurologico, Finestra Anabolica, Cortisolo, Digestione, Glicemia].
+${alertsText ? `${alertsText}${rulesText}` : ''}
 
 REGOLA PREDITTIVA: Distingui i nodi con orario <= ${oraAttuale}h (STORICO) dai nodi con orario > ${oraAttuale}h (PIANIFICAZIONE). Per i nodi STORICI esegui un'analisi. Per i nodi di PIANIFICAZIONE (es. un allenamento o lavoro al PC previsto tra alcune ore) genera consigli di OTTIMIZZAZIONE PREVENTIVA: timing dei nutrienti, pre-workout, sonno richiesto, idratazione e tutto ciò che massimizza la performance all'arrivo di quell'evento.`;
 }
