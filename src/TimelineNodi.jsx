@@ -23,9 +23,7 @@ export default function TimelineNodi({
   decimalToTimeStr,
   syncDatiFirebase,
   setManualNodes,
-  setDailyLog,
-  setTimelineBackup,
-  timelineBackup
+  setDailyLog
 }) {
   const nodes = activeNodesWithStack ?? [];
 
@@ -157,9 +155,6 @@ export default function TimelineNodi({
             );
           })}
         </div>
-        {timelineBackup != null && (
-          <button type="button" onClick={() => { setManualNodes(timelineBackup.manualNodes); setDailyLog(timelineBackup.dailyLog); syncDatiFirebase(timelineBackup.dailyLog, timelineBackup.manualNodes); setTimelineBackup(null); }} style={{ flexShrink: 0, padding: '8px 12px', fontSize: '0.75rem', fontWeight: 'bold', background: '#333', color: '#00e5ff', border: '1px solid #00e5ff', borderRadius: '8px', cursor: 'pointer' }}>↩ Annulla</button>
-        )}
       </div>
     </>
   );
