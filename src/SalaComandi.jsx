@@ -4880,7 +4880,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 </div>
                 {/* Widget Fase Metabolica */}
-                <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '400px', minHeight: 0 }}>
+                <div
+                  style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '400px', minHeight: 0, cursor: 'pointer', position: 'relative' }}
+                  onClick={() => { if (typeof setExpandedChart === 'function') setExpandedChart('percent'); }}
+                >
+                  <div style={{ position: 'absolute', top: '12px', right: '15px', opacity: 0.4, fontSize: '1.2rem' }}>
+                    ⚗️
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span>⏳</span>
