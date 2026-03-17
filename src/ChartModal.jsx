@@ -250,8 +250,8 @@ export default function ChartModal({
             onTouchEnd={handleChartTouchEnd}
           >
             <div style={{ width: `${220 * zoomLevel}%`, height: '100%', position: 'relative', minHeight: 0 }} className="chart-modal-inner">
-              {/* Wrapper grafico: lascia spazio in basso per la timeline (80px per Chrome Android) */}
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 80px)', minHeight: 0, transform: `scale(${zoomLevel})`, transformOrigin: 'center center', transition: 'transform 0.05s ease-out' }}>
+              {/* Wrapper grafico: lascia spazio in basso per la timeline (90px) */}
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 90px)', minHeight: 0, transform: `scale(${zoomLevel})`, transformOrigin: 'center center', transition: 'transform 0.05s ease-out' }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
@@ -334,11 +334,11 @@ export default function ChartModal({
                 )}
               </div>
 
-              {/* TIMELINE REALE: sollevata di 15px per evitare il taglio su Chrome Android, senza paddingBottom conflittuali */}
+              {/* TIMELINE REALE: Protetta dalla maschera di clipping */}
               <div
                 style={{
                   position: 'absolute',
-                  bottom: '15px',
+                  bottom: '20px',
                   left: '50px',
                   right: '15px',
                   height: '60px',
