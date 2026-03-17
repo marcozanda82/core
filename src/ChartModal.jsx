@@ -242,16 +242,18 @@ export default function ChartModal({
         {/* Main: left (chart + sim) + sidebar */}
         <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* Area grafico: scroll orizzontale, timeline integrata (absolute) */}
+          {/* Area grafico: scroll orizzontale nativo */}
           <div
-            style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: '30px' }}
+            style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}
             onTouchStart={handleChartTouchStart}
             onTouchMove={handleChartTouchMove}
             onTouchEnd={handleChartTouchEnd}
           >
-            <div style={{ width: `${220 * zoomLevel}%`, height: '100%', position: 'relative' }} className="chart-modal-inner">
-              {/* Wrapper grafico: spazio in basso per timeline sollevata (150px) */}
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 150px)', transform: `scale(${zoomLevel})`, transformOrigin: 'top center', transition: 'transform 0.05s ease-out' }}>
+            {/* Contenitore largo per lo scroll, impilato in colonna */}
+            <div style={{ width: `${220 * zoomLevel}%`, height: '100%', display: 'flex', flexDirection: 'column' }} className="chart-modal-inner">
+
+              {/* 1. IL GRAFICO (Si espande per occupare tutto lo spazio superiore disponibile) */}
+              <div style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 15 }}>
@@ -334,24 +336,13 @@ export default function ChartModal({
                 )}
               </div>
 
-              {/* TIMELINE REALE: Ancorata dall'alto (Top-Down) per eludere il bug di Chrome Android */}
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% - 150px)',
-                  left: '50px',
-                  right: '15px',
-                  height: '60px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  boxSizing: 'border-box',
-                  zIndex: 100
-                }}
-              >
-                <div style={{ flex: 1, height: '100%', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', position: 'relative' }}>
+              {/* 2. LA TIMELINE (Altezza fissa in basso, in flow nativo, con margine di sicurezza) */}
+              <div style={{ height: '90px', width: '100%', flexShrink: 0, paddingBottom: '30px', paddingTop: '5px' }}>
+                <div style={{ height: '55px', margin: '0 15px 0 50px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', position: 'relative', overflow: 'visible' }}>
                   {(activeNodesWithStack || []).map(node => renderTimelineNode(node))}
                 </div>
               </div>
+
             </div>
           </div>
 
