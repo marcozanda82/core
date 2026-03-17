@@ -4621,8 +4621,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
               {/* Hitbox: blocca tap sul grafico nella fascia timeline (left/right allineati a YAxis) */}
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50px', right: '15px', pointerEvents: 'none' }} aria-hidden="true" />
-              {/* Timeline nodi integrata nel grafico (position absolute, stessa scroll orizzontale) */}
-              <div style={{ position: 'absolute', bottom: 0, left: '50px', right: '15px', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '0px' }}>
+              {/* Timeline nodi in flow sotto il grafico (no overlap sull'asse X) */}
+              <div style={{ position: 'relative', width: '100%', marginTop: '5px', zIndex: 10 }}>
                 <TimelineNodi
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}
