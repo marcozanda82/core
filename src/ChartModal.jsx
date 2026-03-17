@@ -69,7 +69,6 @@ export default function ChartModal({
 }) {
   const [selectedSimNode, setSelectedSimNode] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [isTimelineSplit, setIsTimelineSplit] = useState(false);
   const modalSwipeStartXRef = useRef(null);
   const bottomTouchStartX = useRef(null);
   const highlightResetTimeoutRef = useRef(null);
@@ -470,34 +469,22 @@ export default function ChartModal({
           </div>
         </div>
 
-        {/* AREA TIMELINE — altezza fissa, in flow (safe-area solo come padding finale) */}
+        {/* AREA TIMELINE — singola riga, altezza fissa */}
         <div
           className="timeline-nodes-strip"
-          onClick={() => setIsTimelineSplit(!isTimelineSplit)}
           style={{
             flexShrink: 0,
-            height: isTimelineSplit ? 110 : 70,
+            height: 70,
             background: '#050508',
             borderTop: '1px solid #222',
             paddingBottom: 'env(safe-area-inset-bottom)',
-            cursor: 'pointer',
-            boxSizing: 'border-box'
+            boxSizing: 'border-box',
+            overflow: 'hidden'
           }}
         >
-          {!isTimelineSplit ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '50px', paddingRight: '15px', height: '55px' }}>
-              {activeNodesWithStack.map(node => renderTimelineNode(node))}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '50px', paddingRight: '15px', height: '55px' }}>
-                {activeNodesWithStack.filter(n => n.type === 'workout' || n.type === 'cognitive' || n.type === 'sleep').map(node => renderTimelineNode(node))}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '50px', paddingRight: '15px', height: '55px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
-                {activeNodesWithStack.filter(n => n.type !== 'workout' && n.type !== 'cognitive' && n.type !== 'sleep').map(node => renderTimelineNode(node))}
-              </div>
-            </div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '50px', paddingRight: '15px', height: '55px', minHeight: 0 }}>
+            {activeNodesWithStack.map(node => renderTimelineNode(node))}
+          </div>
         </div>
 
         {isSimulationMode && selectedSimNode && (
