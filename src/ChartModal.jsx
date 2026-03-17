@@ -334,11 +334,11 @@ export default function ChartModal({
                 )}
               </div>
 
-              {/* TIMELINE REALE: sollevata 80px per barra Chrome Android */}
+              {/* TIMELINE REALE: Ancorata dall'alto (Top-Down) per eludere il bug di Chrome Android */}
               <div
                 style={{
                   position: 'absolute',
-                  bottom: '80px',
+                  top: 'calc(100% - 150px)',
                   left: '50px',
                   right: '15px',
                   height: '60px',
