@@ -214,18 +214,7 @@ export default function ChartModal({
         role="dialog"
         aria-modal="true"
         aria-label="Grafico a tutto schermo"
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: 'var(--vh)',
-          backgroundColor: '#050508',
-          zIndex: 99999,
-          display: 'flex',
-          flexDirection: 'column',
-          boxSizing: 'border-box'
-        }}
+        style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#050508', zIndex: 99999, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}
       >
         {/* Header */}
         <div style={{ flexShrink: 0, padding: '16px', paddingBottom: '8px' }} onTouchStart={handleModalSwipeStart} onTouchEnd={handleModalSwipeEnd} onMouseDown={handleModalSwipeStartMouse} onMouseUp={handleModalSwipeEndMouse} onMouseLeave={() => { modalSwipeStartXRef.current = null; }}>
@@ -233,7 +222,7 @@ export default function ChartModal({
             <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
               {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'calorieTimeline' ? '📈 Calorie cumulative' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : expandedChart === 'neuro' ? 'Recupero Neurologico' : expandedChart === 'kcal' ? 'Calorie ingerite 0–24h' : 'Calorie ingerite 0–24h'}
             </span>
-            <button type="button" onClick={() => { onClose(); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi</button>
+            <button type="button" onClick={() => { onClose(); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi ⚗️</button>
           </div>
           {expandedChart === 'percent' && <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }}>Indice simulato di energia fisiologica del sistema nervoso centrale.</div>}
           {expandedChart === 'kcal' && <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }}>Calorie ingerite nel corso della giornata in base ai pasti registrati.</div>}
