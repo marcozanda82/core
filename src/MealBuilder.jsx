@@ -64,7 +64,8 @@ export default function MealBuilder({
   TARGETS,
   MEAL_LABELS_SAVE,
   saveMealToDiary,
-  registerAddFoodCallback
+  registerAddFoodCallback,
+  editingMealId
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -134,10 +135,10 @@ export default function MealBuilder({
 
   const isCena = mealType === 'cena';
   const dailyGoals = useMemo(() => ({
-    kcal: dynamicDailyKcal ?? userTargets?.kcal ?? 2000,
-    prot: userTargets?.prot ?? 150,
-    carb: userTargets?.carb ?? 200,
-    fat: userTargets?.fatTotal ?? userTargets?.fat ?? 60
+    kcal: (dynamicDailyKcal ?? userTargets?.kcal ?? 2000) || 2000,
+    prot: (userTargets?.prot ?? 150) || 150,
+    carb: (userTargets?.carb ?? 200) || 200,
+    fat: (userTargets?.fatTotal ?? userTargets?.fat ?? 60) || 60
   }), [dynamicDailyKcal, userTargets]);
   const consumedSoFar = useMemo(() => ({
     kcal: totali?.kcal ?? 0,
@@ -146,24 +147,35 @@ export default function MealBuilder({
     fat: totali?.fatTotal ?? totali?.fat ?? 0
   }), [totali]);
 
+  /* In modifica pasto (editingMealId): non azzerare i target: usa totali ESCLUSO il pasto in editing così la rimanenza non va a 0 */
+  const consumedSoFarForRemainder = useMemo(() => {
+    if (!editingMealId) return consumedSoFar;
+    return {
+      kcal: Math.max(0, (consumedSoFar.kcal ?? 0) - (currentMealMacros.kcal ?? 0)),
+      prot: Math.max(0, (consumedSoFar.prot ?? 0) - (currentMealMacros.prot ?? 0)),
+      carb: Math.max(0, (consumedSoFar.carb ?? 0) - (currentMealMacros.carb ?? 0)),
+      fat: Math.max(0, (consumedSoFar.fat ?? 0) - (currentMealMacros.fat ?? 0))
+    };
+  }, [editingMealId, consumedSoFar, currentMealMacros]);
+
   const targetMacros = useMemo(() => {
     if (isCena) {
       return {
-        kcal: Math.max(0, dailyGoals.kcal - consumedSoFar.kcal),
-        prot: Math.max(0, dailyGoals.prot - consumedSoFar.prot),
-        carb: Math.max(0, dailyGoals.carb - consumedSoFar.carb),
-        fat: Math.max(0, dailyGoals.fat - consumedSoFar.fat),
+        kcal: Math.max(1, (dailyGoals.kcal || 2000) - (consumedSoFarForRemainder.kcal ?? 0)),
+        prot: Math.max(1, (dailyGoals.prot || 150) - (consumedSoFarForRemainder.prot ?? 0)),
+        carb: Math.max(1, (dailyGoals.carb || 200) - (consumedSoFarForRemainder.carb ?? 0)),
+        fat: Math.max(1, (dailyGoals.fat || 60) - (consumedSoFarForRemainder.fat ?? 0)),
         fibre: Math.max(0, (userTargets?.fibre ?? 30) - (totali?.fibre ?? 0))
       };
     }
     return {
-      kcal: targetMacrosPasto?.kcal ?? dailyGoals.kcal * 0.25,
-      prot: targetMacrosPasto?.prot ?? dailyGoals.prot * 0.25,
-      carb: targetMacrosPasto?.carb ?? dailyGoals.carb * 0.25,
-      fat: targetMacrosPasto?.fat ?? dailyGoals.fat * 0.25,
-      fibre: targetMacrosPasto?.fibre ?? (userTargets?.fibre ?? 30) * 0.25
+      kcal: (targetMacrosPasto?.kcal ?? (dailyGoals.kcal || 2000) * 0.25) || 500,
+      prot: (targetMacrosPasto?.prot ?? (dailyGoals.prot || 150) * 0.25) || 38,
+      carb: (targetMacrosPasto?.carb ?? (dailyGoals.carb || 200) * 0.25) || 50,
+      fat: (targetMacrosPasto?.fat ?? (dailyGoals.fat || 60) * 0.25) || 15,
+      fibre: (targetMacrosPasto?.fibre ?? (userTargets?.fibre ?? 30) * 0.25) || 8
     };
-  }, [isCena, dailyGoals, consumedSoFar, targetMacrosPasto, userTargets?.fibre, totali?.fibre]);
+  }, [isCena, dailyGoals, consumedSoFarForRemainder, targetMacrosPasto, userTargets?.fibre, totali?.fibre]);
 
   return (
     <div className="view-animate">
@@ -387,11 +399,11 @@ export default function MealBuilder({
                       <div className="telemetry-carousel" ref={mealCarouselRef} onScroll={handleMealCarouselScroll} style={{ height: '220px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none' }}>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                           <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                            {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, targetMacrosPasto.kcal, 'kcal', 'kcal')}
-                            {renderProgressBar('PROTEINE', toNum(mealTotaliFull?.prot), toNum(targetMacrosPasto?.prot), 'g', 'prot')}
-                            {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, targetMacrosPasto.carb, 'g', 'carb')}
-                            {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
-                            {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, targetMacrosPasto.fibre, 'g', 'fibre')}
+                            {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, (targetMacrosPasto?.kcal ?? targetMacros?.kcal) || 500, 'kcal', 'kcal')}
+                            {renderProgressBar('PROTEINE', toNum(mealTotaliFull?.prot), toNum(targetMacrosPasto?.prot ?? targetMacros?.prot) || 38, 'g', 'prot')}
+                            {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, (targetMacrosPasto?.carb ?? targetMacros?.carb) || 50, 'g', 'carb')}
+                            {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, (targetMacrosPasto?.fat ?? targetMacros?.fat) || 15, 'g', 'fatTotal')}
+                            {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, (targetMacrosPasto?.fibre ?? targetMacros?.fibre) || 8, 'g', 'fibre')}
                           </div>
                         </div>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
@@ -418,7 +430,7 @@ export default function MealBuilder({
                         </div>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                           <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                            {renderProgressBar('Grassi tot.', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, targetMacrosPasto.fat, 'g', 'fatTotal')}
+                            {renderProgressBar('Grassi tot.', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, (targetMacrosPasto?.fat ?? targetMacros?.fat) || 15, 'g', 'fatTotal')}
                             {Object.keys(TARGETS.fat || {}).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.fat[k] || 0) * ratio, 'g', k))}
                           </div>
                         </div>
@@ -434,10 +446,10 @@ export default function MealBuilder({
               {isCena ? 'Rimanenza Giornaliera' : 'Quota Prevista Pasto'}
             </h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {renderProgressBar('Kcal', currentMealMacros.kcal, targetMacros.kcal, 'kcal', 'kcal')}
-              {renderProgressBar('Proteine', toNum(currentMealMacros.prot), toNum(targetMacros.prot), 'g', 'prot')}
-              {renderProgressBar('Carboidrati', currentMealMacros.carb, targetMacros.carb, 'g', 'carb')}
-              {renderProgressBar('Grassi', currentMealMacros.fat, targetMacros.fat, 'g', 'fatTotal')}
+              {renderProgressBar('Kcal', currentMealMacros.kcal || 0, targetMacros.kcal || 500, 'kcal', 'kcal')}
+              {renderProgressBar('Proteine', toNum(currentMealMacros.prot), toNum(targetMacros.prot) || 38, 'g', 'prot')}
+              {renderProgressBar('Carboidrati', currentMealMacros.carb || 0, targetMacros.carb || 50, 'g', 'carb')}
+              {renderProgressBar('Grassi', currentMealMacros.fat || 0, targetMacros.fat || 15, 'g', 'fatTotal')}
             </div>
           </div>
           <button type="button" onClick={saveMealToDiary} style={{ width: '100%', padding: '18px', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', opacity: addedFoods.length > 0 ? 1 : 0.5 }}>SALVA NEL DIARIO</button>

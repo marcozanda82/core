@@ -1349,7 +1349,12 @@ export default function SalaComandi() {
   }, [currentTrackerDate, fullHistory]);
 
   const openDrawer = () => { setActiveAction(null); setIsDrawerOpen(true); };
-  const closeDrawer = () => { setIsDrawerOpen(false); setTimeout(() => setActiveAction(null), 400); };
+  const closeDrawer = () => {
+    setEditingMealId(null);
+    setAddedFoods([]);
+    setIsDrawerOpen(false);
+    setTimeout(() => setActiveAction(null), 400);
+  };
 
   // ============================================================================
   // FUNZIONI CRITICHE CON RETROCOMPATIBILITÀ
@@ -5377,6 +5382,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             TARGETS={TARGETS}
             MEAL_LABELS_SAVE={MEAL_LABELS_SAVE}
             saveMealToDiary={saveMealToDiary}
+            editingMealId={editingMealId}
           />
         )}
 

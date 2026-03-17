@@ -305,7 +305,7 @@ export default function ChartModal({
       .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
     `}</style>
     <div
-      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, height: '100dvh', display: 'flex', flexDirection: 'column', background: '#050508', zIndex: 100000, overflow: 'hidden' }}
+      style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box', background: '#050508', zIndex: 100000 }}
       role="dialog"
       aria-modal="true"
       aria-label="Grafico a tutto schermo"
@@ -335,7 +335,7 @@ export default function ChartModal({
           </div>
         )}
         <div
-          style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden', touchAction: 'none' }}
+          style={{ flex: '1 1 0px', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', touchAction: 'none' }}
           onTouchStart={handleChartTouchStart}
           onTouchMove={handleChartTouchMove}
           onTouchEnd={handleChartTouchEnd}
@@ -456,18 +456,19 @@ export default function ChartModal({
           onClick={() => setIsTimelineSplit(!isTimelineSplit)}
           style={{
             width: '100%',
-            height: isTimelineSplit ? '90px' : '60px',
+            flex: '0 0 auto',
+            minHeight: isTimelineSplit ? 90 : 60,
             background: '#111',
             borderTop: '1px solid #333',
             borderBottom: '1px solid #333',
             position: 'relative',
-            flexShrink: 0,
             cursor: 'pointer',
-            transition: 'height 0.3s ease',
+            transition: 'min-height 0.3s ease',
             overflow: 'visible',
             marginTop: '5px',
             marginBottom: 0,
-            paddingBottom: 'env(safe-area-inset-bottom, 15px)'
+            paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
+            boxSizing: 'border-box'
           }}
         >
           <div style={{ position: 'absolute', left: '45px', right: '15px', top: 0, bottom: 0 }}>
