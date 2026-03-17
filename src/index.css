@@ -79,20 +79,36 @@ body {
   transform: scale(0.9);
 }
 
-/* Timeline nodi (SalaComandi + ChartModal): no selezione testo, swipe orizzontale senza interferenza */
-.timeline-node,
-.meal-node,
-.node-time-label,
-.mini-timeline-hitbox,
-.mini-timeline-bar-wrap,
-.mini-timeline-point-bubble,
+/* Timeline e chart: no selezione testo (scroll nativo sui grafici resta abilitato) */
+.chart-scroll-container,
+.chart-scroll-container *,
 .timeline-nodes-strip,
 .timeline-nodes-strip *,
-.chart-scroll-container,
-.chart-scroll-container * {
+.node-time-label {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* touch-action: none SOLO su nodi trascinabili e maniglie di ridimensionamento */
+.timeline-node,
+.meal-node,
+.mini-timeline-hitbox,
+.mini-timeline-bar-wrap,
+.mini-timeline-point-bubble {
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+}
+
+/* Contenitore barra nodi: allineamento orizzontale */
+.timeline-strip-container {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 /* Dashboard Allarmi: pulsazione per pill in stato critico */

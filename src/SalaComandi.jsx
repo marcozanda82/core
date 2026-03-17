@@ -3721,7 +3721,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             )}
             </div>
             {/* STRISCIA TIMELINE NODI (Sopra il grafico) */}
-            <div style={{ height: '70px', marginTop: '12px', marginBottom: '10px', paddingBottom: '25px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
+            <div className="timeline-strip-container" style={{ height: '70px', marginTop: '12px', marginBottom: '10px', paddingBottom: '25px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
               <div style={{ position: 'absolute', left: '50px', right: '15px', top: 0, bottom: 0 }}>
                 {(activeNodesWithStack || []).map((node) => {
                   const pct = ((node.time ?? 0) / 24) * 100;
