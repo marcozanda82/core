@@ -319,7 +319,7 @@ export default function ChartModal({
         minHeight: 0,
         backgroundColor: '#050508',
         zIndex: 99999,
-        overflow: 'hidden'
+       // overflow: 'hidden'
       }}
       role="dialog"
       aria-modal="true"
