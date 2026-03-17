@@ -8,6 +8,12 @@ body {
   color: #e4e6eb;
 }
 
+/* Test: evitare che un parent globale tagli il layout (es. modal fullscreen su mobile) */
+html, body, #root {
+  height: 100% !important;
+  overflow: visible !important;
+}
+
 .sleepPromptModal {
   position: fixed;
   inset: 0;
