@@ -2,7 +2,7 @@
  * ChartModal.jsx — Modale fullscreen per grafici con glossario e carosello swipe.
  * Estratto da SalaComandi.jsx per refactoring UI.
  */
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   ComposedChart,
   Line,
@@ -67,10 +67,17 @@ export default function ChartModal({
   onTimeChange,
   activeAlerts = []
 }) {
+  const [viewportHeight, setViewportHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : '100vh');
   const [selectedSimNode, setSelectedSimNode] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isTimelineSplit, setIsTimelineSplit] = useState(false);
   const modalSwipeStartXRef = useRef(null);
+
+  useEffect(() => {
+    const handleResize = () => setViewportHeight(window.innerHeight);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const bottomTouchStartX = useRef(null);
   const highlightResetTimeoutRef = useRef(null);
   const initialPinchDistanceRef = useRef(null);
@@ -305,7 +312,7 @@ export default function ChartModal({
       .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
     `}</style>
     <div
-      style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box', background: '#050508', zIndex: 100000 }}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, height: viewportHeight, backgroundColor: '#050508', zIndex: 99999, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
       role="dialog"
       aria-modal="true"
       aria-label="Grafico a tutto schermo"
@@ -457,6 +464,7 @@ export default function ChartModal({
           style={{
             width: '100%',
             flex: '0 0 auto',
+            flexShrink: 0,
             minHeight: isTimelineSplit ? 90 : 60,
             background: '#111',
             borderTop: '1px solid #333',
@@ -467,7 +475,7 @@ export default function ChartModal({
             overflow: 'visible',
             marginTop: '5px',
             marginBottom: 0,
-            paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
+            paddingBottom: '20px',
             boxSizing: 'border-box'
           }}
         >
