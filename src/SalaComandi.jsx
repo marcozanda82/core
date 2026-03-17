@@ -4391,7 +4391,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               >
                 {chartUnit === 'percent' ? (
               <div style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
-                <div style={{ width: '100%', height: '220px' }}>
+                <div style={{ position: 'relative', width: '100%', height: '280px', paddingBottom: '60px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
                       <defs>
@@ -4621,8 +4621,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
               {/* Hitbox: blocca tap sul grafico nella fascia timeline (left/right allineati a YAxis) */}
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50px', right: '15px', pointerEvents: 'none' }} aria-hidden="true" />
-              {/* Timeline nodi in flow sotto il grafico (no overlap sull'asse X) */}
-              <div style={{ position: 'relative', width: '100%', marginTop: '5px', zIndex: 10 }}>
+              {/* Timeline nodi nel "buco" sotto il grafico (absolute + bottom 0) */}
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px', zIndex: 10 }}>
                 <TimelineNodi
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}
