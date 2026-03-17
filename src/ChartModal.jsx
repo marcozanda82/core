@@ -251,8 +251,8 @@ export default function ChartModal({
             onTouchEnd={handleChartTouchEnd}
           >
             <div style={{ width: `${220 * zoomLevel}%`, height: '100%', position: 'relative', minHeight: 0 }} className="chart-modal-inner">
-              {/* Wrapper grafico: lascia 60px per la timeline */}
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: `calc(100% - ${TIMELINE_HEIGHT}px)`, minHeight: 0, transform: `scale(${zoomLevel})`, transformOrigin: 'center center', transition: 'transform 0.05s ease-out' }}>
+              {/* Wrapper grafico: lascia spazio in basso per la timeline (80px per Chrome Android) */}
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 80px)', minHeight: 0, transform: `scale(${zoomLevel})`, transformOrigin: 'center center', transition: 'transform 0.05s ease-out' }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
@@ -335,33 +335,24 @@ export default function ChartModal({
                 )}
               </div>
 
-              {/* Timeline: position absolute, integrata nel grafico, safe area — TEST: nodi commentati, div rosso per debug */}
-              {/* <div
+              {/* TIMELINE REALE: sollevata di 15px per evitare il taglio su Chrome Android, senza paddingBottom conflittuali */}
+              <div
                 style={{
                   position: 'absolute',
-                  bottom: 0,
+                  bottom: '15px',
                   left: '50px',
                   right: '15px',
-                  height: `${TIMELINE_HEIGHT}px`,
+                  height: '60px',
                   display: 'flex',
                   alignItems: 'center',
-                  paddingBottom: 'env(safe-area-inset-bottom)',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  zIndex: 100
                 }}
               >
-                <div style={{ flex: 1, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', position: 'relative' }}>
+                <div style={{ flex: 1, height: '100%', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', position: 'relative' }}>
                   {(activeNodesWithStack || []).map(node => renderTimelineNode(node))}
                 </div>
-              </div> */}
-              <div style={{
-                position: 'absolute',
-                bottom: 0,
-                left: '50px',
-                right: '15px',
-                height: '60px',
-                background: 'red',
-                zIndex: 9999
-              }} />
+              </div>
             </div>
           </div>
 
