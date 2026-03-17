@@ -2,7 +2,7 @@
  * ChartModal.jsx — Modale fullscreen per grafici con glossario e carosello swipe.
  * Estratto da SalaComandi.jsx per refactoring UI.
  */
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ComposedChart,
   Line,
@@ -67,17 +67,10 @@ export default function ChartModal({
   onTimeChange,
   activeAlerts = []
 }) {
-  const [viewportHeight, setViewportHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : '100vh');
   const [selectedSimNode, setSelectedSimNode] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isTimelineSplit, setIsTimelineSplit] = useState(false);
   const modalSwipeStartXRef = useRef(null);
-
-  useEffect(() => {
-    const handleResize = () => setViewportHeight(window.innerHeight);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
   const bottomTouchStartX = useRef(null);
   const highlightResetTimeoutRef = useRef(null);
   const initialPinchDistanceRef = useRef(null);
@@ -316,8 +309,9 @@ export default function ChartModal({
       style={{
         position: 'fixed',
         inset: 0,
-        height: viewportHeight,
+        height: '100dvh',
         maxHeight: '100dvh',
+        minHeight: 0,
         backgroundColor: '#050508',
         zIndex: 99999,
         overflow: 'hidden',
@@ -329,7 +323,7 @@ export default function ChartModal({
       aria-label="Grafico a tutto schermo"
     >
       <div
-        style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
+        style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}
         onTouchStart={handleModalSwipeStart}
         onTouchEnd={handleModalSwipeEnd}
         onMouseDown={handleModalSwipeStartMouse}
