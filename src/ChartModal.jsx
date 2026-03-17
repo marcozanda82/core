@@ -460,41 +460,32 @@ export default function ChartModal({
 
         {/* STRISCIA TIMELINE INFERIORE (Cliccabile per sdoppiare) */}
         <div
+          className="timeline-nodes-strip"
           onClick={() => setIsTimelineSplit(!isTimelineSplit)}
           style={{
-            width: '100%',
-            flex: '0 0 auto',
-            flexShrink: 0,
-            minHeight: isTimelineSplit ? 90 : 60,
-            background: '#111',
-            borderTop: '1px solid #333',
-            borderBottom: '1px solid #333',
             position: 'relative',
-            cursor: 'pointer',
-            transition: 'min-height 0.3s ease',
-            overflow: 'visible',
-            marginTop: '5px',
-            marginBottom: 0,
-            paddingBottom: '20px',
-            boxSizing: 'border-box'
+            background: '#050508',
+            borderTop: '1px solid #222',
+            flexShrink: 0,
+            paddingBottom: 'max(15px, env(safe-area-inset-bottom))',
+            width: '100%',
+            cursor: 'pointer'
           }}
         >
-          <div style={{ position: 'absolute', left: '45px', right: '15px', top: 0, bottom: 0 }}>
-            {!isTimelineSplit ? (
-              <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}>
-                {activeNodesWithStack.map(node => renderTimelineNode(node))}
+          {!isTimelineSplit ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '50px', paddingRight: '15px', height: '55px' }}>
+              {activeNodesWithStack.map(node => renderTimelineNode(node))}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '50px', paddingRight: '15px', height: '55px' }}>
+                {activeNodesWithStack.filter(n => n.type === 'workout' || n.type === 'cognitive' || n.type === 'sleep').map(node => renderTimelineNode(node))}
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <div style={{ flex: 1, position: 'relative' }}>
-                  {activeNodesWithStack.filter(n => n.type === 'workout' || n.type === 'cognitive' || n.type === 'sleep').map(node => renderTimelineNode(node))}
-                </div>
-                <div style={{ flex: 1, position: 'relative', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
-                  {activeNodesWithStack.filter(n => n.type !== 'workout' && n.type !== 'cognitive' && n.type !== 'sleep').map(node => renderTimelineNode(node))}
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '50px', paddingRight: '15px', height: '55px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                {activeNodesWithStack.filter(n => n.type !== 'workout' && n.type !== 'cognitive' && n.type !== 'sleep').map(node => renderTimelineNode(node))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {isSimulationMode && selectedSimNode && (
