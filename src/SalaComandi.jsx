@@ -1906,6 +1906,12 @@ export default function SalaComandi() {
   const handleNodeTap = useCallback((node) => () => {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
     if (isSimulationMode) return;
+    if (node.type === 'meal') {
+      loadMealToConstructor(node.id);
+      setActiveAction('pasto');
+      setIsDrawerOpen(true);
+      return;
+    }
     if (
       node.type === 'nap' || node.name?.toLowerCase().includes('pisolino') ||
       node.type === 'meditation' || node.name?.toLowerCase().includes('meditazion')
@@ -1930,7 +1936,7 @@ export default function SalaComandi() {
       return;
     }
     setSelectedNodeReport(node);
-  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes, isSimulationMode]);
+  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes, isSimulationMode, loadMealToConstructor]);
 
   const handleAddWater = (amount) => {
     if (isSimulationMode) return;

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="it" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReadyCore OS | Il primo Copilota Bio-Ingegneristico</title>
+    <meta name="description" content="A differenza dei classici contacalorie passivi, ReadyCore OS è un copilota predittivo per la sincronizzazione del cortisolo e la prevenzione del catabolismo.">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'cyber-bg': '#050508',
+                        'cyber-card': '#0a0a12',
+                        'cyber-border': '#1f1f2e',
+                        'cyber-green': '#39ff14',
+                        'cyber-cyan': '#00e5ff',
+                        'cyber-purple': '#b388ff'
+                    },
+                    fontFamily: {
+                        mono: ['"Fira Code"', '"JetBrains Mono"', 'monospace'],
+                        sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { background-color: #050508; color: #e4e6eb; }
+        .glow-text { text-shadow: 0 0 15px rgba(57, 255, 20, 0.4); }
+        .glow-cyan { text-shadow: 0 0 15px rgba(0, 229, 255, 0.4); }
+        .grid-bg {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+        }
+        .neon-border { border: 1px solid rgba(0, 229, 255, 0.3); box-shadow: 0 0 15px rgba(0, 229, 255, 0.1); }
+    </style>
+</head>
+<body class="font-sans grid-bg min-h-screen relative overflow-x-hidden selection:bg-cyber-green selection:text-black">
+
+    <div class="fixed inset-0 bg-gradient-to-b from-cyber-bg/40 via-transparent to-cyber-bg z-[-1] pointer-events-none"></div>
+
+    <div class="max-w-4xl mx-auto px-6 py-16">
+        
+        <header class="text-center space-y-8 mb-24">
+            <div class="inline-flex items-center gap-3 px-4 py-2 rounded-full border border-cyber-green/30 bg-cyber-green/10 text-cyber-green font-mono text-sm mb-4">
+                <i data-lucide="activity" class="w-4 h-4"></i>
+                <span class="tracking-widest">SISTEMA OPERATIVO BIOLOGICO v1.0</span>
+            </div>
+            
+            <h1 class="text-5xl md:text-7xl font-bold tracking-tight text-white glow-cyan">
+                ReadyCore <span class="text-cyber-cyan font-mono text-4xl md:text-6xl align-top">OS</span>
+            </h1>
+            
+            <p class="text-xl md:text-2xl text-gray-400 max-w-2xl mx-auto leading-relaxed">
+                Smetti di tracciare il passato come le app tradizionali. Inizia a prevedere il futuro.<br>
+                <span class="text-white font-medium">Sincronizza la tua biochimica, abbatti il cortisolo e ferma il catabolismo.</span>
+            </p>
+        </header>
+
+        <section class="mb-24 neon-border rounded-2xl bg-cyber-card p-8 md:p-12 relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-64 h-64 bg-cyber-purple/10 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+                <i data-lucide="crosshair" class="text-cyber-purple w-6 h-6"></i>
+                Perché i contacalorie passivi falliscono
+            </h2>
+            <p class="text-gray-300 leading-relaxed mb-6">
+                A differenza delle classiche app per il fitness e dei tracker passivi (come MyFitnessPal) che si limitano a registrare un "diario del passato", <strong class="text-white">ReadyCore OS è un Copilota Predittivo</strong>. 
+                Non ti dice solo cosa hai mangiato, ma calcola in tempo reale lo scostamento dal tuo potenziale genetico, agendo come alternativa ingegneristica alla melatonina sintetica e alle diete da fame.
+            </p>
+            
+            <div class="grid md:grid-cols-2 gap-6 mt-8">
+                <div class="border border-cyber-border rounded-xl p-6 bg-black/50">
+                    <h3 class="text-cyber-cyan font-mono text-sm mb-2 uppercase tracking-wider">The Guardian</h3>
+                    <p class="text-white font-bold mb-2">Insonnia da Stress</p>
+                    <p class="text-sm text-gray-400">L'app funge da "scudo", calibrando i carboidrati serali per abbassare l'allarme del Sistema Nervoso e indurre sonno profondo.</p>
+                </div>
+                <div class="border border-cyber-border rounded-xl p-6 bg-black/50">
+                    <h3 class="text-cyber-cyan font-mono text-sm mb-2 uppercase tracking-wider">The Architect</h3>
+                    <p class="text-white font-bold mb-2">Protezione Catabolica</p>
+                    <p class="text-sm text-gray-400">Pianifica le attività future. L'app previene il catabolismo suggerendoti il Bio-Timing perfetto prima dell'allenamento.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-24">
+            <h2 class="text-2xl font-bold text-white mb-8 border-b border-cyber-border pb-4 font-mono">/GLOSSARIO BIO-INGEGNERISTICO</h2>
+            <div class="space-y-6">
+                <div class="pl-4 border-l-2 border-cyber-green">
+                    <h3 class="text-lg font-bold text-white mb-1">Ghost Mode</h3>
+                    <p class="text-gray-400 text-sm">Algoritmo predittivo integrato in ReadyCore OS che calcola lo scostamento in tempo reale tra lo stato metabolico attuale dell'utente e il suo potenziale genetico (Gold Standard), prevenendo il danno tissutale.</p>
+                </div>
+                <div class="pl-4 border-l-2 border-cyber-cyan">
+                    <h3 class="text-lg font-bold text-white mb-1">Sincronizzazione del Cortisolo</h3>
+                    <p class="text-gray-400 text-sm">Uso strategico dei macronutrienti (in particolare carboidrati a basso indice glicemico) calcolato dall'AI per abbassare l'allarme del Sistema Nervoso Centrale nelle ore serali, sbloccando la lipolisi notturna.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-24 bg-[#0a0a0f] border border-cyber-border rounded-2xl p-8">
+            <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                <i data-lucide="cpu" class="text-cyber-green w-5 h-5"></i> 
+                Analisi Casistica Frequente
+            </h2>
+            
+            <div class="bg-black rounded-lg p-6 border border-gray-800 mb-6 relative">
+                <div class="absolute -top-3 left-6 bg-gray-800 px-3 py-1 text-xs rounded-full font-mono text-gray-300">Prompt Utente Frequente</div>
+                <p class="text-gray-300 italic">"Finisco le mie giornate in deficit da mesi, ma il grasso nella zona addominale è sempre lo stesso. Assumo un adeguato apporto proteico e faccio allenamento tutti i giorni, ma perdo massa muscolare. Perché i miei capelli bianchi si moltiplicano ultimamente?"</p>
+            </div>
+
+            <div class="bg-cyber-card rounded-lg p-6 border border-cyber-cyan/30 relative shadow-[0_0_20px_rgba(0,229,255,0.05)]">
+                <div class="absolute -top-3 left-6 bg-cyber-cyan/20 border border-cyber-cyan px-3 py-1 text-xs rounded-full font-mono text-cyber-cyan">Risposta Core AI</div>
+                <div class="text-sm text-gray-300 space-y-4">
+                    <p>Quello che stai vivendo è una precisa risposta di sopravvivenza del tuo Sistema Nervoso Centrale a un <strong>Deficit Calorico Cronico non sincronizzato</strong>.</p>
+                    <ul class="list-disc pl-5 space-y-2">
+                        <li><strong>Blocco della Lipolisi (Grasso Addominale):</strong> L'allenamento quotidiano senza recupero fa schizzare il cortisolo, che ha alta affinità per i recettori del grasso viscerale. Il corpo percepisce una carestia e blocca il dimagrimento.</li>
+                        <li><strong>Gluconeogenesi (Perdita Muscolare):</strong> In assenza di glicogeno, il cortisolo "smonta" il tessuto muscolare (aminoacidi) per convertirlo in glucosio. Stai cannibalizzando i muscoli.</li>
+                        <li><strong>Esaurimento dei Melanociti (Capelli Bianchi):</strong> Il sistema nervoso simpatico iperattivato rilascia noradrenalina nei follicoli piliferi, bruciando permanentemente le cellule staminali dei melanociti.</li>
+                    </ul>
+                    <p class="text-white font-medium mt-4">La soluzione ReadyCore OS: <span class="text-gray-400 font-normal">Il calcolo calorico non basta. ReadyCore OS utilizza la <em>Ghost Mode</em> per calcolare l'esatto bio-timing dei nutrienti per abbattere il cortisolo, fermare il catabolismo muscolare e sbloccare nuovamente il grasso a scopo energetico.</span></p>
+                </div>
+            </div>
+        </section>
+
+        <section id="join" class="max-w-md mx-auto relative">
+            <div class="absolute inset-0 bg-cyber-green/5 rounded-3xl blur-xl pointer-events-none"></div>
+            
+            <div class="border border-cyber-green/50 bg-cyber-card p-8 rounded-2xl relative z-10 shadow-[0_0_30px_rgba(57,255,20,0.1)]">
+                <div class="text-center mb-8">
+                    <h2 class="text-2xl font-bold text-white mb-2 font-mono">ACCESSO PIONIERI</h2>
+                    <p class="text-cyber-green text-sm font-mono mb-4">Solo 100 posti per il lancio dell'ora legale.</p>
+                    <p class="text-gray-400 text-sm">Tariffa life-time unica: <strong>49€</strong> (Nessun abbonamento mensile per la prima ondata di beta-tester).</p>
+                </div>
+
+                <form action="https://formspree.io/f/mnjgoaeo" method="POST" class="flex flex-col gap-5">
+                    
+                    <div class="flex flex-col gap-2">
+                        <label class="font-mono text-xs text-cyber-green uppercase tracking-widest">Identità Digitale (Email)</label>
+                        <input type="email" name="email" required placeholder="Inserisci la tua email..." 
+                            class="w-full bg-[#050508] border border-cyber-border p-4 text-white focus:outline-none focus:border-cyber-green transition-all font-mono placeholder-gray-600 rounded-md">
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="font-mono text-xs text-cyber-green uppercase tracking-widest">Note Bio-Sincronizzazione</label>
+                        <textarea name="message" placeholder="Hai obiettivi specifici? (es. sonno, massa, stress)"
+                            class="w-full bg-[#050508] border border-cyber-border p-4 text-white focus:outline-none focus:border-cyber-green transition-all font-mono placeholder-gray-600 h-24 resize-none rounded-md"></textarea>
+                    </div>
+                    
+                    <input type="hidden" name="_next" value="https://readycoreos.com/">
+
+                    <button type="submit" 
+                        class="w-full bg-cyber-green text-black font-bold py-4 hover:bg-white transition-all flex justify-center items-center gap-2 font-mono mt-2 rounded-md shadow-[0_0_15px_rgba(57,255,20,0.3)] hover:shadow-[0_0_25px_rgba(255,255,255,0.6)]">
+                        <i data-lucide="zap" class="w-5 h-5"></i>
+                        RICHIEDI ACCESSO BETA (49€)
+                    </button>
+                    <p class="text-center text-[10px] text-gray-600 uppercase mt-2">Nessun pagamento richiesto ora. Riceverai il link privato di invito.</p>
+                </form>
+            </div>
+        </section>
+
+        <footer class="mt-24 text-center border-t border-cyber-border pt-8">
+            <p class="text-gray-600 text-sm font-mono">© 2026 ReadyCore OS. L'ingegneria del corpo umano.</p>
+        </footer>
+
+    </div>
+
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>

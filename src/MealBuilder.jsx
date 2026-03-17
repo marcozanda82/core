@@ -122,6 +122,8 @@ export default function MealBuilder({
   };
 
   const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (typeof v === 'string' ? Number(v) : v) != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
+  const safeBarTarget = (val, fallback = 1) => Math.max(1, Number(val) || fallback);
+  const safeBarCurrent = (val) => Math.max(0, Number(val) || 0);
 
   const currentMealMacros = useMemo(() => {
     const items = addedFoods || [];
@@ -399,11 +401,11 @@ export default function MealBuilder({
                       <div className="telemetry-carousel" ref={mealCarouselRef} onScroll={handleMealCarouselScroll} style={{ height: '220px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none' }}>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                           <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                            {renderProgressBar('Calorie', mealTotaliFull.kcal || 0, (targetMacrosPasto?.kcal ?? targetMacros?.kcal) || 500, 'kcal', 'kcal')}
-                            {renderProgressBar('PROTEINE', toNum(mealTotaliFull?.prot), toNum(targetMacrosPasto?.prot ?? targetMacros?.prot) || 38, 'g', 'prot')}
-                            {renderProgressBar('CARBOIDRATI', mealTotaliFull.carb || 0, (targetMacrosPasto?.carb ?? targetMacros?.carb) || 50, 'g', 'carb')}
-                            {renderProgressBar('GRASSI', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, (targetMacrosPasto?.fat ?? targetMacros?.fat) || 15, 'g', 'fatTotal')}
-                            {renderProgressBar('FIBRE', mealTotaliFull.fibre || 0, (targetMacrosPasto?.fibre ?? targetMacros?.fibre) || 8, 'g', 'fibre')}
+                            {renderProgressBar('Calorie', safeBarCurrent(mealTotaliFull.kcal), safeBarTarget(targetMacrosPasto?.kcal ?? targetMacros?.kcal, 500), 'kcal', 'kcal')}
+                            {renderProgressBar('PROTEINE', safeBarCurrent(mealTotaliFull?.prot), safeBarTarget(targetMacrosPasto?.prot ?? targetMacros?.prot, 38), 'g', 'prot')}
+                            {renderProgressBar('CARBOIDRATI', safeBarCurrent(mealTotaliFull.carb), safeBarTarget(targetMacrosPasto?.carb ?? targetMacros?.carb, 50), 'g', 'carb')}
+                            {renderProgressBar('GRASSI', safeBarCurrent(mealTotaliFull.fatTotal ?? mealTotaliFull.fat), safeBarTarget(targetMacrosPasto?.fat ?? targetMacros?.fat, 15), 'g', 'fatTotal')}
+                            {renderProgressBar('FIBRE', safeBarCurrent(mealTotaliFull.fibre), safeBarTarget(targetMacrosPasto?.fibre ?? targetMacros?.fibre, 8), 'g', 'fibre')}
                           </div>
                         </div>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
@@ -430,7 +432,7 @@ export default function MealBuilder({
                         </div>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                           <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                            {renderProgressBar('Grassi tot.', mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0, (targetMacrosPasto?.fat ?? targetMacros?.fat) || 15, 'g', 'fatTotal')}
+                            {renderProgressBar('Grassi tot.', safeBarCurrent(mealTotaliFull.fatTotal ?? mealTotaliFull.fat), safeBarTarget(targetMacrosPasto?.fat ?? targetMacros?.fat, 15), 'g', 'fatTotal')}
                             {Object.keys(TARGETS.fat || {}).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.fat[k] || 0) * ratio, 'g', k))}
                           </div>
                         </div>
@@ -446,10 +448,10 @@ export default function MealBuilder({
               {isCena ? 'Rimanenza Giornaliera' : 'Quota Prevista Pasto'}
             </h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {renderProgressBar('Kcal', currentMealMacros.kcal || 0, targetMacros.kcal || 500, 'kcal', 'kcal')}
-              {renderProgressBar('Proteine', toNum(currentMealMacros.prot), toNum(targetMacros.prot) || 38, 'g', 'prot')}
-              {renderProgressBar('Carboidrati', currentMealMacros.carb || 0, targetMacros.carb || 50, 'g', 'carb')}
-              {renderProgressBar('Grassi', currentMealMacros.fat || 0, targetMacros.fat || 15, 'g', 'fatTotal')}
+              {renderProgressBar('Kcal', safeBarCurrent(currentMealMacros.kcal), safeBarTarget(targetMacros.kcal, 500), 'kcal', 'kcal')}
+              {renderProgressBar('Proteine', safeBarCurrent(currentMealMacros.prot), safeBarTarget(targetMacros.prot, 38), 'g', 'prot')}
+              {renderProgressBar('Carboidrati', safeBarCurrent(currentMealMacros.carb), safeBarTarget(targetMacros.carb, 50), 'g', 'carb')}
+              {renderProgressBar('Grassi', safeBarCurrent(currentMealMacros.fat), safeBarTarget(targetMacros.fat, 15), 'g', 'fatTotal')}
             </div>
           </div>
           <button type="button" onClick={saveMealToDiary} style={{ width: '100%', padding: '18px', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', opacity: addedFoods.length > 0 ? 1 : 0.5 }}>SALVA NEL DIARIO</button>
