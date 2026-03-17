@@ -2,7 +2,7 @@
  * ChartModal.jsx — Modale fullscreen per grafici con glossario e carosello swipe.
  * Estratto da SalaComandi.jsx per refactoring UI.
  */
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ComposedChart,
   Line,
@@ -74,6 +74,13 @@ export default function ChartModal({
   const bottomTouchStartX = useRef(null);
   const highlightResetTimeoutRef = useRef(null);
   const initialPinchDistanceRef = useRef(null);
+
+  // Forza reflow iniziale su mobile: il viewport non si aggiorna subito al mount
+  useEffect(() => {
+    if (!expandedChart) return;
+    const t = setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
+    return () => clearTimeout(t);
+  }, [expandedChart]);
 
   const getDistance = (touch1, touch2) =>
     Math.sqrt(
