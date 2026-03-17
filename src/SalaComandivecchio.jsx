@@ -15,10 +15,9 @@ import { ref, get, set, onValue, update } from 'firebase/database';
 
 import { useFirebase } from './useFirebase';
 import ChartModal from './ChartModal';
-import TimelineNodi from './TimelineNodi';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
-import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
+import { TARGETS, DEFAULT_TARGETS, useBiochimico, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
   RADIAN,
   getTodayString,
@@ -308,9 +307,7 @@ export default function SalaComandi() {
   const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
   const [draggingNode, setDraggingNode] = useState(null);
   const [touchingNodeId, setTouchingNodeId] = useState(null);
-  const [historyStack, setHistoryStack] = useState([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const [showUndoToast, setShowUndoToast] = useState(false);
+  const [timelineBackup, setTimelineBackup] = useState(null);
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const [dragLiveTime, setDragLiveTime] = useState(null);
   const dragEngine = useRef({
@@ -331,8 +328,6 @@ export default function SalaComandi() {
   const longPressTimerRef = useRef(null);
   const longPressMoveCleanupRef = useRef(null);
   const pendingClickRef = useRef(null);
-  const historyStackRef = useRef([]);
-  const historyIndexRef = useRef(-1);
   const dragOffsetYRef = useRef(0);
   const miniTimelinePastoRef = useRef(null);
   const miniTimelineActivityRef = useRef(null);
@@ -344,7 +339,6 @@ export default function SalaComandi() {
   const [fastChargeSupplementName, setFastChargeSupplementName] = useState('');
   const currentTrackerDateRef = useRef(currentTrackerDate);
   useEffect(() => { currentTrackerDateRef.current = currentTrackerDate; }, [currentTrackerDate]);
-  useEffect(() => { historyStackRef.current = historyStack; historyIndexRef.current = historyIndex; }, [historyStack, historyIndex]);
 
   // Weekly adaptive calibration of physiological coefficients
   // The simulation gradually learns the user's metabolic responses.
@@ -1108,12 +1102,7 @@ export default function SalaComandi() {
         return;
       }
       const dx = currentX - lastX;
-      const deltaT = currentT - lastTime;
-      const velocity = deltaT > 0 ? Math.abs(dx) / deltaT : 0;
-      const VELOCITY_THRESHOLD = 0.4;
-      const FRICTION = 0.3;
-      const effectiveDx = velocity > VELOCITY_THRESHOLD ? dx : dx * FRICTION;
-      const deltaHours = effectiveDx / pixelsPerHour;
+      const deltaHours = dx / pixelsPerHour;
       let newTime = currentLiveTime + deltaHours;
       if (newTime < 0) newTime = 0;
       if (newTime > 24) newTime = 24;
@@ -1121,15 +1110,6 @@ export default function SalaComandi() {
       dragEngine.current.lastX = currentX;
       dragEngine.current.lastTime = currentT;
       setDragLiveTime(Math.round(newTime * 60) / 60);
-    };
-
-    const pushHistoryAndShowToast = (newDailyLog, newManualNodes) => {
-      const newStack = historyStackRef.current.slice(0, historyIndexRef.current + 1);
-      newStack.push({ dailyLog: JSON.parse(JSON.stringify(newDailyLog)), manualNodes: JSON.parse(JSON.stringify(newManualNodes)) });
-      setHistoryStack(newStack);
-      setHistoryIndex(newStack.length - 1);
-      setShowUndoToast(true);
-      setTimeout(() => setShowUndoToast(false), 4000);
     };
 
     const onUp = () => {
@@ -1151,33 +1131,40 @@ export default function SalaComandi() {
         if (confirmDelete) {
           if (dragType === 'meal') {
             const { itemIds } = draggingNode;
-            const newLog = dailyLog.filter(item => !(itemIds && itemIds.includes(item.id)));
-            const newNodes = manualNodes;
-            setDailyLog(newLog);
-            syncDatiFirebase(newLog, newNodes);
-            pushHistoryAndShowToast(newLog, newNodes);
+            setDailyLog(prev => {
+              const next = prev.filter(item => !(itemIds && itemIds.includes(item.id)));
+              syncDatiFirebase(next, manualNodes);
+              return next;
+            });
           } else {
-            const newLog = dailyLog.filter(item => item.id !== dragId);
-            const newNodes = manualNodes.filter(n => n.id !== dragId);
-            setDailyLog(newLog);
-            setManualNodes(newNodes);
-            syncDatiFirebase(newLog, newNodes);
-            pushHistoryAndShowToast(newLog, newNodes);
+            setDailyLog(prev => {
+              const newLog = prev.filter(item => item.id !== dragId);
+              setManualNodes(prevN => {
+                const newNodes = prevN.filter(n => n.id !== dragId);
+                syncDatiFirebase(newLog, newNodes);
+                return newNodes;
+              });
+              return newLog;
+            });
           }
         } else {
           if (dragType === 'meal') {
             const { itemIds, originalTime: origTime } = draggingNode;
-            const next = dailyLog.map(item =>
-              itemIds && itemIds.includes(item.id) ? { ...item, mealTime: origTime } : item
-            );
-            setDailyLog(next);
-            syncDatiFirebase(next, manualNodes);
+            setDailyLog(prev => {
+              const next = prev.map(item =>
+                itemIds && itemIds.includes(item.id) ? { ...item, mealTime: origTime } : item
+              );
+              syncDatiFirebase(next, manualNodes);
+              return next;
+            });
           } else {
-            const next = manualNodes.map(n =>
-              n.id === dragId ? { ...n, time: originalTime, duration: originalDuration ?? n.duration } : n
-            );
-            setManualNodes(next);
-            syncDatiFirebase(dailyLog, next);
+            setManualNodes(prev => {
+              const next = prev.map(n =>
+                n.id === dragId ? { ...n, time: originalTime, duration: originalDuration ?? n.duration } : n
+              );
+              syncDatiFirebase(dailyLog, next);
+              return next;
+            });
           }
         }
       } else {
@@ -1188,27 +1175,27 @@ export default function SalaComandi() {
           );
           setDailyLog(nextLog);
           syncDatiFirebase(nextLog, manualNodes);
-          pushHistoryAndShowToast(nextLog, manualNodes);
         } else {
-          const next = manualNodes.map(n => {
-            if (n.id !== dragId) return n;
-            if (n.type === 'work' || n.type === 'cognitive') {
-              if (dragEdge === 'start') {
-                const end = n.time + (n.duration || 1);
-                const newTime = Math.min(finalTimeRounded, end - 0.25);
-                return { ...n, time: newTime, duration: end - newTime };
-              }
-              if (dragEdge === 'end') {
-                const newEnd = Math.max(finalTimeRounded, n.time + 0.25);
-                return { ...n, duration: newEnd - n.time };
+          setManualNodes(prev => {
+            const next = prev.map(n => {
+              if (n.id !== dragId) return n;
+              if (n.type === 'work' || n.type === 'cognitive') {
+                if (dragEdge === 'start') {
+                  const end = n.time + (n.duration || 1);
+                  const newTime = Math.min(finalTimeRounded, end - 0.25);
+                  return { ...n, time: newTime, duration: end - newTime };
+                }
+                if (dragEdge === 'end') {
+                  const newEnd = Math.max(finalTimeRounded, n.time + 0.25);
+                  return { ...n, duration: newEnd - n.time };
+                }
+                return { ...n, time: finalTimeRounded };
               }
               return { ...n, time: finalTimeRounded };
-            }
-            return { ...n, time: finalTimeRounded };
+            });
+            syncDatiFirebase(dailyLog, next);
+            return next;
           });
-          setManualNodes(next);
-          syncDatiFirebase(dailyLog, next);
-          pushHistoryAndShowToast(dailyLog, next);
         }
       }
       dragEngine.current.isActive = false;
@@ -1237,12 +1224,6 @@ export default function SalaComandi() {
   const baseKcal = (userTargets.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
   const { totali, obiettiviPasti } = useBiochimico(activeLog, baseKcal);
   const targetKcal = baseKcal + (totali?.workout ?? 0);
-
-  // Macro giornalieri reali (solo da dailyLog) per MealBuilder — mai undefined per evitare NaN nelle barre
-  const macroDailyReals = useMemo(() => {
-    const t = computeTotali(dailyLog ?? []);
-    return t && typeof t === 'object' ? t : { kcal: 0, prot: 0, carb: 0, fat: 0, fatTotal: 0, fibre: 0, workout: 0 };
-  }, [dailyLog]);
 
   const dailyReport = useMemo(() => {
     if (!activeLog || currentTrackerDate === getTodayString()) return null;
@@ -1355,12 +1336,7 @@ export default function SalaComandi() {
   }, [currentTrackerDate, fullHistory]);
 
   const openDrawer = () => { setActiveAction(null); setIsDrawerOpen(true); };
-  const closeDrawer = () => {
-    setEditingMealId(null);
-    setAddedFoods([]);
-    setIsDrawerOpen(false);
-    setTimeout(() => setActiveAction(null), 400);
-  };
+  const closeDrawer = () => { setIsDrawerOpen(false); setTimeout(() => setActiveAction(null), 400); };
 
   // ============================================================================
   // FUNZIONI CRITICHE CON RETROCOMPATIBILITÀ
@@ -1859,6 +1835,7 @@ export default function SalaComandi() {
       longPressMoveCleanupRef.current = null;
       target.setPointerCapture(e.pointerId);
       dragOffsetYRef.current = 0;
+      setTimelineBackup({ manualNodes: JSON.parse(JSON.stringify(manualNodes)), dailyLog: JSON.parse(JSON.stringify(dailyLog || [])) });
       const itemIds = node.type === 'meal'
         ? (activeLog || []).filter(item => getSlotKey(item) === String(node.id)).map(i => i.id)
         : [];
@@ -1870,7 +1847,7 @@ export default function SalaComandi() {
         originalDuration: node.duration,
         edge
       });
-    }, 200);
+    }, 350);
   }, [activeLog, manualNodes, dailyLog]);
 
   const releaseNodePointer = (e) => {
@@ -1885,40 +1862,9 @@ export default function SalaComandi() {
     if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
-  const handleUndo = useCallback(() => {
-    if (historyIndex <= 0) return;
-    const newIndex = historyIndex - 1;
-    const prev = historyStack[newIndex];
-    if (!prev) return;
-    setHistoryIndex(newIndex);
-    setDailyLog(prev.dailyLog);
-    setManualNodes(prev.manualNodes);
-    syncDatiFirebase(prev.dailyLog, prev.manualNodes);
-    setShowUndoToast(false);
-  }, [historyIndex, historyStack, syncDatiFirebase]);
-
-  const handleRedo = useCallback(() => {
-    if (historyIndex >= historyStack.length - 1) return;
-    const newIndex = historyIndex + 1;
-    const next = historyStack[newIndex];
-    if (!next) return;
-    setHistoryIndex(newIndex);
-    setDailyLog(next.dailyLog);
-    setManualNodes(next.manualNodes);
-    syncDatiFirebase(next.dailyLog, next.manualNodes);
-    setShowUndoToast(false);
-  }, [historyIndex, historyStack, syncDatiFirebase]);
-
   const handleNodeTap = useCallback((node) => () => {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
     if (isSimulationMode) return;
-    if (node.type === 'meal') {
-      setEditingMealId(node.id);
-      loadMealToConstructor(node.id);
-      setActiveAction('pasto');
-      setIsDrawerOpen(true);
-      return;
-    }
     if (
       node.type === 'nap' || node.name?.toLowerCase().includes('pisolino') ||
       node.type === 'meditation' || node.name?.toLowerCase().includes('meditazion')
@@ -1943,7 +1889,7 @@ export default function SalaComandi() {
       return;
     }
     setSelectedNodeReport(node);
-  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes, isSimulationMode, loadMealToConstructor]);
+  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes, isSimulationMode]);
 
   const handleAddWater = (amount) => {
     if (isSimulationMode) return;
@@ -3739,7 +3685,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             )}
             </div>
             {/* STRISCIA TIMELINE NODI (Sopra il grafico) */}
-            <div className="timeline-strip-container" style={{ height: '70px', marginTop: '12px', marginBottom: '10px', paddingBottom: '25px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
+            <div style={{ height: '70px', marginTop: '12px', marginBottom: '10px', paddingBottom: '25px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
               <div style={{ position: 'absolute', left: '50px', right: '15px', top: 0, bottom: 0 }}>
                 {(activeNodesWithStack || []).map((node) => {
                   const pct = ((node.time ?? 0) / 24) * 100;
@@ -4352,8 +4298,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia SNC (%)'}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              <button type="button" onClick={handleUndo} disabled={historyIndex <= 0} title="Annulla" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: historyIndex <= 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: historyIndex <= 0 ? '#444' : '#00e5ff', fontSize: '1.1rem', cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer' }} aria-label="Annulla">↩</button>
-              <button type="button" onClick={handleRedo} disabled={historyIndex >= historyStack.length - 1} title="Ripeti" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: historyIndex >= historyStack.length - 1 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: historyIndex >= historyStack.length - 1 ? '#444' : '#00e5ff', fontSize: '1.1rem', cursor: historyIndex >= historyStack.length - 1 ? 'not-allowed' : 'pointer' }} aria-label="Ripeti">↪</button>
               {chartUnit === 'idratazione' && (
                 <button type="button" onClick={() => setIsWaterAutopilot(prev => !prev)} title={isWaterAutopilot ? 'Disattiva Pilota Automatico Idratazione' : 'Attiva Pilota Automatico Idratazione'} style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isWaterAutopilot ? 'rgba(0, 229, 255, 0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${isWaterAutopilot ? '#00e5ff' : '#333'}`, borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label={isWaterAutopilot ? 'Pilota idratazione ON' : 'Pilota idratazione OFF'}>🤖💧</button>
               )}
@@ -4619,35 +4563,139 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </ResponsiveContainer>
                 )}
               </div>
-              {/* Hitbox: blocca tap sul grafico nella fascia timeline (left/right allineati a YAxis) */}
+              {/* TIMELINE NODI DRAGGABILI (Sovrapposta) - left = margin.left(15) + YAxis.width(35) = 50px */}
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50px', right: '15px', pointerEvents: 'none' }} aria-hidden="true" />
-              {/* Timeline nodi integrata nel grafico (position absolute, stessa scroll orizzontale) */}
               <div style={{ position: 'absolute', bottom: 0, left: '50px', right: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <TimelineNodi
-                  activeNodesWithStack={activeNodesWithStack}
-                  chartUnit={chartUnit}
-                  activeAction={activeAction}
-                  idealStrategy={idealStrategy}
-                  realTotals={realTotals}
-                  NODE_IMPORTANCE={NODE_IMPORTANCE}
-                  NODE_TYPE_ICON={NODE_TYPE_ICON}
-                  draggingNode={draggingNode}
-                  touchingNodeId={touchingNodeId}
-                  dragOffsetY={dragOffsetY}
-                  dragLiveTime={dragLiveTime}
-                  timelineContainerRef={timelineContainerRef}
-                  startNodeDrag={startNodeDrag}
-                  releaseNodePointer={releaseNodePointer}
-                  handleNodeTap={handleNodeTap}
-                  decimalToTimeStr={decimalToTimeStr}
-                  syncDatiFirebase={syncDatiFirebase}
-                  setManualNodes={setManualNodes}
-                  setDailyLog={setDailyLog}
-                />
+                <div ref={timelineContainerRef} style={{ flex: 1, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', position: 'relative' }}>
+                  {activeNodesWithStack.map((node) => {
+                    const currentChartUnit = chartUnit;
+                    const effectiveNodeType = node.type === 'meal' ? 'meal' : node.type;
+                    const isImportant = NODE_IMPORTANCE[currentChartUnit]?.includes(effectiveNodeType);
+                    const importanceStyle = isImportant ? { filter: 'none', opacity: 1, zIndex: 10 } : { filter: 'grayscale(100%)', opacity: 0.35, zIndex: 1 };
+                    const isNodeFocused = (!activeAction || activeAction === 'home') || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive')) || (activeAction === 'acqua' && node.type === 'water');
+                    const isWork = node.type === 'work';
+                    const isCognitive = node.type === 'cognitive';
+                    const percent = (node.time / 24) * 100;
+                    const startPercent = percent;
+                    const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
+                    const idealVal = node.type === 'meal' ? (idealStrategy[node.strategyKey] ?? 400) : (node.type === 'workout' || node.type === 'cognitive' ? (idealStrategy.allenamento ?? 300) : (node.type === 'water' ? 100 : (node.kcal ?? 400)));
+                    const realVal = (node.type === 'meal' || node.type === 'workout') ? (realTotals[node.strategyKey] ?? 0) : 0;
+                    const ratio = idealVal > 0 ? realVal / idealVal : 1;
+                    let borderColor = '#00e5ff';
+                    if (node.type === 'nap') borderColor = '#818cf8';
+                    else if (node.type === 'meditation') borderColor = '#22c55e';
+                    else if (node.type === 'supplements') borderColor = '#a855f7';
+                    else if (node.type === 'sunlight') borderColor = '#fbbf24';
+                    else if (node.type === 'water') borderColor = '#00e5ff';
+                    else if (ratio < 0.5) borderColor = '#ff3d00';
+                    else if (ratio > 1.2) borderColor = '#ffea00';
+                    const pointBorderColor = isWork ? '#ffea00' : (isCognitive ? '#00e5ff' : borderColor);
+                    const isDragging = draggingNode?.id === node.id;
+                    const isTouchingOrDragging = isDragging || (touchingNodeId === node.id);
+                    const dragY = isDragging ? dragOffsetY : 0;
+                    const displayTimeVal = (isDragging && dragLiveTime != null) ? dragLiveTime : node.time;
+                    const displayPercent = (displayTimeVal / 24) * 100;
+                    const workEndTime = node.time + (node.duration || 1);
+                    const displayDurationPercent = (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'start'
+                      ? ((workEndTime - dragLiveTime) / 24) * 100
+                      : (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'end'
+                        ? ((dragLiveTime - node.time) / 24) * 100
+                        : durationPercent;
+                    const workBarLeftPercent = (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'end' ? percent : displayPercent;
+                    const cognitiveIcon = node.subType === 'studio' ? '📚' : '💻';
+                    const cognitiveBg = 'rgba(0, 229, 255, 0.15)';
+                    const cognitiveBorder = '#00e5ff';
+
+                    if (isWork) {
+                      const dragEdge = isDragging ? draggingNode?.edge : null;
+                      return (
+                        <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
+                          <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                            {(dragEdge === 'start' || dragEdge === 'all') && (
+                              <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
+                                {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
+                              </div>
+                            )}
+                            💼
+                          </div>
+                          <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                            {(dragEdge === 'end' || dragEdge === 'all') && (
+                              <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
+                                {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
+                              </div>
+                            )}
+                            🏁
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (isCognitive) {
+                      const dragEdge = isDragging ? draggingNode?.edge : null;
+                      return (
+                        <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(0, 229, 255, 0.3)' : cognitiveBg, borderLeft: `2px solid ${cognitiveBorder}`, borderRight: `2px solid ${cognitiveBorder}`, borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
+                          <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                            {(dragEdge === 'start' || dragEdge === 'all') && (
+                              <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
+                                {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
+                              </div>
+                            )}
+                            {cognitiveIcon}
+                          </div>
+                          <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                            {(dragEdge === 'end' || dragEdge === 'all') && (
+                              <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
+                                {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
+                              </div>
+                            )}
+                            🏁
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const isPesi = node.type === 'workout' && node.subType === 'pesi' && node.muscles?.length > 0;
+                    const isWater = node.type === 'water';
+                    const isStimulant = node.type === 'stimulant';
+                    const isCognitivePoint = node.type === 'cognitive';
+                    const iconContent = NODE_TYPE_ICON[node.type] ?? (isStimulant ? '☕' : (isWater ? '💧' : (isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•'))));
+                    const bioTypeBg = { nap: 'rgba(129,140,248,0.2)', meditation: 'rgba(34,197,94,0.2)', supplements: 'rgba(168,85,247,0.2)', sunlight: 'rgba(251,191,36,0.2)', cognitive: 'rgba(182,102,210,0.2)' }[node.type];
+                    const bioTypeBorder = { nap: '#818cf8', meditation: '#22c55e', supplements: '#a855f7', sunlight: '#fbbf24', cognitive: '#b666d2' }[node.type];
+                    const isWorkoutPoint = node.type === 'workout';
+                    const isMealPoint = node.type === 'meal';
+                    let bgColor = node.color;
+                    if (!bgColor) {
+                      if (isTouchingOrDragging) {
+                        bgColor = isWorkoutPoint ? 'rgba(255,68,68,0.4)' : isMealPoint ? 'rgba(0,229,255,0.4)' : isCognitivePoint ? 'rgba(182,102,210,0.4)' : isStimulant ? 'rgba(245,158,11,0.35)' : isWater ? 'rgba(0,229,255,0.35)' : '#888';
+                      } else {
+                        bgColor = isCognitivePoint ? 'rgba(182,102,210,0.2)' : isWorkoutPoint ? 'rgba(255,68,68,0.2)' : isMealPoint ? 'rgba(0,229,255,0.15)' : isStimulant ? 'rgba(245,158,11,0.2)' : isWater ? 'rgba(0, 229, 255, 0.15)' : (bioTypeBg || 'rgba(0,0,0,0.6)');
+                      }
+                    }
+                    const nodeBorderColor = node.color || (isCognitivePoint ? '#b666d2' : isWorkoutPoint ? '#ff4444' : isMealPoint ? '#00e5ff' : (isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (bioTypeBorder || pointBorderColor))));
+                    const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
+                    const pointTransform = isDragging ? `translate(-50%, ${dragY - 45}px) scale(2)` : `translateX(-50%) scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`;
+                    let pointBoxShadow = 'none';
+                    if (isTouchingOrDragging) {
+                      pointBoxShadow = isWorkoutPoint ? '0 0 15px #ff4444' : isMealPoint ? '0 0 15px #00e5ff' : isCognitivePoint ? '0 0 15px #b666d2' : isStimulant ? '0 0 15px #f59e0b' : isWater ? '0 0 15px #00e5ff' : (bioTypeBorder ? `0 0 15px ${bioTypeBorder}` : 'none');
+                    } else if (isCognitivePoint) {
+                      pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
+                    }
+                    return (
+                      <div key={node.id} className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${displayPercent}%`, transform: pointTransform, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, boxShadow: pointBoxShadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
+                        <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor))), marginBottom: '2px', transition: 'color 0.2s' }}>
+                          {timeLabelStr}
+                        </span>
+                        <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || (isPesi ? pointBorderColor : 'inherit')))) }}>{iconContent}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {timelineBackup != null && (
+                  <button type="button" onClick={() => { setManualNodes(timelineBackup.manualNodes); setDailyLog(timelineBackup.dailyLog); syncDatiFirebase(timelineBackup.dailyLog, timelineBackup.manualNodes); setTimelineBackup(null); }} style={{ flexShrink: 0, padding: '8px 12px', fontSize: '0.75rem', fontWeight: 'bold', background: '#333', color: '#00e5ff', border: '1px solid #00e5ff', borderRadius: '8px', cursor: 'pointer' }}>↩ Annulla</button>
+                )}
               </div>
             </div>
-            {/* SPACER PER PULSANTIERA: permette di scrollare oltre la fine del grafico */}
-            <div style={{ width: '80px', flexShrink: 0 }} />
+            {/* SPACER PER PULSANTIERA: Permette di scrollare oltre la fine del grafico per non coprire le 24:00 */}
+            <div style={{ width: '80px', flexShrink: 0 }}></div>
           </div>
         </div>
         </div>
@@ -5360,7 +5408,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             miniTimelinePastoRef={miniTimelinePastoRef}
             handleMiniTimelineDrag={handleMiniTimelineDrag}
             allNodes={allNodes}
-            totali={macroDailyReals}
+            totali={totali}
             userTargets={userTargets}
             dynamicDailyKcal={dynamicDailyKcal}
             renderLiveProgressBar={renderLiveProgressBar}
@@ -5400,7 +5448,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             TARGETS={TARGETS}
             MEAL_LABELS_SAVE={MEAL_LABELS_SAVE}
             saveMealToDiary={saveMealToDiary}
-            editingMealId={editingMealId}
           />
         )}
 
@@ -6730,16 +6777,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         );
       })()}
-
-      {/* Toast Undo: fisso in basso al centro */}
-      {showUndoToast && (
-        <div style={{ position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)', zIndex: 10001, display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px', background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-          <span style={{ color: '#e0e0e0', fontSize: '0.9rem' }}>Orario modificato</span>
-          <button type="button" onClick={handleUndo} style={{ padding: '8px 16px', fontSize: '0.8rem', fontWeight: 'bold', background: 'rgba(0, 229, 255, 0.15)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>
-            ANNULLA
-          </button>
-        </div>
-      )}
     </div>
   );
 }

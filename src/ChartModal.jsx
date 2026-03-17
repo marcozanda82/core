@@ -474,7 +474,7 @@ export default function ChartModal({
           className="timeline-nodes-strip"
           style={{
             flexShrink: 0,
-            height: 70,
+            height: 90,
             background: '#050508',
             borderTop: '1px solid #222',
             paddingBottom: 'env(safe-area-inset-bottom)',
