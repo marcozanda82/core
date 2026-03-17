@@ -100,9 +100,12 @@ body {
   touch-action: none;
 }
 
-/* Modale grafico fullscreen: safe-area e altezza contenuta nel viewport reale */
+/* Modale grafico fullscreen: doppia altezza (vh fallback + dvh) per stabilità mobile, safe-area */
 .chart-modal-root {
   box-sizing: border-box;
+  height: 100vh;
+  height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Contenitore barra nodi: allineamento orizzontale */

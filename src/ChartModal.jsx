@@ -309,14 +309,10 @@ export default function ChartModal({
       style={{
         position: 'fixed',
         inset: 0,
-        height: '100dvh',
-        maxHeight: '100dvh',
         minHeight: 0,
         backgroundColor: '#050508',
         zIndex: 99999,
-        overflow: 'hidden',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-        boxSizing: 'border-box'
+        overflow: 'hidden'
       }}
       role="dialog"
       aria-modal="true"
