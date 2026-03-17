@@ -219,12 +219,11 @@ export default function ChartModal({
           top: 0,
           left: 0,
           width: '100%',
-          height: 'var(--vh)',
+          height: '100dvh',
           backgroundColor: '#050508',
           zIndex: 99999,
           display: 'flex',
           flexDirection: 'column',
-          paddingBottom: 'env(safe-area-inset-bottom)',
           boxSizing: 'border-box'
         }}
       >
@@ -245,7 +244,7 @@ export default function ChartModal({
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Area grafico: scroll orizzontale, timeline integrata (absolute) */}
           <div
-            style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}
+            style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: '40px' }}
             onTouchStart={handleChartTouchStart}
             onTouchMove={handleChartTouchMove}
             onTouchEnd={handleChartTouchEnd}
