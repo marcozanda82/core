@@ -1913,6 +1913,7 @@ export default function SalaComandi() {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
     if (isSimulationMode) return;
     if (node.type === 'meal') {
+      setEditingMealId(node.id);
       loadMealToConstructor(node.id);
       setActiveAction('pasto');
       setIsDrawerOpen(true);
