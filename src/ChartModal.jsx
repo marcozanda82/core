@@ -312,37 +312,40 @@ export default function ChartModal({
       .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
     `}</style>
     <div
-      style={{ position: 'fixed', top: 0, left: 0, right: 0, height: viewportHeight, backgroundColor: '#050508', zIndex: 99999, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+      className="chart-scroll-container"
+      style={{ position: 'fixed', inset: 0, height: viewportHeight, backgroundColor: '#050508', zIndex: 99999, overflow: 'hidden' }}
       role="dialog"
       aria-modal="true"
       aria-label="Grafico a tutto schermo"
     >
       <div
-        style={{ flex: 1, position: 'relative', minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', padding: '16px' }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
         onTouchStart={handleModalSwipeStart}
         onTouchEnd={handleModalSwipeEnd}
         onMouseDown={handleModalSwipeStartMouse}
         onMouseUp={handleModalSwipeEndMouse}
         onMouseLeave={() => { modalSwipeStartXRef.current = null; }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexShrink: 0 }}>
-          <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
-            {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'calorieTimeline' ? '📈 Calorie cumulative' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : expandedChart === 'neuro' ? 'Recupero Neurologico (Dopamina & Adrenalina)' : expandedChart === 'kcal' ? 'Calorie ingerite 0–24h' : 'Calorie ingerite 0–24h'}
-          </span>
-          <button type="button" onClick={() => { onClose(); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi</button>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '16px', paddingBottom: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
+              {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'calorieTimeline' ? '📈 Calorie cumulative' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : expandedChart === 'neuro' ? 'Recupero Neurologico (Dopamina & Adrenalina)' : expandedChart === 'kcal' ? 'Calorie ingerite 0–24h' : 'Calorie ingerite 0–24h'}
+            </span>
+            <button type="button" onClick={() => { onClose(); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi</button>
+          </div>
+          {expandedChart === 'percent' && (
+            <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }} title="Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.">
+              Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.
+            </div>
+          )}
+          {expandedChart === 'kcal' && (
+            <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }} title="Calorie ingerite nel corso della giornata in base ai pasti registrati.">
+              Calorie ingerite nel corso della giornata in base ai pasti registrati.
+            </div>
+          )}
         </div>
-        {expandedChart === 'percent' && (
-          <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3, flexShrink: 0 }} title="Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.">
-            Indice simulato di energia fisiologica del sistema nervoso centrale. Dipende da sonno, ritmo circadiano, digestione, stress e altri fattori.
-          </div>
-        )}
-        {expandedChart === 'kcal' && (
-          <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3, flexShrink: 0 }} title="Calorie ingerite nel corso della giornata in base ai pasti registrati.">
-            Calorie ingerite nel corso della giornata in base ai pasti registrati.
-          </div>
-        )}
         <div
-          style={{ flex: '1 1 0px', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', touchAction: 'none' }}
+          style={{ position: 'absolute', top: 70, left: 16, right: 16, bottom: 90, overflow: 'hidden', touchAction: 'none' }}
           onTouchStart={handleChartTouchStart}
           onTouchMove={handleChartTouchMove}
           onTouchEnd={handleChartTouchEnd}
@@ -463,12 +466,14 @@ export default function ChartModal({
           className="timeline-nodes-strip"
           onClick={() => setIsTimelineSplit(!isTimelineSplit)}
           style={{
-            position: 'relative',
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
             background: '#050508',
             borderTop: '1px solid #222',
-            flexShrink: 0,
             paddingBottom: 'max(15px, env(safe-area-inset-bottom))',
-            width: '100%',
+            minHeight: 70,
             cursor: 'pointer'
           }}
         >
