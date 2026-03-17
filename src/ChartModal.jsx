@@ -2,7 +2,7 @@
  * ChartModal.jsx — Modale fullscreen per grafici. Layout semplice e stabile su mobile.
  * Timeline integrata nel grafico (position: absolute), nessun blocco separato.
  */
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ComposedChart,
   Line,
@@ -74,6 +74,19 @@ export default function ChartModal({
   const bottomTouchStartX = useRef(null);
   const highlightResetTimeoutRef = useRef(null);
   const initialPinchDistanceRef = useRef(null);
+
+  useEffect(() => {
+    const updateViewport = () => {
+      document.documentElement.style.setProperty('--vh', `${window.innerHeight}px`);
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    window.addEventListener('orientationchange', updateViewport);
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+      window.removeEventListener('orientationchange', updateViewport);
+    };
+  }, []);
 
   const getDistance = (touch1, touch2) =>
     Math.sqrt(Math.pow(touch2.clientX - touch1.clientX, 2) + Math.pow(touch2.clientY - touch1.clientY, 2));
@@ -206,7 +219,7 @@ export default function ChartModal({
           top: 0,
           left: 0,
           width: '100%',
-          height: '100%',
+          height: 'var(--vh)',
           backgroundColor: '#050508',
           zIndex: 99999,
           display: 'flex',
