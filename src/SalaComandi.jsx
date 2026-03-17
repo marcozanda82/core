@@ -18,7 +18,7 @@ import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
-import { TARGETS, DEFAULT_TARGETS, useBiochimico, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
+import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
   RADIAN,
   getTodayString,
@@ -1237,6 +1237,12 @@ export default function SalaComandi() {
   const baseKcal = (userTargets.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
   const { totali, obiettiviPasti } = useBiochimico(activeLog, baseKcal);
   const targetKcal = baseKcal + (totali?.workout ?? 0);
+
+  // Macro giornalieri reali (solo da dailyLog) per MealBuilder — mai undefined per evitare NaN nelle barre
+  const macroDailyReals = useMemo(() => {
+    const t = computeTotali(dailyLog ?? []);
+    return t && typeof t === 'object' ? t : { kcal: 0, prot: 0, carb: 0, fat: 0, fatTotal: 0, fibre: 0, workout: 0 };
+  }, [dailyLog]);
 
   const dailyReport = useMemo(() => {
     if (!activeLog || currentTrackerDate === getTodayString()) return null;
@@ -5348,7 +5354,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             miniTimelinePastoRef={miniTimelinePastoRef}
             handleMiniTimelineDrag={handleMiniTimelineDrag}
             allNodes={allNodes}
-            totali={totali}
+            totali={macroDailyReals}
             userTargets={userTargets}
             dynamicDailyKcal={dynamicDailyKcal}
             renderLiveProgressBar={renderLiveProgressBar}
