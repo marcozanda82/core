@@ -345,12 +345,12 @@ export default function ChartModal({
           )}
         </div>
         <div
-          style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', paddingLeft: 16, paddingRight: 16, touchAction: 'none' }}
+          style={{ flex: 1, minHeight: 0, overflow: 'hidden', paddingLeft: 16, paddingRight: 16, touchAction: 'none' }}
           onTouchStart={handleChartTouchStart}
           onTouchMove={handleChartTouchMove}
           onTouchEnd={handleChartTouchEnd}
         >
-          <div style={{ width: '100%', height: '100%', transform: `scale(${zoomLevel})`, transformOrigin: 'center center', transition: 'transform 0.05s ease-out' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', minHeight: 0, overflow: 'hidden', transform: `scale(${zoomLevel})`, transformOrigin: 'center center', transition: 'transform 0.05s ease-out' }}>
           {expandedChart === 'percent' ? (
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
@@ -402,9 +402,10 @@ export default function ChartModal({
             </ResponsiveContainer>
           ) : expandedChart === 'calorieTimeline' ? (
             <>
-              <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
+              <div style={{ flexShrink: 0, fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }} title="Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.">
                 Accumulo delle calorie ingerite durante la giornata in base ai pasti registrati.
               </div>
+              <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={safeCalorieTimelineData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
@@ -419,6 +420,7 @@ export default function ChartModal({
                   <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
+              </div>
             </>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
