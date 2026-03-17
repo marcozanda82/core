@@ -222,27 +222,28 @@ export default function ChartModal({
             <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
               {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'calorieTimeline' ? '📈 Calorie cumulative' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : expandedChart === 'neuro' ? 'Recupero Neurologico' : expandedChart === 'kcal' ? 'Calorie ingerite 0–24h' : 'Calorie ingerite 0–24h'}
             </span>
-            <button type="button" onClick={() => { onClose(); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>Chiudi ⚗️</button>
+            <button type="button" onClick={() => { onClose(); setActiveHighlight(null); }} style={{ padding: '10px 20px', fontSize: '0.9rem', fontWeight: 'bold', background: '#1a1a1a', border: '2px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>X</button>
           </div>
           {expandedChart === 'percent' && <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }}>Indice simulato di energia fisiologica del sistema nervoso centrale.</div>}
           {expandedChart === 'kcal' && <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }}>Calorie ingerite nel corso della giornata in base ai pasti registrati.</div>}
         </div>
 
-        {/* Main: left (chart + sim) + sidebar */}
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* Area grafico: scroll orizzontale nativo */}
-          <div
-            style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}
-            onTouchStart={handleChartTouchStart}
-            onTouchMove={handleChartTouchMove}
-            onTouchEnd={handleChartTouchEnd}
-          >
-            {/* Contenitore largo per lo scroll, impilato in colonna */}
-            <div style={{ width: `${220 * zoomLevel}%`, height: '100%', display: 'flex', flexDirection: 'column' }} className="chart-modal-inner">
+        {/* Main: grafico sopra, analisi AI sotto */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Contenitore grafico (altezza fissa ~45% in alto) */}
+          <div style={{ height: '45%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Area grafico: scroll orizzontale nativo */}
+            <div
+              style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}
+              onTouchStart={handleChartTouchStart}
+              onTouchMove={handleChartTouchMove}
+              onTouchEnd={handleChartTouchEnd}
+            >
+              {/* Contenitore largo per lo scroll, impilato in colonna */}
+              <div style={{ width: `${220 * zoomLevel}%`, height: '100%', display: 'flex', flexDirection: 'column' }} className="chart-modal-inner">
 
-              {/* 1. IL GRAFICO (Si espande per occupare tutto lo spazio superiore disponibile) */}
-              <div style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
+                {/* 1. IL GRAFICO (Si espande per occupare tutto lo spazio superiore disponibile) */}
+                <div style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 15 }}>
@@ -335,8 +336,8 @@ export default function ChartModal({
             </div>
           </div>
 
-            {/* Simulazione: slider tempo (se attivo) */}
-            {isSimulationMode && selectedSimNode && (
+          {/* Simulazione: slider tempo (se attivo) */}
+          {isSimulationMode && selectedSimNode && (
             <div style={{ flexShrink: 0, marginTop: '8px', padding: '15px', background: 'rgba(98, 0, 234, 0.15)', borderRadius: '12px', border: '1px solid #6200ea' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                 <strong style={{ color: '#fff', fontSize: '1.1rem' }}>⏱ Sposta: {selectedSimNode.name || selectedSimNode.desc || selectedSimNode.type || 'Evento'}</strong>
@@ -347,12 +348,10 @@ export default function ChartModal({
               <input type="range" min={0} max={1439} value={typeof (selectedSimNode.time ?? selectedSimNode.mealTime) === 'number' ? Math.round((selectedSimNode.time ?? selectedSimNode.mealTime) * 60) : (() => { const t = selectedSimNode.time ?? selectedSimNode.mealTime ?? '00:00'; const parts = String(t).split(':'); return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0); })()} onChange={(e) => { const mins = parseInt(e.target.value, 10); setSelectedSimNode(prev => prev ? { ...prev, time: mins / 60, mealTime: mins / 60 } : null); if (onTimeChange) onTimeChange(selectedSimNode.id || selectedSimNode.idLog, `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`); }} style={{ width: '100%', accentColor: '#00e5ff', height: '6px', outline: 'none' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#aaa', marginTop: '8px' }}><span>00:00</span><span>12:00</span><span>23:59</span></div>
             </div>
-            )}
+          )}
 
-          </div>
-
-          {/* Sidebar: Descrizione / Analisi AI */}
-          <div style={{ flex: '0 0 40%', overflow: 'auto', padding: '16px', borderLeft: '1px solid #222', display: 'flex', flexDirection: 'column' }}>
+          {/* Contenitore Analisi / Descrizione AI (in basso, scrollabile) */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px', borderTop: '1px solid #222', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', background: '#222', borderRadius: '20px', padding: '4px', marginBottom: '15px', flexShrink: 0 }}>
               <div role="button" tabIndex={0} onClick={() => setBottomTab('desc')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setBottomTab('desc'); } }} style={{ flex: 1, textAlign: 'center', padding: '8px', borderRadius: '16px', background: bottomTab === 'desc' ? '#333' : 'transparent', color: bottomTab === 'desc' ? '#fff' : '#888', cursor: 'pointer', transition: 'all 0.3s' }}>Descrizione</div>
               <div role="button" tabIndex={0} onClick={() => setBottomTab('ai')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setBottomTab('ai'); } }} style={{ flex: 1, textAlign: 'center', padding: '8px', borderRadius: '16px', background: bottomTab === 'ai' ? '#00e5ff' : 'transparent', color: bottomTab === 'ai' ? '#000' : '#888', fontWeight: bottomTab === 'ai' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.3s' }}>Analisi AI</div>
