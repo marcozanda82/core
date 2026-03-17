@@ -202,8 +202,11 @@ export default function ChartModal({
         aria-modal="true"
         aria-label="Grafico a tutto schermo"
         style={{
-          position: 'fixed',
-          inset: 0,
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
           backgroundColor: '#050508',
           zIndex: 99999,
           display: 'flex',
