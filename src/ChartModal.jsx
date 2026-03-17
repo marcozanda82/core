@@ -244,17 +244,17 @@ export default function ChartModal({
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Area grafico: scroll orizzontale, timeline integrata (absolute) */}
           <div
-            style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: '40px' }}
+            style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: '30px' }}
             onTouchStart={handleChartTouchStart}
             onTouchMove={handleChartTouchMove}
             onTouchEnd={handleChartTouchEnd}
           >
-            <div style={{ width: `${220 * zoomLevel}%`, height: '100%', position: 'relative', minHeight: 0 }} className="chart-modal-inner">
-              {/* Wrapper grafico: lascia spazio in basso per la timeline (90px) */}
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 90px)', minHeight: 0, transform: `scale(${zoomLevel})`, transformOrigin: 'center center', transition: 'transform 0.05s ease-out' }}>
+            <div style={{ width: `${220 * zoomLevel}%`, height: '100%', position: 'relative' }} className="chart-modal-inner">
+              {/* Wrapper grafico */}
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', transform: `scale(${zoomLevel})`, transformOrigin: 'top center', transition: 'transform 0.05s ease-out' }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
+                    <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 15 }}>
                       <defs>
                         <linearGradient id="colorEnergiaModal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/><stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/></linearGradient>
                         <linearGradient id="colorRiservaModal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00e676" stopOpacity={0.4}/><stop offset="95%" stopColor="#00e676" stopOpacity={0}/></linearGradient>
@@ -276,7 +276,7 @@ export default function ChartModal({
                   </ResponsiveContainer>
                 ) : expandedChart === 'kcal' ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
+                    <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 15 }}>
                       <defs><linearGradient id="modalColorEnergyKcal" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9}/><stop offset="50%" stopColor="#047857" stopOpacity={0.7}/><stop offset="100%" stopColor="#dc2626" stopOpacity={0.6}/></linearGradient></defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                       <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} padding={{ left: 0, right: 0 }} />
@@ -290,7 +290,7 @@ export default function ChartModal({
                   </ResponsiveContainer>
                 ) : expandedChart === 'calorieTimeline' ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={safeCalorieTimelineData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
+                    <ComposedChart data={safeCalorieTimelineData} margin={{ top: 20, right: 15, left: 15, bottom: 15 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                       <XAxis dataKey="time" type="number" domain={[0, 24]} ticks={[0, 6, 12, 18, 24]} tickFormatter={(val) => `${val}:00`} stroke="#666" fontSize={10} padding={{ left: 0, right: 0 }} />
                       <YAxis domain={[0, Math.max(targetKcalChart, totalCaloriesTimeline || 0)]} tickFormatter={(val) => Math.round(Number(val))} stroke="#666" fontSize={10} width={35} />
@@ -303,7 +303,7 @@ export default function ChartModal({
                   </ResponsiveContainer>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 0 }}>
+                    <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 15 }}>
                       <defs>
                         <linearGradient id="modalColorAnabolic" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00e5ff" stopOpacity={0.6}/><stop offset="95%" stopColor="#00e5ff" stopOpacity={0}/></linearGradient>
                         <linearGradient id="modalColorCortisol" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#9c27b0" stopOpacity={0.4}/><stop offset="95%" stopColor="#9c27b0" stopOpacity={0}/></linearGradient>
@@ -338,7 +338,7 @@ export default function ChartModal({
               <div
                 style={{
                   position: 'absolute',
-                  bottom: '20px',
+                  bottom: '5px',
                   left: '50px',
                   right: '15px',
                   height: '60px',

@@ -4393,7 +4393,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
                 <div style={{ width: '100%', height: '220px' }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 0 }}>
+                    <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
                       <defs>
                         <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
@@ -4447,7 +4447,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
                 ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 0 }}>
+                <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
                   <defs>
                     <linearGradient id="colorEnergy" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
@@ -4622,7 +4622,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {/* Hitbox: blocca tap sul grafico nella fascia timeline (left/right allineati a YAxis) */}
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50px', right: '15px', pointerEvents: 'none' }} aria-hidden="true" />
               {/* Timeline nodi integrata nel grafico (position absolute, stessa scroll orizzontale) */}
-              <div style={{ position: 'absolute', bottom: 0, left: '50px', right: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ position: 'absolute', bottom: 0, left: '50px', right: '15px', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '0px' }}>
                 <TimelineNodi
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}
