@@ -100,6 +100,11 @@ body {
   touch-action: none;
 }
 
+/* Modale grafico fullscreen: safe-area e altezza contenuta nel viewport reale */
+.chart-modal-root {
+  box-sizing: border-box;
+}
+
 /* Contenitore barra nodi: allineamento orizzontale */
 .timeline-strip-container {
   display: flex;

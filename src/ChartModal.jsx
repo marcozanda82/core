@@ -312,21 +312,31 @@ export default function ChartModal({
       .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
     `}</style>
     <div
-      className="chart-scroll-container"
-      style={{ position: 'fixed', inset: 0, height: viewportHeight, backgroundColor: '#050508', zIndex: 99999, overflow: 'hidden' }}
+      className="chart-scroll-container chart-modal-root"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        height: viewportHeight,
+        maxHeight: '100dvh',
+        backgroundColor: '#050508',
+        zIndex: 99999,
+        overflow: 'hidden',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        boxSizing: 'border-box'
+      }}
       role="dialog"
       aria-modal="true"
       aria-label="Grafico a tutto schermo"
     >
       <div
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
         onTouchStart={handleModalSwipeStart}
         onTouchEnd={handleModalSwipeEnd}
         onMouseDown={handleModalSwipeStartMouse}
         onMouseUp={handleModalSwipeEndMouse}
         onMouseLeave={() => { modalSwipeStartXRef.current = null; }}
       >
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '16px', paddingBottom: '8px' }}>
+        <div style={{ flexShrink: 0, padding: '16px', paddingBottom: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.85rem', color: '#00e5ff', fontWeight: 'bold' }}>
               {expandedChart === 'percent' ? '⚡ Energia SNC (%)' : expandedChart === 'calorieTimeline' ? '📈 Calorie cumulative' : expandedChart === 'glicemia' ? 'Simulatore Glicemico' : expandedChart === 'idratazione' ? 'Simulatore Idratazione' : expandedChart === 'cortisolo' ? 'Cortisolo / Stress' : expandedChart === 'digestione' ? 'Grafico Digestione' : expandedChart === 'neuro' ? 'Recupero Neurologico (Dopamina & Adrenalina)' : expandedChart === 'kcal' ? 'Calorie ingerite 0–24h' : 'Calorie ingerite 0–24h'}
@@ -345,7 +355,7 @@ export default function ChartModal({
           )}
         </div>
         <div
-          style={{ position: 'absolute', top: 70, left: 16, right: 16, bottom: 90, overflow: 'hidden', touchAction: 'none' }}
+          style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', paddingLeft: 16, paddingRight: 16, touchAction: 'none' }}
           onTouchStart={handleChartTouchStart}
           onTouchMove={handleChartTouchMove}
           onTouchEnd={handleChartTouchEnd}
@@ -461,20 +471,18 @@ export default function ChartModal({
           </div>
         </div>
 
-        {/* STRISCIA TIMELINE INFERIORE (Cliccabile per sdoppiare) */}
+        {/* STRISCIA TIMELINE INFERIORE — in flow, sempre visibile sopra safe-area (padding sul root) */}
         <div
           className="timeline-nodes-strip"
           onClick={() => setIsTimelineSplit(!isTimelineSplit)}
           style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
+            flexShrink: 0,
             background: '#050508',
             borderTop: '1px solid #222',
-            paddingBottom: 'max(15px, env(safe-area-inset-bottom))',
+            paddingBottom: 15,
             minHeight: 70,
-            cursor: 'pointer'
+            cursor: 'pointer',
+            boxSizing: 'border-box'
           }}
         >
           {!isTimelineSplit ? (
