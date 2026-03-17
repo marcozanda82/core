@@ -4369,7 +4369,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
             </div>
             )}
-            <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
+            <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex' }}>
             <div
               className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
               onTouchStart={() => { chartTouchTimerRef.current = setTimeout(() => setIsChartTooltipActive(true), 400); }}
@@ -4619,6 +4620,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </ResponsiveContainer>
                 )}
               </div>
+            </div>
+            {/* SPACER PER PULSANTIERA: permette di scrollare oltre la fine del grafico */}
+            <div style={{ width: '80px', flexShrink: 0 }} />
+            </div>
+            <div style={{ flexShrink: 0, height: '70px', paddingBottom: 'env(safe-area-inset-bottom)', boxSizing: 'border-box' }}>
               <TimelineNodi
                 activeNodesWithStack={activeNodesWithStack}
                 chartUnit={chartUnit}
@@ -4641,8 +4647,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 setDailyLog={setDailyLog}
               />
             </div>
-            {/* SPACER PER PULSANTIERA: Permette di scrollare oltre la fine del grafico per non coprire le 24:00 */}
-            <div style={{ width: '80px', flexShrink: 0 }}></div>
           </div>
         </div>
         </div>

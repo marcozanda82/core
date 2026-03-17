@@ -471,16 +471,16 @@ export default function ChartModal({
           </div>
         </div>
 
-        {/* STRISCIA TIMELINE INFERIORE — in flow, sempre visibile sopra safe-area (padding sul root) */}
+        {/* AREA TIMELINE — altezza fissa, in flow (safe-area solo come padding finale) */}
         <div
           className="timeline-nodes-strip"
           onClick={() => setIsTimelineSplit(!isTimelineSplit)}
           style={{
             flexShrink: 0,
+            height: 70,
             background: '#050508',
             borderTop: '1px solid #222',
-            paddingBottom: 15,
-            minHeight: 70,
+            paddingBottom: 'env(safe-area-inset-bottom)',
             cursor: 'pointer',
             boxSizing: 'border-box'
           }}

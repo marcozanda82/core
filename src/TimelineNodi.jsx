@@ -28,11 +28,8 @@ export default function TimelineNodi({
   const nodes = activeNodesWithStack ?? [];
 
   return (
-    <>
-      {/* TIMELINE NODI DRAGGABILI (Sovrapposta) - left = margin.left(15) + YAxis.width(35) = 50px */}
-      <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50px', right: '15px', pointerEvents: 'none' }} aria-hidden="true" />
-      <div style={{ position: 'absolute', bottom: 0, left: '50px', right: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <div ref={timelineContainerRef} style={{ flex: 1, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', position: 'relative' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minHeight: '55px', paddingLeft: '50px', paddingRight: '15px', boxSizing: 'border-box' }}>
+      <div ref={timelineContainerRef} style={{ flex: 1, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', position: 'relative' }}>
           {nodes.map((node) => {
             const currentChartUnit = chartUnit;
             const effectiveNodeType = node.type === 'meal' ? 'meal' : node.type;
@@ -155,7 +152,6 @@ export default function TimelineNodi({
             );
           })}
         </div>
-      </div>
-    </>
+    </div>
   );
 }
