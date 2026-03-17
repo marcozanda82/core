@@ -319,8 +319,8 @@ export default function ChartModal({
                 )}
               </div>
 
-              {/* Timeline: position absolute, integrata nel grafico, safe area */}
-              <div
+              {/* Timeline: position absolute, integrata nel grafico, safe area — TEST: nodi commentati, div rosso per debug */}
+              {/* <div
                 style={{
                   position: 'absolute',
                   bottom: 0,
@@ -336,7 +336,16 @@ export default function ChartModal({
                 <div style={{ flex: 1, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', position: 'relative' }}>
                   {(activeNodesWithStack || []).map(node => renderTimelineNode(node))}
                 </div>
-              </div>
+              </div> */}
+              <div style={{
+                position: 'absolute',
+                bottom: 0,
+                left: '50px',
+                right: '15px',
+                height: '60px',
+                background: 'red',
+                zIndex: 9999
+              }} />
             </div>
           </div>
 
