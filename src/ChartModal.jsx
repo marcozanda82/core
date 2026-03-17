@@ -476,7 +476,7 @@ export default function ChartModal({
           onClick={() => setIsTimelineSplit(!isTimelineSplit)}
           style={{
             flexShrink: 0,
-            height: 70,
+            height: isTimelineSplit ? 110 : 70,
             background: '#050508',
             borderTop: '1px solid #222',
             paddingBottom: 'env(safe-area-inset-bottom)',
@@ -546,7 +546,14 @@ export default function ChartModal({
           </div>
         )}
       </div>
-      <div style={{ flex: '0 0 40%', overflow: 'auto', padding: '16px', borderTop: '1px solid #222', display: 'flex', flexDirection: 'column' }}>
+      <div style={{
+  flex: '0 0 40%',
+  overflow: 'auto',
+  padding: '16px',
+  borderTop: '1px solid #222',
+  display: 'flex',
+  flexDirection: 'column'
+}}>
         <div style={{ display: 'flex', background: '#222', borderRadius: '20px', padding: '4px', marginBottom: '15px', flexShrink: 0 }}>
           <div role="button" tabIndex={0} onClick={() => setBottomTab('desc')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setBottomTab('desc'); } }} style={{ flex: 1, textAlign: 'center', padding: '8px', borderRadius: '16px', background: bottomTab === 'desc' ? '#333' : 'transparent', color: bottomTab === 'desc' ? '#fff' : '#888', cursor: 'pointer', transition: 'all 0.3s' }}>
             Descrizione
