@@ -74,37 +74,37 @@ export default function MealBuilder({
   const [numpadValue, setNumpadValue] = useState('');
   const mealCarouselRef = useRef(null);
 
-  const [recentFoodIds, setRecentFoodIds] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('readycore_recentFoods')) || []; }
+  const [recentFoods, setRecentFoods] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('recentFoods') || '[]'); }
     catch { return []; }
   });
 
-  const recentFoodIdsRef = useRef(recentFoodIds);
-  recentFoodIdsRef.current = recentFoodIds;
+  const recentFoodsRef = useRef(recentFoods);
+  recentFoodsRef.current = recentFoods;
   useEffect(() => {
     if (typeof registerAddFoodCallback !== 'function') return;
     registerAddFoodCallback((foodId) => {
       if (!foodId) return;
-      const updatedRecents = [foodId, ...recentFoodIdsRef.current.filter(id => id !== foodId)].slice(0, 20);
-      setRecentFoodIds(updatedRecents);
-      try { localStorage.setItem('readycore_recentFoods', JSON.stringify(updatedRecents)); } catch (_) {}
+      const updateRecents = [foodId, ...recentFoodsRef.current.filter(id => id !== foodId)].slice(0, 20);
+      setRecentFoods(updateRecents);
+      try { localStorage.setItem('recentFoods', JSON.stringify(updateRecents)); } catch (_) {}
     });
     return () => registerAddFoodCallback(null);
   }, [registerAddFoodCallback]);
 
   const sortedSuggestions = useMemo(() => {
     const list = foodDropdownSuggestions || [];
-    if (list.length === 0 || recentFoodIds.length === 0) return list;
+    if (list.length === 0 || recentFoods.length === 0) return list;
     return [...list].sort((a, b) => {
       const aId = a.id ?? a.key;
       const bId = b.id ?? b.key;
-      const aRecent = recentFoodIds.includes(aId);
-      const bRecent = recentFoodIds.includes(bId);
+      const aRecent = recentFoods.includes(aId);
+      const bRecent = recentFoods.includes(bId);
       if (aRecent && !bRecent) return -1;
       if (!aRecent && bRecent) return 1;
       return 0;
     });
-  }, [foodDropdownSuggestions, recentFoodIds]);
+  }, [foodDropdownSuggestions, recentFoods]);
 
   const handleMealCarouselScroll = (e) => {
     const { scrollLeft, clientWidth } = e.target;
