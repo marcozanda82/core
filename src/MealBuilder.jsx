@@ -275,13 +275,35 @@ export default function MealBuilder({
             )}
             <div style={{ position: 'sticky', top: '-20px', zIndex: 50, background: '#111', paddingTop: '20px', paddingBottom: '10px', borderBottom: '1px solid #333', margin: '0 -15px 20px -15px', paddingLeft: '15px', paddingRight: '15px' }}>
               <div className="quick-add-bar">
-                <div style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
-                  <input ref={foodInputRef} type="text" className="quick-input input-name" placeholder="Es. Pollo" value={foodNameInput} onChange={(e) => setFoodNameInput(e.target.value)} onFocus={() => setShowFoodDropdown(true)} onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)} onKeyDown={(e) => { if (e.key === 'Enter') document.getElementById('weight-input')?.focus(); }} style={{ paddingRight: foodNameInput ? '36px' : undefined }} />
+                <div style={{ position: 'relative', flex: 3, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+                  <input
+                    ref={foodInputRef}
+                    type="text"
+                    className="quick-input input-name"
+                    placeholder="Es. Pollo"
+                    value={foodNameInput}
+                    onChange={(e) => setFoodNameInput(e.target.value)}
+                    onFocus={() => setShowFoodDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') document.getElementById('weight-input')?.focus(); }}
+                    style={{ flex: 3, width: '100%', paddingRight: foodNameInput ? '36px' : undefined, boxSizing: 'border-box' }}
+                  />
                   {foodNameInput ? (
                     <button type="button" onClick={() => setFoodNameInput('')} aria-label="Cancella ricerca" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', width: '28px', height: '28px', minWidth: 28, minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', color: '#888', fontSize: '1rem', cursor: 'pointer', lineHeight: 1 }}>✕</button>
                   ) : null}
                 </div>
-                <input id="weight-input" type="number" inputMode="decimal" className="quick-input input-weight" placeholder="g" value={foodWeightInput} onChange={(e) => setFoodWeightInput(e.target.value)} onFocus={(e) => { if (numpadFoodId) e.target.blur(); }} onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()} />
+                <input
+                  id="weight-input"
+                  type="number"
+                  inputMode="decimal"
+                  className="quick-input input-weight"
+                  placeholder="g"
+                  value={foodWeightInput}
+                  onChange={(e) => setFoodWeightInput(e.target.value)}
+                  onFocus={(e) => { if (numpadFoodId) e.target.blur(); }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()}
+                  style={{ flex: 1, maxWidth: '80px', textAlign: 'center', boxSizing: 'border-box' }}
+                />
                 <button type="button" title="Scansiona barcode" onClick={() => setIsBarcodeScannerOpen(prev => !prev)} style={{ padding: '10px 12px', background: isBarcodeScannerOpen ? '#00e5ff' : 'rgba(255,255,255,0.08)', border: '1px solid #333', borderRadius: '10px', cursor: 'pointer', fontSize: '1.1rem' }}>📷</button>
                 <button type="button" className="quick-add-btn" onClick={handleAddFoodManual}>+</button>
               </div>
