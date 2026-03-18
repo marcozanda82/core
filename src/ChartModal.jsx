@@ -335,6 +335,7 @@ export default function ChartModal({
 
             </div>
           </div>
+          </div>
 
           {/* Simulazione: slider tempo (se attivo) */}
           {isSimulationMode && selectedSimNode && (
