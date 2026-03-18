@@ -3575,7 +3575,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const fullscreenChartLabel = currentChartType === 'percent' ? 'Energia SNC %' : currentChartType === 'cortisolo' ? 'Cortisolo' : currentChartType === 'calorieTimeline' ? 'Bilancio Calorico' : currentChartType === 'glicemia' ? 'Glicemia' : currentChartType === 'idratazione' ? 'Idratazione' : currentChartType === 'neuro' ? 'Recupero Neurologico' : currentChartType === 'digestione' ? 'Digestione' : currentChartType === 'kcal' ? 'Kcal' : 'Grafico';
 
     return (
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '100dvh', paddingBottom: 'env(safe-area-inset-bottom, 20px)', backgroundColor: '#121212', zIndex: 99999, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '100dvh', overflowY: 'auto', paddingBottom: 'env(safe-area-inset-bottom, 20px)', backgroundColor: '#121212', zIndex: 99999, display: 'flex', flexDirection: 'column' }}>
         {/* 1. HEADER FISSO */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#1e1e1e', borderBottom: '1px solid #333', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -3588,8 +3588,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
         {/* 2. CORPO SCORREVOLE (GRAFICO E NODI IN SOLIDO) - pulsantiera zoom è fuori, ancorata a fixed */}
         <div ref={fullscreenChartScrollRef} style={{ flex: 1, width: '100%', minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
-          <div style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', minHeight: '100%', display: 'flex', flexDirection: 'column', paddingBottom: '30px', transition: 'width 0.3s ease' }}>
-            <div style={{ flex: 1, minHeight: '280px' }}>
+          <div style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', minHeight: '100%', display: 'flex', flexDirection: 'column', paddingBottom: '10px', transition: 'width 0.3s ease' }}>
+            <div style={{ flex: 1, minHeight: 0 }}>
             {currentChartType === 'percent' && (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
@@ -3739,7 +3739,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             )}
             </div>
             {/* STRISCIA TIMELINE NODI (Sopra il grafico) */}
-            <div className="timeline-strip-container" style={{ height: '70px', marginTop: '12px', marginBottom: '40px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
+            <div className="timeline-strip-container" style={{ height: '70px', marginTop: '12px', marginBottom: '15px', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', flexShrink: 0, zIndex: 10 }}>
               <div style={{ position: 'absolute', left: '50px', right: '15px', top: 0, bottom: 0 }}>
                 {(activeNodesWithStack || []).map((node) => {
                   const pct = ((node.time ?? 0) / 24) * 100;
