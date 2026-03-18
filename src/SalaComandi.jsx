@@ -233,6 +233,27 @@ export default function SalaComandi() {
   const [isFullScreenGraph, setIsFullScreenGraph] = useState(false);
   const availableFullscreenCharts = ['percent', 'cortisolo', 'calorieTimeline', 'glicemia', 'idratazione', 'neuro', 'digestione', 'kcal'];
   const [fullscreenChartIndex, setFullscreenChartIndex] = useState(0);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(orientation: landscape)");
+
+    const handleOrientationChange = (e) => {
+      // Se diventa landscape, attiva il fullscreen. Altrimenti lo disattiva.
+      setIsFullScreenGraph(e.matches);
+    };
+
+    // Controllo iniziale nel caso l'app venga aperta già in orizzontale
+    if (mediaQuery.matches) {
+      setIsFullScreenGraph(true);
+    }
+
+    // Aggiungi il listener
+    mediaQuery.addEventListener("change", handleOrientationChange);
+
+    // Cleanup
+    return () => mediaQuery.removeEventListener("change", handleOrientationChange);
+  }, []);
+
   const [showTrainingPopup, setShowTrainingPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
