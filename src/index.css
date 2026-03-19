@@ -58,7 +58,7 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  z-index: 1100;
+  z-index: 50;
   background: rgba(0, 0, 0, 0.5);
   padding: 10px 6px;
   border-radius: 30px;

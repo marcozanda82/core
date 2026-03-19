@@ -3858,7 +3858,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             right: '15px',
             top: '40%',
             transform: 'translateY(-50%)',
-            zIndex: 2000,
+            zIndex: 50,
             display: 'flex',
             flexDirection: 'column',
             gap: '15px',
@@ -3907,15 +3907,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .btn-toggle { background: none; border: 1px solid #333; color: #666; padding: 10px 20px !important; font-size: 0.8rem !important; min-height: 44px; border-radius: 20px; cursor: pointer; letter-spacing: 2px; transition: all 0.3s; -webkit-tap-highlight-color: transparent; display: flex; align-items: center; }
           .btn-toggle.active { border-color: #00e5ff; color: #00e5ff; box-shadow: 0 0 10px rgba(0,229,255,0.2); }
           
-          .drawer-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity 0.4s ease; z-index: 100; }
+          .drawer-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity 0.4s ease; z-index: 99998; }
           .drawer-overlay.open { opacity: 1; pointer-events: all; }
           
           /* Ottimizzazione Drawer per Mobile */
-          .drawer-content { position: fixed; bottom: -100%; left: 0; right: 0; background: rgba(15, 15, 15, 0.95); border-top: 1px solid #2a2a2a; border-radius: 25px 25px 0 0 !important; padding: 30px 20px !important; padding-bottom: max(20px, env(safe-area-inset-bottom)); transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.05); z-index: 101; box-shadow: 0 -10px 50px rgba(0,0,0,0.9); max-height: 92vh !important; overflow-y: auto; backdrop-filter: blur(25px); -webkit-overflow-scrolling: touch; }
+          .drawer-content { position: fixed; bottom: -100%; left: 0; right: 0; background: rgba(15, 15, 15, 0.95); border-top: 1px solid #2a2a2a; border-radius: 25px 25px 0 0 !important; padding: 30px 20px !important; padding-bottom: max(20px, env(safe-area-inset-bottom)); transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.05); z-index: 99999; box-shadow: 0 -10px 50px rgba(0,0,0,0.9); max-height: 92vh !important; overflow-y: auto; backdrop-filter: blur(25px); -webkit-overflow-scrolling: touch; }
           .drawer-content.open { bottom: 0; }
           
           /* Barra zoom verticale (pollice-friendly, bordo destro) - stessa definizione in index.css */
-          .zoom-vertical-bar { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 14px; z-index: 1100; background: rgba(0, 0, 0, 0.5); padding: 10px 6px; border-radius: 30px; backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.12); pointer-events: auto; }
+          .zoom-vertical-bar { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 14px; z-index: 50; background: rgba(0, 0, 0, 0.5); padding: 10px 6px; border-radius: 30px; backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.12); pointer-events: auto; }
           .zoom-btn-vertical { width: 40px; height: 40px; border-radius: 50%; background: #2c2c2e; color: white; border: 1px solid #444; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; }
           .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
           @keyframes pulseDot {
