@@ -256,6 +256,7 @@ export default function SalaComandi() {
   }, []);
 
   const [showTrainingPopup, setShowTrainingPopup] = useState(false);
+  const [showSncPopup, setShowSncPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
   const [editingQuickNode, setEditingQuickNode] = useState(null);
@@ -4183,8 +4184,27 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </button>
           </div>
 
-          {/* DESTRA: Logout, Widget Energia */}
+          {/* DESTRA: allarme SNC compatto, Logout, Widget Energia */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
+            {sncStressLevel > 65 && (
+              <button
+                type="button"
+                onClick={() => setShowSncPopup(true)}
+                title={sncStressLevel >= 85 ? 'Allarme overtraining SNC' : 'Affaticamento SNC'}
+                aria-label={sncStressLevel >= 85 ? 'Allarme overtraining SNC' : 'Affaticamento SNC'}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '1.2rem',
+                  cursor: 'pointer',
+                  padding: '5px',
+                  lineHeight: 1,
+                  animation: sncStressLevel >= 85 ? 'pulseDot 1.5s infinite ease-in-out' : 'none'
+                }}
+              >
+                {sncStressLevel >= 85 ? '⚠️' : '⚡'}
+              </button>
+            )}
             <button className="btn-toggle" onClick={() => auth.signOut()} style={{ padding: '8px 12px !important', minHeight: 'auto', fontSize: '0.7rem !important' }}>LOGOUT</button>
             {/* Widget Energia Biologica (Arco) */}
             <div 
@@ -4418,51 +4438,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
             <span style={{ fontSize: '0.65rem', color: '#666' }}>🩸 {Math.round(gl)} · ⚙️ {Math.round(dig)}%</span>
           </div>
-          {sncStressLevel >= 85 ? (
-            <div
-              style={{
-                background: 'rgba(239, 68, 68, 0.14)',
-                border: '1px solid rgba(239, 68, 68, 0.55)',
-                borderRadius: '12px',
-                padding: '10px 12px',
-                marginTop: '10px',
-                color: '#fff',
-                boxShadow: '0 0 20px rgba(239, 68, 68, 0.12)'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '1.05rem', color: '#ef4444' }}>⚠️</span>
-                <div style={{ fontWeight: 900, lineHeight: 1.2 }}>
-                  Allarme Overtraining: Sistema Nervoso Centrale saturo al {Math.round(sncStressLevel)}%.
-                </div>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: '#ffd1d1', marginTop: '6px' }}>
-                Si consigliano 3-5 giorni di scarico attivo per resettare l&apos;energia massima.
-              </div>
-            </div>
-          ) : sncStressLevel > 65 ? (
-            <div
-              style={{
-                background: 'rgba(255, 152, 0, 0.12)',
-                border: '1px solid rgba(255, 152, 0, 0.45)',
-                borderRadius: '12px',
-                padding: '10px 12px',
-                marginTop: '10px',
-                color: '#fff',
-                boxShadow: '0 0 20px rgba(255, 152, 0, 0.12)'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '1.05rem', color: '#ff9800' }}>⚡</span>
-                <div style={{ fontWeight: 900, lineHeight: 1.2 }}>
-                  Affaticamento SNC in accumulo.
-                </div>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: '#ffe9c2', marginTop: '6px' }}>
-                Accumulo SNC attuale: {Math.round(sncStressLevel)}%.
-              </div>
-            </div>
-          ) : null}
           <div
             role="button"
             tabIndex={0}
@@ -6880,6 +6855,48 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <li><strong style={{ color: '#ef4444' }}>Catabolismo:</strong> Allarme rosso. L'energia è sotto la soglia critica; il corpo smonta le fibre muscolari per sopravvivere. Avviene dopo sforzi intensi senza nutrizione.</li>
             </ul>
             <button type="button" onClick={() => setShowMetabolicPopup(false)} style={{ background: '#333', color: '#fff', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
+              Ho capito
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showSncPopup && (
+        <div
+          role="presentation"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000 }}
+          onClick={() => setShowSncPopup(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="snc-popup-title"
+            style={{
+              background: '#1a1a1c',
+              padding: '24px',
+              borderRadius: '16px',
+              border: sncStressLevel >= 85 ? '1px solid #f44336' : '1px solid #ff9800',
+              width: '90%',
+              maxWidth: '350px',
+              textAlign: 'center'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: '2.5rem', marginBottom: '10px' }}>{sncStressLevel >= 85 ? '⚠️' : '⚡'}</div>
+            <h3 id="snc-popup-title" style={{ color: '#fff', marginTop: 0 }}>
+              {sncStressLevel >= 85 ? 'Allarme Overtraining' : 'Affaticamento SNC'}
+            </h3>
+            <p style={{ color: '#b0b0b0', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '20px' }}>
+              Sistema Nervoso Centrale saturo al <strong>{Math.round(sncStressLevel)}%</strong>.<br /><br />
+              {sncStressLevel >= 85
+                ? "Si consigliano 3-5 giorni di scarico attivo (niente allenamenti pesanti) per resettare l'energia massima ed evitare lo stallo metabolico."
+                : 'Il carico allostatico sta aumentando. Presta attenzione al recupero nei prossimi giorni.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowSncPopup(false)}
+              style={{ background: '#333', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}
+            >
               Ho capito
             </button>
           </div>
