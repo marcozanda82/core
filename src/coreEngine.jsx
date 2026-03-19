@@ -1328,16 +1328,35 @@ function normalizeSleepEntry(entry) {
  * Giornata con allenamento: log workout o nodo timeline workout; oppure kcal workout nel log; testo/tag "allenamento".
  */
 function dayHasTrainingFromLogs(log, manualNodes) {
-  if ((manualNodes || []).some(n => n && n.type === 'workout')) return true;
+  // 1. Controllo nodi manuali (ignora micro-attività sotto i 20 min o 150 kcal)
+  const validManual = (manualNodes || []).some(n =>
+    n && n.type === 'workout' && ((n.duration || 1) >= 0.33 || (n.kcal || n.cal || 0) >= 150)
+  );
+  if (validManual) return true;
+
   const L = log || [];
-  if (L.some(e => e && e.type === 'workout')) return true;
+
+  // 2. Controllo log diario (somma e filtra i workout reali)
   let workoutKcal = 0;
+  let workoutDuration = 0;
   L.forEach(e => {
-    if (e?.type === 'workout') workoutKcal += Number(e.kcal ?? e.cal) || 0;
+    if (e?.type === 'workout') {
+      workoutKcal += Number(e.kcal ?? e.cal) || 0;
+      workoutDuration += Number(e.duration) || 0;
+    }
   });
-  if (workoutKcal >= 80) return true;
-  const blob = L.map(e => `${e?.desc || ''} ${e?.name || ''} ${e?.tag || ''} ${e?.tags || ''}`).join(' ').toLowerCase();
-  return blob.includes('allenamento');
+
+  // Un VERO allenamento che impatta il SNC deve bruciare almeno 150 kcal o durare almeno 20 minuti.
+  if (workoutKcal >= 150 || workoutDuration >= 0.33) return true;
+
+  // 3. Match testuale corretto (Evita falsi positivi come stringhe "no allenamento" o "barretta pre-allenamento")
+  // Controlliamo SOLO tag specifici e isolati.
+  const tags = L.map(e => String(e?.tag || e?.tags || '').toLowerCase().trim());
+  const exactWorkoutTags = ['workout', 'pesi', 'palestra', 'allenamento', 'training', 'wod'];
+
+  if (tags.some(t => exactWorkoutTags.includes(t))) return true;
+
+  return false;
 }
 
 /** Sonno "pessimo" o sotto 6h → +1 punto sul carico (opzionale in computeAccumuloSNC). */
