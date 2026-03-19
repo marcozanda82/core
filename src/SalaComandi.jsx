@@ -9,7 +9,7 @@
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
+import { ComposedChart, LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
 
 import { ref, get, set, onValue, update } from 'firebase/database';
 
@@ -83,7 +83,9 @@ import {
   clampModelValue,
   calibrateUserModel,
   buildWeeklyDataFromHistory,
-  predictEnergyIntervention
+  predictEnergyIntervention,
+  computeDayEvaluations,
+  computeEvaluationTrend
 } from './coreEngine';
 
 export default function SalaComandi() {
@@ -307,6 +309,7 @@ export default function SalaComandi() {
   const [showMetabolicPopup, setShowMetabolicPopup] = useState(false);
   const [showEnergyPopup, setShowEnergyPopup] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [trendModalMetric, setTrendModalMetric] = useState(null);
   const [reportViewedDates, setReportViewedDates] = useState(() => {
     try { return JSON.parse(localStorage.getItem('reportViewedDates')) || {}; } catch { return {}; }
   });
@@ -1285,101 +1288,14 @@ export default function SalaComandi() {
   const dailyReport = useMemo(() => {
     if (!activeLog || currentTrackerDate === getTodayString()) return null;
     const foods = (activeLog || []).filter(e => e.type === 'food');
-    const hasStrengthWorkout = (activeLog || []).some(t => {
-      if (t.type !== 'workout') return false;
-      const sub = (t.subType ?? t.workoutType ?? '').toLowerCase();
-      return sub === 'pesi' || sub === 'hiit';
-    });
     if (foods.length === 0 && !(activeLog || []).some(e => e.type === 'sleep' || e.type === 'workout')) return null;
+    return computeDayEvaluations(activeLog, userTargets);
+  }, [activeLog, currentTrackerDate, userTargets]);
 
-    const proTotal = totali?.prot ?? 0;
-    const proTarget = userTargets?.prot ?? 150;
-    const kcalTotal = totali?.kcal ?? 0;
-    const kcalTarget = userTargets?.kcal ?? 2000;
-    const choTotal = totali?.carb ?? 0;
-    const choTarget = userTargets?.carb ?? 200;
-
-    const bySlot = {};
-    foods.forEach(f => {
-      const slot = getSlotKey(f) || f.mealType || 'other';
-      if (!bySlot[slot]) bySlot[slot] = 0;
-      bySlot[slot] += Number(f.prot ?? f.pro ?? 0) || 0;
-    });
-    const highProMeals = Object.values(bySlot).filter(sum => sum >= 20).length;
-
-    let muscleStars = 0;
-    let muscleReason = '';
-    if (!hasStrengthWorkout) {
-      muscleStars = proTotal >= proTarget * 0.9 ? 2 : highProMeals >= 2 ? 1 : 0;
-      muscleReason = proTotal >= proTarget * 0.9
-        ? 'Pasto proteico ottimo per il mantenimento, ma senza stimolo meccanico (pesi/HIIT) non c\'è crescita.'
-        : 'Mancano proteine e stimolo di forza per la crescita muscolare.';
-    } else {
-      muscleStars = 1;
-      if (proTotal >= proTarget) muscleStars += 2;
-      else if (proTotal >= proTarget * 0.9) muscleStars += 1;
-      if (highProMeals >= 4) muscleStars += 2;
-      else if (highProMeals >= 3) muscleStars += 1;
-      muscleStars = Math.min(5, Math.max(0, muscleStars));
-      if (proTotal < proTarget * 0.9) muscleReason = 'Allenamento intenso, ma mancano i mattoni (proteine) per riparare e costruire le fibre.';
-      else if (highProMeals < 4) muscleReason = 'Potenziale alto, ma le proteine sono troppo concentrate. Distribuiscile in 4 pasti per la sintesi costante.';
-      else muscleReason = 'Sinergia perfetta tra stimolo meccanico e timing proteico. Crescita massimizzata!';
-    }
-    muscleStars = Math.min(5, Math.max(0, muscleStars));
-
-    let fatStars = 1;
-    if (kcalTotal <= kcalTarget) fatStars += 2;
-    if ((activeLog || []).some(t => t.type === 'workout')) fatStars += 1;
-    if (choTotal <= choTarget * 1.1) fatStars += 1;
-    fatStars = Math.min(5, fatStars);
-    let fatReason = '';
-    if (kcalTotal > kcalTarget) fatReason = 'Lieve surplus calorico: la lipolisi è stata inibita per favorire l\'accumulo.';
-    else if (choTotal > choTarget * 1.1) fatReason = 'Picchi insulinici eccessivi hanno bloccato l\'accesso alle riserve di grasso.';
-    else fatReason = 'Calorie e carboidrati sotto controllo: condizioni ideali per la perdita di grasso.';
-
-    const sleepEntry = (activeLog || []).find(e => e.type === 'sleep');
-    const sleepHours = sleepEntry?.duration ?? sleepEntry?.hours ?? 0;
-    const lateCaffeine = (activeLog || []).some(t => t.type === 'stimulant' && (parseFloat(t.time ?? t.mealTime ?? 0) >= 16));
-    const cenaEquiv = getEquivalentMealTypes('cena');
-    const dinnerCho = foods.filter(f => cenaEquiv.includes(f.mealType)).reduce((acc, item) => acc + (Number(item.carb ?? item.cho ?? 0) || 0), 0);
-
-    let neuroStars = 0;
-    let neuroReason = '';
-    if (sleepHours < 7) neuroReason = 'Il riposo breve ha impedito la ricarica completa dei neurotrasmettitori.';
-    else if (lateCaffeine) neuroReason = 'La caffeina dopo le 16:00 ha frammentato l\'architettura del tuo sonno profondo.';
-    else if (dinnerCho < 40) neuroReason = 'Mancata soppressione del cortisolo serale: il sistema nervoso è rimasto in allerta.';
-    if (sleepHours >= 8 && !lateCaffeine && dinnerCho >= 40) { neuroStars = 5; neuroReason = 'Sonno, timing caffeina e CHO a cena ottimali. Recupero neurologico completo.'; }
-    else if (sleepHours >= 7) {
-      neuroStars = !lateCaffeine ? 4 : 3;
-      if (dinnerCho >= 40) neuroStars = Math.min(5, neuroStars + 1);
-      neuroStars = Math.min(4, neuroStars);
-    } else if (sleepHours >= 6) neuroStars = Math.min(3, (lateCaffeine ? 2 : 3));
-    else if (sleepHours > 0) neuroStars = 1;
-    neuroStars = Math.min(5, Math.max(0, neuroStars));
-    if (!neuroReason) neuroReason = 'Sonno e abitudini serali da ottimizzare.';
-
-    let firstMealTime = 24;
-    let lastMealTime = 0;
-    foods.forEach(f => {
-      const t = parseFloat(f.mealTime ?? f.time ?? 12);
-      if (!Number.isNaN(t)) { if (t < firstMealTime) firstMealTime = t; if (t > lastMealTime) lastMealTime = t; }
-    });
-    const fastingHours = foods.length === 0 ? 24 : (24 - lastMealTime) + firstMealTime;
-    let fastStars = 0;
-    let fastReason = '';
-    if (fastingHours < 12) { fastStars = 0; fastReason = 'Finestra di alimentazione troppo ampia. L\'autofagia (pulizia cellulare) non si è attivata.'; }
-    else if (fastingHours < 14) { fastStars = 1; fastReason = 'Finestra di alimentazione troppo ampia. L\'autofagia (pulizia cellulare) non si è attivata.'; }
-    else if (fastingHours < 16) { fastStars = 3; fastReason = 'Buon inizio di riciclo cellulare. Il sistema ha iniziato a eliminare le proteine danneggiate.'; }
-    else { fastStars = 5; fastReason = 'Protocollo Gold: 16+ ore di digiuno hanno garantito una rigenerazione cellulare profonda.'; }
-
-    return {
-      ready: true,
-      muscle: { score: muscleStars, reason: muscleReason || 'Stimolo e nutrizione non allineati per la crescita.' },
-      fat: { score: fatStars, reason: fatReason },
-      neuro: { score: neuroStars, reason: neuroReason || 'Sonno e abitudini serali da ottimizzare.' },
-      fast: { score: fastStars, reason: fastReason }
-    };
-  }, [activeLog, currentTrackerDate, totali, userTargets]);
+  const evaluationTrendData = useMemo(() => {
+    if (!trendModalMetric) return [];
+    return computeEvaluationTrend(fullHistory, trendModalMetric, userTargets, 14);
+  }, [fullHistory, trendModalMetric, userTargets]);
 
   const yesterdayReportReady = useMemo(() => {
     if (currentTrackerDate !== getTodayString() || !fullHistory || typeof fullHistory !== 'object') return false;
@@ -6816,8 +6732,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               const reason = typeof item === 'object' && item != null && 'reason' in item ? item.reason : '';
               return (
                 <div key={key} style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#aaa', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {emoji} {label}
+                  <div style={{ fontSize: '0.75rem', color: '#aaa', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span>{emoji} {label}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setTrendModalMetric(key); }}
+                      style={{ background: 'transparent', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', marginLeft: '10px' }}
+                      title="Vedi Trend Storico"
+                    >
+                      📈
+                    </button>
                   </div>
                   <div style={{ display: 'flex', gap: '2px' }}>
                     {[1, 2, 3, 4, 5].map(n => (
@@ -6833,6 +6757,57 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               );
             })}
             <button onClick={() => setShowReportModal(false)} style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}>
+              Chiudi
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Trend storico valutazioni report (cumulativo) */}
+      {trendModalMetric && (
+        <div
+          role="presentation"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', zIndex: 100001, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(6px)' }}
+          onClick={() => setTrendModalMetric(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '22px', maxWidth: '420px', width: '100%', position: 'relative', boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '6px', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
+              Trend Storico
+            </h3>
+            <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '14px' }}>
+              {{
+                muscle: 'Crescita Muscolare',
+                fat: 'Perdita di Grasso',
+                neuro: 'Recupero Neurologico',
+                fast: 'Pulizia Cellulare (Digiuno)'
+              }[trendModalMetric] ?? trendModalMetric}
+            </p>
+            <div style={{ width: '100%', height: 250 }}>
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={evaluationTrendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+                  <XAxis dataKey="date" stroke="#888" tick={{ fill: '#888', fontSize: 10 }} />
+                  <YAxis stroke="#888" tick={{ fill: '#888', fontSize: 10 }} width={36} />
+                  <Tooltip
+                    contentStyle={{ background: '#1a1a1a', border: '1px solid #444', borderRadius: '8px' }}
+                    labelStyle={{ color: '#aaa' }}
+                    formatter={(value, name, props) => [value, name === 'score' ? 'Score cumulativo' : name]}
+                    labelFormatter={(label) => `Data ${label}`}
+                  />
+                  <Line type="monotone" dataKey="score" stroke="#00e5ff" strokeWidth={3} dot={{ r: 4, fill: '#00e5ff' }} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTrendModalMetric(null)}
+              style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '16px' }}
+            >
               Chiudi
             </button>
           </div>

@@ -1,6 +1,7 @@
 
 
 import React from 'react';
+import { computeTotali } from './useBiochimico';
 
 const RADIAN = Math.PI / 180;
 
@@ -1586,6 +1587,154 @@ function getLogFromStoricoTree(tree, dateStr) {
   const raw = log ?? [];
   const asArray = Array.isArray(raw) ? raw : Object.values(raw || {});
   return normalizeLogData(asArray);
+}
+
+/**
+ * Valutazioni a stelle del report giornaliero (stessa logica della dashboard).
+ * Richiede un log normalizzato (es. da activeLog o da getLogFromStoricoTree).
+ */
+export function computeDayEvaluations(log, userTargets) {
+  const L = log || [];
+  const foods = L.filter(e => e.type === 'food');
+  const hasStrengthWorkout = L.some(t => {
+    if (t.type !== 'workout') return false;
+    const sub = (t.subType ?? t.workoutType ?? '').toLowerCase();
+    return sub === 'pesi' || sub === 'hiit';
+  });
+
+  const totali = computeTotali(L);
+  const proTotal = totali?.prot ?? 0;
+  const proTarget = userTargets?.prot ?? 150;
+  const kcalTotal = totali?.kcal ?? 0;
+  const kcalTarget = userTargets?.kcal ?? 2000;
+  const choTotal = totali?.carb ?? 0;
+  const choTarget = userTargets?.carb ?? 200;
+
+  const bySlot = {};
+  foods.forEach(f => {
+    const slot = getSlotKey(f) || f.mealType || 'other';
+    if (!bySlot[slot]) bySlot[slot] = 0;
+    bySlot[slot] += Number(f.prot ?? f.pro ?? 0) || 0;
+  });
+  const highProMeals = Object.values(bySlot).filter(sum => sum >= 20).length;
+
+  let muscleStars = 0;
+  let muscleReason = '';
+  if (!hasStrengthWorkout) {
+    muscleStars = proTotal >= proTarget * 0.9 ? 2 : highProMeals >= 2 ? 1 : 0;
+    muscleReason = proTotal >= proTarget * 0.9
+      ? 'Pasto proteico ottimo per il mantenimento, ma senza stimolo meccanico (pesi/HIIT) non c\'è crescita.'
+      : 'Mancano proteine e stimolo di forza per la crescita muscolare.';
+  } else {
+    muscleStars = 1;
+    if (proTotal >= proTarget) muscleStars += 2;
+    else if (proTotal >= proTarget * 0.9) muscleStars += 1;
+    if (highProMeals >= 4) muscleStars += 2;
+    else if (highProMeals >= 3) muscleStars += 1;
+    muscleStars = Math.min(5, Math.max(0, muscleStars));
+    if (proTotal < proTarget * 0.9) muscleReason = 'Allenamento intenso, ma mancano i mattoni (proteine) per riparare e costruire le fibre.';
+    else if (highProMeals < 4) muscleReason = 'Potenziale alto, ma le proteine sono troppo concentrate. Distribuiscile in 4 pasti per la sintesi costante.';
+    else muscleReason = 'Sinergia perfetta tra stimolo meccanico e timing proteico. Crescita massimizzata!';
+  }
+  muscleStars = Math.min(5, Math.max(0, muscleStars));
+
+  let fatStars = 1;
+  if (kcalTotal <= kcalTarget) fatStars += 2;
+  if (L.some(t => t.type === 'workout')) fatStars += 1;
+  if (choTotal <= choTarget * 1.1) fatStars += 1;
+  fatStars = Math.min(5, fatStars);
+  let fatReason = '';
+  if (kcalTotal > kcalTarget) fatReason = 'Lieve surplus calorico: la lipolisi è stata inibita per favorire l\'accumulo.';
+  else if (choTotal > choTarget * 1.1) fatReason = 'Picchi insulinici eccessivi hanno bloccato l\'accesso alle riserve di grasso.';
+  else fatReason = 'Calorie e carboidrati sotto controllo: condizioni ideali per la perdita di grasso.';
+
+  const sleepEntry = L.find(e => e.type === 'sleep');
+  const sleepHours = sleepEntry?.duration ?? sleepEntry?.hours ?? 0;
+  const lateCaffeine = L.some(t => t.type === 'stimulant' && (parseFloat(t.time ?? t.mealTime ?? 0) >= 16));
+  const cenaEquiv = getEquivalentMealTypes('cena');
+  const dinnerCho = foods.filter(f => cenaEquiv.includes(f.mealType)).reduce((acc, item) => acc + (Number(item.carb ?? item.cho ?? 0) || 0), 0);
+
+  let neuroStars = 0;
+  let neuroReason = '';
+  if (sleepHours < 7) neuroReason = 'Il riposo breve ha impedito la ricarica completa dei neurotrasmettitori.';
+  else if (lateCaffeine) neuroReason = 'La caffeina dopo le 16:00 ha frammentato l\'architettura del tuo sonno profondo.';
+  else if (dinnerCho < 40) neuroReason = 'Mancata soppressione del cortisolo serale: il sistema nervoso è rimasto in allerta.';
+  if (sleepHours >= 8 && !lateCaffeine && dinnerCho >= 40) { neuroStars = 5; neuroReason = 'Sonno, timing caffeina e CHO a cena ottimali. Recupero neurologico completo.'; }
+  else if (sleepHours >= 7) {
+    neuroStars = !lateCaffeine ? 4 : 3;
+    if (dinnerCho >= 40) neuroStars = Math.min(5, neuroStars + 1);
+    neuroStars = Math.min(4, neuroStars);
+  } else if (sleepHours >= 6) neuroStars = Math.min(3, (lateCaffeine ? 2 : 3));
+  else if (sleepHours > 0) neuroStars = 1;
+  neuroStars = Math.min(5, Math.max(0, neuroStars));
+  if (!neuroReason) neuroReason = 'Sonno e abitudini serali da ottimizzare.';
+
+  let firstMealTime = 24;
+  let lastMealTime = 0;
+  foods.forEach(f => {
+    const t = parseFloat(f.mealTime ?? f.time ?? 12);
+    if (!Number.isNaN(t)) { if (t < firstMealTime) firstMealTime = t; if (t > lastMealTime) lastMealTime = t; }
+  });
+  const fastingHours = foods.length === 0 ? 24 : (24 - lastMealTime) + firstMealTime;
+  let fastStars = 0;
+  let fastReason = '';
+  if (fastingHours < 12) { fastStars = 0; fastReason = 'Finestra di alimentazione troppo ampia. L\'autofagia (pulizia cellulare) non si è attivata.'; }
+  else if (fastingHours < 14) { fastStars = 1; fastReason = 'Finestra di alimentazione troppo ampia. L\'autofagia (pulizia cellulare) non si è attivata.'; }
+  else if (fastingHours < 16) { fastStars = 3; fastReason = 'Buon inizio di riciclo cellulare. Il sistema ha iniziato a eliminare le proteine danneggiate.'; }
+  else { fastStars = 5; fastReason = 'Protocollo Gold: 16+ ore di digiuno hanno garantito una rigenerazione cellulare profonda.'; }
+
+  return {
+    ready: true,
+    muscle: { score: muscleStars, reason: muscleReason || 'Stimolo e nutrizione non allineati per la crescita.' },
+    fat: { score: fatStars, reason: fatReason },
+    neuro: { score: neuroStars, reason: neuroReason || 'Sonno e abitudini serali da ottimizzare.' },
+    fast: { score: fastStars, reason: fastReason }
+  };
+}
+
+function trendStarDelta(stars) {
+  const s = Math.max(0, Math.min(5, Math.floor(Number(stars) || 0)));
+  if (s >= 5) return 10;
+  if (s === 4) return 5;
+  if (s === 3) return 0;
+  if (s === 2) return -5;
+  return -10;
+}
+
+/**
+ * Trend cumulativo (score sintetico) per una metrica del report sui giorni precedenti (escluso oggi).
+ * @param {'muscle'|'fat'|'neuro'|'fast'} metricKey
+ */
+export function computeEvaluationTrend(trackerData, metricKey, userTargets, daysBack = 14) {
+  if (!trackerData || typeof trackerData !== 'object') return [];
+  const validKeys = ['muscle', 'fat', 'neuro', 'fast'];
+  if (!validKeys.includes(metricKey)) return [];
+
+  const today = getTodayString();
+  const n = Math.max(1, Math.min(120, Number(daysBack) || 14));
+  let accumulatore = 100;
+  const out = [];
+
+  for (let daysAgo = n; daysAgo >= 1; daysAgo--) {
+    const dateStr = addDays(today, -daysAgo);
+    const log = getLogFromStoricoTree(trackerData, dateStr);
+    const hasFood = log.some(e => e.type === 'food');
+    const hasWorkout = log.some(e => e.type === 'workout');
+    let starScore = 3;
+    if (log.length > 0 && (hasFood || hasWorkout)) {
+      const evals = computeDayEvaluations(log, userTargets);
+      const block = evals[metricKey];
+      starScore = typeof block?.score === 'number' ? block.score : 3;
+    }
+    accumulatore += trendStarDelta(starScore);
+    out.push({
+      date: dateStr.substring(5),
+      score: accumulatore,
+      stars: starScore
+    });
+  }
+
+  return out;
 }
 
 const STRATEGY_PROFILES = {
