@@ -1438,6 +1438,30 @@ export default function SalaComandi() {
     return bestMatch;
   };
 
+  /** Alimenti del diario che appartengono allo slot pasto (mealType o composito mealType_decimalTime come nel Pie). */
+  const getFoodItemsForMealSlot = useCallback((log, slotId) => {
+    if (slotId == null || slotId === 'rimanenti') return [];
+    const idStr = String(slotId);
+    const list = log || [];
+    let items = list.filter(item => getSlotKey(item) === idStr);
+    if (items.length === 0) {
+      const u = idStr.lastIndexOf('_');
+      if (u > 0) {
+        const baseMealType = idStr.slice(0, u);
+        const parsedTime = Number(idStr.slice(u + 1));
+        if (!Number.isNaN(parsedTime)) {
+          items = list.filter(item =>
+            item.type === 'food' &&
+            item.mealType === baseMealType &&
+            typeof item.mealTime === 'number' &&
+            Math.abs(item.mealTime - parsedTime) < 1e-4
+          );
+        }
+      }
+    }
+    return items;
+  }, []);
+
   /**
    * Carica un pasto nel costruttore. Accetta mealType o id composito "mealType_time" (es. snack_16.5).
    * Con id composito carica solo i food con quel mealType e quel mealTime.
@@ -1445,7 +1469,7 @@ export default function SalaComandi() {
   const loadMealToConstructor = (mTypeOrId) => {
     setAddedFoods([]);
     setEditingMealId(mTypeOrId);
-    let items = (activeLog || []).filter(item => getSlotKey(item) === String(mTypeOrId));
+    let items = getFoodItemsForMealSlot(activeLog, mTypeOrId);
 
     if (items.length === 0) {
       const canonical = toCanonicalMealType(String(mTypeOrId).split('_')[0]);
@@ -1472,6 +1496,7 @@ export default function SalaComandi() {
     setAddedFoods(items);
     setActiveAction('pasto');
     setIsDrawerOpen(true);
+    setIsMealBuilderOpen(true);
   };
 
   useEffect(() => {
@@ -1934,10 +1959,40 @@ export default function SalaComandi() {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
     if (isSimulationMode) return;
     if (node.type === 'meal') {
-      setEditingMealId(node.id);
+      const slotId = typeof node.time === 'number' && !Number.isNaN(node.time) ? `${node.id}_${node.time}` : String(node.id);
+      const foodsForSlot = getFoodItemsForMealSlot(activeLog, slotId);
+      if (foodsForSlot.length > 0) {
+        const toN = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (Number(v) || 0);
+        const kcal = foodsForSlot.reduce((a, f) => a + toN(f.kcal ?? f.cal), 0);
+        const prot = foodsForSlot.reduce((a, f) => a + toN(f.prot ?? f.proteine), 0);
+        const carb = foodsForSlot.reduce((a, f) => a + toN(f.carb ?? f.carboidrati), 0);
+        const fat = foodsForSlot.reduce((a, f) => a + toN(f.fat ?? f.fatTotal ?? f.grassi), 0);
+        const mType = foodsForSlot[0]?.mealType || String(node.id).split('_')[0];
+        const slot = String(mType).split('_')[0] || 'snack';
+        const baseName = MEAL_LABELS_SAVE?.[slot] || mType || 'Pasto';
+        let timeLabel = '';
+        if (typeof node.time === 'number') {
+          const h = Math.floor(node.time).toString().padStart(2, '0');
+          const m = Math.round((node.time % 1) * 60).toString().padStart(2, '0');
+          timeLabel = ` (${h}:${m})`;
+        }
+        setSelectedMealCenter({
+          id: slotId,
+          name: `${baseName}${timeLabel}`,
+          label: `${baseName}${timeLabel}`,
+          value: kcal,
+          kcal,
+          prot,
+          carb,
+          fat,
+          timeValue: node.time,
+          color: '#00e5ff',
+          fill: '#00e5ff',
+          payload: { macros: { pro: prot, carb, fat } }
+        });
+        return;
+      }
       loadMealToConstructor(node.id);
-      setActiveAction('pasto');
-      setIsDrawerOpen(true);
       return;
     }
     if (
@@ -1964,7 +2019,7 @@ export default function SalaComandi() {
       return;
     }
     setSelectedNodeReport(node);
-  }, [manualNodes, dailyLog, syncDatiFirebase, setManualNodes, isSimulationMode, loadMealToConstructor]);
+  }, [manualNodes, dailyLog, activeLog, syncDatiFirebase, setManualNodes, isSimulationMode, loadMealToConstructor, MEAL_LABELS_SAVE, getFoodItemsForMealSlot]);
 
   const handleAddWater = (amount) => {
     if (isSimulationMode) return;
@@ -4733,9 +4788,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (selectedMealCenter) {
-                          const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === selectedMealCenter.id || n.id === (selectedMealCenter.id && String(selectedMealCenter.id).split('_')[0])));
-                          if (mealNode) handleNodeTap(mealNode)();
+                        if (selectedMealCenter && selectedMealCenter.id && selectedMealCenter.id !== 'rimanenti') {
+                          loadMealToConstructor(selectedMealCenter.id);
                         }
                       }}
                       style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease', pointerEvents: selectedMealCenter ? 'auto' : 'none' }}
@@ -4796,8 +4850,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                               const pastoCorrente = mealPieData.find(m => m.id === data.id);
                               if (!pastoCorrente) return;
                               if (selectedMealCenter && selectedMealCenter.id === data.id) {
-                                const mealNode = allNodes.find(n => n.type === 'meal' && (n.id === data.id || n.id === (data.id && String(data.id).split('_')[0])));
-                                if (mealNode) handleNodeTap(mealNode)();
+                                loadMealToConstructor(data.id);
                               } else {
                                 setSelectedMealCenter(pastoCorrente);
                               }
@@ -4825,6 +4878,68 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </div>
                   </div>
                 </div>
+                {/* Scheda dettaglio pasto (sotto il quadrante) — allineata a selectedMealCenter / tap Timeline */}
+                {selectedMealCenter && selectedMealCenter.id && selectedMealCenter.id !== 'rimanenti' && (() => {
+                  const slotFoods = getFoodItemsForMealSlot(activeLog, selectedMealCenter.id);
+                  return (
+                    <div
+                      className="scheda-dettaglio-pasto"
+                      style={{
+                        width: '100%',
+                        maxWidth: '400px',
+                        margin: '0 auto 14px auto',
+                        padding: '12px 14px',
+                        background: '#121214',
+                        border: '1px solid #2a2a2e',
+                        borderRadius: '14px',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.45)'
+                      }}
+                    >
+                      <div style={{ fontSize: '0.72rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Scheda dettaglio pasto</div>
+                      <div style={{ fontSize: '1rem', fontWeight: '700', color: '#00e5ff', marginBottom: '10px' }}>
+                        {selectedMealCenter.name || selectedMealCenter.label}
+                      </div>
+                      {slotFoods.length === 0 ? (
+                        <p style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: '#666' }}>Nessun alimento registrato per questo slot.</p>
+                      ) : (
+                        <ul style={{ margin: '0 0 12px 0', paddingLeft: '18px', color: '#ccc', fontSize: '0.88rem', lineHeight: 1.5 }}>
+                          {slotFoods.map((f, idx) => {
+                            const label = f.desc || f.name || f.nome || 'Alimento';
+                            const g = Math.round(Number(f.qta ?? f.weight ?? 0) || 0);
+                            return (
+                              <li key={f.id || `${selectedMealCenter.id}-${idx}`} style={{ marginBottom: '4px' }}>
+                                {label} — {g} g
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          loadMealToConstructor(selectedMealCenter.id);
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          fontSize: '0.95rem',
+                          fontWeight: '800',
+                          letterSpacing: '0.06em',
+                          textTransform: 'uppercase',
+                          color: '#0a0a0a',
+                          background: 'linear-gradient(135deg, #00e5ff 0%, #00b8d4 100%)',
+                          border: 'none',
+                          borderRadius: '10px',
+                          cursor: 'pointer',
+                          boxShadow: '0 0 20px rgba(0,229,255,0.35)'
+                        }}
+                      >
+                        Modifica pasto
+                      </button>
+                    </div>
+                  );
+                })()}
                 {/* Box macronutrienti neon (3 colonne) */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', width: '100%', marginBottom: '12px' }}>
                   <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
