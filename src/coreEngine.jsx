@@ -1325,41 +1325,43 @@ function normalizeSleepEntry(entry) {
 }
 
 /**
- * Giornata con allenamento: log workout o nodo timeline workout; oppure kcal workout nel log; testo/tag "allenamento".
+ * Giornata con allenamento “pesante” per accumulo SNC: singola sessione workout, soglie kcal/durata, no tag testuali.
  */
 function dayHasTrainingFromLogs(log, manualNodes) {
-  // Funzione di validazione per una SINGOLA attività
   const isHeavySncWorkout = (entry) => {
     if (!entry || entry.type !== 'workout') return false;
 
     const desc = String(entry.desc || entry.name || entry.workoutType || '').toLowerCase();
 
-    // 1. Ignora categoricamente le attività di recupero attivo / basso impatto SNC
-    const lightActivities = ['camminat', 'walking', 'passi', 'passeggiat', 'stretching', 'yoga', 'pilates', 'meditazione'];
-    if (lightActivities.some(light => desc.includes(light))) {
-      return false;
-    }
+    // 1. Ampliamo le attività di recupero attivo ignorate
+    const lightActivities = [
+      'camminat', 'walking', 'passi', 'passeggiat', 'stretching',
+      'yoga', 'pilates', 'meditazione', 'riscaldamento', 'warmup',
+      'defaticamento', 'recupero', 'posturale', 'mobilita', 'mobilità'
+    ];
+    if (lightActivities.some(light => desc.includes(light))) return false;
 
-    // 2. Valuta l'intensità della SINGOLA sessione (non la somma giornaliera)
+    // 2. Normalizzazione durata (gestisce sia ore decimali che minuti netti)
+    let dur = Number(entry.duration);
+    if (isNaN(dur)) dur = 0;
+    // Se maggiore di 5, si presume siano minuti (es. 30). Se minore, ore (es. 0.5 = 30min).
+    const durationInMinutes = dur > 5 ? dur : dur * 60;
+
     const kcal = Number(entry.kcal ?? entry.cal ?? 0);
-    const duration = Number(entry.duration);
-    const isValidDuration = !isNaN(duration) ? duration >= 0.33 : false; // Almeno 20 minuti
 
-    return kcal >= 150 || isValidDuration;
+    // 3. Soglia di intensità VERA per affaticare il Sistema Nervoso Centrale:
+    // Un'attività sotto le 250 kcal o sotto i 35 minuti NON distrugge il SNC, è scarico attivo.
+    if (kcal > 0 && kcal < 250 && durationInMinutes < 35) return false;
+    if (kcal === 0 && durationInMinutes < 35) return false;
+
+    return true;
   };
 
-  // Controlla i nodi inseriti manualmente
   if ((manualNodes || []).some(isHeavySncWorkout)) return true;
+  if ((log || []).some(isHeavySncWorkout)) return true;
 
-  // Controlla il diario loggato (es. import da smartwatch) - Niente più somme!
-  const L = log || [];
-  if (L.some(isHeavySncWorkout)) return true;
-
-  // Fallback: Controlla se l'utente ha inserito un tag specifico e isolato
-  const tags = L.map(e => String(e?.tag || e?.tags || '').toLowerCase().trim());
-  const exactWorkoutTags = ['workout', 'pesi', 'palestra', 'allenamento', 'training', 'wod', 'crossfit'];
-  if (tags.some(t => exactWorkoutTags.includes(t))) return true;
-
+  // ELIMINATO: Rimossa completamente la ricerca dei tag testuali ('allenamento')
+  // sui cibi e sulle note generiche che causava il 90% dei falsi positivi.
   return false;
 }
 
@@ -1376,6 +1378,7 @@ function daySleepAddsStressLoad(sleepEntry) {
 
 /**
  * Accumulo stress SNC (carico allostatico) 0–100 dall'ultimo `daysBack` giorni di storico Firebase.
+ * Scarico incrementale: più giorni di riposo consecutivi, più reset rapido.
  * @param {Record<string, { log?: unknown, manualNodes?: unknown[] }>} trackerData - tracker_data (chiavi trackerStorico_YYYY-MM-DD)
  * @param {number} [daysBack=60]
  */
@@ -1399,10 +1402,14 @@ function computeAccumuloSNC(trackerData, daysBack = 60) {
       restDaysStreak = 0;
     } else {
       restDaysStreak += 1;
-      if (restDaysStreak >= 3) {
-        accumulo = Math.max(0, accumulo - 10);
+      // Recupero incrementale: più riposi consecutivamente, più il SNC si resetta in fretta
+      if (restDaysStreak === 1) {
+        accumulo = Math.max(0, accumulo - 2.5);
+      } else if (restDaysStreak === 2) {
+        accumulo = Math.max(0, accumulo - 5.0);
       } else {
-        accumulo = Math.max(0, accumulo - 1.5);
+        // Dal 3° giorno scatta il Deep Flush (Settimana di scarico)
+        accumulo = Math.max(0, accumulo - 10.0);
       }
     }
 
