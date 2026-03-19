@@ -257,6 +257,22 @@ function responseCurve(t, peakTime, duration) {
   return Math.max(0, peak);
 }
 
+/**
+ * Pilota automatico idratazione: nessun record acqua nel diario e nessun nodo acqua sulla timeline
+ * → il motore assume idratazione ottimale (nessun malus da disidratazione).
+ */
+function computeWaterHydrationAutoPilot(dailyLog, timelineNodes) {
+  const log = dailyLog || [];
+  const waterLogs = log.filter(
+    e =>
+      e?.type === 'water' ||
+      e?.id === 'water' ||
+      (typeof e?.id === 'string' && e.id.startsWith('water_'))
+  );
+  const waterNodes = (timelineNodes || []).filter(n => n?.type === 'water');
+  return waterLogs.length === 0 && waterNodes.length === 0;
+}
+
 /** Centralized physiological simulation coefficients for tuning and maintenance. */
 const PHYSIOLOGY_CONFIG = {
   energyDecayPerHour: 2,
@@ -281,8 +297,9 @@ const PHYSIOLOGY_CONFIG = {
  * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
  * Restituisce { chartData, realTotals } per grafico doppia curva e semafori.
  */
-function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, waterAutopilot = false, currentTime = null) {
+function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, currentTime = null) {
   const log = dailyLog || [];
+  const isWaterAutoPilot = computeWaterHydrationAutoPilot(log, timelineNodes);
   const ideal = idealStrategy || {};
   const model = {
     caffeineSensitivity: clampModelValue(userModel?.caffeineSensitivity ?? 1),
@@ -561,23 +578,26 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       metabolicEnergy * 0.4;
     currentEnergy = Math.min(combinedEnergy, neuralEnergy);
 
-    currentHydration -= PHYSIOLOGY_CONFIG.hydrationDecayPerHour;
-    (timelineNodes || []).forEach(node => {
-      if (node.type === 'water' && node.time >= h && node.time < h + 1) {
-        const ml = node.ml ?? node.amount ?? 250;
-        currentHydration += (ml / (dailyWaterGoal || 2500)) * 45;
-      }
-      if ((node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') && h >= node.time && h <= node.time + (node.duration || 1)) {
-        currentHydration -= 8.0;
-      }
-      if (node.type === 'stimulant' && node.time >= h && node.time < h + 1) {
-        const sub = (node.subtype || 'caffè').toLowerCase();
-        const malus = sub === 'energy drink' ? 15 : sub === 'caffè' ? 10 : 5;
-        currentHydration -= malus;
-      }
-    });
-    currentHydration = Math.max(0, Math.min(100, currentHydration));
-    if (waterAutopilot) currentHydration = Math.max(currentHydration, 87);
+    if (!isWaterAutoPilot) {
+      currentHydration -= PHYSIOLOGY_CONFIG.hydrationDecayPerHour;
+      (timelineNodes || []).forEach(node => {
+        if (node.type === 'water' && node.time >= h && node.time < h + 1) {
+          const ml = node.ml ?? node.amount ?? 250;
+          currentHydration += (ml / (dailyWaterGoal || 2500)) * 45;
+        }
+        if ((node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') && h >= node.time && h <= node.time + (node.duration || 1)) {
+          currentHydration -= 8.0;
+        }
+        if (node.type === 'stimulant' && node.time >= h && node.time < h + 1) {
+          const sub = (node.subtype || 'caffè').toLowerCase();
+          const malus = sub === 'energy drink' ? 15 : sub === 'caffè' ? 10 : 5;
+          currentHydration -= malus;
+        }
+      });
+      currentHydration = Math.max(0, Math.min(100, currentHydration));
+    } else {
+      currentHydration = 100;
+    }
 
     currentEnergy = Math.max(0, Math.min(100, currentEnergy));
     currentIdealEnergy = Math.max(0, Math.min(100, currentIdealEnergy));
@@ -602,7 +622,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     }
     currentCortisol += (cortisolBase - currentCortisol) * 0.3;
     if (currentEnergy < 35) { currentCortisol += 8; globalCortisolRisk = true; }
-    if (currentHydration < 45) { currentCortisol += 6 * model.hydrationSensitivity; globalCortisolRisk = true; }
+    if (!isWaterAutoPilot && currentHydration < 45) { currentCortisol += 6 * model.hydrationSensitivity; globalCortisolRisk = true; }
     (timelineNodes || []).forEach(node => {
       if (h >= node.time && h < node.time + (node.duration || 1)) {
         if (node.type === 'workout') {
@@ -681,7 +701,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     gl += (85 - gl) * 0.25;
     currentCortisol += (20 - currentCortisol) * 0.10;
-    currentHydration += (80 - currentHydration) * 0.05;
+    if (!isWaterAutoPilot) {
+      currentHydration += (80 - currentHydration) * 0.05;
+    } else {
+      currentHydration = 100;
+    }
 
     // Mild homeostatic stabilization toward baseline only during sleep (after wake, no pull-up)
     if (isSleeping) {
@@ -723,7 +747,15 @@ if (isSleeping) {
       if ((pt.cortisolo ?? 0) < 70) globalCortisolRisk = false;
     }
   }
-  return { chartData: out, realTotals, hasCrashRisk: globalCrashRisk, hasCortisolRisk: globalCortisolRisk, hasDigestionRisk, nervousSystemLoad: load };
+  return {
+    chartData: out,
+    realTotals,
+    hasCrashRisk: globalCrashRisk,
+    hasCortisolRisk: globalCortisolRisk,
+    hasDigestionRisk,
+    nervousSystemLoad: load,
+    isWaterHydrationAutoPilot: isWaterAutoPilot
+  };
 }
 
 /** Normalized driver signals for which physiological factors are pushing energy up or down. */
@@ -1775,6 +1807,7 @@ export {
   computeDigestiveLoad,
   responseCurve,
   PHYSIOLOGY_CONFIG,
+  computeWaterHydrationAutoPilot,
   generateRealEnergyData,
   computeEnergyDrivers,
   computeMetabolicStress,

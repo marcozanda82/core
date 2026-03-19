@@ -39,6 +39,7 @@ import {
   computeDigestiveLoad,
   responseCurve,
   PHYSIOLOGY_CONFIG,
+  computeWaterHydrationAutoPilot,
   generateRealEnergyData,
   computeEnergyDrivers,
   computeMetabolicStress,
@@ -107,7 +108,6 @@ export default function SalaComandi() {
   const highlightResetTimeoutRef = useRef(null);
   const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
-  const [isWaterAutopilot, setIsWaterAutopilot] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
@@ -592,6 +592,12 @@ export default function SalaComandi() {
     if (effectiveWakeTimeForSleep == null) return log;
     return log.map(e => e.type === 'sleep' ? { ...e, wakeTime: effectiveWakeTimeForSleep } : e);
   }, [activeLog, effectiveWakeTimeForSleep]);
+
+  /** Pilota idratazione: nessun record acqua → nessun malus; un solo log/nodo acqua attiva il calcolo reale. */
+  const isWaterHydrationAutoPilot = useMemo(
+    () => computeWaterHydrationAutoPilot(dailyLogForEnergy, nodesForEnergySimulation),
+    [dailyLogForEnergy, nodesForEnergySimulation]
+  );
 
   const allNodesWithStack = useMemo(() => {
     const endTime = (n) => {
@@ -2411,7 +2417,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
     try {
       const foodDbNames = Object.keys(foodDb || {}).map(k => foodDb[k]?.desc || foodDb[k]?.name || k).filter(Boolean).slice(0, 150);
-      const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad, false, currentTime);
+      const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad, currentTime);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
       const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
@@ -3081,7 +3087,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       nervousSystemLoad: 0
     };
   } else {
-    energySimulation = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad, isWaterAutopilot, currentTime);
+    energySimulation = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad, currentTime);
   }
   const chartData = energySimulation?.chartData ?? [];
   const dailyReportDisplay = useMemo(() => {
@@ -3091,7 +3097,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const neuroReasonBase = typeof neuroVal === 'object' ? neuroVal.reason : '';
     if (!chartData || chartData.length === 0) return dailyReport;
     const minIdr = Math.min(...chartData.map(p => p.idratazione ?? 100));
-    const neuroMalus = minIdr < 45 ? 1 : 0;
+    const neuroMalus = !isWaterHydrationAutoPilot && minIdr < 45 ? 1 : 0;
     const neuroReason = neuroMalus
       ? (neuroReasonBase ? `${neuroReasonBase} DISIDRATAZIONE: Il cervello ha lavorato in condizioni di stress osmotico.` : 'DISIDRATAZIONE: Il cervello ha lavorato in condizioni di stress osmotico.')
       : neuroReasonBase;
@@ -3099,7 +3105,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       ...dailyReport,
       neuro: { score: Math.max(0, neuroScore - neuroMalus), reason: neuroReason }
     };
-  }, [dailyReport, chartData]);
+  }, [dailyReport, chartData, isWaterHydrationAutoPilot]);
   const realTotals = energySimulation?.realTotals ?? {};
   const hasCrashRisk = energySimulation?.hasCrashRisk ?? false;
   const hasCortisolRisk = energySimulation?.hasCortisolRisk ?? false;
@@ -3175,7 +3181,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const dotIdratazione = chartData.length > 0
     ? (chartData[currentH]?.idratazione ?? 100) + ((chartData[nextH]?.idratazione ?? 100) - (chartData[currentH]?.idratazione ?? 100)) * fraction
     : 100;
-  const hasWaterRisk = dotIdratazione < 40;
+  const hasWaterRisk = !isWaterHydrationAutoPilot && dotIdratazione < 40;
   const dotCortisolo = chartData.length > 0
     ? (chartData[currentH]?.cortisolo ?? 25) + ((chartData[nextH]?.cortisolo ?? 25) - (chartData[currentH]?.cortisolo ?? 25)) * fraction
     : 25;
@@ -4424,8 +4430,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
               <button type="button" onClick={handleUndo} disabled={historyIndex <= 0} title="Annulla" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: historyIndex <= 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: historyIndex <= 0 ? '#444' : '#00e5ff', fontSize: '1.1rem', cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer' }} aria-label="Annulla">↩</button>
               <button type="button" onClick={handleRedo} disabled={historyIndex >= historyStack.length - 1} title="Ripeti" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: historyIndex >= historyStack.length - 1 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: historyIndex >= historyStack.length - 1 ? '#444' : '#00e5ff', fontSize: '1.1rem', cursor: historyIndex >= historyStack.length - 1 ? 'not-allowed' : 'pointer' }} aria-label="Ripeti">↪</button>
-              {chartUnit === 'idratazione' && (
-                <button type="button" onClick={() => setIsWaterAutopilot(prev => !prev)} title={isWaterAutopilot ? 'Disattiva Pilota Automatico Idratazione' : 'Attiva Pilota Automatico Idratazione'} style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isWaterAutopilot ? 'rgba(0, 229, 255, 0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${isWaterAutopilot ? '#00e5ff' : '#333'}`, borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label={isWaterAutopilot ? 'Pilota idratazione ON' : 'Pilota idratazione OFF'}>🤖💧</button>
+              {chartUnit === 'idratazione' && isWaterHydrationAutoPilot && (
+                <span title="Nessun record acqua: il motore assume idratazione ottimale (100%). Aggiungi acqua dal diario per il tracking reale." style={{ fontSize: '0.65rem', color: '#00e5ff', opacity: 0.9, maxWidth: '140px', lineHeight: 1.2, textAlign: 'right' }}>🤖 Pilota idratazione attivo</span>
               )}
               <button type="button" onClick={() => { setExpandedChart(chartUnit); setActiveHighlight(null); }} title="Dettagli / Telemetria" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label="Dettagli grafico">🎯</button>
               <button type="button" onClick={enterFullscreen} title="Fullscreen" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label="Apri a tutto schermo">⛶</button>
