@@ -323,6 +323,9 @@ export default function SalaComandi() {
     return computeAccumuloSNC(fullHistory, 60);
   }, [fullHistory]);
 
+  // Alias semantico: livello SNC usato in UI / allarmi.
+  const sncStressLevel = accumuloSNC;
+
   const [idealStrategy, setIdealStrategy] = useState(() => {
     const saved = localStorage.getItem('vyta_idealStrategy');
     return saved ? JSON.parse(saved) : { colazione: 400, pranzo: 700, spuntino: 250, cena: 500, allenamento: 300 };
@@ -4415,6 +4418,51 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
             <span style={{ fontSize: '0.65rem', color: '#666' }}>🩸 {Math.round(gl)} · ⚙️ {Math.round(dig)}%</span>
           </div>
+          {sncStressLevel >= 85 ? (
+            <div
+              style={{
+                background: 'rgba(239, 68, 68, 0.14)',
+                border: '1px solid rgba(239, 68, 68, 0.55)',
+                borderRadius: '12px',
+                padding: '10px 12px',
+                marginTop: '10px',
+                color: '#fff',
+                boxShadow: '0 0 20px rgba(239, 68, 68, 0.12)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.05rem', color: '#ef4444' }}>⚠️</span>
+                <div style={{ fontWeight: 900, lineHeight: 1.2 }}>
+                  Allarme Overtraining: Sistema Nervoso Centrale saturo al {Math.round(sncStressLevel)}%.
+                </div>
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#ffd1d1', marginTop: '6px' }}>
+                Si consigliano 3-5 giorni di scarico attivo per resettare l&apos;energia massima.
+              </div>
+            </div>
+          ) : sncStressLevel > 65 ? (
+            <div
+              style={{
+                background: 'rgba(255, 152, 0, 0.12)',
+                border: '1px solid rgba(255, 152, 0, 0.45)',
+                borderRadius: '12px',
+                padding: '10px 12px',
+                marginTop: '10px',
+                color: '#fff',
+                boxShadow: '0 0 20px rgba(255, 152, 0, 0.12)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.05rem', color: '#ff9800' }}>⚡</span>
+                <div style={{ fontWeight: 900, lineHeight: 1.2 }}>
+                  Affaticamento SNC in accumulo.
+                </div>
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#ffe9c2', marginTop: '6px' }}>
+                Accumulo SNC attuale: {Math.round(sncStressLevel)}%.
+              </div>
+            </div>
+          ) : null}
           <div
             role="button"
             tabIndex={0}
