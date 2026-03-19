@@ -297,9 +297,10 @@ const PHYSIOLOGY_CONFIG = {
  * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
  * Restituisce { chartData, realTotals } per grafico doppia curva e semafori.
  */
-function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, currentTime = null) {
+function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, currentTime = null, accumuloSNC = 0) {
   const log = dailyLog || [];
   const isWaterAutoPilot = computeWaterHydrationAutoPilot(log, timelineNodes);
+  const maxEnergyCap = Math.max(0, Math.min(100, 100 - (Number(accumuloSNC) || 0) * 0.25));
   const ideal = idealStrategy || {};
   const model = {
     caffeineSensitivity: clampModelValue(userModel?.caffeineSensitivity ?? 1),
@@ -603,6 +604,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     currentIdealEnergy = Math.max(0, Math.min(100, currentIdealEnergy));
 
     currentEnergy = currentEnergy * 0.7 + previousEnergy * 0.3;
+    currentEnergy = Math.min(currentEnergy, maxEnergyCap);
     previousEnergy = currentEnergy;
 
     console.log("Simulated energy:", currentEnergy);
@@ -720,10 +722,11 @@ if (isSleeping) {
       peakNeuroAtWake = Math.max(peakNeuroAtWake ?? 0, currentNeuro);
     }
 
+    const energyCapped = Math.min(useContinuityAtZero ? initialEnergy : currentEnergy, maxEnergyCap);
     out.push({
       time: h,
       hour: h,
-      energy: useContinuityAtZero ? initialEnergy : currentEnergy,
+      energy: energyCapped,
       idealEnergy: useContinuityAtZero ? (initialIdealEnergy ?? initialEnergy) : currentIdealEnergy,
       glicemia: Math.max(55, Math.min(250, gl)),
       idratazione: currentHydration,
@@ -754,7 +757,9 @@ if (isSleeping) {
     hasCortisolRisk: globalCortisolRisk,
     hasDigestionRisk,
     nervousSystemLoad: load,
-    isWaterHydrationAutoPilot: isWaterAutoPilot
+    isWaterHydrationAutoPilot: isWaterAutoPilot,
+    accumuloSNC: Number(accumuloSNC) || 0,
+    maxEnergyCap
   };
 }
 
@@ -1319,6 +1324,74 @@ function normalizeSleepEntry(entry) {
   return out;
 }
 
+/**
+ * Giornata con allenamento: log workout o nodo timeline workout; oppure kcal workout nel log; testo/tag "allenamento".
+ */
+function dayHasTrainingFromLogs(log, manualNodes) {
+  if ((manualNodes || []).some(n => n && n.type === 'workout')) return true;
+  const L = log || [];
+  if (L.some(e => e && e.type === 'workout')) return true;
+  let workoutKcal = 0;
+  L.forEach(e => {
+    if (e?.type === 'workout') workoutKcal += Number(e.kcal ?? e.cal) || 0;
+  });
+  if (workoutKcal >= 80) return true;
+  const blob = L.map(e => `${e?.desc || ''} ${e?.name || ''} ${e?.tag || ''} ${e?.tags || ''}`).join(' ').toLowerCase();
+  return blob.includes('allenamento');
+}
+
+/** Sonno "pessimo" o sotto 6h → +1 punto sul carico (opzionale in computeAccumuloSNC). */
+function daySleepAddsStressLoad(sleepEntry) {
+  if (!sleepEntry) return false;
+  const h = Number(
+    sleepEntry.hours ?? sleepEntry.duration ?? sleepEntry.sleepHours ?? sleepEntry.sleepDuration ?? 0
+  );
+  if (h > 0 && h < 6) return true;
+  const q = String(sleepEntry.quality ?? sleepEntry.sleepQuality ?? sleepEntry.rating ?? '').toLowerCase();
+  return q.includes('pess');
+}
+
+/**
+ * Accumulo stress SNC (carico allostatico) 0–100 dall'ultimo `daysBack` giorni di storico Firebase.
+ * @param {Record<string, { log?: unknown, manualNodes?: unknown[] }>} trackerData - tracker_data (chiavi trackerStorico_YYYY-MM-DD)
+ * @param {number} [daysBack=60]
+ */
+function computeAccumuloSNC(trackerData, daysBack = 60) {
+  if (!trackerData || typeof trackerData !== 'object') return 0;
+  const today = getTodayString();
+  const n = Math.max(1, Math.min(366, Number(daysBack) || 60));
+  let accumulo = 0;
+  let restDaysStreak = 0;
+
+  for (let back = n - 1; back >= 0; back--) {
+    const dateStr = addDays(today, -back);
+    const key = TRACKER_STORICO_KEY(dateStr);
+    const node = trackerData[key];
+    const rawLog = node?.log;
+    const manualNodes = Array.isArray(node?.manualNodes) ? node.manualNodes : [];
+    const log = normalizeLogData(Array.isArray(rawLog) ? rawLog : rawLog != null ? Object.values(rawLog) : []);
+
+    if (dayHasTrainingFromLogs(log, manualNodes)) {
+      accumulo = Math.min(100, accumulo + 4);
+      restDaysStreak = 0;
+    } else {
+      restDaysStreak += 1;
+      if (restDaysStreak >= 3) {
+        accumulo = Math.max(0, accumulo - 10);
+      } else {
+        accumulo = Math.max(0, accumulo - 1.5);
+      }
+    }
+
+    const sleepEntry = log.find(e => e && (e.type === 'sleep' || isSleepEntry(e)));
+    if (daySleepAddsStressLoad(sleepEntry)) {
+      accumulo = Math.min(100, accumulo + 1);
+    }
+  }
+
+  return Math.max(0, Math.min(100, accumulo));
+}
+
 /** Normalizza log da formato vecchio (meal/items, single, workout) a lista piatta. */
 function normalizeLogData(rawLog) {
   const out = [];
@@ -1808,6 +1881,7 @@ export {
   responseCurve,
   PHYSIOLOGY_CONFIG,
   computeWaterHydrationAutoPilot,
+  computeAccumuloSNC,
   generateRealEnergyData,
   computeEnergyDrivers,
   computeMetabolicStress,
