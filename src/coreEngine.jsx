@@ -1328,32 +1328,36 @@ function normalizeSleepEntry(entry) {
  * Giornata con allenamento: log workout o nodo timeline workout; oppure kcal workout nel log; testo/tag "allenamento".
  */
 function dayHasTrainingFromLogs(log, manualNodes) {
-  // 1. Controllo nodi manuali (ignora micro-attività sotto i 20 min o 150 kcal)
-  const validManual = (manualNodes || []).some(n =>
-    n && n.type === 'workout' && ((n.duration || 1) >= 0.33 || (n.kcal || n.cal || 0) >= 150)
-  );
-  if (validManual) return true;
+  // Funzione di validazione per una SINGOLA attività
+  const isHeavySncWorkout = (entry) => {
+    if (!entry || entry.type !== 'workout') return false;
 
-  const L = log || [];
+    const desc = String(entry.desc || entry.name || entry.workoutType || '').toLowerCase();
 
-  // 2. Controllo log diario (somma e filtra i workout reali)
-  let workoutKcal = 0;
-  let workoutDuration = 0;
-  L.forEach(e => {
-    if (e?.type === 'workout') {
-      workoutKcal += Number(e.kcal ?? e.cal) || 0;
-      workoutDuration += Number(e.duration) || 0;
+    // 1. Ignora categoricamente le attività di recupero attivo / basso impatto SNC
+    const lightActivities = ['camminat', 'walking', 'passi', 'passeggiat', 'stretching', 'yoga', 'pilates', 'meditazione'];
+    if (lightActivities.some(light => desc.includes(light))) {
+      return false;
     }
-  });
 
-  // Un VERO allenamento che impatta il SNC deve bruciare almeno 150 kcal o durare almeno 20 minuti.
-  if (workoutKcal >= 150 || workoutDuration >= 0.33) return true;
+    // 2. Valuta l'intensità della SINGOLA sessione (non la somma giornaliera)
+    const kcal = Number(entry.kcal ?? entry.cal ?? 0);
+    const duration = Number(entry.duration);
+    const isValidDuration = !isNaN(duration) ? duration >= 0.33 : false; // Almeno 20 minuti
 
-  // 3. Match testuale corretto (Evita falsi positivi come stringhe "no allenamento" o "barretta pre-allenamento")
-  // Controlliamo SOLO tag specifici e isolati.
+    return kcal >= 150 || isValidDuration;
+  };
+
+  // Controlla i nodi inseriti manualmente
+  if ((manualNodes || []).some(isHeavySncWorkout)) return true;
+
+  // Controlla il diario loggato (es. import da smartwatch) - Niente più somme!
+  const L = log || [];
+  if (L.some(isHeavySncWorkout)) return true;
+
+  // Fallback: Controlla se l'utente ha inserito un tag specifico e isolato
   const tags = L.map(e => String(e?.tag || e?.tags || '').toLowerCase().trim());
-  const exactWorkoutTags = ['workout', 'pesi', 'palestra', 'allenamento', 'training', 'wod'];
-
+  const exactWorkoutTags = ['workout', 'pesi', 'palestra', 'allenamento', 'training', 'wod', 'crossfit'];
   if (tags.some(t => exactWorkoutTags.includes(t))) return true;
 
   return false;
