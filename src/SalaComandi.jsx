@@ -4808,16 +4808,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                               if (data.id === 'rimanenti') return;
                               const pastoCorrente = mealPieData.find(m => m.id === data.id);
                               if (!pastoCorrente) return;
-                              const mealName = pastoCorrente.name || data.name || data.id;
-                              const mealId = pastoCorrente.id || data.id || String(mealName).toLowerCase().split(' ')[0];
+                              const entry = pastoCorrente;
+                              const mealName = entry.name || entry.id || 'Pasto';
+                              let genericId = entry.id ? String(entry.id).toLowerCase() : String(mealName).toLowerCase().split(' ')[0];
+
+                              const canonical = toCanonicalMealType(genericId);
+
+                              const logItems = (activeLog || []).filter(
+                                (f) => f.type === 'food' && toCanonicalMealType(f.mealType) === canonical
+                              );
+
+                              const exactId = logItems.length > 0 ? logItems[0].mealType : genericId;
+
                               setSelectedMealCenter(pastoCorrente);
                               setSelectedNodeReport({
                                 type: 'meal',
-                                id: mealId,
-                                name: mealName,
-                                ...(typeof pastoCorrente.timeValue === 'number' && !Number.isNaN(pastoCorrente.timeValue)
-                                  ? { time: pastoCorrente.timeValue }
-                                  : {})
+                                id: exactId,
+                                name: mealName
                               });
                             }}
                             style={{ cursor: 'pointer', outline: 'none' }}
