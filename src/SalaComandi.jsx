@@ -395,6 +395,7 @@ export default function SalaComandi() {
     currentLiveTime: 0
   });
   const timelineContainerRef = useRef(null);
+  const alcoholPopupTimelineRef = useRef(null);
   const chartScrollRef = useRef(null);
   const initialPinchDistance = useRef(null);
   const initialZoomLevel = useRef(1);
@@ -2027,6 +2028,9 @@ export default function SalaComandi() {
     syncDatiFirebase(dailyLog, next);
     setShowAlcoholPopup(false);
   };
+
+  const getAlcoholGlassIcon = (type) => (type === 'birra' ? '🍺' : type === 'vino' ? '🍷' : '🥃');
+  const getAlcoholBaseMl = (type) => (type === 'birra' ? 330 : type === 'vino' ? 150 : 40);
 
   const handleAddWater = (amount) => {
     if (isSimulationMode) return;
@@ -3825,48 +3829,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
 
             {/* SINGOLA BARRA NODI (TimelineNodi) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '60px', flexShrink: 0, marginTop: '10px', marginBottom: '10px' }}>
-              <div style={{ flex: 1, minWidth: 0, height: '60px' }}>
-                <TimelineNodi
-                  activeNodesWithStack={activeNodesWithStack}
-                  chartUnit={chartUnit}
-                  activeAction={activeAction}
-                  idealStrategy={idealStrategy}
-                  realTotals={realTotals}
-                  NODE_IMPORTANCE={NODE_IMPORTANCE}
-                  NODE_TYPE_ICON={NODE_TYPE_ICON}
-                  draggingNode={draggingNode}
-                  touchingNodeId={touchingNodeId}
-                  dragOffsetY={dragOffsetY}
-                  dragLiveTime={dragLiveTime}
-                  timelineContainerRef={timelineContainerRef}
-                  startNodeDrag={startNodeDrag}
-                  releaseNodePointer={releaseNodePointer}
-                  handleNodeTap={handleNodeTap}
-                  decimalToTimeStr={decimalToTimeStr}
-                  syncDatiFirebase={syncDatiFirebase}
-                  setManualNodes={setManualNodes}
-                  setDailyLog={setDailyLog}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (isSimulationMode) return;
-                  const now = new Date();
-                  setAlcoholForm({
-                    subtype: 'vino',
-                    ml: 150,
-                    abv: 12,
-                    timeStr: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-                  });
-                  setShowAlcoholPopup(true);
-                }}
-                style={{ background: '#2a2a2c', border: '1px solid #444', borderRadius: '12px', padding: '10px 15px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flexShrink: 0 }}
-              >
-                <span>🍷</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Alcol</span>
-              </button>
+            <div style={{ height: '60px', flexShrink: 0, marginTop: '10px', marginBottom: '10px' }}>
+              <TimelineNodi
+                activeNodesWithStack={activeNodesWithStack}
+                chartUnit={chartUnit}
+                activeAction={activeAction}
+                idealStrategy={idealStrategy}
+                realTotals={realTotals}
+                NODE_IMPORTANCE={NODE_IMPORTANCE}
+                NODE_TYPE_ICON={NODE_TYPE_ICON}
+                draggingNode={draggingNode}
+                touchingNodeId={touchingNodeId}
+                dragOffsetY={dragOffsetY}
+                dragLiveTime={dragLiveTime}
+                timelineContainerRef={timelineContainerRef}
+                startNodeDrag={startNodeDrag}
+                releaseNodePointer={releaseNodePointer}
+                handleNodeTap={handleNodeTap}
+                decimalToTimeStr={decimalToTimeStr}
+                syncDatiFirebase={syncDatiFirebase}
+                setManualNodes={setManualNodes}
+                setDailyLog={setDailyLog}
+              />
             </div>
           </div>
         </div>
@@ -4738,48 +4722,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {/* Hitbox: blocca tap sul grafico nella fascia timeline (left/right allineati a YAxis) */}
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50px', right: '15px', pointerEvents: 'none' }} aria-hidden="true" />
               {/* Timeline nodi nel "buco" sotto il grafico (absolute + bottom 0) */}
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px', zIndex: 10, display: 'flex', alignItems: 'center', gap: '10px', paddingLeft: '0', paddingRight: '0', boxSizing: 'border-box' }}>
-                <div style={{ flex: 1, minWidth: 0, height: '60px' }}>
-                  <TimelineNodi
-                    activeNodesWithStack={activeNodesWithStack}
-                    chartUnit={chartUnit}
-                    activeAction={activeAction}
-                    idealStrategy={idealStrategy}
-                    realTotals={realTotals}
-                    NODE_IMPORTANCE={NODE_IMPORTANCE}
-                    NODE_TYPE_ICON={NODE_TYPE_ICON}
-                    draggingNode={draggingNode}
-                    touchingNodeId={touchingNodeId}
-                    dragOffsetY={dragOffsetY}
-                    dragLiveTime={dragLiveTime}
-                    timelineContainerRef={timelineContainerRef}
-                    startNodeDrag={startNodeDrag}
-                    releaseNodePointer={releaseNodePointer}
-                    handleNodeTap={handleNodeTap}
-                    decimalToTimeStr={decimalToTimeStr}
-                    syncDatiFirebase={syncDatiFirebase}
-                    setManualNodes={setManualNodes}
-                    setDailyLog={setDailyLog}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isSimulationMode) return;
-                    const now = new Date();
-                    setAlcoholForm({
-                      subtype: 'vino',
-                      ml: 150,
-                      abv: 12,
-                      timeStr: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-                    });
-                    setShowAlcoholPopup(true);
-                  }}
-                  style={{ background: '#2a2a2c', border: '1px solid #444', borderRadius: '12px', padding: '10px 12px', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', flexShrink: 0, marginRight: '8px' }}
-                >
-                  <span>🍷</span>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Alcol</span>
-                </button>
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px', zIndex: 10 }}>
+                <TimelineNodi
+                  activeNodesWithStack={activeNodesWithStack}
+                  chartUnit={chartUnit}
+                  activeAction={activeAction}
+                  idealStrategy={idealStrategy}
+                  realTotals={realTotals}
+                  NODE_IMPORTANCE={NODE_IMPORTANCE}
+                  NODE_TYPE_ICON={NODE_TYPE_ICON}
+                  draggingNode={draggingNode}
+                  touchingNodeId={touchingNodeId}
+                  dragOffsetY={dragOffsetY}
+                  dragLiveTime={dragLiveTime}
+                  timelineContainerRef={timelineContainerRef}
+                  startNodeDrag={startNodeDrag}
+                  releaseNodePointer={releaseNodePointer}
+                  handleNodeTap={handleNodeTap}
+                  decimalToTimeStr={decimalToTimeStr}
+                  syncDatiFirebase={syncDatiFirebase}
+                  setManualNodes={setManualNodes}
+                  setDailyLog={setDailyLog}
+                />
               </div>
             </div>
             {/* SPACER PER PULSANTIERA: permette di scrollare oltre la fine del grafico */}
@@ -6278,6 +6242,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <span style={{ fontSize: '1.5rem' }}>☕</span> ENERGIZZANTE
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isSimulationMode) return;
+                    const now = new Date();
+                    setAlcoholForm({
+                      subtype: 'vino',
+                      ml: 150,
+                      abv: 12,
+                      timeStr: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+                    });
+                    setShowChoiceModal(false);
+                    setShowAlcoholPopup(true);
+                  }}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}
+                >
+                  <span style={{ fontSize: '1.5rem' }}>🍷</span> ALCOL
+                </button>
+
                 <button onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #00e5ff', color: '#00e5ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
                   <span style={{ fontSize: '1.5rem' }}>⚙️</span> MENÙ PRINCIPALE
                 </button>
@@ -7008,12 +6991,38 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {showAlcoholPopup && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, backdropFilter: 'blur(4px)' }} onClick={() => setShowAlcoholPopup(false)}>
           <div style={{ background: '#1a1a1c', padding: '24px', borderRadius: '20px', width: '90%', maxWidth: '380px', border: '1px solid #333', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
               <span style={{ fontSize: '1.8rem' }}>🍷</span>
               <h3 style={{ margin: 0, color: '#fff' }}>Aggiungi Drink</h3>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+            <div style={{ padding: '10px 0', borderBottom: '1px solid #333', marginBottom: '20px' }}>
+              <div style={{ height: '56px', overflow: 'hidden' }}>
+                <TimelineNodi
+                  activeNodesWithStack={activeNodesWithStack}
+                  chartUnit={chartUnit}
+                  activeAction={activeAction}
+                  idealStrategy={idealStrategy}
+                  realTotals={realTotals}
+                  NODE_IMPORTANCE={NODE_IMPORTANCE}
+                  NODE_TYPE_ICON={NODE_TYPE_ICON}
+                  draggingNode={draggingNode}
+                  touchingNodeId={touchingNodeId}
+                  dragOffsetY={dragOffsetY}
+                  dragLiveTime={dragLiveTime}
+                  timelineContainerRef={alcoholPopupTimelineRef}
+                  startNodeDrag={startNodeDrag}
+                  releaseNodePointer={releaseNodePointer}
+                  handleNodeTap={handleNodeTap}
+                  decimalToTimeStr={decimalToTimeStr}
+                  syncDatiFirebase={syncDatiFirebase}
+                  setManualNodes={setManualNodes}
+                  setDailyLog={setDailyLog}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
               {[
                 { id: 'birra', label: 'Birra 🍺', ml: 330, abv: 5 },
                 { id: 'vino', label: 'Vino 🍷', ml: 150, abv: 12 },
@@ -7039,6 +7048,42 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   {preset.label}
                 </button>
               ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', padding: '15px 0', marginBottom: '10px' }}>
+              {[...Array(5)].map((_, i) => {
+                const baseMl = getAlcoholBaseMl(alcoholForm.subtype);
+                const glassIcon = getAlcoholGlassIcon(alcoholForm.subtype);
+                const mlNum = Number(alcoholForm.ml) || 0;
+                const isFilled = mlNum >= baseMl * (i + 1);
+                return (
+                  <div
+                    key={i}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setAlcoholForm({ ...alcoholForm, ml: baseMl * (i + 1) });
+                      }
+                    }}
+                    onClick={() => setAlcoholForm({ ...alcoholForm, ml: baseMl * (i + 1) })}
+                    style={{
+                      fontSize: '2.2rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                      opacity: isFilled ? 1 : 0.25,
+                      filter: isFilled ? 'drop-shadow(0 0 8px rgba(255,255,255,0.2))' : 'grayscale(100%)',
+                      transform: isFilled ? 'scale(1.1)' : 'scale(1)'
+                    }}
+                  >
+                    {glassIcon}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ textAlign: 'center', fontSize: '0.85rem', color: '#b0b0b0', marginBottom: '20px' }}>
+              Tocca i bicchieri per impostare la quantità
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
