@@ -310,6 +310,7 @@ export default function SalaComandi() {
   const [showEnergyPopup, setShowEnergyPopup] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [trendModalMetric, setTrendModalMetric] = useState(null);
+  const [trendDays, setTrendDays] = useState(30);
   const [reportViewedDates, setReportViewedDates] = useState(() => {
     try { return JSON.parse(localStorage.getItem('reportViewedDates')) || {}; } catch { return {}; }
   });
@@ -1292,10 +1293,10 @@ export default function SalaComandi() {
     return computeDayEvaluations(activeLog, userTargets);
   }, [activeLog, currentTrackerDate, userTargets]);
 
-  const evaluationTrendData = useMemo(() => {
+  const trendData = useMemo(() => {
     if (!trendModalMetric) return [];
-    return computeEvaluationTrend(fullHistory, trendModalMetric, userTargets, 14);
-  }, [fullHistory, trendModalMetric, userTargets]);
+    return computeEvaluationTrend(fullHistory, trendModalMetric, userTargets, trendDays);
+  }, [fullHistory, trendModalMetric, userTargets, trendDays]);
 
   const yesterdayReportReady = useMemo(() => {
     if (currentTrackerDate !== getTodayString() || !fullHistory || typeof fullHistory !== 'object') return false;
@@ -6725,46 +6726,65 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {trendModalMetric && (
         <div
           role="presentation"
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', zIndex: 100001, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(6px)' }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100001, backdropFilter: 'blur(4px)' }}
           onClick={() => setTrendModalMetric(null)}
         >
           <div
             role="dialog"
             aria-modal="true"
-            style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '22px', maxWidth: '420px', width: '100%', position: 'relative', boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}
+            style={{ background: '#1a1a1c', padding: '20px', borderRadius: '16px', border: '1px solid #333', width: '95%', maxWidth: '600px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '6px', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
-              Trend Storico
-            </h3>
-            <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '14px' }}>
-              {{
-                muscle: 'Crescita Muscolare',
-                fat: 'Perdita di Grasso',
-                neuro: 'Recupero Neurologico',
-                fast: 'Pulizia Cellulare (Digiuno)'
-              }[trendModalMetric] ?? trendModalMetric}
-            </p>
-            <div style={{ width: '100%', height: 250 }}>
-              <ResponsiveContainer width="100%" height={250}>
-                <LineChart data={evaluationTrendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ color: '#fff', margin: 0 }}>Trend Storico</h3>
+                <div style={{ fontSize: '0.85rem', color: '#00e5ff', textTransform: 'uppercase', marginTop: '4px' }}>
+                  {trendModalMetric === 'muscle' ? 'Crescita Muscolare' : trendModalMetric === 'fat' ? 'Dimagrimento' : trendModalMetric === 'neuro' ? 'Recupero Neurologico' : 'Finestra di Digiuno'}
+                </div>
+              </div>
+
+              <select
+                value={trendDays}
+                onChange={(e) => setTrendDays(Number(e.target.value))}
+                style={{ background: '#2a2a2c', color: '#fff', border: '1px solid #444', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', outline: 'none', fontSize: '0.9rem' }}
+              >
+                <option value={7}>Ultima Settimana</option>
+                <option value={30}>Ultimo Mese</option>
+                <option value={90}>Ultimi 3 Mesi</option>
+                <option value={180}>Ultimi 6 Mesi</option>
+                <option value={365}>Ultimo Anno</option>
+              </select>
+            </div>
+
+            <div style={{ width: '100%', height: 250, marginBottom: '20px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                   <XAxis dataKey="date" stroke="#888" tick={{ fill: '#888', fontSize: 10 }} />
                   <YAxis stroke="#888" tick={{ fill: '#888', fontSize: 10 }} width={36} />
                   <Tooltip
                     contentStyle={{ background: '#1a1a1a', border: '1px solid #444', borderRadius: '8px' }}
                     labelStyle={{ color: '#aaa' }}
-                    formatter={(value, name, props) => [value, name === 'score' ? 'Score cumulativo' : name]}
+                    formatter={(value, name) => [value, name === 'score' ? 'Score cumulativo' : name]}
                     labelFormatter={(label) => `Data ${label}`}
                   />
-                  <Line type="monotone" dataKey="score" stroke="#00e5ff" strokeWidth={3} dot={{ r: 4, fill: '#00e5ff' }} isAnimationActive={false} />
+                  <Line
+                    type="monotone"
+                    dataKey="score"
+                    stroke="#00e5ff"
+                    strokeWidth={trendDays > 90 ? 2 : 3}
+                    dot={trendDays <= 30 ? { r: 4, fill: '#00e5ff', stroke: '#1a1a1c', strokeWidth: 2 } : false}
+                    activeDot={{ r: 6, fill: '#fff' }}
+                    isAnimationActive={false}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </div>
+
             <button
               type="button"
               onClick={() => setTrendModalMetric(null)}
-              style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '16px' }}
+              style={{ width: '100%', padding: '12px', background: '#333', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}
             >
               Chiudi
             </button>

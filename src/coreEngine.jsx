@@ -1711,7 +1711,7 @@ export function computeEvaluationTrend(trackerData, metricKey, userTargets, days
   if (!validKeys.includes(metricKey)) return [];
 
   const today = getTodayString();
-  const n = Math.max(1, Math.min(120, Number(daysBack) || 14));
+  const n = Math.max(1, Math.min(365, Number(daysBack) || 14));
   let accumulatore = 100;
   const out = [];
 
