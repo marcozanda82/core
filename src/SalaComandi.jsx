@@ -85,7 +85,8 @@ import {
   buildWeeklyDataFromHistory,
   predictEnergyIntervention,
   computeDayEvaluations,
-  computeEvaluationTrend
+  computeEvaluationTrend,
+  computeRiskMatrix
 } from './coreEngine';
 
 const CustomDateTick = ({ x, y, payload }) => {
@@ -292,6 +293,7 @@ export default function SalaComandi() {
 
   const [showTrainingPopup, setShowTrainingPopup] = useState(false);
   const [showAlcoholPopup, setShowAlcoholPopup] = useState(false);
+  const [showLongevityModal, setShowLongevityModal] = useState(false);
   const [alcoholForm, setAlcoholForm] = useState({ subtype: 'vino', ml: 150, abv: 12, timeStr: '20:00' });
   const [showSncPopup, setShowSncPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
@@ -1327,6 +1329,19 @@ export default function SalaComandi() {
     if (foods.length === 0 && !(activeLog || []).some(e => e.type === 'sleep' || e.type === 'workout')) return null;
     return computeDayEvaluations(activeLog, userTargets);
   }, [activeLog, currentTrackerDate, userTargets]);
+
+  const longevityData = useMemo(() => {
+    if (!fullHistory || !userTargets) return null;
+    const matrix = computeRiskMatrix(fullHistory, userTargets, 7);
+    const weightedRisk = (matrix.metabolic * 0.30) + (matrix.neuro * 0.30) + (matrix.inflammatory * 0.20) + (matrix.cardio * 0.20);
+    const masterScore = Math.max(0, Math.min(100, Math.round(100 - weightedRisk)));
+
+    let color = '#00e5ff';
+    if (masterScore < 60) color = '#f44336';
+    else if (masterScore < 85) color = '#ffb300';
+
+    return { ...matrix, masterScore, color };
+  }, [fullHistory, userTargets]);
 
   const trendData = useMemo(() => {
     if (!trendModalMetric) return [];
@@ -4163,10 +4178,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
 
       {/* HEADER SUPERIORE - MINIMALE (2 ZONE) */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '5px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '5px', gap: '10px' }}>
           
           {/* SINISTRA: Titolo OS */}
-          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', flex: 1, minWidth: 0, gap: '10px' }}>
             <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
               <h1 style={{ margin: 0, fontSize: '1.5rem', color: '#00e5ff', letterSpacing: '1px', fontWeight: 'bold', display: 'flex', alignItems: 'flex-start' }}>
                 ReadyCore
@@ -4175,10 +4190,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </span>
               </h1>
             </button>
+            {longevityData && (
+              <button
+                type="button"
+                onClick={() => setShowLongevityModal(true)}
+                style={{ background: 'transparent', border: `1px solid ${longevityData.color}50`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: `0 0 10px ${longevityData.color}20`, marginLeft: 'auto', flexShrink: 0 }}
+                title="Healthspan & Longevità"
+              >
+                <span style={{ fontSize: '1.2rem' }}>🧬</span>
+              </button>
+            )}
           </div>
 
           {/* DESTRA: allarme SNC compatto, Logout, Widget Energia */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
             {sncStressLevel > 65 && (
               <button
                 type="button"
@@ -7158,6 +7183,60 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button type="button" onClick={() => setShowAlcoholPopup(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#aaa', border: '1px solid #444', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>Annulla</button>
               <button type="button" onClick={handleSaveAlcohol} style={{ flex: 2, padding: '12px', background: '#f44336', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>Aggiungi Drink</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showLongevityModal && longevityData && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,12,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100000, overflowY: 'auto', padding: '20px', backdropFilter: 'blur(10px)' }}>
+          <div style={{ width: '100%', maxWidth: '500px', marginTop: '40px' }}>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
+              <div>
+                <h2 style={{ color: '#fff', margin: '0 0 5px 0', fontSize: '1.8rem' }}>Healthspan</h2>
+                <div style={{ color: '#888', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '2px' }}>Analisi ultimi 7 giorni</div>
+              </div>
+              <button type="button" onClick={() => setShowLongevityModal(false)} style={{ background: '#222', color: '#fff', border: 'none', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '50px' }}>
+              <div style={{ width: '180px', height: '180px', borderRadius: '50%', border: `4px solid ${longevityData.color}`, background: `${longevityData.color}10`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 40px ${longevityData.color}30` }}>
+                <span style={{ color: longevityData.color, fontSize: '4rem', fontWeight: 'bold', lineHeight: '1' }}>{longevityData.masterScore}</span>
+                <span style={{ color: '#aaa', fontSize: '0.85rem', marginTop: '5px', textTransform: 'uppercase', letterSpacing: '1px' }}>Score Longevità</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>
+              {[
+                { label: 'Rischio Metabolico', val: longevityData.metabolic, icon: '🩸', desc: 'Glicazione, Insulina e Autofagia' },
+                { label: 'Usura Neuro-Ormonale', val: longevityData.neuro, icon: '🧠', desc: 'Cortisolo, Stress e Deep Sleep' },
+                { label: 'Carico Infiammatorio', val: longevityData.inflammatory, icon: '🔥', desc: 'Danno tissutale e Tossicità' },
+                { label: 'Rischio Cardiovascolare', val: longevityData.cardio, icon: '🫀', desc: 'Endotelio e Sedentarietà' }
+              ].map(risk => {
+                let rColor = '#00e5ff';
+                if (risk.val > 40) rColor = '#f44336';
+                else if (risk.val > 20) rColor = '#ffb300';
+
+                return (
+                  <div key={risk.label} style={{ background: '#1a1a1c', padding: '16px', borderRadius: '16px', border: '1px solid #2a2a2c' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '1.5rem' }}>{risk.icon}</span>
+                        <div>
+                          <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '1rem' }}>{risk.label}</div>
+                          <div style={{ color: '#666', fontSize: '0.75rem' }}>{risk.desc}</div>
+                        </div>
+                      </div>
+                      <span style={{ color: rColor, fontWeight: 'bold', fontSize: '1.2rem' }}>{risk.val}%</span>
+                    </div>
+                    <div style={{ width: '100%', height: '6px', background: '#111', borderRadius: '3px', overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min(100, risk.val)}%`, height: '100%', background: rColor, borderRadius: '3px', transition: 'width 1s ease-out' }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
           </div>
         </div>
       )}
