@@ -1891,6 +1891,7 @@ export default function SalaComandi() {
   const handleNodeTap = useCallback((node) => () => {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
     if (isSimulationMode) return;
+
     if (node.type === 'meal') {
       const slotId = typeof node.time === 'number' && !Number.isNaN(node.time) ? `${node.id}_${node.time}` : String(node.id);
       const foodsForSlot = getFoodItemsForMealSlot(activeLog, slotId);
@@ -1923,11 +1924,15 @@ export default function SalaComandi() {
           fill: '#00e5ff',
           payload: { macros: { pro: prot, carb, fat } }
         });
+
+        // BUGFIX: Riapriamo il Modale con la lista degli alimenti e il tasto Modifica
+        setSelectedNodeReport(node);
         return;
       }
       loadMealToConstructor(node.id);
       return;
     }
+
     if (
       node.type === 'nap' || node.name?.toLowerCase().includes('pisolino') ||
       node.type === 'meditation' || node.name?.toLowerCase().includes('meditazion')
@@ -1935,6 +1940,7 @@ export default function SalaComandi() {
       setEditingQuickNode(node);
       return;
     }
+
     // Modifica rapida orario per energizzanti/caffè senza aprire il modale
     if (node.type === 'stimulant' || node.type === 'energizer' || node.isEnergizer) {
       const currentHH = Math.floor(node.time).toString().padStart(2, '0');
@@ -1951,6 +1957,7 @@ export default function SalaComandi() {
       }
       return;
     }
+
     setSelectedNodeReport(node);
   }, [manualNodes, dailyLog, activeLog, syncDatiFirebase, setManualNodes, isSimulationMode, loadMealToConstructor, MEAL_LABELS_SAVE, getFoodItemsForMealSlot]);
 
