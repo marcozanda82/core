@@ -395,7 +395,6 @@ export default function SalaComandi() {
     currentLiveTime: 0
   });
   const timelineContainerRef = useRef(null);
-  const alcoholPopupTimelineRef = useRef(null);
   const chartScrollRef = useRef(null);
   const initialPinchDistance = useRef(null);
   const initialZoomLevel = useRef(1);
@@ -6997,29 +6996,76 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <h3 style={{ margin: 0, color: '#fff' }}>Aggiungi Drink</h3>
             </div>
 
-            <div style={{ padding: '10px 0', borderBottom: '1px solid #333', marginBottom: '20px' }}>
-              <div style={{ height: '56px', overflow: 'hidden' }}>
-                <TimelineNodi
-                  activeNodesWithStack={activeNodesWithStack}
-                  chartUnit={chartUnit}
-                  activeAction={activeAction}
-                  idealStrategy={idealStrategy}
-                  realTotals={realTotals}
-                  NODE_IMPORTANCE={NODE_IMPORTANCE}
-                  NODE_TYPE_ICON={NODE_TYPE_ICON}
-                  draggingNode={draggingNode}
-                  touchingNodeId={touchingNodeId}
-                  dragOffsetY={dragOffsetY}
-                  dragLiveTime={dragLiveTime}
-                  timelineContainerRef={alcoholPopupTimelineRef}
-                  startNodeDrag={startNodeDrag}
-                  releaseNodePointer={releaseNodePointer}
-                  handleNodeTap={handleNodeTap}
-                  decimalToTimeStr={decimalToTimeStr}
-                  syncDatiFirebase={syncDatiFirebase}
-                  setManualNodes={setManualNodes}
-                  setDailyLog={setDailyLog}
-                />
+            {/* Timeline Interattiva Alcol */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ color: '#666', fontSize: '0.8rem', fontWeight: 'bold' }}>00:00</span>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#aaa', textTransform: 'uppercase', marginBottom: '2px' }}>Orario</div>
+                  <div style={{ color: '#00e5ff', fontWeight: 'bold', fontSize: '1.2rem', background: '#111', padding: '4px 12px', borderRadius: '8px', border: '1px solid #333' }}>
+                    {alcoholForm.timeStr}
+                  </div>
+                </div>
+                <span style={{ color: '#666', fontSize: '0.8rem', fontWeight: 'bold' }}>23:59</span>
+              </div>
+
+              <div style={{ position: 'relative', height: '44px', background: '#111', borderRadius: '22px', border: '1px solid #222', display: 'flex', alignItems: 'center' }}>
+                {/* Background Line */}
+                <div style={{ position: 'absolute', left: '20px', right: '20px', height: '4px', background: '#333', borderRadius: '2px' }} />
+
+                {/* Nodi Esistenti (Sfondo) - Pallini grigi per dare contesto */}
+                {manualNodes.map(n => {
+                  if (typeof n.time !== 'number') return null;
+                  const percent = (n.time / 24) * 100;
+                  return (
+                    <div key={n.id} style={{ position: 'absolute', left: `calc(20px + ${percent}% - ${percent * 0.4}px)`, width: '8px', height: '8px', borderRadius: '50%', background: 'rgba(255,255,255,0.15)', transform: 'translate(-50%, -50%)', top: '50%', pointerEvents: 'none' }} />
+                  );
+                })}
+
+                {(() => {
+                  const [h, m] = alcoholForm.timeStr.split(':').map(Number);
+                  const currentFloat = (h || 0) + ((m || 0) / 60);
+                  const currentPercent = (currentFloat / 24) * 100;
+                  const icon = alcoholForm.subtype === 'birra' ? '🍺' : alcoholForm.subtype === 'vino' ? '🍷' : '🥃';
+
+                  return (
+                    <>
+                      {/* Range Input: Invisibile ma permette il trascinamento tattile perfetto */}
+                      <input
+                        type="range"
+                        min="0"
+                        max="23.99"
+                        step="0.25"
+                        value={currentFloat}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const newH = Math.floor(val);
+                          const newM = Math.round((val - newH) * 60);
+                          setAlcoholForm({ ...alcoholForm, timeStr: `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}` });
+                        }}
+                        style={{ position: 'absolute', left: '10px', right: '10px', width: 'calc(100% - 20px)', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10, margin: 0 }}
+                      />
+
+                      {/* Maniglia Personalizzata: Il nodo visibile che si muove */}
+                      <div style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: `calc(20px + ${currentPercent}% - ${currentPercent * 0.4}px)`,
+                        transform: 'translate(-50%, -50%)',
+                        width: '32px', height: '32px',
+                        borderRadius: '50%',
+                        background: '#f44336',
+                        border: '2px solid #fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 0 12px rgba(244,67,54,0.6)',
+                        pointerEvents: 'none', zIndex: 5,
+                        transition: 'left 0.1s ease-out'
+                      }}>
+                        <span style={{ fontSize: '14px' }}>{icon}</span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
@@ -7095,10 +7141,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Gradazione (%)</label>
                 <input type="number" step="0.1" value={alcoholForm.abv} onChange={e => setAlcoholForm({ ...alcoholForm, abv: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111', border: '1px solid #444', borderRadius: '8px', color: '#fff' }} />
-              </div>
-              <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Orario</label>
-                <input type="time" value={alcoholForm.timeStr} onChange={e => setAlcoholForm({ ...alcoholForm, timeStr: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111', border: '1px solid #444', borderRadius: '8px', color: '#fff' }} />
               </div>
             </div>
 
