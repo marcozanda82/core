@@ -1728,7 +1728,7 @@ export function computeEvaluationTrend(trackerData, metricKey, userTargets, days
     }
     accumulatore += trendStarDelta(starScore);
     out.push({
-      date: dateStr.substring(5),
+      date: dateStr,
       score: accumulatore,
       stars: starScore
     });
