@@ -291,6 +291,8 @@ export default function SalaComandi() {
   }, []);
 
   const [showTrainingPopup, setShowTrainingPopup] = useState(false);
+  const [showAlcoholPopup, setShowAlcoholPopup] = useState(false);
+  const [alcoholForm, setAlcoholForm] = useState({ subtype: 'vino', ml: 150, abv: 12, timeStr: '20:00' });
   const [showSncPopup, setShowSncPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
@@ -1994,6 +1996,37 @@ export default function SalaComandi() {
 
     setSelectedNodeReport(node);
   }, [manualNodes, dailyLog, activeLog, syncDatiFirebase, setManualNodes, isSimulationMode, loadMealToConstructor, MEAL_LABELS_SAVE, getFoodItemsForMealSlot]);
+
+  const handleSaveAlcohol = () => {
+    if (isSimulationMode) return;
+    if (!alcoholForm.timeStr || !alcoholForm.timeStr.includes(':')) return;
+    const [h, m] = alcoholForm.timeStr.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return;
+    const timeFloat = h + (m / 60);
+
+    const ml = Number(alcoholForm.ml);
+    const abv = Number(alcoholForm.abv);
+    const pureAlcoholGrams = ml * (abv / 100) * 0.8;
+    const kcal = pureAlcoholGrams * 7;
+
+    const sub = String(alcoholForm.subtype || 'vino');
+    const newNode = {
+      id: `alcohol_${Date.now()}`,
+      type: 'alcohol',
+      subtype: sub,
+      name: sub.charAt(0).toUpperCase() + sub.slice(1),
+      time: timeFloat,
+      ml,
+      abv,
+      pureAlcohol: pureAlcoholGrams,
+      kcal: Math.round(kcal)
+    };
+
+    const next = [...manualNodes, newNode].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+    setManualNodes(next);
+    syncDatiFirebase(dailyLog, next);
+    setShowAlcoholPopup(false);
+  };
 
   const handleAddWater = (amount) => {
     if (isSimulationMode) return;
@@ -3792,28 +3825,48 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
 
             {/* SINGOLA BARRA NODI (TimelineNodi) */}
-            <div style={{ height: '60px', flexShrink: 0, marginTop: '10px', marginBottom: '10px' }}>
-              <TimelineNodi
-                activeNodesWithStack={activeNodesWithStack}
-                chartUnit={chartUnit}
-                activeAction={activeAction}
-                idealStrategy={idealStrategy}
-                realTotals={realTotals}
-                NODE_IMPORTANCE={NODE_IMPORTANCE}
-                NODE_TYPE_ICON={NODE_TYPE_ICON}
-                draggingNode={draggingNode}
-                touchingNodeId={touchingNodeId}
-                dragOffsetY={dragOffsetY}
-                dragLiveTime={dragLiveTime}
-                timelineContainerRef={timelineContainerRef}
-                startNodeDrag={startNodeDrag}
-                releaseNodePointer={releaseNodePointer}
-                handleNodeTap={handleNodeTap}
-                decimalToTimeStr={decimalToTimeStr}
-                syncDatiFirebase={syncDatiFirebase}
-                setManualNodes={setManualNodes}
-                setDailyLog={setDailyLog}
-              />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '60px', flexShrink: 0, marginTop: '10px', marginBottom: '10px' }}>
+              <div style={{ flex: 1, minWidth: 0, height: '60px' }}>
+                <TimelineNodi
+                  activeNodesWithStack={activeNodesWithStack}
+                  chartUnit={chartUnit}
+                  activeAction={activeAction}
+                  idealStrategy={idealStrategy}
+                  realTotals={realTotals}
+                  NODE_IMPORTANCE={NODE_IMPORTANCE}
+                  NODE_TYPE_ICON={NODE_TYPE_ICON}
+                  draggingNode={draggingNode}
+                  touchingNodeId={touchingNodeId}
+                  dragOffsetY={dragOffsetY}
+                  dragLiveTime={dragLiveTime}
+                  timelineContainerRef={timelineContainerRef}
+                  startNodeDrag={startNodeDrag}
+                  releaseNodePointer={releaseNodePointer}
+                  handleNodeTap={handleNodeTap}
+                  decimalToTimeStr={decimalToTimeStr}
+                  syncDatiFirebase={syncDatiFirebase}
+                  setManualNodes={setManualNodes}
+                  setDailyLog={setDailyLog}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isSimulationMode) return;
+                  const now = new Date();
+                  setAlcoholForm({
+                    subtype: 'vino',
+                    ml: 150,
+                    abv: 12,
+                    timeStr: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+                  });
+                  setShowAlcoholPopup(true);
+                }}
+                style={{ background: '#2a2a2c', border: '1px solid #444', borderRadius: '12px', padding: '10px 15px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flexShrink: 0 }}
+              >
+                <span>🍷</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Alcol</span>
+              </button>
             </div>
           </div>
         </div>
@@ -4685,28 +4738,48 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {/* Hitbox: blocca tap sul grafico nella fascia timeline (left/right allineati a YAxis) */}
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50px', right: '15px', pointerEvents: 'none' }} aria-hidden="true" />
               {/* Timeline nodi nel "buco" sotto il grafico (absolute + bottom 0) */}
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px', zIndex: 10 }}>
-                <TimelineNodi
-                  activeNodesWithStack={activeNodesWithStack}
-                  chartUnit={chartUnit}
-                  activeAction={activeAction}
-                  idealStrategy={idealStrategy}
-                  realTotals={realTotals}
-                  NODE_IMPORTANCE={NODE_IMPORTANCE}
-                  NODE_TYPE_ICON={NODE_TYPE_ICON}
-                  draggingNode={draggingNode}
-                  touchingNodeId={touchingNodeId}
-                  dragOffsetY={dragOffsetY}
-                  dragLiveTime={dragLiveTime}
-                  timelineContainerRef={timelineContainerRef}
-                  startNodeDrag={startNodeDrag}
-                  releaseNodePointer={releaseNodePointer}
-                  handleNodeTap={handleNodeTap}
-                  decimalToTimeStr={decimalToTimeStr}
-                  syncDatiFirebase={syncDatiFirebase}
-                  setManualNodes={setManualNodes}
-                  setDailyLog={setDailyLog}
-                />
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px', zIndex: 10, display: 'flex', alignItems: 'center', gap: '10px', paddingLeft: '0', paddingRight: '0', boxSizing: 'border-box' }}>
+                <div style={{ flex: 1, minWidth: 0, height: '60px' }}>
+                  <TimelineNodi
+                    activeNodesWithStack={activeNodesWithStack}
+                    chartUnit={chartUnit}
+                    activeAction={activeAction}
+                    idealStrategy={idealStrategy}
+                    realTotals={realTotals}
+                    NODE_IMPORTANCE={NODE_IMPORTANCE}
+                    NODE_TYPE_ICON={NODE_TYPE_ICON}
+                    draggingNode={draggingNode}
+                    touchingNodeId={touchingNodeId}
+                    dragOffsetY={dragOffsetY}
+                    dragLiveTime={dragLiveTime}
+                    timelineContainerRef={timelineContainerRef}
+                    startNodeDrag={startNodeDrag}
+                    releaseNodePointer={releaseNodePointer}
+                    handleNodeTap={handleNodeTap}
+                    decimalToTimeStr={decimalToTimeStr}
+                    syncDatiFirebase={syncDatiFirebase}
+                    setManualNodes={setManualNodes}
+                    setDailyLog={setDailyLog}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isSimulationMode) return;
+                    const now = new Date();
+                    setAlcoholForm({
+                      subtype: 'vino',
+                      ml: 150,
+                      abv: 12,
+                      timeStr: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+                    });
+                    setShowAlcoholPopup(true);
+                  }}
+                  style={{ background: '#2a2a2c', border: '1px solid #444', borderRadius: '12px', padding: '10px 12px', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', flexShrink: 0, marginRight: '8px' }}
+                >
+                  <span>🍷</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Alcol</span>
+                </button>
               </div>
             </div>
             {/* SPACER PER PULSANTIERA: permette di scrollare oltre la fine del grafico */}
@@ -6931,6 +7004,75 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         );
       })()}
+
+      {showAlcoholPopup && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, backdropFilter: 'blur(4px)' }} onClick={() => setShowAlcoholPopup(false)}>
+          <div style={{ background: '#1a1a1c', padding: '24px', borderRadius: '20px', width: '90%', maxWidth: '380px', border: '1px solid #333', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+              <span style={{ fontSize: '1.8rem' }}>🍷</span>
+              <h3 style={{ margin: 0, color: '#fff' }}>Aggiungi Drink</h3>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              {[
+                { id: 'birra', label: 'Birra 🍺', ml: 330, abv: 5 },
+                { id: 'vino', label: 'Vino 🍷', ml: 150, abv: 12 },
+                { id: 'superalcolico', label: 'Shot/Cocktail 🥃', ml: 40, abv: 40 }
+              ].map(preset => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => setAlcoholForm({ ...alcoholForm, subtype: preset.id, ml: preset.ml, abv: preset.abv })}
+                  style={{
+                    flex: 1,
+                    padding: '10px 5px',
+                    background: alcoholForm.subtype === preset.id ? '#00e5ff' : '#2a2a2c',
+                    color: alcoholForm.subtype === preset.id ? '#000' : '#fff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    fontWeight: 'bold',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    transition: '0.2s'
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Quantità (ml)</label>
+                <input type="number" value={alcoholForm.ml} onChange={e => setAlcoholForm({ ...alcoholForm, ml: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111', border: '1px solid #444', borderRadius: '8px', color: '#fff' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Gradazione (%)</label>
+                <input type="number" step="0.1" value={alcoholForm.abv} onChange={e => setAlcoholForm({ ...alcoholForm, abv: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111', border: '1px solid #444', borderRadius: '8px', color: '#fff' }} />
+              </div>
+              <div style={{ gridColumn: 'span 2' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Orario</label>
+                <input type="time" value={alcoholForm.timeStr} onChange={e => setAlcoholForm({ ...alcoholForm, timeStr: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111', border: '1px solid #444', borderRadius: '8px', color: '#fff' }} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(244, 67, 54, 0.1)', border: '1px solid #f44336', borderRadius: '10px', fontSize: '0.85rem', color: '#ffbaba' }}>
+              <div>
+                Alcol puro:{' '}
+                <strong>{((Number(alcoholForm.ml) * (Number(alcoholForm.abv) / 100)) * 0.8).toFixed(1)}g</strong>
+              </div>
+              <div style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.8 }}>
+                Calorie vuote stimate: {Math.round(((Number(alcoholForm.ml) * (Number(alcoholForm.abv) / 100)) * 0.8) * 7)} kcal
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button type="button" onClick={() => setShowAlcoholPopup(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#aaa', border: '1px solid #444', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>Annulla</button>
+              <button type="button" onClick={handleSaveAlcohol} style={{ flex: 2, padding: '12px', background: '#f44336', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>Aggiungi Drink</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast Undo: fisso in basso al centro */}
       {showUndoToast && (

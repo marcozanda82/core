@@ -1466,22 +1466,22 @@ const MEAL_LABELS_SAVE = {
 
 /** Importanza dinamica dei nodi per vista grafico: quali tipi evidenziare. */
 const NODE_IMPORTANCE = {
-  percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'sunlight'],
-  kcal: ['meal', 'workout', 'cognitive'],
-  cortisolo: ['work', 'workout', 'cognitive', 'stimulant', 'meditation'],
+  percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'sunlight', 'alcohol'],
+  kcal: ['meal', 'workout', 'cognitive', 'alcohol'],
+  cortisolo: ['work', 'workout', 'cognitive', 'stimulant', 'meditation', 'alcohol'],
   glicemia: ['meal', 'workout', 'cognitive', 'stimulant'],
-  idratazione: ['water', 'workout', 'cognitive', 'stimulant'],
-  digestione: ['meal'],
-  neuro: ['sleep', 'work', 'workout', 'cognitive', 'stimulant', 'nap', 'meditation', 'sunlight']
+  idratazione: ['water', 'workout', 'cognitive', 'stimulant', 'alcohol'],
+  digestione: ['meal', 'alcohol'],
+  neuro: ['sleep', 'work', 'workout', 'cognitive', 'stimulant', 'nap', 'meditation', 'sunlight', 'alcohol']
 };
 
 /** Gerarchia nodi nel modale Spiegazione: primari (focus) vs secondari (sfondo) per grafico. */
 const MODAL_NODE_PRIMARY = {
   glicemia: ['meal', 'workout', 'cognitive'],
-  cortisolo: ['work', 'workout', 'cognitive', 'stimulant', 'meditation'],
-  neuro: ['work', 'workout', 'cognitive', 'stimulant', 'nap', 'meditation', 'sunlight'],
+  cortisolo: ['work', 'workout', 'cognitive', 'stimulant', 'meditation', 'alcohol'],
+  neuro: ['work', 'workout', 'cognitive', 'stimulant', 'nap', 'meditation', 'sunlight', 'alcohol'],
   calorieTimeline: ['meal'],
-  percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'sunlight']
+  percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'sunlight', 'alcohol']
 };
 
 /** Icona per tipo nodo (timeline e modale). */
@@ -1495,7 +1495,8 @@ const NODE_TYPE_ICON = {
   nap: '😴',
   meditation: '🧘',
   supplements: '💊',
-  sunlight: '☀️'
+  sunlight: '☀️',
+  alcohol: '🍷'
 };
 
 function denormalizeLogForFirebase(flatLog) {
