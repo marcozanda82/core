@@ -196,7 +196,7 @@ export default function SalaComandi() {
         setActiveAction('home');
         window.history.pushState({ noExit: true }, '');
       } else {
-        const confirmExit = window.confirm('Vuoi uscire da ReadyCore?');
+        const confirmExit = window.confirm('Vuoi uscire da KentuOS?');
         if (!confirmExit) {
           window.history.pushState({ noExit: true }, '');
         }
@@ -334,7 +334,7 @@ export default function SalaComandi() {
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
   const [chatHistory, setChatHistory] = useState([
-    { sender: 'ai', text: 'ReadyCore ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
+    { sender: 'ai', text: 'KentuOS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
   ]);
   const CHAT_HISTORY_WINDOW = 10;
   const lastLogFromFirebaseRef = useRef(null);
@@ -2455,7 +2455,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const piccoAnabolico = Math.max(0, ...(anabolicCurve?.map(c => c.anabolicScore) ?? [0]));
       const piccoCortisolo = Math.max(0, ...(cortisolCurve?.map(c => c.cortisolScore) ?? [0]));
 
-      const baseSystemPrompt = `Sei l'assistente di ReadyCore. Il tuo scopo è dialogare con l'utente in italiano.
+      const baseSystemPrompt = `Sei l'assistente di KentuOS. Il tuo scopo è dialogare con l'utente in italiano.
 
 Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino"), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
 
@@ -3686,12 +3686,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         ) : (
           <form className="login-box" onSubmit={handleLogin}>
-            <h1 style={{ margin: 0, fontSize: '2rem', color: '#00e5ff', letterSpacing: '1px', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', marginBottom: '20px' }}>
-              ReadyCore
-              <span style={{ fontSize: '0.5em', verticalAlign: 'super', marginLeft: '4px', color: '#888', letterSpacing: '0px', fontWeight: 'normal' }}>
-                OS
-              </span>
+            <h1 style={{ margin: 0, fontSize: '2rem', color: '#fff', letterSpacing: '-0.5px', fontWeight: '900', display: 'flex', justifyContent: 'center', alignItems: 'baseline', marginBottom: '8px', gap: '4px' }}>
+              Kentu<span style={{ color: '#00e5ff' }}>OS</span>
             </h1>
+            <p style={{ textAlign: 'center', fontSize: '0.65rem', color: '#00e5ff', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px' }}>Sardinian Blue Zone Technology</p>
             <p style={{textAlign: 'center', fontSize: '0.65rem', color: '#666', marginBottom: '20px'}}>SYSTEM ENCRYPTED. REQUIRE AUTHENTICATION.</p>
             <input type="email" placeholder="USER ID (EMAIL)" className="login-input" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
             <input type="password" placeholder="PASSWORD" className="login-input" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
@@ -3713,10 +3711,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </style>
         <div style={{ textAlign: 'center' }}>
           <div className="spinner-sync"></div>
-          <div style={{ letterSpacing: '4px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'flex-start' }}>
-            ReadyCore
-            <span style={{ fontSize: '0.5em', verticalAlign: 'super', marginLeft: '4px', color: '#888', letterSpacing: '0px', fontWeight: 'normal' }}>OS</span>
+          <div style={{ letterSpacing: '2px', fontWeight: '900', display: 'inline-flex', alignItems: 'baseline', gap: '2px', fontSize: '1.25rem', color: '#fff' }}>
+            Kentu<span style={{ color: '#00e5ff' }}>OS</span>
           </div>
+          <div style={{ fontSize: '0.55rem', color: '#00e5ff', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '8px' }}>Sardinian Blue Zone Technology</div>
           <div style={{ fontSize: '0.6rem', color: '#444', marginTop: '10px' }}>INITIALIZING...</div>
         </div>
       </div>
@@ -4232,15 +4230,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {/* HEADER SUPERIORE - MINIMALE (2 ZONE) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '5px', gap: '10px' }}>
           
-          {/* SINISTRA: Titolo OS */}
+          {/* SINISTRA: Titolo KentuOS + Longevità + Ghost */}
           <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', flex: 1, minWidth: 0, gap: '10px' }}>
-            <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}>
-              <h1 style={{ margin: 0, fontSize: '1.5rem', color: '#00e5ff', letterSpacing: '1px', fontWeight: 'bold', display: 'flex', alignItems: 'flex-start' }}>
-                ReadyCore
-                <span style={{ fontSize: '0.5em', verticalAlign: 'super', marginLeft: '4px', color: '#888', letterSpacing: '0px', fontWeight: 'normal' }}>
-                  OS
-                </span>
-              </h1>
+            <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', flex: 1, minWidth: 0 }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'inline-block', border: '1px solid rgba(0,229,255,0.3)', padding: '2px 8px', borderRadius: '12px', background: 'rgba(0,0,0,0.5)', width: 'fit-content', marginBottom: '4px' }}>
+                  <span style={{ color: '#00e5ff', fontSize: '0.65rem', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    Sardinian Blue Zone Technology
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <h1 style={{ margin: 0, fontSize: '2.2rem', fontWeight: '900', color: '#fff', letterSpacing: '-1px' }}>
+                    Kentu<span style={{ color: '#00e5ff' }}>OS</span>
+                  </h1>
+                </div>
+                <div style={{ color: '#888', fontSize: '0.8rem', fontWeight: '300', letterSpacing: '0.5px' }}>
+                  Algoritmo Predittivo di Longevità
+                </div>
+              </div>
             </button>
             {longevityData && (
               <button
