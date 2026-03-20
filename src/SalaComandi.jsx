@@ -15,6 +15,8 @@ import { ref, get, set, onValue, update } from 'firebase/database';
 
 import { useFirebase } from './useFirebase';
 import ChartModal from './ChartModal';
+import GhostModeDashboard from './GhostModeDashboard';
+import { MEAL_KEYS } from './constants';
 import TimelineNodi from './TimelineNodi';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
@@ -296,6 +298,7 @@ export default function SalaComandi() {
   const [showLongevityModal, setShowLongevityModal] = useState(false);
   const [longevityDays, setLongevityDays] = useState(7);
   const [expandedRiskId, setExpandedRiskId] = useState(null);
+  const [isGhostMode, setIsGhostMode] = useState(false);
   const [alcoholForm, setAlcoholForm] = useState({ subtype: 'vino', ml: 150, abv: 12, timeStr: '20:00' });
   const [showSncPopup, setShowSncPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
@@ -3130,6 +3133,51 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     };
   }, [dailyReport, chartData, isWaterHydrationAutoPilot]);
   const realTotals = energySimulation?.realTotals ?? {};
+  const ghostMealsData = useMemo(() => {
+    const MEAL_TO_STRATEGY = { merenda1: 'colazione', pranzo: 'pranzo', merenda2: 'spuntino', cena: 'cena' };
+    const emptyMacro = () => ({ kcal: 0, prot: 0, carb: 0, fat: 0, fibre: 0 });
+    const dailyKcal = userTargets?.kcal ?? 2000;
+    const buildTarget = (mealKey) => {
+      const sk = MEAL_TO_STRATEGY[mealKey];
+      const targetKcal = (idealStrategy && sk && idealStrategy[sk] != null) ? idealStrategy[sk] : dailyKcal / 4;
+      const ratio = dailyKcal > 0 ? targetKcal / dailyKcal : 0.25;
+      return {
+        kcal: targetKcal,
+        prot: (userTargets?.prot ?? 150) * ratio,
+        carb: (userTargets?.carb ?? 200) * ratio,
+        fat: (userTargets?.fatTotal ?? userTargets?.fat ?? 60) * ratio,
+        fibre: (userTargets?.fibre ?? 30) * ratio,
+      };
+    };
+    const slotForFood = (mt) => {
+      const base = (mt || '').split('_')[0];
+      if (base === 'colazione' || base === 'merenda1') return 'merenda1';
+      if (base === 'pranzo') return 'pranzo';
+      if (base === 'merenda2' || base === 'spuntino' || base === 'snack') return 'merenda2';
+      if (base === 'cena') return 'cena';
+      return null;
+    };
+    const real = {
+      merenda1: emptyMacro(),
+      pranzo: emptyMacro(),
+      merenda2: emptyMacro(),
+      cena: emptyMacro(),
+    };
+    (activeLog || []).forEach(item => {
+      if (item.type !== 'food' && item.type !== 'meal') return;
+      const slot = slotForFood(item.mealType);
+      if (!slot || !real[slot]) return;
+      real[slot].kcal += Number(item.kcal || item.cal || 0);
+      real[slot].prot += Number(item.prot || 0);
+      real[slot].carb += Number(item.carb || 0);
+      real[slot].fat += Number(item.fatTotal || item.fat || 0);
+      real[slot].fibre += Number(item.fibre || 0);
+    });
+    return MEAL_KEYS.reduce((acc, key) => {
+      acc[key] = { target: buildTarget(key), real: real[key] };
+      return acc;
+    }, {});
+  }, [activeLog, userTargets, idealStrategy]);
   const hasCrashRisk = energySimulation?.hasCrashRisk ?? false;
   const hasCortisolRisk = energySimulation?.hasCortisolRisk ?? false;
   const hasDigestionRisk = energySimulation?.hasDigestionRisk ?? false;
@@ -4204,6 +4252,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <span style={{ fontSize: '1.2rem' }}>🧬</span>
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setIsGhostMode(!isGhostMode)}
+              style={{
+                background: isGhostMode ? '#b000ff20' : 'transparent',
+                border: `1px solid ${isGhostMode ? '#b000ff' : '#444'}`,
+                borderRadius: '8px',
+                padding: '4px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                boxShadow: isGhostMode ? '0 0 15px rgba(176,0,255,0.3)' : 'none',
+                marginLeft: longevityData ? '10px' : 'auto',
+                transition: 'all 0.3s ease',
+                flexShrink: 0
+              }}
+              title="Attiva/Disattiva Ghost Mode"
+            >
+              <span style={{ fontSize: '1.1rem', filter: isGhostMode ? 'drop-shadow(0 0 5px #b000ff)' : 'grayscale(100%)' }}>🔮</span>
+              <span style={{ color: isGhostMode ? '#b000ff' : '#888', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Ghost</span>
+            </button>
           </div>
 
           {/* DESTRA: allarme SNC compatto, Logout, Widget Energia */}
@@ -4414,6 +4484,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
         </div>
 
+      {!isGhostMode ? (
+      <>
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato */}
       <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(12px, 1.5vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
@@ -5063,6 +5135,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             );
           })()}
         </div>
+      )}
+      </>
+      ) : (
+      <div style={{ marginTop: '10px' }}>
+        <div style={{ background: 'linear-gradient(135deg, #1a1a1c 0%, #2a0845 100%)', border: '1px solid #b000ff50', borderRadius: '16px', padding: '16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '15px', boxShadow: '0 4px 20px rgba(176,0,255,0.1)' }}>
+          <span style={{ fontSize: '2rem' }}>🔮</span>
+          <div>
+            <div style={{ color: '#b000ff', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}>Ambiente di Simulazione</div>
+            <div style={{ color: '#fff', fontSize: '0.9rem', lineHeight: '1.4', marginTop: '4px' }}>
+              Sei nella Ghost Mode. Inserisci e modifica eventi per vedere le proiezioni future sul tuo assetto metabolico, senza alterare il diario reale.
+            </div>
+          </div>
+        </div>
+        <GhostModeDashboard
+          activeLog={activeLog}
+          userTargets={userTargets}
+          mealsData={ghostMealsData}
+        />
+      </div>
       )}
 
       {/* Barra trigger AI persistente (fixed in fondo) - Apre la chat reale */}

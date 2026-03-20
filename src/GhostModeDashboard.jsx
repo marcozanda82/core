@@ -48,6 +48,8 @@ function getMotivationalMessage(avgSync) {
 
 export default function GhostModeDashboard({
   mealsData = {},
+  activeLog: _activeLog,
+  userTargets: _userTargets,
 }) {
   const [selectedIndex, setSelectedIndex] = useState(null);
   const { getTipsByMineral } = useGoldStandard('/crea_gold_standard.json');
