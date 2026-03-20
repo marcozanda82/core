@@ -274,6 +274,16 @@ function computeWaterHydrationAutoPilot(dailyLog, timelineNodes) {
   return waterLogs.length === 0 && waterNodes.length === 0;
 }
 
+/** Grammi di etanolo da nodo timeline `alcohol` (pureAlcohol o stima da ml × ABV). */
+function getPureAlcoholGrams(node) {
+  if (!node || node.type !== 'alcohol') return 0;
+  const pa = Number(node.pureAlcohol);
+  if (Number.isFinite(pa) && pa > 0) return pa;
+  const ml = Number(node.ml) || 0;
+  const abv = Number(node.abv) || 0;
+  return ml * (abv / 100) * 0.8;
+}
+
 /** Centralized physiological simulation coefficients for tuning and maintenance. */
 const PHYSIOLOGY_CONFIG = {
   energyDecayPerHour: 2,
@@ -595,10 +605,21 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const malus = sub === 'energy drink' ? 15 : sub === 'caffè' ? 10 : 5;
           currentHydration -= malus;
         }
+        if (node.type === 'alcohol' && node.time >= h && node.time < h + 1) {
+          const diuresi = getPureAlcoholGrams(node) * 10;
+          currentHydration -= (diuresi / (dailyWaterGoal || 2500)) * 45;
+        }
       });
       currentHydration = Math.max(0, Math.min(100, currentHydration));
     } else {
       currentHydration = 100;
+      (timelineNodes || []).forEach(node => {
+        if (node.type === 'alcohol' && node.time >= h && node.time < h + 1) {
+          const diuresi = getPureAlcoholGrams(node) * 10;
+          currentHydration -= (diuresi / (dailyWaterGoal || 2500)) * 45;
+        }
+      });
+      currentHydration = Math.max(0, Math.min(100, currentHydration));
     }
 
     currentEnergy = Math.max(0, Math.min(100, currentEnergy));
@@ -1090,6 +1111,20 @@ function generateCortisolCurve(dailyLog, manualNodes = []) {
     });
   });
 
+  (manualNodes || []).forEach(node => {
+    if (node.type !== 'alcohol' || typeof node.time !== 'number') return;
+    const pa = getPureAlcoholGrams(node);
+    if (pa <= 0) return;
+    timeline.forEach(point => {
+      const oreDalDrink = point.time - node.time;
+      if (oreDalDrink > 0 && oreDalDrink <= 2) {
+        point.cortisolScore = Math.max(10, point.cortisolScore - pa * 0.2);
+      } else if (oreDalDrink > 2 && oreDalDrink < 8) {
+        point.cortisolScore = Math.min(100, point.cortisolScore + pa * 0.5);
+      }
+    });
+  });
+
   return timeline;
 }
 
@@ -1418,6 +1453,14 @@ function computeAccumuloSNC(trackerData, daysBack = 60) {
     if (daySleepAddsStressLoad(sleepEntry)) {
       accumulo = Math.min(100, accumulo + 1);
     }
+
+    manualNodes.forEach(n => {
+      if (n?.type === 'alcohol') {
+        const g = Number(n.pureAlcohol);
+        const pure = Number.isFinite(g) && g > 0 ? g : getPureAlcoholGrams(n);
+        accumulo = Math.min(100, accumulo + pure * 0.15);
+      }
+    });
   }
 
   return Math.max(0, Math.min(100, accumulo));
