@@ -2083,6 +2083,70 @@ function predictEnergyIntervention(chartData, displayTime) {
   return null;
 }
 
+/**
+ * Quattro pilastri del rischio sistemico (0–100) sugli ultimi `daysBack` giorni di storico.
+ * Usa computeDayEvaluations (stelle) + alcol da log e manualNodes + presenza allenamento.
+ */
+export function computeRiskMatrix(trackerData, userTargets, daysBack = 7) {
+  let risks = { metabolic: 15, cardio: 15, inflammatory: 15, neuro: 15 };
+  let validDays = 0;
+
+  if (!trackerData || typeof trackerData !== 'object') {
+    return { metabolic: 50, cardio: 50, inflammatory: 50, neuro: 50 };
+  }
+
+  const today = getTodayString();
+  const n = Math.max(1, Math.min(90, Number(daysBack) || 7));
+
+  for (let daysAgo = n; daysAgo >= 1; daysAgo--) {
+    const dateStr = addDays(today, -daysAgo);
+    const log = getLogFromStoricoTree(trackerData, dateStr) || [];
+    const dayNode = trackerData[TRACKER_STORICO_KEY(dateStr)];
+    const manualNodes = Array.isArray(dayNode?.manualNodes) ? dayNode.manualNodes : [];
+
+    if (log.length === 0 && manualNodes.length === 0) continue;
+    validDays++;
+
+    const evals = computeDayEvaluations(log, userTargets);
+
+    const dailyAlcoholGrams =
+      log.filter(e => e.type === 'alcohol').reduce((acc, e) => acc + getPureAlcoholGrams(e), 0) +
+      manualNodes.filter(e => e.type === 'alcohol').reduce((acc, e) => acc + getPureAlcoholGrams(e), 0);
+
+    const hasWorkout =
+      log.some(e => e.type === 'workout' || e.type === 'training') ||
+      manualNodes.some(e => e.type === 'workout' || e.type === 'training');
+
+    if (evals.fast && evals.fast.score <= 2) risks.metabolic += 8;
+    if (evals.fast && evals.fast.score >= 4) risks.metabolic -= 5;
+    if (dailyAlcoholGrams > 0) risks.metabolic += dailyAlcoholGrams * 0.4;
+
+    if (!hasWorkout) risks.cardio += 6;
+    else risks.cardio -= 8;
+
+    if (dailyAlcoholGrams > 20) risks.inflammatory += 15;
+    if (evals.muscle && evals.muscle.score <= 2) risks.inflammatory += 6;
+    if (evals.muscle && evals.muscle.score >= 4) risks.inflammatory -= 4;
+
+    if (evals.neuro && evals.neuro.score <= 2) risks.neuro += 10;
+    if (evals.neuro && evals.neuro.score >= 4) risks.neuro -= 6;
+    if (dailyAlcoholGrams > 0) risks.neuro += dailyAlcoholGrams * 0.3;
+  }
+
+  const clamp = (val) => Math.max(0, Math.min(100, Math.round(val)));
+
+  if (validDays === 0) {
+    return { metabolic: 50, cardio: 50, inflammatory: 50, neuro: 50 };
+  }
+
+  return {
+    metabolic: clamp(risks.metabolic),
+    cardio: clamp(risks.cardio),
+    inflammatory: clamp(risks.inflammatory),
+    neuro: clamp(risks.neuro)
+  };
+}
+
 export {
   RADIAN,
   getTodayString,
