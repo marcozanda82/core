@@ -3702,20 +3702,30 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   if (!isInitialLoadComplete) {
     return (
-      <div style={{ height: '100dvh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff', fontFamily: 'monospace' }}>
+      <div style={{ height: '100dvh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff', fontFamily: 'system-ui, sans-serif' }}>
         <style>
           {`
-            .spinner-sync { border: 2px solid transparent; border-top-color: #00e5ff; border-radius: 50%; width: 30px; height: 30px; animation: spin-sync 1s linear infinite; margin-bottom: 20px; }
-            @keyframes spin-sync { to { transform: rotate(360deg); } }
+            @keyframes pulse-kentu { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.65; transform: scale(0.96); } }
           `}
         </style>
-        <div style={{ textAlign: 'center' }}>
-          <div className="spinner-sync"></div>
-          <div style={{ letterSpacing: '2px', fontWeight: '900', display: 'inline-flex', alignItems: 'baseline', gap: '2px', fontSize: '1.25rem', color: '#fff' }}>
-            Kentu<span style={{ color: '#00e5ff' }}>OS</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+          <div style={{ fontSize: '3rem', animation: 'pulse-kentu 1.5s infinite' }}>⏳</div>
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ color: '#fff', fontSize: '2rem', fontWeight: '900', margin: '0 0 10px 0', letterSpacing: '-1px' }}>
+              Kentu<sup style={{ color: '#00e5ff', fontSize: '1rem', position: 'relative', top: '-0.35em' }}>OS</sup>
+            </h2>
+            <div style={{ display: 'inline-block', border: '1px solid rgba(0,229,255,0.4)', padding: '4px 12px', borderRadius: '20px', background: 'rgba(0,229,255,0.05)', marginBottom: '15px' }}>
+              <span style={{ color: '#00e5ff', fontSize: '0.7rem', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '2px' }}>
+                Sardinian Blue Zone Technology
+              </span>
+            </div>
+            <div style={{ color: '#888', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '300' }}>
+              Algoritmo Predittivo di Longevità
+            </div>
           </div>
-          <div style={{ fontSize: '0.55rem', color: '#00e5ff', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '8px' }}>Sardinian Blue Zone Technology</div>
-          <div style={{ fontSize: '0.6rem', color: '#444', marginTop: '10px' }}>INITIALIZING...</div>
+          <div style={{ color: '#555', fontSize: '0.75rem', marginTop: '20px', fontFamily: 'monospace' }}>
+            Sincronizzazione dati in corso...
+          </div>
         </div>
       </div>
     );
@@ -4233,20 +4243,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           {/* SINISTRA: Titolo KentuOS + Longevità + Ghost */}
           <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', flex: 1, minWidth: 0, gap: '10px' }}>
             <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', flex: 1, minWidth: 0 }}>
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <div style={{ display: 'inline-block', border: '1px solid rgba(0,229,255,0.3)', padding: '2px 8px', borderRadius: '12px', background: 'rgba(0,0,0,0.5)', width: 'fit-content', marginBottom: '4px' }}>
-                  <span style={{ color: '#00e5ff', fontSize: '0.65rem', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                    Sardinian Blue Zone Technology
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                  <h1 style={{ margin: 0, fontSize: '2.2rem', fontWeight: '900', color: '#fff', letterSpacing: '-1px' }}>
-                    Kentu<span style={{ color: '#00e5ff' }}>OS</span>
-                  </h1>
-                </div>
-                <div style={{ color: '#888', fontSize: '0.8rem', fontWeight: '300', letterSpacing: '0.5px' }}>
-                  Algoritmo Predittivo di Longevità
-                </div>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+                <h1 style={{ margin: 0, fontSize: '2.2rem', fontWeight: '900', color: '#fff', letterSpacing: '-1px' }}>
+                  Kentu<sup style={{ color: '#00e5ff', fontSize: '1.2rem', fontWeight: 'bold', marginLeft: '2px', top: '-0.5em', position: 'relative' }}>OS</sup>
+                </h1>
               </div>
             </button>
             {longevityData && (
