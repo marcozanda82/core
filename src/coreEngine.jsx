@@ -2084,24 +2084,33 @@ function predictEnergyIntervention(chartData, displayTime) {
 }
 
 /**
- * Quattro pilastri del rischio sistemico (0–100) sugli ultimi `daysBack` giorni di storico.
- * Usa computeDayEvaluations (stelle) + alcol da log e manualNodes + presenza allenamento.
+ * Quattro pilastri del rischio sistemico (0–100) sugli ultimi `daysBack` giorni + referti diagnostici.
  */
 export function computeRiskMatrix(trackerData, userTargets, daysBack = 7) {
   let risks = { metabolic: 15, cardio: 15, inflammatory: 15, neuro: 15 };
   let validDays = 0;
 
+  const details = { metabolic: [], cardio: [], inflammatory: [], neuro: [] };
+  const stats = { totalAlcohol: 0, noFast: 0, goodFast: 0, noWorkout: 0, badMuscle: 0, goodNeuro: 0, badNeuro: 0 };
+
+  const clamp = (val) => Math.max(0, Math.min(100, Math.round(val)));
+
+  const insufficientMatrix = () => {
+    const fb = { score: 50, details: ["Dati storici insufficienti per l'analisi."] };
+    return { metabolic: fb, cardio: fb, inflammatory: fb, neuro: fb };
+  };
+
   if (!trackerData || typeof trackerData !== 'object') {
-    return { metabolic: 50, cardio: 50, inflammatory: 50, neuro: 50 };
+    return insufficientMatrix();
   }
 
-  const today = getTodayString();
-  const n = Math.max(1, Math.min(90, Number(daysBack) || 7));
+  const todayStr = getTodayString();
+  const n = Math.max(1, Math.min(366, Number(daysBack) || 7));
 
-  for (let daysAgo = n; daysAgo >= 1; daysAgo--) {
-    const dateStr = addDays(today, -daysAgo);
-    const log = getLogFromStoricoTree(trackerData, dateStr) || [];
-    const dayNode = trackerData[TRACKER_STORICO_KEY(dateStr)];
+  for (let i = n; i >= 1; i--) {
+    const dStr = addDays(todayStr, -i);
+    const log = getLogFromStoricoTree(trackerData, dStr) || [];
+    const dayNode = trackerData[TRACKER_STORICO_KEY(dStr)];
     const manualNodes = Array.isArray(dayNode?.manualNodes) ? dayNode.manualNodes : [];
 
     if (log.length === 0 && manualNodes.length === 0) continue;
@@ -2109,41 +2118,55 @@ export function computeRiskMatrix(trackerData, userTargets, daysBack = 7) {
 
     const evals = computeDayEvaluations(log, userTargets);
 
-    const dailyAlcoholGrams =
-      log.filter(e => e.type === 'alcohol').reduce((acc, e) => acc + getPureAlcoholGrams(e), 0) +
-      manualNodes.filter(e => e.type === 'alcohol').reduce((acc, e) => acc + getPureAlcoholGrams(e), 0);
+    const dailyAlcohol = [...log, ...manualNodes]
+      .filter(node => node.type === 'alcohol')
+      .reduce((acc, node) => acc + (node.pureAlcohol || ((node.ml || 0) * ((node.abv || 0) / 100) * 0.8)), 0);
+    stats.totalAlcohol += dailyAlcohol;
 
-    const hasWorkout =
-      log.some(e => e.type === 'workout' || e.type === 'training') ||
-      manualNodes.some(e => e.type === 'workout' || e.type === 'training');
+    const hasWorkout = [...log, ...manualNodes].some(node => node.type === 'workout' || node.type === 'training');
 
-    if (evals.fast && evals.fast.score <= 2) risks.metabolic += 8;
-    if (evals.fast && evals.fast.score >= 4) risks.metabolic -= 5;
-    if (dailyAlcoholGrams > 0) risks.metabolic += dailyAlcoholGrams * 0.4;
+    if (!hasWorkout) stats.noWorkout++;
+
+    if (evals.fast && evals.fast.score <= 2) { risks.metabolic += 8; stats.noFast++; }
+    if (evals.fast && evals.fast.score >= 4) { risks.metabolic -= 5; stats.goodFast++; }
+    if (dailyAlcohol > 0) risks.metabolic += dailyAlcohol * 0.4;
 
     if (!hasWorkout) risks.cardio += 6;
     else risks.cardio -= 8;
 
-    if (dailyAlcoholGrams > 20) risks.inflammatory += 15;
-    if (evals.muscle && evals.muscle.score <= 2) risks.inflammatory += 6;
+    if (dailyAlcohol > 20) risks.inflammatory += 15;
+    if (evals.muscle && evals.muscle.score <= 2) { risks.inflammatory += 6; stats.badMuscle++; }
     if (evals.muscle && evals.muscle.score >= 4) risks.inflammatory -= 4;
 
-    if (evals.neuro && evals.neuro.score <= 2) risks.neuro += 10;
-    if (evals.neuro && evals.neuro.score >= 4) risks.neuro -= 6;
-    if (dailyAlcoholGrams > 0) risks.neuro += dailyAlcoholGrams * 0.3;
+    if (evals.neuro && evals.neuro.score <= 2) { risks.neuro += 10; stats.badNeuro++; }
+    if (evals.neuro && evals.neuro.score >= 4) { risks.neuro -= 6; stats.goodNeuro++; }
+    if (dailyAlcohol > 0) risks.neuro += dailyAlcohol * 0.3;
   }
-
-  const clamp = (val) => Math.max(0, Math.min(100, Math.round(val)));
 
   if (validDays === 0) {
-    return { metabolic: 50, cardio: 50, inflammatory: 50, neuro: 50 };
+    return insufficientMatrix();
   }
 
+  if (stats.noFast > 0) details.metabolic.push(`🔴 ${stats.noFast} giorni con digiuno assente/insufficiente (rischio insulino-resistenza).`);
+  if (stats.goodFast >= Math.ceil(validDays * 0.3)) details.metabolic.push('🟢 Ottima attivazione dell\'autofagia nel periodo.');
+  if (stats.totalAlcohol > 0) details.metabolic.push(`🔴 ${Math.round(stats.totalAlcohol)}g di etanolo pesano sul metabolismo epatico.`);
+
+  if (stats.noWorkout >= Math.ceil(validDays * 0.6)) details.cardio.push(`🔴 Sedentarietà eccessiva (${stats.noWorkout} giorni senza allenamento).`);
+  else details.cardio.push('🟢 Ottimo stimolo meccanico sul tono endoteliale.');
+
+  if (stats.totalAlcohol > 40) details.inflammatory.push('🔴 Carico tossico elevato da smaltimento alcolico.');
+  if (stats.badMuscle > 0) details.inflammatory.push(`🔴 ${stats.badMuscle} giorni con catabolismo e tessuti non riparati (infiammazione cellulare).`);
+  if (stats.badMuscle === 0) details.inflammatory.push('🟢 Costante sintesi proteica e recupero tissutale.');
+
+  if (stats.badNeuro > 0) details.neuro.push(`🔴 ${stats.badNeuro} giorni con cortisolo serale alto o architettura del sonno povera.`);
+  if (stats.goodNeuro >= Math.ceil(validDays * 0.4)) details.neuro.push('🟢 Profondo lavaggio glinfatico e recupero SNC.');
+  if (stats.totalAlcohol > 0) details.neuro.push('🔴 L\'alcol ingerito ha inibito parzialmente le fasi di sonno profondo (REM/Deep).');
+
   return {
-    metabolic: clamp(risks.metabolic),
-    cardio: clamp(risks.cardio),
-    inflammatory: clamp(risks.inflammatory),
-    neuro: clamp(risks.neuro)
+    metabolic: { score: clamp(risks.metabolic), details: details.metabolic.length ? details.metabolic : ['Metabolismo glucidico e lipidico in asse.'] },
+    cardio: { score: clamp(risks.cardio), details: details.cardio.length ? details.cardio : ['Rischio cardiovascolare controllato.'] },
+    inflammatory: { score: clamp(risks.inflammatory), details: details.inflammatory.length ? details.inflammatory : ['Omeostasi tissutale e infiammazione basale stabile.'] },
+    neuro: { score: clamp(risks.neuro), details: details.neuro.length ? details.neuro : ['Equilibrio simpatico-parasimpatico mantenuto.'] }
   };
 }
 

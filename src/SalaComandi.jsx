@@ -294,6 +294,8 @@ export default function SalaComandi() {
   const [showTrainingPopup, setShowTrainingPopup] = useState(false);
   const [showAlcoholPopup, setShowAlcoholPopup] = useState(false);
   const [showLongevityModal, setShowLongevityModal] = useState(false);
+  const [longevityDays, setLongevityDays] = useState(7);
+  const [expandedRiskId, setExpandedRiskId] = useState(null);
   const [alcoholForm, setAlcoholForm] = useState({ subtype: 'vino', ml: 150, abv: 12, timeStr: '20:00' });
   const [showSncPopup, setShowSncPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
@@ -1332,8 +1334,10 @@ export default function SalaComandi() {
 
   const longevityData = useMemo(() => {
     if (!fullHistory || !userTargets) return null;
-    const matrix = computeRiskMatrix(fullHistory, userTargets, 7);
-    const weightedRisk = (matrix.metabolic * 0.30) + (matrix.neuro * 0.30) + (matrix.inflammatory * 0.20) + (matrix.cardio * 0.20);
+    if (Object.keys(fullHistory || {}).length === 0) return null;
+
+    const matrix = computeRiskMatrix(fullHistory, userTargets, longevityDays);
+    const weightedRisk = (matrix.metabolic.score * 0.30) + (matrix.neuro.score * 0.30) + (matrix.inflammatory.score * 0.20) + (matrix.cardio.score * 0.20);
     const masterScore = Math.max(0, Math.min(100, Math.round(100 - weightedRisk)));
 
     let color = '#00e5ff';
@@ -1341,7 +1345,7 @@ export default function SalaComandi() {
     else if (masterScore < 85) color = '#ffb300';
 
     return { ...matrix, masterScore, color };
-  }, [fullHistory, userTargets]);
+  }, [fullHistory, userTargets, longevityDays]);
 
   const trendData = useMemo(() => {
     if (!trendModalMetric) return [];
@@ -7194,12 +7198,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
               <div>
                 <h2 style={{ color: '#fff', margin: '0 0 5px 0', fontSize: '1.8rem' }}>Healthspan</h2>
-                <div style={{ color: '#888', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '2px' }}>Analisi ultimi 7 giorni</div>
+                <select
+                  value={longevityDays}
+                  onChange={(e) => setLongevityDays(Number(e.target.value))}
+                  style={{ background: 'transparent', color: '#00e5ff', border: 'none', borderBottom: '1px dashed #00e5ff', padding: '2px 0', cursor: 'pointer', outline: 'none', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}
+                >
+                  <option value={7} style={{ background: '#1a1a1c' }}>Ultimi 7 Giorni</option>
+                  <option value={30} style={{ background: '#1a1a1c' }}>Ultimo Mese</option>
+                  <option value={90} style={{ background: '#1a1a1c' }}>Ultimi 3 Mesi</option>
+                  <option value={365} style={{ background: '#1a1a1c' }}>Ultimo Anno</option>
+                </select>
               </div>
-              <button type="button" onClick={() => setShowLongevityModal(false)} style={{ background: '#222', color: '#fff', border: 'none', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+              <button type="button" onClick={() => { setShowLongevityModal(false); setExpandedRiskId(null); }} style={{ background: '#222', color: '#fff', border: 'none', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '50px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px' }}>
               <div style={{ width: '180px', height: '180px', borderRadius: '50%', border: `4px solid ${longevityData.color}`, background: `${longevityData.color}10`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 40px ${longevityData.color}30` }}>
                 <span style={{ color: longevityData.color, fontSize: '4rem', fontWeight: 'bold', lineHeight: '1' }}>{longevityData.masterScore}</span>
                 <span style={{ color: '#aaa', fontSize: '0.85rem', marginTop: '5px', textTransform: 'uppercase', letterSpacing: '1px' }}>Score Longevità</span>
@@ -7208,17 +7221,31 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>
               {[
-                { label: 'Rischio Metabolico', val: longevityData.metabolic, icon: '🩸', desc: 'Glicazione, Insulina e Autofagia' },
-                { label: 'Usura Neuro-Ormonale', val: longevityData.neuro, icon: '🧠', desc: 'Cortisolo, Stress e Deep Sleep' },
-                { label: 'Carico Infiammatorio', val: longevityData.inflammatory, icon: '🔥', desc: 'Danno tissutale e Tossicità' },
-                { label: 'Rischio Cardiovascolare', val: longevityData.cardio, icon: '🫀', desc: 'Endotelio e Sedentarietà' }
+                { id: 'metabolic', label: 'Rischio Metabolico', data: longevityData.metabolic, icon: '🩸', desc: 'Glicazione, Insulina e Autofagia' },
+                { id: 'neuro', label: 'Usura Neuro-Ormonale', data: longevityData.neuro, icon: '🧠', desc: 'Cortisolo, Stress e Deep Sleep' },
+                { id: 'inflammatory', label: 'Carico Infiammatorio', data: longevityData.inflammatory, icon: '🔥', desc: 'Danno tissutale e Tossicità' },
+                { id: 'cardio', label: 'Rischio Cardiovascolare', data: longevityData.cardio, icon: '🫀', desc: 'Endotelio e Sedentarietà' }
               ].map(risk => {
                 let rColor = '#00e5ff';
-                if (risk.val > 40) rColor = '#f44336';
-                else if (risk.val > 20) rColor = '#ffb300';
+                if (risk.data.score > 40) rColor = '#f44336';
+                else if (risk.data.score > 20) rColor = '#ffb300';
+
+                const isExpanded = expandedRiskId === risk.id;
 
                 return (
-                  <div key={risk.label} style={{ background: '#1a1a1c', padding: '16px', borderRadius: '16px', border: '1px solid #2a2a2c' }}>
+                  <div
+                    key={risk.id}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setExpandedRiskId(isExpanded ? null : risk.id);
+                      }
+                    }}
+                    onClick={() => setExpandedRiskId(isExpanded ? null : risk.id)}
+                    style={{ background: '#1a1a1c', padding: '16px', borderRadius: '16px', border: `1px solid ${isExpanded ? rColor : '#2a2a2c'}`, cursor: 'pointer', transition: 'all 0.3s ease' }}
+                  >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <span style={{ fontSize: '1.5rem' }}>{risk.icon}</span>
@@ -7227,11 +7254,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           <div style={{ color: '#666', fontSize: '0.75rem' }}>{risk.desc}</div>
                         </div>
                       </div>
-                      <span style={{ color: rColor, fontWeight: 'bold', fontSize: '1.2rem' }}>{risk.val}%</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ color: rColor, fontWeight: 'bold', fontSize: '1.2rem' }}>{risk.data.score}%</span>
+                        <span style={{ color: '#555', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s ease' }}>▼</span>
+                      </div>
                     </div>
                     <div style={{ width: '100%', height: '6px', background: '#111', borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(100, risk.val)}%`, height: '100%', background: rColor, borderRadius: '3px', transition: 'width 1s ease-out' }} />
+                      <div style={{ width: `${Math.min(100, risk.data.score)}%`, height: '100%', background: rColor, borderRadius: '3px', transition: 'width 1s ease-out' }} />
                     </div>
+
+                    {isExpanded && (
+                      <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #2a2a2c' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#00e5ff', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '1px' }}>Insight Diagnostico</div>
+                        <ul style={{ margin: 0, paddingLeft: '18px', color: '#ccc', fontSize: '0.85rem', lineHeight: '1.5' }}>
+                          {risk.data.details.map((detail, idx) => (
+                            <li key={idx} style={{ marginBottom: '6px' }}>{detail}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 );
               })}
