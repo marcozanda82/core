@@ -4808,11 +4808,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                               if (data.id === 'rimanenti') return;
                               const pastoCorrente = mealPieData.find(m => m.id === data.id);
                               if (!pastoCorrente) return;
-                              if (selectedMealCenter && selectedMealCenter.id === data.id) {
-                                loadMealToConstructor(data.id);
-                              } else {
-                                setSelectedMealCenter(pastoCorrente);
-                              }
+                              const mealName = pastoCorrente.name || data.name || data.id;
+                              const mealId = pastoCorrente.id || data.id || String(mealName).toLowerCase().split(' ')[0];
+                              setSelectedMealCenter(pastoCorrente);
+                              setSelectedNodeReport({
+                                type: 'meal',
+                                id: mealId,
+                                name: mealName,
+                                ...(typeof pastoCorrente.timeValue === 'number' && !Number.isNaN(pastoCorrente.timeValue)
+                                  ? { time: pastoCorrente.timeValue }
+                                  : {})
+                              });
                             }}
                             style={{ cursor: 'pointer', outline: 'none' }}
                           >
@@ -4837,68 +4843,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </div>
                   </div>
                 </div>
-                {/* Scheda dettaglio pasto (sotto il quadrante) — allineata a selectedMealCenter / tap Timeline */}
-                {selectedMealCenter && selectedMealCenter.id && selectedMealCenter.id !== 'rimanenti' && (() => {
-                  const slotFoods = getFoodItemsForMealSlot(activeLog, selectedMealCenter.id);
-                  return (
-                    <div
-                      className="scheda-dettaglio-pasto"
-                      style={{
-                        width: '100%',
-                        maxWidth: '400px',
-                        margin: '0 auto 14px auto',
-                        padding: '12px 14px',
-                        background: '#121214',
-                        border: '1px solid #2a2a2e',
-                        borderRadius: '14px',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.45)'
-                      }}
-                    >
-                      <div style={{ fontSize: '0.72rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Scheda dettaglio pasto</div>
-                      <div style={{ fontSize: '1rem', fontWeight: '700', color: '#00e5ff', marginBottom: '10px' }}>
-                        {selectedMealCenter.name || selectedMealCenter.label}
-                      </div>
-                      {slotFoods.length === 0 ? (
-                        <p style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: '#666' }}>Nessun alimento registrato per questo slot.</p>
-                      ) : (
-                        <ul style={{ margin: '0 0 12px 0', paddingLeft: '18px', color: '#ccc', fontSize: '0.88rem', lineHeight: 1.5 }}>
-                          {slotFoods.map((f, idx) => {
-                            const label = f.desc || f.name || f.nome || 'Alimento';
-                            const g = Math.round(Number(f.qta ?? f.weight ?? 0) || 0);
-                            return (
-                              <li key={f.id || `${selectedMealCenter.id}-${idx}`} style={{ marginBottom: '4px' }}>
-                                {label} — {g} g
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          loadMealToConstructor(selectedMealCenter.id);
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '12px 16px',
-                          fontSize: '0.95rem',
-                          fontWeight: '800',
-                          letterSpacing: '0.06em',
-                          textTransform: 'uppercase',
-                          color: '#0a0a0a',
-                          background: 'linear-gradient(135deg, #00e5ff 0%, #00b8d4 100%)',
-                          border: 'none',
-                          borderRadius: '10px',
-                          cursor: 'pointer',
-                          boxShadow: '0 0 20px rgba(0,229,255,0.35)'
-                        }}
-                      >
-                        Modifica pasto
-                      </button>
-                    </div>
-                  );
-                })()}
                 {/* Box macronutrienti neon (3 colonne) */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', width: '100%', marginBottom: '12px' }}>
                   <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
