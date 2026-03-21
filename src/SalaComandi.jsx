@@ -381,14 +381,18 @@ export default function SalaComandi() {
   const [isZenActive, setIsZenActive] = useState(false);
   const [zenBreathPhase, setZenBreathPhase] = useState(null);
   const [zenSunScale, setZenSunScale] = useState(1);
-  /** Ambiente sonoro Neural Reset: nessun suono | mare | foresta */
+  /** Audio guidato sul respiro: nessuno | mare (ondemare) */
   const [audioMode, setAudioMode] = useState('muted');
+  /** Paesaggio sonoro continuo foresta (indipendente dai fade del respiro) */
+  const [zenForestAmbientOn, setZenForestAmbientOn] = useState(false);
   const [zenBreathPatternId, setZenBreathPatternId] = useState('square');
   const [zenSessionDurationKey, setZenSessionDurationKey] = useState('3');
   const [zenSessionRemainingSec, setZenSessionRemainingSec] = useState(null);
   const [zenGracefulEnd, setZenGracefulEnd] = useState(false);
   const neuralResetAudioRef = useRef(null);
   const neuralResetBellRef = useRef(null);
+  const zenAmbientForestRef = useRef(null);
+  const zenAmbientFadeIntervalRef = useRef(null);
   const neuralResetFadeIntervalRef = useRef(null);
   const zenSessionEndTriggeredRef = useRef(false);
   const zenEndSessionTimeoutRef = useRef(null);
@@ -441,6 +445,44 @@ export default function SalaComandi() {
     }
     return { ctx, gain };
   }, []);
+
+  const ZEN_AMBIENT_TARGET_VOL = 0.35;
+  const ZEN_AMBIENT_FADE_MS = 2000;
+
+  const clearZenAmbientFade = useCallback(() => {
+    if (zenAmbientFadeIntervalRef.current != null) {
+      clearInterval(zenAmbientFadeIntervalRef.current);
+      zenAmbientFadeIntervalRef.current = null;
+    }
+  }, []);
+
+  /** Fade sul solo elemento ambient (non tocca Web Audio del respiro). */
+  const fadeZenAmbientVolume = useCallback((targetVol, durationMs, onComplete) => {
+    const el = zenAmbientForestRef.current;
+    if (!el) {
+      onComplete?.();
+      return;
+    }
+    clearZenAmbientFade();
+    const safeTarget = Math.max(0, Math.min(1, targetVol));
+    const startVol = el.volume;
+    const tickMs = 32;
+    const t0 = performance.now();
+    const dur = Math.max(1, durationMs);
+    const easeInOut = (u) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, u)));
+    const id = setInterval(() => {
+      const t = Math.min(1, (performance.now() - t0) / dur);
+      const w = easeInOut(t);
+      el.volume = startVol + (safeTarget - startVol) * w;
+      if (t >= 1) {
+        el.volume = safeTarget;
+        clearInterval(id);
+        zenAmbientFadeIntervalRef.current = null;
+        onComplete?.();
+      }
+    }, tickMs);
+    zenAmbientFadeIntervalRef.current = id;
+  }, [clearZenAmbientFade]);
 
   const fadeAudio = useCallback((targetVolume, durationMs) => {
     const el = neuralResetAudioRef.current;
@@ -500,6 +542,9 @@ export default function SalaComandi() {
 
   const endZenSessionGracefully = useCallback(() => {
     setZenGracefulEnd(true);
+    if (zenSessionDurationKey !== 'infinite') {
+      setZenSessionRemainingSec(0);
+    }
     setZenBreathPhase(null);
     setZenSunScale(1);
     const bell = neuralResetBellRef.current;
@@ -509,6 +554,14 @@ export default function SalaComandi() {
       bell.play().catch(() => {});
     }
     fadeAudio(0, 2600);
+    fadeZenAmbientVolume(0, 2600, () => {
+      const amb = zenAmbientForestRef.current;
+      if (amb) {
+        amb.pause();
+        amb.currentTime = 0;
+      }
+      setZenForestAmbientOn(false);
+    });
     if (zenEndSessionTimeoutRef.current) {
       clearTimeout(zenEndSessionTimeoutRef.current);
       zenEndSessionTimeoutRef.current = null;
@@ -536,8 +589,15 @@ export default function SalaComandi() {
       }
       if (el) el.volume = 1;
       zenSessionEndTriggeredRef.current = false;
+      clearZenAmbientFade();
+      const amb = zenAmbientForestRef.current;
+      if (amb) {
+        amb.pause();
+        amb.currentTime = 0;
+        amb.volume = 0;
+      }
     }, 2800);
-  }, [clearNeuralResetFades, fadeAudio]);
+  }, [clearNeuralResetFades, clearZenAmbientFade, fadeAudio, fadeZenAmbientVolume, zenSessionDurationKey]);
 
   const zenSunTransitionMs = useMemo(() => {
     if (zenGracefulEnd && !zenBreathPhase) return 2500;
@@ -551,12 +611,14 @@ export default function SalaComandi() {
   }, [zenBreathPatternId, zenBreathPhase]);
 
   const zenTimerLine = useMemo(() => {
-    if (!isZenActive || zenGracefulEnd) return null;
+    if (!isZenActive) return null;
+    if (zenGracefulEnd) return '00:00';
     if (zenSessionDurationKey === 'infinite') return 'Senza limite';
     if (zenSessionRemainingSec == null) return null;
+    if (zenSessionRemainingSec <= 0) return '00:00';
     const m = Math.floor(zenSessionRemainingSec / 60);
     const s = Math.max(0, zenSessionRemainingSec % 60);
-    return `${m}:${String(s).padStart(2, '0')}`;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }, [isZenActive, zenGracefulEnd, zenSessionDurationKey, zenSessionRemainingSec]);
 
   // AI ASSISTANT E CLUSTER
@@ -1629,13 +1691,29 @@ export default function SalaComandi() {
         bell.pause();
         bell.currentTime = 0;
       }
+      clearZenAmbientFade();
+      const amb = zenAmbientForestRef.current;
+      if (amb) {
+        amb.pause();
+        amb.currentTime = 0;
+        amb.volume = 0;
+      }
+      setZenForestAmbientOn(false);
     };
-  }, [activeAction, clearNeuralResetFades]);
+  }, [activeAction, clearNeuralResetFades, clearZenAmbientFade]);
 
   useEffect(() => {
     if (activeAction === 'focus') return;
+    clearZenAmbientFade();
+    const amb = zenAmbientForestRef.current;
+    if (amb) {
+      amb.pause();
+      amb.currentTime = 0;
+      amb.volume = 0;
+    }
+    setZenForestAmbientOn(false);
     setAudioMode('muted');
-  }, [activeAction]);
+  }, [activeAction, clearZenAmbientFade]);
 
   useEffect(() => {
     if (activeAction !== 'focus') return;
@@ -1649,7 +1727,7 @@ export default function SalaComandi() {
       return;
     }
 
-    const nextSrc = audioMode === 'sea' ? '/onde-mare.mp3' : '/forest.mp3';
+    const nextSrc = '/onde-mare.mp3';
     const tail = nextSrc.replace(/^\//, '');
     let pathMatches = false;
     try {
@@ -6392,6 +6470,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               aria-hidden
               style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
             />
+            <audio
+              ref={zenAmbientForestRef}
+              src="/foresta.mp3"
+              loop
+              preload="auto"
+              aria-hidden
+              style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+            />
             <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', gap: '12px' }}>
               <button
                 type="button"
@@ -6400,6 +6486,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     clearTimeout(zenEndSessionTimeoutRef.current);
                     zenEndSessionTimeoutRef.current = null;
                   }
+                  clearZenAmbientFade();
+                  const amb = zenAmbientForestRef.current;
+                  if (amb) {
+                    amb.pause();
+                    amb.currentTime = 0;
+                    amb.volume = 0;
+                  }
+                  setZenForestAmbientOn(false);
                   setZenGracefulEnd(false);
                   setIsZenActive(false);
                   setActiveAction(null);
@@ -6575,10 +6669,27 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAudioMode(m => (m === 'forest' ? 'muted' : 'forest'))}
-                  title="Suono foresta"
-                  aria-label="Suono foresta"
-                  aria-pressed={audioMode === 'forest'}
+                  onClick={() => {
+                    const el = zenAmbientForestRef.current;
+                    if (!el) return;
+                    if (zenForestAmbientOn) {
+                      fadeZenAmbientVolume(0, ZEN_AMBIENT_FADE_MS, () => {
+                        el.pause();
+                        el.currentTime = 0;
+                        setZenForestAmbientOn(false);
+                      });
+                    } else {
+                      setZenForestAmbientOn(true);
+                      el.volume = 0;
+                      el.play().catch(() => {
+                        setZenForestAmbientOn(false);
+                      });
+                      fadeZenAmbientVolume(ZEN_AMBIENT_TARGET_VOL, ZEN_AMBIENT_FADE_MS, null);
+                    }
+                  }}
+                  title={zenForestAmbientOn ? 'Spegni paesaggio foresta' : 'Accendi paesaggio foresta'}
+                  aria-label={zenForestAmbientOn ? 'Spegni paesaggio sonoro foresta' : 'Accendi paesaggio sonoro foresta'}
+                  aria-pressed={zenForestAmbientOn}
                   style={{
                     width: '52px',
                     height: '52px',
@@ -6586,13 +6697,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderRadius: '14px',
-                    border: `1px solid ${audioMode === 'forest' ? 'rgba(0,255,136,0.55)' : 'rgba(255,255,255,0.12)'}`,
-                    background: audioMode === 'forest' ? 'rgba(0,255,136,0.08)' : 'rgba(0,0,0,0.2)',
+                    border: `1px solid ${zenForestAmbientOn ? 'rgba(0,255,136,0.55)' : 'rgba(255,255,255,0.12)'}`,
+                    background: zenForestAmbientOn ? 'rgba(0,255,136,0.08)' : 'rgba(0,0,0,0.2)',
                     cursor: 'pointer',
                     transition: 'filter 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease',
-                    filter: audioMode === 'forest' ? 'none' : 'grayscale(100%)',
-                    opacity: audioMode === 'forest' ? 1 : 0.4,
-                    boxShadow: audioMode === 'forest' ? '0 0 18px rgba(0, 255, 136, 0.45), 0 0 32px rgba(0, 255, 136, 0.18)' : 'none',
+                    filter: zenForestAmbientOn ? 'none' : 'grayscale(100%)',
+                    opacity: zenForestAmbientOn ? 1 : 0.4,
+                    boxShadow: zenForestAmbientOn ? '0 0 18px rgba(0, 255, 136, 0.45), 0 0 32px rgba(0, 255, 136, 0.18)' : 'none',
                     color: '#00ff88',
                   }}
                 >
