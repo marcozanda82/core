@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>ReadyCore</title>
-    <meta name="description" content="ReadyCore - Tracker e motore biochimico per energia, pasti e benessere.">
+    <title>KentuOS</title>
+    <meta name="description" content="KentuOS — Tracker e motore biochimico per energia, pasti e benessere.">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="ReadyCore">
+    <meta name="apple-mobile-web-app-title" content="KentuOS">
     <link rel="apple-touch-icon" href="/icon-192.png">
   </head>
   <body>
@@ -19,7 +19,7 @@
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('ReadyCore (SW) Active.'))
+            .then(reg => console.log('KentuOS (SW) Active.'))
             .catch(err => console.error('SW Error:', err));
         });
       }

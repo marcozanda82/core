@@ -1,6 +1,6 @@
 {
-  "name": "ReadyCore",
-  "short_name": "ReadyCore",
+  "name": "KentuOS",
+  "short_name": "KentuOS",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
