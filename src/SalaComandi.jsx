@@ -323,6 +323,8 @@ export default function SalaComandi() {
 
   const dailyWaterGoal = userTargets.water ?? 2500; 
   const [isZenActive, setIsZenActive] = useState(false);
+  const [zenBreathPhase, setZenBreathPhase] = useState(null);
+  const [zenSunScale, setZenSunScale] = useState(1);
 
   // AI ASSISTANT E CLUSTER
   const [apiKeys, setApiKeys] = useState(() => JSON.parse(localStorage.getItem('ghost_api_cluster')) || ['']);
@@ -1309,6 +1311,51 @@ export default function SalaComandi() {
   }, [draggingNode, isSimulationMode]);
 
   useEffect(() => { if (!isDrawerOpen) setIsZenActive(false); }, [isDrawerOpen]);
+
+  useEffect(() => {
+    const PHASE_MS = 4000;
+    const SUN_MAX = 2.2;
+    if (!isZenActive) {
+      setZenBreathPhase(null);
+      setZenSunScale(1);
+      return undefined;
+    }
+    const timeouts = [];
+    let cancelled = false;
+    const after = (ms, fn) => {
+      const id = setTimeout(() => {
+        if (!cancelled) fn();
+      }, ms);
+      timeouts.push(id);
+    };
+    const runCycle = () => {
+      if (cancelled) return;
+      setZenBreathPhase('Inspira');
+      setZenSunScale(SUN_MAX);
+      after(PHASE_MS, () => {
+        if (cancelled) return;
+        setZenBreathPhase('Trattieni');
+        after(PHASE_MS, () => {
+          if (cancelled) return;
+          setZenBreathPhase('Espira');
+          setZenSunScale(1);
+          after(PHASE_MS, () => {
+            if (cancelled) return;
+            setZenBreathPhase('Pausa');
+            after(PHASE_MS, () => {
+              if (cancelled) return;
+              runCycle();
+            });
+          });
+        });
+      });
+    };
+    runCycle();
+    return () => {
+      cancelled = true;
+      timeouts.forEach(clearTimeout);
+    };
+  }, [isZenActive]);
 
   useEffect(() => {
     if (isDrawerOpen && activeAction === 'pasto') setDrawerMealTimeStr(decimalToTimeStr(drawerMealTime));
@@ -4084,17 +4131,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .chat-send-btn { background: #fff; color: #000; border: none; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: 0.2s; font-size: 1.1rem; }
           .chat-send-btn.has-text { background: #b388ff; color: #fff; }
 
-          .zen-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 250px; position: relative; margin-bottom: 20px; }
-          .zen-orb { width: 80px; height: 80px; border-radius: 50%; background: radial-gradient(circle, #fbc02d 10%, #f57f17 100%); opacity: 0.2; box-shadow: 0 0 20px rgba(251, 192, 45, 0.2); transition: all 0.5s ease; position: relative; z-index: 2; }
-          .zen-orb.breathing { animation: boxBreathe 16s linear infinite; }
-          @keyframes boxBreathe { 0% { transform: scale(1); opacity: 0.3; box-shadow: 0 0 20px rgba(251, 192, 45, 0.2); } 25% { transform: scale(2.2); opacity: 1; box-shadow: 0 0 80px rgba(251, 192, 45, 0.8); } 50% { transform: scale(2.2); opacity: 1; box-shadow: 0 0 80px rgba(251, 192, 45, 0.8); } 75% { transform: scale(1); opacity: 0.3; box-shadow: 0 0 20px rgba(251, 192, 45, 0.2); } 100% { transform: scale(1); opacity: 0.3; box-shadow: 0 0 20px rgba(251, 192, 45, 0.2); } }
-          .zen-rings { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80px; height: 80px; border-radius: 50%; border: 1px solid rgba(251, 192, 45, 0.3); z-index: 1; transition: all 0.5s ease; }
-          .breathing ~ .zen-rings { animation: ringsExpand 16s linear infinite; }
-          @keyframes ringsExpand { 0% { transform: translate(-50%, -50%) scale(1); opacity: 0; } 12% { opacity: 1; } 25% { transform: translate(-50%, -50%) scale(2.6); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(2.6); opacity: 0; } }
-          .zen-instruction { position: absolute; bottom: 0; font-size: 0.8rem; color: #888; letter-spacing: 2px; text-transform: uppercase; animation: fadeInOut 16s linear infinite; opacity: 0; }
-          .breathing ~ .zen-instruction { opacity: 1; }
-          @keyframes fadeInOut { 0%, 24% { content: "Inspira"; color: #fbc02d; } 25%, 49% { content: "Trattieni"; color: #fff; } 50%, 74% { content: "Espira"; color: #fbc02d; } 75%, 100% { content: "Pausa"; color: #888; } }
-
           .delete-overlay { position: fixed; inset: 0; background: radial-gradient(circle, rgba(220, 38, 38, 0.0) 40%, rgba(220, 38, 38, 0.25) 100%); z-index: 45; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; display: flex; align-items: center; justify-content: center; flex-direction: column; }
           .delete-overlay.active { opacity: 1; }
           .delete-icon { font-size: 5rem; filter: drop-shadow(0 0 20px rgba(220, 38, 38, 0.8)); opacity: 0.5; transform: scale(0.8); transition: transform 0.2s ease; }
@@ -6000,22 +6036,89 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           );
         })()}
 
-        {/* VISTA ZEN */}
+        {/* VISTA ZEN — Neural Reset (respirazione quadrata, sole sardo) */}
         {activeAction === 'focus' && (
           <div className="view-animate">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <button onClick={() => { setIsZenActive(false); setActiveAction(null); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#fbc02d', letterSpacing: '2px', margin: 0 }}>🧘 NEURAL RESET</h2>
+              <button type="button" onClick={() => { setIsZenActive(false); setActiveAction(null); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
+              <h2 style={{ fontSize: '0.8rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)' }}>🧘 NEURAL RESET</h2>
               <div style={{ width: '70px' }}></div>
             </div>
-            <p style={{ textAlign: 'center', color: '#888', fontSize: '0.75rem', marginBottom: '20px' }}>Sincronizza il respiro con l'anello per abbassare il ritmo cardiaco.</p>
-            <div className="zen-container">
-              <div className={`zen-orb ${isZenActive ? 'breathing' : ''}`}></div>
-              <div className="zen-rings"></div>
-              <div className="zen-instruction" style={{ display: isZenActive ? 'block' : 'none' }}></div>
-              {!isZenActive && <div style={{ position: 'absolute', bottom: '0', fontSize: '0.8rem', color: '#555', letterSpacing: '2px' }}>IN ATTESA</div>}
+            <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.75)', fontSize: '0.75rem', marginBottom: '16px' }}>Respirazione quadrata 4–4–4–4: segui il sole sul mare.</p>
+            <div
+              style={{
+                borderRadius: '16px',
+                overflow: 'hidden',
+                marginBottom: '20px',
+                background: 'radial-gradient(circle at center, #00e5ff 0%, #004d66 60%, #000000 100%)',
+              }}
+            >
+              <div
+                style={{
+                  position: 'relative',
+                  height: '280px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    width: '80px',
+                    height: '80px',
+                    marginLeft: '-40px',
+                    marginTop: '-40px',
+                    transform: `scale(${zenSunScale})`,
+                    transition: 'transform 4s ease-in-out',
+                    zIndex: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: '-6px',
+                      borderRadius: '50%',
+                      border: '1px solid rgba(255, 215, 0, 0.45)',
+                      boxShadow: '0 0 24px rgba(255, 215, 0, 0.2)',
+                    }}
+                  />
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      borderRadius: '50%',
+                      background: '#FFD700',
+                      boxShadow: '0 0 40px 18px rgba(255, 215, 0, 0.55), 0 0 80px 36px rgba(255, 200, 80, 0.22)',
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '18px',
+                    left: '12px',
+                    right: '12px',
+                    textAlign: 'center',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                    color: '#fff',
+                    textShadow: '0 2px 12px rgba(0,0,0,0.65)',
+                  }}
+                >
+                  {isZenActive && zenBreathPhase ? zenBreathPhase : 'In attesa'}
+                </div>
+              </div>
             </div>
-            <button onClick={() => setIsZenActive(!isZenActive)} style={{ width: '100%', padding: '18px', backgroundColor: isZenActive ? '#222' : '#fbc02d', color: isZenActive ? '#fbc02d' : '#000', border: isZenActive ? '1px solid #fbc02d' : 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.3s', boxShadow: isZenActive ? 'none' : '0 0 20px rgba(251, 192, 45, 0.3)' }}>
+            <button type="button" onClick={() => setIsZenActive(!isZenActive)} style={{ width: '100%', padding: '18px', backgroundColor: isZenActive ? '#222' : '#FFD700', color: isZenActive ? '#FFD700' : '#000', border: isZenActive ? '1px solid #FFD700' : 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.3s', boxShadow: isZenActive ? 'none' : '0 0 24px rgba(255, 215, 0, 0.35)' }}>
               {isZenActive ? 'TERMINA SESSIONE' : 'AVVIA CICLO'}
             </button>
           </div>
