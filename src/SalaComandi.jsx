@@ -123,6 +123,61 @@ const CustomDateTick = ({ x, y, payload }) => {
   );
 };
 
+const ZEN_SUN_MAX = 2.2;
+
+/** Pattern respirazione Neural Reset: fasi in ordine, ms e scala sole per fase */
+const NEURAL_RESET_PATTERNS = {
+  square: {
+    id: 'square',
+    label: 'Respiro quadrato (4-4-4-4)',
+    hint: 'Quattro tempi uguali: segui il sole sul mare.',
+    steps: [
+      { phase: 'Inspira', ms: 4000, sunTarget: ZEN_SUN_MAX },
+      { phase: 'Trattieni', ms: 4000, sunTarget: ZEN_SUN_MAX, dimHold: true },
+      { phase: 'Espira', ms: 4000, sunTarget: 1 },
+      { phase: 'Pausa', ms: 4000, sunTarget: 1 },
+    ],
+  },
+  relax478: {
+    id: 'relax478',
+    label: 'Rilassamento (4-7-8)',
+    hint: 'Inspira 4 s, trattieni 7 s, espira 8 s; il ciclo riparte subito.',
+    steps: [
+      { phase: 'Inspira', ms: 4000, sunTarget: ZEN_SUN_MAX },
+      { phase: 'Trattieni', ms: 7000, sunTarget: ZEN_SUN_MAX, dimHold: true },
+      { phase: 'Espira', ms: 8000, sunTarget: 1 },
+    ],
+  },
+  coherent: {
+    id: 'coherent',
+    label: 'Coerente (5.5 - 5.5)',
+    hint: '5,5 s di inspiro e 5,5 s di espiro, senza pause.',
+    steps: [
+      { phase: 'Inspira', ms: 5500, sunTarget: ZEN_SUN_MAX },
+      { phase: 'Espira', ms: 5500, sunTarget: 1 },
+    ],
+  },
+};
+
+const ZEN_SESSION_DURATION_OPTIONS = [
+  { value: '1', label: '1 minuto', sec: 60 },
+  { value: '3', label: '3 minuti', sec: 180 },
+  { value: '5', label: '5 minuti', sec: 300 },
+  { value: '10', label: '10 minuti', sec: 600 },
+  { value: 'infinite', label: 'Infinito', sec: null },
+];
+
+function getNeuralResetZenStep(patternId, phaseName) {
+  return NEURAL_RESET_PATTERNS[patternId]?.steps.find((s) => s.phase === phaseName);
+}
+
+function getZenBreathAudioFade(phaseName, phaseMs) {
+  if (phaseName === 'Inspira') return { target: 0.9, duration: Math.min(4000, phaseMs) };
+  if (phaseName === 'Espira') return { target: 0.6, duration: Math.min(4000, phaseMs) };
+  if (phaseName === 'Trattieni' || phaseName === 'Pausa') return { target: 0.02, duration: Math.min(3000, phaseMs) };
+  return null;
+}
+
 export default function SalaComandi() {
   const { db, auth, user, handleLogin: firebaseLogin } = useFirebase();
   const isAuthenticated = !!user;
@@ -328,8 +383,15 @@ export default function SalaComandi() {
   const [zenSunScale, setZenSunScale] = useState(1);
   /** Ambiente sonoro Neural Reset: nessun suono | mare | foresta */
   const [audioMode, setAudioMode] = useState('muted');
+  const [zenBreathPatternId, setZenBreathPatternId] = useState('square');
+  const [zenSessionDurationKey, setZenSessionDurationKey] = useState('3');
+  const [zenSessionRemainingSec, setZenSessionRemainingSec] = useState(null);
+  const [zenGracefulEnd, setZenGracefulEnd] = useState(false);
   const neuralResetAudioRef = useRef(null);
+  const neuralResetBellRef = useRef(null);
   const neuralResetFadeIntervalRef = useRef(null);
+  const zenSessionEndTriggeredRef = useRef(false);
+  const zenEndSessionTimeoutRef = useRef(null);
   const neuralResetAudioContextRef = useRef(null);
   const neuralResetGainRef = useRef(null);
   const neuralResetMediaSourceCreatedRef = useRef(false);
@@ -396,6 +458,12 @@ export default function SalaComandi() {
       const param = gain.gain;
       const now = ctx.currentTime;
       param.cancelScheduledValues(now);
+      if (safeTarget <= 0) {
+        const cur = Math.max(param.value, 0);
+        param.setValueAtTime(cur, now);
+        param.linearRampToValueAtTime(0, now + durationSec);
+        return;
+      }
       const current = Math.max(param.value, floor);
       param.setValueAtTime(current, now);
       try {
@@ -406,15 +474,20 @@ export default function SalaComandi() {
       return;
     }
 
-    const startVol = Math.max(el.volume, floor);
-    const endVol = rampEnd;
+    const startVol = Math.max(el.volume, safeTarget <= 0 ? 0 : floor);
+    const endVol = safeTarget <= 0 ? 0 : rampEnd;
     const tickMs = 32;
     const startTime = performance.now();
     const safeDur = Math.max(1, durationMs);
     const id = setInterval(() => {
       const elapsed = performance.now() - startTime;
       const t = Math.min(1, elapsed / safeDur);
-      const v = startVol * (endVol / startVol) ** t;
+      let v;
+      if (safeTarget <= 0) {
+        v = startVol * (1 - t);
+      } else {
+        v = startVol * (endVol / Math.max(startVol, floor)) ** t;
+      }
       el.volume = Math.min(1, Math.max(0, v));
       if (t >= 1) {
         el.volume = safeTarget;
@@ -424,6 +497,67 @@ export default function SalaComandi() {
     }, tickMs);
     neuralResetFadeIntervalRef.current = id;
   }, [clearNeuralResetFades, ensureNeuralResetWebAudio]);
+
+  const endZenSessionGracefully = useCallback(() => {
+    setZenGracefulEnd(true);
+    setZenBreathPhase(null);
+    setZenSunScale(1);
+    const bell = neuralResetBellRef.current;
+    if (bell) {
+      bell.currentTime = 0;
+      bell.volume = 1;
+      bell.play().catch(() => {});
+    }
+    fadeAudio(0, 2600);
+    if (zenEndSessionTimeoutRef.current) {
+      clearTimeout(zenEndSessionTimeoutRef.current);
+      zenEndSessionTimeoutRef.current = null;
+    }
+    zenEndSessionTimeoutRef.current = window.setTimeout(() => {
+      zenEndSessionTimeoutRef.current = null;
+      setIsZenActive(false);
+      setZenGracefulEnd(false);
+      setZenSessionRemainingSec(null);
+      const el = neuralResetAudioRef.current;
+      if (el) {
+        el.pause();
+        el.currentTime = 0;
+      }
+      clearNeuralResetFades();
+      const g = neuralResetGainRef.current;
+      const ctx = neuralResetAudioContextRef.current;
+      if (ctx && g) {
+        try {
+          g.gain.cancelScheduledValues(ctx.currentTime);
+          g.gain.value = 1;
+        } catch {
+          /* noop */
+        }
+      }
+      if (el) el.volume = 1;
+      zenSessionEndTriggeredRef.current = false;
+    }, 2800);
+  }, [clearNeuralResetFades, fadeAudio]);
+
+  const zenSunTransitionMs = useMemo(() => {
+    if (zenGracefulEnd && !zenBreathPhase) return 2500;
+    if (!zenBreathPhase) return 4000;
+    return getNeuralResetZenStep(zenBreathPatternId, zenBreathPhase)?.ms ?? 4000;
+  }, [zenBreathPatternId, zenBreathPhase, zenGracefulEnd]);
+
+  const zenSunDimHold = useMemo(() => {
+    const step = zenBreathPhase ? getNeuralResetZenStep(zenBreathPatternId, zenBreathPhase) : null;
+    return !!step?.dimHold;
+  }, [zenBreathPatternId, zenBreathPhase]);
+
+  const zenTimerLine = useMemo(() => {
+    if (!isZenActive || zenGracefulEnd) return null;
+    if (zenSessionDurationKey === 'infinite') return 'Senza limite';
+    if (zenSessionRemainingSec == null) return null;
+    const m = Math.floor(zenSessionRemainingSec / 60);
+    const s = Math.max(0, zenSessionRemainingSec % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }, [isZenActive, zenGracefulEnd, zenSessionDurationKey, zenSessionRemainingSec]);
 
   // AI ASSISTANT E CLUSTER
   const [apiKeys, setApiKeys] = useState(() => JSON.parse(localStorage.getItem('ghost_api_cluster')) || ['']);
@@ -1412,13 +1546,20 @@ export default function SalaComandi() {
   useEffect(() => { if (!isDrawerOpen) setIsZenActive(false); }, [isDrawerOpen]);
 
   useEffect(() => {
-    const PHASE_MS = 4000;
-    const SUN_MAX = 2.2;
+    if (isZenActive) zenSessionEndTriggeredRef.current = false;
+  }, [isZenActive]);
+
+  useEffect(() => {
     if (!isZenActive) {
       setZenBreathPhase(null);
       setZenSunScale(1);
       return undefined;
     }
+    if (zenGracefulEnd) return undefined;
+
+    const pattern = NEURAL_RESET_PATTERNS[zenBreathPatternId];
+    if (!pattern?.steps?.length) return undefined;
+
     const timeouts = [];
     let cancelled = false;
     const after = (ms, fn) => {
@@ -1427,34 +1568,52 @@ export default function SalaComandi() {
       }, ms);
       timeouts.push(id);
     };
-    const runCycle = () => {
+
+    const runStep = (stepIndex) => {
       if (cancelled) return;
-      setZenBreathPhase('Inspira');
-      setZenSunScale(SUN_MAX);
-      after(PHASE_MS, () => {
+      const { steps } = pattern;
+      const step = steps[stepIndex];
+      if (!step) return;
+      setZenBreathPhase(step.phase);
+      setZenSunScale(step.sunTarget);
+      after(step.ms, () => {
         if (cancelled) return;
-        setZenBreathPhase('Trattieni');
-        after(PHASE_MS, () => {
-          if (cancelled) return;
-          setZenBreathPhase('Espira');
-          setZenSunScale(1);
-          after(PHASE_MS, () => {
-            if (cancelled) return;
-            setZenBreathPhase('Pausa');
-            after(PHASE_MS, () => {
-              if (cancelled) return;
-              runCycle();
-            });
-          });
-        });
+        runStep((stepIndex + 1) % steps.length);
       });
     };
-    runCycle();
+
+    runStep(0);
     return () => {
       cancelled = true;
       timeouts.forEach(clearTimeout);
     };
-  }, [isZenActive]);
+  }, [isZenActive, zenBreathPatternId, zenGracefulEnd]);
+
+  useEffect(() => {
+    if (!isZenActive || zenGracefulEnd || zenSessionDurationKey === 'infinite') {
+      if (!isZenActive) setZenSessionRemainingSec(null);
+      return undefined;
+    }
+    const opt = ZEN_SESSION_DURATION_OPTIONS.find((o) => o.value === zenSessionDurationKey);
+    const total = opt?.sec;
+    if (total == null) return undefined;
+    setZenSessionRemainingSec(total);
+    const id = window.setInterval(() => {
+      setZenSessionRemainingSec((r) => {
+        if (r === null || r <= 0) return 0;
+        return r - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isZenActive, zenSessionDurationKey, zenGracefulEnd]);
+
+  useEffect(() => {
+    if (zenSessionDurationKey === 'infinite' || !isZenActive || zenGracefulEnd) return;
+    if (zenSessionRemainingSec !== 0) return;
+    if (zenSessionEndTriggeredRef.current) return;
+    zenSessionEndTriggeredRef.current = true;
+    endZenSessionGracefully();
+  }, [zenSessionRemainingSec, zenSessionDurationKey, isZenActive, zenGracefulEnd, endZenSessionGracefully]);
 
   useEffect(() => {
     if (activeAction !== 'focus') return undefined;
@@ -1464,6 +1623,11 @@ export default function SalaComandi() {
       if (el) {
         el.pause();
         el.currentTime = 0;
+      }
+      const bell = neuralResetBellRef.current;
+      if (bell) {
+        bell.pause();
+        bell.currentTime = 0;
       }
     };
   }, [activeAction, clearNeuralResetFades]);
@@ -1504,14 +1668,13 @@ export default function SalaComandi() {
   }, [activeAction, audioMode, isZenActive, clearNeuralResetFades]);
 
   useEffect(() => {
-    if (activeAction !== 'focus' || !isZenActive || audioMode === 'muted') return;
-    const FADE_IN_MS = 4000;
-    const FADE_OUT_QUIET_MS = 3000;
-    if (zenBreathPhase === 'Inspira') fadeAudio(0.9, FADE_IN_MS);
-    else if (zenBreathPhase === 'Trattieni') fadeAudio(0.02, FADE_OUT_QUIET_MS);
-    else if (zenBreathPhase === 'Espira') fadeAudio(0.6, FADE_IN_MS);
-    else if (zenBreathPhase === 'Pausa') fadeAudio(0.02, FADE_OUT_QUIET_MS);
-  }, [zenBreathPhase, activeAction, isZenActive, audioMode, fadeAudio]);
+    if (activeAction !== 'focus' || !isZenActive || audioMode === 'muted' || zenGracefulEnd) return;
+    if (!zenBreathPhase) return;
+    const step = getNeuralResetZenStep(zenBreathPatternId, zenBreathPhase);
+    if (!step) return;
+    const fade = getZenBreathAudioFade(zenBreathPhase, step.ms);
+    if (fade) fadeAudio(fade.target, fade.duration);
+  }, [zenBreathPhase, zenBreathPatternId, activeAction, isZenActive, audioMode, zenGracefulEnd, fadeAudio]);
 
   useEffect(() => {
     if (isDrawerOpen && activeAction === 'pasto') setDrawerMealTimeStr(decimalToTimeStr(drawerMealTime));
@@ -6222,10 +6385,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               aria-hidden
               style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
             />
+            <audio
+              ref={neuralResetBellRef}
+              src="/campana.mp3"
+              preload="auto"
+              aria-hidden
+              style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+            />
             <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', gap: '12px' }}>
               <button
                 type="button"
-                onClick={() => { setIsZenActive(false); setActiveAction(null); }}
+                onClick={() => {
+                  if (zenEndSessionTimeoutRef.current) {
+                    clearTimeout(zenEndSessionTimeoutRef.current);
+                    zenEndSessionTimeoutRef.current = null;
+                  }
+                  setZenGracefulEnd(false);
+                  setIsZenActive(false);
+                  setActiveAction(null);
+                }}
                 style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}
               >
                 &lt; INDIETRO
@@ -6235,8 +6413,54 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </h2>
               <div style={{ width: '48px', height: '48px', flexShrink: 0 }} aria-hidden />
             </div>
+            <div style={{ flexShrink: 0, padding: '0 16px 10px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '420px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                Pattern di respirazione
+                <select
+                  value={zenBreathPatternId}
+                  onChange={(e) => setZenBreathPatternId(e.target.value)}
+                  disabled={isZenActive}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(0,0,0,0.35)',
+                    color: '#fff',
+                    fontSize: '0.8rem',
+                    cursor: isZenActive ? 'not-allowed' : 'pointer',
+                    opacity: isZenActive ? 0.55 : 1,
+                  }}
+                >
+                  {Object.values(NEURAL_RESET_PATTERNS).map((p) => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                Durata sessione
+                <select
+                  value={zenSessionDurationKey}
+                  onChange={(e) => setZenSessionDurationKey(e.target.value)}
+                  disabled={isZenActive}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(0,0,0,0.35)',
+                    color: '#fff',
+                    fontSize: '0.8rem',
+                    cursor: isZenActive ? 'not-allowed' : 'pointer',
+                    opacity: isZenActive ? 0.55 : 1,
+                  }}
+                >
+                  {ZEN_SESSION_DURATION_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <p style={{ flexShrink: 0, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: '0.75rem', margin: '0 20px 8px', lineHeight: 1.5 }}>
-              Respirazione quadrata 4–4–4–4: segui il sole sul mare.
+              {NEURAL_RESET_PATTERNS[zenBreathPatternId]?.hint ?? ''}
             </p>
             <div
               style={{
@@ -6260,8 +6484,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   marginLeft: '-40px',
                   marginTop: '-40px',
                   transform: `scale(${zenSunScale})`,
-                  transition: 'transform 4s ease-in-out, opacity 4s ease-in-out',
-                  opacity: isZenActive && zenBreathPhase === 'Trattieni' ? 0.07 : 1,
+                  transition: `transform ${zenSunTransitionMs}ms ease-in-out, opacity ${zenSunTransitionMs}ms ease-in-out`,
+                  opacity: isZenActive && zenSunDimHold ? 0.07 : 1,
                   zIndex: 2,
                   display: 'flex',
                   alignItems: 'center',
@@ -6302,7 +6526,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   textShadow: '0 2px 12px rgba(0,0,0,0.65)',
                 }}
               >
-                {isZenActive && zenBreathPhase ? zenBreathPhase : 'In attesa'}
+                <span>{isZenActive && zenBreathPhase ? zenBreathPhase : zenGracefulEnd ? 'Completamento…' : 'In attesa'}</span>
+                {zenTimerLine && (
+                  <div style={{ marginTop: '8px', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.35em', color: 'rgba(255,215,0,0.85)' }}>
+                    {zenTimerLine}
+                  </div>
+                )}
               </div>
             </div>
             <div style={{ flexShrink: 0, padding: '12px 20px max(20px, env(safe-area-inset-bottom))' }}>
@@ -6376,23 +6605,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
               <button
                 type="button"
-                onClick={() => setIsZenActive(!isZenActive)}
+                disabled={zenGracefulEnd}
+                onClick={() => {
+                  if (zenGracefulEnd) return;
+                  setIsZenActive(!isZenActive);
+                }}
                 style={{
                   width: '100%',
                   padding: '18px',
-                  backgroundColor: isZenActive ? 'rgba(0,0,0,0.35)' : '#FFD700',
-                  color: isZenActive ? '#FFD700' : '#000',
-                  border: isZenActive ? '1px solid #FFD700' : 'none',
+                  backgroundColor: zenGracefulEnd ? 'rgba(0,0,0,0.25)' : isZenActive ? 'rgba(0,0,0,0.35)' : '#FFD700',
+                  color: zenGracefulEnd ? 'rgba(255,215,0,0.5)' : isZenActive ? '#FFD700' : '#000',
+                  border: isZenActive || zenGracefulEnd ? '1px solid #FFD700' : 'none',
                   borderRadius: '15px',
                   fontSize: '0.9rem',
                   fontWeight: 'bold',
                   letterSpacing: '2px',
-                  cursor: 'pointer',
+                  cursor: zenGracefulEnd ? 'default' : 'pointer',
                   transition: '0.3s',
-                  boxShadow: isZenActive ? 'none' : '0 0 24px rgba(255, 215, 0, 0.35)',
+                  boxShadow: isZenActive || zenGracefulEnd ? 'none' : '0 0 24px rgba(255, 215, 0, 0.35)',
+                  opacity: zenGracefulEnd ? 0.85 : 1,
                 }}
               >
-                {isZenActive ? 'TERMINA SESSIONE' : 'AVVIA CICLO'}
+                {zenGracefulEnd ? 'Completamento…' : isZenActive ? 'TERMINA SESSIONE' : 'AVVIA CICLO'}
               </button>
             </div>
           </div>,
