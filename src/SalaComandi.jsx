@@ -380,8 +380,7 @@ export default function SalaComandi() {
     return { ctx, gain };
   }, []);
 
-  const fadeAudio = useCallback((targetVolume, durationMs, opts) => {
-    const organicDecay = opts?.organicDecay === true;
+  const fadeAudio = useCallback((targetVolume, durationMs) => {
     const el = neuralResetAudioRef.current;
     if (!el) return;
     clearNeuralResetFades();
@@ -399,11 +398,6 @@ export default function SalaComandi() {
       param.cancelScheduledValues(now);
       const current = Math.max(param.value, floor);
       param.setValueAtTime(current, now);
-      if (organicDecay) {
-        const timeConstant = Math.max(0.08, Math.min(0.18, durationSec / 3.5));
-        param.setTargetAtTime(safeTarget, now, timeConstant);
-        return;
-      }
       try {
         param.exponentialRampToValueAtTime(rampEnd, now + durationSec);
       } catch {
@@ -417,17 +411,10 @@ export default function SalaComandi() {
     const tickMs = 32;
     const startTime = performance.now();
     const safeDur = Math.max(1, durationMs);
-    const easeOutCubic = (u) => 1 - (1 - u) ** 3;
     const id = setInterval(() => {
       const elapsed = performance.now() - startTime;
       const t = Math.min(1, elapsed / safeDur);
-      const w = organicDecay ? easeOutCubic(t) : t;
-      let v;
-      if (organicDecay) {
-        v = startVol + (endVol - startVol) * w;
-      } else {
-        v = startVol * (endVol / startVol) ** t;
-      }
+      const v = startVol * (endVol / startVol) ** t;
       el.volume = Math.min(1, Math.max(0, v));
       if (t >= 1) {
         el.volume = safeTarget;
@@ -1519,11 +1506,11 @@ export default function SalaComandi() {
   useEffect(() => {
     if (activeAction !== 'focus' || !isZenActive || audioMode === 'muted') return;
     const FADE_IN_MS = 4000;
-    const FADE_OUT_QUIET_MS = 450;
+    const FADE_OUT_QUIET_MS = 3000;
     if (zenBreathPhase === 'Inspira') fadeAudio(0.9, FADE_IN_MS);
-    else if (zenBreathPhase === 'Trattieni') fadeAudio(0.02, FADE_OUT_QUIET_MS, { organicDecay: true });
+    else if (zenBreathPhase === 'Trattieni') fadeAudio(0.02, FADE_OUT_QUIET_MS);
     else if (zenBreathPhase === 'Espira') fadeAudio(0.6, FADE_IN_MS);
-    else if (zenBreathPhase === 'Pausa') fadeAudio(0.02, FADE_OUT_QUIET_MS, { organicDecay: true });
+    else if (zenBreathPhase === 'Pausa') fadeAudio(0.02, FADE_OUT_QUIET_MS);
   }, [zenBreathPhase, activeAction, isZenActive, audioMode, fadeAudio]);
 
   useEffect(() => {
