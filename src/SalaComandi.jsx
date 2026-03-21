@@ -325,6 +325,32 @@ export default function SalaComandi() {
   const [isZenActive, setIsZenActive] = useState(false);
   const [zenBreathPhase, setZenBreathPhase] = useState(null);
   const [zenSunScale, setZenSunScale] = useState(1);
+  const neuralResetAudioRef = useRef(null);
+  const neuralResetFadeIntervalRef = useRef(null);
+
+  const fadeAudio = useCallback((targetVolume, duration) => {
+    const el = neuralResetAudioRef.current;
+    if (!el) return;
+    const tickMs = 50;
+    if (neuralResetFadeIntervalRef.current != null) {
+      clearInterval(neuralResetFadeIntervalRef.current);
+      neuralResetFadeIntervalRef.current = null;
+    }
+    const clampedTarget = Math.max(0, Math.min(1, targetVolume));
+    const startVol = el.volume;
+    const safeDuration = Math.max(1, duration);
+    const startTime = Date.now();
+    const id = setInterval(() => {
+      const t = Math.min(1, (Date.now() - startTime) / safeDuration);
+      el.volume = startVol + (clampedTarget - startVol) * t;
+      if (t >= 1) {
+        el.volume = clampedTarget;
+        clearInterval(id);
+        if (neuralResetFadeIntervalRef.current === id) neuralResetFadeIntervalRef.current = null;
+      }
+    }, tickMs);
+    neuralResetFadeIntervalRef.current = id;
+  }, []);
 
   // AI ASSISTANT E CLUSTER
   const [apiKeys, setApiKeys] = useState(() => JSON.parse(localStorage.getItem('ghost_api_cluster')) || ['']);
@@ -1356,6 +1382,28 @@ export default function SalaComandi() {
       timeouts.forEach(clearTimeout);
     };
   }, [isZenActive]);
+
+  useEffect(() => {
+    if (activeAction !== 'focus') return undefined;
+    const el = neuralResetAudioRef.current;
+    if (!el) return undefined;
+    el.volume = 0.2;
+    el.play().catch(() => {});
+    return () => {
+      if (neuralResetFadeIntervalRef.current != null) {
+        clearInterval(neuralResetFadeIntervalRef.current);
+        neuralResetFadeIntervalRef.current = null;
+      }
+      el.pause();
+      el.currentTime = 0;
+    };
+  }, [activeAction]);
+
+  useEffect(() => {
+    if (activeAction !== 'focus') return;
+    if (zenBreathPhase === 'Inspira') fadeAudio(1, 4000);
+    else if (zenBreathPhase === 'Espira') fadeAudio(0.2, 4000);
+  }, [zenBreathPhase, activeAction, fadeAudio]);
 
   useEffect(() => {
     if (isDrawerOpen && activeAction === 'pasto') setDrawerMealTimeStr(decimalToTimeStr(drawerMealTime));
@@ -6039,6 +6087,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         {/* VISTA ZEN — Neural Reset (respirazione quadrata, sole sardo) */}
         {activeAction === 'focus' && (
           <div className="view-animate">
+            <audio
+              ref={neuralResetAudioRef}
+              src="/onde-mare.mp3"
+              loop
+              preload="auto"
+              aria-hidden
+              style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+            />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <button type="button" onClick={() => { setIsZenActive(false); setActiveAction(null); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
               <h2 style={{ fontSize: '0.8rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)' }}>🧘 NEURAL RESET</h2>
