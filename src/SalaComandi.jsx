@@ -4459,6 +4459,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .action-btn.full-width { grid-column: 1 / -1; flex-direction: row; padding: 20px; gap: 15px; }
           .action-btn.full-width .action-icon { font-size: 2rem; }
           .action-icon { font-size: 1.6rem; filter: drop-shadow(0 0 5px rgba(255,255,255,0.1)); }
+          .action-icon-img { width: 1.6rem; height: 1.6rem; object-fit: contain; display: block; flex-shrink: 0; }
+          .action-icon-img-lg { width: 1.8rem; height: 1.8rem; }
+          .action-icon-img-fab { width: 1.35rem; height: 1.35rem; }
           .action-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1.5px; color: #aaa; font-weight: 600; }
 
           .type-btn { flex: 1; background: transparent; border: 1px solid #333; color: #777; padding: 12px 0; border-radius: 14px; font-size: 0.7rem; letter-spacing: 1px; cursor: pointer; transition: 0.3s; text-align: center; }
@@ -5525,7 +5528,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
           style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '12px 20px', border: '1px solid #333', cursor: 'pointer' }}
         >
-          <span style={{ fontSize: '1.2rem' }}>✨</span>
+          <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-fab" width={22} height={22} decoding="async" />
           <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
         </div>
         <button type="button" onClick={() => { setShowChoiceModal(false); setIsDrawerOpen(true); setActiveAction(null); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
@@ -5639,9 +5642,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button className="action-btn" onClick={() => { setShowReport(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">📊</span><span className="action-label">Report</span></button>
               <button className="action-btn" onClick={() => { setShowProfile(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">⚙️</span><span className="action-label">Profilo & Target</span></button>
               <button className="action-btn" onClick={() => setActiveAction('strategia')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>🎯</span><span className="action-label" style={{ color: '#00e5ff' }}>Protocollo</span></button>
-              <button className="action-btn" onClick={() => setActiveAction('focus')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 192, 45, 0.4))' }}>🧘</span><span className="action-label" style={{ color: '#fbc02d' }}>Neural Reset</span></button>
+              <button className="action-btn" onClick={() => setActiveAction('focus')}><img src="/icon-neural-128.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 192, 45, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#fbc02d' }}>Neural Reset</span></button>
               <button className="action-btn" onClick={() => setActiveAction('ai_chat')} style={{ background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
-                <span className="action-icon" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.5))' }}>✨</span><span className="action-label" style={{ color: '#b388ff' }}>Core AI</span>
+                <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#b388ff' }}>Core AI</span>
               </button>
             </div>
           </div>
@@ -6502,8 +6505,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               >
                 &lt; INDIETRO
               </button>
-              <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center' }}>
-                🧘 NEURAL RESET
+              <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <img src="/icon-neural-128.png" alt="" width={22} height={22} decoding="async" style={{ objectFit: 'contain', filter: 'drop-shadow(0 0 6px rgba(255,215,0,0.35))' }} />
+                NEURAL RESET
               </h2>
               <div style={{ width: '48px', height: '48px', flexShrink: 0 }} aria-hidden />
             </div>
@@ -6848,7 +6852,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               ))}
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => window.print()} style={{ padding: '8px 16px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>🖨️ Stampa PDF</button>
+              <button type="button" onClick={() => window.print()} style={{ padding: '8px 16px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <img src="/icon-pdf-32.png" alt="" width={20} height={20} decoding="async" style={{ objectFit: 'contain' }} />
+                Stampa PDF
+              </button>
               <button onClick={() => setShowReport(false)} style={{ padding: '8px 16px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Chiudi</button>
             </div>
           </div>
@@ -6942,7 +6949,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </select>
                 </label>
               </div>
-              <button type="button" onClick={calculateSmartTargets} style={{ width: '100%', padding: '12px', marginTop: '15px', background: '#ff9800', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>✨ Auto-Calcola Target</button>
+              <button type="button" onClick={calculateSmartTargets} style={{ width: '100%', padding: '12px', marginTop: '15px', background: '#ff9800', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                <img src="/nuova-icona.png" alt="" width={20} height={20} decoding="async" style={{ objectFit: 'contain' }} />
+                Auto-Calcola Target
+              </button>
             </div>
 
             <div style={{ background: '#2c2c2c', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
@@ -7364,7 +7374,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 disabled={isAIVerifying}
                 style={{ background: '#2a2a2a', color: isAIVerifying ? '#888' : '#00e5ff', border: `1px solid ${isAIVerifying ? '#444' : '#00e5ff'}`, padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: isAIVerifying ? 'not-allowed' : 'pointer', display: 'flex', justifyContent: 'center', gap: '8px', transition: 'all 0.3s' }}
               >
-                {isAIVerifying ? '⏳ Analisi in corso...' : '✨ Verifica Correttezza (AI)'}
+                {isAIVerifying ? (
+                  '⏳ Analisi in corso...'
+                ) : (
+                  <>
+                    <img src="/nuova-icona.png" alt="" width={20} height={20} decoding="async" style={{ objectFit: 'contain' }} />
+                    Verifica Correttezza (AI)
+                  </>
+                )}
               </button>
               <button
                 type="button"

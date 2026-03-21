@@ -387,7 +387,16 @@ export default function ChartModal({
                 {aiInsightsList.length === 0 ? (
                   <>
                     <p style={{ fontSize: '0.9rem', color: '#888', marginBottom: '16px' }}>Nessuna analisi generata oggi.</p>
-                    <button type="button" onClick={runGenerateGlobalAI} disabled={isAiLoading} style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'linear-gradient(135deg, rgba(0,229,255,0.2) 0%, rgba(147,51,234,0.15) 100%)', border: '1px solid rgba(0,229,255,0.5)', borderRadius: '10px', color: '#00e5ff', cursor: isAiLoading ? 'wait' : 'pointer', opacity: isAiLoading ? 0.8 : 1 }}>{isAiLoading ? '...' : '✨ Genera Analisi Globale (AI)'}</button>
+                    <button type="button" onClick={runGenerateGlobalAI} disabled={isAiLoading} style={{ padding: '12px 18px', fontSize: '0.85rem', fontWeight: 'bold', background: 'linear-gradient(135deg, rgba(0,229,255,0.2) 0%, rgba(147,51,234,0.15) 100%)', border: '1px solid rgba(0,229,255,0.5)', borderRadius: '10px', color: '#00e5ff', cursor: isAiLoading ? 'wait' : 'pointer', opacity: isAiLoading ? 0.8 : 1, display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+                      {isAiLoading ? (
+                        '...'
+                      ) : (
+                        <>
+                          <img src="/nuova-icona.png" alt="" width={20} height={20} decoding="async" style={{ objectFit: 'contain' }} />
+                          Genera Analisi Globale (AI)
+                        </>
+                      )}
+                    </button>
                   </>
                 ) : (
                   <>

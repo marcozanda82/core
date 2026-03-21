@@ -341,8 +341,15 @@ export default function MealBuilder({
                   </div>
                 ))}
                 {foodNameInput.trim() && (
-                  <button type="button" style={{ width: '100%', padding: '14px 16px', minHeight: '48px', boxSizing: 'border-box', textAlign: 'left', background: 'rgba(179, 136, 255, 0.15)', border: 'none', borderBottom: '1px solid #2a2a2a', color: '#b388ff', cursor: isGeneratingFood ? 'wait' : 'pointer', fontSize: '1rem', fontWeight: '600', display: 'flex', alignItems: 'center' }} onClick={() => generateFoodWithAI(foodNameInput.trim())} disabled={isGeneratingFood}>
-                    {isGeneratingFood ? '⏳ Generazione in corso...' : `✨ Genera con AI: "${foodNameInput.trim()}"`}
+                  <button type="button" style={{ width: '100%', padding: '14px 16px', minHeight: '48px', boxSizing: 'border-box', textAlign: 'left', background: 'rgba(179, 136, 255, 0.15)', border: 'none', borderBottom: '1px solid #2a2a2a', color: '#b388ff', cursor: isGeneratingFood ? 'wait' : 'pointer', fontSize: '1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }} onClick={() => generateFoodWithAI(foodNameInput.trim())} disabled={isGeneratingFood}>
+                    {isGeneratingFood ? (
+                      '⏳ Generazione in corso...'
+                    ) : (
+                      <>
+                        <img src="/nuova-icona.png" alt="" width={22} height={22} decoding="async" style={{ objectFit: 'contain', flexShrink: 0 }} />
+                        <span>{`Genera con AI: "${foodNameInput.trim()}"`}</span>
+                      </>
+                    )}
                   </button>
                 )}
               </div>
