@@ -6566,6 +6566,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 flex: 1,
                 minHeight: 0,
                 width: '100%',
+                overflow: 'hidden',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
@@ -6581,33 +6582,49 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   height: '80px',
                   marginLeft: '-40px',
                   marginTop: '-40px',
-                  transform: `scale(${zenSunScale})`,
-                  transition: `transform ${zenSunTransitionMs}ms ease-in-out, opacity ${zenSunTransitionMs}ms ease-in-out`,
-                  opacity: isZenActive && zenSunDimHold ? 0.07 : 1,
+                  transform: 'scale(1.25)',
+                  transformOrigin: 'center center',
                   zIndex: 2,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  pointerEvents: 'none',
                 }}
               >
                 <div
                   style={{
-                    position: 'absolute',
-                    inset: '-6px',
-                    borderRadius: '50%',
-                    border: '1px solid rgba(255, 215, 0, 0.45)',
-                    boxShadow: '0 0 24px rgba(255, 215, 0, 0.2)',
+                    width: '80px',
+                    height: '80px',
+                    flexShrink: 0,
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transform: `scale(${zenSunScale})`,
+                    transformOrigin: 'center center',
+                    transition: `transform ${zenSunTransitionMs}ms ease-in-out, opacity ${zenSunTransitionMs}ms ease-in-out`,
+                    opacity: isZenActive && zenSunDimHold ? 0.07 : 1,
                   }}
-                />
-                <div
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    borderRadius: '50%',
-                    background: '#FFD700',
-                    boxShadow: '0 0 40px 18px rgba(255, 215, 0, 0.55), 0 0 80px 36px rgba(255, 200, 80, 0.22)',
-                  }}
-                />
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: '-6px',
+                      borderRadius: '50%',
+                      border: '1px solid rgba(255, 215, 0, 0.45)',
+                      boxShadow: '0 0 24px rgba(255, 215, 0, 0.2)',
+                    }}
+                  />
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      borderRadius: '50%',
+                      background: '#FFD700',
+                      boxShadow: '0 0 40px 18px rgba(255, 215, 0, 0.55), 0 0 80px 36px rgba(255, 200, 80, 0.22)',
+                    }}
+                  />
+                </div>
               </div>
               <div
                 style={{
