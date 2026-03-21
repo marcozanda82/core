@@ -326,8 +326,8 @@ export default function SalaComandi() {
   const [isZenActive, setIsZenActive] = useState(false);
   const [zenBreathPhase, setZenBreathPhase] = useState(null);
   const [zenSunScale, setZenSunScale] = useState(1);
-  /** Silenzia il mare durante il ciclo senza fermare la respirazione */
-  const [zenSeaMuted, setZenSeaMuted] = useState(false);
+  /** Ambiente sonoro Neural Reset: nessun suono | mare | foresta */
+  const [audioMode, setAudioMode] = useState('muted');
   const neuralResetAudioRef = useRef(null);
   const neuralResetFadeIntervalRef = useRef(null);
 
@@ -1403,32 +1403,53 @@ export default function SalaComandi() {
 
   useEffect(() => {
     if (activeAction === 'focus') return;
-    setZenSeaMuted(false);
+    setAudioMode('muted');
   }, [activeAction]);
 
   useEffect(() => {
     if (activeAction !== 'focus') return;
     const el = neuralResetAudioRef.current;
     if (!el) return;
-    if (isZenActive && !zenSeaMuted) {
-      el.play().catch(() => {});
-    } else {
+
+    const clearFade = () => {
       if (neuralResetFadeIntervalRef.current != null) {
         clearInterval(neuralResetFadeIntervalRef.current);
         neuralResetFadeIntervalRef.current = null;
       }
+    };
+
+    if (audioMode === 'muted' || !isZenActive) {
+      clearFade();
       el.pause();
       el.currentTime = 0;
+      return;
     }
-  }, [activeAction, isZenActive, zenSeaMuted]);
+
+    const nextSrc = audioMode === 'sea' ? '/onde-mare.mp3' : '/forest.mp3';
+    const tail = nextSrc.replace(/^\//, '');
+    let pathMatches = false;
+    try {
+      if (el.src) pathMatches = new URL(el.src, window.location.href).pathname.endsWith(tail);
+    } catch {
+      pathMatches = false;
+    }
+    if (!pathMatches) {
+      clearFade();
+      el.pause();
+      el.src = nextSrc;
+      el.load();
+    }
+
+    el.play().catch(() => {});
+  }, [activeAction, audioMode, isZenActive]);
 
   useEffect(() => {
-    if (activeAction !== 'focus' || !isZenActive || zenSeaMuted) return;
-    if (zenBreathPhase === 'Inspira') fadeAudio(1, 4000);
-    else if (zenBreathPhase === 'Trattieni') fadeAudio(0.05, 1000);
-    else if (zenBreathPhase === 'Espira') fadeAudio(0.2, 4000);
-    else if (zenBreathPhase === 'Pausa') fadeAudio(0.05, 1000);
-  }, [zenBreathPhase, activeAction, isZenActive, zenSeaMuted, fadeAudio]);
+    if (activeAction !== 'focus' || !isZenActive || audioMode === 'muted') return;
+    if (zenBreathPhase === 'Inspira') fadeAudio(0.7, 4000);
+    else if (zenBreathPhase === 'Trattieni') fadeAudio(0.5, 1000);
+    else if (zenBreathPhase === 'Espira') fadeAudio(0.3, 4000);
+    else if (zenBreathPhase === 'Pausa') fadeAudio(0.2, 1000);
+  }, [zenBreathPhase, activeAction, isZenActive, audioMode, fadeAudio]);
 
   useEffect(() => {
     if (isDrawerOpen && activeAction === 'pasto') setDrawerMealTimeStr(decimalToTimeStr(drawerMealTime));
@@ -6134,7 +6155,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           >
             <audio
               ref={neuralResetAudioRef}
-              src="/onde-mare.mp3"
               loop
               preload="auto"
               aria-hidden
@@ -6151,36 +6171,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center' }}>
                 🧘 NEURAL RESET
               </h2>
-              <button
-                type="button"
-                onClick={() => setZenSeaMuted(m => !m)}
-                title={zenSeaMuted ? 'Attiva suono mare' : 'Silenzia mare'}
-                aria-label={zenSeaMuted ? 'Attiva suono mare' : 'Silenzia mare'}
-                aria-pressed={isZenActive && !zenSeaMuted}
-                style={{
-                  flexShrink: 0,
-                  width: '48px',
-                  height: '48px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: isZenActive && !zenSeaMuted ? 'rgba(0,229,255,0.12)' : 'rgba(0,0,0,0.25)',
-                  border: `1px solid ${isZenActive && !zenSeaMuted ? 'rgba(0,229,255,0.45)' : 'rgba(255,255,255,0.15)'}`,
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  transition: 'filter 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease',
-                  filter: !isZenActive || zenSeaMuted ? 'grayscale(100%)' : 'none',
-                  opacity: !isZenActive || zenSeaMuted ? 0.5 : 1,
-                  boxShadow: isZenActive && !zenSeaMuted ? '0 0 20px rgba(0, 229, 255, 0.55), 0 0 36px rgba(0, 229, 255, 0.2)' : 'none',
-                  color: '#00e5ff',
-                }}
-              >
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M2 12c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
-                  <path d="M2 16c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
-                  <path d="M2 8c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
-                </svg>
-              </button>
+              <div style={{ width: '48px', height: '48px', flexShrink: 0 }} aria-hidden />
             </div>
             <p style={{ flexShrink: 0, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: '0.75rem', margin: '0 20px 8px', lineHeight: 1.5 }}>
               Respirazione quadrata 4–4–4–4: segui il sole sul mare.
@@ -6251,7 +6242,78 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 {isZenActive && zenBreathPhase ? zenBreathPhase : 'In attesa'}
               </div>
             </div>
-            <div style={{ flexShrink: 0, padding: '16px 20px max(20px, env(safe-area-inset-bottom))' }}>
+            <div style={{ flexShrink: 0, padding: '12px 20px max(20px, env(safe-area-inset-bottom))' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: '20px',
+                  marginBottom: '14px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setAudioMode(m => (m === 'sea' ? 'muted' : 'sea'))}
+                  title="Suono mare"
+                  aria-label="Suono mare"
+                  aria-pressed={audioMode === 'sea'}
+                  style={{
+                    width: '52px',
+                    height: '52px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '14px',
+                    border: `1px solid ${audioMode === 'sea' ? 'rgba(0,229,255,0.55)' : 'rgba(255,255,255,0.12)'}`,
+                    background: audioMode === 'sea' ? 'rgba(0,229,255,0.1)' : 'rgba(0,0,0,0.2)',
+                    cursor: 'pointer',
+                    transition: 'filter 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease',
+                    filter: audioMode === 'sea' ? 'none' : 'grayscale(100%)',
+                    opacity: audioMode === 'sea' ? 1 : 0.4,
+                    boxShadow: audioMode === 'sea' ? '0 0 18px rgba(0, 229, 255, 0.5), 0 0 32px rgba(0, 229, 255, 0.2)' : 'none',
+                    color: '#00e5ff',
+                  }}
+                >
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M2 12c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
+                    <path d="M2 16c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
+                    <path d="M2 8c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAudioMode(m => (m === 'forest' ? 'muted' : 'forest'))}
+                  title="Suono foresta"
+                  aria-label="Suono foresta"
+                  aria-pressed={audioMode === 'forest'}
+                  style={{
+                    width: '52px',
+                    height: '52px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '14px',
+                    border: `1px solid ${audioMode === 'forest' ? 'rgba(0,255,136,0.55)' : 'rgba(255,255,255,0.12)'}`,
+                    background: audioMode === 'forest' ? 'rgba(0,255,136,0.08)' : 'rgba(0,0,0,0.2)',
+                    cursor: 'pointer',
+                    transition: 'filter 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease',
+                    filter: audioMode === 'forest' ? 'none' : 'grayscale(100%)',
+                    opacity: audioMode === 'forest' ? 1 : 0.4,
+                    boxShadow: audioMode === 'forest' ? '0 0 18px rgba(0, 255, 136, 0.45), 0 0 32px rgba(0, 255, 136, 0.18)' : 'none',
+                    color: '#00ff88',
+                  }}
+                >
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M12 22v-3" />
+                    <path d="M9.5 19h5" />
+                    <path d="M12 16V4" />
+                    <path d="M12 6l-4 5h8l-4-5" />
+                    <path d="M12 10l-3 4h6l-3-4" />
+                    <path d="M12 13.5l-2 3h4l-2-3" />
+                  </svg>
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsZenActive(!isZenActive)}
