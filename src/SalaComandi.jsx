@@ -1506,7 +1506,7 @@ export default function SalaComandi() {
   useEffect(() => {
     if (activeAction !== 'focus' || !isZenActive || audioMode === 'muted') return;
     const FADE_IN_MS = 4000;
-    const FADE_OUT_QUIET_MS = 750;
+    const FADE_OUT_QUIET_MS = 200;
     if (zenBreathPhase === 'Inspira') fadeAudio(0.9, FADE_IN_MS);
     else if (zenBreathPhase === 'Trattieni') fadeAudio(0.02, FADE_OUT_QUIET_MS);
     else if (zenBreathPhase === 'Espira') fadeAudio(0.6, FADE_IN_MS);
