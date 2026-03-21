@@ -9,6 +9,7 @@
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ComposedChart, LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
 
 import { ref, get, set, onValue, update } from 'firebase/database';
@@ -325,6 +326,8 @@ export default function SalaComandi() {
   const [isZenActive, setIsZenActive] = useState(false);
   const [zenBreathPhase, setZenBreathPhase] = useState(null);
   const [zenSunScale, setZenSunScale] = useState(1);
+  /** Silenzia il mare durante il ciclo senza fermare la respirazione */
+  const [zenSeaMuted, setZenSeaMuted] = useState(false);
   const neuralResetAudioRef = useRef(null);
   const neuralResetFadeIntervalRef = useRef(null);
 
@@ -1385,25 +1388,47 @@ export default function SalaComandi() {
 
   useEffect(() => {
     if (activeAction !== 'focus') return undefined;
-    const el = neuralResetAudioRef.current;
-    if (!el) return undefined;
-    el.volume = 0.2;
-    el.play().catch(() => {});
     return () => {
+      if (neuralResetFadeIntervalRef.current != null) {
+        clearInterval(neuralResetFadeIntervalRef.current);
+        neuralResetFadeIntervalRef.current = null;
+      }
+      const el = neuralResetAudioRef.current;
+      if (el) {
+        el.pause();
+        el.currentTime = 0;
+      }
+    };
+  }, [activeAction]);
+
+  useEffect(() => {
+    if (activeAction === 'focus') return;
+    setZenSeaMuted(false);
+  }, [activeAction]);
+
+  useEffect(() => {
+    if (activeAction !== 'focus') return;
+    const el = neuralResetAudioRef.current;
+    if (!el) return;
+    if (isZenActive && !zenSeaMuted) {
+      el.play().catch(() => {});
+    } else {
       if (neuralResetFadeIntervalRef.current != null) {
         clearInterval(neuralResetFadeIntervalRef.current);
         neuralResetFadeIntervalRef.current = null;
       }
       el.pause();
       el.currentTime = 0;
-    };
-  }, [activeAction]);
+    }
+  }, [activeAction, isZenActive, zenSeaMuted]);
 
   useEffect(() => {
-    if (activeAction !== 'focus') return;
+    if (activeAction !== 'focus' || !isZenActive || zenSeaMuted) return;
     if (zenBreathPhase === 'Inspira') fadeAudio(1, 4000);
+    else if (zenBreathPhase === 'Trattieni') fadeAudio(0.05, 1000);
     else if (zenBreathPhase === 'Espira') fadeAudio(0.2, 4000);
-  }, [zenBreathPhase, activeAction, fadeAudio]);
+    else if (zenBreathPhase === 'Pausa') fadeAudio(0.05, 1000);
+  }, [zenBreathPhase, activeAction, isZenActive, zenSeaMuted, fadeAudio]);
 
   useEffect(() => {
     if (isDrawerOpen && activeAction === 'pasto') setDrawerMealTimeStr(decimalToTimeStr(drawerMealTime));
@@ -6084,9 +6109,29 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           );
         })()}
 
-        {/* VISTA ZEN — Neural Reset (respirazione quadrata, sole sardo) */}
-        {activeAction === 'focus' && (
-          <div className="view-animate">
+        {/* VISTA ZEN — Neural Reset fullscreen (portal su document.body) */}
+        {activeAction === 'focus' && createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              margin: 0,
+              padding: 0,
+              borderRadius: 0,
+              zIndex: 100000,
+              boxSizing: 'border-box',
+              background: 'radial-gradient(circle at center, #00e5ff 0%, #004d66 60%, #000000 100%)',
+              display: 'flex',
+              flexDirection: 'column',
+              paddingTop: 'env(safe-area-inset-top)',
+              paddingBottom: 'env(safe-area-inset-bottom)',
+              paddingLeft: 'env(safe-area-inset-left)',
+              paddingRight: 'env(safe-area-inset-right)',
+            }}
+          >
             <audio
               ref={neuralResetAudioRef}
               src="/onde-mare.mp3"
@@ -6095,26 +6140,76 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               aria-hidden
               style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <button type="button" onClick={() => { setIsZenActive(false); setActiveAction(null); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)' }}>🧘 NEURAL RESET</h2>
-              <div style={{ width: '70px' }}></div>
+            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => { setIsZenActive(false); setActiveAction(null); }}
+                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}
+              >
+                &lt; INDIETRO
+              </button>
+              <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center' }}>
+                🧘 NEURAL RESET
+              </h2>
+              <button
+                type="button"
+                onClick={() => setZenSeaMuted(m => !m)}
+                title={zenSeaMuted ? 'Attiva suono mare' : 'Silenzia mare'}
+                aria-label={zenSeaMuted ? 'Attiva suono mare' : 'Silenzia mare'}
+                aria-pressed={isZenActive && !zenSeaMuted}
+                style={{
+                  flexShrink: 0,
+                  width: '48px',
+                  height: '48px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: isZenActive && !zenSeaMuted ? 'rgba(0,229,255,0.12)' : 'rgba(0,0,0,0.25)',
+                  border: `1px solid ${isZenActive && !zenSeaMuted ? 'rgba(0,229,255,0.45)' : 'rgba(255,255,255,0.15)'}`,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  transition: 'filter 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease',
+                  filter: !isZenActive || zenSeaMuted ? 'grayscale(100%)' : 'none',
+                  opacity: !isZenActive || zenSeaMuted ? 0.5 : 1,
+                  boxShadow: isZenActive && !zenSeaMuted ? '0 0 20px rgba(0, 229, 255, 0.55), 0 0 36px rgba(0, 229, 255, 0.2)' : 'none',
+                  color: '#00e5ff',
+                }}
+              >
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M2 12c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
+                  <path d="M2 16c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
+                  <path d="M2 8c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
+                </svg>
+              </button>
             </div>
-            <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.75)', fontSize: '0.75rem', marginBottom: '16px' }}>Respirazione quadrata 4–4–4–4: segui il sole sul mare.</p>
+            <p style={{ flexShrink: 0, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: '0.75rem', margin: '0 20px 8px', lineHeight: 1.5 }}>
+              Respirazione quadrata 4–4–4–4: segui il sole sul mare.
+            </p>
             <div
               style={{
-                borderRadius: '16px',
-                overflow: 'hidden',
-                marginBottom: '20px',
-                background: 'radial-gradient(circle at center, #00e5ff 0%, #004d66 60%, #000000 100%)',
+                position: 'relative',
+                flex: 1,
+                minHeight: 0,
+                width: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               <div
                 style={{
-                  position: 'relative',
-                  height: '280px',
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  width: '80px',
+                  height: '80px',
+                  marginLeft: '-40px',
+                  marginTop: '-40px',
+                  transform: `scale(${zenSunScale})`,
+                  transition: 'transform 4s ease-in-out',
+                  zIndex: 2,
                   display: 'flex',
-                  flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
@@ -6122,62 +6217,64 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <div
                   style={{
                     position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    width: '80px',
-                    height: '80px',
-                    marginLeft: '-40px',
-                    marginTop: '-40px',
-                    transform: `scale(${zenSunScale})`,
-                    transition: 'transform 4s ease-in-out',
-                    zIndex: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    inset: '-6px',
+                    borderRadius: '50%',
+                    border: '1px solid rgba(255, 215, 0, 0.45)',
+                    boxShadow: '0 0 24px rgba(255, 215, 0, 0.2)',
                   }}
-                >
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: '-6px',
-                      borderRadius: '50%',
-                      border: '1px solid rgba(255, 215, 0, 0.45)',
-                      boxShadow: '0 0 24px rgba(255, 215, 0, 0.2)',
-                    }}
-                  />
-                  <div
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      borderRadius: '50%',
-                      background: '#FFD700',
-                      boxShadow: '0 0 40px 18px rgba(255, 215, 0, 0.55), 0 0 80px 36px rgba(255, 200, 80, 0.22)',
-                    }}
-                  />
-                </div>
+                />
                 <div
                   style={{
-                    position: 'absolute',
-                    bottom: '18px',
-                    left: '12px',
-                    right: '12px',
-                    textAlign: 'center',
-                    fontSize: '0.85rem',
-                    fontWeight: 700,
-                    letterSpacing: '0.2em',
-                    textTransform: 'uppercase',
-                    color: '#fff',
-                    textShadow: '0 2px 12px rgba(0,0,0,0.65)',
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: '50%',
+                    background: '#FFD700',
+                    boxShadow: '0 0 40px 18px rgba(255, 215, 0, 0.55), 0 0 80px 36px rgba(255, 200, 80, 0.22)',
                   }}
-                >
-                  {isZenActive && zenBreathPhase ? zenBreathPhase : 'In attesa'}
-                </div>
+                />
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 'max(24px, env(safe-area-inset-bottom))',
+                  left: '20px',
+                  right: '20px',
+                  textAlign: 'center',
+                  fontSize: '0.9rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  color: '#fff',
+                  textShadow: '0 2px 12px rgba(0,0,0,0.65)',
+                }}
+              >
+                {isZenActive && zenBreathPhase ? zenBreathPhase : 'In attesa'}
               </div>
             </div>
-            <button type="button" onClick={() => setIsZenActive(!isZenActive)} style={{ width: '100%', padding: '18px', backgroundColor: isZenActive ? '#222' : '#FFD700', color: isZenActive ? '#FFD700' : '#000', border: isZenActive ? '1px solid #FFD700' : 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.3s', boxShadow: isZenActive ? 'none' : '0 0 24px rgba(255, 215, 0, 0.35)' }}>
-              {isZenActive ? 'TERMINA SESSIONE' : 'AVVIA CICLO'}
-            </button>
-          </div>
+            <div style={{ flexShrink: 0, padding: '16px 20px max(20px, env(safe-area-inset-bottom))' }}>
+              <button
+                type="button"
+                onClick={() => setIsZenActive(!isZenActive)}
+                style={{
+                  width: '100%',
+                  padding: '18px',
+                  backgroundColor: isZenActive ? 'rgba(0,0,0,0.35)' : '#FFD700',
+                  color: isZenActive ? '#FFD700' : '#000',
+                  border: isZenActive ? '1px solid #FFD700' : 'none',
+                  borderRadius: '15px',
+                  fontSize: '0.9rem',
+                  fontWeight: 'bold',
+                  letterSpacing: '2px',
+                  cursor: 'pointer',
+                  transition: '0.3s',
+                  boxShadow: isZenActive ? 'none' : '0 0 24px rgba(255, 215, 0, 0.35)',
+                }}
+              >
+                {isZenActive ? 'TERMINA SESSIONE' : 'AVVIA CICLO'}
+              </button>
+            </div>
+          </div>,
+          document.body
         )}
 
         {/* Modale Info alimento */}
