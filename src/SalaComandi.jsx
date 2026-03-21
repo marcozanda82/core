@@ -330,36 +330,100 @@ export default function SalaComandi() {
   const [audioMode, setAudioMode] = useState('muted');
   const neuralResetAudioRef = useRef(null);
   const neuralResetFadeIntervalRef = useRef(null);
+  const neuralResetAudioContextRef = useRef(null);
+  const neuralResetGainRef = useRef(null);
+  const neuralResetMediaSourceCreatedRef = useRef(false);
 
-  const fadeAudio = useCallback((targetVolume, duration) => {
-    const el = neuralResetAudioRef.current;
-    if (!el) return;
-    const tickMs = 32;
+  const clearNeuralResetFades = useCallback(() => {
     if (neuralResetFadeIntervalRef.current != null) {
       clearInterval(neuralResetFadeIntervalRef.current);
       neuralResetFadeIntervalRef.current = null;
     }
-    const clampedTarget = Math.max(0, Math.min(1, targetVolume));
-    const startVol = el.volume;
-    const safeDuration = Math.max(1, duration);
+    const ctx = neuralResetAudioContextRef.current;
+    const gain = neuralResetGainRef.current;
+    if (ctx && gain) {
+      try {
+        gain.gain.cancelScheduledValues(ctx.currentTime);
+      } catch {
+        /* noop */
+      }
+    }
+  }, []);
+
+  const ensureNeuralResetWebAudio = useCallback(() => {
+    const el = neuralResetAudioRef.current;
+    if (!el) return null;
+    const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
+    if (!AC) return null;
+    if (!neuralResetAudioContextRef.current) {
+      neuralResetAudioContextRef.current = new AC();
+    }
+    const ctx = neuralResetAudioContextRef.current;
+    if (!neuralResetGainRef.current) {
+      const g = ctx.createGain();
+      g.connect(ctx.destination);
+      neuralResetGainRef.current = g;
+    }
+    const gain = neuralResetGainRef.current;
+    if (!neuralResetMediaSourceCreatedRef.current) {
+      try {
+        const src = ctx.createMediaElementSource(el);
+        src.connect(gain);
+        neuralResetMediaSourceCreatedRef.current = true;
+        const v = el.volume;
+        el.volume = 1;
+        gain.gain.value = v > 0 ? v : 1;
+      } catch {
+        return null;
+      }
+    }
+    return { ctx, gain };
+  }, []);
+
+  const fadeAudio = useCallback((targetVolume, durationMs) => {
+    const el = neuralResetAudioRef.current;
+    if (!el) return;
+    clearNeuralResetFades();
+    const safeTarget = Math.max(0, Math.min(1, targetVolume));
+    const floor = 0.0001;
+    const rampEnd = Math.max(floor, safeTarget);
+    const durationSec = Math.max(0.02, durationMs / 1000);
+
+    const graph = ensureNeuralResetWebAudio();
+    if (graph) {
+      const { ctx, gain } = graph;
+      ctx.resume().catch(() => {});
+      const param = gain.gain;
+      const now = ctx.currentTime;
+      param.cancelScheduledValues(now);
+      const current = Math.max(param.value, floor);
+      param.setValueAtTime(current, now);
+      try {
+        param.exponentialRampToValueAtTime(rampEnd, now + durationSec);
+      } catch {
+        param.linearRampToValueAtTime(safeTarget, now + durationSec);
+      }
+      return;
+    }
+
+    const startVol = Math.max(el.volume, floor);
+    const endVol = rampEnd;
+    const tickMs = 32;
     const startTime = performance.now();
-    const easeInOutSine = (u) => {
-      const x = Math.min(1, Math.max(0, u));
-      return 0.5 - 0.5 * Math.cos(Math.PI * x);
-    };
+    const safeDur = Math.max(1, durationMs);
     const id = setInterval(() => {
       const elapsed = performance.now() - startTime;
-      const tLin = Math.min(1, elapsed / safeDuration);
-      const eased = easeInOutSine(tLin);
-      el.volume = startVol + (clampedTarget - startVol) * eased;
-      if (tLin >= 1) {
-        el.volume = clampedTarget;
+      const t = Math.min(1, elapsed / safeDur);
+      const v = startVol * (endVol / startVol) ** t;
+      el.volume = Math.min(1, Math.max(0, v));
+      if (t >= 1) {
+        el.volume = safeTarget;
         clearInterval(id);
         if (neuralResetFadeIntervalRef.current === id) neuralResetFadeIntervalRef.current = null;
       }
     }, tickMs);
     neuralResetFadeIntervalRef.current = id;
-  }, []);
+  }, [clearNeuralResetFades, ensureNeuralResetWebAudio]);
 
   // AI ASSISTANT E CLUSTER
   const [apiKeys, setApiKeys] = useState(() => JSON.parse(localStorage.getItem('ghost_api_cluster')) || ['']);
@@ -1395,17 +1459,14 @@ export default function SalaComandi() {
   useEffect(() => {
     if (activeAction !== 'focus') return undefined;
     return () => {
-      if (neuralResetFadeIntervalRef.current != null) {
-        clearInterval(neuralResetFadeIntervalRef.current);
-        neuralResetFadeIntervalRef.current = null;
-      }
+      clearNeuralResetFades();
       const el = neuralResetAudioRef.current;
       if (el) {
         el.pause();
         el.currentTime = 0;
       }
     };
-  }, [activeAction]);
+  }, [activeAction, clearNeuralResetFades]);
 
   useEffect(() => {
     if (activeAction === 'focus') return;
@@ -1417,15 +1478,8 @@ export default function SalaComandi() {
     const el = neuralResetAudioRef.current;
     if (!el) return;
 
-    const clearFade = () => {
-      if (neuralResetFadeIntervalRef.current != null) {
-        clearInterval(neuralResetFadeIntervalRef.current);
-        neuralResetFadeIntervalRef.current = null;
-      }
-    };
-
     if (audioMode === 'muted' || !isZenActive) {
-      clearFade();
+      clearNeuralResetFades();
       el.pause();
       el.currentTime = 0;
       return;
@@ -1440,21 +1494,23 @@ export default function SalaComandi() {
       pathMatches = false;
     }
     if (!pathMatches) {
-      clearFade();
+      clearNeuralResetFades();
       el.pause();
       el.src = nextSrc;
       el.load();
     }
 
     el.play().catch(() => {});
-  }, [activeAction, audioMode, isZenActive]);
+  }, [activeAction, audioMode, isZenActive, clearNeuralResetFades]);
 
   useEffect(() => {
     if (activeAction !== 'focus' || !isZenActive || audioMode === 'muted') return;
-    if (zenBreathPhase === 'Inspira') fadeAudio(0.9, 4000);
-    else if (zenBreathPhase === 'Trattieni') fadeAudio(0.02, 4000);
-    else if (zenBreathPhase === 'Espira') fadeAudio(0.6, 4000);
-    else if (zenBreathPhase === 'Pausa') fadeAudio(0.02, 4000);
+    const FADE_IN_MS = 4000;
+    const FADE_OUT_QUIET_MS = 750;
+    if (zenBreathPhase === 'Inspira') fadeAudio(0.9, FADE_IN_MS);
+    else if (zenBreathPhase === 'Trattieni') fadeAudio(0.02, FADE_OUT_QUIET_MS);
+    else if (zenBreathPhase === 'Espira') fadeAudio(0.6, FADE_IN_MS);
+    else if (zenBreathPhase === 'Pausa') fadeAudio(0.02, FADE_OUT_QUIET_MS);
   }, [zenBreathPhase, activeAction, isZenActive, audioMode, fadeAudio]);
 
   useEffect(() => {
