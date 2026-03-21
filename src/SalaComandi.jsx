@@ -6204,7 +6204,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   marginLeft: '-40px',
                   marginTop: '-40px',
                   transform: `scale(${zenSunScale})`,
-                  transition: 'transform 4s ease-in-out',
+                  transition: 'transform 4s ease-in-out, opacity 4s ease-in-out',
+                  opacity: isZenActive && zenBreathPhase === 'Trattieni' ? 0.07 : 1,
                   zIndex: 2,
                   display: 'flex',
                   alignItems: 'center',
@@ -6310,13 +6311,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     color: '#00ff88',
                   }}
                 >
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M12 22v-3" />
-                    <path d="M9.5 19h5" />
-                    <path d="M12 16V4" />
-                    <path d="M12 6l-4 5h8l-4-5" />
-                    <path d="M12 10l-3 4h6l-3-4" />
-                    <path d="M12 13.5l-2 3h4l-2-3" />
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <path d="M12 2.5L7.2 11.2h9.6L12 2.5z" />
+                    <path d="M12 7.5L5.5 16.5h13L12 7.5z" />
+                    <rect x="10" y="16.2" width="4" height="6.3" rx="0.45" />
                   </svg>
                 </button>
               </div>
