@@ -334,7 +334,7 @@ export default function SalaComandi() {
   const fadeAudio = useCallback((targetVolume, duration) => {
     const el = neuralResetAudioRef.current;
     if (!el) return;
-    const tickMs = 50;
+    const tickMs = 32;
     if (neuralResetFadeIntervalRef.current != null) {
       clearInterval(neuralResetFadeIntervalRef.current);
       neuralResetFadeIntervalRef.current = null;
@@ -342,11 +342,17 @@ export default function SalaComandi() {
     const clampedTarget = Math.max(0, Math.min(1, targetVolume));
     const startVol = el.volume;
     const safeDuration = Math.max(1, duration);
-    const startTime = Date.now();
+    const startTime = performance.now();
+    const easeInOutSine = (u) => {
+      const x = Math.min(1, Math.max(0, u));
+      return 0.5 - 0.5 * Math.cos(Math.PI * x);
+    };
     const id = setInterval(() => {
-      const t = Math.min(1, (Date.now() - startTime) / safeDuration);
-      el.volume = startVol + (clampedTarget - startVol) * t;
-      if (t >= 1) {
+      const elapsed = performance.now() - startTime;
+      const tLin = Math.min(1, elapsed / safeDuration);
+      const eased = easeInOutSine(tLin);
+      el.volume = startVol + (clampedTarget - startVol) * eased;
+      if (tLin >= 1) {
         el.volume = clampedTarget;
         clearInterval(id);
         if (neuralResetFadeIntervalRef.current === id) neuralResetFadeIntervalRef.current = null;
@@ -1445,10 +1451,10 @@ export default function SalaComandi() {
 
   useEffect(() => {
     if (activeAction !== 'focus' || !isZenActive || audioMode === 'muted') return;
-    if (zenBreathPhase === 'Inspira') fadeAudio(0.7, 4000);
-    else if (zenBreathPhase === 'Trattieni') fadeAudio(0.5, 1000);
-    else if (zenBreathPhase === 'Espira') fadeAudio(0.3, 4000);
-    else if (zenBreathPhase === 'Pausa') fadeAudio(0.2, 1000);
+    if (zenBreathPhase === 'Inspira') fadeAudio(0.9, 4000);
+    else if (zenBreathPhase === 'Trattieni') fadeAudio(0.02, 4000);
+    else if (zenBreathPhase === 'Espira') fadeAudio(0.6, 4000);
+    else if (zenBreathPhase === 'Pausa') fadeAudio(0.02, 4000);
   }, [zenBreathPhase, activeAction, isZenActive, audioMode, fadeAudio]);
 
   useEffect(() => {
