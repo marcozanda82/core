@@ -204,9 +204,15 @@ function FirebaseDataLoadingLayer({ blocking }) {
     <div
       style={{
         position: 'fixed',
-        inset: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100%',
+        minHeight: '100dvh',
         zIndex: 200000,
-        background: 'radial-gradient(ellipse 125% 85% at 50% 12%, #0c2848 0%, #050a12 48%, #020408 100%)',
+        boxSizing: 'border-box',
+        background: 'radial-gradient(ellipse 130% 90% at 50% 10%, #0b2540 0%, #040d18 45%, #010509 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -4161,7 +4167,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <form className="login-box" onSubmit={handleLogin}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
               <img
-                src="/logo8.png?v=8"
+                src="/logo9.png?v=9"
                 alt="KentuOS"
                 decoding="async"
                 style={{
@@ -4745,7 +4751,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             }}
           >
             <img
-              src="/logo8.png?v=8"
+              src="/logo9.png?v=9"
               alt="KentuOS Logo"
               decoding="async"
               draggable={false}
@@ -6579,7 +6585,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               aria-hidden
               style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
             />
-            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px 16px', gap: '12px' }}>
+            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px 18px', gap: '12px' }}>
               <button
                 type="button"
                 onClick={() => {
@@ -6605,7 +6611,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
               <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <img
-                  src="/logo8.png?v=8"
+                  src="/logo9.png?v=9"
                   alt=""
                   decoding="async"
                   style={{ maxHeight: 26, width: 'auto', maxWidth: 'min(140px, 38vw)', objectFit: 'contain', display: 'block', filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.45))' }}

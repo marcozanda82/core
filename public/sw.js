@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kentuos-pwa-v11';
+const CACHE_NAME = 'kentuos-pwa-v12';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
