@@ -4084,7 +4084,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <form className="login-box" onSubmit={handleLogin}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
               <img
-                src="/logo3.png"
+                src="/logo3.png?v=1"
                 alt="KentuOS"
                 decoding="async"
                 style={{
@@ -4120,7 +4120,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div style={{ textAlign: 'center' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
               <img
-                src="/logo3.png"
+                src="/logo3.png?v=1"
                 alt="KentuOS"
                 decoding="async"
                 style={{
@@ -4698,7 +4698,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             }}
           >
             <img
-              src="/logo3.png"
+              src="/logo3.png?v=1"
               alt="KentuOS Logo"
               decoding="async"
               style={{
@@ -6555,7 +6555,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
               <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <img
-                  src="/logo3.png"
+                  src="/logo3.png?v=1"
                   alt=""
                   decoding="async"
                   style={{ maxHeight: 26, width: 'auto', maxWidth: 'min(140px, 38vw)', objectFit: 'contain', display: 'block', filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.45))' }}
