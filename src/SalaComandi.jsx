@@ -4633,14 +4633,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
               <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
                 <img
-                  src="/logo.png"
+                  src="/logo2.png"
                   alt="KentuOS Logo"
                   decoding="async"
                   style={{
                     maxHeight: 48,
                     height: 'auto',
                     width: 'auto',
-                    maxWidth: 'min(220px, 46vw)',
+                    maxWidth: 'min(280px, 58vw)',
                     objectFit: 'contain',
                     display: 'block',
                   }}
