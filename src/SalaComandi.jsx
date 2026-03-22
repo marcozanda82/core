@@ -4084,7 +4084,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <form className="login-box" onSubmit={handleLogin}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
               <img
-                src="/logo5.png?v=5"
+                src="/logo6.png?v=6"
                 alt="KentuOS"
                 decoding="async"
                 style={{
@@ -4120,7 +4120,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div style={{ textAlign: 'center' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
               <img
-                src="/logo5.png?v=5"
+                src="/logo6.png?v=6"
                 alt="KentuOS"
                 decoding="async"
                 style={{
@@ -4698,7 +4698,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             }}
           >
             <img
-              src="/logo5.png?v=5"
+              src="/logo6.png?v=6"
               alt="KentuOS Logo"
               decoding="async"
               style={{
@@ -6529,7 +6529,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               aria-hidden
               style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
             />
-            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', gap: '12px' }}>
+            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px 16px', gap: '12px' }}>
               <button
                 type="button"
                 onClick={() => {
@@ -6555,7 +6555,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
               <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <img
-                  src="/logo5.png?v=5"
+                  src="/logo6.png?v=6"
                   alt=""
                   decoding="async"
                   style={{ maxHeight: 26, width: 'auto', maxWidth: 'min(140px, 38vw)', objectFit: 'contain', display: 'block', filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.45))' }}
@@ -6564,7 +6564,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </h2>
               <div style={{ width: '48px', height: '48px', flexShrink: 0 }} aria-hidden />
             </div>
-            <div style={{ flexShrink: 0, padding: '0 16px 10px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '420px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+            <div style={{ flexShrink: 0, padding: '0 16px 14px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '420px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
                 Pattern di respirazione
                 <select
@@ -6610,7 +6610,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </select>
               </label>
             </div>
-            <p style={{ flexShrink: 0, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: '0.75rem', margin: '0 20px 18px', lineHeight: 1.5 }}>
+            <p style={{ flexShrink: 0, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: '0.75rem', margin: '0 20px 24px', lineHeight: 1.5 }}>
               {NEURAL_RESET_PATTERNS[zenBreathPatternId]?.hint ?? ''}
             </p>
             <div
@@ -6624,8 +6624,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                paddingTop: 'clamp(24px, 6vh, 48px)',
-                paddingBottom: 'clamp(20px, 5vh, 40px)',
+                paddingTop: 'clamp(32px, 7.5vh, 56px)',
+                paddingBottom: 'clamp(28px, 6.5vh, 48px)',
                 boxSizing: 'border-box',
               }}
             >
