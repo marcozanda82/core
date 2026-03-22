@@ -60,7 +60,7 @@ export default function KentuOSBootVideo({ onComplete }) {
         }}
       >
         <img
-          src="/logo3.png?v=1"
+          src="/logo5.png?v=5"
           alt="KentuOS"
           decoding="async"
           style={{
