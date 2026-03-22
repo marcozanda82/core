@@ -4096,7 +4096,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 }}
               />
             </div>
-            <p style={{ textAlign: 'center', fontSize: '0.65rem', color: '#00e5ff', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px' }}>Sardinian Blue Zone Technology</p>
+            <p
+              style={{
+                textAlign: 'center',
+                fontSize: '0.72rem',
+                fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+                fontWeight: 300,
+                letterSpacing: '0.06em',
+                color: 'rgba(255,255,255,0.42)',
+                marginBottom: '16px',
+                lineHeight: 1.5,
+              }}
+            >
+              Inspired by Sardinia&apos;s Blue Zones
+            </p>
             <p style={{textAlign: 'center', fontSize: '0.65rem', color: '#666', marginBottom: '20px'}}>SYSTEM ENCRYPTED. REQUIRE AUTHENTICATION.</p>
             <input type="email" placeholder="USER ID (EMAIL)" className="login-input" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
             <input type="password" placeholder="PASSWORD" className="login-input" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
@@ -4132,14 +4145,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 }}
               />
             </div>
-            <div style={{ display: 'inline-block', border: '1px solid rgba(0,229,255,0.4)', padding: '4px 12px', borderRadius: '20px', background: 'rgba(0,229,255,0.05)', marginBottom: '15px' }}>
-              <span style={{ color: '#00e5ff', fontSize: '0.7rem', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '2px' }}>
-                Sardinian Blue Zone Technology
-              </span>
-            </div>
-            <div style={{ color: '#888', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '300' }}>
-              Algoritmo Predittivo di Longevità
-            </div>
+            <p
+              style={{
+                margin: '0 0 12px 0',
+                fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+                fontWeight: 300,
+                fontSize: 'clamp(0.8rem, 2.8vw, 0.95rem)',
+                letterSpacing: '0.05em',
+                color: 'rgba(255,255,255,0.5)',
+                lineHeight: 1.55,
+              }}
+            >
+              Inspired by Sardinia&apos;s Blue Zones
+            </p>
           </div>
           <div style={{ color: '#555', fontSize: '0.75rem', marginTop: '20px', fontFamily: 'monospace' }}>
             Sincronizzazione dati in corso...

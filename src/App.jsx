@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import SalaComandi from './SalaComandi';
-import KentuOSBootVideo from './KentuOSBootVideo';
+import BootMessage from './BootMessage';
 
 export default function App() {
   const [bootComplete, setBootComplete] = useState(false);
 
   if (!bootComplete) {
-    return <KentuOSBootVideo onComplete={() => setBootComplete(true)} />;
+    return <BootMessage onComplete={() => setBootComplete(true)} />;
   }
 
   return <SalaComandi />;
