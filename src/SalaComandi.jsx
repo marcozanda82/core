@@ -4630,11 +4630,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           
           {/* SINISTRA: Titolo KentuOS + Longevità + Logout */}
           <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', flex: 1, minWidth: 0, gap: '10px' }}>
-            <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', flex: 1, minWidth: 0 }}>
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
-                <h1 style={{ margin: 0, fontSize: '2.2rem', fontWeight: '900', color: '#fff', letterSpacing: '-1px' }}>
-                  Kentu<sup style={{ color: '#00e5ff', fontSize: '1.2rem', fontWeight: 'bold', marginLeft: '2px', top: '-0.5em', position: 'relative' }}>OS</sup>
-                </h1>
+            <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                <img
+                  src="/logo.png"
+                  alt="KentuOS Logo"
+                  decoding="async"
+                  style={{
+                    maxHeight: 48,
+                    height: 'auto',
+                    width: 'auto',
+                    maxWidth: 'min(220px, 46vw)',
+                    objectFit: 'contain',
+                    display: 'block',
+                  }}
+                />
               </div>
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto', flexShrink: 0 }}>
