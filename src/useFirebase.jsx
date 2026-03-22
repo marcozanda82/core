@@ -23,10 +23,12 @@ const db = getDatabase(app);
 
 export function useFirebase() {
   const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
+      setAuthReady(true);
     });
     return () => unsub();
   }, []);
@@ -35,5 +37,5 @@ export function useFirebase() {
     await signInWithEmailAndPassword(auth, email, password);
   };
 
-  return { app, auth, db, user, handleLogin };
+  return { app, auth, db, user, authReady, handleLogin };
 }

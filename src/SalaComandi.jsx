@@ -178,8 +178,81 @@ function getZenBreathAudioFade(phaseName, phaseMs) {
   return null;
 }
 
+const FIREBASE_LOAD_OVERLAY_FADE_MS = 800;
+
+/** Overlay fullscreen durante il primo caricamento dati Firebase (stesso file SalaComandi). */
+function FirebaseDataLoadingLayer({ dataLoading }) {
+  const [mounted, setMounted] = useState(false);
+  const [opaque, setOpaque] = useState(true);
+
+  useEffect(() => {
+    if (dataLoading) {
+      setMounted(true);
+      setOpaque(true);
+      return;
+    }
+    if (mounted) {
+      setOpaque(false);
+      const t = window.setTimeout(() => setMounted(false), FIREBASE_LOAD_OVERLAY_FADE_MS);
+      return () => window.clearTimeout(t);
+    }
+  }, [dataLoading, mounted]);
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200000,
+        background: 'radial-gradient(ellipse 125% 85% at 50% 12%, #0c2848 0%, #050a12 48%, #020408 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding:
+          'max(20px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left))',
+        opacity: opaque ? 1 : 0,
+        transition: `opacity ${FIREBASE_LOAD_OVERLAY_FADE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+        pointerEvents: dataLoading ? 'auto' : 'none',
+      }}
+      aria-live="polite"
+      aria-busy={dataLoading}
+    >
+      <style>{`
+        @keyframes kentuos-load-msg-in {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .kentuos-load-msg {
+          animation: kentuos-load-msg-in 0.65s ease-out forwards;
+        }
+      `}</style>
+      <p
+        className="kentuos-load-msg"
+        style={{
+          margin: 0,
+          maxWidth: 'min(24rem, 90vw)',
+          textAlign: 'center',
+          fontFamily: 'ui-serif, Georgia, "Times New Roman", serif',
+          fontWeight: 300,
+          fontSize: 'clamp(0.95rem, 3.5vw, 1.18rem)',
+          letterSpacing: '0.06em',
+          lineHeight: 1.75,
+          color: 'rgba(248, 250, 252, 0.95)',
+          textShadow: '0 0 48px rgba(212, 175, 55, 0.2), 0 1px 2px rgba(0,0,0,0.55)',
+        }}
+      >
+        Inspired by{' '}
+        <span style={{ color: '#e8c547', fontWeight: 400 }}>Sardinia&apos;s Blue Zones</span>
+      </p>
+    </div>,
+    document.body
+  );
+}
+
 export default function SalaComandi() {
-  const { db, auth, user, handleLogin: firebaseLogin } = useFirebase();
+  const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
   const isAuthenticated = !!user;
   const userUid = user?.uid ?? null;
 
@@ -4054,10 +4127,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const selectedMealCenterIndex = selectedMealCenter ? mealPieData.findIndex(e => e.id === selectedMealCenter.id) : -1;
 
   // ========================================================
-  // SCHERMATA DI LOGIN
+  // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
   // ========================================================
-  if (!isAuthenticated) {
-    return (
+  let salaContent;
+
+  if (!authReady) {
+    salaContent = <div style={{ minHeight: '100dvh', width: '100%', background: '#121212' }} aria-hidden />;
+  } else if (!isAuthenticated) {
+    salaContent = (
       <div style={{ backgroundColor: '#000', color: '#00e5ff', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace', overflow: 'hidden', position: 'relative' }}>
         <style>
           {`
@@ -4084,7 +4161,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <form className="login-box" onSubmit={handleLogin}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
               <img
-                src="/logo6.png?v=6"
+                src="/logo7.png?v=7"
                 alt="KentuOS"
                 decoding="async"
                 style={{
@@ -4118,60 +4195,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         )}
       </div>
     );
-  }
-
-  if (!isInitialLoadComplete) {
-    return (
-      <div style={{ height: '100dvh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff', fontFamily: 'system-ui, sans-serif' }}>
-        <style>
-          {`
-            @keyframes pulse-kentu { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.65; transform: scale(0.96); } }
-          `}
-        </style>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
-          <div style={{ fontSize: '3rem', animation: 'pulse-kentu 1.5s infinite' }}>⏳</div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
-              <img
-                src="/logo6.png?v=6"
-                alt="KentuOS"
-                decoding="async"
-                style={{
-                  maxHeight: 48,
-                  width: 'auto',
-                  maxWidth: 'min(280px, 88vw)',
-                  objectFit: 'contain',
-                  display: 'block',
-                }}
-              />
-            </div>
-            <p
-              style={{
-                margin: '0 0 12px 0',
-                fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
-                fontWeight: 300,
-                fontSize: 'clamp(0.8rem, 2.8vw, 0.95rem)',
-                letterSpacing: '0.05em',
-                color: 'rgba(255,255,255,0.5)',
-                lineHeight: 1.55,
-              }}
-            >
-              Inspired by Sardinia&apos;s Blue Zones
-            </p>
-          </div>
-          <div style={{ color: '#555', fontSize: '0.75rem', marginTop: '20px', fontFamily: 'monospace' }}>
-            Sincronizzazione dati in corso...
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isFullScreenGraph) {
+  } else if (!isInitialLoadComplete) {
+    salaContent = <div style={{ minHeight: '100dvh', width: '100%', background: '#121212' }} aria-hidden />;
+  } else if (isFullScreenGraph) {
     const currentChartType = availableFullscreenCharts[fullscreenChartIndex] || 'percent';
     const fullscreenChartLabel = currentChartType === 'percent' ? 'Energia SNC %' : currentChartType === 'cortisolo' ? 'Cortisolo' : currentChartType === 'calorieTimeline' ? 'Bilancio Calorico' : currentChartType === 'glicemia' ? 'Glicemia' : currentChartType === 'idratazione' ? 'Idratazione' : currentChartType === 'neuro' ? 'Recupero Neurologico' : currentChartType === 'digestione' ? 'Digestione' : currentChartType === 'kcal' ? 'Kcal' : 'Grafico';
 
-    return (
+    salaContent = (
       <div style={{ position: 'fixed', inset: 0, backgroundColor: '#121212', zIndex: 99999, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
         {/* HEADER COMANDI (fisso) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#1e1e1e', borderBottom: '1px solid #333', flexShrink: 0 }}>
@@ -4390,9 +4420,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       </div>
     );
-  }
-
-  return (
+  } else {
+    salaContent = (
     <div style={{ backgroundColor: isSimulationMode ? '#1a1625' : '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '65px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
       <style>
@@ -4716,7 +4745,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             }}
           >
             <img
-              src="/logo6.png?v=6"
+              src="/logo7.png?v=7"
               alt="KentuOS Logo"
               decoding="async"
               style={{
@@ -6573,7 +6602,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
               <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <img
-                  src="/logo6.png?v=6"
+                  src="/logo7.png?v=7"
                   alt=""
                   decoding="async"
                   style={{ maxHeight: 26, width: 'auto', maxWidth: 'min(140px, 38vw)', objectFit: 'contain', display: 'block', filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.45))' }}
@@ -8144,5 +8173,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
     </div>
+  );
+  }
+
+  const isDataLoaded = isInitialLoadComplete;
+
+  return (
+    <>
+      <FirebaseDataLoadingLayer dataLoading={isAuthenticated && !isDataLoaded} />
+      {salaContent}
+    </>
   );
 }
