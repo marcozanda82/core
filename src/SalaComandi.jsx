@@ -180,13 +180,13 @@ function getZenBreathAudioFade(phaseName, phaseMs) {
 
 const FIREBASE_LOAD_OVERLAY_FADE_MS = 800;
 
-/** Overlay fullscreen durante il primo caricamento dati Firebase (stesso file SalaComandi). */
-function FirebaseDataLoadingLayer({ dataLoading }) {
+/** Overlay fullscreen: unico piano visibile finché auth/data non sono pronti per la dashboard/login. */
+function FirebaseDataLoadingLayer({ blocking }) {
   const [mounted, setMounted] = useState(false);
   const [opaque, setOpaque] = useState(true);
 
   useEffect(() => {
-    if (dataLoading) {
+    if (blocking) {
       setMounted(true);
       setOpaque(true);
       return;
@@ -196,7 +196,7 @@ function FirebaseDataLoadingLayer({ dataLoading }) {
       const t = window.setTimeout(() => setMounted(false), FIREBASE_LOAD_OVERLAY_FADE_MS);
       return () => window.clearTimeout(t);
     }
-  }, [dataLoading, mounted]);
+  }, [blocking, mounted]);
 
   if (!mounted) return null;
 
@@ -214,10 +214,10 @@ function FirebaseDataLoadingLayer({ dataLoading }) {
           'max(20px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left))',
         opacity: opaque ? 1 : 0,
         transition: `opacity ${FIREBASE_LOAD_OVERLAY_FADE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
-        pointerEvents: dataLoading ? 'auto' : 'none',
+        pointerEvents: blocking ? 'auto' : 'none',
       }}
       aria-live="polite"
-      aria-busy={dataLoading}
+      aria-busy={blocking}
     >
       <style>{`
         @keyframes kentuos-load-msg-in {
@@ -4132,7 +4132,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   let salaContent;
 
   if (!authReady) {
-    salaContent = <div style={{ minHeight: '100dvh', width: '100%', background: '#121212' }} aria-hidden />;
+    salaContent = <div style={{ minHeight: '100dvh', width: '100%', background: '#050a12' }} aria-hidden />;
   } else if (!isAuthenticated) {
     salaContent = (
       <div style={{ backgroundColor: '#000', color: '#00e5ff', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace', overflow: 'hidden', position: 'relative' }}>
@@ -4161,7 +4161,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <form className="login-box" onSubmit={handleLogin}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
               <img
-                src="/logo7.png?v=7"
+                src="/logo8.png?v=8"
                 alt="KentuOS"
                 decoding="async"
                 style={{
@@ -4196,7 +4196,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
     );
   } else if (!isInitialLoadComplete) {
-    salaContent = <div style={{ minHeight: '100dvh', width: '100%', background: '#121212' }} aria-hidden />;
+    salaContent = <div style={{ minHeight: '100dvh', width: '100%', background: '#050a12' }} aria-hidden />;
   } else if (isFullScreenGraph) {
     const currentChartType = availableFullscreenCharts[fullscreenChartIndex] || 'percent';
     const fullscreenChartLabel = currentChartType === 'percent' ? 'Energia SNC %' : currentChartType === 'cortisolo' ? 'Cortisolo' : currentChartType === 'calorieTimeline' ? 'Bilancio Calorico' : currentChartType === 'glicemia' ? 'Glicemia' : currentChartType === 'idratazione' ? 'Idratazione' : currentChartType === 'neuro' ? 'Recupero Neurologico' : currentChartType === 'digestione' ? 'Digestione' : currentChartType === 'kcal' ? 'Kcal' : 'Grafico';
@@ -4745,16 +4745,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             }}
           >
             <img
-              src="/logo7.png?v=7"
+              src="/logo8.png?v=8"
               alt="KentuOS Logo"
               decoding="async"
+              draggable={false}
               style={{
                 maxHeight: 48,
                 height: 'auto',
                 width: 'auto',
                 maxWidth: 'min(300px, 72vw)',
                 objectFit: 'contain',
+                objectPosition: 'center',
                 display: 'block',
+                transform: 'translateZ(0)',
               }}
             />
           </button>
@@ -6602,7 +6605,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
               <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <img
-                  src="/logo7.png?v=7"
+                  src="/logo8.png?v=8"
                   alt=""
                   decoding="async"
                   style={{ maxHeight: 26, width: 'auto', maxWidth: 'min(140px, 38vw)', objectFit: 'contain', display: 'block', filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.45))' }}
@@ -8177,10 +8180,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }
 
   const isDataLoaded = isInitialLoadComplete;
+  const startupOverlayBlocking = !authReady || (isAuthenticated && !isDataLoaded);
 
   return (
     <>
-      <FirebaseDataLoadingLayer dataLoading={isAuthenticated && !isDataLoaded} />
+      <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} />
       {salaContent}
     </>
   );
