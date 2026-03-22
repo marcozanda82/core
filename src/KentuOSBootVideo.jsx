@@ -44,9 +44,39 @@ export default function KentuOSBootVideo({ onComplete }) {
       role="presentation"
       aria-hidden="true"
     >
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          paddingTop: 'max(14px, env(safe-area-inset-top))',
+          paddingLeft: 'env(safe-area-inset-left)',
+          paddingRight: 'env(safe-area-inset-right)',
+          pointerEvents: 'none',
+          zIndex: 2,
+        }}
+      >
+        <img
+          src="/logo3.png"
+          alt="KentuOS"
+          decoding="async"
+          style={{
+            maxHeight: 44,
+            width: 'auto',
+            maxWidth: 'min(260px, 86vw)',
+            objectFit: 'contain',
+            display: 'block',
+          }}
+        />
+      </div>
       <video
         src={BOOT_VIDEO_SRC}
         style={{
+          position: 'relative',
+          zIndex: 1,
           width: '100%',
           height: '100%',
           maxHeight: '100dvh',

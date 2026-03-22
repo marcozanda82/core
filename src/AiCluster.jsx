@@ -89,7 +89,10 @@ export default function AiCluster({
     <div className="view-animate" style={{ display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', color: '#888', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; MENU</button>
-        <h2 style={{ fontSize: '0.8rem', color: '#b388ff', letterSpacing: '2px', margin: 0 }}>✨ KentuOS AI</h2>
+        <h2 style={{ fontSize: '0.8rem', color: '#b388ff', letterSpacing: '2px', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 600 }}>
+          <img src="/logo3.png" alt="KentuOS" decoding="async" style={{ maxHeight: 22, width: 'auto', maxWidth: 'min(120px, 32vw)', objectFit: 'contain', display: 'block' }} />
+          <span style={{ whiteSpace: 'nowrap' }}>✨ AI</span>
+        </h2>
         <button type="button" onClick={() => setShowAiSettings(!showAiSettings)} style={{ background: 'none', border: 'none', color: '#b388ff', fontSize: '1.2rem', cursor: 'pointer', filter: 'drop-shadow(0 0 5px rgba(179, 136, 255, 0.5))' }}>⚙️</button>
       </div>
       {onAnalysisResult && buildGlobalAIPrompt && callGeminiAPIWithRotation && (

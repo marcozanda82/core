@@ -4082,9 +4082,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         ) : (
           <form className="login-box" onSubmit={handleLogin}>
-            <h1 style={{ margin: 0, fontSize: '2rem', color: '#fff', letterSpacing: '-0.5px', fontWeight: '900', display: 'flex', justifyContent: 'center', alignItems: 'baseline', marginBottom: '8px', gap: '4px' }}>
-              Kentu<span style={{ color: '#00e5ff' }}>OS</span>
-            </h1>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+              <img
+                src="/logo3.png"
+                alt="KentuOS"
+                decoding="async"
+                style={{
+                  maxHeight: 52,
+                  width: 'auto',
+                  maxWidth: 'min(280px, 88vw)',
+                  objectFit: 'contain',
+                  display: 'block',
+                }}
+              />
+            </div>
             <p style={{ textAlign: 'center', fontSize: '0.65rem', color: '#00e5ff', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px' }}>Sardinian Blue Zone Technology</p>
             <p style={{textAlign: 'center', fontSize: '0.65rem', color: '#666', marginBottom: '20px'}}>SYSTEM ENCRYPTED. REQUIRE AUTHENTICATION.</p>
             <input type="email" placeholder="USER ID (EMAIL)" className="login-input" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
@@ -4107,9 +4118,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
           <div style={{ fontSize: '3rem', animation: 'pulse-kentu 1.5s infinite' }}>⏳</div>
           <div style={{ textAlign: 'center' }}>
-            <h2 style={{ color: '#fff', fontSize: '2rem', fontWeight: '900', margin: '0 0 10px 0', letterSpacing: '-1px' }}>
-              Kentu<sup style={{ color: '#00e5ff', fontSize: '1rem', position: 'relative', top: '-0.35em' }}>OS</sup>
-            </h2>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
+              <img
+                src="/logo3.png"
+                alt="KentuOS"
+                decoding="async"
+                style={{
+                  maxHeight: 48,
+                  width: 'auto',
+                  maxWidth: 'min(280px, 88vw)',
+                  objectFit: 'contain',
+                  display: 'block',
+                }}
+              />
+            </div>
             <div style={{ display: 'inline-block', border: '1px solid rgba(0,229,255,0.4)', padding: '4px 12px', borderRadius: '20px', background: 'rgba(0,229,255,0.05)', marginBottom: '15px' }}>
               <span style={{ color: '#00e5ff', fontSize: '0.7rem', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '2px' }}>
                 Sardinian Blue Zone Technology
@@ -4625,57 +4647,73 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div className="delete-text">RILASCIA PER ELIMINARE</div>
       </div>
 
-      {/* HEADER SUPERIORE - MINIMALE (2 ZONE) */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '5px', gap: '10px' }}>
-          
-          {/* SINISTRA: Titolo KentuOS + Longevità + Logout */}
-          <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', flex: 1, minWidth: 0, gap: '10px' }}>
-            <button type="button" onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }} style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left', flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-                <img
-                  src="/logo2.png"
-                  alt="KentuOS Logo"
-                  decoding="async"
-                  style={{
-                    maxHeight: 48,
-                    height: 'auto',
-                    width: 'auto',
-                    maxWidth: 'min(280px, 58vw)',
-                    objectFit: 'contain',
-                    display: 'block',
-                  }}
-                />
-              </div>
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto', flexShrink: 0 }}>
-              {longevityData && (
-                <button
-                  type="button"
-                  onClick={() => setShowLongevityModal(true)}
-                  style={{ background: 'transparent', border: `1px solid ${longevityData.color}50`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: `0 0 10px ${longevityData.color}20`, flexShrink: 0 }}
-                  title="Healthspan & Longevità"
-                >
-                  <span style={{ fontSize: '1.2rem' }}>🧬</span>
-                </button>
-              )}
+      {/* HEADER SUPERIORE — logo KentuOS centrato; controlli ai lati */}
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '5px', gap: '10px', minHeight: 52 }}>
+          {/* SINISTRA: Longevità + Logout */}
+          <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', flex: 1, minWidth: 0, gap: '10px', zIndex: 2 }}>
+            {longevityData && (
               <button
                 type="button"
-                onClick={() => auth.signOut()}
-                title="Esci"
-                aria-label="Esci"
-                style={{ background: 'transparent', border: '1px solid #333', borderRadius: '8px', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#666', transition: 'all 0.2s', flexShrink: 0 }}
+                onClick={() => setShowLongevityModal(true)}
+                style={{ background: 'transparent', border: `1px solid ${longevityData.color}50`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: `0 0 10px ${longevityData.color}20`, flexShrink: 0 }}
+                title="Healthspan & Longevità"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                  <polyline points="16 17 21 12 16 7" />
-                  <line x1="21" y1="12" x2="9" y2="12" />
-                </svg>
+                <span style={{ fontSize: '1.2rem' }}>🧬</span>
               </button>
-            </div>
+            )}
+            <button
+              type="button"
+              onClick={() => auth.signOut()}
+              title="Esci"
+              aria-label="Esci"
+              style={{ background: 'transparent', border: '1px solid #333', borderRadius: '8px', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#666', transition: 'all 0.2s', flexShrink: 0 }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </button>
           </div>
+          <button
+            type="button"
+            onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }}
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 1,
+              background: 'none',
+              border: 'none',
+              padding: '4px 10px',
+              margin: 0,
+              cursor: 'pointer',
+              font: 'inherit',
+              color: 'inherit',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              maxWidth: 'min(300px, 72vw)',
+            }}
+          >
+            <img
+              src="/logo3.png"
+              alt="KentuOS Logo"
+              decoding="async"
+              style={{
+                maxHeight: 48,
+                height: 'auto',
+                width: 'auto',
+                maxWidth: 'min(300px, 72vw)',
+                objectFit: 'contain',
+                display: 'block',
+              }}
+            />
+          </button>
 
           {/* DESTRA: allarme SNC compatto, Widget Energia */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', flexShrink: 0, flex: 1, minWidth: 0, zIndex: 2 }}>
             {sncStressLevel > 65 && (
               <button
                 type="button"
@@ -6515,9 +6553,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               >
                 &lt; INDIETRO
               </button>
-              <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                <img src="/icon-neural-128.png" alt="" width={22} height={22} decoding="async" style={{ objectFit: 'contain', filter: 'drop-shadow(0 0 6px rgba(255,215,0,0.35))' }} />
-                NEURAL RESET
+              <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <img
+                  src="/logo3.png"
+                  alt=""
+                  decoding="async"
+                  style={{ maxHeight: 26, width: 'auto', maxWidth: 'min(140px, 38vw)', objectFit: 'contain', display: 'block', filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.45))' }}
+                />
+                <span style={{ whiteSpace: 'nowrap' }}>NEURAL RESET</span>
               </h2>
               <div style={{ width: '48px', height: '48px', flexShrink: 0 }} aria-hidden />
             </div>
@@ -6567,7 +6610,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </select>
               </label>
             </div>
-            <p style={{ flexShrink: 0, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: '0.75rem', margin: '0 20px 8px', lineHeight: 1.5 }}>
+            <p style={{ flexShrink: 0, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: '0.75rem', margin: '0 20px 18px', lineHeight: 1.5 }}>
               {NEURAL_RESET_PATTERNS[zenBreathPatternId]?.hint ?? ''}
             </p>
             <div
@@ -6581,6 +6624,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
+                paddingTop: 'clamp(24px, 6vh, 48px)',
+                paddingBottom: 'clamp(20px, 5vh, 40px)',
+                boxSizing: 'border-box',
               }}
             >
               <div
