@@ -23,12 +23,14 @@ const COUNT_UP_MS = 800;
  * `longevity`: output di computeLongevityScore (score, priorityFocus, …).
  * `chart`: nodo React (es. ResponsiveContainer + grafico) dal genitore.
  * `timelineProps`: spread su TimelineNodi (stessi props di SalaComandi).
+ * `onFocusClick`: opzionale — click / Invio / Spazio sulla card Priority Focus.
  */
 export default function HomeView({
   longevity,
   chart,
   timelineProps,
-  onAddEvent
+  onAddEvent,
+  onFocusClick
 }) {
   const score =
     longevity != null && typeof longevity.score === 'number' && !Number.isNaN(longevity.score)
@@ -66,6 +68,15 @@ export default function HomeView({
 
   const { priorityFocus } = longevity;
   const scoreGlow = getScoreGlow(score);
+  const focusInteractive = typeof onFocusClick === 'function';
+
+  const handleFocusKeyDown = (e) => {
+    if (!focusInteractive) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onFocusClick();
+    }
+  };
 
   return (
     <div style={{ padding: 16, maxWidth: 700, margin: '0 auto' }}>
@@ -97,6 +108,12 @@ export default function HomeView({
       {/* FOCUS (HERO) */}
       {priorityFocus && (
         <motion.div
+          role={focusInteractive ? 'button' : undefined}
+          tabIndex={focusInteractive ? 0 : undefined}
+          aria-label={focusInteractive ? 'Longevity focus — show details' : undefined}
+          onClick={focusInteractive ? () => onFocusClick() : undefined}
+          onKeyDown={focusInteractive ? handleFocusKeyDown : undefined}
+          whileHover={focusInteractive ? { scale: 1.015 } : undefined}
           style={{
             marginBottom: SECTION_GAP,
             backdropFilter: 'blur(16px)',
@@ -106,7 +123,9 @@ export default function HomeView({
             border: '1px solid rgba(255,255,255,0.08)',
             boxShadow: '0 28px 56px rgba(0,0,0,0.55), 0 10px 24px rgba(0,0,0,0.35)',
             padding: 18,
-            color: '#e8e8e8'
+            color: '#e8e8e8',
+            cursor: focusInteractive ? 'pointer' : undefined,
+            outlineOffset: 4
           }}
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
