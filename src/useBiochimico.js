@@ -38,21 +38,6 @@ export function getTargetForNutrient(key) {
 }
 
 /**
- * Regola AI / completamento: quando un valore non è disponibile, usa la media (target/4 per pasto).
- * Mai restituire 0 o bloccare il sistema: stima sempre un valore ragionevole.
- */
-export function getDefaultNutrientValue(key) {
-  const target = getTargetForNutrient(key);
-  if (target != null && target > 0) return target / 4; // media per pasto
-  // fallback generico per chiavi non in TARGETS (es. kcal)
-  if (key === 'kcal' || key === 'cal') return 400;
-  if (key === 'prot') return 35;
-  if (key === 'carb') return 75;
-  if (key === 'fatTotal') return 21;
-  return 0;
-}
-
-/**
  * Inizializza un oggetto totali con tutte le chiavi nutrizionali a 0.
  */
 function buildEmptyTotali() {
@@ -80,6 +65,61 @@ export function computeTotali(dailyLog) {
   });
   totali.workout = workoutKcal;
   return totali;
+}
+
+const TRACKER_STORICO_PREFIX = 'trackerStorico_';
+
+function getLogArrayFromTrackerNode(node) {
+  if (!node || typeof node !== 'object') return [];
+  const raw = node.log;
+  if (raw == null) return [];
+  return Array.isArray(raw) ? raw : Object.values(raw);
+}
+
+/**
+ * Media giornaliera del nutriente su tutti i giorni con almeno un pasto (tracker_data globale).
+ * @returns {number|null} media giornaliera o null se nessuno storico utile
+ */
+function averageDailyNutrientFromTrackerData(trackerData, key) {
+  if (!trackerData || typeof trackerData !== 'object') return null;
+  const dayKeys = Object.keys(trackerData).filter(k => k.startsWith(TRACKER_STORICO_PREFIX));
+  if (dayKeys.length === 0) return null;
+  const samples = [];
+  for (const dk of dayKeys) {
+    const log = getLogArrayFromTrackerNode(trackerData[dk]);
+    if (!log.some(e => e && e.type === 'food')) continue;
+    const totali = computeTotali(log);
+    let v;
+    if (key === 'kcal' || key === 'cal') v = Number(totali.kcal || 0) || 0;
+    else v = totali[key] != null && typeof totali[key] === 'number' ? totali[key] : 0;
+    if (!Number.isFinite(v)) v = 0;
+    samples.push(v);
+  }
+  if (samples.length === 0) return null;
+  return samples.reduce((a, b) => a + b, 0) / samples.length;
+}
+
+function defaultNutrientQuarterFallback(key) {
+  const target = getTargetForNutrient(key);
+  if (target != null && target > 0) return target / 4;
+  const defT = DEFAULT_TARGETS[key];
+  if (defT != null && defT > 0) return defT / 4;
+  if (key === 'kcal' || key === 'cal') return 400;
+  if (key === 'prot') return 35;
+  if (key === 'carb') return 75;
+  if (key === 'fatTotal') return 21;
+  return 0;
+}
+
+/**
+ * Stima per pasto: (media giornaliera dallo storico) / 4 se possibile; altrimenti DEFAULT_TARGETS o TARGET / 4.
+ * @param {string} key
+ * @param {object} [trackerData] — albero Firebase `tracker_data` (chiavi trackerStorico_YYYY-MM-DD)
+ */
+export function getDefaultNutrientValue(key, trackerData) {
+  const avgDaily = averageDailyNutrientFromTrackerData(trackerData, key);
+  if (avgDaily != null && avgDaily > 0) return avgDaily / 4;
+  return defaultNutrientQuarterFallback(key);
 }
 
 /**

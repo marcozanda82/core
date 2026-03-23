@@ -227,7 +227,7 @@ function FirebaseDataLoadingLayer({ blocking }) {
         minHeight: '100dvh',
         zIndex: 200000,
         boxSizing: 'border-box',
-        background: 'radial-gradient(ellipse 130% 90% at 50% 10%, #0b2540 0%, #040d18 45%, #010509 100%)',
+        background: 'linear-gradient(165deg, #0f2847 0%, #0a1a2e 42%, #050e1a 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -264,8 +264,7 @@ function FirebaseDataLoadingLayer({ blocking }) {
           textShadow: '0 0 48px rgba(212, 175, 55, 0.2), 0 1px 2px rgba(0,0,0,0.55)',
         }}
       >
-        Inspired by{' '}
-        <span style={{ color: '#e8c547', fontWeight: 400 }}>Sardinia&apos;s Blue Zones</span>
+        Inspired by Sardinia&apos;s Blue Zones
       </p>
     </div>,
     document.body
@@ -731,6 +730,13 @@ export default function SalaComandi() {
   const foodInputRef = useRef(null);
   const csvInputRef = useRef(null);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
+  const [startupSafetyBypass, setStartupSafetyBypass] = useState(false);
+
+  useEffect(() => {
+    setStartupSafetyBypass(false);
+    const t = window.setTimeout(() => setStartupSafetyBypass(true), 5000);
+    return () => window.clearTimeout(t);
+  }, [userUid]);
 
   const [fullStorico, setFullStorico] = useState(null);
   const [fullHistory, setFullHistory] = useState({});
@@ -2165,9 +2171,9 @@ export default function SalaComandi() {
       const name = entryPer100?.desc || `Barcode ${barcode}`;
       if (entryPer100 && userUid) {
         Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => { 
-          if (entryPer100[k] == null) entryPer100[k] = getDefaultNutrientValue(k); 
+          if (entryPer100[k] == null) entryPer100[k] = getDefaultNutrientValue(k, fullHistory); 
         }));
-        if (entryPer100.kcal == null) entryPer100.kcal = getDefaultNutrientValue('kcal');
+        if (entryPer100.kcal == null) entryPer100.kcal = getDefaultNutrientValue('kcal', fullHistory);
         const newKey = `food_${Date.now()}_${String(name).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
         const basePath = `users/${userUid}/tracker_data`;
         await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
@@ -2181,7 +2187,7 @@ export default function SalaComandi() {
       setFoodWeightInput('100');
       setTimeout(() => document.getElementById('weight-input')?.focus(), 100);
     }
-  }, [foodDb, userUid]);
+  }, [foodDb, userUid, fullHistory]);
 
   useEffect(() => {
     if (!isBarcodeScannerOpen || !barcodeVideoRef.current) return;
@@ -2246,9 +2252,9 @@ export default function SalaComandi() {
       const f = getAverageEstimate('fatTotal', foodDesc);
       return Math.round((p * 4 + c * 4 + f * 9)) || 120;
     }
-    const def = getDefaultNutrientValue(nutrientKey);
+    const def = getDefaultNutrientValue(nutrientKey, fullHistory);
     return def > 0 ? def : (nutrientKey === 'fibre' ? 3 : nutrientKey === 'omega3' ? 0.3 : nutrientKey === 'mg' ? 25 : 10);
-  }, []);
+  }, [fullHistory]);
 
   // Estrazione dati da DB
   const estraiDatiFoodDb = useCallback((nome, qta, pastoType) => {
@@ -2268,25 +2274,25 @@ export default function SalaComandi() {
       Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g]).forEach(k => {
         if (foodItem[k] == null || foodItem[k] === 0) {
           foodItem[k] = macroKeys.includes(k)
-            ? (getAverageEstimate(k, nome) / 100) * qta || getDefaultNutrientValue(k)
-            : getDefaultNutrientValue(k);
+            ? (getAverageEstimate(k, nome) / 100) * qta || getDefaultNutrientValue(k, fullHistory)
+            : getDefaultNutrientValue(k, fullHistory);
         }
       }));
-      if (!foodItem.kcal || foodItem.kcal === 0) foodItem.kcal = (getAverageEstimate('kcal', nome) / 100) * qta || getDefaultNutrientValue('kcal');
+      if (!foodItem.kcal || foodItem.kcal === 0) foodItem.kcal = (getAverageEstimate('kcal', nome) / 100) * qta || getDefaultNutrientValue('kcal', fullHistory);
     } else {
       const macroKeys = ['kcal', 'cal', 'prot', 'carb', 'fatTotal', 'fibre'];
-      foodItem.kcal = (getAverageEstimate('kcal', nome) / 100) * qta || getDefaultNutrientValue('kcal');
+      foodItem.kcal = (getAverageEstimate('kcal', nome) / 100) * qta || getDefaultNutrientValue('kcal', fullHistory);
       foodItem.cal = foodItem.kcal;
-      foodItem.prot = (getAverageEstimate('prot', nome) / 100) * qta || getDefaultNutrientValue('prot');
-      foodItem.carb = (getAverageEstimate('carb', nome) / 100) * qta || getDefaultNutrientValue('carb');
-      foodItem.fatTotal = (getAverageEstimate('fatTotal', nome) / 100) * qta || getDefaultNutrientValue('fatTotal');
+      foodItem.prot = (getAverageEstimate('prot', nome) / 100) * qta || getDefaultNutrientValue('prot', fullHistory);
+      foodItem.carb = (getAverageEstimate('carb', nome) / 100) * qta || getDefaultNutrientValue('carb', fullHistory);
+      foodItem.fatTotal = (getAverageEstimate('fatTotal', nome) / 100) * qta || getDefaultNutrientValue('fatTotal', fullHistory);
       Object.values(TARGETS).forEach(g => Object.keys(g || {}).forEach(k => {
         if (foodItem[k] == null)
-          foodItem[k] = macroKeys.includes(k) ? (getAverageEstimate(k, nome) / 100) * qta || getDefaultNutrientValue(k) : getDefaultNutrientValue(k);
+          foodItem[k] = macroKeys.includes(k) ? (getAverageEstimate(k, nome) / 100) * qta || getDefaultNutrientValue(k, fullHistory) : getDefaultNutrientValue(k, fullHistory);
       }));
     }
     return foodItem;
-  }, [foodDb, getAverageEstimate]);
+  }, [foodDb, getAverageEstimate, fullHistory]);
 
   const handleAddFoodManual = () => {
     if (!foodNameInput || !foodWeightInput) return;
@@ -3753,6 +3759,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     [longevityEngineScore]
   );
 
+  const homeLongevityInsightLine = useMemo(() => {
+    const t = longevityEngineScore?.priorityFocus?.title;
+    if (typeof t === 'string' && t.trim()) return t.trim();
+    const ex = (longevityExplanation || '').trim();
+    if (!ex) return '';
+    const parts = ex.split(/(?<=[.!?])\s+/);
+    return (parts[0] || ex).trim();
+  }, [longevityEngineScore?.priorityFocus?.title, longevityExplanation]);
+
   const dailyReportDisplay = useMemo(() => {
     if (!dailyReport) return null;
     const neuroVal = dailyReport.neuro;
@@ -4853,7 +4868,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               left: '50%',
               top: '50%',
               transform: 'translate(-50%, -50%)',
-              zIndex: 1,
+              zIndex: 15,
               background: 'none',
               border: 'none',
               padding: '4px 10px',
@@ -5106,6 +5121,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           {(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? `🎯 Rimangono ${Math.round(dynamicDailyKcal - (totali?.kcal || 0))} kcal` : `🔥 Surplus calorico +${Math.abs(Math.round(dynamicDailyKcal - (totali?.kcal || 0)))} kcal`}
         </span>
       </div>
+
+      {(!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
+        <div style={{ fontSize: '13px', opacity: 0.7, color: '#94a3b8', marginBottom: '6px' }}>
+          {homeLongevityInsightLine}
+        </div>
+      ) : null}
 
       {userProfile?.level === 'pro' && (
       <>
@@ -6702,7 +6723,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               aria-hidden
               style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
             />
-            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px 18px', gap: '12px' }}>
+            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px 18px', gap: '12px', position: 'relative', zIndex: 30 }}>
               <button
                 type="button"
                 onClick={() => {
@@ -6813,7 +6834,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   marginTop: '-40px',
                   transform: 'scale(1.25)',
                   transformOrigin: 'center center',
-                  zIndex: 2,
+                  zIndex: 0,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -8304,7 +8325,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }
 
   const isDataLoaded = isInitialLoadComplete;
-  const startupOverlayBlocking = !authReady || (isAuthenticated && !isDataLoaded);
+  const startupOverlayBlocking =
+    !startupSafetyBypass && (!authReady || (isAuthenticated && !isDataLoaded));
 
   return (
     <>
