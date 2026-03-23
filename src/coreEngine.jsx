@@ -2677,6 +2677,28 @@ function buildLongevitySuggestions(daily, drivers) {
   return out;
 }
 
+const LONGEVITY_PRIORITY_FOCUS_TITLE = {
+  energia: 'Energy stability',
+  nutrizione: 'Nutrition',
+  stress: 'Metabolic stress',
+  abitudini: 'Sleep & hydration',
+  rischio: 'Health risk'
+};
+
+/** Primo driver negativo (pilastro più basso) + stessa azione del primo suggerimento mirato. */
+function buildLongevityPriorityFocus(daily, drivers) {
+  if (!Array.isArray(drivers) || drivers.length === 0) return null;
+  const firstNeg = drivers.find(d => d.type === 'negative');
+  if (!firstNeg) return null;
+  const title = LONGEVITY_PRIORITY_FOCUS_TITLE[firstNeg.key] || 'Focus area';
+  let action = longevitySuggestionForNegativeDriver(firstNeg, daily);
+  if (!action) {
+    const m = firstNeg.message || '';
+    action = m.length > 100 ? `${m.slice(0, 97)}…` : m || 'Review this pillar today';
+  }
+  return { key: firstNeg.key, title, action };
+}
+
 /**
  * Punteggio longevità giornaliero (0–100) da dati aggregati del giorno.
  * Campi opzionali tipici: energyStability (0–1), energySeries, totals/targets macro,
@@ -2684,6 +2706,7 @@ function buildLongevitySuggestions(daily, drivers) {
  * Contesto opzionale per messaggi driver: stressPeakPeriod, metabolicStressByPhase, hydrationByPhase,
  * morningHydrationRatio, hydrationMorningMl, energySeries (serie per fase giorno / calo pomeridiano).
  * Ritorna anche `suggestions`: fino a 5 stringhe, una per driver negativo, azioni concrete legate al driver e ai dati.
+ * `priorityFocus`: primo pilastro negativo + azione allineata al primo suggerimento (null se non ci sono driver negativi).
  */
 export function computeLongevityScore(daily) {
   const energia = scoreLongevityEnergia(daily);
@@ -2700,11 +2723,13 @@ export function computeLongevityScore(daily) {
       rischio * 0.10
   );
   const drivers = buildLongevityDrivers(daily, breakdown);
+  const suggestions = buildLongevitySuggestions(daily, drivers);
   return {
     score,
     breakdown,
     drivers,
-    suggestions: buildLongevitySuggestions(daily, drivers)
+    suggestions,
+    priorityFocus: buildLongevityPriorityFocus(daily, drivers)
   };
 }
 
