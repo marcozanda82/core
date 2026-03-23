@@ -2270,6 +2270,148 @@ function scoreLongevityRischio(daily) {
   return clampLongevityComponent(100 - clampLongevityComponent(raw));
 }
 
+const LONGEVITY_BREAKDOWN_KEYS = ['energia', 'nutrizione', 'stress', 'abitudini', 'rischio'];
+
+function longevityRawStress(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  if (typeof d.stress === 'number') return d.stress;
+  if (typeof d.metabolicStress === 'number') return d.metabolicStress;
+  return null;
+}
+
+function longevityRawRisk(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  if (typeof d.risk === 'number') return d.risk;
+  if (typeof d.riskScore === 'number') return d.riskScore;
+  return null;
+}
+
+function longevitySleepHydrationParts(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  let sleepPart = null;
+  if (typeof d.sleepScore === 'number') sleepPart = d.sleepScore;
+  else if (typeof d.sleepHours === 'number') {
+    sleepPart = clampLongevityComponent(100 - Math.abs(d.sleepHours - 7.5) * 14);
+  } else if (typeof d.sleep === 'number') {
+    sleepPart = d.sleep <= 24 ? clampLongevityComponent(100 - Math.abs(d.sleep - 7.5) * 14) : d.sleep;
+  }
+  let hydPart = null;
+  if (typeof d.hydrationScore === 'number') hydPart = d.hydrationScore;
+  else if (typeof d.hydration === 'number') {
+    const goal = Number(d.hydrationTarget);
+    if (goal > 0) hydPart = clampLongevityComponent((d.hydration / goal) * 100);
+    else hydPart = d.hydration;
+  }
+  return { sleepPart, hydPart };
+}
+
+function longevityNegativeDriverMessage(key, score, daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  switch (key) {
+    case 'energia': {
+      if (typeof d.energyStability === 'number' && d.energyStability < 0.45) {
+        return 'Unstable energy pattern';
+      }
+      if (typeof d.energyVolatility === 'number' && d.energyVolatility > 55) {
+        return 'Uneven energy across the day';
+      }
+      if (score < 60) return 'Sharp energy swings';
+      return 'Energy stability could improve';
+    }
+    case 'nutrizione': {
+      if (score < 70) return 'Macronutrient imbalance';
+      return 'Nutrition off your targets';
+    }
+    case 'stress': {
+      const raw = longevityRawStress(d);
+      if (score < 60 || (raw != null && raw > 40)) return 'Elevated metabolic stress';
+      return 'Metabolic stress creeping up';
+    }
+    case 'abitudini': {
+      const { sleepPart, hydPart } = longevitySleepHydrationParts(d);
+      if (sleepPart != null && hydPart != null && sleepPart < hydPart && sleepPart < 60) {
+        return 'Sleep short of what you need';
+      }
+      if (hydPart != null && sleepPart != null && hydPart < sleepPart && hydPart < 60) {
+        return 'Hydration below goal';
+      }
+      if (sleepPart != null && sleepPart < 55) return 'Sleep short of what you need';
+      if (hydPart != null && hydPart < 55) return 'Hydration below goal';
+      return 'Sleep or hydration gaps';
+    }
+    case 'rischio': {
+      const raw = longevityRawRisk(d);
+      if (raw != null && raw > 50) return 'Elevated health risk load';
+      return 'Risk signals worth attention';
+    }
+    default:
+      return 'Needs attention';
+  }
+}
+
+function longevityPositiveDriverMessage(key, score, daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  switch (key) {
+    case 'energia': {
+      if (score > 80) return 'Stable energy throughout the day';
+      if (typeof d.energyStability === 'number' && d.energyStability >= 0.75) {
+        return 'Stable energy levels';
+      }
+      return 'Energy steadier than other pillars';
+    }
+    case 'nutrizione': {
+      if (score >= 75) return 'Macros aligned with targets';
+      return 'Nutrition relatively on track';
+    }
+    case 'stress': {
+      const raw = longevityRawStress(d);
+      if (score > 80 || (raw != null && raw < 25)) return 'Low metabolic stress';
+      return 'Metabolic stress under control';
+    }
+    case 'abitudini': {
+      if (score > 80) return 'Strong sleep and hydration';
+      return 'Solid sleep or hydration';
+    }
+    case 'rischio': {
+      if (score > 80) return 'Risk factors well controlled';
+      return 'Risk load relatively low';
+    }
+    default:
+      return 'Doing well here';
+  }
+}
+
+/** Tre pilastri più deboli e due più forti, senza sovrapposizione di chiave. */
+function buildLongevityDrivers(daily, breakdown) {
+  const entries = LONGEVITY_BREAKDOWN_KEYS.map(key => ({ key, score: breakdown[key] }));
+  const byAsc = [...entries].sort((a, b) => a.score - b.score || a.key.localeCompare(b.key));
+  const byDesc = [...entries].sort((a, b) => b.score - a.score || a.key.localeCompare(b.key));
+
+  const negatives = byAsc.slice(0, 3);
+  const negKeys = new Set(negatives.map(x => x.key));
+
+  const positives = [];
+  for (const item of byDesc) {
+    if (positives.length >= 2) break;
+    if (negKeys.has(item.key)) continue;
+    positives.push(item);
+  }
+
+  const drivers = [
+    ...negatives.map(({ key, score }) => ({
+      type: 'negative',
+      key,
+      message: longevityNegativeDriverMessage(key, score, daily)
+    })),
+    ...positives.map(({ key, score }) => ({
+      type: 'positive',
+      key,
+      message: longevityPositiveDriverMessage(key, score, daily)
+    }))
+  ];
+  return drivers;
+}
+
 /**
  * Punteggio longevità giornaliero (0–100) da dati aggregati del giorno.
  * Campi opzionali tipici: energyStability (0–1), energySeries, totals/targets macro,
@@ -2281,6 +2423,7 @@ export function computeLongevityScore(daily) {
   const stress = scoreLongevityStress(daily);
   const abitudini = scoreLongevityAbitudini(daily);
   const rischio = scoreLongevityRischio(daily);
+  const breakdown = { energia, nutrizione, stress, abitudini, rischio };
   const score = clampLongevityComponent(
     energia * 0.30 +
       nutrizione * 0.25 +
@@ -2290,7 +2433,8 @@ export function computeLongevityScore(daily) {
   );
   return {
     score,
-    breakdown: { energia, nutrizione, stress, abitudini, rischio }
+    breakdown,
+    drivers: buildLongevityDrivers(daily, breakdown)
   };
 }
 
