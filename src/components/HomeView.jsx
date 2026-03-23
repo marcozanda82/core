@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import TimelineNodi from '../TimelineNodi';
 
@@ -16,6 +16,8 @@ const getScoreGlow = (value) => {
   return '0 0 20px rgba(239,68,68,0.4)';
 };
 
+const COUNT_UP_MS = 800;
+
 /**
  * Layout home: longevity hero, grafico energetico, timeline nodi, CTA.
  * `longevity`: output di computeLongevityScore (score, priorityFocus, …).
@@ -28,9 +30,41 @@ export default function HomeView({
   timelineProps,
   onAddEvent
 }) {
+  const score =
+    longevity != null && typeof longevity.score === 'number' && !Number.isNaN(longevity.score)
+      ? longevity.score
+      : 0;
+
+  const [displayScore, setDisplayScore] = useState(0);
+
+  useEffect(() => {
+    if (longevity == null) {
+      setDisplayScore(0);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const target = score;
+    const t0 = performance.now();
+
+    const tick = (now) => {
+      if (cancelled) return;
+      const t = Math.min(1, (now - t0) / COUNT_UP_MS);
+      const eased = 1 - (1 - t) ** 3;
+      setDisplayScore(Math.round(target * eased));
+      if (t < 1) requestAnimationFrame(tick);
+    };
+
+    const rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
+  }, [longevity, score]);
+
   if (!longevity) return null;
 
-  const { score, priorityFocus } = longevity;
+  const { priorityFocus } = longevity;
   const scoreGlow = getScoreGlow(score);
 
   return (
@@ -49,7 +83,7 @@ export default function HomeView({
           color: getColor(score),
           textShadow: scoreGlow
         }}>
-          {score}
+          {displayScore}
         </div>
         <div style={{
           opacity: 0.65,
