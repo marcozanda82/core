@@ -87,15 +87,23 @@ export default function HomeView({
       )}
 
       {/* ENERGY CHART */}
-      <div style={{
-        background: '#020617',
-        borderRadius: 16,
-        padding: 12,
-        border: '1px solid #1e293b',
-        marginBottom: 20
-      }}>
+      <motion.div
+        style={{
+          marginBottom: 20,
+          background: 'rgba(2,6,23,0.85)',
+          borderRadius: 18,
+          padding: 16,
+          border: '1px solid rgba(255,255,255,0.05)',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)'
+        }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.2 }}
+      >
         {chart}
-      </div>
+      </motion.div>
 
       {/* TIMELINE */}
       <div style={{ marginBottom: 20 }}>
