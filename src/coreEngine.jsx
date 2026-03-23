@@ -2412,10 +2412,126 @@ function buildLongevityDrivers(daily, breakdown) {
   return drivers;
 }
 
+/** Suggerimento mirato da gap macro vs target (solo se i numeri ci sono). */
+function longevityNutritionSuggestionFromTotals(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  const targets = d.targets || d.nutritionTargets || {};
+  const totals = d.nutrition || d.totals || {};
+  const rows = [
+    {
+      k: 'prot',
+      under: 'Increase protein at lunch (+25–30g lean meat, fish, or Greek yogurt)',
+      over: 'Trade one evening protein snack for a bowl of vegetables'
+    },
+    {
+      k: 'carb',
+      under: 'Add slow carbs at breakfast (oats or fruit with your meal)',
+      over: 'Cut bread or pasta at dinner by one serving tonight'
+    },
+    {
+      k: 'fat',
+      under: 'Add a thumb of olive oil or half an avocado at lunch',
+      over: 'Use one less spoon of oil when cooking dinner'
+    },
+    {
+      k: 'kcal',
+      under: 'Add one planned 300–400 kcal meal so you reach today’s calorie target',
+      over: 'Drop one sugary drink or dessert today to land closer to your kcal target'
+    }
+  ];
+  let worstUnder = null;
+  let worstOver = null;
+  for (const row of rows) {
+    const tg = Number(targets[row.k]);
+    const ac = Number(totals[row.k]);
+    if (tg <= 0 || Number.isNaN(ac)) continue;
+    const ratio = ac / tg;
+    if (ratio < 0.88) {
+      const gap = 1 - ratio;
+      if (!worstUnder || gap > worstUnder.gap) worstUnder = { gap, msg: row.under };
+    }
+    if (ratio > 1.15) {
+      const gap = ratio - 1;
+      if (!worstOver || gap > worstOver.gap) worstOver = { gap, msg: row.over };
+    }
+  }
+  if (worstUnder) return worstUnder.msg;
+  if (worstOver) return worstOver.msg;
+  return null;
+}
+
+/**
+ * Un suggerimento pratico per ogni driver negativo (max 5 totali).
+ * Usa `daily` ove possibile per evitare consigli vaghi.
+ */
+function longevitySuggestionForNegativeDriver(driver, daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  const { key, message } = driver;
+
+  switch (key) {
+    case 'stress': {
+      if (message === 'Elevated metabolic stress') {
+        return 'Reduce caffeine after 15:00';
+      }
+      if (message === 'Metabolic stress creeping up') {
+        return 'Take a 10-minute easy walk right after lunch';
+      }
+      return 'Dim the lights and screens 60 minutes before bed tonight';
+    }
+    case 'nutrizione': {
+      const macro = longevityNutritionSuggestionFromTotals(daily);
+      if (macro) return macro;
+      if (message === 'Macronutrient imbalance') {
+        return 'Lead your next meal with a palm-sized protein portion before starches';
+      }
+      return 'Pre-log tomorrow’s meals so kcal and macros match your targets within 10%';
+    }
+    case 'energia': {
+      if (message === 'Unstable energy pattern' || message === 'Uneven energy across the day') {
+        return 'Eat a protein-forward breakfast within 90 minutes of waking';
+      }
+      if (message === 'Sharp energy swings') {
+        return 'Avoid grazing—use two solid meals 4–5 hours apart, no liquid calories between';
+      }
+      return 'Skip afternoon espresso; if needed, one small coffee before noon only';
+    }
+    case 'abitudini': {
+      if (message === 'Hydration below goal') {
+        return 'Drink 500ml water within the first hour after waking';
+      }
+      if (message === 'Sleep short of what you need') {
+        return 'Set a fixed lights-out 30 minutes earlier than last night';
+      }
+      return 'Front-load water before 18:00 and stop fluids 90 minutes before bed';
+    }
+    case 'rischio': {
+      if (message === 'Elevated health risk load') {
+        return 'Walk 15 minutes immediately after your largest meal today';
+      }
+      return 'No alcohol tonight—give liver and sleep a 24-hour reset';
+    }
+    default:
+      return null;
+  }
+}
+
+function buildLongevitySuggestions(daily, drivers) {
+  const max = 5;
+  const out = [];
+  for (const dr of drivers) {
+    if (dr.type !== 'negative') continue;
+    const s = longevitySuggestionForNegativeDriver(dr, daily);
+    if (s) out.push(s);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 /**
  * Punteggio longevità giornaliero (0–100) da dati aggregati del giorno.
  * Campi opzionali tipici: energyStability (0–1), energySeries, totals/targets macro,
  * stress o metabolicStress (0–100), sleepScore o sleepHours, hydration o hydrationTarget, risk (0–100).
+ * Ritorna anche `suggestions`: fino a 5 stringhe, una per driver negativo, azioni concrete legate al driver e ai dati.
  */
 export function computeLongevityScore(daily) {
   const energia = scoreLongevityEnergia(daily);
@@ -2431,10 +2547,12 @@ export function computeLongevityScore(daily) {
       abitudini * 0.15 +
       rischio * 0.10
   );
+  const drivers = buildLongevityDrivers(daily, breakdown);
   return {
     score,
     breakdown,
-    drivers: buildLongevityDrivers(daily, breakdown)
+    drivers,
+    suggestions: buildLongevitySuggestions(daily, drivers)
   };
 }
 
