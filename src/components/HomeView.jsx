@@ -124,22 +124,25 @@ export default function HomeView({
       </motion.div>
 
       {/* CTA */}
-      <button
+      <motion.button
         type="button"
         onClick={onAddEvent}
+        whileTap={{ scale: 0.96 }}
+        whileHover={{ scale: 1.02 }}
         style={{
           width: '100%',
-          padding: 14,
-          borderRadius: 12,
-          background: '#22c55e',
+          padding: 16,
+          borderRadius: 14,
+          background: 'linear-gradient(135deg, #22c55e, #4ade80)',
           border: 'none',
           fontWeight: 'bold',
           cursor: 'pointer',
-          color: '#020617'
+          color: '#020617',
+          boxShadow: '0 10px 25px rgba(34,197,94,0.3)'
         }}
       >
         + Add Event
-      </button>
+      </motion.button>
 
     </div>
   );
