@@ -24,14 +24,19 @@ const COUNT_UP_MS = 800;
  * `chart`: nodo React (es. ResponsiveContainer + grafico) dal genitore.
  * `timelineProps`: spread su TimelineNodi (stessi props di SalaComandi).
  * `onFocusClick`: opzionale — click / Invio / Spazio sulla card Priority Focus.
+ * `explanation`: testo da buildLongevityExplanation; sotto la card Focus (o solo blocco leggibile se senza longevity).
  */
 export default function HomeView({
   longevity,
   chart,
   timelineProps,
   onAddEvent,
-  onFocusClick
+  onFocusClick,
+  explanation
 }) {
+  const explanationText =
+    typeof explanation === 'string' && explanation.trim() ? explanation.trim() : '';
+
   const score =
     longevity != null && typeof longevity.score === 'number' && !Number.isNaN(longevity.score)
       ? longevity.score
@@ -64,7 +69,21 @@ export default function HomeView({
     };
   }, [longevity, score]);
 
-  if (!longevity) return null;
+  if (!longevity) {
+    if (!explanationText) return null;
+    return (
+      <div style={{ padding: '0 4px', marginBottom: 12, maxWidth: 700, marginLeft: 'auto', marginRight: 'auto' }}>
+        <div style={{
+          fontSize: 14,
+          lineHeight: 1.55,
+          color: '#c9d1d9',
+          opacity: 0.92
+        }}>
+          {explanationText}
+        </div>
+      </div>
+    );
+  }
 
   const { priorityFocus } = longevity;
   const scoreGlow = getScoreGlow(score);
@@ -161,67 +180,92 @@ export default function HomeView({
         </motion.div>
       )}
 
-      {/* ENERGY CHART */}
-      <motion.div
-        style={{
+      {explanationText ? (
+        <div style={{
           marginBottom: SECTION_GAP,
-          background: 'rgba(2,6,23,0.85)',
-          borderRadius: 18,
-          padding: 16,
-          border: '1px solid rgba(255,255,255,0.06)',
-          boxShadow: '0 14px 36px rgba(0,0,0,0.42)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)'
-        }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2 }}
-      >
-        {chart}
-      </motion.div>
+          padding: '12px 14px',
+          borderRadius: 12,
+          background: 'rgba(15,23,42,0.5)',
+          border: '1px solid rgba(255,255,255,0.06)'
+        }}>
+          <div style={{
+            fontSize: 14,
+            lineHeight: 1.55,
+            color: '#c9d1d9',
+            opacity: 0.92
+          }}>
+            {explanationText}
+          </div>
+        </div>
+      ) : null}
+
+      {/* ENERGY CHART */}
+      {chart != null ? (
+        <motion.div
+          style={{
+            marginBottom: SECTION_GAP,
+            background: 'rgba(2,6,23,0.85)',
+            borderRadius: 18,
+            padding: 16,
+            border: '1px solid rgba(255,255,255,0.06)',
+            boxShadow: '0 14px 36px rgba(0,0,0,0.42)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)'
+          }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+        >
+          {chart}
+        </motion.div>
+      ) : null}
 
       {/* TIMELINE */}
-      <motion.div
-        style={{
-          marginBottom: SECTION_GAP,
-          borderRadius: 18,
-          padding: 8,
-          background: 'rgba(2,6,23,0.4)',
-          border: '1px solid rgba(255,255,255,0.06)',
-          boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
-          backdropFilter: 'blur(6px)',
-          WebkitBackdropFilter: 'blur(6px)'
-        }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 0.95 }}
-        transition={{ delay: 0.3 }}
-      >
-        <TimelineNodi {...timelineProps} />
-      </motion.div>
+      {timelineProps != null ? (
+        <motion.div
+          style={{
+            marginBottom: SECTION_GAP,
+            borderRadius: 18,
+            padding: 8,
+            background: 'rgba(2,6,23,0.4)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)'
+          }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.95 }}
+          transition={{ delay: 0.3 }}
+        >
+          <TimelineNodi {...timelineProps} />
+        </motion.div>
+      ) : null}
 
       {/* CTA */}
-      <motion.button
-        type="button"
-        onClick={(e) => {
-          navigator.vibrate?.(10);
-          onAddEvent(e);
-        }}
-        whileTap={{ scale: 0.96 }}
-        whileHover={{ scale: 1.02 }}
-        style={{
-          width: '100%',
-          padding: 16,
-          borderRadius: 16,
-          background: 'linear-gradient(135deg, #22c55e, #4ade80)',
-          border: 'none',
-          fontWeight: 'bold',
-          cursor: 'pointer',
-          color: '#020617',
-          boxShadow: '0 10px 25px rgba(34,197,94,0.3)'
-        }}
-      >
-        + Add Event
-      </motion.button>
+      {typeof onAddEvent === 'function' ? (
+        <motion.button
+          type="button"
+          onClick={(e) => {
+            navigator.vibrate?.(10);
+            onAddEvent(e);
+          }}
+          whileTap={{ scale: 0.96 }}
+          whileHover={{ scale: 1.02 }}
+          style={{
+            width: '100%',
+            padding: 16,
+            borderRadius: 16,
+            background: 'linear-gradient(135deg, #22c55e, #4ade80)',
+            border: 'none',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            color: '#020617',
+            boxShadow: '0 10px 25px rgba(34,197,94,0.3)'
+          }}
+        >
+          + Add Event
+        </motion.button>
+      ) : null}
 
     </div>
   );
