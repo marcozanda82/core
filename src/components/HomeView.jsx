@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import TimelineNodi from '../TimelineNodi';
 
 const getColor = (value) => {
@@ -27,16 +28,22 @@ export default function HomeView({
     <div style={{ padding: 16, maxWidth: 700, margin: '0 auto' }}>
 
       {/* SCORE */}
-      <div style={{ marginBottom: 16 }}>
+      <motion.div
+        style={{ marginBottom: 16 }}
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
         <div style={{
-          fontSize: 48,
+          fontSize: 52,
           fontWeight: 'bold',
-          color: getColor(score)
+          color: getColor(score),
+          textShadow: '0 0 20px rgba(34,197,94,0.4)'
         }}>
           {score}
         </div>
         <div style={{ opacity: 0.6 }}>Longevity Score</div>
-      </div>
+      </motion.div>
 
       {/* FOCUS (HERO) */}
       {priorityFocus && (
