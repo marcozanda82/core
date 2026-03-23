@@ -2170,6 +2170,130 @@ export function computeRiskMatrix(trackerData, userTargets, daysBack = 7) {
   };
 }
 
+function clampLongevityComponent(n) {
+  if (typeof n !== 'number' || Number.isNaN(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+/** Stabilità energetica: più stabile = punteggio più alto. */
+function scoreLongevityEnergia(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  if (typeof d.energyStability === 'number') {
+    return clampLongevityComponent(Math.max(0, Math.min(1, d.energyStability)) * 100);
+  }
+  if (typeof d.energyVolatility === 'number') {
+    return clampLongevityComponent(100 - clampLongevityComponent(d.energyVolatility));
+  }
+  if (Array.isArray(d.energySeries) && d.energySeries.length > 2) {
+    const vals = d.energySeries.map(Number).filter(v => !Number.isNaN(v));
+    if (vals.length < 3) return 50;
+    const mean = vals.reduce((a, x) => a + x, 0) / vals.length;
+    const variance = vals.reduce((a, x) => a + (x - mean) ** 2, 0) / vals.length;
+    const std = Math.sqrt(variance);
+    const cv = mean !== 0 ? std / Math.abs(mean) : std;
+    return clampLongevityComponent(100 - Math.min(100, cv * 120));
+  }
+  if (typeof d.energy === 'number') {
+    return clampLongevityComponent(100 - Math.min(100, Math.abs(d.energy - 55) * 2));
+  }
+  return 50;
+}
+
+/** Allineamento macro (e kcal) rispetto ai target. */
+function scoreLongevityNutrizione(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  const targets = d.targets || d.nutritionTargets || {};
+  const totals = d.nutrition || d.totals || {};
+  const keys = ['kcal', 'prot', 'carb', 'fat'];
+  const parts = [];
+  for (const k of keys) {
+    const tg = Number(targets[k]);
+    const ac = Number(totals[k]);
+    if (tg > 0 && !Number.isNaN(ac)) {
+      const ratio = ac / tg;
+      const dev = Math.abs(1 - ratio);
+      parts.push(clampLongevityComponent(100 - Math.min(100, dev * 100)));
+    }
+  }
+  if (parts.length === 0) return 50;
+  return clampLongevityComponent(parts.reduce((a, b) => a + b, 0) / parts.length);
+}
+
+/** Stress metabolico: più basso lo stress in input, più alto il sotto-punteggio. */
+function scoreLongevityStress(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  const raw =
+    typeof d.stress === 'number'
+      ? d.stress
+      : typeof d.metabolicStress === 'number'
+        ? d.metabolicStress
+        : null;
+  if (raw == null) return 50;
+  return clampLongevityComponent(100 - clampLongevityComponent(raw));
+}
+
+/** Sonno + idratazione (medie su sotto-punteggi 0–100). */
+function scoreLongevityAbitudini(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+
+  let sleepPart = null;
+  if (typeof d.sleepScore === 'number') sleepPart = d.sleepScore;
+  else if (typeof d.sleepHours === 'number') {
+    sleepPart = clampLongevityComponent(100 - Math.abs(d.sleepHours - 7.5) * 14);
+  } else if (typeof d.sleep === 'number') {
+    sleepPart = d.sleep <= 24 ? clampLongevityComponent(100 - Math.abs(d.sleep - 7.5) * 14) : d.sleep;
+  }
+
+  let hydPart = null;
+  if (typeof d.hydrationScore === 'number') hydPart = d.hydrationScore;
+  else if (typeof d.hydration === 'number') {
+    const goal = Number(d.hydrationTarget);
+    if (goal > 0) hydPart = clampLongevityComponent((d.hydration / goal) * 100);
+    else hydPart = d.hydration;
+  }
+
+  const s = sleepPart != null ? clampLongevityComponent(sleepPart) : 50;
+  const h = hydPart != null ? clampLongevityComponent(hydPart) : 50;
+  return clampLongevityComponent((s + h) / 2);
+}
+
+/** Rischio aggregato: più alto il rischio in input, più basso il sotto-punteggio. */
+function scoreLongevityRischio(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  const raw =
+    typeof d.risk === 'number'
+      ? d.risk
+      : typeof d.riskScore === 'number'
+        ? d.riskScore
+        : null;
+  if (raw == null) return 50;
+  return clampLongevityComponent(100 - clampLongevityComponent(raw));
+}
+
+/**
+ * Punteggio longevità giornaliero (0–100) da dati aggregati del giorno.
+ * Campi opzionali tipici: energyStability (0–1), energySeries, totals/targets macro,
+ * stress o metabolicStress (0–100), sleepScore o sleepHours, hydration o hydrationTarget, risk (0–100).
+ */
+export function computeLongevityScore(daily) {
+  const energia = scoreLongevityEnergia(daily);
+  const nutrizione = scoreLongevityNutrizione(daily);
+  const stress = scoreLongevityStress(daily);
+  const abitudini = scoreLongevityAbitudini(daily);
+  const rischio = scoreLongevityRischio(daily);
+  const score = clampLongevityComponent(
+    energia * 0.30 +
+      nutrizione * 0.25 +
+      stress * 0.20 +
+      abitudini * 0.15 +
+      rischio * 0.10
+  );
+  return {
+    score,
+    breakdown: { energia, nutrizione, stress, abitudini, rischio }
+  };
+}
+
 export {
   RADIAN,
   getTodayString,
