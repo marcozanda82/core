@@ -5107,12 +5107,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </span>
       </div>
 
-      {(!activeAction || activeAction === 'home') && (
-        <div style={{ marginBottom: 'max(12px, 1.5vh)' }}>
-          <HomeView longevity={longevityEngineScore} explanation={longevityExplanation} />
-        </div>
-      )}
-
       {userProfile?.level === 'pro' && (
       <>
       {/* Cruscotto energetico giornaliero 0-24h */}
