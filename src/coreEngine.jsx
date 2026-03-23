@@ -2305,44 +2305,165 @@ function longevitySleepHydrationParts(daily) {
   return { sleepPart, hydPart };
 }
 
+function longevityAverage(values) {
+  if (!values.length) return NaN;
+  return values.reduce((a, x) => a + x, 0) / values.length;
+}
+
+/** Opzionale: stressPeakPeriod, metabolicStressByPhase, oppure energySeries (stima fase del picco). */
+function longevityInferMetabolicStressPhase(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  if (typeof d.stressPeakPeriod === 'string') {
+    const p = d.stressPeakPeriod.toLowerCase();
+    if (['morning', 'afternoon', 'evening'].includes(p)) return p;
+  }
+  const byPh = d.metabolicStressByPhase;
+  if (byPh && typeof byPh === 'object') {
+    const parts = ['morning', 'afternoon', 'evening'].map(k => ({ k, v: Number(byPh[k]) }));
+    const valid = parts.filter(x => !Number.isNaN(x.v));
+    if (valid.length) {
+      const peak = valid.reduce((a, b) => (b.v > a.v ? b : a));
+      if (peak.v >= 38) return peak.k;
+    }
+  }
+  const series = Array.isArray(d.energySeries) ? d.energySeries.map(Number).filter(v => !Number.isNaN(v)) : [];
+  if (series.length >= 8) {
+    const n = series.length;
+    const t = Math.floor(n / 3);
+    const s1 = longevityAverage(series.slice(0, t));
+    const s2 = longevityAverage(series.slice(t, 2 * t));
+    const s3 = longevityAverage(series.slice(2 * t));
+    const lo = Math.min(s1, s2, s3);
+    if (lo === s2 && s2 < s1 - 5 && s2 <= s3 - 2) return 'afternoon';
+    if (lo === s3 && s3 < s1 - 5) return 'evening';
+    if (lo === s1 && s1 < s2 - 5) return 'morning';
+  }
+  return null;
+}
+
+function longevityWorstMacroGapMessage(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  const targets = d.targets || d.nutritionTargets || {};
+  const totals = d.nutrition || d.totals || {};
+  const rows = [
+    { k: 'prot', under: 'Protein intake below target', over: 'Protein intake above target' },
+    { k: 'carb', under: 'Carb intake below target', over: 'Carb intake above target' },
+    { k: 'fat', under: 'Fat intake below target', over: 'Fat intake above target' },
+    { k: 'kcal', under: 'Calories below target', over: 'Calories above target' }
+  ];
+  let worst = null;
+  for (const row of rows) {
+    const tg = Number(targets[row.k]);
+    const ac = Number(totals[row.k]);
+    if (tg <= 0 || Number.isNaN(ac)) continue;
+    const ratio = ac / tg;
+    if (ratio < 0.9) {
+      const gap = 1 - ratio;
+      if (!worst || gap > worst.gap) worst = { gap, msg: row.under };
+    } else if (ratio > 1.12) {
+      const gap = ratio - 1;
+      if (!worst || gap > worst.gap) worst = { gap, msg: row.over };
+    }
+  }
+  return worst ? worst.msg : null;
+}
+
+function longevityEnergyAfternoonDip(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  const series = Array.isArray(d.energySeries) ? d.energySeries.map(Number).filter(v => !Number.isNaN(v)) : [];
+  if (series.length < 8) return false;
+  const n = series.length;
+  const a = Math.floor(n * 0.35);
+  const b = Math.floor(n * 0.65);
+  const early = longevityAverage(series.slice(0, a));
+  const mid = longevityAverage(series.slice(a, b));
+  return mid < early - 8;
+}
+
+/** Opzionale: hydrationByPhase, morningHydrationRatio, hydrationMorningMl + hydrationTarget. */
+function longevityPoorHydrationEarlyInDay(daily) {
+  const d = daily && typeof daily === 'object' ? daily : {};
+  const by = d.hydrationByPhase;
+  if (by && typeof by === 'object') {
+    const m = Number(by.morning);
+    const aft = Number(by.afternoon);
+    if (!Number.isNaN(m) && !Number.isNaN(aft) && m < 35 && m < aft * 0.55) return true;
+  }
+  if (typeof d.morningHydrationRatio === 'number' && d.morningHydrationRatio < 0.28) return true;
+  const goal = Number(d.hydrationTarget);
+  if (typeof d.hydrationMorningMl === 'number' && goal > 0) {
+    if (d.hydrationMorningMl < goal * 0.22) return true;
+  }
+  return false;
+}
+
+function longevityStressElevatedLabel(phase) {
+  if (phase === 'afternoon') return 'Elevated metabolic stress in the afternoon';
+  if (phase === 'evening') return 'Elevated metabolic stress in the evening';
+  if (phase === 'morning') return 'Elevated metabolic stress in the morning';
+  return 'Elevated metabolic stress today';
+}
+
 function longevityNegativeDriverMessage(key, score, daily) {
   const d = daily && typeof daily === 'object' ? daily : {};
   switch (key) {
     case 'energia': {
+      if (longevityEnergyAfternoonDip(d)) return 'Energy dipped in the afternoon';
       if (typeof d.energyStability === 'number' && d.energyStability < 0.45) {
-        return 'Unstable energy pattern';
+        return 'Unstable energy curve (low stability score)';
       }
       if (typeof d.energyVolatility === 'number' && d.energyVolatility > 55) {
-        return 'Uneven energy across the day';
+        return 'Uneven energy across waking hours';
       }
-      if (score < 60) return 'Sharp energy swings';
-      return 'Energy stability could improve';
+      if (score < 60) return 'Sharp swings in perceived energy';
+      if (score < 70) return 'Energy stability trailing your other pillars';
+      return 'Energy stability is lagging today';
     }
     case 'nutrizione': {
-      if (score < 70) return 'Macronutrient imbalance';
-      return 'Nutrition off your targets';
+      const macroMsg = longevityWorstMacroGapMessage(d);
+      if (macroMsg) return macroMsg;
+      if (score < 70) return 'Macronutrient mix off your planned targets';
+      return 'Nutrition tracking or targets missing—balance unclear';
     }
     case 'stress': {
       const raw = longevityRawStress(d);
-      if (score < 60 || (raw != null && raw > 40)) return 'Elevated metabolic stress';
-      return 'Metabolic stress creeping up';
+      const elevated = score < 60 || (raw != null && raw > 40);
+      if (elevated) {
+        const phase = longevityInferMetabolicStressPhase(d);
+        return longevityStressElevatedLabel(phase);
+      }
+      return 'Metabolic stress edging higher than ideal';
     }
     case 'abitudini': {
       const { sleepPart, hydPart } = longevitySleepHydrationParts(d);
+      const hydWeak =
+        hydPart != null &&
+        (sleepPart == null || hydPart <= sleepPart) &&
+        hydPart < 60;
+      if (hydWeak && longevityPoorHydrationEarlyInDay(d)) {
+        return 'Poor hydration early in the day';
+      }
       if (sleepPart != null && hydPart != null && sleepPart < hydPart && sleepPart < 60) {
-        return 'Sleep short of what you need';
+        const h = typeof d.sleepHours === 'number' ? d.sleepHours : typeof d.sleep === 'number' && d.sleep <= 24 ? d.sleep : null;
+        if (h != null && h < 7) return `Short sleep (${h}h) vs your recovery needs`;
+        return 'Sleep duration or quality below par';
       }
       if (hydPart != null && sleepPart != null && hydPart < sleepPart && hydPart < 60) {
-        return 'Hydration below goal';
+        return 'Hydration under today’s fluid target';
       }
-      if (sleepPart != null && sleepPart < 55) return 'Sleep short of what you need';
+      if (sleepPart != null && sleepPart < 55) {
+        const h = typeof d.sleepHours === 'number' ? d.sleepHours : typeof d.sleep === 'number' && d.sleep <= 24 ? d.sleep : null;
+        if (h != null) return `Only about ${h}h sleep logged—recovery may suffer`;
+        return 'Sleep short of what you need';
+      }
       if (hydPart != null && hydPart < 55) return 'Hydration below goal';
-      return 'Sleep or hydration gaps';
+      return 'Sleep or hydration needs attention';
     }
     case 'rischio': {
       const raw = longevityRawRisk(d);
-      if (raw != null && raw > 50) return 'Elevated health risk load';
-      return 'Risk signals worth attention';
+      if (raw != null && raw > 50) return 'Health risk score elevated versus your baseline';
+      if (raw != null) return `Risk markers around ${Math.round(raw)}/100—room to improve`;
+      return 'Risk signals need attention';
     }
     default:
       return 'Needs attention';
@@ -2354,26 +2475,52 @@ function longevityPositiveDriverMessage(key, score, daily) {
   switch (key) {
     case 'energia': {
       if (score > 80) return 'Stable energy throughout the day';
-      if (typeof d.energyStability === 'number' && d.energyStability >= 0.75) {
-        return 'Stable energy levels';
+      const series = Array.isArray(d.energySeries) ? d.energySeries.map(Number).filter(v => !Number.isNaN(v)) : [];
+      if (series.length >= 6) {
+        const mean = longevityAverage(series);
+        const spread = Math.sqrt(
+          series.reduce((a, x) => a + (x - mean) ** 2, 0) / series.length
+        );
+        if (spread < Math.max(5, mean * 0.08) && score >= 72) {
+          return 'Even energy band—few crashes across the day';
+        }
       }
-      return 'Energy steadier than other pillars';
+      if (typeof d.energyStability === 'number' && d.energyStability >= 0.75) {
+        return 'Stable energy levels from your stability data';
+      }
+      return 'Energy steadier than your weaker pillars today';
     }
     case 'nutrizione': {
-      if (score >= 75) return 'Macros aligned with targets';
+      const macroIssue = longevityWorstMacroGapMessage(d);
+      if (!macroIssue && score >= 78) return 'Macros aligned with your daily targets';
+      if (score >= 75) return 'Nutrition closest to plan among your pillars';
       return 'Nutrition relatively on track';
     }
     case 'stress': {
       const raw = longevityRawStress(d);
-      if (score > 80 || (raw != null && raw < 25)) return 'Low metabolic stress';
+      const phase = longevityInferMetabolicStressPhase(d);
+      if (score > 82 && phase === 'afternoon') return 'Metabolic stress stayed low through the afternoon';
+      if (score > 80 || (raw != null && raw < 22)) return 'Metabolic stress stayed low today';
       return 'Metabolic stress under control';
     }
     case 'abitudini': {
+      const { sleepPart, hydPart } = longevitySleepHydrationParts(d);
+      if (score > 80 && sleepPart != null && hydPart != null && sleepPart >= 75 && hydPart >= 75) {
+        return 'Strong sleep and hydration together';
+      }
+      if (sleepPart != null && hydPart != null && hydPart > sleepPart && hydPart >= 78) {
+        return 'Hydration on target—fluids well covered';
+      }
+      if (sleepPart != null && hydPart != null && sleepPart > hydPart && sleepPart >= 78) {
+        return 'Sleep window supportive of recovery';
+      }
       if (score > 80) return 'Strong sleep and hydration';
-      return 'Solid sleep or hydration';
+      return 'Solid sleep or hydration habits today';
     }
     case 'rischio': {
+      const raw = longevityRawRisk(d);
       if (score > 80) return 'Risk factors well controlled';
+      if (raw != null && raw < 30) return `Risk score low (${Math.round(raw)}/100)`;
       return 'Risk load relatively low';
     }
     default:
@@ -2470,10 +2617,10 @@ function longevitySuggestionForNegativeDriver(driver, daily) {
 
   switch (key) {
     case 'stress': {
-      if (message === 'Elevated metabolic stress') {
+      if (message.includes('Elevated')) {
         return 'Reduce caffeine after 15:00';
       }
-      if (message === 'Metabolic stress creeping up') {
+      if (message.includes('edging higher')) {
         return 'Take a 10-minute easy walk right after lunch';
       }
       return 'Dim the lights and screens 60 minutes before bed tonight';
@@ -2481,31 +2628,34 @@ function longevitySuggestionForNegativeDriver(driver, daily) {
     case 'nutrizione': {
       const macro = longevityNutritionSuggestionFromTotals(daily);
       if (macro) return macro;
-      if (message === 'Macronutrient imbalance') {
+      if (message.includes('Protein')) {
         return 'Lead your next meal with a palm-sized protein portion before starches';
       }
       return 'Pre-log tomorrow’s meals so kcal and macros match your targets within 10%';
     }
     case 'energia': {
-      if (message === 'Unstable energy pattern' || message === 'Uneven energy across the day') {
-        return 'Eat a protein-forward breakfast within 90 minutes of waking';
+      if (message.includes('afternoon') || message.includes('dipped')) {
+        return 'Add lean protein at lunch before your usual afternoon slump';
       }
-      if (message === 'Sharp energy swings') {
+      if (message.includes('Sharp')) {
         return 'Avoid grazing—use two solid meals 4–5 hours apart, no liquid calories between';
+      }
+      if (message.includes('Uneven') || message.includes('Unstable') || message.includes('trailing') || message.includes('lagging')) {
+        return 'Eat a protein-forward breakfast within 90 minutes of waking';
       }
       return 'Skip afternoon espresso; if needed, one small coffee before noon only';
     }
     case 'abitudini': {
-      if (message === 'Hydration below goal') {
+      if (message.includes('early in the day') || message.includes('Hydration under') || message.includes('Hydration below')) {
         return 'Drink 500ml water within the first hour after waking';
       }
-      if (message === 'Sleep short of what you need') {
+      if (message.includes('Sleep') || message.includes('sleep')) {
         return 'Set a fixed lights-out 30 minutes earlier than last night';
       }
       return 'Front-load water before 18:00 and stop fluids 90 minutes before bed';
     }
     case 'rischio': {
-      if (message === 'Elevated health risk load') {
+      if (message.includes('elevated') || message.includes('Risk markers')) {
         return 'Walk 15 minutes immediately after your largest meal today';
       }
       return 'No alcohol tonight—give liver and sleep a 24-hour reset';
@@ -2531,6 +2681,8 @@ function buildLongevitySuggestions(daily, drivers) {
  * Punteggio longevità giornaliero (0–100) da dati aggregati del giorno.
  * Campi opzionali tipici: energyStability (0–1), energySeries, totals/targets macro,
  * stress o metabolicStress (0–100), sleepScore o sleepHours, hydration o hydrationTarget, risk (0–100).
+ * Contesto opzionale per messaggi driver: stressPeakPeriod, metabolicStressByPhase, hydrationByPhase,
+ * morningHydrationRatio, hydrationMorningMl, energySeries (serie per fase giorno / calo pomeridiano).
  * Ritorna anche `suggestions`: fino a 5 stringhe, una per driver negativo, azioni concrete legate al driver e ai dati.
  */
 export function computeLongevityScore(daily) {
