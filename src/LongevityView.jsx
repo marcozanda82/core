@@ -6,7 +6,7 @@ const getColor = (value) => {
   return '#ef4444'; // rosso
 };
 
-export default function LongevityView({ data }) {
+export default function LongevityView({ data, showPriorityFocus = true }) {
   if (!data) return <div style={{ padding: 20 }}>No data</div>;
 
   const { score, breakdown, drivers, suggestions, priorityFocus } = data;
@@ -23,7 +23,7 @@ export default function LongevityView({ data }) {
       </div>
 
       {/* 🔴 PRIORITY FOCUS */}
-      {priorityFocus && (
+      {showPriorityFocus && priorityFocus && (
         <div style={{
           background: '#111',
           padding: 16,

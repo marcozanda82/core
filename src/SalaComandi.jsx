@@ -8181,8 +8181,29 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </div>
             </div>
 
+            {longevityEngineScore?.priorityFocus && (
+              <div style={{
+                background: '#0f172a',
+                padding: '10px 14px',
+                borderRadius: 10,
+                marginBottom: 10,
+                border: '1px solid #1e293b',
+                color: '#e8e8e8'
+              }}>
+                <div style={{ fontSize: 12, opacity: 0.6 }}>
+                  Longevity Focus
+                </div>
+                <div style={{ fontWeight: 'bold', marginTop: 2 }}>
+                  {longevityEngineScore.priorityFocus.title}
+                </div>
+                <div style={{ color: '#00e5ff', fontSize: 13, marginTop: 4 }}>
+                  → {longevityEngineScore.priorityFocus.action}
+                </div>
+              </div>
+            )}
+
             <div style={{ marginBottom: '32px', color: '#e8e8e8' }}>
-              <LongevityView data={longevityEngineScore} />
+              <LongevityView data={longevityEngineScore} showPriorityFocus={false} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>

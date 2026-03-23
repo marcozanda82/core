@@ -1,0 +1,110 @@
+import React from 'react';
+import TimelineNodi from '../TimelineNodi';
+
+const getColor = (value) => {
+  if (value >= 75) return '#22c55e';
+  if (value >= 50) return '#facc15';
+  return '#ef4444';
+};
+
+/**
+ * Layout home: longevity hero, grafico energetico, timeline nodi, CTA.
+ * `longevity`: output di computeLongevityScore (score, priorityFocus, …).
+ * `chart`: nodo React (es. ResponsiveContainer + grafico) dal genitore.
+ * `timelineProps`: spread su TimelineNodi (stessi props di SalaComandi).
+ */
+export default function HomeView({
+  longevity,
+  chart,
+  timelineProps,
+  onAddEvent
+}) {
+  if (!longevity) return null;
+
+  const { score, priorityFocus } = longevity;
+
+  return (
+    <div style={{ padding: 16, maxWidth: 700, margin: '0 auto' }}>
+
+      {/* SCORE */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{
+          fontSize: 48,
+          fontWeight: 'bold',
+          color: getColor(score)
+        }}>
+          {score}
+        </div>
+        <div style={{ opacity: 0.6 }}>Longevity Score</div>
+      </div>
+
+      {/* FOCUS (HERO) */}
+      {priorityFocus && (
+        <div style={{
+          background: 'linear-gradient(135deg, #0f172a, #020617)',
+          padding: 18,
+          borderRadius: 16,
+          marginBottom: 20,
+          border: '1px solid #1e293b',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
+          color: '#e8e8e8'
+        }}>
+          <div style={{ fontSize: 12, opacity: 0.6 }}>
+            TODAY FOCUS
+          </div>
+
+          <div style={{
+            fontSize: 20,
+            fontWeight: 'bold',
+            marginTop: 4
+          }}>
+            {priorityFocus.title}
+          </div>
+
+          <div style={{
+            marginTop: 10,
+            color: '#22c55e',
+            fontWeight: 500
+          }}>
+            → {priorityFocus.action}
+          </div>
+        </div>
+      )}
+
+      {/* ENERGY CHART */}
+      <div style={{
+        background: '#020617',
+        borderRadius: 16,
+        padding: 12,
+        border: '1px solid #1e293b',
+        marginBottom: 20
+      }}>
+        {chart}
+      </div>
+
+      {/* TIMELINE */}
+      <div style={{ marginBottom: 20 }}>
+        <TimelineNodi {...timelineProps} />
+      </div>
+
+      {/* CTA */}
+      <button
+        type="button"
+        onClick={onAddEvent}
+        style={{
+          width: '100%',
+          padding: 14,
+          borderRadius: 12,
+          background: '#22c55e',
+          border: 'none',
+          fontWeight: 'bold',
+          cursor: 'pointer',
+          color: '#020617'
+        }}
+      >
+        + Add Event
+      </button>
+
+    </div>
+  );
+}
