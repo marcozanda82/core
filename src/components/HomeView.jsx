@@ -47,23 +47,31 @@ export default function HomeView({
 
       {/* FOCUS (HERO) */}
       {priorityFocus && (
-        <div style={{
-          background: 'linear-gradient(135deg, #0f172a, #020617)',
-          padding: 18,
-          borderRadius: 16,
-          marginBottom: 20,
-          border: '1px solid #1e293b',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
-          color: '#e8e8e8'
-        }}>
-          <div style={{ fontSize: 12, opacity: 0.6 }}>
+        <motion.div
+          style={{
+            marginBottom: 20,
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            background: 'linear-gradient(135deg, rgba(15,23,42,0.8), rgba(2,6,23,0.9))',
+            borderRadius: 18,
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+            padding: 18,
+            color: '#e8e8e8'
+          }}
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.1 }}
+        >
+          <div style={{ fontSize: 12, opacity: 0.6, color: '#e8e8e8' }}>
             TODAY FOCUS
           </div>
 
           <div style={{
             fontSize: 20,
             fontWeight: 'bold',
-            marginTop: 4
+            marginTop: 4,
+            color: '#e8e8e8'
           }}>
             {priorityFocus.title}
           </div>
@@ -75,7 +83,7 @@ export default function HomeView({
           }}>
             → {priorityFocus.action}
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* ENERGY CHART */}
