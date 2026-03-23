@@ -202,7 +202,10 @@ export default function HomeView({
       {/* CTA */}
       <motion.button
         type="button"
-        onClick={onAddEvent}
+        onClick={(e) => {
+          navigator.vibrate?.(10);
+          onAddEvent(e);
+        }}
         whileTap={{ scale: 0.96 }}
         whileHover={{ scale: 1.02 }}
         style={{
