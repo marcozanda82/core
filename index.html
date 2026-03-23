@@ -5,23 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>KentuOS</title>
     <meta name="description" content="KentuOS — Tracker e motore biochimico per energia, pasti e benessere.">
-    <link rel="manifest" href="/manifest.json?v=9">
-    <link rel="icon" type="image/png" sizes="192x192" href="/kentuos_icon_192.png?v=9" />
+    <link rel="manifest" href="/manifest.json?v=2">
+    <link rel="icon" type="image/png" href="/kentuos_icon_192.png?v=2" />
     <meta name="theme-color" content="#050a12">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="KentuOS">
-    <link rel="apple-touch-icon" href="/kentuos_icon_192.png?v=9" />
+    <link rel="apple-touch-icon" href="/kentuos_icon_192.png?v=2" />
   </head>
   <body style="margin:0;background:#050a12;">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
     <script>
+      /* TEMP: unregister per svuotare cache SW e forzare nuove icone. Ripristina register('/sw.js') quando ok. */
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('KentuOS (SW) Active.'))
-            .catch(err => console.error('SW Error:', err));
+          navigator.serviceWorker.getRegistrations().then((regs) => {
+            regs.forEach((reg) => reg.unregister());
+            console.log('KentuOS: Service Worker unregistered (cache bust / icone).');
+          }).catch((err) => console.error('SW unregister error:', err));
         });
       }
     </script>
