@@ -2739,9 +2739,14 @@ function longevityExplainCapitalize(sentence) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function longevityRandomPick(list) {
-  if (!list || list.length === 0) return '';
-  return list[Math.floor(Math.random() * list.length)];
+function pickStable(arr, seed) {
+  if (!arr || arr.length === 0) return '';
+  const s = String(seed ?? '');
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) {
+    hash = (hash * 31 + s.charCodeAt(i)) % 100000;
+  }
+  return arr[hash % arr.length];
 }
 
 const LONGEVITY_SUMMARY_HIGH = [
@@ -2765,7 +2770,7 @@ const LONGEVITY_SUMMARY_LOW = [
 /**
  * Riformula il driver negativo con aperture varie + contesto (pomeriggio / sonno / idratazione).
  */
-function longevityVaryNegativeWording(clause, rawDriverMessage) {
+function longevityVaryNegativeWording(clause, rawDriverMessage, phraseSeed) {
   if (!clause || typeof clause !== 'string') return '';
   let c = clause.trim().replace(/\.$/, '');
   const msg = (rawDriverMessage || '').toLowerCase();
@@ -2787,36 +2792,46 @@ function longevityVaryNegativeWording(clause, rawDriverMessage) {
     enriched = `${rest}, and morning hydration habits often show up here`;
   }
 
+  const negPickKey = `${phraseSeed ?? ''}:neg`;
+
   const pickFramed = () => {
     if (useStructuredOpeners) {
-      return longevityRandomPick([
-        `Your system showed ${enriched}`,
-        `Your body responded with ${enriched}`,
-        `There was a sign of ${enriched}`
-      ]);
+      return pickStable(
+        [
+          `Your system showed ${enriched}`,
+          `Your body responded with ${enriched}`,
+          `There was a sign of ${enriched}`
+        ],
+        `${negPickKey}:struct`
+      );
     }
     if (/^your /i.test(c)) {
-      return longevityRandomPick([
-        c.charAt(0).toUpperCase() + c.slice(1),
-        `We noticed ${c.charAt(0).toLowerCase() + c.slice(1)}`,
-        `There was a hint that ${c.charAt(0).toLowerCase() + c.slice(1)}`
-      ]);
+      return pickStable(
+        [
+          c.charAt(0).toUpperCase() + c.slice(1),
+          `We noticed ${c.charAt(0).toLowerCase() + c.slice(1)}`,
+          `There was a hint that ${c.charAt(0).toLowerCase() + c.slice(1)}`
+        ],
+        `${negPickKey}:your`
+      );
     }
     if (
       /^(metabolic stress|hydration|fluids|sleep looked|sleep duration|energy |macros |risk signals|a few risk|nutrition data|one area)/i.test(c)
     ) {
       const low = enriched.charAt(0).toLowerCase() + enriched.slice(1);
-      return longevityRandomPick([
-        longevityExplainCapitalize(enriched),
-        `Your day reflected ${low}`,
-        `We noted ${low}`
-      ]);
+      return pickStable(
+        [longevityExplainCapitalize(enriched), `Your day reflected ${low}`, `We noted ${low}`],
+        `${negPickKey}:topic`
+      );
     }
-    return longevityRandomPick([
-      longevityExplainCapitalize(enriched),
-      `Your day pointed to ${enriched.charAt(0).toLowerCase() + enriched.slice(1)}`,
-      `We picked up ${enriched.charAt(0).toLowerCase() + enriched.slice(1)}`
-    ]);
+    return pickStable(
+      [
+        longevityExplainCapitalize(enriched),
+        `Your day pointed to ${enriched.charAt(0).toLowerCase() + enriched.slice(1)}`,
+        `We picked up ${enriched.charAt(0).toLowerCase() + enriched.slice(1)}`
+      ],
+      `${negPickKey}:default`
+    );
   };
 
   return pickFramed().replace(/\s+/g, ' ').trim();
@@ -2928,15 +2943,17 @@ export function buildLongevityExplanation(result) {
   const negClause = firstNeg ? longevityNegativeDriverToClause(firstNeg.message) : null;
   const posClause = firstPos ? longevityPositiveDriverToClause(firstPos.message) : null;
 
+  const seed = JSON.stringify(result?.breakdown ?? {}) + (result?.score ?? 0);
+
   const tone = score >= 75 ? 'high' : score >= 50 ? 'mid' : 'low';
   const summaryPool =
     tone === 'high' ? LONGEVITY_SUMMARY_HIGH : tone === 'mid' ? LONGEVITY_SUMMARY_MID : LONGEVITY_SUMMARY_LOW;
-  const summary = longevityRandomPick(summaryPool);
+  const summary = pickStable(summaryPool, `${seed}:summary`);
 
   const parts = [`${String(summary).replace(/\.$/, '').trim()}.`];
 
   if (negClause) {
-    let b = longevityVaryNegativeWording(negClause, firstNeg.message);
+    let b = longevityVaryNegativeWording(negClause, firstNeg.message, seed);
     if (!b || !String(b).trim()) {
       b = longevityExplainCapitalize(negClause).replace(/\.$/, '');
     }
