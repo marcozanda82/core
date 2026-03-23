@@ -2739,6 +2739,89 @@ function longevityExplainCapitalize(sentence) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+function longevityRandomPick(list) {
+  if (!list || list.length === 0) return '';
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+const LONGEVITY_SUMMARY_HIGH = [
+  'Today your overall balance looked strong.',
+  'Overall, the day sat in a comfortable range for you.',
+  'You stacked today in a mostly solid place overall.'
+];
+
+const LONGEVITY_SUMMARY_MID = [
+  'Today your overall balance was decent.',
+  'The day landed in the middle, without big swings either way.',
+  'Overall things were steady, with a few spots to fine-tune.'
+];
+
+const LONGEVITY_SUMMARY_LOW = [
+  'Today tipped demanding for your overall balance.',
+  'Overall, today asked more of your system than usual.',
+  'The day skewed heavy on your overall load.'
+];
+
+/**
+ * Riformula il driver negativo con aperture varie + contesto (pomeriggio / sonno / idratazione).
+ */
+function longevityVaryNegativeWording(clause, rawDriverMessage) {
+  if (!clause || typeof clause !== 'string') return '';
+  let c = clause.trim().replace(/\.$/, '');
+  const msg = (rawDriverMessage || '').toLowerCase();
+
+  let rest = c;
+  const ye = /^you experienced (.+)$/i.exec(c);
+  const oa = !ye ? /^one area to watch is that (.+)$/i.exec(c) : null;
+  if (ye) rest = ye[1].trim();
+  else if (oa) rest = oa[1].trim();
+  const useStructuredOpeners = !!(ye || oa);
+
+  const rLow = rest.toLowerCase();
+  let enriched = rest;
+  if ((/afternoon|evening/.test(msg) || /afternoon|evening/.test(rLow)) && !/later in the day|through the afternoon|overnight/.test(rLow)) {
+    enriched = `${rest}, especially later in the day`;
+  } else if (/sleep|slept|night|bed|hours|recovery/.test(msg) && !/overnight|night|recovery/.test(rLow)) {
+    enriched = `${rest}, which can carry into how you recover overnight`;
+  } else if (/hydration|hydrat|fluid|water|drink/.test(msg) && !/early|morning|start the day/.test(rLow)) {
+    enriched = `${rest}, and morning hydration habits often show up here`;
+  }
+
+  const pickFramed = () => {
+    if (useStructuredOpeners) {
+      return longevityRandomPick([
+        `Your system showed ${enriched}`,
+        `Your body responded with ${enriched}`,
+        `There was a sign of ${enriched}`
+      ]);
+    }
+    if (/^your /i.test(c)) {
+      return longevityRandomPick([
+        c.charAt(0).toUpperCase() + c.slice(1),
+        `We noticed ${c.charAt(0).toLowerCase() + c.slice(1)}`,
+        `There was a hint that ${c.charAt(0).toLowerCase() + c.slice(1)}`
+      ]);
+    }
+    if (
+      /^(metabolic stress|hydration|fluids|sleep looked|sleep duration|energy |macros |risk signals|a few risk|nutrition data|one area)/i.test(c)
+    ) {
+      const low = enriched.charAt(0).toLowerCase() + enriched.slice(1);
+      return longevityRandomPick([
+        longevityExplainCapitalize(enriched),
+        `Your day reflected ${low}`,
+        `We noted ${low}`
+      ]);
+    }
+    return longevityRandomPick([
+      longevityExplainCapitalize(enriched),
+      `Your day pointed to ${enriched.charAt(0).toLowerCase() + enriched.slice(1)}`,
+      `We picked up ${enriched.charAt(0).toLowerCase() + enriched.slice(1)}`
+    ]);
+  };
+
+  return pickFramed().replace(/\s+/g, ' ').trim();
+}
+
 /** Trasforma il messaggio driver negativo in una frase tipo “you / your …”. */
 function longevityNegativeDriverToClause(message) {
   if (!message || typeof message !== 'string') return null;
@@ -2846,20 +2929,21 @@ export function buildLongevityExplanation(result) {
   const posClause = firstPos ? longevityPositiveDriverToClause(firstPos.message) : null;
 
   const tone = score >= 75 ? 'high' : score >= 50 ? 'mid' : 'low';
-  const summary =
-    tone === 'high'
-      ? 'Today your overall balance looked strong.'
-      : tone === 'mid'
-        ? 'Today your overall balance was decent.'
-        : 'Today tipped demanding for your overall balance.';
+  const summaryPool =
+    tone === 'high' ? LONGEVITY_SUMMARY_HIGH : tone === 'mid' ? LONGEVITY_SUMMARY_MID : LONGEVITY_SUMMARY_LOW;
+  const summary = longevityRandomPick(summaryPool);
 
-  const parts = [`${summary.replace(/\.$/, '')}.`];
+  const parts = [`${String(summary).replace(/\.$/, '').trim()}.`];
 
   if (negClause) {
-    const b = longevityExplainCapitalize(negClause).replace(/\.$/, '');
-    if (tone === 'high') parts.push(`Still, ${b}.`);
-    else if (tone === 'mid') parts.push(`But ${b}.`);
-    else parts.push(`${b}.`);
+    let b = longevityVaryNegativeWording(negClause, firstNeg.message);
+    if (!b || !String(b).trim()) {
+      b = longevityExplainCapitalize(negClause).replace(/\.$/, '');
+    }
+    if (b && !/[.!?]$/.test(b)) b += '.';
+    if (tone === 'high') parts.push(`Still, ${b}`);
+    else if (tone === 'mid') parts.push(`That said, ${b.charAt(0).toLowerCase() + b.slice(1)}`);
+    else parts.push(b);
   } else if (tone === 'low') {
     parts.push('Small shifts to sleep, stress, or fuel tomorrow will help you rebound.');
   }
