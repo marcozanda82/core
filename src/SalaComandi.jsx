@@ -184,6 +184,17 @@ function getZenBreathAudioFade(phaseName, phaseMs) {
 
 const FIREBASE_LOAD_OVERLAY_FADE_MS = 800;
 
+/** Riferimenti stabili per chart vuoto / notte in sospeso (evita ricalcoli longevity ad ogni render). */
+const EMPTY_ENERGY_CHART_DATA = [];
+const LONGEVITY_NIGHT_PENDING_ENERGY_SIM = {
+  chartData: EMPTY_ENERGY_CHART_DATA,
+  realTotals: {},
+  hasCrashRisk: false,
+  hasCortisolRisk: false,
+  hasDigestionRisk: false,
+  nervousSystemLoad: 0
+};
+
 /** Overlay fullscreen: unico piano visibile finché auth/data non sono pronti per la dashboard/login. */
 function FirebaseDataLoadingLayer({ blocking }) {
   const [mounted, setMounted] = useState(false);
@@ -1873,6 +1884,16 @@ export default function SalaComandi() {
 
     return { ...matrix, masterScore, color };
   }, [fullHistory, userTargets, longevityDays]);
+
+  const longevityModalRiskRows = useMemo(() => {
+    if (!longevityData) return [];
+    return [
+      { id: 'metabolic', label: 'Rischio Metabolico', data: longevityData.metabolic, icon: '🩸', desc: 'Glicazione, Insulina e Autofagia' },
+      { id: 'neuro', label: 'Usura Neuro-Ormonale', data: longevityData.neuro, icon: '🧠', desc: 'Cortisolo, Stress e Deep Sleep' },
+      { id: 'inflammatory', label: 'Carico Infiammatorio', data: longevityData.inflammatory, icon: '🔥', desc: 'Danno tissutale e Tossicità' },
+      { id: 'cardio', label: 'Rischio Cardiovascolare', data: longevityData.cardio, icon: '🫀', desc: 'Endotelio e Sedentarietà' }
+    ];
+  }, [longevityData]);
 
   const trendData = useMemo(() => {
     if (!trendModalMetric) return [];
@@ -3626,20 +3647,37 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const sleepStatus = getSleepStatus(activeLog);
   const activeWaterIntake = simulationMode ? activeNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0) : waterIntake;
-  let energySimulation;
-  if (sleepStatus === "NIGHT_PENDING") {
-    energySimulation = {
-      chartData: [],
-      realTotals: {},
-      hasCrashRisk: false,
-      hasCortisolRisk: false,
-      hasDigestionRisk: false,
-      nervousSystemLoad: 0
-    };
-  } else {
-    energySimulation = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad, currentTime, accumuloSNC);
-  }
-  const chartData = energySimulation?.chartData ?? [];
+  const energySimulation = useMemo(() => {
+    if (sleepStatus === 'NIGHT_PENDING') {
+      return LONGEVITY_NIGHT_PENDING_ENERGY_SIM;
+    }
+    return generateRealEnergyData(
+      nodesForEnergySimulation,
+      dailyLogForEnergy,
+      idealStrategy,
+      activeWaterIntake,
+      dailyWaterGoal,
+      yesterdayEnergyAt24?.energy ?? undefined,
+      yesterdayEnergyAt24?.idealEnergy ?? undefined,
+      userModel,
+      nervousSystemLoad,
+      currentTime,
+      accumuloSNC
+    );
+  }, [
+    sleepStatus,
+    nodesForEnergySimulation,
+    dailyLogForEnergy,
+    idealStrategy,
+    activeWaterIntake,
+    dailyWaterGoal,
+    yesterdayEnergyAt24,
+    userModel,
+    nervousSystemLoad,
+    currentTime,
+    accumuloSNC
+  ]);
+  const chartData = energySimulation?.chartData ?? EMPTY_ENERGY_CHART_DATA;
 
   /** Input giornaliero per computeLongevityScore (allineato a chart, totali, rischio matrix, acqua). */
   const longevityPayload = useMemo(() => {
@@ -3698,7 +3736,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     userTargets,
     targetKcal,
     totali,
-    chartData,
+    energySimulation,
     activeWaterIntake,
     dailyWaterGoal,
     sleepStatus,
@@ -8201,12 +8239,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>
-              {[
-                { id: 'metabolic', label: 'Rischio Metabolico', data: longevityData.metabolic, icon: '🩸', desc: 'Glicazione, Insulina e Autofagia' },
-                { id: 'neuro', label: 'Usura Neuro-Ormonale', data: longevityData.neuro, icon: '🧠', desc: 'Cortisolo, Stress e Deep Sleep' },
-                { id: 'inflammatory', label: 'Carico Infiammatorio', data: longevityData.inflammatory, icon: '🔥', desc: 'Danno tissutale e Tossicità' },
-                { id: 'cardio', label: 'Rischio Cardiovascolare', data: longevityData.cardio, icon: '🫀', desc: 'Endotelio e Sedentarietà' }
-              ].map(risk => {
+              {longevityModalRiskRows.map(risk => {
                 let rColor = '#00e5ff';
                 if (risk.data.score > 40) rColor = '#f44336';
                 else if (risk.data.score > 20) rColor = '#ffb300';
