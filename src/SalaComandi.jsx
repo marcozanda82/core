@@ -19,6 +19,7 @@ import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
+import LongevityView from './LongevityView';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
   RADIAN,
@@ -87,7 +88,8 @@ import {
   predictEnergyIntervention,
   computeDayEvaluations,
   computeEvaluationTrend,
-  computeRiskMatrix
+  computeRiskMatrix,
+  computeLongevityScore
 } from './coreEngine';
 
 const CustomDateTick = ({ x, y, payload }) => {
@@ -3636,6 +3638,76 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     energySimulation = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, activeWaterIntake, dailyWaterGoal, yesterdayEnergyAt24?.energy ?? undefined, yesterdayEnergyAt24?.idealEnergy ?? undefined, userModel, nervousSystemLoad, currentTime, accumuloSNC);
   }
   const chartData = energySimulation?.chartData ?? [];
+
+  /** Input giornaliero per computeLongevityScore (allineato a chart, totali, rischio matrix, acqua). */
+  const longevityPayload = useMemo(() => {
+    const nutritionTotals =
+      totali && typeof totali === 'object'
+        ? {
+            ...totali,
+            fat: totali.fat != null && totali.fat > 0 ? totali.fat : (totali.fatTotal ?? 0)
+          }
+        : computeTotali(activeLog || []);
+
+    const stressPts = (chartData || [])
+      .map(p => computeMetabolicStress(p))
+      .filter(v => typeof v === 'number' && !Number.isNaN(v));
+    const metabolicStressVal = stressPts.length
+      ? Math.round(stressPts.reduce((a, b) => a + b, 0) / stressPts.length)
+      : undefined;
+
+    const riskBadness =
+      longevityData != null && typeof longevityData.masterScore === 'number'
+        ? Math.max(0, Math.min(100, 100 - longevityData.masterScore))
+        : undefined;
+
+    const sleepEntry = (activeLog || []).find(e => e && e.type === 'sleep');
+    const sleepHoursRaw = sleepEntry
+      ? Number(sleepEntry.hours ?? sleepEntry.duration ?? sleepEntry.sleepHours ?? NaN)
+      : NaN;
+    const sleepHours = !Number.isNaN(sleepHoursRaw) ? sleepHoursRaw : undefined;
+
+    const payload = {
+      totals: nutritionTotals,
+      nutrition: nutritionTotals,
+      targets: {
+        kcal: targetKcal,
+        prot: userTargets?.prot ?? DEFAULT_TARGETS.prot,
+        carb: userTargets?.carb ?? DEFAULT_TARGETS.carb,
+        fat: userTargets?.fat ?? userTargets?.fatTotal ?? DEFAULT_TARGETS.fatTotal
+      },
+      metabolicStress: metabolicStressVal,
+      stress: metabolicStressVal,
+      risk: riskBadness ?? 50,
+      hydration: activeWaterIntake,
+      hydrationTarget: dailyWaterGoal,
+      energySeries: (chartData || []).map(p => p.energy).filter(v => typeof v === 'number' && !Number.isNaN(v))
+    };
+
+    if (sleepHours !== undefined) {
+      payload.sleepHours = sleepHours;
+    } else {
+      payload.sleepScore = sleepStatus === 'OK' ? 80 : sleepStatus === 'NIGHT_PENDING' ? 45 : 55;
+    }
+
+    return payload;
+  }, [
+    activeLog,
+    userTargets,
+    targetKcal,
+    totali,
+    chartData,
+    activeWaterIntake,
+    dailyWaterGoal,
+    sleepStatus,
+    longevityData
+  ]);
+
+  const longevityEngineScore = useMemo(
+    () => computeLongevityScore(longevityPayload),
+    [longevityPayload]
+  );
+
   const dailyReportDisplay = useMemo(() => {
     if (!dailyReport) return null;
     const neuroVal = dailyReport.neuro;
@@ -8107,6 +8179,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <span style={{ color: longevityData.color, fontSize: '4rem', fontWeight: 'bold', lineHeight: '1' }}>{longevityData.masterScore}</span>
                 <span style={{ color: '#aaa', fontSize: '0.85rem', marginTop: '5px', textTransform: 'uppercase', letterSpacing: '1px' }}>Score Longevità</span>
               </div>
+            </div>
+
+            <div style={{ marginBottom: '32px', color: '#e8e8e8' }}>
+              <LongevityView data={longevityEngineScore} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>
