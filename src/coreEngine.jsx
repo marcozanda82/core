@@ -2733,6 +2733,146 @@ export function computeLongevityScore(daily) {
   };
 }
 
+function longevityExplainCapitalize(sentence) {
+  const s = (sentence || '').trim();
+  if (!s) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Trasforma il messaggio driver negativo in una frase tipo “you / your …”. */
+function longevityNegativeDriverToClause(message) {
+  if (!message || typeof message !== 'string') return null;
+  const t = message.trim().replace(/\.$/, '').replace(/\s+/g, ' ');
+
+  if (/^elevated metabolic stress/i.test(t)) {
+    const rest = t.replace(/^elevated metabolic stress/i, '').trim().toLowerCase();
+    return rest ? `you experienced higher metabolic stress ${rest}` : 'you experienced higher metabolic stress than ideal';
+  }
+  if (/metabolic stress edging higher|metabolic stress crept/i.test(t)) {
+    return 'metabolic stress edged higher than ideal';
+  }
+  if (/^energy dipped in the/i.test(t)) {
+    return `your ${t.charAt(0).toLowerCase()}${t.slice(1)}`;
+  }
+  if (/^(protein|carb|fat|calories) intake below target$/i.test(t)) {
+    const macro = t.split(/\s+/)[0].toLowerCase();
+    return `your ${macro} intake landed below target`;
+  }
+  if (/^(protein|carb|fat|calories) intake above target$/i.test(t)) {
+    const macro = t.split(/\s+/)[0].toLowerCase();
+    return `your ${macro} intake ran above target`;
+  }
+  if (/^hydration below goal$/i.test(t)) return 'hydration finished below your goal';
+  if (/^hydration under today/i.test(t)) return 'fluids stayed under what you aimed for today';
+  if (/poor hydration early in the day/i.test(t)) return 'hydration was light early in the day';
+  if (/sleep short of what you need|only about \d/i.test(t)) return 'sleep looked shorter than your body needs';
+  if (/sleep duration or quality below par/i.test(t)) return 'sleep duration or quality slipped';
+  if (/sharp swings in perceived energy/i.test(t)) return 'your energy swung more than usual';
+  if (/uneven energy across waking hours/i.test(t)) return 'energy was uneven across the day';
+  if (/unstable energy curve/i.test(t)) return 'energy stability wavered';
+  if (/energy stability trailing/i.test(t)) return 'energy stability trailed your other pillars';
+  if (/energy stability is lagging today/i.test(t)) return 'energy stability lagged today';
+  if (/macronutrient mix off/i.test(t)) return 'macros drifted off your planned mix';
+  if (/nutrition tracking or targets missing/i.test(t)) return 'nutrition data was thin, so balance is harder to judge';
+  if (/health risk score elevated/i.test(t)) return 'risk signals read higher than your usual baseline';
+  if (/risk markers around/i.test(t)) return 'a few risk markers need a closer look';
+  if (/risk signals need attention/i.test(t)) return 'risk signals deserve a bit of attention';
+
+  const soft = t.charAt(0).toLowerCase() + t.slice(1);
+  return `one area to watch is that ${soft}`;
+}
+
+/** Una frase breve di rinforzo dal driver positivo. */
+function longevityPositiveDriverToClause(message) {
+  if (!message || typeof message !== 'string') return null;
+  const t = message.trim().replace(/\.$/, '');
+
+  if (/stable energy throughout the day/i.test(t)) {
+    return 'Your energy levels remained fairly stable, which is a good sign.';
+  }
+  if (/even energy band/i.test(t)) {
+    return 'Your energy stayed even for much of the day, which helps recovery.';
+  }
+  if (/stable energy levels from your stability data/i.test(t)) {
+    return 'Your stability data suggests steady energy, and that is worth keeping.';
+  }
+  if (/macros aligned with your daily targets/i.test(t)) {
+    return 'Your macros lined up well with what you planned.';
+  }
+  if (/nutrition closest to plan/i.test(t)) {
+    return 'Nutrition was the cleanest pillar of the day.';
+  }
+  if (/metabolic stress stayed low through the afternoon/i.test(t)) {
+    return 'Metabolic stress stayed tame through the afternoon.';
+  }
+  if (/metabolic stress stayed low today/i.test(t)) {
+    return 'Metabolic stress stayed relatively low, which is encouraging.';
+  }
+  if (/strong sleep and hydration together/i.test(t)) {
+    return 'Sleep and hydration both showed up for you today.';
+  }
+  if (/hydration on target/i.test(t)) {
+    return 'Hydration was on target, and that supports everything else.';
+  }
+  if (/sleep window supportive/i.test(t)) {
+    return 'Your sleep window still supported recovery.';
+  }
+  if (/risk factors well controlled|risk score low/i.test(t)) {
+    return 'Risk readouts stayed controlled, which is a quiet win.';
+  }
+  return `On the upside, ${t.charAt(0).toLowerCase() + t.slice(1)}.`;
+}
+
+/**
+ * Spiegazione breve (2–3 frasi) dal risultato di computeLongevityScore.
+ * @param {object} result — output di computeLongevityScore
+ * @returns {string}
+ */
+export function buildLongevityExplanation(result) {
+  const fallback =
+    'We could not read a clear longevity picture yet. Log meals, sleep, and hydration and check back.';
+
+  if (!result || typeof result !== 'object') return fallback;
+
+  const score =
+    typeof result.score === 'number' && !Number.isNaN(result.score) ? result.score : null;
+  if (score == null) return fallback;
+
+  const drivers = Array.isArray(result.drivers) ? result.drivers : [];
+  const firstNeg = drivers.find(d => d && d.type === 'negative');
+  const firstPos = drivers.find(d => d && d.type === 'positive');
+
+  const negClause = firstNeg ? longevityNegativeDriverToClause(firstNeg.message) : null;
+  const posClause = firstPos ? longevityPositiveDriverToClause(firstPos.message) : null;
+
+  const tone = score >= 75 ? 'high' : score >= 50 ? 'mid' : 'low';
+  const summary =
+    tone === 'high'
+      ? 'Today your overall balance looked strong.'
+      : tone === 'mid'
+        ? 'Today your overall balance was decent.'
+        : 'Today tipped demanding for your overall balance.';
+
+  const parts = [`${summary.replace(/\.$/, '')}.`];
+
+  if (negClause) {
+    const b = longevityExplainCapitalize(negClause).replace(/\.$/, '');
+    if (tone === 'high') parts.push(`Still, ${b}.`);
+    else if (tone === 'mid') parts.push(`But ${b}.`);
+    else parts.push(`${b}.`);
+  } else if (tone === 'low') {
+    parts.push('Small shifts to sleep, stress, or fuel tomorrow will help you rebound.');
+  }
+
+  if (posClause && parts.length < 3) {
+    let p2 = posClause.trim();
+    if (!/[.!?]$/.test(p2)) p2 += '.';
+    parts.push(p2);
+  }
+
+  return parts.slice(0, 3).join(' ');
+}
+
 export {
   RADIAN,
   getTodayString,
