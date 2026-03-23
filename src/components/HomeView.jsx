@@ -106,9 +106,22 @@ export default function HomeView({
       </motion.div>
 
       {/* TIMELINE */}
-      <div style={{ marginBottom: 20 }}>
+      <motion.div
+        style={{
+          marginBottom: 20,
+          borderRadius: 16,
+          padding: 8,
+          background: 'rgba(2,6,23,0.4)',
+          border: '1px solid rgba(255,255,255,0.04)',
+          backdropFilter: 'blur(6px)',
+          WebkitBackdropFilter: 'blur(6px)'
+        }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 0.95 }}
+        transition={{ delay: 0.3 }}
+      >
         <TimelineNodi {...timelineProps} />
-      </div>
+      </motion.div>
 
       {/* CTA */}
       <button
