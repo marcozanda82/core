@@ -120,7 +120,8 @@ export default function MealBuilder({
   registerAddFoodCallback,
   editingMealId,
   callGeminiAPIWithRotation,
-  saveCustomRecipeToFoodDb
+  saveCustomRecipeToFoodDb,
+  foodDb = {}
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -136,6 +137,8 @@ export default function MealBuilder({
   const [extraIngredientQuery, setExtraIngredientQuery] = useState('');
   const [isAddingExtra, setIsAddingExtra] = useState(false);
   const [complexPortionWeight, setComplexPortionWeight] = useState(100);
+  const [recipeSearchResults, setRecipeSearchResults] = useState([]);
+  const [showRecipeDropdown, setShowRecipeDropdown] = useState(false);
 
   const draftTotalsPer100g = useMemo(() => (
     draftRecipe.reduce(
@@ -179,6 +182,46 @@ export default function MealBuilder({
     return () => registerAddFoodCallback(null);
   }, [registerAddFoodCallback]);
 
+  useEffect(() => {
+    if (!isComplexMode) {
+      setRecipeSearchResults([]);
+      setShowRecipeDropdown(false);
+      return;
+    }
+    const q = complexFoodQuery.trim();
+    if (q.length < 2) {
+      setRecipeSearchResults([]);
+      setShowRecipeDropdown(false);
+      return;
+    }
+    const lower = q.toLowerCase();
+    const db = foodDb && typeof foodDb === 'object' ? foodDb : {};
+    const out = [];
+    Object.entries(db).forEach(([key, entry]) => {
+      if (!entry || typeof entry !== 'object') return;
+      const isRec = entry.isRecipe === true || entry.type === 'recipe';
+      if (!isRec) return;
+      const name = String(entry.desc ?? entry.name ?? '').trim();
+      if (!name.toLowerCase().includes(lower)) return;
+      const ingredients = entry.ingredients;
+      if (!Array.isArray(ingredients) || ingredients.length === 0) return;
+      out.push({ key, name, ingredients });
+    });
+    out.sort((a, b) => a.name.localeCompare(b.name, 'it'));
+    setRecipeSearchResults(out);
+    setShowRecipeDropdown(out.length > 0);
+  }, [complexFoodQuery, foodDb, isComplexMode]);
+
+  const handleSelectSavedRecipe = (recipe) => {
+    if (!recipe || !Array.isArray(recipe.ingredients)) return;
+    const name = String(recipe.name ?? '').trim() || 'Ricetta';
+    setComplexFoodQuery(name);
+    const next = recipe.ingredients.map((row, i) => normalizeDraftIngredient(row, i));
+    setDraftRecipe(next);
+    setShowRecipeDropdown(false);
+    setComplexPortionWeight(100);
+  };
+
   const sortedSuggestions = useMemo(() => {
     const list = foodDropdownSuggestions || [];
     if (list.length === 0 || recentFoods.length === 0) return list;
@@ -211,6 +254,7 @@ export default function MealBuilder({
   const handleGenerateRecipe = async () => {
     const dish = complexFoodQuery.trim();
     if (!dish) return;
+    setShowRecipeDropdown(false);
     if (typeof callGeminiAPIWithRotation !== 'function') {
       alert('AI non disponibile: configura le API Key nelle impostazioni.');
       return;
@@ -369,6 +413,8 @@ export default function MealBuilder({
     setExtraIngredientQuery('');
     setIsAddingExtra(false);
     setComplexPortionWeight(100);
+    setRecipeSearchResults([]);
+    setShowRecipeDropdown(false);
   };
 
   const handleCancelComplexMode = () => {
@@ -379,6 +425,8 @@ export default function MealBuilder({
     setExtraIngredientQuery('');
     setIsAddingExtra(false);
     setComplexPortionWeight(100);
+    setRecipeSearchResults([]);
+    setShowRecipeDropdown(false);
   };
 
   const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (typeof v === 'string' ? Number(v) : v) != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
@@ -571,7 +619,12 @@ export default function MealBuilder({
                   </div>
                   <button
                     type="button"
-                    onClick={() => { setIsComplexMode(true); setShowFoodDropdown(false); }}
+                    onClick={() => {
+                      setIsComplexMode(true);
+                      setShowFoodDropdown(false);
+                      setRecipeSearchResults([]);
+                      setShowRecipeDropdown(false);
+                    }}
                     style={{
                       width: '100%',
                       marginTop: '10px',
@@ -594,6 +647,7 @@ export default function MealBuilder({
               ) : (
                 <div
                   style={{
+                    position: 'relative',
                     background: '#2c2c2e',
                     border: '1px solid #3a3a3c',
                     borderRadius: '12px',
@@ -604,24 +658,78 @@ export default function MealBuilder({
                   <div style={{ fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '8px' }}>
                     Piatto complesso
                   </div>
-                  <input
-                    type="text"
-                    value={complexFoodQuery}
-                    onChange={(e) => setComplexFoodQuery(e.target.value)}
-                    placeholder="Es. Lasagne, Chili con carne…"
-                    disabled={isGeneratingRecipe}
-                    style={{
-                      width: '100%',
-                      boxSizing: 'border-box',
-                      padding: '12px 14px',
-                      background: '#1a1a1a',
-                      border: '1px solid #444',
-                      borderRadius: '12px',
-                      color: '#fff',
-                      fontSize: '0.95rem',
-                      outline: 'none'
-                    }}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      value={complexFoodQuery}
+                      onChange={(e) => setComplexFoodQuery(e.target.value)}
+                      onFocus={() => {
+                        if (recipeSearchResults.length > 0) setShowRecipeDropdown(true);
+                      }}
+                      onBlur={() => {
+                        setTimeout(() => setShowRecipeDropdown(false), 200);
+                      }}
+                      placeholder="Es. Lasagne, Chili con carne…"
+                      disabled={isGeneratingRecipe}
+                      autoComplete="off"
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '12px 14px',
+                        background: '#1a1a1a',
+                        border: '1px solid #444',
+                        borderRadius: '12px',
+                        color: '#fff',
+                        fontSize: '0.95rem',
+                        outline: 'none'
+                      }}
+                    />
+                    {showRecipeDropdown && recipeSearchResults.length > 0 && !isGeneratingRecipe && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          marginTop: '4px',
+                          background: '#1c1c1e',
+                          border: '1px solid #333',
+                          borderRadius: '8px',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                          zIndex: 20,
+                          boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+                        }}
+                      >
+                        {recipeSearchResults.map((r) => (
+                          <div
+                            key={r.key}
+                            role="button"
+                            tabIndex={0}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleSelectSavedRecipe(r);
+                              }
+                            }}
+                            onClick={() => handleSelectSavedRecipe(r)}
+                            style={{
+                              padding: '12px 14px',
+                              fontSize: '0.9rem',
+                              color: '#fff',
+                              cursor: 'pointer',
+                              borderBottom: '1px solid #2a2a2a'
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0, 229, 255, 0.12)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                          >
+                            {r.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '14px' }}>
                     <button
                       type="button"

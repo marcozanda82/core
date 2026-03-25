@@ -6390,6 +6390,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             editingMealId={editingMealId}
             callGeminiAPIWithRotation={callGeminiAPIWithRotation}
             saveCustomRecipeToFoodDb={saveCustomRecipeToFoodDb}
+            foodDb={foodDb}
           />
         )}
 
