@@ -74,6 +74,11 @@ export default function MealBuilder({
   const [numpadValue, setNumpadValue] = useState('');
   const mealCarouselRef = useRef(null);
 
+  const [isComplexMode, setIsComplexMode] = useState(false);
+  const [complexFoodQuery, setComplexFoodQuery] = useState('');
+  const [draftRecipe, setDraftRecipe] = useState([]);
+  const [isGeneratingRecipe, setIsGeneratingRecipe] = useState(false);
+
   const [recentFoods, setRecentFoods] = useState(() => {
     try { return JSON.parse(localStorage.getItem('recentFoods') || '[]'); }
     catch { return []; }
@@ -119,6 +124,18 @@ export default function MealBuilder({
       const container = mealCarouselRef.current;
       container.scrollTo({ left: index * container.clientWidth, behavior: 'smooth' });
     }
+  };
+
+  const handleGenerateRecipeDraft = () => {
+    setIsGeneratingRecipe(true);
+    console.log('Chiamata AI per:', complexFoodQuery);
+    window.setTimeout(() => setIsGeneratingRecipe(false), 1000);
+  };
+
+  const handleCancelComplexMode = () => {
+    setIsComplexMode(false);
+    setComplexFoodQuery('');
+    setIsGeneratingRecipe(false);
   };
 
   const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (typeof v === 'string' ? Number(v) : v) != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
@@ -274,41 +291,138 @@ export default function MealBuilder({
               </div>
             )}
             <div style={{ position: 'sticky', top: '-20px', zIndex: 50, background: '#111', paddingTop: '20px', paddingBottom: '10px', borderBottom: '1px solid #333', margin: '0 -15px 20px -15px', paddingLeft: '15px', paddingRight: '15px' }}>
-              <div className="quick-add-bar">
-                <div style={{ position: 'relative', flex: 3, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+              {!isComplexMode ? (
+                <>
+                  <div className="quick-add-bar">
+                    <div style={{ position: 'relative', flex: 3, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+                      <input
+                        ref={foodInputRef}
+                        type="text"
+                        className="quick-input input-name"
+                        placeholder="Es. Pollo"
+                        value={foodNameInput}
+                        onChange={(e) => setFoodNameInput(e.target.value)}
+                        onFocus={() => setShowFoodDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') document.getElementById('weight-input')?.focus(); }}
+                        style={{ flex: 3, width: '100%', paddingRight: foodNameInput ? '36px' : undefined, boxSizing: 'border-box' }}
+                      />
+                      {foodNameInput ? (
+                        <button type="button" onClick={() => setFoodNameInput('')} aria-label="Cancella ricerca" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', width: '28px', height: '28px', minWidth: 28, minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', color: '#888', fontSize: '1rem', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+                      ) : null}
+                    </div>
+                    <input
+                      id="weight-input"
+                      type="number"
+                      inputMode="decimal"
+                      className="quick-input input-weight"
+                      placeholder="g"
+                      value={foodWeightInput}
+                      onChange={(e) => setFoodWeightInput(e.target.value)}
+                      onFocus={(e) => { if (numpadFoodId) e.target.blur(); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()}
+                      style={{ flex: 1, maxWidth: '80px', textAlign: 'center', boxSizing: 'border-box' }}
+                    />
+                    <button type="button" title="Scansiona barcode" onClick={() => setIsBarcodeScannerOpen(prev => !prev)} style={{ padding: '10px 12px', background: isBarcodeScannerOpen ? '#00e5ff' : 'rgba(255,255,255,0.08)', border: '1px solid #333', borderRadius: '10px', cursor: 'pointer', fontSize: '1.1rem' }}>📷</button>
+                    <button type="button" className="quick-add-btn" onClick={handleAddFoodManual}>+</button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setIsComplexMode(true); setShowFoodDropdown(false); }}
+                    style={{
+                      width: '100%',
+                      marginTop: '10px',
+                      padding: '12px 14px',
+                      background: '#2c2c2e',
+                      border: '1px solid rgba(0, 229, 255, 0.35)',
+                      borderRadius: '12px',
+                      color: '#fff',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.04em',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    Crea da Ricetta / Piatto Complesso
+                  </button>
+                </>
+              ) : (
+                <div
+                  style={{
+                    background: '#2c2c2e',
+                    border: '1px solid #3a3a3c',
+                    borderRadius: '12px',
+                    padding: '14px',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '8px' }}>
+                    Piatto complesso
+                  </div>
                   <input
-                    ref={foodInputRef}
                     type="text"
-                    className="quick-input input-name"
-                    placeholder="Es. Pollo"
-                    value={foodNameInput}
-                    onChange={(e) => setFoodNameInput(e.target.value)}
-                    onFocus={() => setShowFoodDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') document.getElementById('weight-input')?.focus(); }}
-                    style={{ flex: 3, width: '100%', paddingRight: foodNameInput ? '36px' : undefined, boxSizing: 'border-box' }}
+                    value={complexFoodQuery}
+                    onChange={(e) => setComplexFoodQuery(e.target.value)}
+                    placeholder="Es. Lasagne, Chili con carne…"
+                    disabled={isGeneratingRecipe}
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      padding: '12px 14px',
+                      background: '#1a1a1a',
+                      border: '1px solid #444',
+                      borderRadius: '12px',
+                      color: '#fff',
+                      fontSize: '0.95rem',
+                      outline: 'none'
+                    }}
                   />
-                  {foodNameInput ? (
-                    <button type="button" onClick={() => setFoodNameInput('')} aria-label="Cancella ricerca" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', width: '28px', height: '28px', minWidth: 28, minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', color: '#888', fontSize: '1rem', cursor: 'pointer', lineHeight: 1 }}>✕</button>
-                  ) : null}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '14px' }}>
+                    <button
+                      type="button"
+                      onClick={handleGenerateRecipeDraft}
+                      disabled={isGeneratingRecipe || !complexFoodQuery.trim()}
+                      style={{
+                        flex: '1 1 140px',
+                        padding: '12px 16px',
+                        background: isGeneratingRecipe ? '#333' : 'rgba(0, 229, 255, 0.18)',
+                        border: '1px solid #00e5ff',
+                        borderRadius: '12px',
+                        color: '#00e5ff',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: isGeneratingRecipe || !complexFoodQuery.trim() ? 'not-allowed' : 'pointer',
+                        opacity: isGeneratingRecipe || !complexFoodQuery.trim() ? 0.6 : 1
+                      }}
+                    >
+                      {isGeneratingRecipe ? '⏳ Generazione…' : 'Genera Bozza con AI'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelComplexMode}
+                      disabled={isGeneratingRecipe}
+                      style={{
+                        flex: '1 1 100px',
+                        padding: '12px 16px',
+                        background: '#1a1a1a',
+                        border: '1px solid #555',
+                        borderRadius: '12px',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        cursor: isGeneratingRecipe ? 'not-allowed' : 'pointer',
+                        opacity: isGeneratingRecipe ? 0.5 : 1
+                      }}
+                    >
+                      Annulla
+                    </button>
+                  </div>
                 </div>
-                <input
-                  id="weight-input"
-                  type="number"
-                  inputMode="decimal"
-                  className="quick-input input-weight"
-                  placeholder="g"
-                  value={foodWeightInput}
-                  onChange={(e) => setFoodWeightInput(e.target.value)}
-                  onFocus={(e) => { if (numpadFoodId) e.target.blur(); }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()}
-                  style={{ flex: 1, maxWidth: '80px', textAlign: 'center', boxSizing: 'border-box' }}
-                />
-                <button type="button" title="Scansiona barcode" onClick={() => setIsBarcodeScannerOpen(prev => !prev)} style={{ padding: '10px 12px', background: isBarcodeScannerOpen ? '#00e5ff' : 'rgba(255,255,255,0.08)', border: '1px solid #333', borderRadius: '10px', cursor: 'pointer', fontSize: '1.1rem' }}>📷</button>
-                <button type="button" className="quick-add-btn" onClick={handleAddFoodManual}>+</button>
-              </div>
+              )}
             </div>
-            {foodNameInput.trim() === '' && abitudiniIeri.length > 0 && (
+            {!isComplexMode && foodNameInput.trim() === '' && abitudiniIeri.length > 0 && (
               <div style={{ marginBottom: '16px' }}>
                 <button type="button" onClick={() => setIsAbitudiniOpen(prev => !prev)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid #333', borderRadius: '10px', color: '#888', fontSize: '0.7rem', letterSpacing: '1px', cursor: 'pointer', textAlign: 'left' }}>
                   <span>Abitudini di ieri</span>
@@ -325,7 +439,7 @@ export default function MealBuilder({
                 )}
               </div>
             )}
-            {showFoodDropdown && (foodNameInput.trim() || sortedSuggestions.length > 0) && (
+            {!isComplexMode && showFoodDropdown && (foodNameInput.trim() || sortedSuggestions.length > 0) && (
               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#1e1e1e', border: '1px solid #333', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '250px', overflowY: 'auto', zIndex: 1000, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', margin: 0, padding: 0 }}>
                 {sortedSuggestions.map(s => (
                   <div
