@@ -3,6 +3,23 @@
  * Estratto da SalaComandi.jsx. La logica saveMealToDiary resta nel genitore; qui solo rendering e onClick.
  */
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { TARGETS } from './useBiochimico';
+
+const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
+  'fibre',
+  ...Object.values(TARGETS).flatMap(g => Object.keys(g || {}))
+]);
+
+function mergeDraftNutrientExtras(base, row) {
+  const out = { ...base };
+  DRAFT_NUTRIENT_EXTRA_KEYS.forEach((k) => {
+    if (row[k] == null) return;
+    const n = Number(row[k]);
+    if (!Number.isFinite(n)) return;
+    out[k] = k === 'kcal' ? Math.max(0, Math.round(n)) : Math.max(0, Math.round(n * 10) / 10);
+  });
+  return out;
+}
 
 const MEAL_BUTTONS = [
   { label: 'Colazione', id: 'merenda1' },
@@ -35,7 +52,7 @@ function normalizeDraftIngredient(row, index) {
     return Number.isFinite(n) ? n : 0;
   };
   const baseId = String(row.id != null ? row.id : 'ing').replace(/\s+/g, '_');
-  return {
+  const base = {
     id: `draft_${index}_${baseId}`.slice(0, 80),
     name: String(row.name != null ? row.name : 'Ingrediente').trim() || 'Ingrediente',
     weight,
@@ -44,6 +61,7 @@ function normalizeDraftIngredient(row, index) {
     carb: Math.max(0, Math.round(num(row.carb) * 10) / 10),
     fat: Math.max(0, Math.round(num(row.fat) * 10) / 10)
   };
+  return mergeDraftNutrientExtras(base, row);
 }
 
 export default function MealBuilder({
@@ -101,7 +119,8 @@ export default function MealBuilder({
   saveMealToDiary,
   registerAddFoodCallback,
   editingMealId,
-  callGeminiAPIWithRotation
+  callGeminiAPIWithRotation,
+  saveCustomRecipeToFoodDb
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -116,6 +135,31 @@ export default function MealBuilder({
   const [isGeneratingRecipe, setIsGeneratingRecipe] = useState(false);
   const [extraIngredientQuery, setExtraIngredientQuery] = useState('');
   const [isAddingExtra, setIsAddingExtra] = useState(false);
+  const [complexPortionWeight, setComplexPortionWeight] = useState(100);
+
+  const draftTotalsPer100g = useMemo(() => (
+    draftRecipe.reduce(
+      (acc, ing) => ({
+        kcal: acc.kcal + (Number(ing.kcal) || 0),
+        prot: acc.prot + (Number(ing.prot) || 0),
+        carb: acc.carb + (Number(ing.carb) || 0),
+        fat: acc.fat + (Number(ing.fat) || 0)
+      }),
+      { kcal: 0, prot: 0, carb: 0, fat: 0 }
+    )
+  ), [draftRecipe]);
+
+  const portionPreview = useMemo(() => {
+    const w = Math.max(50, Math.min(5000, Number(complexPortionWeight) || 100));
+    const f = w / 100;
+    return {
+      w,
+      kcal: (draftTotalsPer100g.kcal * f),
+      prot: (draftTotalsPer100g.prot * f),
+      carb: (draftTotalsPer100g.carb * f),
+      fat: (draftTotalsPer100g.fat * f)
+    };
+  }, [draftTotalsPer100g, complexPortionWeight]);
 
   const [recentFoods, setRecentFoods] = useState(() => {
     try { return JSON.parse(localStorage.getItem('recentFoods') || '[]'); }
@@ -182,6 +226,7 @@ export default function MealBuilder({
         return;
       }
       setDraftRecipe(next);
+      setComplexPortionWeight(100);
     } catch (err) {
       console.error('Recipe AI error:', err);
       alert(
@@ -250,7 +295,7 @@ export default function MealBuilder({
       const prompt =
         'Sei un nutrizionista. Fornisci i valori nutrizionali per 100 grammi crudi di: ' +
         JSON.stringify(q) +
-        ". Se mancano dati precisi, fai una stima logica usando valori medi. Restituisci SOLO un array JSON (senza backtick o markdown) contenente un singolo oggetto strutturato così: [{ id: 'extra_[timestamp_o_random]', name: '[Nome Inserito]', weight: 100, kcal: [numero], prot: [numero], carb: [numero], fat: [numero] }].";
+        ". Se mancano dati precisi, fai una stima logica usando valori medi. Genera anche i micronutrienti principali (fibre, vitamine, minerali) se possibile, con chiavi piatte coerenti con uno schema nutrizionale (es. fibre, vitc, fe, ca, mg, k, na), in modo da popolare il database alimenti in modo completo. Restituisci SOLO un array JSON (senza backtick o markdown) contenente un singolo oggetto strutturato così: [{ id: 'extra_[timestamp_o_random]', name: '[Nome Inserito]', weight: 100, kcal: [numero], prot: [numero], carb: [numero], fat: [numero], ...micronutrienti opzionali }].";
       const rawText = await callGeminiAPIWithRotation(prompt);
       const rows = parseRecipeIngredientsFromAI(rawText);
       if (!rows.length) {
@@ -277,29 +322,53 @@ export default function MealBuilder({
 
   const handleConfirmRecipeToMeal = () => {
     if (!draftRecipe.length) return;
-    const stamp = Date.now();
-    const foods = draftRecipe.map((ing, idx) => ({
-      id: `complex_${stamp}_${idx}_${String(ing.id).replace(/\W/g, '_').slice(0, 24)}`,
-      type: 'food',
+    const name = complexFoodQuery.trim() || 'Ricetta';
+    const sumK = draftRecipe.reduce((a, ing) => a + (Number(ing.kcal) || 0), 0);
+    const sumP = draftRecipe.reduce((a, ing) => a + (Number(ing.prot) || 0), 0);
+    const sumC = draftRecipe.reduce((a, ing) => a + (Number(ing.carb) || 0), 0);
+    const sumF = draftRecipe.reduce((a, ing) => a + (Number(ing.fat) || 0), 0);
+    const w = Math.max(50, Math.min(5000, Math.round(Number(complexPortionWeight)) || 100));
+    const recipeId = `recipe_${Date.now()}`;
+    const recipe = {
+      id: recipeId,
+      name,
+      desc: name,
+      type: 'recipe',
+      weight: w,
+      qta: w,
       mealType,
-      desc: ing.name,
-      name: ing.name,
-      qta: ing.weight,
-      weight: ing.weight,
-      kcal: ing.kcal,
-      cal: ing.kcal,
-      prot: ing.prot,
-      carb: ing.carb,
-      fatTotal: ing.fat,
-      fat: ing.fat
-    }));
-    setAddedFoods((prev) => [...foods, ...prev]);
+      unitStep: 50,
+      kcal: (sumK * w) / 100,
+      cal: (sumK * w) / 100,
+      prot: (sumP * w) / 100,
+      carb: (sumC * w) / 100,
+      fat: (sumF * w) / 100,
+      fatTotal: (sumF * w) / 100,
+      ingredients: draftRecipe.map((ing) => ({ ...ing }))
+    };
+    setAddedFoods((prev) => [recipe, ...prev]);
+    void (async () => {
+      try {
+        await saveCustomRecipeToFoodDb?.({
+          desc: name,
+          kcal: sumK,
+          prot: sumP,
+          carb: sumC,
+          fatTotal: sumF,
+          ingredients: draftRecipe
+        });
+      } catch (err) {
+        console.error('saveCustomRecipeToFoodDb', err);
+        alert('Ricetta aggiunta al pasto, ma il salvataggio nel database alimenti non è riuscito.');
+      }
+    })();
     setIsComplexMode(false);
     setDraftRecipe([]);
     setComplexFoodQuery('');
     setIsGeneratingRecipe(false);
     setExtraIngredientQuery('');
     setIsAddingExtra(false);
+    setComplexPortionWeight(100);
   };
 
   const handleCancelComplexMode = () => {
@@ -309,6 +378,7 @@ export default function MealBuilder({
     setIsGeneratingRecipe(false);
     setExtraIngredientQuery('');
     setIsAddingExtra(false);
+    setComplexPortionWeight(100);
   };
 
   const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (typeof v === 'string' ? Number(v) : v) != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
@@ -721,6 +791,89 @@ export default function MealBuilder({
                   style={{
                     marginTop: '14px',
                     padding: '14px',
+                    background: '#1e1e22',
+                    border: '1px solid #3a3a3c',
+                    borderRadius: '12px',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <div style={{ fontSize: '0.75rem', color: '#e2e8f0', fontWeight: 700, marginBottom: '12px' }}>
+                    Quantità consumata del piatto:
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', marginBottom: '12px' }}>
+                    <button
+                      type="button"
+                      aria-label="Meno 50 grammi"
+                      onClick={() => setComplexPortionWeight((prev) => Math.max(50, (Number(prev) || 100) - 50))}
+                      style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '10px',
+                        border: '1px solid #555',
+                        background: '#2c2c2e',
+                        color: '#fff',
+                        fontSize: '1.25rem',
+                        cursor: 'pointer',
+                        lineHeight: 1
+                      }}
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      min={50}
+                      max={5000}
+                      step={5}
+                      value={complexPortionWeight}
+                      onChange={(e) => {
+                        const n = Math.round(Number(e.target.value));
+                        if (!Number.isFinite(n)) return;
+                        setComplexPortionWeight(Math.max(50, Math.min(5000, n)));
+                      }}
+                      style={{
+                        flex: '1 1 100px',
+                        minWidth: '80px',
+                        padding: '12px 14px',
+                        background: '#1a1a1a',
+                        border: '1px solid #444',
+                        borderRadius: '12px',
+                        color: '#fff',
+                        fontSize: '1rem',
+                        fontWeight: 700,
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Più 50 grammi"
+                      onClick={() => setComplexPortionWeight((prev) => Math.min(5000, (Number(prev) || 100) + 50))}
+                      style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '10px',
+                        border: '1px solid #555',
+                        background: '#2c2c2e',
+                        color: '#fff',
+                        fontSize: '1.25rem',
+                        cursor: 'pointer',
+                        lineHeight: 1
+                      }}
+                    >
+                      +
+                    </button>
+                    <span style={{ fontSize: '0.7rem', color: '#94a3b8', flex: '1 1 100%' }}>g (bozza calibrata su 100g totali)</span>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#94a3b8', lineHeight: 1.6 }}>
+                    <div><strong style={{ color: '#cbd5e1' }}>Anteprima porzione ({portionPreview.w}g):</strong></div>
+                    <div>
+                      {Math.round(portionPreview.kcal)} kcal · P {portionPreview.prot.toFixed(1)}g · C {portionPreview.carb.toFixed(1)}g · G {portionPreview.fat.toFixed(1)}g
+                    </div>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    marginTop: '14px',
+                    padding: '14px',
                     background: '#2c2c2e',
                     border: '1px solid #3a3a3c',
                     borderRadius: '12px',
@@ -855,16 +1008,21 @@ export default function MealBuilder({
               <p style={{ textAlign: 'center', color: '#444', fontSize: '0.8rem', fontStyle: 'italic', marginTop: '30px' }}>Nessun alimento in coda</p>
             ) : (
               addedFoods.map((food) => {
+                const isRecipe = food.type === 'recipe';
                 const omega3G = (food.omega3 != null && food.omega3 > 0) ? (food.omega3 >= 1 ? food.omega3 : food.omega3 / 1000) : 0;
                 const omega3Rich = omega3G > 0.5;
                 const mgVal = Number(food.mg) || 0;
                 const mgRich = mgVal >= 30;
                 const qta = Number(food.qta ?? food.weight ?? 100) || 100;
+                const step = isRecipe ? 50 : (Number(food.unitStep) || 10);
                 return (
                   <div key={food.id} className="food-pill">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
                         <span className="food-pill-name">{food.desc || food.name}</span>
+                        {isRecipe && (
+                          <span style={{ fontSize: '0.58rem', padding: '2px 8px', borderRadius: '8px', background: 'rgba(179, 136, 255, 0.25)', color: '#c4b5fd', fontWeight: 700, letterSpacing: '0.04em' }}>RICETTA</span>
+                        )}
                         <span className="food-pill-weight">{qta}g</span>
                         {(omega3Rich || mgRich) && (
                           <span style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -875,18 +1033,16 @@ export default function MealBuilder({
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {(() => { const step = Number(food.unitStep) || 10; return (
-                        <>
-                          <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, -step)} title={`-${step}g`} aria-label={`-${step}g`}>−</button>
-                          <div
-                            onClick={() => { setNumpadValue(String(qta)); setNumpadFoodId(food.id); }}
-                            style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#00e5ff', minWidth: '60px', textAlign: 'center', cursor: 'pointer', background: '#222', padding: '5px 10px', borderRadius: '8px', border: '1px solid #333' }}
-                          >
-                            {qta}g
-                          </div>
-                          <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, step)} title={`+${step}g`} aria-label={`+${step}g`}>+</button>
-                        </>
-                      ); })()}
+                      <>
+                        <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, -step)} title={`-${step}g`} aria-label={`-${step}g`}>−</button>
+                        <div
+                          onClick={() => { setNumpadValue(String(qta)); setNumpadFoodId(food.id); }}
+                          style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#00e5ff', minWidth: '60px', textAlign: 'center', cursor: 'pointer', background: '#222', padding: '5px 10px', borderRadius: '8px', border: '1px solid #333' }}
+                        >
+                          {qta}g
+                        </div>
+                        <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, step)} title={`+${step}g`} aria-label={`+${step}g`}>+</button>
+                      </>
                       <div className="food-pill-actions" style={{ marginLeft: '4px' }}>
                         <button type="button" className="food-pill-btn" onClick={() => setSelectedFoodForInfo(food)} title="Info macro/micro">ℹ️</button>
                         <button type="button" className="food-pill-btn" onClick={() => { setSelectedFoodForEdit({ food, source: 'queue' }); setEditQuantityValue(String(qta)); }} title="Modifica quantità">✏️</button>

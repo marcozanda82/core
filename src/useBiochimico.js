@@ -47,14 +47,14 @@ function buildEmptyTotali() {
 }
 
 /**
- * Somma i nutrienti da dailyLog (solo type === 'food') e workout.
- * Ogni singolo item food viene iterato con ALL_NUTRIENT_KEYS: nessun dato biochimico perso.
+ * Somma i nutrienti da dailyLog (food e recipe) e workout.
+ * Ogni singolo item viene iterato con ALL_NUTRIENT_KEYS: nessun dato biochimico perso.
  */
 export function computeTotali(dailyLog) {
   const totali = buildEmptyTotali();
   let workoutKcal = 0;
   dailyLog.forEach(item => {
-    if (item.type === 'food') {
+    if (item.type === 'food' || item.type === 'recipe') {
       totali.kcal += Number(item.kcal || item.cal || 0) || 0;
       ALL_NUTRIENT_KEYS.forEach(k => {
         if (item[k] != null && typeof item[k] === 'number') totali[k] += item[k];
@@ -87,7 +87,7 @@ function averageDailyNutrientFromTrackerData(trackerData, key) {
   const samples = [];
   for (const dk of dayKeys) {
     const log = getLogArrayFromTrackerNode(trackerData[dk]);
-    if (!log.some(e => e && e.type === 'food')) continue;
+    if (!log.some(e => e && (e.type === 'food' || e.type === 'recipe'))) continue;
     const totali = computeTotali(log);
     let v;
     if (key === 'kcal' || key === 'cal') v = Number(totali.kcal || 0) || 0;
@@ -123,13 +123,13 @@ export function getDefaultNutrientValue(key, trackerData) {
 }
 
 /**
- * Consumi per pasto (solo food), ordinati per MEAL_ORDER.
+ * Consumi per pasto (food e recipe), ordinati per MEAL_ORDER.
  */
 function computeConsumedPerMeal(dailyLog) {
   const consumed = {};
   MEAL_ORDER.forEach(m => { consumed[m] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { consumed[m][k] = 0; }); });
   dailyLog.forEach(item => {
-    if (item.type !== 'food' || !item.mealType) return;
+    if ((item.type !== 'food' && item.type !== 'recipe') || !item.mealType) return;
     const meal = MEAL_ORDER.includes(item.mealType) ? item.mealType : 'pranzo';
     if (!consumed[meal]) consumed[meal] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { if (!consumed[meal][k]) consumed[meal][k] = 0; });
     consumed[meal].kcal += Number(item.kcal || item.cal || 0) || 0;

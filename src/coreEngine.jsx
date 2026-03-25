@@ -141,7 +141,7 @@ function getGhostMealType(baseType, log) {
 }
 
 function getSlotKey(item) {
-  if (item.type !== 'food') return null;
+  if (item.type !== 'food' && item.type !== 'recipe') return null;
   return item.mealType;
 }
 
@@ -1473,8 +1473,9 @@ function normalizeLogData(rawLog) {
     if (entry.type === 'meal') {
       const mealType = inferMealType(entry);
       (entry.items || []).forEach(subItem => {
+        const itemType = subItem.type === 'recipe' ? 'recipe' : 'food';
         out.push({
-          ...subItem, type: 'food', mealType,
+          ...subItem, type: itemType, mealType,
           id: subItem.id || Date.now() + Math.random(),
           kcal: subItem.kcal ?? subItem.cal ?? 0
         });
@@ -1578,12 +1579,18 @@ function denormalizeLogForFirebase(flatLog) {
       });
       return;
     }
-    if (entry.type === 'food' || !entry.type) {
+    if (entry.type === 'food' || entry.type === 'recipe' || !entry.type) {
       // Usa il mealType così com'è (può essere 'spuntino' o 'snack')
       const mealType = entry.mealType || 'cena';
       if (!meals[mealType]) meals[mealType] = [];
       const { type, mealType: _, ...rest } = entry;
-      meals[mealType].push({ ...rest, kcal: rest.kcal ?? rest.cal ?? 0, cal: rest.cal ?? rest.kcal ?? 0 });
+      const itemType = entry.type === 'recipe' ? 'recipe' : 'food';
+      meals[mealType].push({
+        ...rest,
+        type: itemType,
+        kcal: rest.kcal ?? rest.cal ?? 0,
+        cal: rest.cal ?? rest.kcal ?? 0
+      });
     }
   });
   

@@ -1338,7 +1338,7 @@ export default function SalaComandi() {
     try {
       const dateStr = currentTrackerDate;
       const logForFirebase = denormalizeLogForFirebase(nuovoLog || []);
-      const mealTimes = (nuovoLog || []).filter(i => i.type === 'food').reduce((acc, f) => ({
+      const mealTimes = (nuovoLog || []).filter(i => i.type === 'food' || i.type === 'recipe').reduce((acc, f) => ({
         ...acc,
         [f.mealType]: f.mealTime ?? 12
       }), {});
@@ -1511,7 +1511,7 @@ export default function SalaComandi() {
       if (dayData && dayData.log) {
         const rawLog = Array.isArray(dayData.log) ? dayData.log : Object.values(dayData.log || []);
         const flatLog = normalizeLogData(rawLog);
-        const foodItems = flatLog.filter(item => item.type === 'food');
+        const foodItems = flatLog.filter(item => item.type === 'food' || item.type === 'recipe');
         if (foodItems.length > 0) totalDaysFound++;
         foodItems.forEach(food => {
           REPORT_NUTRIENT_KEYS.forEach(key => {
@@ -1871,7 +1871,7 @@ export default function SalaComandi() {
 
   const dailyReport = useMemo(() => {
     if (!activeLog || currentTrackerDate === getTodayString()) return null;
-    const foods = (activeLog || []).filter(e => e.type === 'food');
+    const foods = (activeLog || []).filter(e => e.type === 'food' || e.type === 'recipe');
     if (foods.length === 0 && !(activeLog || []).some(e => e.type === 'sleep' || e.type === 'workout')) return null;
     return computeDayEvaluations(activeLog, userTargets);
   }, [activeLog, currentTrackerDate, userTargets]);
@@ -1912,7 +1912,7 @@ export default function SalaComandi() {
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().slice(0, 10);
     const log = getLogFromStoricoTree(fullHistory, yesterdayStr) || [];
-    const hasFood = log.some(e => e.type === 'food');
+    const hasFood = log.some(e => e.type === 'food' || e.type === 'recipe');
     const hasSleepOrWorkout = log.some(e => e.type === 'sleep' || e.type === 'workout');
     return hasFood || hasSleepOrWorkout;
   }, [currentTrackerDate, fullHistory]);
@@ -1956,7 +1956,7 @@ export default function SalaComandi() {
       const log = fullStorico[dayKey]?.log || [];
       const flatLog = normalizeLogData(Array.isArray(log) ? log : Object.values(log));
       flatLog.forEach(item => {
-        if (item.type !== 'food') return;
+        if (item.type !== 'food' && item.type !== 'recipe') return;
         const canonical = toCanonicalMealType(item.mealType);
         const t = mealTimesObj[item.mealType] ?? item.mealTime;
         if (typeof t === 'number') {
@@ -1993,7 +1993,7 @@ export default function SalaComandi() {
         const parsedTime = Number(idStr.slice(u + 1));
         if (!Number.isNaN(parsedTime)) {
           items = list.filter(item =>
-            item.type === 'food' &&
+            (item.type === 'food' || item.type === 'recipe') &&
             item.mealType === baseMealType &&
             typeof item.mealTime === 'number' &&
             Math.abs(item.mealTime - parsedTime) < 1e-4
@@ -2016,7 +2016,7 @@ export default function SalaComandi() {
     if (items.length === 0) {
       const canonical = toCanonicalMealType(String(mTypeOrId).split('_')[0]);
       const equivalents = getEquivalentMealTypes(canonical);
-      items = (activeLog || []).filter(item => item.type === 'food' && equivalents.includes(item.mealType));
+      items = (activeLog || []).filter(item => (item.type === 'food' || item.type === 'recipe') && equivalents.includes(item.mealType));
     }
 
     const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (Number(v) || 0);
@@ -2060,8 +2060,8 @@ export default function SalaComandi() {
     const equivalents = getEquivalentMealTypes(mealTypeKey);
     
     // Cerca nel dailyLog corrente
-    const first = (activeLog || []).find(item => 
-      item.type === 'food' && equivalents.includes(item.mealType)
+    const first = (activeLog || []).find(item =>
+      (item.type === 'food' || item.type === 'recipe') && equivalents.includes(item.mealType)
     );
     if (first != null && typeof first.mealTime === 'number') return first.mealTime;
     
@@ -2125,7 +2125,7 @@ export default function SalaComandi() {
       const log = fullStorico[key]?.log;
       if (!Array.isArray(log)) continue;
       const flat = normalizeLogData(log);
-      const found = flat.filter(i => i.type === 'food').find(i => 
+      const found = flat.filter(i => i.type === 'food' || i.type === 'recipe').find(i => 
         norm(i.desc || i.name) === target || 
         norm(i.desc || i.name).includes(target) || 
         target.includes(norm(i.desc || i.name))
@@ -2265,6 +2265,54 @@ export default function SalaComandi() {
     const dbKey = Object.keys(foodDb).find(k => foodDb[k].desc?.toLowerCase().includes(nome.toLowerCase()));
     if (dbKey) {
       const dbF = foodDb[dbKey];
+      if (dbF.isRecipe && Array.isArray(dbF.ingredients) && dbF.ingredients.length > 0) {
+        const factor = qta / 100;
+        const ingredients = dbF.ingredients.map((ing) => {
+          const w0 = Number(ing.weight) || 0;
+          const wf = w0 > 0 ? Math.max(5, Math.round(w0 * factor)) / w0 : factor;
+          return {
+            ...ing,
+            weight: Math.max(5, Math.round(w0 * factor)),
+            kcal: Math.max(0, Math.round((Number(ing.kcal) || 0) * wf)),
+            prot: Math.max(0, Math.round((Number(ing.prot) || 0) * wf * 10) / 10),
+            carb: Math.max(0, Math.round((Number(ing.carb) || 0) * wf * 10) / 10),
+            fat: Math.max(0, Math.round((Number(ing.fat) || 0) * wf * 10) / 10)
+          };
+        });
+        const recipeItem = {
+          id: `recipe_${Date.now()}`,
+          type: 'recipe',
+          mealType: pastoType,
+          desc: dbF.desc || nome,
+          name: dbF.desc || nome,
+          qta,
+          weight: qta,
+          unitStep: 50,
+          kcal: ((Number(dbF.kcal) || 0) * qta) / 100,
+          cal: ((Number(dbF.kcal) || 0) * qta) / 100,
+          prot: ((Number(dbF.prot) || 0) * qta) / 100,
+          carb: ((Number(dbF.carb) || 0) * qta) / 100,
+          fat: ((Number(dbF.fatTotal) || Number(dbF.fat) || 0) * qta) / 100,
+          fatTotal: ((Number(dbF.fatTotal) || Number(dbF.fat) || 0) * qta) / 100,
+          ingredients
+        };
+        Object.keys(dbF || {}).forEach(k => {
+          if (typeof dbF[k] === 'number' && k !== 'id' && k !== 'kcal' && k !== 'cal' && !['prot', 'carb', 'fatTotal', 'fat'].includes(k)) {
+            recipeItem[k] = (dbF[k] / 100) * qta;
+          }
+        });
+        const macroKeys = ['kcal', 'cal', 'prot', 'carb', 'fatTotal', 'fibre'];
+        Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g]).forEach(k => {
+          if (recipeItem[k] == null || recipeItem[k] === 0) {
+            recipeItem[k] = macroKeys.includes(k)
+              ? (getAverageEstimate(k, nome) / 100) * qta || getDefaultNutrientValue(k, fullHistory)
+              : getDefaultNutrientValue(k, fullHistory);
+          }
+        }));
+        recipeItem.kcal = recipeItem.kcal || recipeItem.cal || 0;
+        recipeItem.cal = recipeItem.cal ?? recipeItem.kcal;
+        return recipeItem;
+      }
       Object.keys(dbF || {}).forEach(k => {
         if (typeof dbF[k] === 'number' && k !== 'id') foodItem[k] = (dbF[k] / 100) * qta;
       });
@@ -2308,9 +2356,63 @@ export default function SalaComandi() {
     if (!food) return;
     const currentQta = Number(food.qta ?? food.weight ?? 100) || 100;
     const newQta = Math.max(5, Math.min(5000, currentQta + deltaG));
+    if (food.type === 'recipe') {
+      const ratio = newQta / currentQta;
+      const scaleKeys = new Set([
+        'kcal', 'cal', 'prot', 'carb', 'fat', 'fatTotal',
+        ...Object.values(TARGETS).flatMap(g => Object.keys(g || {}))
+      ]);
+      setAddedFoods(prev => prev.map(f => {
+        if (f.id !== foodId) return f;
+        const next = { ...f, qta: newQta, weight: newQta };
+        scaleKeys.forEach((k) => {
+          if (f[k] != null && typeof f[k] === 'number' && !Number.isNaN(f[k])) {
+            next[k] = f[k] * ratio;
+          }
+        });
+        if (Array.isArray(f.ingredients)) {
+          next.ingredients = f.ingredients.map((ing) => {
+            const w0 = Number(ing.weight) || 0;
+            const w1 = Math.max(5, Math.round(w0 * ratio));
+            const wf = w0 > 0 ? w1 / w0 : 1;
+            return {
+              ...ing,
+              weight: w1,
+              kcal: Math.max(0, Math.round((Number(ing.kcal) || 0) * wf)),
+              prot: Math.max(0, Math.round((Number(ing.prot) || 0) * wf * 10) / 10),
+              carb: Math.max(0, Math.round((Number(ing.carb) || 0) * wf * 10) / 10),
+              fat: Math.max(0, Math.round((Number(ing.fat) || 0) * wf * 10) / 10)
+            };
+          });
+        }
+        return next;
+      }));
+      return;
+    }
     const updated = estraiDatiFoodDb(food.desc || food.name, newQta, food.mealType || mealType);
     setAddedFoods(prev => prev.map(f => f.id === foodId ? { ...updated, id: foodId } : f));
   };
+
+  const saveCustomRecipeToFoodDb = useCallback(async ({ desc, kcal, prot, carb, fatTotal, ingredients }) => {
+    if (!userUid || !desc) return;
+    const basePath = `users/${userUid}/tracker_data`;
+    const slug = String(desc).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 40);
+    const newKey = `recipe_${Date.now()}_${slug}`;
+    const entryPer100 = {
+      desc: String(desc).trim(),
+      kcal: Number(kcal) || 0,
+      prot: Number(prot) || 0,
+      carb: Number(carb) || 0,
+      fatTotal: fatTotal != null ? Number(fatTotal) : 0,
+      isRecipe: true,
+      ingredients: Array.isArray(ingredients) ? ingredients : []
+    };
+    Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => {
+      if (entryPer100[k] == null) entryPer100[k] = getDefaultNutrientValue(k, fullHistory);
+    }));
+    await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
+    setFoodDb(prev => ({ ...(prev || {}), [newKey]: entryPer100 }));
+  }, [userUid, db, fullHistory]);
 
   const enterFullscreen = async () => {
     const idx = availableFullscreenCharts.indexOf(chartUnit);
@@ -2344,20 +2446,20 @@ export default function SalaComandi() {
 
       const mealItems = (addedFoods || []).map((f, index) => ({
         ...f,
-        type: 'food',
+        type: f.type === 'recipe' ? 'recipe' : 'food',
         mealType: ourSlot,
         mealTime: timeToUse,
         id: f.id || `f_${uniqueBatchId}_${index}`
       }));
 
       const rest = safeDailyLog.filter(item => {
-        if (item.type !== 'food') return true;
+        if (item.type !== 'food' && item.type !== 'recipe') return true;
         return getSlotKey(item) !== slotToReplace;
       });
 
       const nuovoLog = [...mealItems, ...rest];
       if (isSimulationMode) {
-        setSimulatedLog(prev => [...(prev || []).filter(item => item.type !== 'food' || getSlotKey(item) !== slotToReplace), ...mealItems]);
+        setSimulatedLog(prev => [...(prev || []).filter(item => (item.type !== 'food' && item.type !== 'recipe') || getSlotKey(item) !== slotToReplace), ...mealItems]);
         setAddedFoods([]);
         setEditingMealId(null);
         closeDrawer();
@@ -2387,19 +2489,19 @@ export default function SalaComandi() {
       const ourSlot = getGhostMealType(payload.mealType || mealType, logToUse);
       const mealItems = payload.items.map((f, index) => ({
         ...f,
-        type: 'food',
+        type: f.type === 'recipe' ? 'recipe' : 'food',
         mealType: ourSlot,
         mealTime: timeToUse,
         id: f.id || `f_${Date.now()}_${index}`
       }));
       if (isSimulationMode) {
         setSimulatedLog(prev => {
-          const rest = (prev || []).filter(item => item.type !== 'food' || getSlotKey(item) !== ourSlot);
+          const rest = (prev || []).filter(item => (item.type !== 'food' && item.type !== 'recipe') || getSlotKey(item) !== ourSlot);
           return [...mealItems, ...rest];
         });
         return;
       }
-      const dailyLogRest = dailyLog.filter(item => item.type !== 'food' || getSlotKey(item) !== ourSlot);
+      const dailyLogRest = dailyLog.filter(item => (item.type !== 'food' && item.type !== 'recipe') || getSlotKey(item) !== ourSlot);
       setDailyLog([...mealItems, ...dailyLogRest]);
       syncDatiFirebase([...mealItems, ...dailyLogRest], manualNodes);
     }
@@ -3339,7 +3441,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const waterProgress = Math.min((waterIntake / dailyWaterGoal) * 100, 100);
   
-  const foodsLog = activeLog.filter(item => item.type === 'food');
+  const foodsLog = activeLog.filter(item => item.type === 'food' || item.type === 'recipe');
   const groupedFoods = foodsLog.reduce((acc, food) => {
     const slotKey = getSlotKey(food);
     if (slotKey) {
@@ -3421,7 +3523,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const logArr = Array.isArray(raw) ? raw : Object.values(raw || {});
     const normalized = normalizeLogData(logArr);
     const equivalents = getEquivalentMealTypes(mealType);
-    return normalized.filter(item => item.type === 'food' && equivalents.includes(item.mealType));
+    return normalized.filter(item => (item.type === 'food' || item.type === 'recipe') && equivalents.includes(item.mealType));
   }, [fullStorico, mealType]);
 
   const weeklyTrendData = useMemo(() => {
@@ -3431,8 +3533,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       const prevStr = prevDate.toISOString().slice(0, 10);
       const prevNode = fullStorico?.[TRACKER_STORICO_KEY(prevStr)];
       const prevLog = Array.isArray(prevNode?.log) ? prevNode.log : Object.values(prevNode?.log || {});
-      const prevFood = prevLog.filter(i => i?.type === 'food' && i?.mealTime != null);
-      const todayFood = (d.log || []).filter(i => i?.type === 'food' && i?.mealTime != null);
+      const prevFood = prevLog.filter(i => (i?.type === 'food' || i?.type === 'recipe') && i?.mealTime != null);
+      const todayFood = (d.log || []).filter(i => (i?.type === 'food' || i?.type === 'recipe') && i?.mealTime != null);
       const lastMealPrev = prevFood.length ? Math.max(...prevFood.map(i => i.mealTime)) : null;
       const firstMealToday = todayFood.length ? Math.min(...todayFood.map(i => i.mealTime)) : null;
       let maxFastingHours = null;
@@ -3620,7 +3722,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const mealTypesToStrategy = { merenda1: 'colazione', colazione: 'colazione', pranzo: 'pranzo', merenda2: 'spuntino', spuntino: 'spuntino', snack: 'spuntino', cena: 'cena' };
     const yesterdayNodes = [];
     yesterdayLog.forEach(entry => {
-      if (entry?.type === 'food') {
+      if (entry?.type === 'food' || entry?.type === 'recipe') {
         const t = typeof entry.mealTime === 'number' ? entry.mealTime : 12;
         const strategyKey = mealTypesToStrategy[entry.mealType?.split('_')[0]] || 'cena';
         yesterdayNodes.push({ type: 'meal', time: t, strategyKey, kcal: entry.kcal ?? entry.cal ?? 0 });
@@ -3980,7 +4082,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const mealsById = {};
 
     (activeLog || []).forEach(item => {
-      if (item.type !== 'food' && item.type !== 'meal') return;
+      if (item.type !== 'food' && item.type !== 'recipe' && item.type !== 'meal') return;
 
       // Chiave univoca basata sull'orario per raggruppare gli alimenti dello STESSO pasto
       const timeKey = typeof item.mealTime === 'number' ? item.mealTime.toString() : 'unknown';
@@ -4144,7 +4246,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const fastingData = useMemo(() => {
     let lastMealTime = null;
     let lastMealDate = null;
-    const todayMeals = (activeLog || []).filter(i => i.type === 'food' && typeof i.mealTime === 'number' && i.mealTime <= currentTime).sort((a, b) => b.mealTime - a.mealTime);
+    const todayMeals = (activeLog || []).filter(i => (i.type === 'food' || i.type === 'recipe') && typeof i.mealTime === 'number' && i.mealTime <= currentTime).sort((a, b) => b.mealTime - a.mealTime);
     if (todayMeals.length > 0) { lastMealTime = todayMeals[0].mealTime; lastMealDate = 'today'; }
     if (lastMealDate === null && fullHistory) {
       const yesterdayObj = new Date(currentDateObj);
@@ -4154,7 +4256,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       const yesterdayNode = fullHistory[TRACKER_STORICO_KEY(yesterdayStr)];
       if (yesterdayNode && yesterdayNode.log) {
         const yesterdayLog = normalizeLogData(Array.isArray(yesterdayNode.log) ? yesterdayNode.log : Object.values(yesterdayNode.log));
-        const yestMeals = yesterdayLog.filter(i => i.type === 'food');
+        const yestMeals = yesterdayLog.filter(i => i.type === 'food' || i.type === 'recipe');
         let maxYestTime = -1;
         yestMeals.forEach(m => {
           const t = yesterdayNode.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
@@ -5613,7 +5715,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                               const canonical = toCanonicalMealType(genericId);
 
                               const logItems = (activeLog || []).filter(
-                                (f) => f.type === 'food' && toCanonicalMealType(f.mealType) === canonical
+                                (f) => (f.type === 'food' || f.type === 'recipe') && toCanonicalMealType(f.mealType) === canonical
                               );
 
                               const exactId = logItems.length > 0 ? logItems[0].mealType : genericId;
@@ -6260,6 +6362,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             saveMealToDiary={saveMealToDiary}
             editingMealId={editingMealId}
             callGeminiAPIWithRotation={callGeminiAPIWithRotation}
+            saveCustomRecipeToFoodDb={saveCustomRecipeToFoodDb}
           />
         )}
 
@@ -8012,7 +8115,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {/* POP-UP READY TO TRAIN (digestione) */}
       {showTrainingPopup && (() => {
-        const pastoRecente = (activeLog || []).find(item => item.type === 'food' && displayTime - item.mealTime >= 0 && displayTime - item.mealTime <= 1);
+        const pastoRecente = (activeLog || []).find(item => (item.type === 'food' || item.type === 'recipe') && displayTime - item.mealTime >= 0 && displayTime - item.mealTime <= 1);
         const mealTime = pastoRecente?.mealTime ?? 0;
         const waitMinutesTotal = 90;
         const elapsedMinutes = (displayTime - mealTime) * 60;
