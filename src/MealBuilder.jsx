@@ -21,6 +21,131 @@ function mergeDraftNutrientExtras(base, row) {
   return out;
 }
 
+const ALL_TARGET_NUTRIENT_KEYS = [...new Set([
+  'kcal',
+  ...Object.values(TARGETS).flatMap(g => Object.keys(g || {}))
+])];
+
+const ALIAS_TO_CANON_RAW = {
+  kcal: 'kcal', cal: 'kcal', calories: 'kcal', energia: 'kcal',
+  prot: 'prot', protein: 'prot', proteins: 'prot', proteine: 'prot',
+  carb: 'carb', carbs: 'carb', carboidrati: 'carb', carbohydrates: 'carb',
+  fat: 'fat', grassi: 'fat', lipidi: 'fat',
+  fattotal: 'fatTotal', fat_total: 'fatTotal', lipiditotali: 'fatTotal',
+  fibre: 'fibre', fiber: 'fibre', fibra: 'fibre',
+  vitc: 'vitc', vitaminc: 'vitc', vitaminec: 'vitc', vit_c: 'vitc',
+  vitd: 'vitD', vitaminad: 'vitD',
+  vita: 'vitA', vitaminaa: 'vitA', retinol: 'vitA',
+  vitb1: 'vitB1', vitb2: 'vitB2', vitb3: 'vitB3', vitb5: 'vitB5', vitb6: 'vitB6',
+  b9: 'b9', folate: 'b9', folic: 'b9', acidofolico: 'b9',
+  vitb12: 'vitB12', cobalamin: 'vitB12',
+  vite: 'vitE', vitaminae: 'vitE',
+  vitk: 'vitK', vitamink: 'vitK',
+  ca: 'ca', calcio: 'ca', calcium: 'ca',
+  fe: 'fe', ferro: 'fe', iron: 'fe',
+  mg: 'mg', magnesio: 'mg', magnesium: 'mg',
+  k: 'k', potassio: 'k', potassium: 'k',
+  na: 'na', sodio: 'na', sodium: 'na', sale: 'na',
+  zn: 'zn', zinc: 'zn', zink: 'zn',
+  cu: 'cu', rame: 'cu', copper: 'cu',
+  se: 'se', selenium: 'se', selenio: 'se',
+  p: 'p', fosforo: 'p', phosphorus: 'p',
+  leu: 'leu', leucina: 'leu', iso: 'iso', isoleucina: 'iso',
+  val: 'val', valina: 'val', lys: 'lys', lisina: 'lys',
+  met: 'met', metionina: 'met', phe: 'phe', fenilalanina: 'phe',
+  thr: 'thr', treonina: 'thr', trp: 'trp', triptofano: 'trp',
+  his: 'his', istidina: 'his',
+  fatsat: 'fatSat', saturatedfat: 'fatSat', grassisaturi: 'fatSat',
+  fattrans: 'fatTrans', fattmono: 'fatMono', fatpoly: 'fatPoly',
+  omega3: 'omega3', omega6: 'omega6', omega_3: 'omega3', omega_6: 'omega6',
+  colest: 'colest', cholesterol: 'colest', colesterolo: 'colest'
+};
+ALL_TARGET_NUTRIENT_KEYS.forEach((key) => {
+  ALIAS_TO_CANON_RAW[key.toLowerCase().replace(/[^a-z0-9]/g, '')] = key;
+});
+
+function parseNutrientProfileObjectFromAI(text) {
+  const cleaned = String(text || '')
+    .replace(/```json/gi, '')
+    .replace(/```/g, '')
+    .trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('Nessun oggetto JSON nella risposta');
+  }
+  return JSON.parse(cleaned.slice(start, end + 1));
+}
+
+function normalizeRawNutrientsToPer100(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.entries(raw).forEach(([k, v]) => {
+    const num = typeof v === 'number' ? v : Number(String(v).replace(',', '.'));
+    if (!Number.isFinite(num)) return;
+    const simple = String(k).toLowerCase().replace(/[^a-z0-9]/g, '');
+    let canon = ALIAS_TO_CANON_RAW[simple];
+    if (!canon) {
+      const fk = ALL_TARGET_NUTRIENT_KEYS.find(ak => ak.toLowerCase().replace(/[^a-z0-9]/g, '') === simple);
+      if (fk) canon = fk;
+    }
+    if (!canon || !ALL_TARGET_NUTRIENT_KEYS.includes(canon)) return;
+    out[canon] = num;
+  });
+  if (out.fatTotal == null && out.fat != null) out.fatTotal = out.fat;
+  return out;
+}
+
+function isIngredientNameInFoodDb(ingredientName, foodDb) {
+  const n = String(ingredientName ?? '').trim().toLowerCase();
+  if (!n || !foodDb || typeof foodDb !== 'object') return false;
+  return Object.values(foodDb).some((e) => {
+    if (!e || typeof e !== 'object') return false;
+    if (e.isRecipe === true || e.type === 'recipe') return false;
+    const d = String(e.desc ?? e.name ?? '').trim().toLowerCase();
+    return d === n;
+  });
+}
+
+function scaleDraftIngredientWithPer100(ing, per100) {
+  const w = Math.max(5, Number(ing.weight) || 100);
+  const factor = w / 100;
+  const r0 = (x) => Math.max(0, Math.round(x));
+  const r1 = (x) => Math.max(0, Math.round(x * 10) / 10);
+  const next = { ...ing };
+  if (per100.kcal != null) next.kcal = r0(per100.kcal * factor);
+  if (per100.prot != null) next.prot = r1(per100.prot * factor);
+  if (per100.carb != null) next.carb = r1(per100.carb * factor);
+  const fBase = per100.fatTotal != null ? per100.fatTotal : per100.fat;
+  if (fBase != null) {
+    next.fat = r1(fBase * factor);
+    next.fatTotal = r1(fBase * factor);
+  }
+  ALL_TARGET_NUTRIENT_KEYS.forEach((k) => {
+    if (['kcal', 'prot', 'carb', 'fat', 'fatTotal'].includes(k)) return;
+    if (per100[k] == null) return;
+    next[k] = r1(per100[k] * factor);
+  });
+  return next;
+}
+
+function buildFoodDbEntryPer100FromNormalized(desc, per100) {
+  const entry = { desc: String(desc).trim(), isRecipe: false };
+  if (per100.kcal != null) entry.kcal = per100.kcal;
+  if (per100.prot != null) entry.prot = per100.prot;
+  if (per100.carb != null) entry.carb = per100.carb;
+  const f = per100.fatTotal != null ? per100.fatTotal : per100.fat;
+  if (f != null) {
+    entry.fat = f;
+    entry.fatTotal = f;
+  }
+  ALL_TARGET_NUTRIENT_KEYS.forEach((k) => {
+    if (['kcal', 'prot', 'carb', 'fat', 'fatTotal'].includes(k)) return;
+    if (per100[k] != null) entry[k] = per100[k];
+  });
+  return entry;
+}
+
 const MEAL_BUTTONS = [
   { label: 'Colazione', id: 'merenda1' },
   { label: 'Snack', id: 'snack' },
@@ -121,7 +246,8 @@ export default function MealBuilder({
   editingMealId,
   callGeminiAPIWithRotation,
   saveCustomRecipeToFoodDb,
-  foodDb = {}
+  foodDb = {},
+  saveFoodEntryPer100ToFoodDb
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -139,6 +265,9 @@ export default function MealBuilder({
   const [complexPortionWeight, setComplexPortionWeight] = useState(100);
   const [recipeSearchResults, setRecipeSearchResults] = useState([]);
   const [showRecipeDropdown, setShowRecipeDropdown] = useState(false);
+  const [extraSearchResults, setExtraSearchResults] = useState([]);
+  const [showExtraDropdown, setShowExtraDropdown] = useState(false);
+  const [deepCompileLoadingIndex, setDeepCompileLoadingIndex] = useState(null);
 
   const draftTotalsPer100g = useMemo(() => (
     draftRecipe.reduce(
@@ -211,6 +340,33 @@ export default function MealBuilder({
     setRecipeSearchResults(out);
     setShowRecipeDropdown(out.length > 0);
   }, [complexFoodQuery, foodDb, isComplexMode]);
+
+  useEffect(() => {
+    if (!isComplexMode) {
+      setExtraSearchResults([]);
+      setShowExtraDropdown(false);
+      return;
+    }
+    const q = extraIngredientQuery.trim();
+    if (q.length < 2) {
+      setExtraSearchResults([]);
+      setShowExtraDropdown(false);
+      return;
+    }
+    const lower = q.toLowerCase();
+    const db = foodDb && typeof foodDb === 'object' ? foodDb : {};
+    const out = [];
+    Object.entries(db).forEach(([key, entry]) => {
+      if (!entry || typeof entry !== 'object') return;
+      if (entry.isRecipe === true || entry.type === 'recipe') return;
+      const name = String(entry.desc ?? entry.name ?? '').trim();
+      if (!name.toLowerCase().includes(lower)) return;
+      out.push({ key, name, entry });
+    });
+    out.sort((a, b) => a.name.localeCompare(b.name, 'it'));
+    setExtraSearchResults(out.slice(0, 50));
+    setShowExtraDropdown(out.length > 0);
+  }, [extraIngredientQuery, foodDb, isComplexMode]);
 
   const handleSelectSavedRecipe = (recipe) => {
     if (!recipe || !Array.isArray(recipe.ingredients)) return;
@@ -327,9 +483,75 @@ export default function MealBuilder({
     setDraftRecipe((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const handleSelectExtraFoodFromDb = (pick) => {
+    if (!pick?.entry) return;
+    const entry = pick.entry;
+    const name = String(entry.desc ?? entry.name ?? '').trim();
+    const weight = 100;
+    const row = {
+      name,
+      weight,
+      kcal: Number(entry.kcal) || 0,
+      prot: Number(entry.prot) || 0,
+      carb: Number(entry.carb) || 0,
+      fat: Number(entry.fat ?? entry.fatTotal) || 0
+    };
+    Object.keys(entry).forEach((k) => {
+      if (['desc', 'name', 'ingredients', 'isRecipe', 'type', 'id'].includes(k)) return;
+      if (typeof entry[k] === 'number' && Number.isFinite(entry[k])) row[k] = entry[k];
+    });
+    setDraftRecipe((prev) => [...prev, normalizeDraftIngredient(row, prev.length)]);
+    setExtraIngredientQuery('');
+    setShowExtraDropdown(false);
+  };
+
+  const handleDeepAICompile = async (index, ingredientName) => {
+    const nm = String(ingredientName ?? '').trim();
+    if (!nm) return;
+    if (typeof callGeminiAPIWithRotation !== 'function') {
+      alert('AI non disponibile: configura le API Key nelle impostazioni.');
+      return;
+    }
+    setDeepCompileLoadingIndex(index);
+    try {
+      const prompt =
+        'Sei un nutrizionista. Genera il profilo nutrizionale completo per 100g crudi di: ' +
+        JSON.stringify(nm) +
+        ". Devi restituire un JSON valido con tutte le 40 chiavi nutrizionali previste dal sistema. Quando un valore non è disponibile per la compilazione automatica, fai una stima e usa il valore medio. Restituisci SOLO un oggetto JSON piatto (senza backtick) con le chiavi: kcal, prot, carb, fat, fibre, e tutte le vitamine/minerali (es. vitA, vitB1, vitc, ca, fe, leu, omega3, fatSat, ecc.).";
+      const rawText = await callGeminiAPIWithRotation(prompt);
+      const rawObj = parseNutrientProfileObjectFromAI(rawText);
+      const per100 = normalizeRawNutrientsToPer100(rawObj);
+      if (Object.keys(per100).length === 0) {
+        alert('La risposta AI non contiene nutrienti riconosciuti. Riprova.');
+        return;
+      }
+      const entry = buildFoodDbEntryPer100FromNormalized(nm, per100);
+      if (typeof saveFoodEntryPer100ToFoodDb === 'function') {
+        await saveFoodEntryPer100ToFoodDb(entry);
+      }
+      setDraftRecipe((prev) => {
+        if (index < 0 || index >= prev.length) return prev;
+        const ing = prev[index];
+        const scaled = scaleDraftIngredientWithPer100(ing, per100);
+        scaled._foodDbSchedato = true;
+        return prev.map((it, i) => (i === index ? scaled : it));
+      });
+    } catch (err) {
+      console.error('Deep AI compile', err);
+      alert(
+        err?.message
+          ? `Schedatura fallita: ${err.message}`
+          : 'Schedatura fallita. Riprova.'
+      );
+    } finally {
+      setDeepCompileLoadingIndex(null);
+    }
+  };
+
   const handleAddExtraIngredient = async () => {
     const q = extraIngredientQuery.trim();
     if (!q) return;
+    setShowExtraDropdown(false);
     if (typeof callGeminiAPIWithRotation !== 'function') {
       alert('AI non disponibile: configura le API Key nelle impostazioni.');
       return;
@@ -415,6 +637,9 @@ export default function MealBuilder({
     setComplexPortionWeight(100);
     setRecipeSearchResults([]);
     setShowRecipeDropdown(false);
+    setExtraSearchResults([]);
+    setShowExtraDropdown(false);
+    setDeepCompileLoadingIndex(null);
   };
 
   const handleCancelComplexMode = () => {
@@ -427,6 +652,9 @@ export default function MealBuilder({
     setComplexPortionWeight(100);
     setRecipeSearchResults([]);
     setShowRecipeDropdown(false);
+    setExtraSearchResults([]);
+    setShowExtraDropdown(false);
+    setDeepCompileLoadingIndex(null);
   };
 
   const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (typeof v === 'string' ? Number(v) : v) != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
@@ -624,6 +852,8 @@ export default function MealBuilder({
                       setShowFoodDropdown(false);
                       setRecipeSearchResults([]);
                       setShowRecipeDropdown(false);
+                      setExtraSearchResults([]);
+                      setShowExtraDropdown(false);
                     }}
                     style={{
                       width: '100%',
@@ -795,7 +1025,11 @@ export default function MealBuilder({
                   Bozza ingredienti
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {draftRecipe.map((ing, idx) => (
+                  {draftRecipe.map((ing, idx) => {
+                    const inFoodDb = isIngredientNameInFoodDb(ing.name, foodDb);
+                    const schedato = ing._foodDbSchedato === true;
+                    const deepLoading = deepCompileLoadingIndex === idx;
+                    return (
                     <div
                       key={`${ing.id}_${idx}`}
                       style={{
@@ -816,7 +1050,44 @@ export default function MealBuilder({
                           {Math.round(ing.kcal)} kcal · P {ing.prot}g · C {ing.carb}g · G {ing.fat}g
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flexShrink: 0 }}>
+                        {schedato ? (
+                          <span
+                            style={{
+                              fontSize: '0.62rem',
+                              fontWeight: 700,
+                              padding: '6px 10px',
+                              borderRadius: '10px',
+                              background: 'rgba(34, 197, 94, 0.2)',
+                              color: '#4ade80',
+                              border: '1px solid rgba(34, 197, 94, 0.45)',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            ✅ Schedato
+                          </span>
+                        ) : null}
+                        {!schedato && !inFoodDb ? (
+                          <button
+                            type="button"
+                            disabled={deepLoading || isGeneratingRecipe}
+                            onClick={() => { void handleDeepAICompile(idx, ing.name); }}
+                            style={{
+                              fontSize: '0.62rem',
+                              fontWeight: 700,
+                              padding: '6px 10px',
+                              borderRadius: '10px',
+                              background: 'rgba(234, 179, 8, 0.18)',
+                              color: '#fbbf24',
+                              border: '1px solid rgba(234, 179, 8, 0.5)',
+                              cursor: deepLoading || isGeneratingRecipe ? 'not-allowed' : 'pointer',
+                              opacity: deepLoading || isGeneratingRecipe ? 0.55 : 1,
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {deepLoading ? '⏳ Schedatura…' : '⚠️ Scheda nel DB'}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           aria-label="Meno 5 grammi"
@@ -893,7 +1164,124 @@ export default function MealBuilder({
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
+                </div>
+                <div
+                  style={{
+                    marginTop: '14px',
+                    padding: '14px',
+                    background: '#2c2c2e',
+                    border: '1px solid #3a3a3c',
+                    borderRadius: '12px',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>
+                    Ingrediente extra
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'stretch' }}>
+                      <input
+                        type="text"
+                        value={extraIngredientQuery}
+                        onChange={(e) => setExtraIngredientQuery(e.target.value)}
+                        onFocus={() => {
+                          if (extraSearchResults.length > 0) setShowExtraDropdown(true);
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => setShowExtraDropdown(false), 200);
+                        }}
+                        placeholder="Cerca nel database o usa AI…"
+                        disabled={isAddingExtra}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !isAddingExtra && extraIngredientQuery.trim()) {
+                            e.preventDefault();
+                            void handleAddExtraIngredient();
+                          }
+                        }}
+                        style={{
+                          flex: '1 1 180px',
+                          minWidth: 0,
+                          padding: '12px 14px',
+                          background: '#1a1a1a',
+                          border: '1px solid #444',
+                          borderRadius: '12px',
+                          color: '#fff',
+                          fontSize: '0.9rem',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                          opacity: isAddingExtra ? 0.65 : 1
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { void handleAddExtraIngredient(); }}
+                        disabled={isAddingExtra || !extraIngredientQuery.trim()}
+                        style={{
+                          flex: '0 0 auto',
+                          padding: '12px 18px',
+                          background: isAddingExtra ? '#333' : 'rgba(0, 229, 255, 0.15)',
+                          border: '1px solid #00e5ff',
+                          borderRadius: '12px',
+                          color: '#00e5ff',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          cursor: isAddingExtra || !extraIngredientQuery.trim() ? 'not-allowed' : 'pointer',
+                          opacity: isAddingExtra || !extraIngredientQuery.trim() ? 0.55 : 1,
+                          whiteSpace: 'nowrap',
+                          alignSelf: 'center'
+                        }}
+                      >
+                        {isAddingExtra ? 'Cerco…' : '+ Aggiungi (AI)'}
+                      </button>
+                    </div>
+                    {showExtraDropdown && extraSearchResults.length > 0 && !isAddingExtra && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          marginTop: '4px',
+                          background: '#1c1c1e',
+                          border: '1px solid #333',
+                          borderRadius: '8px',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                          zIndex: 20,
+                          boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+                        }}
+                      >
+                        {extraSearchResults.map((row) => (
+                          <div
+                            key={row.key}
+                            role="button"
+                            tabIndex={0}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleSelectExtraFoodFromDb(row);
+                              }
+                            }}
+                            onClick={() => handleSelectExtraFoodFromDb(row)}
+                            style={{
+                              padding: '12px 14px',
+                              fontSize: '0.9rem',
+                              color: '#fff',
+                              cursor: 'pointer',
+                              borderBottom: '1px solid #2a2a2a'
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0, 229, 255, 0.12)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                          >
+                            {row.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div
                   style={{
@@ -976,69 +1364,6 @@ export default function MealBuilder({
                     <div>
                       {Math.round(portionPreview.kcal)} kcal · P {portionPreview.prot.toFixed(1)}g · C {portionPreview.carb.toFixed(1)}g · G {portionPreview.fat.toFixed(1)}g
                     </div>
-                  </div>
-                </div>
-                <div
-                  style={{
-                    marginTop: '14px',
-                    padding: '14px',
-                    background: '#2c2c2e',
-                    border: '1px solid #3a3a3c',
-                    borderRadius: '12px',
-                    boxSizing: 'border-box'
-                  }}
-                >
-                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>
-                    Ingrediente extra
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'stretch' }}>
-                    <input
-                      type="text"
-                      value={extraIngredientQuery}
-                      onChange={(e) => setExtraIngredientQuery(e.target.value)}
-                      placeholder="Es. Pepe nero, Olio extravergine..."
-                      disabled={isAddingExtra}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !isAddingExtra && extraIngredientQuery.trim()) {
-                          e.preventDefault();
-                          void handleAddExtraIngredient();
-                        }
-                      }}
-                      style={{
-                        flex: '1 1 180px',
-                        minWidth: 0,
-                        padding: '12px 14px',
-                        background: '#1a1a1a',
-                        border: '1px solid #444',
-                        borderRadius: '12px',
-                        color: '#fff',
-                        fontSize: '0.9rem',
-                        outline: 'none',
-                        boxSizing: 'border-box',
-                        opacity: isAddingExtra ? 0.65 : 1
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => { void handleAddExtraIngredient(); }}
-                      disabled={isAddingExtra || !extraIngredientQuery.trim()}
-                      style={{
-                        flex: '0 0 auto',
-                        padding: '12px 18px',
-                        background: isAddingExtra ? '#333' : 'rgba(0, 229, 255, 0.15)',
-                        border: '1px solid #00e5ff',
-                        borderRadius: '12px',
-                        color: '#00e5ff',
-                        fontSize: '0.8rem',
-                        fontWeight: 700,
-                        cursor: isAddingExtra || !extraIngredientQuery.trim() ? 'not-allowed' : 'pointer',
-                        opacity: isAddingExtra || !extraIngredientQuery.trim() ? 0.55 : 1,
-                        whiteSpace: 'nowrap',
-                        alignSelf: 'center'
-                      }}
-                    >
-                      {isAddingExtra ? 'Cerco...' : '+ Aggiungi'}
-                    </button>
                   </div>
                 </div>
                 <button

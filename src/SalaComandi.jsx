@@ -2441,6 +2441,26 @@ export default function SalaComandi() {
     setFoodDb(prev => ({ ...(prev || {}), [newKey]: entryPer100 }));
   }, [userUid, db, fullHistory]);
 
+  const saveFoodEntryPer100ToFoodDb = useCallback(async (entry) => {
+    if (!userUid || !entry?.desc) return;
+    const basePath = `users/${userUid}/tracker_data`;
+    const name = String(entry.desc).trim();
+    const slug = name.replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 40);
+    const newKey = `food_${Date.now()}_${slug}`;
+    const payload = { ...entry, desc: name, isRecipe: false };
+    delete payload.ingredients;
+    delete payload.type;
+    Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => {
+      if (payload[k] == null) payload[k] = getDefaultNutrientValue(k, fullHistory);
+    }));
+    if (payload.kcal == null || Number(payload.kcal) === 0) {
+      payload.kcal = getDefaultNutrientValue('kcal', fullHistory);
+    }
+    if (payload.fatTotal == null && payload.fat != null) payload.fatTotal = Number(payload.fat);
+    await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), payload);
+    setFoodDb(prev => ({ ...(prev || {}), [newKey]: payload }));
+  }, [userUid, db, fullHistory]);
+
   const enterFullscreen = async () => {
     const idx = availableFullscreenCharts.indexOf(chartUnit);
     setFullscreenChartIndex(idx >= 0 ? idx : 0);
@@ -6391,6 +6411,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             callGeminiAPIWithRotation={callGeminiAPIWithRotation}
             saveCustomRecipeToFoodDb={saveCustomRecipeToFoodDb}
             foodDb={foodDb}
+            saveFoodEntryPer100ToFoodDb={saveFoodEntryPer100ToFoodDb}
           />
         )}
 
