@@ -11,6 +11,41 @@ const MEAL_BUTTONS = [
   { label: 'Cena', id: 'cena' }
 ];
 
+function parseRecipeIngredientsFromAI(text) {
+  const cleaned = String(text || '')
+    .replace(/```json/gi, '')
+    .replace(/```/g, '')
+    .trim();
+  const start = cleaned.indexOf('[');
+  const end = cleaned.lastIndexOf(']');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('Nessun array JSON nella risposta');
+  }
+  const jsonStr = cleaned.slice(start, end + 1);
+  const parsed = JSON.parse(jsonStr);
+  if (!Array.isArray(parsed)) throw new Error('La risposta non è un array');
+  return parsed;
+}
+
+function normalizeDraftIngredient(row, index) {
+  const w = Number(row.weight);
+  const weight = Number.isFinite(w) && w > 0 ? Math.max(5, Math.round(w)) : 100;
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const baseId = String(row.id != null ? row.id : 'ing').replace(/\s+/g, '_');
+  return {
+    id: `draft_${index}_${baseId}`.slice(0, 80),
+    name: String(row.name != null ? row.name : 'Ingrediente').trim() || 'Ingrediente',
+    weight,
+    kcal: Math.max(0, Math.round(num(row.kcal))),
+    prot: Math.max(0, Math.round(num(row.prot) * 10) / 10),
+    carb: Math.max(0, Math.round(num(row.carb) * 10) / 10),
+    fat: Math.max(0, Math.round(num(row.fat) * 10) / 10)
+  };
+}
+
 export default function MealBuilder({
   onClose,
   mealType,
@@ -65,7 +100,8 @@ export default function MealBuilder({
   MEAL_LABELS_SAVE,
   saveMealToDiary,
   registerAddFoodCallback,
-  editingMealId
+  editingMealId,
+  callGeminiAPIWithRotation
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -126,15 +162,109 @@ export default function MealBuilder({
     }
   };
 
-  const handleGenerateRecipeDraft = () => {
+  const handleGenerateRecipe = async () => {
+    const dish = complexFoodQuery.trim();
+    if (!dish) return;
+    if (typeof callGeminiAPIWithRotation !== 'function') {
+      alert('AI non disponibile: configura le API Key nelle impostazioni.');
+      return;
+    }
     setIsGeneratingRecipe(true);
-    console.log('Chiamata AI per:', complexFoodQuery);
-    window.setTimeout(() => setIsGeneratingRecipe(false), 1000);
+    try {
+      const prompt = `Sei uno chef stellato esperto in nutrizione. Scomponi il piatto complesso ${JSON.stringify(dish)} nei suoi ingredienti crudi base. Calcola le proporzioni esatte affinché il peso totale degli ingredienti sia 100 grammi. Quando un valore nutrizionale non è disponibile per la compilazione automatica, fai una stima logica e usa il valore medio. Restituisci SOLO un array JSON (senza backtick o markdown) con oggetti strutturati così: { id: '...', name: '...', weight: [numero], kcal: [numero], prot: [numero], carb: [numero], fat: [numero] }.`;
+      const rawText = await callGeminiAPIWithRotation(prompt);
+      const rows = parseRecipeIngredientsFromAI(rawText);
+      const next = rows.map((row, i) => normalizeDraftIngredient(row, i));
+      if (next.length === 0) {
+        alert('L’AI non ha restituito ingredienti. Riprova.');
+        return;
+      }
+      setDraftRecipe(next);
+    } catch (err) {
+      console.error('Recipe AI error:', err);
+      alert(
+        err?.message
+          ? `Impossibile elaborare la ricetta: ${err.message}`
+          : 'Impossibile elaborare la ricetta. Controlla la risposta dell’AI o riprova.'
+      );
+    } finally {
+      setIsGeneratingRecipe(false);
+    }
+  };
+
+  const adjustDraftIngredientWeight = (id, deltaGrams) => {
+    setDraftRecipe((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const nextW = Math.max(5, item.weight + deltaGrams);
+        if (nextW === item.weight) return item;
+        const factor = nextW / item.weight;
+        return {
+          ...item,
+          weight: nextW,
+          kcal: Math.max(0, Math.round(item.kcal * factor)),
+          prot: Math.max(0, Math.round(item.prot * factor * 10) / 10),
+          carb: Math.max(0, Math.round(item.carb * factor * 10) / 10),
+          fat: Math.max(0, Math.round(item.fat * factor * 10) / 10)
+        };
+      })
+    );
+  };
+
+  const setDraftIngredientWeightFromInput = (id, rawValue) => {
+    const parsed = Math.round(Number(String(rawValue).replace(',', '.')));
+    if (!Number.isFinite(parsed)) return;
+    const nextW = Math.max(5, Math.round(parsed / 5) * 5);
+    setDraftRecipe((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        if (nextW === item.weight) return item;
+        const factor = nextW / item.weight;
+        return {
+          ...item,
+          weight: nextW,
+          kcal: Math.max(0, Math.round(item.kcal * factor)),
+          prot: Math.max(0, Math.round(item.prot * factor * 10) / 10),
+          carb: Math.max(0, Math.round(item.carb * factor * 10) / 10),
+          fat: Math.max(0, Math.round(item.fat * factor * 10) / 10)
+        };
+      })
+    );
+  };
+
+  const removeDraftIngredient = (id) => {
+    setDraftRecipe((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleConfirmRecipeToMeal = () => {
+    if (!draftRecipe.length) return;
+    const stamp = Date.now();
+    const foods = draftRecipe.map((ing, idx) => ({
+      id: `complex_${stamp}_${idx}_${String(ing.id).replace(/\W/g, '_').slice(0, 24)}`,
+      type: 'food',
+      mealType,
+      desc: ing.name,
+      name: ing.name,
+      qta: ing.weight,
+      weight: ing.weight,
+      kcal: ing.kcal,
+      cal: ing.kcal,
+      prot: ing.prot,
+      carb: ing.carb,
+      fatTotal: ing.fat,
+      fat: ing.fat
+    }));
+    setAddedFoods((prev) => [...foods, ...prev]);
+    setIsComplexMode(false);
+    setDraftRecipe([]);
+    setComplexFoodQuery('');
+    setIsGeneratingRecipe(false);
   };
 
   const handleCancelComplexMode = () => {
     setIsComplexMode(false);
     setComplexFoodQuery('');
+    setDraftRecipe([]);
     setIsGeneratingRecipe(false);
   };
 
@@ -382,7 +512,7 @@ export default function MealBuilder({
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '14px' }}>
                     <button
                       type="button"
-                      onClick={handleGenerateRecipeDraft}
+                      onClick={() => { void handleGenerateRecipe(); }}
                       disabled={isGeneratingRecipe || !complexFoodQuery.trim()}
                       style={{
                         flex: '1 1 140px',
@@ -422,6 +552,151 @@ export default function MealBuilder({
                 </div>
               )}
             </div>
+            {isComplexMode && isGeneratingRecipe && (
+              <div
+                style={{
+                  marginBottom: '14px',
+                  padding: '12px 14px',
+                  background: 'rgba(0, 229, 255, 0.08)',
+                  border: '1px solid rgba(0, 229, 255, 0.35)',
+                  borderRadius: '12px',
+                  color: '#e2e8f0',
+                  fontSize: '0.8rem',
+                  textAlign: 'center'
+                }}
+              >
+                Lo chef AI sta calcolando…
+              </div>
+            )}
+            {isComplexMode && draftRecipe.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>
+                  Bozza ingredienti
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {draftRecipe.map((ing, idx) => (
+                    <div
+                      key={`${ing.id}_${idx}`}
+                      style={{
+                        background: '#2c2c2e',
+                        border: '1px solid #3a3a3c',
+                        borderRadius: '12px',
+                        padding: '12px 14px',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        gap: '10px',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+                        <div style={{ color: '#fff', fontWeight: 600, fontSize: '0.9rem', marginBottom: '4px' }}>{ing.name}</div>
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                          {Math.round(ing.kcal)} kcal · P {ing.prot}g · C {ing.carb}g · G {ing.fat}g
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          aria-label="Meno 5 grammi"
+                          onClick={() => adjustDraftIngredientWeight(ing.id, -5)}
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '10px',
+                            border: '1px solid #555',
+                            background: '#1a1a1a',
+                            color: '#fff',
+                            fontSize: '1.1rem',
+                            cursor: 'pointer',
+                            lineHeight: 1
+                          }}
+                        >
+                          −
+                        </button>
+                        <input
+                          key={`w-${ing.id}-${ing.weight}`}
+                          type="number"
+                          inputMode="numeric"
+                          min={5}
+                          step={5}
+                          defaultValue={ing.weight}
+                          onBlur={(e) => setDraftIngredientWeightFromInput(ing.id, e.target.value)}
+                          style={{
+                            width: '64px',
+                            padding: '8px',
+                            textAlign: 'center',
+                            background: '#1a1a1a',
+                            border: '1px solid #444',
+                            borderRadius: '10px',
+                            color: '#fff',
+                            fontSize: '0.9rem',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          aria-label="Più 5 grammi"
+                          onClick={() => adjustDraftIngredientWeight(ing.id, 5)}
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '10px',
+                            border: '1px solid #555',
+                            background: '#1a1a1a',
+                            color: '#fff',
+                            fontSize: '1.1rem',
+                            cursor: 'pointer',
+                            lineHeight: 1
+                          }}
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Rimuovi ingrediente"
+                          onClick={() => removeDraftIngredient(ing.id)}
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(244, 67, 54, 0.5)',
+                            background: 'rgba(244, 67, 54, 0.15)',
+                            color: '#f87171',
+                            fontSize: '1rem',
+                            cursor: 'pointer',
+                            lineHeight: 1
+                          }}
+                        >
+                          🗑
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleConfirmRecipeToMeal}
+                  style={{
+                    width: '100%',
+                    marginTop: '16px',
+                    padding: '16px 18px',
+                    background: 'linear-gradient(145deg, rgba(0, 229, 255, 0.25), rgba(0, 229, 255, 0.08))',
+                    border: '2px solid #00e5ff',
+                    borderRadius: '12px',
+                    color: '#fff',
+                    fontSize: '0.9rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  Conferma e Aggiungi al Pasto
+                </button>
+              </div>
+            )}
             {!isComplexMode && foodNameInput.trim() === '' && abitudiniIeri.length > 0 && (
               <div style={{ marginBottom: '16px' }}>
                 <button type="button" onClick={() => setIsAbitudiniOpen(prev => !prev)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid #333', borderRadius: '10px', color: '#888', fontSize: '0.7rem', letterSpacing: '1px', cursor: 'pointer', textAlign: 'left' }}>
