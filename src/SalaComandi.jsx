@@ -765,6 +765,26 @@ export default function SalaComandi() {
     return new Date(currentDateObj.getTime() - offset).toISOString().slice(0, 10);
   }, [currentDateObj]);
 
+  const selectedNodeReportPrevRef = useRef(null);
+  useEffect(() => {
+    setExpandedRecipes({});
+  }, [currentTrackerDate]);
+
+  useEffect(() => {
+    if (activeAction !== 'diario_giornaliero') setExpandedRecipes({});
+  }, [activeAction]);
+
+  useEffect(() => {
+    setExpandedRecipes({});
+  }, [diarioTab]);
+
+  useEffect(() => {
+    if (selectedNodeReportPrevRef.current != null && selectedNodeReport == null) {
+      setExpandedRecipes({});
+    }
+    selectedNodeReportPrevRef.current = selectedNodeReport;
+  }, [selectedNodeReport]);
+
   /** Carico allostatico (0–100) ultimi 60gg → tetto energia in generateRealEnergyData */
   const accumuloSNC = useMemo(() => {
     if (!fullHistory || typeof fullHistory !== 'object') return 0;
