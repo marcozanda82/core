@@ -247,7 +247,8 @@ export default function MealBuilder({
   callGeminiAPIWithRotation,
   saveCustomRecipeToFoodDb,
   foodDb = {},
-  saveFoodEntryPer100ToFoodDb
+  saveFoodEntryPer100ToFoodDb,
+  deleteRecipeFromFoodDb
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -268,6 +269,63 @@ export default function MealBuilder({
   const [extraSearchResults, setExtraSearchResults] = useState([]);
   const [showExtraDropdown, setShowExtraDropdown] = useState(false);
   const [deepCompileLoadingIndex, setDeepCompileLoadingIndex] = useState(null);
+  const [expandedAddedFoods, setExpandedAddedFoods] = useState({});
+
+  const mealBuilderScrollAnchorRef = useRef(null);
+
+  const toggleAddedFood = (id) => {
+    const k = id != null ? String(id) : '';
+    if (!k) return;
+    setExpandedAddedFoods((prev) => ({ ...prev, [k]: !prev[k] }));
+  };
+
+  const handleDeleteRecipeFromDb = async (e, recipeKey) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!recipeKey) return;
+    if (!window.confirm('Vuoi eliminare definitivamente questa ricetta dal database?')) return;
+    if (typeof deleteRecipeFromFoodDb !== 'function') {
+      alert('Eliminazione non disponibile.');
+      return;
+    }
+    try {
+      await deleteRecipeFromFoodDb(recipeKey);
+      setRecipeSearchResults((prev) => {
+        const next = prev.filter((r) => r.key !== recipeKey);
+        if (next.length === 0) setShowRecipeDropdown(false);
+        return next;
+      });
+    } catch (err) {
+      console.error('deleteRecipeFromFoodDb', err);
+      alert('Eliminazione non riuscita.');
+    }
+  };
+
+  const handleEditAddedRecipe = (foodId) => {
+    const food = addedFoods.find((f) => f.id === foodId);
+    if (!food) return;
+    const isRec = food.type === 'recipe' || food.isRecipe === true;
+    if (!isRec) return;
+    const ings = Array.isArray(food.ingredients) ? food.ingredients : [];
+    const name = String(food.desc || food.name || '').trim() || 'Ricetta';
+    const w = Math.max(50, Math.min(5000, Math.round(Number(food.qta ?? food.weight) || 100)));
+    setAddedFoods((prev) => prev.filter((f) => f.id !== foodId));
+    setShowFoodDropdown(false);
+    setRecipeSearchResults([]);
+    setShowRecipeDropdown(false);
+    setExtraSearchResults([]);
+    setShowExtraDropdown(false);
+    setIsComplexMode(true);
+    setComplexFoodQuery(name);
+    setComplexPortionWeight(w);
+    setDraftRecipe(ings.map((row, i) => normalizeDraftIngredient({ ...row }, i)));
+    setIsGeneratingRecipe(false);
+    setExtraIngredientQuery('');
+    setIsAddingExtra(false);
+    window.setTimeout(() => {
+      mealBuilderScrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
 
   const draftTotalsPer100g = useMemo(() => (
     draftRecipe.reduce(
@@ -790,7 +848,7 @@ export default function MealBuilder({
         </div>
       </div>
       <div className="pasto-container">
-        <div className="pasto-builder-panel">
+        <div className="pasto-builder-panel" ref={mealBuilderScrollAnchorRef}>
           <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '10px', border: '1px solid #333', background: energyAt20Percent < 40 ? 'rgba(220, 38, 38, 0.12)' : 'rgba(34, 197, 94, 0.1)', borderColor: energyAt20Percent < 40 ? 'rgba(220, 38, 38, 0.4)' : 'rgba(34, 197, 94, 0.35)' }}>
             <div style={{ fontSize: '0.7rem', fontWeight: '600', color: energyAt20Percent < 40 ? '#f87171' : '#4ade80', marginBottom: '4px' }}>Analisi Bio-Feedback</div>
             {energyAt20Percent < 40 ? (
@@ -934,27 +992,69 @@ export default function MealBuilder({
                         {recipeSearchResults.map((r) => (
                           <div
                             key={r.key}
-                            role="button"
-                            tabIndex={0}
-                            onMouseDown={(e) => e.preventDefault()}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                handleSelectSavedRecipe(r);
-                              }
-                            }}
-                            onClick={() => handleSelectSavedRecipe(r)}
                             style={{
-                              padding: '12px 14px',
-                              fontSize: '0.9rem',
-                              color: '#fff',
-                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '8px 10px 8px 14px',
                               borderBottom: '1px solid #2a2a2a'
                             }}
-                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0, 229, 255, 0.12)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                           >
-                            {r.name}
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleSelectSavedRecipe(r);
+                                }
+                              }}
+                              onClick={() => handleSelectSavedRecipe(r)}
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                padding: '4px 0',
+                                fontSize: '0.9rem',
+                                color: '#fff',
+                                cursor: 'pointer'
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0, 229, 255, 0.08)'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                            >
+                              {r.name}
+                            </div>
+                            <button
+                              type="button"
+                              title="Elimina dal database"
+                              aria-label="Elimina ricetta dal database"
+                              onClick={(e) => { void handleDeleteRecipeFromDb(e, r.key); }}
+                              style={{
+                                flexShrink: 0,
+                                width: '36px',
+                                height: '36px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: 'transparent',
+                                border: '1px solid transparent',
+                                borderRadius: '8px',
+                                color: 'rgba(248, 113, 113, 0.85)',
+                                fontSize: '1rem',
+                                cursor: 'pointer',
+                                lineHeight: 1
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(248, 113, 113, 0.12)';
+                                e.currentTarget.style.borderColor = 'rgba(248, 113, 113, 0.25)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.borderColor = 'transparent';
+                              }}
+                            >
+                              🗑️
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -1441,47 +1541,119 @@ export default function MealBuilder({
               <p style={{ textAlign: 'center', color: '#444', fontSize: '0.8rem', fontStyle: 'italic', marginTop: '30px' }}>Nessun alimento in coda</p>
             ) : (
               addedFoods.map((food) => {
-                const isRecipe = food.type === 'recipe';
+                const isRecipeItem = food.type === 'recipe' || food.isRecipe === true;
                 const omega3G = (food.omega3 != null && food.omega3 > 0) ? (food.omega3 >= 1 ? food.omega3 : food.omega3 / 1000) : 0;
                 const omega3Rich = omega3G > 0.5;
                 const mgVal = Number(food.mg) || 0;
                 const mgRich = mgVal >= 30;
                 const qta = Number(food.qta ?? food.weight ?? 100) || 100;
-                const step = isRecipe ? 50 : (Number(food.unitStep) || 10);
+                const step = isRecipeItem ? 50 : (Number(food.unitStep) || 10);
+                const rowKey = String(food.id);
+                const recipeExpanded = !!expandedAddedFoods[rowKey];
+                const recipeIngs = Array.isArray(food.ingredients) ? food.ingredients : [];
+                const accBtnStyle = {
+                  flexShrink: 0,
+                  width: '28px',
+                  height: '28px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid #333',
+                  borderRadius: '6px',
+                  color: '#94a3b8',
+                  fontSize: '0.65rem',
+                  cursor: 'pointer',
+                  padding: 0,
+                  lineHeight: 1
+                };
                 return (
-                  <div key={food.id} className="food-pill">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                        <span className="food-pill-name">{food.desc || food.name}</span>
-                        {isRecipe && (
-                          <span style={{ fontSize: '0.58rem', padding: '2px 8px', borderRadius: '8px', background: 'rgba(179, 136, 255, 0.25)', color: '#c4b5fd', fontWeight: 700, letterSpacing: '0.04em' }}>RICETTA</span>
-                        )}
-                        <span className="food-pill-weight">{qta}g</span>
-                        {(omega3Rich || mgRich) && (
-                          <span style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap' }}>
-                            {omega3Rich && <span style={{ fontSize: '0.6rem', padding: '2px 6px', borderRadius: '10px', background: 'rgba(0, 150, 255, 0.25)', color: '#5eb3f6', fontWeight: '600' }}>Ω3</span>}
-                            {mgRich && <span style={{ fontSize: '0.6rem', padding: '2px 6px', borderRadius: '10px', background: 'rgba(139, 90, 43, 0.35)', color: '#d4a574', fontWeight: '600' }}>Mg</span>}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <>
-                        <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, -step)} title={`-${step}g`} aria-label={`-${step}g`}>−</button>
-                        <div
-                          onClick={() => { setNumpadValue(String(qta)); setNumpadFoodId(food.id); }}
-                          style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#00e5ff', minWidth: '60px', textAlign: 'center', cursor: 'pointer', background: '#222', padding: '5px 10px', borderRadius: '8px', border: '1px solid #333' }}
-                        >
-                          {qta}g
+                  <div key={food.id} className="food-pill" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', width: '100%' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                          {isRecipeItem ? (
+                            <button
+                              type="button"
+                              aria-expanded={recipeExpanded}
+                              title={recipeExpanded ? 'Comprimi ingredienti' : 'Espandi ingredienti'}
+                              onClick={() => toggleAddedFood(food.id)}
+                              style={accBtnStyle}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0, 229, 255, 0.1)'; e.currentTarget.style.borderColor = 'rgba(0, 229, 255, 0.35)'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.borderColor = '#333'; }}
+                            >
+                              {recipeExpanded ? '▲' : '▼'}
+                            </button>
+                          ) : null}
+                          <span className="food-pill-name">{food.desc || food.name}</span>
+                          {isRecipeItem && (
+                            <span style={{ fontSize: '0.58rem', padding: '2px 8px', borderRadius: '8px', background: 'rgba(179, 136, 255, 0.25)', color: '#c4b5fd', fontWeight: 700, letterSpacing: '0.04em' }}>RICETTA</span>
+                          )}
+                          <span className="food-pill-weight">{qta}g</span>
+                          {(omega3Rich || mgRich) && (
+                            <span style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap' }}>
+                              {omega3Rich && <span style={{ fontSize: '0.6rem', padding: '2px 6px', borderRadius: '10px', background: 'rgba(0, 150, 255, 0.25)', color: '#5eb3f6', fontWeight: '600' }}>Ω3</span>}
+                              {mgRich && <span style={{ fontSize: '0.6rem', padding: '2px 6px', borderRadius: '10px', background: 'rgba(139, 90, 43, 0.35)', color: '#d4a574', fontWeight: '600' }}>Mg</span>}
+                            </span>
+                          )}
                         </div>
-                        <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, step)} title={`+${step}g`} aria-label={`+${step}g`}>+</button>
-                      </>
-                      <div className="food-pill-actions" style={{ marginLeft: '4px' }}>
-                        <button type="button" className="food-pill-btn" onClick={() => setSelectedFoodForInfo(food)} title="Info macro/micro">ℹ️</button>
-                        <button type="button" className="food-pill-btn" onClick={() => { setSelectedFoodForEdit({ food, source: 'queue' }); setEditQuantityValue(String(qta)); }} title="Modifica quantità">✏️</button>
-                        <button type="button" className="food-pill-btn btn-delete" onClick={() => setAddedFoods(prev => prev.filter(f => f.id !== food.id))}>✕</button>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <>
+                          <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, -step)} title={`-${step}g`} aria-label={`-${step}g`}>−</button>
+                          <div
+                            onClick={() => { setNumpadValue(String(qta)); setNumpadFoodId(food.id); }}
+                            style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#00e5ff', minWidth: '60px', textAlign: 'center', cursor: 'pointer', background: '#222', padding: '5px 10px', borderRadius: '8px', border: '1px solid #333' }}
+                          >
+                            {qta}g
+                          </div>
+                          <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, step)} title={`+${step}g`} aria-label={`+${step}g`}>+</button>
+                        </>
+                        <div className="food-pill-actions" style={{ marginLeft: '4px' }}>
+                          <button type="button" className="food-pill-btn" onClick={() => setSelectedFoodForInfo(food)} title="Info macro/micro">ℹ️</button>
+                          {isRecipeItem ? (
+                            <button type="button" className="food-pill-btn" onClick={() => handleEditAddedRecipe(food.id)} title="Modifica bozza ricetta">✏️</button>
+                          ) : (
+                            <button type="button" className="food-pill-btn" onClick={() => { setSelectedFoodForEdit({ food, source: 'queue' }); setEditQuantityValue(String(qta)); }} title="Modifica quantità">✏️</button>
+                          )}
+                          <button type="button" className="food-pill-btn btn-delete" onClick={() => setAddedFoods(prev => prev.filter(f => f.id !== food.id))}>✕</button>
+                        </div>
                       </div>
                     </div>
+                    {isRecipeItem && recipeExpanded ? (
+                      <div
+                        style={{
+                          marginTop: '10px',
+                          paddingLeft: '12px',
+                          marginLeft: '4px',
+                          borderLeft: '2px solid rgba(179, 136, 255, 0.35)',
+                          fontSize: '0.68rem',
+                          color: '#94a3b8',
+                          lineHeight: 1.35
+                        }}
+                      >
+                        {recipeIngs.length === 0 ? (
+                          <span style={{ fontStyle: 'italic', opacity: 0.85 }}>Nessun ingrediente in elenco</span>
+                        ) : (
+                          recipeIngs.map((ing, idx) => {
+                            const nm = String(ing.desc ?? ing.name ?? '—').trim() || '—';
+                            const gw = Math.round(Number(ing.weight ?? ing.qta) || 0);
+                            const ik = ing.kcal != null && Number.isFinite(Number(ing.kcal)) ? `${Math.round(Number(ing.kcal))}` : '—';
+                            const ip = ing.prot != null && Number.isFinite(Number(ing.prot)) ? `${Math.round(Number(ing.prot) * 10) / 10}` : '—';
+                            const ic = ing.carb != null && Number.isFinite(Number(ing.carb)) ? `${Math.round(Number(ing.carb) * 10) / 10}` : '—';
+                            const ifat = ing.fat != null && Number.isFinite(Number(ing.fat)) ? `${Math.round(Number(ing.fat) * 10) / 10}` : '—';
+                            return (
+                              <div key={ing.id != null ? String(ing.id) : `ing-${idx}`} style={{ marginBottom: '6px' }}>
+                                <span style={{ color: '#e2e8f0' }}>{nm}</span>
+                                <span>{' · '}{gw}g</span>
+                                <span>{' · '}{ik} kcal</span>
+                                <span>{' · '}P {ip}g · C {ic}g · G {ifat}g</span>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })

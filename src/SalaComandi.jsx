@@ -12,7 +12,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { ComposedChart, LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
 
-import { ref, get, set, onValue, update } from 'firebase/database';
+import { ref, get, set, onValue, update, remove } from 'firebase/database';
 
 import { useFirebase } from './useFirebase';
 import ChartModal from './ChartModal';
@@ -2460,6 +2460,17 @@ export default function SalaComandi() {
     await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), payload);
     setFoodDb(prev => ({ ...(prev || {}), [newKey]: payload }));
   }, [userUid, db, fullHistory]);
+
+  const deleteRecipeFromFoodDb = useCallback(async (recipeKey) => {
+    if (!userUid || !recipeKey) return;
+    const path = `users/${userUid}/tracker_data/trackerFoodDatabase/${recipeKey}`;
+    await remove(ref(db, path));
+    setFoodDb((prev) => {
+      const next = { ...(prev || {}) };
+      delete next[recipeKey];
+      return next;
+    });
+  }, [userUid, db]);
 
   const enterFullscreen = async () => {
     const idx = availableFullscreenCharts.indexOf(chartUnit);
@@ -6412,6 +6423,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             saveCustomRecipeToFoodDb={saveCustomRecipeToFoodDb}
             foodDb={foodDb}
             saveFoodEntryPer100ToFoodDb={saveFoodEntryPer100ToFoodDb}
+            deleteRecipeFromFoodDb={deleteRecipeFromFoodDb}
           />
         )}
 
