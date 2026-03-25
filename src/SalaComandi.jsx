@@ -357,7 +357,14 @@ export default function SalaComandi() {
 
   // SOTTO-NAVIGAZIONE DIARIO
   const [diarioTab, setDiarioTab] = useState('storico');
+  const [expandedRecipes, setExpandedRecipes] = useState({});
   const [telemetrySubTab, setTelemetrySubTab] = useState('macro');
+
+  const toggleRecipe = useCallback((id) => {
+    const key = id != null ? String(id) : '';
+    if (!key) return;
+    setExpandedRecipes((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
   const TELEMETRY_TABS = ['macro', 'bilanci', 'amino', 'vit', 'min', 'fat'];
   const telemetryScrollRef = useRef(null);
   const popupTelemetryScrollRef = useRef(null);
@@ -6470,20 +6477,88 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           </h4>
                           <button type="button" className="food-pill-btn" onClick={() => setSelectedNodeReport({ id: slotKey, type: 'meal' })} title="Dettaglio pasto">✏️</button>
                         </div>
-                        {items.map(food => (
-                          <div key={food.id} className="food-pill" style={{ borderLeft: '3px solid #333', cursor: 'pointer' }} onClick={() => setSelectedNodeReport({ id: slotKey, type: 'meal' })}>
-                            <div>
-                              <span className="food-pill-name">{food.desc || food.name}</span>
-                              <span className="food-pill-weight">{food.qta || food.weight}g</span>
+                        {items.map(food => {
+                          const recipeExpandable = (food.type === 'recipe' || food.isRecipe === true)
+                            && Array.isArray(food.ingredients)
+                            && food.ingredients.length > 0;
+                          const recipeKey = food.id != null ? String(food.id) : '';
+                          const recipeExpanded = recipeKey && !!expandedRecipes[recipeKey];
+                          return (
+                            <div key={food.id} style={{ marginBottom: '8px' }}>
+                              <div className="food-pill" style={{ borderLeft: '3px solid #333', cursor: 'pointer' }} onClick={() => setSelectedNodeReport({ id: slotKey, type: 'meal' })}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, flex: 1 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                                    <span className="food-pill-name">{food.desc || food.name}</span>
+                                    {recipeExpandable && (
+                                      <button
+                                        type="button"
+                                        className="food-pill-btn"
+                                        aria-expanded={recipeExpanded}
+                                        aria-label={recipeExpanded ? 'Nascondi ingredienti' : 'Mostra ingredienti'}
+                                        title={recipeExpanded ? 'Nascondi ingredienti' : 'Mostra ingredienti'}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleRecipe(food.id);
+                                        }}
+                                        style={{ fontSize: '0.65rem', opacity: 0.85, padding: '2px 6px' }}
+                                      >
+                                        {recipeExpanded ? '▲' : '▼'}
+                                      </button>
+                                    )}
+                                    <span className="food-pill-weight">{food.qta || food.weight}g</span>
+                                  </div>
+                                </div>
+                                <div className="food-pill-actions" onClick={(e) => e.stopPropagation()}>
+                                  <button className="food-pill-btn" onClick={(e) => { e.stopPropagation(); setSelectedFoodForInfo(food); }} title="Info macro/micro">ℹ️</button>
+                                  <button className="food-pill-btn" onClick={(e) => { e.stopPropagation(); setSelectedNodeReport({ id: slotKey, type: 'meal' }); }} title="Dettaglio pasto">✏️</button>
+                                  <div style={{ fontSize: '0.75rem', color: '#888', marginRight: '10px' }}>{Math.round(food.kcal || food.cal || 0)} kcal</div>
+                                  <button className="food-pill-btn btn-delete" onClick={(e) => { e.stopPropagation(); removeLogItem(food.id); }}>✕</button>
+                                </div>
+                              </div>
+                              {recipeExpandable && recipeExpanded && (
+                                <div
+                                  style={{
+                                    marginTop: '8px',
+                                    marginLeft: '4px',
+                                    paddingLeft: '15px',
+                                    paddingTop: '8px',
+                                    paddingBottom: '8px',
+                                    paddingRight: '10px',
+                                    borderLeft: '2px solid #444',
+                                    background: 'rgba(0,0,0,0.28)',
+                                    borderRadius: '0 10px 10px 0'
+                                  }}
+                                >
+                                  {food.ingredients.map((ing, ingIdx) => {
+                                    const w = Number(ing.weight);
+                                    const wg = Number.isFinite(w) ? `${Math.round(w)}g` : '—';
+                                    const kc = Math.round(Number(ing.kcal) || 0);
+                                    const p = Number(ing.prot);
+                                    const c = Number(ing.carb);
+                                    const g = Number(ing.fat);
+                                    const pStr = Number.isFinite(p) ? p.toFixed(1) : '0';
+                                    const cStr = Number.isFinite(c) ? c.toFixed(1) : '0';
+                                    const gStr = Number.isFinite(g) ? g.toFixed(1) : '0';
+                                    const nm = ing.name != null ? String(ing.name) : 'Ingrediente';
+                                    return (
+                                      <div
+                                        key={ing.id != null ? String(ing.id) : `ing_${ingIdx}`}
+                                        style={{
+                                          fontSize: '0.85rem',
+                                          color: '#aaa',
+                                          lineHeight: 1.45,
+                                          marginBottom: ingIdx < food.ingredients.length - 1 ? '6px' : 0
+                                        }}
+                                      >
+                                        {nm} · {wg} · {kc} kcal · P {pStr}g · C {cStr}g · G {gStr}g
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
-                            <div className="food-pill-actions" onClick={(e) => e.stopPropagation()}>
-                              <button className="food-pill-btn" onClick={(e) => { e.stopPropagation(); setSelectedFoodForInfo(food); }} title="Info macro/micro">ℹ️</button>
-                              <button className="food-pill-btn" onClick={(e) => { e.stopPropagation(); setSelectedNodeReport({ id: slotKey, type: 'meal' }); }} title="Dettaglio pasto">✏️</button>
-                              <div style={{ fontSize: '0.75rem', color: '#888', marginRight: '10px' }}>{Math.round(food.kcal || food.cal || 0)} kcal</div>
-                              <button className="food-pill-btn btn-delete" onClick={(e) => { e.stopPropagation(); removeLogItem(food.id); }}>✕</button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     );
                   })
@@ -7593,27 +7668,81 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         <span style={{ color: '#4caf50' }}>🍞 {Math.round(totals.carb)}g</span>
                         <span style={{ color: '#ffeb3b' }}>🥑 {Math.round(totals.fat)}g</span>
                       </div>
-                      <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 25px 0', maxHeight: '200px', overflowY: 'auto' }}>
-                        {items.map(item => (
-                          <li key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #333' }}>
-                            <span>{item.name || item.desc}</span>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ color: '#aaa' }}>{item.qta || item.weight}g</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setInspectedFood(item);
-                                  setEditFoodData({ ...item });
-                                }}
-                                style={{ background: 'transparent', border: 'none', color: '#00e5ff', cursor: 'pointer', fontSize: '1.2rem', padding: '0 5px' }}
-                                title="Ispeziona/Modifica Nutrienti"
-                              >
-                                🔍
-                              </button>
-                            </span>
-                          </li>
-                        ))}
+                      <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 25px 0', maxHeight: '280px', overflowY: 'auto' }}>
+                        {items.map(item => {
+                          const recipeExpandableModal = (item.type === 'recipe' || item.isRecipe === true)
+                            && Array.isArray(item.ingredients)
+                            && item.ingredients.length > 0;
+                          const rk = item.id != null ? String(item.id) : '';
+                          const recipeOpenModal = rk && !!expandedRecipes[rk];
+                          return (
+                            <li key={item.id} style={{ padding: '10px 0', borderBottom: '1px solid #333' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', minWidth: 0 }}>
+                                  {item.name || item.desc}
+                                  {recipeExpandableModal && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleRecipe(item.id)}
+                                      aria-expanded={recipeOpenModal}
+                                      aria-label={recipeOpenModal ? 'Nascondi ingredienti' : 'Mostra ingredienti'}
+                                      style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.7rem', padding: '2px 6px' }}
+                                    >
+                                      {recipeOpenModal ? '▲' : '▼'}
+                                    </button>
+                                  )}
+                                </span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                  <span style={{ color: '#aaa' }}>{item.qta || item.weight}g</span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setInspectedFood(item);
+                                      setEditFoodData({ ...item });
+                                    }}
+                                    style={{ background: 'transparent', border: 'none', color: '#00e5ff', cursor: 'pointer', fontSize: '1.2rem', padding: '0 5px' }}
+                                    title="Ispeziona/Modifica Nutrienti"
+                                  >
+                                    🔍
+                                  </button>
+                                </span>
+                              </div>
+                              {recipeExpandableModal && recipeOpenModal && (
+                                <div
+                                  style={{
+                                    marginTop: '8px',
+                                    marginLeft: '4px',
+                                    paddingLeft: '12px',
+                                    paddingTop: '6px',
+                                    paddingBottom: '6px',
+                                    borderLeft: '2px solid #444',
+                                    background: 'rgba(0,0,0,0.25)',
+                                    borderRadius: '0 8px 8px 0'
+                                  }}
+                                >
+                                  {item.ingredients.map((ing, ingIdx) => {
+                                    const w = Number(ing.weight);
+                                    const wg = Number.isFinite(w) ? `${Math.round(w)}g` : '—';
+                                    const kc = Math.round(Number(ing.kcal) || 0);
+                                    const p = Number(ing.prot);
+                                    const c = Number(ing.carb);
+                                    const g = Number(ing.fat);
+                                    const nm = ing.name != null ? String(ing.name) : 'Ingrediente';
+                                    return (
+                                      <div
+                                        key={ing.id != null ? String(ing.id) : `ding_${ingIdx}`}
+                                        style={{ fontSize: '0.85rem', color: '#aaa', lineHeight: 1.45, marginBottom: ingIdx < item.ingredients.length - 1 ? '6px' : 0 }}
+                                      >
+                                        {nm} · {wg} · {kc} kcal · P {(Number.isFinite(p) ? p : 0).toFixed(1)}g · C {(Number.isFinite(c) ? c : 0).toFixed(1)}g · G {(Number.isFinite(g) ? g : 0).toFixed(1)}g
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     </>
                   );
