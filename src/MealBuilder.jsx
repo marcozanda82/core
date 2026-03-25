@@ -114,6 +114,8 @@ export default function MealBuilder({
   const [complexFoodQuery, setComplexFoodQuery] = useState('');
   const [draftRecipe, setDraftRecipe] = useState([]);
   const [isGeneratingRecipe, setIsGeneratingRecipe] = useState(false);
+  const [extraIngredientQuery, setExtraIngredientQuery] = useState('');
+  const [isAddingExtra, setIsAddingExtra] = useState(false);
 
   const [recentFoods, setRecentFoods] = useState(() => {
     try { return JSON.parse(localStorage.getItem('recentFoods') || '[]'); }
@@ -236,6 +238,43 @@ export default function MealBuilder({
     setDraftRecipe((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const handleAddExtraIngredient = async () => {
+    const q = extraIngredientQuery.trim();
+    if (!q) return;
+    if (typeof callGeminiAPIWithRotation !== 'function') {
+      alert('AI non disponibile: configura le API Key nelle impostazioni.');
+      return;
+    }
+    setIsAddingExtra(true);
+    try {
+      const prompt =
+        'Sei un nutrizionista. Fornisci i valori nutrizionali per 100 grammi crudi di: ' +
+        JSON.stringify(q) +
+        ". Se mancano dati precisi, fai una stima logica usando valori medi. Restituisci SOLO un array JSON (senza backtick o markdown) contenente un singolo oggetto strutturato così: [{ id: 'extra_[timestamp_o_random]', name: '[Nome Inserito]', weight: 100, kcal: [numero], prot: [numero], carb: [numero], fat: [numero] }].";
+      const rawText = await callGeminiAPIWithRotation(prompt);
+      const rows = parseRecipeIngredientsFromAI(rawText);
+      if (!rows.length) {
+        alert('L’AI non ha restituito dati per l’ingrediente. Riprova.');
+        return;
+      }
+      setDraftRecipe((prev) => {
+        const startIdx = prev.length;
+        const normalized = rows.map((row, i) => normalizeDraftIngredient(row, startIdx + i));
+        return [...prev, ...normalized];
+      });
+      setExtraIngredientQuery('');
+    } catch (err) {
+      console.error('Extra ingredient AI error:', err);
+      alert(
+        err?.message
+          ? `Impossibile aggiungere l’ingrediente: ${err.message}`
+          : 'Impossibile aggiungere l’ingrediente. Controlla la risposta dell’AI o riprova.'
+      );
+    } finally {
+      setIsAddingExtra(false);
+    }
+  };
+
   const handleConfirmRecipeToMeal = () => {
     if (!draftRecipe.length) return;
     const stamp = Date.now();
@@ -259,6 +298,8 @@ export default function MealBuilder({
     setDraftRecipe([]);
     setComplexFoodQuery('');
     setIsGeneratingRecipe(false);
+    setExtraIngredientQuery('');
+    setIsAddingExtra(false);
   };
 
   const handleCancelComplexMode = () => {
@@ -266,6 +307,8 @@ export default function MealBuilder({
     setComplexFoodQuery('');
     setDraftRecipe([]);
     setIsGeneratingRecipe(false);
+    setExtraIngredientQuery('');
+    setIsAddingExtra(false);
   };
 
   const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (typeof v === 'string' ? Number(v) : v) != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
@@ -673,6 +716,69 @@ export default function MealBuilder({
                       </div>
                     </div>
                   ))}
+                </div>
+                <div
+                  style={{
+                    marginTop: '14px',
+                    padding: '14px',
+                    background: '#2c2c2e',
+                    border: '1px solid #3a3a3c',
+                    borderRadius: '12px',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>
+                    Ingrediente extra
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'stretch' }}>
+                    <input
+                      type="text"
+                      value={extraIngredientQuery}
+                      onChange={(e) => setExtraIngredientQuery(e.target.value)}
+                      placeholder="Es. Pepe nero, Olio extravergine..."
+                      disabled={isAddingExtra}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !isAddingExtra && extraIngredientQuery.trim()) {
+                          e.preventDefault();
+                          void handleAddExtraIngredient();
+                        }
+                      }}
+                      style={{
+                        flex: '1 1 180px',
+                        minWidth: 0,
+                        padding: '12px 14px',
+                        background: '#1a1a1a',
+                        border: '1px solid #444',
+                        borderRadius: '12px',
+                        color: '#fff',
+                        fontSize: '0.9rem',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                        opacity: isAddingExtra ? 0.65 : 1
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { void handleAddExtraIngredient(); }}
+                      disabled={isAddingExtra || !extraIngredientQuery.trim()}
+                      style={{
+                        flex: '0 0 auto',
+                        padding: '12px 18px',
+                        background: isAddingExtra ? '#333' : 'rgba(0, 229, 255, 0.15)',
+                        border: '1px solid #00e5ff',
+                        borderRadius: '12px',
+                        color: '#00e5ff',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: isAddingExtra || !extraIngredientQuery.trim() ? 'not-allowed' : 'pointer',
+                        opacity: isAddingExtra || !extraIngredientQuery.trim() ? 0.55 : 1,
+                        whiteSpace: 'nowrap',
+                        alignSelf: 'center'
+                      }}
+                    >
+                      {isAddingExtra ? 'Cerco...' : '+ Aggiungi'}
+                    </button>
+                  </div>
                 </div>
                 <button
                   type="button"
