@@ -4459,8 +4459,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <form className="login-box" onSubmit={handleLogin}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
               <img
-                src="/logo9.png?v=9"
-                alt="KentuOS"
+                src="/nuovo%20logo%20trasparente.png"
+                alt="Kentuos Logo"
                 decoding="async"
                 style={{
                   maxHeight: 52,
@@ -4993,7 +4993,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
 
       {/* HEADER SUPERIORE — logo KentuOS centrato; controlli ai lati */}
-        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '5px', gap: '10px', minHeight: 52 }}>
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '5px', gap: '10px', minHeight: 58 }}>
           {/* SINISTRA: Longevità + Logout */}
           <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', flex: 1, minWidth: 0, gap: '10px', zIndex: 2 }}>
             {longevityData && (
@@ -5043,12 +5043,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             }}
           >
             <img
-              src="/logo9.png?v=9"
-              alt="KentuOS Logo"
+              src="/nuovo%20logo%20trasparente.png"
+              alt="Kentuos Logo"
               decoding="async"
               draggable={false}
               style={{
-                maxHeight: 48,
+                maxHeight: 60,
                 height: 'auto',
                 width: 'auto',
                 maxWidth: 'min(300px, 72vw)',
@@ -6982,8 +6982,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
               <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <img
-                  src="/logo9.png?v=9"
-                  alt=""
+                  src="/nuovo%20logo%20trasparente.png"
+                  alt="Kentuos Logo"
                   decoding="async"
                   style={{ maxHeight: 26, width: 'auto', maxWidth: 'min(140px, 38vw)', objectFit: 'contain', display: 'block', filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.45))' }}
                 />
