@@ -7,7 +7,7 @@ const getColor = (value) => {
 };
 
 export default function LongevityView({ data, showPriorityFocus = true }) {
-  if (!data) return <div style={{ padding: 20 }}>No data</div>;
+  if (!data) return <div style={{ padding: 20 }}>Nessun dato disponibile</div>;
 
   const { score, breakdown, drivers, suggestions, priorityFocus } = data;
 
@@ -19,7 +19,7 @@ export default function LongevityView({ data, showPriorityFocus = true }) {
         <div style={{ fontSize: 64, fontWeight: 'bold', color: getColor(score) }}>
           {score}
         </div>
-        <div style={{ fontSize: 18, opacity: 0.7 }}>Longevity Score</div>
+        <div style={{ fontSize: 18, opacity: 0.7 }}>Punteggio Longevità</div>
       </div>
 
       {/* 🔴 PRIORITY FOCUS */}
@@ -31,7 +31,7 @@ export default function LongevityView({ data, showPriorityFocus = true }) {
           marginBottom: 24,
           border: '1px solid #333'
         }}>
-          <div style={{ fontSize: 14, opacity: 0.6 }}>FOCUS</div>
+          <div style={{ fontSize: 14, opacity: 0.6 }}>PRIORITÀ DI OGGI</div>
           <div style={{ fontSize: 18, fontWeight: 'bold', marginTop: 4 }}>
             {priorityFocus.title}
           </div>
@@ -43,7 +43,7 @@ export default function LongevityView({ data, showPriorityFocus = true }) {
 
       {/* 🧬 BREAKDOWN */}
       <div style={{ marginBottom: 24 }}>
-        <div style={{ marginBottom: 10, fontWeight: 'bold' }}>Breakdown</div>
+        <div style={{ marginBottom: 10, fontWeight: 'bold' }}>Dettaglio Parametri</div>
 
         {Object.entries(breakdown).map(([key, value]) => (
           <div key={key} style={{ marginBottom: 10 }}>
@@ -69,7 +69,7 @@ export default function LongevityView({ data, showPriorityFocus = true }) {
 
       {/* 🔥 DRIVERS */}
       <div style={{ marginBottom: 24 }}>
-        <div style={{ marginBottom: 10, fontWeight: 'bold' }}>Insights</div>
+        <div style={{ marginBottom: 10, fontWeight: 'bold' }}>Indicatori Chiave</div>
 
         {drivers?.map((d, i) => (
           <div key={`${d.type}-${d.key}-${i}`} style={{ marginBottom: 6 }}>
@@ -80,7 +80,7 @@ export default function LongevityView({ data, showPriorityFocus = true }) {
 
       {/* 🎯 SUGGESTIONS */}
       <div>
-        <div style={{ marginBottom: 10, fontWeight: 'bold' }}>Actions</div>
+        <div style={{ marginBottom: 10, fontWeight: 'bold' }}>Azioni Consigliate</div>
 
         {suggestions?.map((s, i) => (
           <div key={i} style={{ marginBottom: 6 }}>
