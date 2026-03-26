@@ -270,6 +270,7 @@ export default function MealBuilder({
   const [showExtraDropdown, setShowExtraDropdown] = useState(false);
   const [deepCompileLoadingIndex, setDeepCompileLoadingIndex] = useState(null);
   const [expandedAddedFoods, setExpandedAddedFoods] = useState({});
+  const [editingRecipeKey, setEditingRecipeKey] = useState(null);
 
   const mealBuilderScrollAnchorRef = useRef(null);
 
@@ -322,6 +323,7 @@ export default function MealBuilder({
     setIsGeneratingRecipe(false);
     setExtraIngredientQuery('');
     setIsAddingExtra(false);
+    setEditingRecipeKey(food.key != null && String(food.key).trim() !== '' ? String(food.key).trim() : String(food.id));
     window.setTimeout(() => {
       mealBuilderScrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
@@ -434,6 +436,7 @@ export default function MealBuilder({
     setDraftRecipe(next);
     setShowRecipeDropdown(false);
     setComplexPortionWeight(100);
+    setEditingRecipeKey(recipe.key != null ? String(recipe.key) : null);
   };
 
   const sortedSuggestions = useMemo(() => {
@@ -468,6 +471,7 @@ export default function MealBuilder({
   const handleGenerateRecipe = async () => {
     const dish = complexFoodQuery.trim();
     if (!dish) return;
+    setEditingRecipeKey(null);
     setShowRecipeDropdown(false);
     if (typeof callGeminiAPIWithRotation !== 'function') {
       alert('AI non disponibile: configura le API Key nelle impostazioni.');
@@ -652,9 +656,12 @@ export default function MealBuilder({
     const sumC = draftRecipe.reduce((a, ing) => a + (Number(ing.carb) || 0), 0);
     const sumF = draftRecipe.reduce((a, ing) => a + (Number(ing.fat) || 0), 0);
     const w = Math.max(50, Math.min(5000, Math.round(Number(complexPortionWeight)) || 100));
-    const recipeId = `recipe_${Date.now()}`;
+    const recipeId = editingRecipeKey || `recipe_${Date.now()}`;
+    const keyForRow = editingRecipeKey || recipeId;
     const recipe = {
       id: recipeId,
+      key: keyForRow,
+      isRecipe: true,
       name,
       desc: name,
       type: 'recipe',
@@ -670,17 +677,21 @@ export default function MealBuilder({
       fatTotal: (sumF * w) / 100,
       ingredients: draftRecipe.map((ing) => ({ ...ing }))
     };
+    const keyForSave = editingRecipeKey;
     setAddedFoods((prev) => [recipe, ...prev]);
     void (async () => {
       try {
-        await saveCustomRecipeToFoodDb?.({
+        const dbKey = await saveCustomRecipeToFoodDb?.({
           desc: name,
           kcal: sumK,
           prot: sumP,
           carb: sumC,
           fatTotal: sumF,
           ingredients: draftRecipe
-        });
+        }, keyForSave);
+        if (dbKey && dbKey !== recipeId) {
+          setAddedFoods((prev) => prev.map((f) => (f.id === recipeId ? { ...f, id: dbKey, key: dbKey } : f)));
+        }
       } catch (err) {
         console.error('saveCustomRecipeToFoodDb', err);
         alert('Ricetta aggiunta al pasto, ma il salvataggio nel database alimenti non è riuscito.');
@@ -698,6 +709,7 @@ export default function MealBuilder({
     setExtraSearchResults([]);
     setShowExtraDropdown(false);
     setDeepCompileLoadingIndex(null);
+    setEditingRecipeKey(null);
   };
 
   const handleCancelComplexMode = () => {
@@ -713,6 +725,7 @@ export default function MealBuilder({
     setExtraSearchResults([]);
     setShowExtraDropdown(false);
     setDeepCompileLoadingIndex(null);
+    setEditingRecipeKey(null);
   };
 
   const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (typeof v === 'string' ? Number(v) : v) != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
@@ -907,6 +920,7 @@ export default function MealBuilder({
                     type="button"
                     onClick={() => {
                       setIsComplexMode(true);
+                      setEditingRecipeKey(null);
                       setShowFoodDropdown(false);
                       setRecipeSearchResults([]);
                       setShowRecipeDropdown(false);
@@ -1485,7 +1499,7 @@ export default function MealBuilder({
                     boxSizing: 'border-box'
                   }}
                 >
-                  Conferma e Aggiungi al Pasto
+                  {editingRecipeKey ? 'Aggiorna Ricetta e Aggiungi' : 'Conferma Nuova Ricetta e Aggiungi'}
                 </button>
               </div>
             )}

@@ -2420,11 +2420,12 @@ export default function SalaComandi() {
     setAddedFoods(prev => prev.map(f => f.id === foodId ? { ...updated, id: foodId } : f));
   };
 
-  const saveCustomRecipeToFoodDb = useCallback(async ({ desc, kcal, prot, carb, fatTotal, ingredients }) => {
-    if (!userUid || !desc) return;
+  const saveCustomRecipeToFoodDb = useCallback(async ({ desc, kcal, prot, carb, fatTotal, ingredients }, existingKey) => {
+    if (!userUid || !desc) return null;
     const basePath = `users/${userUid}/tracker_data`;
     const slug = String(desc).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 40);
-    const newKey = `recipe_${Date.now()}_${slug}`;
+    const trimmed = existingKey != null && String(existingKey).trim() !== '' ? String(existingKey).trim() : '';
+    const dbKey = trimmed || `recipe_${Date.now()}_${slug}`;
     const entryPer100 = {
       desc: String(desc).trim(),
       kcal: Number(kcal) || 0,
@@ -2437,8 +2438,9 @@ export default function SalaComandi() {
     Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => {
       if (entryPer100[k] == null) entryPer100[k] = getDefaultNutrientValue(k, fullHistory);
     }));
-    await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
-    setFoodDb(prev => ({ ...(prev || {}), [newKey]: entryPer100 }));
+    await set(ref(db, `${basePath}/trackerFoodDatabase/${dbKey}`), entryPer100);
+    setFoodDb(prev => ({ ...(prev || {}), [dbKey]: entryPer100 }));
+    return dbKey;
   }, [userUid, db, fullHistory]);
 
   const saveFoodEntryPer100ToFoodDb = useCallback(async (entry) => {
