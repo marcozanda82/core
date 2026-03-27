@@ -296,6 +296,7 @@ export default function SalaComandi() {
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
+  const [activeBottomTab, setActiveBottomTab] = useState('oggi');
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
   const [isMealBuilderOpen, setIsMealBuilderOpen] = useState(false);
@@ -4696,7 +4697,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     );
   } else {
     salaContent = (
-    <div style={{ backgroundColor: isSimulationMode ? '#1a1625' : '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: '65px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+    <div style={{ backgroundColor: isSimulationMode ? '#1a1625' : '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: 0, fontFamily: 'sans-serif', overflow: 'hidden' }}>
       
       <style>
         {`
@@ -5107,6 +5108,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         )}
 
+      {activeBottomTab === 'oggi' && (
+      <div style={{ paddingBottom: '90px' }}>
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato */}
       <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(8px, 1vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
@@ -5764,8 +5767,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
 
-      {/* Barra trigger AI persistente (fixed in fondo) - Apre la chat reale */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: 'max(12px, env(safe-area-inset-bottom))', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid #222', zIndex: 90 }}>
+      {/* Barra trigger AI + FAB: sopra la bottom navigation (solo tab Oggi) */}
+      <div style={{ position: 'fixed', bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))', left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: '12px', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid #222', zIndex: 9998, boxSizing: 'border-box' }}>
         <div
           onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
           style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '12px 20px', border: '1px solid #333', cursor: 'pointer' }}
@@ -7255,6 +7258,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         </div>
       )}
+      </div>
+      )}
+
+      {activeBottomTab === 'analisi' && (
+        <div style={{ padding: '20px', paddingBottom: '90px', textAlign: 'center' }}>
+          <h2 style={{ color: '#fff' }}>📊 Laboratorio Analisi</h2>
+          <p style={{ color: '#888', marginTop: '12px' }}>Qui sposteremo i grafici storici e il report a stella.</p>
+        </div>
+      )}
+      {activeBottomTab === 'longevita' && (
+        <div style={{ padding: '20px', paddingBottom: '90px', textAlign: 'center' }}>
+          <h2 style={{ color: '#fff' }}>🧬 Longevità e Statistiche</h2>
+          <p style={{ color: '#888', marginTop: '12px' }}>Qui costruiremo l&apos;Età Proiettata e i trend a lungo termine.</p>
+        </div>
+      )}
+      {activeBottomTab === 'menu' && (
+        <div style={{ padding: '20px', paddingBottom: '90px', textAlign: 'center' }}>
+          <h2 style={{ color: '#fff' }}>⚙️ Impostazioni</h2>
+          <p style={{ color: '#888', marginTop: '12px' }}>Profilo, Kentu AI, Database Alimenti.</p>
+        </div>
+      )}
+
       {showProfile && (
         <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.9)', zIndex: 10000, overflowY: 'auto', padding: '20px' }}>
           <div style={{ background: '#1e1e1e', padding: '30px', borderRadius: '16px', maxWidth: '600px', margin: '0 auto', color: '#fff' }}>
@@ -8458,13 +8483,63 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {/* Toast Undo: fisso in basso al centro */}
       {showUndoToast && (
-        <div style={{ position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)', zIndex: 10001, display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px', background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+        <div style={{ position: 'fixed', bottom: 'calc(80px + 75px + env(safe-area-inset-bottom, 0px))', left: '50%', transform: 'translateX(-50%)', zIndex: 10001, display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px', background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
           <span style={{ color: '#e0e0e0', fontSize: '0.9rem' }}>Orario modificato</span>
           <button type="button" onClick={handleUndo} style={{ padding: '8px 16px', fontSize: '0.8rem', fontWeight: 'bold', background: 'rgba(0, 229, 255, 0.15)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>
             ANNULLA
           </button>
         </div>
       )}
+
+      <nav
+        aria-label="Navigazione principale"
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '75px',
+          background: 'rgba(20, 20, 22, 0.90)',
+          backdropFilter: 'blur(15px)',
+          WebkitBackdropFilter: 'blur(15px)',
+          borderTop: '1px solid #333',
+          display: 'flex',
+          justifyContent: 'space-around',
+          alignItems: 'center',
+          zIndex: 9999,
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          boxSizing: 'border-box',
+        }}
+      >
+        {[
+          { id: 'oggi', label: 'Oggi', icon: '🏠' },
+          { id: 'analisi', label: 'Analisi', icon: '📊' },
+          { id: 'longevita', label: 'Longevità', icon: '🧬' },
+          { id: 'menu', label: 'Menu', icon: '⚙️' },
+        ].map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setActiveBottomTab(t.id)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '4px',
+              cursor: 'pointer',
+              width: '25%',
+              color: activeBottomTab === t.id ? '#00e5ff' : '#888',
+              fontSize: '0.7rem',
+              padding: '4px 0',
+            }}
+          >
+            <span style={{ fontSize: '1.25rem', lineHeight: 1 }} aria-hidden>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
   }
