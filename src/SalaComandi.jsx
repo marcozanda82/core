@@ -962,7 +962,7 @@ export default function SalaComandi() {
       const timer = setTimeout(() => centerCurrentTime(), 100);
       return () => clearTimeout(timer);
     }
-  }, [userProfile?.level, currentTrackerDate, zoomLevel, centerCurrentTime]);
+  }, [userProfile?.level, currentTrackerDate, zoomLevel, centerCurrentTime, activeBottomTab]);
 
   const handleChartTouchStart = (e) => {
     if (e.touches.length === 2) {
@@ -5126,9 +5126,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         )}
 
-      {activeBottomTab === 'oggi' && (
+      {(activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
       <div style={{ paddingBottom: '90px' }}>
-      {/* Barra Telemetria Rapida Premium - wrap attivato e centrato */}
+      {/* Barra Telemetria Rapida Premium - wrap attivato e centrato (solo tab Oggi) */}
+      {activeBottomTab === 'oggi' && (
       <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(8px, 1vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
           <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676'}`, padding: '8px 12px', borderRadius: '20px', color: ((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676', boxShadow: `0 0 10px ${((Number(totali?.omega3) ?? 0) < 1) ? 'rgba(255,85,85,0.2)' : 'rgba(0,230,118,0.1)'}`, whiteSpace: 'nowrap' }}>
@@ -5142,14 +5143,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           {(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? `🎯 Rimangono ${Math.round(dynamicDailyKcal - (totali?.kcal || 0))} kcal` : `🔥 Surplus calorico +${Math.abs(Math.round(dynamicDailyKcal - (totali?.kcal || 0)))} kcal`}
         </span>
       </div>
+      )}
 
-      {(!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
+      {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
         <div style={{ fontSize: '13px', opacity: 0.7, color: '#94a3b8', marginBottom: '6px' }}>
           {homeLongevityInsightLine}
         </div>
       ) : null}
 
-      {userProfile?.level === 'pro' && (
+      {userProfile?.level === 'pro' && (activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
       <>
       {/* Cruscotto energetico giornaliero 0-24h */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
@@ -5544,7 +5546,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       )}
 
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
-      {userProfile?.level !== 'pro' && (
+      {userProfile?.level !== 'pro' && activeBottomTab === 'oggi' && (
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'max(10px, 1.2vh)', padding: 'max(10px, 1.2vh) 14px', marginBottom: '12px', overflow: 'hidden' }}>
           {/* --- CRUSCOTTO BIOLOGICO: Anello Calorie + Box Macro Neon + Fase Metabolica --- */}
           {(() => {
@@ -5785,7 +5787,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
 
+      {activeBottomTab === 'analisi' && userProfile?.level !== 'pro' && (
+        <div style={{ padding: '24px 16px', paddingBottom: '90px', textAlign: 'center' }}>
+          <p style={{ color: '#aaa', fontSize: '0.95rem', lineHeight: 1.5 }}>
+            I grafici e la telemetria avanzata della vista Analisi sono disponibili con il livello interfaccia <strong style={{ color: '#00e5ff' }}>Pro</strong>. Apri il Menu (≡) → Profilo &amp; Target per attivarli.
+          </p>
+        </div>
+      )}
+
       {/* Barra trigger AI + FAB: sopra la bottom navigation (solo tab Oggi) */}
+      {activeBottomTab === 'oggi' && (
       <div style={{ position: 'fixed', bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))', left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: '12px', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid #222', zIndex: 9998, boxSizing: 'border-box' }}>
         <div
           onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
@@ -5796,6 +5807,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
         <button type="button" onClick={() => { setShowChoiceModal(false); setIsDrawerOpen(true); setActiveAction(null); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
       </div>
+      )}
 
       {/* --- CASSETTO AZIONI --- */}
       <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={closeDrawer}></div>
@@ -7278,13 +7290,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       )}
       </div>
       )}
-
-      {activeBottomTab === 'analisi' && (
-        <div style={{ padding: '20px', paddingBottom: '90px', textAlign: 'center' }}>
-          <h2 style={{ color: '#fff' }}>📊 Laboratorio Analisi</h2>
-          <p style={{ color: '#888', marginTop: '12px' }}>Qui sposteremo i grafici storici e il report a stella.</p>
-        </div>
-      )}
       {activeBottomTab === 'longevita' && (
         <div style={{ padding: '20px', paddingBottom: '90px', textAlign: 'center' }}>
           <h2 style={{ color: '#fff' }}>🧬 Longevità e Statistiche</h2>
@@ -8551,12 +8556,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           { id: 'oggi', label: 'Oggi', icon: '🏠' },
           { id: 'analisi', label: 'Analisi', icon: '📊' },
           { id: 'longevita', label: 'Longevità', icon: '🧬' },
-          { id: 'menu', label: 'Menu', icon: '⚙️' },
+          { id: 'menu', label: 'Menu', icon: '≡' },
         ].map((t) => (
           <button
             key={t.id}
             type="button"
-            onClick={() => (t.id === 'menu' ? setShowProfile(true) : setActiveBottomTab(t.id))}
+            onClick={() => {
+              if (t.id === 'menu') {
+                setActiveAction('menu_secondary');
+                setIsDrawerOpen(true);
+                return;
+              }
+              setActiveBottomTab(t.id);
+            }}
             style={{
               background: 'transparent',
               border: 'none',
@@ -8571,7 +8583,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               padding: '4px 0',
             }}
           >
-            <span style={{ fontSize: '1.25rem', lineHeight: 1 }} aria-hidden>{t.icon}</span>
+            <span style={{ fontSize: t.id === 'menu' ? '1.45rem' : '1.25rem', lineHeight: 1, fontWeight: t.id === 'menu' ? 700 : undefined }} aria-hidden>{t.icon}</span>
             <span>{t.label}</span>
           </button>
         ))}
