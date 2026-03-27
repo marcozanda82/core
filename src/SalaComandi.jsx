@@ -4667,6 +4667,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 activeNodesWithStack={activeNodesWithStack}
                 chartUnit={chartUnit}
                 activeAction={activeAction}
+                analysisTabActive={activeBottomTab === 'analisi'}
                 idealStrategy={idealStrategy}
                 realTotals={realTotals}
                 NODE_IMPORTANCE={NODE_IMPORTANCE}
@@ -5127,7 +5128,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         )}
 
       {(activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
-      <div style={{ paddingBottom: '90px' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: '90px', boxSizing: 'border-box', width: '100%' }}>
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato (solo tab Oggi) */}
       {activeBottomTab === 'oggi' && (
       <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(8px, 1vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
@@ -5212,7 +5213,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           </div>
           <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', transform: 'none' }}>
-            {(!activeAction || activeAction === 'home') && (
+            {(activeBottomTab === 'analisi' || !activeAction || activeAction === 'home') && (
             <div className="zoom-vertical-bar" aria-label="Controlli zoom">
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
               <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
@@ -5477,6 +5478,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}
                   activeAction={activeAction}
+                  analysisTabActive={activeBottomTab === 'analisi'}
                   idealStrategy={idealStrategy}
                   realTotals={realTotals}
                   NODE_IMPORTANCE={NODE_IMPORTANCE}

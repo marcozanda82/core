@@ -8,6 +8,7 @@ export default function TimelineNodi({
   activeNodesWithStack,
   chartUnit,
   activeAction,
+  analysisTabActive = false,
   idealStrategy,
   realTotals,
   NODE_IMPORTANCE,
@@ -35,7 +36,7 @@ export default function TimelineNodi({
             const effectiveNodeType = node.type === 'meal' ? 'meal' : node.type;
             const isImportant = NODE_IMPORTANCE?.[currentChartUnit]?.includes(effectiveNodeType);
             const importanceStyle = isImportant ? { filter: 'none', opacity: 1, zIndex: 10 } : { filter: 'grayscale(100%)', opacity: 0.35, zIndex: 1 };
-            const isNodeFocused = (!activeAction || activeAction === 'home') || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive')) || (activeAction === 'acqua' && node.type === 'water');
+            const isNodeFocused = analysisTabActive || (!activeAction || activeAction === 'home') || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive')) || (activeAction === 'acqua' && node.type === 'water');
             const isWork = node.type === 'work';
             const isCognitive = node.type === 'cognitive';
             const percent = (node.time / 24) * 100;
