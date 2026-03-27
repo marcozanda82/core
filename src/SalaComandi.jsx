@@ -271,6 +271,20 @@ function FirebaseDataLoadingLayer({ blocking }) {
   );
 }
 
+/** Età in anni interi dalla data di nascita (formato YYYY-MM-DD). */
+export function calculateAge(dobString) {
+  if (!dobString) return null;
+  const today = new Date();
+  const birthDate = new Date(dobString);
+  if (Number.isNaN(birthDate.getTime())) return null;
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+}
+
 export default function SalaComandi() {
   const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
   const isAuthenticated = !!user;
@@ -468,6 +482,7 @@ export default function SalaComandi() {
     level: 'base'
   });
   const [userTargets, setUserTargets] = useState({ ...DEFAULT_TARGETS });
+  const [birthDate, setBirthDate] = useState('');
 
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(300);
@@ -1237,7 +1252,10 @@ export default function SalaComandi() {
     get(ref(db, `users/${user.uid}/profile_targets`)).then(profileSnap => {
       if (profileSnap.exists()) {
         const data = profileSnap.val();
-        if (data.profile) setUserProfile(prev => ({ ...prev, ...data.profile }));
+        if (data.profile) {
+          setUserProfile(prev => ({ ...prev, ...data.profile }));
+          setBirthDate(typeof data.profile.birthDate === 'string' ? data.profile.birthDate : '');
+        }
         if (data.targets) setUserTargets(prev => ({ ...prev, ...data.targets }));
       }
     });
@@ -7282,6 +7300,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <h3 style={{ margin: '0 0 15px 0' }}>1. Dati Biometrici</h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                 <label style={{ display: 'block' }}>Sesso: <select value={userProfile.gender} onChange={e => setUserProfile({ ...userProfile, gender: e.target.value })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}><option value="M">Uomo</option><option value="F">Donna</option></select></label>
+                <label style={{ display: 'block' }}>Data di Nascita
+                  <input
+                    type="date"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    style={{ width: '100%', padding: '8px', marginTop: '4px', background: '#2c2c2e', border: '1px solid #444', color: '#fff', borderRadius: '8px', boxSizing: 'border-box' }}
+                  />
+                </label>
+                {calculateAge(birthDate) != null ? (
+                  <div style={{ gridColumn: '1 / -1', fontSize: '0.8rem', color: '#00e5ff', marginTop: '-4px', marginBottom: '4px' }}>
+                    Età calcolata: <strong>{calculateAge(birthDate)}</strong> anni
+                  </div>
+                ) : null}
                 <label style={{ display: 'block' }}>Età: <input type="number" min="1" max="120" inputMode="numeric" value={userProfile.age} onChange={e => setUserProfile({ ...userProfile, age: parseInt(e.target.value, 10) || 30 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
                 <label style={{ display: 'block' }}>Peso (kg): <input type="number" min="1" step="0.1" inputMode="decimal" value={userProfile.weight} onChange={e => setUserProfile({ ...userProfile, weight: parseFloat(e.target.value) || 75 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
                 <label style={{ display: 'block' }}>Altezza (cm): <input type="number" min="1" inputMode="decimal" value={userProfile.height} onChange={e => setUserProfile({ ...userProfile, height: parseFloat(e.target.value) || 175 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
@@ -7361,7 +7392,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
             <div style={{ display: 'flex', gap: '15px' }}>
               <button type="button" onClick={() => setShowProfile(false)} style={{ flex: 1, padding: '12px', background: '#444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Annulla</button>
-              <button type="button" onClick={() => saveProfileToFirebase(userProfile, userTargets)} style={{ flex: 2, padding: '12px', background: '#4caf50', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>💾 Salva Profilo</button>
+              <button
+                type="button"
+                onClick={() => {
+                  const computedAge = calculateAge(birthDate);
+                  const profilePayload = { ...userProfile, birthDate: birthDate || '' };
+                  if (computedAge != null) profilePayload.age = computedAge;
+                  setUserProfile(profilePayload);
+                  saveProfileToFirebase(profilePayload, userTargets);
+                }}
+                style={{ flex: 2, padding: '12px', background: '#4caf50', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                💾 Salva Profilo
+              </button>
             </div>
           </div>
         </div>
