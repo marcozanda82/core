@@ -7273,13 +7273,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <p style={{ color: '#888', marginTop: '12px' }}>Qui costruiremo l&apos;Età Proiettata e i trend a lungo termine.</p>
         </div>
       )}
-      {activeBottomTab === 'menu' && (
-        <div style={{ padding: '20px', paddingBottom: '90px', textAlign: 'center' }}>
-          <h2 style={{ color: '#fff' }}>⚙️ Impostazioni</h2>
-          <p style={{ color: '#888', marginTop: '12px' }}>Profilo, Kentu AI, Database Alimenti.</p>
-        </div>
-      )}
-
       {showProfile && (
         <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.9)', zIndex: 10000, overflowY: 'auto', padding: '20px' }}>
           <div style={{ background: '#1e1e1e', padding: '30px', borderRadius: '16px', maxWidth: '600px', margin: '0 auto', color: '#fff' }}>
@@ -8520,7 +8513,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <button
             key={t.id}
             type="button"
-            onClick={() => setActiveBottomTab(t.id)}
+            onClick={() => (t.id === 'menu' ? setShowProfile(true) : setActiveBottomTab(t.id))}
             style={{
               background: 'transparent',
               border: 'none',
