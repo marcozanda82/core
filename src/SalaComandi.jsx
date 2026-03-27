@@ -306,7 +306,6 @@ export default function SalaComandi() {
   const [simulationNodes, setSimulationNodes] = useState([]);
   const [isSimulationMode, setIsSimulationMode] = useState(false);
   const [simulatedLog, setSimulatedLog] = useState(null);
-  const pressTimer = useRef(null);
   const coreOsClickCount = useRef(0);
   const coreOsClickTimer = useRef(null);
   const [dailyInsights, setDailyInsights] = useState([]);
@@ -1136,20 +1135,6 @@ export default function SalaComandi() {
     setSimulationNodes(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSwitchTouchStart = () => {
-    pressTimer.current = setTimeout(() => {
-      setIsSimulationMode(true);
-      setSimulatedLog(JSON.parse(JSON.stringify(dailyLog || [])));
-    }, 1200);
-  };
-
-  const handleSwitchTouchEnd = () => {
-    if (pressTimer.current) {
-      clearTimeout(pressTimer.current);
-      pressTimer.current = null;
-    }
-  };
-
   const handleCoreOsClick = () => {
     coreOsClickCount.current += 1;
     if (coreOsClickCount.current === 3) {
@@ -1932,17 +1917,6 @@ export default function SalaComandi() {
     if (!trendModalMetric) return [];
     return computeEvaluationTrend(fullHistory, trendModalMetric, userTargets, trendDays);
   }, [fullHistory, trendModalMetric, userTargets, trendDays]);
-
-  const yesterdayReportReady = useMemo(() => {
-    if (currentTrackerDate !== getTodayString() || !fullHistory || typeof fullHistory !== 'object') return false;
-    const yesterday = new Date(getTodayString() + 'T12:00:00');
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().slice(0, 10);
-    const log = getLogFromStoricoTree(fullHistory, yesterdayStr) || [];
-    const hasFood = log.some(e => e.type === 'food' || e.type === 'recipe');
-    const hasSleepOrWorkout = log.some(e => e.type === 'sleep' || e.type === 'workout');
-    return hasFood || hasSleepOrWorkout;
-  }, [currentTrackerDate, fullHistory]);
 
   const openDrawer = () => { setActiveAction(null); setIsDrawerOpen(true); };
   const closeDrawer = () => {
@@ -4994,76 +4968,66 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div className="delete-text">RILASCIA PER ELIMINARE</div>
       </div>
 
-      {/* HEADER SUPERIORE — logo KentuOS centrato; controlli ai lati */}
-        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', marginBottom: '5px', gap: '10px', minHeight: 58 }}>
-          {/* SINISTRA: Longevità + Logout */}
-          <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', flex: 1, minWidth: 0, gap: '10px', zIndex: 2 }}>
-            {longevityData && (
-              <button
-                type="button"
-                onClick={() => setShowLongevityModal(true)}
-                style={{ background: 'transparent', border: `1px solid ${longevityData.color}50`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: `0 0 10px ${longevityData.color}20`, flexShrink: 0 }}
-                title="Healthspan & Longevità"
-              >
-                <span style={{ fontSize: '1.2rem' }}>🧬</span>
-              </button>
-            )}
+      {/* Header compatto: logo | data | energia (spazio per futura bottom bar) */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '6px 4px 8px', marginBottom: '8px', gap: '6px', boxSizing: 'border-box' }}>
+          <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
             <button
               type="button"
-              onClick={() => auth.signOut()}
-              title="Esci"
-              aria-label="Esci"
-              style={{ background: 'transparent', border: '1px solid #333', borderRadius: '8px', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#666', transition: 'all 0.2s', flexShrink: 0 }}
+              onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '2px 4px',
+                margin: 0,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-start',
+                maxWidth: 'min(46vw, 168px)',
+              }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
+              <img
+                src="/nuovo%20logo%20trasparente2.png"
+                alt="Kentuos Logo"
+                decoding="async"
+                draggable={false}
+                style={{
+                  maxHeight: 52,
+                  height: 'auto',
+                  width: 'auto',
+                  maxWidth: '100%',
+                  objectFit: 'contain',
+                  objectPosition: 'left center',
+                  display: 'block',
+                }}
+              />
             </button>
           </div>
-          <button
-            type="button"
-            onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }}
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              transform: 'translate(-50%, -50%)',
-              zIndex: 15,
-              background: 'none',
-              border: 'none',
-              padding: '4px 10px',
-              margin: 0,
-              cursor: 'pointer',
-              font: 'inherit',
-              color: 'inherit',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              maxWidth: 'min(300px, 72vw)',
-            }}
-          >
-            <img
-              src="/nuovo%20logo%20trasparente2.png"
-              alt="Kentuos Logo"
-              decoding="async"
-              draggable={false}
-              style={{
-                maxHeight: 60,
-                height: 'auto',
-                width: 'auto',
-                maxWidth: 'min(300px, 72vw)',
-                objectFit: 'contain',
-                objectPosition: 'center',
-                display: 'block',
-                transform: 'translateZ(0)',
-              }}
-            />
-          </button>
-
-          {/* DESTRA: allarme SNC compatto, Widget Energia */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', flexShrink: 0, flex: 1, minWidth: 0, zIndex: 2 }}>
+          <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
+              <button
+                type="button"
+                onClick={() => changeDate(-1)}
+                style={{ background: 'none', border: 'none', color: '#00e5ff', fontSize: '1.1rem', padding: '6px', flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                aria-label="Giorno precedente"
+              >
+                ◀
+              </button>
+              <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap', pointerEvents: 'none', padding: '0 4px', textAlign: 'center' }}>
+                {currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
+              </span>
+              <button
+                type="button"
+                onClick={() => changeDate(1)}
+                disabled={currentTrackerDate === getTodayString()}
+                style={{ background: 'none', border: 'none', color: '#00e5ff', fontSize: '1.1rem', padding: '6px', flexShrink: 0, cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, display: 'flex', alignItems: 'center' }}
+                aria-label="Giorno successivo"
+              >
+                ▶
+              </button>
+            </div>
+          </div>
+          <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '6px' }}>
             {sncStressLevel > 65 && (
               <button
                 type="button"
@@ -5073,39 +5037,42 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  fontSize: '1.2rem',
+                  fontSize: '1.15rem',
                   cursor: 'pointer',
-                  padding: '5px',
+                  padding: '4px',
                   lineHeight: 1,
-                  animation: sncStressLevel >= 85 ? 'pulseDot 1.5s infinite ease-in-out' : 'none'
+                  animation: sncStressLevel >= 85 ? 'pulseDot 1.5s infinite ease-in-out' : 'none',
+                  flexShrink: 0,
                 }}
               >
                 {sncStressLevel >= 85 ? '⚠️' : '⚡'}
               </button>
             )}
-            {/* Widget Energia Biologica (Arco) */}
-            <div 
+            <div
               onClick={() => setShowEnergyPopup(true)}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer', padding: '4px 8px', borderRadius: '8px', transition: 'background 0.2s' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowEnergyPopup(true); } }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer', padding: '2px 4px', borderRadius: '8px', transition: 'background 0.2s', flexShrink: 0 }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             >
-              <div style={{ position: 'relative', width: '56px', height: '28px' }}>
+              <div style={{ position: 'relative', width: '52px', height: '26px' }}>
                 <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
                   <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
                   <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData?.color || '#00e5ff'} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - ((bodyBatteryData?.level || 0) / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
                 </svg>
                 <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translate(-50%, -100%)', paddingBottom: '2px' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: bodyBatteryData?.color || '#00e5ff', textShadow: `0 0 10px ${bodyBatteryData?.color || '#00e5ff'}80` }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: bodyBatteryData?.color || '#00e5ff', textShadow: `0 0 10px ${bodyBatteryData?.color || '#00e5ff'}80` }}>
                     {bodyBatteryData?.level || 0}%
                   </span>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
                 {(energyIntervention || (energyExplanation && energyExplanation.some(c => c.direction === 'down'))) && (
-                  <span style={{ fontSize: '0.7rem', filter: 'drop-shadow(0 0 5px rgba(255,152,0,0.8))' }}>⚠️</span>
+                  <span style={{ fontSize: '0.65rem', filter: 'drop-shadow(0 0 5px rgba(255,152,0,0.8))' }}>⚠️</span>
                 )}
-                <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#00e5ff' }}>
+                <span style={{ fontSize: '0.6rem', fontWeight: 'bold', color: '#00e5ff' }}>
                   Score: {metabolicDayScore}
                 </span>
               </div>
@@ -5140,137 +5107,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         )}
 
-        {/* BARRA DEGLI STRUMENTI: Data + Stella Report + Toggle Home/Analisi */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', width: '100%', gap: '10px', background: 'linear-gradient(145deg, #111, #0a0a0a)', padding: '6px 12px', borderRadius: '12px', border: '1px solid #222' }}>
-          
-          {/* 1. SELETTORE DATA (A sinistra, dimensioni naturali) */}
-          <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-start', maxWidth: '50%' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
-              <button
-                type="button"
-                onClick={() => changeDate(-1)}
-                style={{ background: 'none', border: 'none', color: '#00e5ff', fontSize: '1.2rem', padding: '10px', flexShrink: 0, cursor: 'pointer', zIndex: 10, display: 'flex', alignItems: 'center' }}
-              >
-                ◀
-              </button>
-              <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem', whiteSpace: 'nowrap', pointerEvents: 'none', padding: '0 5px' }}>
-                {currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
-              </span>
-              <button
-                type="button"
-                onClick={() => changeDate(1)}
-                disabled={currentTrackerDate === getTodayString()}
-                style={{ background: 'none', border: 'none', color: '#00e5ff', fontSize: '1.2rem', padding: '10px', flexShrink: 0, cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, zIndex: 10, display: 'flex', alignItems: 'center' }}
-              >
-                ▶
-              </button>
-            </div>
-          </div>
-
-          {/* 2. STELLA / REPORT (Al centro esatto dello spazio rimanente) */}
-          <div style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center' }}>
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => {
-                const isToday = currentTrackerDate === getTodayString();
-                if (isToday) {
-                  alert('Il report non è pronto, perché mancano i dati di tutta la giornata.');
-                  return;
-                }
-                if (dailyReport?.ready) {
-                  setShowReportModal(true);
-                  setReportViewedDates(prev => {
-                    const newState = { ...prev, [currentTrackerDate]: true };
-                    try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {}
-                    return newState;
-                  });
-                } else {
-                  changeDate(-1);
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  const isToday = currentTrackerDate === getTodayString();
-                  if (isToday) {
-                    alert('Il report non è pronto, perché mancano i dati di tutta la giornata.');
-                    return;
-                  }
-                  if (dailyReport?.ready) {
-                    setShowReportModal(true);
-                    setReportViewedDates(prev => { const newState = { ...prev, [currentTrackerDate]: true }; try { localStorage.setItem('reportViewedDates', JSON.stringify(newState)); } catch (_) {} return newState; });
-                  } else changeDate(-1);
-                }
-              }}
-              title={dailyReport?.ready ? 'Report giornaliero a 5 stelle' : currentTrackerDate === getTodayString() && yesterdayReportReady ? 'Report di ieri pronto: vai al giorno precedente' : 'Disponibile solo per giornate passate con dati'}
-              style={{
-                position: 'relative',
-                fontSize: '1.4rem',
-                cursor: 'pointer',
-                color: dailyReport?.ready ? '#ffd700' : '#444',
-                textShadow: dailyReport?.ready ? '0 0 10px rgba(255, 215, 0, 0.6)' : 'none',
-                transition: 'all 0.3s ease',
-                lineHeight: 1,
-                padding: '2px 4px'
-              }}
-            >
-              ★
-              {currentTrackerDate === getTodayString() && yesterdayReportReady && (() => {
-                const y = new Date(getTodayString() + 'T12:00:00');
-                y.setDate(y.getDate() - 1);
-                const yesterdayStr = y.toISOString().slice(0, 10);
-                return !reportViewedDates[yesterdayStr];
-              })() && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '-2px',
-                    right: '-4px',
-                    width: '10px',
-                    height: '10px',
-                    background: '#ff4444',
-                    borderRadius: '50%',
-                    border: '2px solid #000',
-                    boxShadow: '0 0 5px #ff4444'
-                  }}
-                  aria-hidden
-                />
-              )}
-            </div>
-          </div>
-
-          {/* 3. SWITCH HOME/ANALISI (A destra, dimensioni naturali) */}
-          <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end' }}>
-            <div
-              onMouseDown={handleSwitchTouchStart}
-              onMouseUp={handleSwitchTouchEnd}
-              onMouseLeave={handleSwitchTouchEnd}
-              onTouchStart={handleSwitchTouchStart}
-              onTouchEnd={handleSwitchTouchEnd}
-              onClick={(e) => {
-                e.stopPropagation();
-                const currentIsPro = userProfile?.level === 'pro';
-                setUserProfile(prev => ({ ...prev, level: currentIsPro ? 'base' : 'pro' }));
-                handleSwitchTouchEnd();
-                setIsSimulationMode(false);
-                setSimulatedLog(null);
-              }}
-              style={{ display: 'flex', background: '#222', borderRadius: '12px', padding: '4px', marginBottom: 0, userSelect: 'none', cursor: 'pointer' }}
-            >
-              <div style={{ flex: 1, padding: '8px', background: !isSimulationMode && userProfile?.level !== 'pro' ? '#333' : 'transparent', color: !isSimulationMode && userProfile?.level !== 'pro' ? '#00e5ff' : '#888', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                🏠 Home
-              </div>
-              <div style={{ flex: 1, padding: '8px', background: !isSimulationMode && userProfile?.level === 'pro' ? '#333' : 'transparent', color: !isSimulationMode && userProfile?.level === 'pro' ? '#00e5ff' : '#888', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.75rem', pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                📊 Analisi
-              </div>
-            </div>
-          </div>
-
-        </div>
-
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato */}
-      <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(12px, 1.5vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
+      <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(8px, 1vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
           <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676'}`, padding: '8px 12px', borderRadius: '20px', color: ((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676', boxShadow: `0 0 10px ${((Number(totali?.omega3) ?? 0) < 1) ? 'rgba(255,85,85,0.2)' : 'rgba(0,230,118,0.1)'}`, whiteSpace: 'nowrap' }}>
             {((Number(totali?.omega3) ?? 0) < 1) ? '🔴 Carenza Micro' : '🟢 Micro OK'}
@@ -7485,6 +7323,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
             </div>
 
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
+              {longevityData && (
+                <button
+                  type="button"
+                  onClick={() => { setShowProfile(false); setShowLongevityModal(true); }}
+                  style={{ flex: '1 1 140px', padding: '10px 12px', background: 'transparent', border: `1px solid ${longevityData.color}55`, color: longevityData.color, borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                >
+                  🧬 Longevità
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => auth.signOut()}
+                style={{ flex: '1 1 140px', padding: '10px 12px', background: 'rgba(244,67,54,0.12)', border: '1px solid rgba(244,67,54,0.45)', color: '#f87171', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+              >
+                Esci
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: '15px' }}>
               <button type="button" onClick={() => setShowProfile(false)} style={{ flex: 1, padding: '12px', background: '#444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Annulla</button>
               <button type="button" onClick={() => saveProfileToFirebase(userProfile, userTargets)} style={{ flex: 2, padding: '12px', background: '#4caf50', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>💾 Salva Profilo</button>
