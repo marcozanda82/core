@@ -3914,6 +3914,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     [longevityEngineScore]
   );
 
+  const userAge = calculateAge(birthDate);
+
   const homeLongevityInsightLine = useMemo(() => {
     const t = longevityEngineScore?.priorityFocus?.title;
     if (typeof t === 'string' && t.trim()) return t.trim();
@@ -7285,9 +7287,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
       )}
       {activeBottomTab === 'longevita' && (
-        <div style={{ padding: '20px', paddingBottom: '90px', textAlign: 'center' }}>
-          <h2 style={{ color: '#fff' }}>🧬 Longevità e Statistiche</h2>
-          <p style={{ color: '#888', marginTop: '12px' }}>Qui costruiremo l&apos;Età Proiettata e i trend a lungo termine.</p>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: '90px', boxSizing: 'border-box', width: '100%' }}>
+          <LongevityView data={longevityData} showPriorityFocus userAge={userAge} />
         </div>
       )}
       {showProfile && (
@@ -8455,7 +8456,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <HomeView longevity={longevityEngineScore} explanation={longevityExplanation} />
 
             <div style={{ marginBottom: '32px', color: '#e8e8e8' }}>
-              <LongevityView data={longevityEngineScore} showPriorityFocus={false} />
+              <LongevityView data={longevityEngineScore} showPriorityFocus={false} userAge={userAge} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>
