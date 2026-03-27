@@ -956,9 +956,9 @@ export default function SalaComandi() {
     return () => clearTimeout(timer);
   }, [currentTime, zoomLevel, centerCurrentTime]);
 
-  // Forza la centratura del grafico quando si apre la vista Analisi (Pro)
+  // Forza la centratura del grafico su tab Analisi o con interfaccia Pro su Oggi
   useEffect(() => {
-    if (userProfile?.level === 'pro') {
+    if (activeBottomTab === 'analisi' || userProfile?.level === 'pro') {
       const timer = setTimeout(() => centerCurrentTime(), 100);
       return () => clearTimeout(timer);
     }
@@ -5151,7 +5151,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       ) : null}
 
-      {userProfile?.level === 'pro' && (activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
+      {(activeBottomTab === 'analisi' || (activeBottomTab === 'oggi' && userProfile?.level === 'pro')) && (
       <>
       {/* Cruscotto energetico giornaliero 0-24h */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
@@ -5784,14 +5784,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
             );
           })()}
-        </div>
-      )}
-
-      {activeBottomTab === 'analisi' && userProfile?.level !== 'pro' && (
-        <div style={{ padding: '24px 16px', paddingBottom: '90px', textAlign: 'center' }}>
-          <p style={{ color: '#aaa', fontSize: '0.95rem', lineHeight: 1.5 }}>
-            I grafici e la telemetria avanzata della vista Analisi sono disponibili con il livello interfaccia <strong style={{ color: '#00e5ff' }}>Pro</strong>. Apri il Menu (≡) → Profilo &amp; Target per attivarli.
-          </p>
         </div>
       )}
 
