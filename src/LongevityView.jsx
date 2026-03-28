@@ -4,7 +4,17 @@ import {
   calculateConsolidatedAverageScore as calculateAverageScore,
   calculateProjectedAge,
 } from './longevityStats';
-import { getTodayString, computeDayEvaluations } from './coreEngine';
+import { computeTotali } from './useBiochimico';
+import {
+  getTodayString,
+  computeDayEvaluations,
+  addDays,
+  TRACKER_STORICO_KEY,
+  getLogFromStoricoTree,
+  computeRiskMatrix,
+  getSlotKey,
+  getEquivalentMealTypes,
+} from './coreEngine';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -39,6 +49,179 @@ const DAY_STAR_EVAL_ROWS = [
   { key: 'neuro', label: 'Recupero Neurologico', emoji: '🧠' },
   { key: 'fast', label: 'Pulizia Cellulare (Digiuno)', emoji: '🕐' },
 ];
+
+const SECTION_CARD = {
+  background: '#111',
+  padding: 16,
+  borderRadius: 12,
+  marginBottom: 24,
+  border: '1px solid #333',
+};
+
+const STAR_REPORT_FROZEN_TODAY_MSG =
+  'Il report a stelle sarà disponibile da domani mattina, a giornata conclusa, per garantire l\'accuratezza dei dati.';
+
+const PILLAR_KEYS = ['metabolic', 'cardio', 'inflammatory', 'neuro'];
+
+function combinedDayLog(trackerData, dateStr) {
+  if (!trackerData || !dateStr) return [];
+  const log = getLogFromStoricoTree(trackerData, dateStr) || [];
+  const node = trackerData[TRACKER_STORICO_KEY(dateStr)];
+  const manual = Array.isArray(node?.manualNodes) ? node.manualNodes : [];
+  return [...log, ...manual];
+}
+
+function dayLogQualifiesForStarEval(L) {
+  const foods = L.filter((e) => e.type === 'food' || e.type === 'recipe');
+  return foods.length > 0 || L.some((e) => e.type === 'sleep' || e.type === 'workout');
+}
+
+function collectDayLogsInWindow(trackerData, anchorDate, timeWindow) {
+  const out = [];
+  const tw = Math.max(1, Math.min(366, Number(timeWindow) || 1));
+  for (let i = 1; i <= tw; i++) {
+    const dStr = addDays(anchorDate, -i);
+    const L = combinedDayLog(trackerData, dStr);
+    if (dayLogQualifiesForStarEval(L)) out.push(L);
+  }
+  return out;
+}
+
+/**
+ * Media nutrizionale/biochimica su più giorni → un log sintetico per una sola chiamata a computeDayEvaluations.
+ * Un solo giorno valido: restituisce il log reale.
+ */
+function buildMediatedVirtualLog(dayLogs) {
+  if (!dayLogs.length) return null;
+  if (dayLogs.length === 1) return dayLogs[0];
+
+  const n = dayLogs.length;
+  let sumP = 0;
+  let sumK = 0;
+  let sumC = 0;
+  let hpSum = 0;
+  let dChoSum = 0;
+  let nSleep = 0;
+  let sumSleep = 0;
+  let anyStrength = false;
+  let anyLateCaffeine = false;
+  let anyWorkout = false;
+  let sumFirst = 0;
+  let sumLast = 0;
+  let nWithFoods = 0;
+
+  for (const L of dayLogs) {
+    const t = computeTotali(L);
+    sumP += t.prot ?? 0;
+    sumK += t.kcal ?? 0;
+    sumC += t.carb ?? 0;
+
+    const foods = L.filter((e) => e.type === 'food');
+    const bySlot = {};
+    foods.forEach((f) => {
+      const slot = getSlotKey(f) || f.mealType || 'other';
+      bySlot[slot] = (bySlot[slot] || 0) + (Number(f.prot ?? f.pro) || 0);
+    });
+    hpSum += Object.values(bySlot).filter((x) => x >= 20).length;
+
+    const cenaEq = getEquivalentMealTypes('cena');
+    dChoSum += foods
+      .filter((f) => cenaEq.includes(f.mealType))
+      .reduce((acc, item) => acc + (Number(item.carb ?? item.cho) || 0), 0);
+
+    const sleepEntry = L.find((e) => e.type === 'sleep');
+    if (sleepEntry) {
+      sumSleep += sleepEntry.duration ?? sleepEntry.hours ?? 0;
+      nSleep++;
+    }
+
+    if (
+      L.some((x) => {
+        if (x.type !== 'workout') return false;
+        const sub = String(x.subType ?? x.workoutType ?? '').toLowerCase();
+        return sub === 'pesi' || sub === 'hiit';
+      })
+    ) {
+      anyStrength = true;
+    }
+    if (L.some((x) => x.type === 'workout')) anyWorkout = true;
+    if (L.some((x) => x.type === 'stimulant' && parseFloat(x.time ?? x.mealTime ?? 0) >= 16)) {
+      anyLateCaffeine = true;
+    }
+
+    let firstMealTime = 24;
+    let lastMealTime = 0;
+    foods.forEach((f) => {
+      const tt = parseFloat(f.mealTime ?? f.time ?? 12);
+      if (!Number.isNaN(tt)) {
+        firstMealTime = Math.min(firstMealTime, tt);
+        lastMealTime = Math.max(lastMealTime, tt);
+      }
+    });
+    if (foods.length === 0) {
+      sumFirst += 12;
+      sumLast += 12;
+    } else {
+      sumFirst += firstMealTime;
+      sumLast += lastMealTime;
+    }
+    nWithFoods++;
+  }
+
+  const avgP = sumP / n;
+  const avgK = sumK / n;
+  const avgC = sumC / n;
+  const avgDinnerCho = dChoSum / n;
+  const avgSleep = nSleep ? sumSleep / nSleep : 0;
+  const avgFirst = sumFirst / nWithFoods;
+  const avgLast = sumLast / nWithFoods;
+  const targetHi = Math.max(0, Math.min(4, Math.round(hpSum / n)));
+
+  const mealTypes = ['colazione', 'pranzo', 'spuntino', 'cena'];
+  const span = Math.max(0.5, avgLast - avgFirst);
+  const step = span / 3;
+  const times = [avgFirst, avgFirst + step, avgFirst + 2 * step, avgLast].map((x) =>
+    Math.min(23.99, Math.max(0, x))
+  );
+
+  let slotProt = [avgP / 4, avgP / 4, avgP / 4, avgP / 4];
+  let hi = slotProt.filter((x) => x >= 20).length;
+  for (let guard = 0; guard < 40 && hi < targetHi && avgP > 0; guard++) {
+    const idx = slotProt.indexOf(Math.min(...slotProt));
+    slotProt[idx] += 4;
+    const s = slotProt.reduce((a, b) => a + b, 0);
+    const scale = avgP / s;
+    slotProt = slotProt.map((x) => x * scale);
+    hi = slotProt.filter((x) => x >= 20).length;
+  }
+
+  const remCarb = Math.max(0, avgC - avgDinnerCho);
+  const otherCarb = remCarb / 3;
+
+  const virt = [];
+  mealTypes.forEach((mealType, i) => {
+    virt.push({
+      type: 'food',
+      mealType,
+      mealTime: times[i],
+      prot: slotProt[i],
+      carb: mealType === 'cena' ? avgDinnerCho : otherCarb,
+      kcal: avgK / 4,
+    });
+  });
+  if (avgSleep > 0) {
+    virt.push({ type: 'sleep', duration: avgSleep, hours: avgSleep });
+  }
+  if (anyStrength) {
+    virt.push({ type: 'workout', subType: 'pesi' });
+  } else if (anyWorkout) {
+    virt.push({ type: 'workout', subType: 'cardio' });
+  }
+  if (anyLateCaffeine) {
+    virt.push({ type: 'stimulant', time: 17, mealTime: 17 });
+  }
+  return virt;
+}
 
 function formatAxisDate(entry) {
   const ts = Number(entry?.timestamp);
@@ -204,12 +387,9 @@ export default function LongevityView({
   bodyMetricsHistory = [],
   scoreHistory = [],
   periodAnchorDate,
-  /** Log della giornata visualizzata (es. activeLog) per computeDayEvaluations */
-  logForDayEvaluations = null,
+  /** Albero storico Firebase (tracker_data) per pilastri e log mediato sul periodo */
+  fullHistory = null,
   userTargets = null,
-  /** Punti orari simulazione energia (idratazione) — stesso uso di dailyReportDisplay in SalaComandi */
-  energyChartData = null,
-  isWaterHydrationAutoPilot = false,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const timeOptions = [
@@ -239,33 +419,43 @@ export default function LongevityView({
       ? calculateProjectedAge(userAge, averageScore)
       : null;
 
-  const dayStarReportDisplay = useMemo(() => {
-    const log = logForDayEvaluations;
-    if (!log || !Array.isArray(log)) return null;
-    const foods = log.filter((e) => e.type === 'food' || e.type === 'recipe');
-    if (foods.length === 0 && !log.some((e) => e.type === 'sleep' || e.type === 'workout')) {
-      return null;
+  /** Pilastri matrice rischi: media sui giorni del periodo (stessa finestra dell’età proiettata). */
+  const pillarBreakdownEntries = useMemo(() => {
+    if (!fullHistory || !userTargets) return null;
+    const sums = { metabolic: 0, cardio: 0, inflammatory: 0, neuro: 0 };
+    let count = 0;
+    const tw = Math.max(1, Math.min(366, Number(timeWindow) || 1));
+    for (let i = 1; i <= tw; i++) {
+      const dStr = addDays(anchorDate, -i);
+      const L = combinedDayLog(fullHistory, dStr);
+      if (!dayLogQualifiesForStarEval(L)) continue;
+      const m = computeRiskMatrix(fullHistory, userTargets, 1, addDays(dStr, 1));
+      if (!m) continue;
+      PILLAR_KEYS.forEach((k) => {
+        sums[k] += m[k]?.score ?? 0;
+      });
+      count++;
     }
-    const dailyReport = computeDayEvaluations(log, userTargets);
-    if (!dailyReport?.ready) return null;
+    if (count === 0) return null;
+    return PILLAR_KEYS.map((key) => [key, Math.max(0, 100 - sums[key] / count)]);
+  }, [fullHistory, userTargets, anchorDate, timeWindow]);
 
-    const neuroVal = dailyReport.neuro;
-    const neuroScore = typeof neuroVal === 'object' ? neuroVal.score : neuroVal;
-    const neuroReasonBase = typeof neuroVal === 'object' ? neuroVal.reason : '';
-    const chartData = energyChartData;
-    if (!chartData || chartData.length === 0) return dailyReport;
-    const minIdr = Math.min(...chartData.map((p) => p.idratazione ?? 100));
-    const neuroMalus = !isWaterHydrationAutoPilot && minIdr < 45 ? 1 : 0;
-    const neuroReason = neuroMalus
-      ? (neuroReasonBase
-        ? `${neuroReasonBase} DISIDRATAZIONE: Il cervello ha lavorato in condizioni di stress osmotico.`
-        : 'DISIDRATAZIONE: Il cervello ha lavorato in condizioni di stress osmotico.')
-      : neuroReasonBase;
-    return {
-      ...dailyReport,
-      neuro: { score: Math.max(0, neuroScore - neuroMalus), reason: neuroReason },
-    };
-  }, [logForDayEvaluations, userTargets, energyChartData, isWaterHydrationAutoPilot]);
+  /** Log mediato (o giorno unico) per una sola computeDayEvaluations sul periodo. */
+  const mediatedStarLog = useMemo(() => {
+    if (!fullHistory || !userTargets) return null;
+    const logs = collectDayLogsInWindow(fullHistory, anchorDate, timeWindow);
+    return buildMediatedVirtualLog(logs);
+  }, [fullHistory, userTargets, anchorDate, timeWindow]);
+
+  /** Report a stelle: congelato se anchor è oggi; altrimenti periodo allineato al timeWindow. */
+  const dayStarReportDisplay = useMemo(() => {
+    if (anchorDate === getTodayString()) return null;
+    if (!mediatedStarLog || mediatedStarLog.length === 0) return null;
+    const dailyReport = computeDayEvaluations(mediatedStarLog, userTargets);
+    return dailyReport?.ready ? dailyReport : null;
+  }, [anchorDate, mediatedStarLog, userTargets]);
+
+  const isStarReportFrozenToday = anchorDate === getTodayString();
 
   const { deltaAge } = useMemo(() => {
     if (!data || typeof userAge !== 'number' || Number.isNaN(userAge)) {
@@ -294,20 +484,26 @@ export default function LongevityView({
 
   const { breakdown, drivers, suggestions, priorityFocus } = data;
   const hasEngineBreakdown = breakdown && typeof breakdown === 'object' && breakdown.energia !== undefined;
-  const breakdownEntries = hasEngineBreakdown
+  const fallbackBreakdownEntries = hasEngineBreakdown
     ? Object.entries(breakdown)
     : data.metabolic && data.cardio && data.inflammatory && data.neuro
-      ? ['metabolic', 'cardio', 'inflammatory', 'neuro'].map((key) => [
-          key,
-          Math.max(0, 100 - (data[key]?.score ?? 50)),
-        ])
+      ? PILLAR_KEYS.map((key) => [key, Math.max(0, 100 - (data[key]?.score ?? 50))])
       : [];
+  const breakdownEntries = pillarBreakdownEntries ?? fallbackBreakdownEntries;
+
+  const hasInsightsBlock =
+    (showPriorityFocus && priorityFocus) ||
+    (drivers && drivers.length > 0) ||
+    (suggestions && suggestions.length > 0);
 
   return (
     <div style={{ padding: 20, maxWidth: 600, margin: '0 auto' }}>
 
-      {/* Cruscotto: Età proiettata o fallback */}
-      <div style={{ textAlign: 'center', marginBottom: 30 }}>
+      {/* 1. Proiezione età + selettore temporale */}
+      <div style={{ ...SECTION_CARD, textAlign: 'center' }}>
+        <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', marginBottom: 14 }}>
+          Età proiettata
+        </div>
         {hasUserAge && averageScore == null ? (
           <>
             <div
@@ -382,8 +578,9 @@ export default function LongevityView({
               Anni di Età Proiettata
             </div>
             <div style={{ fontSize: '0.9rem', opacity: 0.6, marginTop: 10, color: '#a3a3a3' }}>
-              Punteggio biochimico
-              {timeWindow > 1 ? ' (media inerzia temporale)' : ''}: {averageScore} / 100
+              Punteggio longevità medio (
+              {timeWindow > 1 ? `ultimi ${timeWindow} giorni` : 'ieri'}
+              , consolidato, oggi escluso): {averageScore != null ? `${averageScore} / 100` : '—'}
             </div>
             <div
               role="tablist"
@@ -456,20 +653,91 @@ export default function LongevityView({
         )}
       </div>
 
-      {/* Trend composizione corporea */}
-      <div
-        className="chart-card"
-        style={{
-          background: '#111',
-          padding: 16,
-          borderRadius: 12,
-          marginBottom: 24,
-          border: '1px solid #333',
-        }}
-      >
+      {/* 2. Dettaglio parametri (pilastri) */}
+      {breakdownEntries.length > 0 && (
+        <div style={SECTION_CARD}>
+          <div style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: 6, color: '#e5e5e5' }}>
+            Dettaglio parametri
+          </div>
+          <div style={{ fontSize: '0.8rem', color: '#888', marginBottom: 14, lineHeight: 1.45 }}>
+            {pillarBreakdownEntries
+              ? `Media dei pilastri su ${timeWindow === 1 ? '1 giorno' : `${timeWindow} giorni`} con dati (finestra come il selettore).`
+              : 'Snapshot dal punteggio longevità corrente.'}
+            {averageScore != null ? (
+              <span style={{ display: 'block', marginTop: 6, color: '#94a3b8' }}>
+                Punteggio longevità medio stesso periodo (selettore): {averageScore}/100.
+              </span>
+            ) : null}
+          </div>
+          {breakdownEntries.map(([key, value]) => (
+            <div key={key} style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ textTransform: 'capitalize', color: '#e5e5e5' }}>
+                  {MATRIX_PILLAR_LABELS[key] || key}
+                </span>
+                <span style={{ color: '#cbd5e1' }}>{Math.round(value)}</span>
+              </div>
+              <div style={{
+                height: 6,
+                background: '#222',
+                borderRadius: 4,
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  width: `${Math.min(100, Math.max(0, value))}%`,
+                  background: getColor(value),
+                  height: '100%',
+                }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 3. Priorità, indicatori chiave, azioni consigliate */}
+      {hasInsightsBlock && (
+        <div style={SECTION_CARD}>
+          {drivers && drivers.length > 0 && (
+            <div style={{ marginBottom: suggestions?.length || (showPriorityFocus && priorityFocus) ? 16 : 0 }}>
+              <div style={{ marginBottom: 10, fontWeight: 'bold', color: '#e5e5e5' }}>Indicatori chiave</div>
+              {drivers.map((d, i) => (
+                <div key={`${d.type}-${d.key}-${i}`} style={{ marginBottom: 8, fontSize: '0.9rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+                  {d.type === 'negative' ? '⚠️' : '✅'} {d.message}
+                </div>
+              ))}
+            </div>
+          )}
+          {suggestions && suggestions.length > 0 && (
+            <div style={{ marginBottom: showPriorityFocus && priorityFocus ? 16 : 0 }}>
+              <div style={{ marginBottom: 10, fontWeight: 'bold', color: '#e5e5e5' }}>Azioni consigliate</div>
+              {suggestions.map((s, i) => (
+                <div key={i} style={{ marginBottom: 8, fontSize: '0.9rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+                  → {s}
+                </div>
+              ))}
+            </div>
+          )}
+          {showPriorityFocus && priorityFocus && (
+            <div>
+              <div style={{ fontSize: 12, opacity: 0.6, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.04em' }}>
+                PRIORITÀ DI OGGI
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 'bold', marginTop: 6, color: '#e5e5e5' }}>
+                {priorityFocus.title}
+              </div>
+              <div style={{ marginTop: 8, color: '#00e5ff', fontSize: '0.95rem' }}>
+                → {priorityFocus.action}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 4. Trend composizione corporea */}
+      <div style={SECTION_CARD}>
         <div style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: 14, color: '#e5e5e5', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span aria-hidden>⚖️</span>
-          Trend Composizione Corporea
+          Trend composizione corporea
         </div>
         {bodyMetricsHistory.length === 0 ? (
           <p style={{ margin: 0, fontSize: '0.9rem', color: '#888', lineHeight: 1.5 }}>
@@ -480,17 +748,8 @@ export default function LongevityView({
         )}
       </div>
 
-      {/* Report giornaliero a 5 stelle (stessa logica computeDayEvaluations + aggiustamento neuro del modal SalaComandi) */}
-      <div
-        className="chart-card"
-        style={{
-          background: '#111',
-          padding: 16,
-          borderRadius: 12,
-          marginBottom: 24,
-          border: '1px solid #333',
-        }}
-      >
+      {/* 5. Report a stelle (periodo = timeWindow; oggi congelato) */}
+      <div style={SECTION_CARD}>
         <div
           style={{
             fontSize: '1rem',
@@ -505,16 +764,24 @@ export default function LongevityView({
           }}
         >
           <span style={{ color: '#ffc107' }} aria-hidden>★</span>
-          Report giornaliero
+          {timeWindow > 1 ? `Valutazione media periodo (${timeWindow} giorni)` : 'Report giornaliero'}
         </div>
-        <p style={{ color: '#888', fontSize: '0.8rem', margin: '0 0 16px' }}>
-          {new Date(`${periodAnchorDate || getTodayString()}T12:00:00`).toLocaleDateString('it-IT', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-          })}
+        <p style={{ color: '#888', fontSize: '0.8rem', margin: '0 0 16px', lineHeight: 1.45 }}>
+          {isStarReportFrozenToday
+            ? `Riferimento: ${new Date(`${anchorDate}T12:00:00`).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })} (giornata in corso)`
+            : timeWindow > 1
+              ? `Media su log consolidati degli ultimi ${timeWindow} giorni con dati (fino a ieri rispetto alla data del tracker).`
+              : new Date(`${anchorDate}T12:00:00`).toLocaleDateString('it-IT', {
+                  weekday: 'long',
+                  day: 'numeric',
+                  month: 'long',
+                })}
         </p>
-        {dayStarReportDisplay ? (
+        {isStarReportFrozenToday ? (
+          <p style={{ margin: 0, fontSize: '0.9rem', color: '#94a3b8', lineHeight: 1.55 }}>
+            {STAR_REPORT_FROZEN_TODAY_MSG}
+          </p>
+        ) : dayStarReportDisplay ? (
           DAY_STAR_EVAL_ROWS.map(({ key, label, emoji }) => {
             const item = dayStarReportDisplay[key];
             const score =
@@ -577,77 +844,6 @@ export default function LongevityView({
           </p>
         )}
       </div>
-
-      {showPriorityFocus && priorityFocus && (
-        <div style={{
-          background: '#111',
-          padding: 16,
-          borderRadius: 12,
-          marginBottom: 24,
-          border: '1px solid #333',
-        }}>
-          <div style={{ fontSize: 14, opacity: 0.6 }}>PRIORITÀ DI OGGI</div>
-          <div style={{ fontSize: 18, fontWeight: 'bold', marginTop: 4 }}>
-            {priorityFocus.title}
-          </div>
-          <div style={{ marginTop: 8, color: '#00e5ff' }}>
-            → {priorityFocus.action}
-          </div>
-        </div>
-      )}
-
-      {breakdownEntries.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ marginBottom: 10, fontWeight: 'bold' }}>Dettaglio Parametri</div>
-
-          {breakdownEntries.map(([key, value]) => (
-            <div key={key} style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ textTransform: 'capitalize' }}>
-                  {MATRIX_PILLAR_LABELS[key] || key}
-                </span>
-                <span>{Math.round(value)}</span>
-              </div>
-              <div style={{
-                height: 6,
-                background: '#222',
-                borderRadius: 4,
-                overflow: 'hidden',
-              }}>
-                <div style={{
-                  width: `${Math.min(100, Math.max(0, value))}%`,
-                  background: getColor(value),
-                  height: '100%',
-                }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {drivers && drivers.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ marginBottom: 10, fontWeight: 'bold' }}>Indicatori Chiave</div>
-
-          {drivers.map((d, i) => (
-            <div key={`${d.type}-${d.key}-${i}`} style={{ marginBottom: 6 }}>
-              {d.type === 'negative' ? '⚠️' : '✅'} {d.message}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {suggestions && suggestions.length > 0 && (
-        <div>
-          <div style={{ marginBottom: 10, fontWeight: 'bold' }}>Azioni Consigliate</div>
-
-          {suggestions.map((s, i) => (
-            <div key={i} style={{ marginBottom: 6 }}>
-              → {s}
-            </div>
-          ))}
-        </div>
-      )}
 
     </div>
   );
