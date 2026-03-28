@@ -99,7 +99,7 @@ function BodyCompositionChart({ history }) {
 
     if (hasBodyFatLine) {
       datasets.push({
-        label: '% Massa grassa',
+        label: 'Massa Grassa (%)',
         data: fatData,
         borderColor: '#ff5e62',
         backgroundColor: 'transparent',
@@ -152,7 +152,17 @@ function BodyCompositionChart({ history }) {
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { display: false },
+          legend: {
+            display: true,
+            position: 'top',
+            align: 'end',
+            labels: {
+              color: 'rgba(255, 255, 255, 0.7)',
+              usePointStyle: true,
+              boxWidth: 8,
+              font: { size: 11 },
+            },
+          },
           tooltip: {
             backgroundColor: 'rgba(15,15,18,0.95)',
             titleColor: '#e5e5e5',
