@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { addDays, getTodayString } from './coreEngine';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -183,7 +184,41 @@ function BodyCompositionChart({ history }) {
   );
 }
 
-export default function LongevityView({ data, showPriorityFocus = true, userAge, bodyMetricsHistory = [] }) {
+function calculateAverageScore(days, anchorDate, scoreHistory, todayScore) {
+  const t = typeof todayScore === 'number' && !Number.isNaN(todayScore) ? todayScore : 0;
+  if (days === 1 || !Array.isArray(scoreHistory) || scoreHistory.length === 0) {
+    return Math.round(t);
+  }
+  const byDate = new Map();
+  for (const r of scoreHistory) {
+    const key = r?.date;
+    if (!key) continue;
+    const s =
+      typeof r.score === 'number'
+        ? r.score
+        : typeof r.masterScore === 'number'
+          ? r.masterScore
+          : null;
+    if (s != null && !Number.isNaN(s)) byDate.set(key, s);
+  }
+  const values = [t];
+  for (let i = 1; i < days; i++) {
+    const dStr = addDays(anchorDate, -i);
+    if (byDate.has(dStr)) values.push(byDate.get(dStr));
+  }
+  const sum = values.reduce((a, b) => a + b, 0);
+  return Math.round(sum / values.length);
+}
+
+export default function LongevityView({
+  data,
+  showPriorityFocus = true,
+  userAge,
+  bodyMetricsHistory = [],
+  scoreHistory = [],
+  todayScore: todayScoreProp,
+  periodAnchorDate,
+}) {
   const calculateProjectedAge = (age, score) => {
     if (!age || typeof age !== 'number' || typeof score !== 'number') return null;
     const maxAge = 100;
@@ -196,6 +231,25 @@ export default function LongevityView({ data, showPriorityFocus = true, userAge,
     return minAge + (score / 50) * (baseAge - minAge);
   };
 
+  const [timeWindow, setTimeWindow] = useState(30);
+  const timeOptions = [
+    { label: 'Oggi', value: 1 },
+    { label: '7g', value: 7 },
+    { label: '14g', value: 14 },
+    { label: '30g', value: 30 },
+  ];
+
+  const anchorDate = periodAnchorDate || getTodayString();
+  const todayScore =
+    typeof todayScoreProp === 'number' && !Number.isNaN(todayScoreProp)
+      ? todayScoreProp
+      : data?.score || data?.masterScore || 0;
+
+  const averageScore = useMemo(
+    () => calculateAverageScore(timeWindow, anchorDate, scoreHistory, todayScore),
+    [timeWindow, anchorDate, scoreHistory, todayScore]
+  );
+
   const bioScore =
     data && typeof data.score === 'number'
       ? data.score
@@ -204,8 +258,8 @@ export default function LongevityView({ data, showPriorityFocus = true, userAge,
         : null;
 
   const projectedAge =
-    data && typeof userAge === 'number' && !Number.isNaN(userAge) && typeof bioScore === 'number'
-      ? calculateProjectedAge(userAge, bioScore)
+    data && typeof userAge === 'number' && !Number.isNaN(userAge) && typeof averageScore === 'number'
+      ? calculateProjectedAge(userAge, averageScore)
       : null;
 
   if (!data) {
@@ -234,14 +288,57 @@ export default function LongevityView({ data, showPriorityFocus = true, userAge,
       <div style={{ textAlign: 'center', marginBottom: 30 }}>
         {projectedAge != null ? (
           <>
-            <div style={{ fontSize: '5rem', fontWeight: 900, color: getColor(bioScore), lineHeight: 1.05 }}>
+            <div style={{ fontSize: '5rem', fontWeight: 900, color: getColor(averageScore), lineHeight: 1.05 }}>
               {projectedAge.toFixed(1)}
             </div>
             <div style={{ fontSize: '1.05rem', fontWeight: 600, marginTop: 12, letterSpacing: '0.04em', color: '#e5e5e5' }}>
               Anni di Età Proiettata
             </div>
             <div style={{ fontSize: '0.9rem', opacity: 0.6, marginTop: 10, color: '#a3a3a3' }}>
-              Punteggio biochimico: {bioScore} / 100
+              Punteggio biochimico
+              {timeWindow > 1 ? ' (media inerzia temporale)' : ''}: {averageScore} / 100
+            </div>
+            <div
+              role="tablist"
+              aria-label="Periodo media mobile età proiettata"
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+                gap: 8,
+                marginTop: 16,
+              }}
+            >
+              {timeOptions.map((opt) => {
+                const active = timeWindow === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setTimeWindow(opt.value)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 999,
+                      border: active ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.12)',
+                      background: active ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+                      color: active ? '#fff' : 'rgba(255,255,255,0.75)',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'background 0.15s, border-color 0.15s',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: '0.75rem', opacity: 0.55, marginTop: 10, color: '#94a3b8', lineHeight: 1.4 }}>
+              {timeWindow === 1
+                ? 'Proiezione basata solo sulle scelte odierne.'
+                : `Basato sulla media degli ultimi ${timeWindow} giorni (solo giorni con dati disponibili).`}
             </div>
           </>
         ) : (

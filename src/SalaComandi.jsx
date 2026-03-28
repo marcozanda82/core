@@ -90,6 +90,7 @@ import {
   computeDayEvaluations,
   computeEvaluationTrend,
   computeRiskMatrix,
+  computeLongevityMasterScoreFromMatrix,
   computeLongevityScore,
   buildLongevityExplanation
 } from './coreEngine';
@@ -3987,6 +3988,39 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const userAge = calculateAge(birthDate);
 
+  /** Punteggi giornalieri (matrice rischi su singolo giorno) prima del giorno ancorato al tracker, per media mobile età proiettata. */
+  const longevityScoreHistory = useMemo(() => {
+    if (!fullHistory || !userTargets) return [];
+    const anchor = currentTrackerDate || getTodayString();
+    const maxLookback = 120;
+    const out = [];
+    for (let k = 1; k < maxLookback; k++) {
+      const dStr = addDays(anchor, -k);
+      const log = getLogFromStoricoTree(fullHistory, dStr) || [];
+      const dayNode = fullHistory[TRACKER_STORICO_KEY(dStr)];
+      const manualNodes = Array.isArray(dayNode?.manualNodes) ? dayNode.manualNodes : [];
+      if (log.length === 0 && manualNodes.length === 0) continue;
+      const matrix = computeRiskMatrix(fullHistory, userTargets, 1, addDays(dStr, 1));
+      const score = computeLongevityMasterScoreFromMatrix(matrix);
+      if (score == null || Number.isNaN(score)) continue;
+      const ts = new Date(`${dStr}T12:00:00`).getTime();
+      out.push({ date: dStr, score, timestamp: ts });
+    }
+    return out.sort((a, b) => a.date.localeCompare(b.date));
+  }, [fullHistory, userTargets, currentTrackerDate]);
+
+  /** Punteggio “oggi” (giorno tracker): motore longevità se calendario = oggi, altrimenti matrice su quel giorno. */
+  const longevityTodayScore = useMemo(() => {
+    if (!fullHistory || !userTargets) return 0;
+    if (currentTrackerDate === getTodayString()) {
+      const s = longevityEngineScore?.score;
+      if (typeof s === 'number' && !Number.isNaN(s)) return s;
+    }
+    const matrix = computeRiskMatrix(fullHistory, userTargets, 1, addDays(currentTrackerDate, 1));
+    const m = computeLongevityMasterScoreFromMatrix(matrix);
+    return typeof m === 'number' && !Number.isNaN(m) ? m : 0;
+  }, [currentTrackerDate, longevityEngineScore, fullHistory, userTargets]);
+
   const homeLongevityInsightLine = useMemo(() => {
     const t = longevityEngineScore?.priorityFocus?.title;
     if (typeof t === 'string' && t.trim()) return t.trim();
@@ -7351,7 +7385,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {activeBottomTab === 'longevita' && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}>
-          <LongevityView data={longevityData} showPriorityFocus userAge={userAge} bodyMetricsHistory={bodyMetricsHistory} />
+          <LongevityView
+            data={longevityData}
+            showPriorityFocus
+            userAge={userAge}
+            bodyMetricsHistory={bodyMetricsHistory}
+            scoreHistory={longevityScoreHistory}
+            todayScore={longevityTodayScore}
+            periodAnchorDate={currentTrackerDate}
+          />
         </div>
       )}
       {showProfile && (
@@ -8540,7 +8582,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <HomeView longevity={longevityEngineScore} explanation={longevityExplanation} />
 
             <div style={{ marginBottom: '32px', color: '#e8e8e8' }}>
-              <LongevityView data={longevityEngineScore} showPriorityFocus={false} userAge={userAge} bodyMetricsHistory={bodyMetricsHistory} />
+              <LongevityView
+                data={longevityEngineScore}
+                showPriorityFocus={false}
+                userAge={userAge}
+                bodyMetricsHistory={bodyMetricsHistory}
+                scoreHistory={longevityScoreHistory}
+                todayScore={longevityTodayScore}
+                periodAnchorDate={currentTrackerDate}
+              />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>

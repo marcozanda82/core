@@ -2091,9 +2091,23 @@ function predictEnergyIntervention(chartData, displayTime) {
 }
 
 /**
- * Quattro pilastri del rischio sistemico (0–100) sugli ultimi `daysBack` giorni + referti diagnostici.
+ * Master score longevità (0–100) dalla matrice rischi, stessa formula di longevityData in SalaComandi.
  */
-export function computeRiskMatrix(trackerData, userTargets, daysBack = 7) {
+export function computeLongevityMasterScoreFromMatrix(matrix) {
+  if (!matrix || !matrix.metabolic || typeof matrix.metabolic.score !== 'number') return null;
+  const weightedRisk =
+    matrix.metabolic.score * 0.3 +
+    matrix.neuro.score * 0.3 +
+    matrix.inflammatory.score * 0.2 +
+    matrix.cardio.score * 0.2;
+  return Math.max(0, Math.min(100, Math.round(100 - weightedRisk)));
+}
+
+/**
+ * Quattro pilastri del rischio sistemico (0–100) sugli ultimi `daysBack` giorni + referti diagnostici.
+ * `referenceDate` (YYYY-MM-DD): giorno “finestra” per il loop; default oggi. Con `daysBack: 1` e `referenceDate = addDays(D, 1)` si ottiene la matrice solo per il giorno D.
+ */
+export function computeRiskMatrix(trackerData, userTargets, daysBack = 7, referenceDate) {
   let risks = { metabolic: 15, cardio: 15, inflammatory: 15, neuro: 15 };
   let validDays = 0;
 
@@ -2111,7 +2125,7 @@ export function computeRiskMatrix(trackerData, userTargets, daysBack = 7) {
     return insufficientMatrix();
   }
 
-  const todayStr = getTodayString();
+  const todayStr = referenceDate || getTodayString();
   const n = Math.max(1, Math.min(366, Number(daysBack) || 7));
 
   for (let i = n; i >= 1; i--) {
