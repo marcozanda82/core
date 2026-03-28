@@ -12,7 +12,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { ComposedChart, LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
 
-import { ref, get, set, onValue, update, remove } from 'firebase/database';
+import { ref, get, set, push, onValue, update, remove } from 'firebase/database';
 
 import { useFirebase } from './useFirebase';
 import ChartModal from './ChartModal';
@@ -433,6 +433,10 @@ export default function SalaComandi() {
   const [nutrientModal, setNutrientModal] = useState(null);
   const [editQuantityValue, setEditQuantityValue] = useState('');
   const [showChoiceModal, setShowChoiceModal] = useState(false);
+  const [showWeightModal, setShowWeightModal] = useState(false);
+  const [inputWeight, setInputWeight] = useState('');
+  const [inputFat, setInputFat] = useState('');
+  const [bodyMetricsSaveToast, setBodyMetricsSaveToast] = useState(false);
   const [addChoiceView, setAddChoiceView] = useState('main'); // 'main' | 'stimulant'
   const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
   const [stimulantTime, setStimulantTime] = useState(8);
@@ -483,6 +487,8 @@ export default function SalaComandi() {
   });
   const [userTargets, setUserTargets] = useState({ ...DEFAULT_TARGETS });
   const [birthDate, setBirthDate] = useState('');
+  const userProfileRef = useRef(userProfile);
+  userProfileRef.current = userProfile;
 
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(300);
@@ -1410,6 +1416,53 @@ export default function SalaComandi() {
       setShowProfile(false);
     }).catch(err => console.error("Errore salvataggio profilo:", err));
   };
+
+  const handleSaveBodyMetrics = useCallback(async () => {
+    const w = parseFloat(String(inputWeight).replace(',', '.'));
+    if (!Number.isFinite(w) || w <= 0) {
+      alert('Inserisci un peso valido (maggiore di 0).');
+      return;
+    }
+    const currentUser = auth.currentUser;
+    if (!currentUser?.uid) {
+      alert('Accedi per registrare la pesata.');
+      return;
+    }
+    const uid = currentUser.uid;
+    const fatRaw = String(inputFat ?? '').trim();
+    const parsedFat = fatRaw === '' ? null : parseFloat(fatRaw.replace(',', '.'));
+    const bodyFat = parsedFat != null && Number.isFinite(parsedFat) ? parsedFat : null;
+    const payload = {
+      weight: w,
+      bodyFat,
+      timestamp: Date.now(),
+      date: new Date().toISOString()
+    };
+    const profileUpdates = { 'profile/weight': w };
+    if (bodyFat != null) profileUpdates['profile/bodyFat'] = bodyFat;
+    try {
+      await update(ref(db, `users/${uid}/profile_targets`), profileUpdates);
+      await push(ref(db, `users/${uid}/body_metrics`), payload);
+      setUserProfile((prev) => ({ ...prev, weight: w, ...(bodyFat != null ? { bodyFat } : {}) }));
+      setShowWeightModal(false);
+      setInputWeight('');
+      setInputFat('');
+      setBodyMetricsSaveToast(true);
+      setTimeout(() => setBodyMetricsSaveToast(false), 3500);
+    } catch (err) {
+      console.error('Salvataggio composizione corporea:', err);
+      alert('Errore durante il salvataggio. Riprova.');
+    }
+  }, [auth, db, inputWeight, inputFat]);
+
+  useEffect(() => {
+    if (!showWeightModal) return;
+    const p = userProfileRef.current;
+    const pw = p?.weight;
+    setInputWeight(pw != null && pw !== '' ? String(pw) : '');
+    const pbf = p?.bodyFat;
+    setInputFat(pbf != null && pbf !== '' ? String(pbf) : '');
+  }, [showWeightModal]);
 
   const handleCSVUpload = (e) => {
     const file = e.target.files?.[0];
@@ -5917,6 +5970,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(0,229,255,0.4)' }} onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); }}>
                 <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>💧</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#00e5ff' }}>ACQUA</span>
               </button>
+              <button type="button" className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(156, 200, 255, 0.45)' }} onClick={() => { closeDrawer(); setShowWeightModal(true); }}>
+                <span className="action-icon" style={{ fontSize: '1.8rem' }}>⚖️</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#9cc8ff' }}>REGISTRA PESO</span>
+              </button>
               <button
                 type="button"
                 className="action-btn"
@@ -7448,6 +7504,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <span style={{ fontSize: '1.5rem' }}>💧</span> ACQUA
                 </button>
 
+                <button type="button" onClick={() => { setShowChoiceModal(false); setAddChoiceView('main'); setShowWeightModal(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #6b8cae', color: '#9cc8ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
+                  <span style={{ fontSize: '1.5rem' }}>⚖️</span> REGISTRA PESO
+                </button>
+
                 <button onClick={() => { setStimulantTime(getCurrentTimeRoundedTo15Min()); setStimulantSubtype('caffè'); setAddChoiceView('stimulant'); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #f59e0b', color: '#f59e0b', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
                   <span style={{ fontSize: '1.5rem' }}>☕</span> ENERGIZZANTE
                 </button>
@@ -7457,6 +7517,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {showWeightModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100020, padding: '20px' }} onClick={() => { setShowWeightModal(false); }}>
+          <div style={{ background: '#1a1a1c', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '20px', padding: '22px', width: '100%', maxWidth: '380px', boxShadow: '0 12px 48px rgba(0,0,0,0.75)' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 6px 0', color: '#fff', fontSize: '1.05rem', letterSpacing: '0.5px' }}>Aggiorna Composizione</h3>
+            <p style={{ margin: '0 0 18px 0', fontSize: '0.8rem', color: '#888' }}>Registra peso e, se vuoi, massa grassa. Lo storico è salvato nel database.</p>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px' }}>Peso (kg) *</label>
+            <input type="number" step="0.1" min="0.1" inputMode="decimal" value={inputWeight} onChange={(e) => setInputWeight(e.target.value)} placeholder="es. 75.5" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: '14px', borderRadius: '12px', border: '1px solid #333', background: '#0d0d0f', color: '#fff', fontSize: '1rem' }} />
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px' }}>Massa grassa (% — opzionale)</label>
+            <input type="number" step="0.1" min="0" max="100" inputMode="decimal" value={inputFat} onChange={(e) => setInputFat(e.target.value)} placeholder="es. 18.5" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: '20px', borderRadius: '12px', border: '1px solid #333', background: '#0d0d0f', color: '#fff', fontSize: '1rem' }} />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button type="button" onClick={() => { setShowWeightModal(false); }} style={{ flex: 1, padding: '14px', borderRadius: '12px', border: '1px solid #444', background: 'transparent', color: '#aaa', fontWeight: 'bold', cursor: 'pointer' }}>Annulla</button>
+              <button type="button" onClick={() => { handleSaveBodyMetrics(); }} style={{ flex: 1, padding: '14px', borderRadius: '12px', border: 'none', background: '#00e5ff', color: '#000', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 0 20px rgba(0,229,255,0.35)' }}>Salva</button>
+            </div>
           </div>
         </div>
       )}
@@ -8513,6 +8590,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <button type="button" onClick={handleUndo} style={{ padding: '8px 16px', fontSize: '0.8rem', fontWeight: 'bold', background: 'rgba(0, 229, 255, 0.15)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>
             ANNULLA
           </button>
+        </div>
+      )}
+
+      {bodyMetricsSaveToast && (
+        <div style={{ position: 'fixed', bottom: 'calc(80px + 75px + env(safe-area-inset-bottom, 0px))', left: '50%', transform: 'translateX(-50%)', zIndex: 100021, padding: '12px 22px', background: '#1a1a1c', border: '1px solid #00e676', borderRadius: '16px', boxShadow: '0 8px 24px rgba(0,230,118,0.2)' }} role="status">
+          <span style={{ color: '#00e676', fontSize: '0.9rem', fontWeight: '600' }}>Pesata registrata con successo!</span>
         </div>
       )}
 
