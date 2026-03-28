@@ -4744,8 +4744,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .mini-timeline-point-bubble:active { transform: translate(-50%, -50%) scale(2); }
 
           /* Tasti header più grandi per il pollice */
-          .btn-toggle { background: none; border: 1px solid #333; color: #666; padding: 10px 20px !important; font-size: 0.8rem !important; min-height: 44px; border-radius: 20px; cursor: pointer; letter-spacing: 2px; transition: all 0.3s; -webkit-tap-highlight-color: transparent; display: flex; align-items: center; }
-          .btn-toggle.active { border-color: #00e5ff; color: #00e5ff; box-shadow: 0 0 10px rgba(0,229,255,0.2); }
           
           .drawer-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity 0.4s ease; z-index: 99998; }
           .drawer-overlay.open { opacity: 1; pointer-events: all; }
@@ -5675,8 +5673,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </div>
                   </div>
                 </div>
-                {/* Macro + Fase: marginTop auto spinge il blocco in basso nello spazio flessibile */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', marginTop: 'auto', marginBottom: '16px', gap: '8px', flexShrink: 0 }}>
+                <div style={{ flexGrow: 1, minHeight: '2vh' }} aria-hidden />
+                {/* Macro + Fase */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', marginBottom: '16px', gap: '8px', flexShrink: 0 }}>
                   {/* Box macronutrienti neon (3 colonne) */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', width: '100%', flexShrink: 0 }}>
                     <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
@@ -5794,7 +5793,114 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
 
-      {/* --- CASSETTO AZIONI --- */}
+      {nutrientModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11000, padding: '20px' }} onClick={() => setNutrientModal(null)}>
+          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '16px', maxWidth: '350px', width: '100%', maxHeight: '80vh', overflow: 'auto', padding: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.8)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '0.9rem', color: '#00e5ff', textTransform: 'uppercase', letterSpacing: '1px' }}>Fonti di {nutrientModal.label}</h3>
+              <button style={{ background: 'none', border: 'none', color: '#888', fontSize: '1.2rem', cursor: 'pointer' }} onClick={() => setNutrientModal(null)}>✕</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {getNutrientSources(nutrientModal.key, nutrientModal.target, nutrientModal.isWeekly).length === 0 ? (
+                <p style={{ fontSize: '0.8rem', color: '#666', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>Nessuna fonte registrata.</p>
+              ) : (
+                getNutrientSources(nutrientModal.key, nutrientModal.target, nutrientModal.isWeekly).map((src, idx) => (
+                  <div key={idx} style={{ background: 'rgba(255,255,255,0.04)', padding: '12px 15px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#eee', fontWeight: '500', flex: 1 }}>{src.name}</span>
+                    <div style={{ textAlign: 'right', marginLeft: '10px' }}>
+                      <div style={{ fontSize: '0.9rem', color: src.percent > 50 ? '#00e676' : '#00e5ff', fontWeight: 'bold' }}>{src.percent.toFixed(1)}%</div>
+                      <div style={{ fontSize: '0.65rem', color: '#888' }}>{src.amount.toFixed(1)} {nutrientModal.unit}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {showReport && (
+        <div className="report-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: '#fff', color: '#000', zIndex: 100020, overflowY: 'auto', padding: '20px' }}>
+          <div className="report-no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', background: '#f0f0f0', padding: '15px', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              {[
+                { val: '7', label: '1 Settimana' },
+                { val: '30', label: '1 Mese' },
+                { val: '90', label: '3 Mesi' },
+                { val: '180', label: '6 Mesi' },
+                { val: '365', label: '1 Anno' }
+              ].map(p => (
+                <button key={p.val} onClick={() => setReportPeriod(p.val)} style={{ padding: '8px 16px', borderRadius: '20px', border: 'none', background: reportPeriod === p.val ? '#0d47a1' : '#ccc', color: reportPeriod === p.val ? '#fff' : '#000', cursor: 'pointer', fontWeight: 'bold' }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button type="button" onClick={() => window.print()} style={{ padding: '8px 16px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <img src="/icon-pdf-32.png" alt="" width={20} height={20} decoding="async" style={{ objectFit: 'contain' }} />
+                Stampa PDF
+              </button>
+              <button onClick={() => setShowReport(false)} style={{ padding: '8px 16px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Chiudi</button>
+            </div>
+          </div>
+
+          <div className="report-print-area">
+            <h1 style={{ borderBottom: '2px solid #0d47a1', paddingBottom: '10px' }}>Analisi Carenze Nutrizionali - Core</h1>
+            <p><strong>Periodo analizzato:</strong> Ultimi {reportPeriod} giorni</p>
+
+            {(() => {
+              const data = generateReportData();
+              if (!data) return <p>Nessun dato sufficiente in questo periodo.</p>;
+
+              const nutrientLabels = { kcal: 'Kcal', prot: 'Proteine (g)', carb: 'Carboidrati (g)', fatTotal: 'Grassi (g)', fibre: 'Fibre (g)', vitc: 'Vit. C (mg)', vitD: 'Vit. D (µg)', omega3: 'Omega 3 (g)', mg: 'Magnesio (mg)', k: 'Potassio (mg)', fe: 'Ferro (mg)', ca: 'Calcio (mg)' };
+              return (
+                <>
+                  <p><strong>Giorni con dati registrati:</strong> {data.daysFound} su {reportPeriod}</p>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                    <thead>
+                      <tr style={{ background: '#f5f5f5', borderBottom: '2px solid #ddd' }}>
+                        <th style={{ padding: '12px', textAlign: 'left' }}>Nutriente</th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>Media Assunta</th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>Target</th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>Stato</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {REPORT_NUTRIENT_KEYS.map(key => {
+                        const avg = data.averages[key];
+                        const target = userTargets[key] ?? getTargetForNutrient(key);
+                        if (target == null || target === 0) return null;
+
+                        const percent = (avg / target) * 100;
+                        const isDeficient = percent < 80;
+                        const isWarning = percent >= 80 && percent < 95;
+
+                        let statusColor = '#2e7d32';
+                        let statusText = '✅ Ottimale';
+                        if (isDeficient) { statusColor = '#d32f2f'; statusText = '❌ Carenza'; }
+                        else if (isWarning) { statusColor = '#f57c00'; statusText = '⚠️ Attenzione'; }
+
+                        return (
+                          <tr key={key} style={{ borderBottom: '1px solid #ddd' }}>
+                            <td style={{ padding: '12px', fontWeight: 'bold' }}>{nutrientLabels[key] || key}</td>
+                            <td style={{ padding: '12px', textAlign: 'center' }}>{avg.toFixed(1)}</td>
+                            <td style={{ padding: '12px', textAlign: 'center' }}>{target}</td>
+                            <td style={{ padding: '12px', textAlign: 'center', color: statusColor, fontWeight: 'bold' }}>
+                              {statusText} ({percent.toFixed(0)}%)
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+      </div>
+      )}
+      {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
       <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={closeDrawer}></div>
       
       <div className={`drawer-content ${isDrawerOpen ? 'open' : ''}`}>
@@ -6294,8 +6400,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ width: '70px' }}></div>
             </div>
             <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', background: '#111', padding: '5px', borderRadius: '15px' }}>
-              <button className={`type-btn ${diarioTab === 'storico' ? 'active blue' : ''}`} onClick={() => setDiarioTab('storico')} style={{ border: 'none' }}>OGGI</button>
-              <button className={`type-btn ${diarioTab === 'telemetria' ? 'active blue' : ''}`} onClick={() => setDiarioTab('telemetria')} style={{ border: 'none' }}>TELEMETRIA (40)</button>
+              <button className={`type-btn ${diarioTab === 'storico' ? 'active blue' : ''}`} onClick={() => setDiarioTab('storico')} style={{ border: 'none' }}>Registro voci</button>
+              <button className={`type-btn ${diarioTab === 'telemetria' ? 'active blue' : ''}`} onClick={() => setDiarioTab('telemetria')} style={{ border: 'none' }}>Bioscan 40</button>
             </div>
             {diarioTab === 'storico' && (
               <div style={{ minHeight: '200px' }}>
@@ -7168,113 +7274,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         )}
 
       </div>
-      {nutrientModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11000, padding: '20px' }} onClick={() => setNutrientModal(null)}>
-          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '16px', maxWidth: '350px', width: '100%', maxHeight: '80vh', overflow: 'auto', padding: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.8)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '0.9rem', color: '#00e5ff', textTransform: 'uppercase', letterSpacing: '1px' }}>Fonti di {nutrientModal.label}</h3>
-              <button style={{ background: 'none', border: 'none', color: '#888', fontSize: '1.2rem', cursor: 'pointer' }} onClick={() => setNutrientModal(null)}>✕</button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {getNutrientSources(nutrientModal.key, nutrientModal.target, nutrientModal.isWeekly).length === 0 ? (
-                <p style={{ fontSize: '0.8rem', color: '#666', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>Nessuna fonte registrata.</p>
-              ) : (
-                getNutrientSources(nutrientModal.key, nutrientModal.target, nutrientModal.isWeekly).map((src, idx) => (
-                  <div key={idx} style={{ background: 'rgba(255,255,255,0.04)', padding: '12px 15px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span style={{ fontSize: '0.85rem', color: '#eee', fontWeight: '500', flex: 1 }}>{src.name}</span>
-                    <div style={{ textAlign: 'right', marginLeft: '10px' }}>
-                      <div style={{ fontSize: '0.9rem', color: src.percent > 50 ? '#00e676' : '#00e5ff', fontWeight: 'bold' }}>{src.percent.toFixed(1)}%</div>
-                      <div style={{ fontSize: '0.65rem', color: '#888' }}>{src.amount.toFixed(1)} {nutrientModal.unit}</div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      {showReport && (
-        <div className="report-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: '#fff', color: '#000', zIndex: 100020, overflowY: 'auto', padding: '20px' }}>
-          <div className="report-no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', background: '#f0f0f0', padding: '15px', borderRadius: '8px' }}>
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              {[
-                { val: '7', label: '1 Settimana' },
-                { val: '30', label: '1 Mese' },
-                { val: '90', label: '3 Mesi' },
-                { val: '180', label: '6 Mesi' },
-                { val: '365', label: '1 Anno' }
-              ].map(p => (
-                <button key={p.val} onClick={() => setReportPeriod(p.val)} style={{ padding: '8px 16px', borderRadius: '20px', border: 'none', background: reportPeriod === p.val ? '#0d47a1' : '#ccc', color: reportPeriod === p.val ? '#fff' : '#000', cursor: 'pointer', fontWeight: 'bold' }}>
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="button" onClick={() => window.print()} style={{ padding: '8px 16px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                <img src="/icon-pdf-32.png" alt="" width={20} height={20} decoding="async" style={{ objectFit: 'contain' }} />
-                Stampa PDF
-              </button>
-              <button onClick={() => setShowReport(false)} style={{ padding: '8px 16px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Chiudi</button>
-            </div>
-          </div>
 
-          <div className="report-print-area">
-            <h1 style={{ borderBottom: '2px solid #0d47a1', paddingBottom: '10px' }}>Analisi Carenze Nutrizionali - Core</h1>
-            <p><strong>Periodo analizzato:</strong> Ultimi {reportPeriod} giorni</p>
-
-            {(() => {
-              const data = generateReportData();
-              if (!data) return <p>Nessun dato sufficiente in questo periodo.</p>;
-
-              const nutrientLabels = { kcal: 'Kcal', prot: 'Proteine (g)', carb: 'Carboidrati (g)', fatTotal: 'Grassi (g)', fibre: 'Fibre (g)', vitc: 'Vit. C (mg)', vitD: 'Vit. D (µg)', omega3: 'Omega 3 (g)', mg: 'Magnesio (mg)', k: 'Potassio (mg)', fe: 'Ferro (mg)', ca: 'Calcio (mg)' };
-              return (
-                <>
-                  <p><strong>Giorni con dati registrati:</strong> {data.daysFound} su {reportPeriod}</p>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
-                    <thead>
-                      <tr style={{ background: '#f5f5f5', borderBottom: '2px solid #ddd' }}>
-                        <th style={{ padding: '12px', textAlign: 'left' }}>Nutriente</th>
-                        <th style={{ padding: '12px', textAlign: 'center' }}>Media Assunta</th>
-                        <th style={{ padding: '12px', textAlign: 'center' }}>Target</th>
-                        <th style={{ padding: '12px', textAlign: 'center' }}>Stato</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {REPORT_NUTRIENT_KEYS.map(key => {
-                        const avg = data.averages[key];
-                        const target = userTargets[key] ?? getTargetForNutrient(key);
-                        if (target == null || target === 0) return null;
-
-                        const percent = (avg / target) * 100;
-                        const isDeficient = percent < 80;
-                        const isWarning = percent >= 80 && percent < 95;
-
-                        let statusColor = '#2e7d32';
-                        let statusText = '✅ Ottimale';
-                        if (isDeficient) { statusColor = '#d32f2f'; statusText = '❌ Carenza'; }
-                        else if (isWarning) { statusColor = '#f57c00'; statusText = '⚠️ Attenzione'; }
-
-                        return (
-                          <tr key={key} style={{ borderBottom: '1px solid #ddd' }}>
-                            <td style={{ padding: '12px', fontWeight: 'bold' }}>{nutrientLabels[key] || key}</td>
-                            <td style={{ padding: '12px', textAlign: 'center' }}>{avg.toFixed(1)}</td>
-                            <td style={{ padding: '12px', textAlign: 'center' }}>{target}</td>
-                            <td style={{ padding: '12px', textAlign: 'center', color: statusColor, fontWeight: 'bold' }}>
-                              {statusText} ({percent.toFixed(0)}%)
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-      </div>
-      )}
       {activeBottomTab === 'longevita' && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}>
           <LongevityView data={longevityData} showPriorityFocus userAge={userAge} />
