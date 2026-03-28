@@ -214,7 +214,7 @@ export default function ChartModal({
         role="dialog"
         aria-modal="true"
         aria-label="Grafico a tutto schermo"
-        style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#050508', zIndex: 99999, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}
+        style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '100dvh', maxHeight: '100dvh', backgroundColor: '#050508', zIndex: 99999, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}
       >
         {/* Header */}
         <div style={{ flexShrink: 0, padding: '16px', paddingBottom: '8px' }} onTouchStart={handleModalSwipeStart} onTouchEnd={handleModalSwipeEnd} onMouseDown={handleModalSwipeStartMouse} onMouseUp={handleModalSwipeEndMouse} onMouseLeave={() => { modalSwipeStartXRef.current = null; }}>
@@ -228,21 +228,23 @@ export default function ChartModal({
           {expandedChart === 'kcal' && <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '8px', lineHeight: 1.3 }}>Calorie ingerite nel corso della giornata in base ai pasti registrati.</div>}
         </div>
 
-        {/* Main: grafico sopra, analisi AI sotto */}
+        {/* Main: grafico + timeline, poi analisi AI sotto */}
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* Contenitore grafico (altezza fissa ~45% in alto) */}
-          <div style={{ height: '45%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* Area grafico: scroll orizzontale nativo */}
+          {/* Blocco grafico: occupa lo spazio flessibile sopra il pannello AI */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Scroll orizzontale solo sulla colonna grafico + timeline allineata */}
             <div
               style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}
               onTouchStart={handleChartTouchStart}
               onTouchMove={handleChartTouchMove}
               onTouchEnd={handleChartTouchEnd}
             >
-              {/* Contenitore largo per lo scroll, impilato in colonna */}
-              <div style={{ width: `${220 * zoomLevel}%`, height: '100%', display: 'flex', flexDirection: 'column' }} className="chart-modal-inner">
+              <div
+                style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, minHeight: '100%', display: 'flex', flexDirection: 'column' }}
+                className="chart-modal-inner"
+              >
 
-                {/* 1. IL GRAFICO (Si espande per occupare tutto lo spazio superiore disponibile) */}
+                {/* Grafico: espande nello spazio rimasto sopra la timeline */}
                 <div style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -326,15 +328,23 @@ export default function ChartModal({
                 )}
               </div>
 
-              {/* 2. LA TIMELINE (Altezza fissa in basso, in flow nativo, con margine di sicurezza) */}
-              <div style={{ height: '90px', width: '100%', flexShrink: 0, paddingBottom: '30px', paddingTop: '5px' }}>
-                <div style={{ height: '55px', margin: '0 15px 0 50px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', position: 'relative', overflow: 'visible' }}>
-                  {(activeNodesWithStack || []).map(node => renderTimelineNode(node))}
+                {/* Timeline nodi: non comprimibile, safe area in basso */}
+                <div
+                  style={{
+                    flexShrink: 0,
+                    width: '100%',
+                    paddingTop: '8px',
+                    paddingBottom: 'max(16px, env(safe-area-inset-bottom, 16px))',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <div style={{ height: '55px', margin: '0 15px 0 50px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)', position: 'relative', overflow: 'visible' }}>
+                    {(activeNodesWithStack || []).map(node => renderTimelineNode(node))}
+                  </div>
                 </div>
-              </div>
 
+              </div>
             </div>
-          </div>
           </div>
 
           {/* Simulazione: slider tempo (se attivo) */}

@@ -95,7 +95,7 @@ export default function LongevityView({ data, showPriorityFocus = true, userAge 
                 <div style={{ fontSize: 64, fontWeight: 'bold', color: getColor(bioScore) }}>
                   {bioScore}
                 </div>
-                <div style={{ fontSize: 18, opacity: 0.7, color: '#a3a3a3' }}>Punteggio Longevità</div>
+                <div style={{ fontSize: 18, opacity: 0.7, color: '#a3a3a3' }}>Punteggio statistiche</div>
               </>
             )}
           </>

@@ -5243,7 +5243,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 aria-label="Apri grafico a tutto schermo"
               >
                 {chartUnit === 'percent' ? (
-              <div style={{ background: '#111', padding: '15px', borderRadius: '15px', border: '1px solid #222' }}>
+              <div style={{ background: '#111', padding: '15px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
                 <div style={{ position: 'relative', width: '100%', height: '280px', paddingBottom: '60px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
@@ -5697,7 +5697,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 </div>
                 {/* Widget Fase Metabolica */}
-                <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: '400px', minHeight: 0 }}>
+                <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px', width: '100%', maxWidth: 'min(400px, calc(100% - 70px))', minHeight: 0, marginRight: '8px', boxSizing: 'border-box', alignSelf: 'center' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span>⏳</span>
@@ -5789,20 +5789,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             );
           })()}
         </div>
-      )}
-
-      {/* Barra trigger AI + FAB: sopra la bottom navigation (solo tab Oggi) */}
-      {activeBottomTab === 'oggi' && (
-      <div style={{ position: 'fixed', bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))', left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: '12px', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid #222', zIndex: 9998, boxSizing: 'border-box' }}>
-        <div
-          onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
-          style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '12px 20px', border: '1px solid #333', cursor: 'pointer' }}
-        >
-          <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-fab" width={22} height={22} decoding="async" />
-          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
-        </div>
-        <button type="button" onClick={() => { setShowChoiceModal(false); setIsDrawerOpen(true); setActiveAction(null); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
-      </div>
       )}
 
       {/* --- CASSETTO AZIONI --- */}
@@ -7379,7 +7365,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   onClick={() => { setShowProfile(false); setShowLongevityModal(true); }}
                   style={{ flex: '1 1 140px', padding: '10px 12px', background: 'transparent', border: `1px solid ${longevityData.color}55`, color: longevityData.color, borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
                 >
-                  🧬 Longevità
+                  🧬 Statistiche
                 </button>
               )}
               <button
@@ -8449,7 +8435,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px' }}>
               <div style={{ width: '180px', height: '180px', borderRadius: '50%', border: `4px solid ${longevityData.color}`, background: `${longevityData.color}10`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 40px ${longevityData.color}30` }}>
                 <span style={{ color: longevityData.color, fontSize: '4rem', fontWeight: 'bold', lineHeight: '1' }}>{longevityData.masterScore}</span>
-                <span style={{ color: '#aaa', fontSize: '0.85rem', marginTop: '5px', textTransform: 'uppercase', letterSpacing: '1px' }}>Score Longevità</span>
+                <span style={{ color: '#aaa', fontSize: '0.85rem', marginTop: '5px', textTransform: 'uppercase', letterSpacing: '1px' }}>Score statistiche</span>
               </div>
             </div>
 
@@ -8527,6 +8513,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
 
+      {/* Barra Kentu AI + FAB: visibile su Oggi, Analisi e Statistiche (sopra la bottom navigation) */}
+      <div style={{ position: 'fixed', bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))', left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: '12px', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid #222', zIndex: 9998, boxSizing: 'border-box' }}>
+        <div
+          onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
+          style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '12px 20px', border: '1px solid #333', cursor: 'pointer' }}
+        >
+          <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-fab" width={22} height={22} decoding="async" />
+          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
+        </div>
+        <button type="button" onClick={() => { setShowChoiceModal(false); setIsDrawerOpen(true); setActiveAction(null); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
+      </div>
+
       <nav
         aria-label="Navigazione principale"
         style={{
@@ -8550,7 +8548,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         {[
           { id: 'oggi', label: 'Oggi', icon: '🏠' },
           { id: 'analisi', label: 'Analisi', icon: '📊' },
-          { id: 'longevita', label: 'Longevità', icon: '🧬' },
+          { id: 'longevita', label: 'Statistiche', icon: '🧬' },
           { id: 'menu', label: 'Menu', icon: '≡' },
         ].map((t) => (
           <button
