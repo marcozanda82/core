@@ -437,6 +437,7 @@ export default function SalaComandi() {
   const [inputWeight, setInputWeight] = useState('');
   const [inputFat, setInputFat] = useState('');
   const [bodyMetricsSaveToast, setBodyMetricsSaveToast] = useState(false);
+  const [bodyMetricsHistory, setBodyMetricsHistory] = useState([]);
   const [addChoiceView, setAddChoiceView] = useState('main'); // 'main' | 'stimulant'
   const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
   const [stimulantTime, setStimulantTime] = useState(8);
@@ -1228,11 +1229,25 @@ export default function SalaComandi() {
   useEffect(() => {
     if (!user) {
       setIsInitialLoadComplete(false);
+      setBodyMetricsHistory([]);
       return;
     }
     let unsubToday = null;
     const today = getTodayString();
     const basePath = `users/${user.uid}/tracker_data`;
+
+    const unsubBodyMetrics = onValue(ref(db, `users/${user.uid}/body_metrics`), (metricsSnap) => {
+      const val = metricsSnap.val();
+      if (!val || typeof val !== 'object') {
+        setBodyMetricsHistory([]);
+        return;
+      }
+      const arr = Object.entries(val)
+        .map(([id, v]) => (v != null && typeof v === 'object' ? { id, ...v } : null))
+        .filter(Boolean);
+      arr.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+      setBodyMetricsHistory(arr);
+    });
 
     get(ref(db, basePath)).then(snap => {
       const tree = snap.exists() ? snap.val() : null;
@@ -1287,7 +1302,10 @@ export default function SalaComandi() {
 
     get(ref(db, `${basePath}/trackerFoodDatabase`)).then(s => { if (s.exists()) setFoodDb(s.val()); });
 
-    return () => { unsubToday?.(); };
+    return () => {
+      unsubBodyMetrics();
+      unsubToday?.();
+    };
   }, [user]);
 
   // Fallback: quando fullHistory è popolato ma dailyLog è ancora vuoto (es. primo caricamento), sincronizza il log del giorno corrente
@@ -7333,7 +7351,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {activeBottomTab === 'longevita' && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}>
-          <LongevityView data={longevityData} showPriorityFocus userAge={userAge} />
+          <LongevityView data={longevityData} showPriorityFocus userAge={userAge} bodyMetricsHistory={bodyMetricsHistory} />
         </div>
       )}
       {showProfile && (
@@ -8522,7 +8540,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <HomeView longevity={longevityEngineScore} explanation={longevityExplanation} />
 
             <div style={{ marginBottom: '32px', color: '#e8e8e8' }}>
-              <LongevityView data={longevityEngineScore} showPriorityFocus={false} userAge={userAge} />
+              <LongevityView data={longevityEngineScore} showPriorityFocus={false} userAge={userAge} bodyMetricsHistory={bodyMetricsHistory} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>
