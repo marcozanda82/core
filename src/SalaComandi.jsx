@@ -5563,9 +5563,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             const targetCarb = userTargets?.carb ?? 200;
             const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0, gap: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
-                <div style={{ position: 'relative', width: '286px', height: '286px', margin: '0 auto 4px auto', zIndex: 10, flexShrink: 0 }} onClick={() => setSelectedMealCenter(null)}>
+                <div style={{ position: 'relative', width: '310px', height: '310px', margin: '0 auto 0 auto', zIndex: 10, flexShrink: 0 }} onClick={() => setSelectedMealCenter(null)}>
                   <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'visible' }}>
                     {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
                     <div
@@ -5675,41 +5675,44 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     </div>
                   </div>
                 </div>
-                {/* Box macronutrienti neon (3 colonne) */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', width: '100%', marginBottom: '4px', flexShrink: 0 }}>
-                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
-                    <div style={{ color: '#b666d2', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Proteine</div>
-                    <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                      {Math.round(totali?.prot || 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetProt)} g</span>
-                    </div>
-                  </div>
-                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
-                    <div style={{ color: '#00ff88', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Carboidrati</div>
-                    <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                      {Math.round(totali?.carb || 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetCarb)} g</span>
-                    </div>
-                  </div>
-                  <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
-                    <div style={{ color: '#ffd700', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Grassi</div>
-                    <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                      {Math.round(totali?.fatTotal ?? totali?.fat ?? 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetFat)} g</span>
-                    </div>
-                  </div>
-                </div>
-                {/* Widget Fase Metabolica */}
-                <div style={{ width: '100%', flexShrink: 0, background: '#1a1a1c', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '10px', boxSizing: 'border-box', height: 'auto', minHeight: 'min-content' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>⏳</span>
-                      <div>
-                        <div style={{ color: '#888', fontSize: '0.7rem', textTransform: 'uppercase' }}>Fase Metabolica</div>
-                        <div style={{ color: faseColor, fontSize: '1rem', fontWeight: 'bold', letterSpacing: '1px' }}>{faseLabel}</div>
+                {/* Macro + Fase: marginTop auto spinge il blocco in basso nello spazio flessibile */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', marginTop: 'auto', gap: '8px', flexShrink: 0 }}>
+                  {/* Box macronutrienti neon (3 colonne) */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', width: '100%', flexShrink: 0 }}>
+                    <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                      <div style={{ color: '#b666d2', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Proteine</div>
+                      <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                        {Math.round(totali?.prot || 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetProt)} g</span>
                       </div>
                     </div>
-                    <div style={{ color: '#aaa', fontSize: '0.85rem' }}>⏱ Da {lastMealHours}h {lastMealMinutes}m</div>
+                    <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                      <div style={{ color: '#00ff88', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Carboidrati</div>
+                      <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                        {Math.round(totali?.carb || 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetCarb)} g</span>
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                      <div style={{ color: '#ffd700', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Grassi</div>
+                      <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                        {Math.round(totali?.fatTotal ?? totali?.fat ?? 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetFat)} g</span>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ height: '4px', background: '#333', borderRadius: '2px', overflow: 'hidden' }}>
-                    <div style={{ width: `${isAssorbimento ? 40 : Math.min(100, (fastingData.hoursFasted / 16) * 100)}%`, height: '100%', background: faseColor, boxShadow: `0 0 8px ${faseColor}` }}></div>
+                  {/* Widget Fase Metabolica */}
+                  <div style={{ width: '100%', flexShrink: 0, background: '#1a1a1c', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '10px', boxSizing: 'border-box', height: 'auto', minHeight: 'min-content' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>⏳</span>
+                        <div>
+                          <div style={{ color: '#888', fontSize: '0.7rem', textTransform: 'uppercase' }}>Fase Metabolica</div>
+                          <div style={{ color: faseColor, fontSize: '1rem', fontWeight: 'bold', letterSpacing: '1px' }}>{faseLabel}</div>
+                        </div>
+                      </div>
+                      <div style={{ color: '#aaa', fontSize: '0.85rem' }}>⏱ Da {lastMealHours}h {lastMealMinutes}m</div>
+                    </div>
+                    <div style={{ height: '4px', background: '#333', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${isAssorbimento ? 40 : Math.min(100, (fastingData.hoursFasted / 16) * 100)}%`, height: '100%', background: faseColor, boxShadow: `0 0 8px ${faseColor}` }}></div>
+                    </div>
                   </div>
                 </div>
               </div>
