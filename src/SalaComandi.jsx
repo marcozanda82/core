@@ -335,8 +335,10 @@ export default function SalaComandi() {
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
+  const addedFoodsRef = useRef(addedFoods);
   useEffect(() => { isDrawerOpenRef.current = isDrawerOpen; }, [isDrawerOpen]);
   useEffect(() => { activeActionRef.current = activeAction; }, [activeAction]);
+  useEffect(() => { addedFoodsRef.current = addedFoods; }, [addedFoods]);
 
   useEffect(() => {
     if (expandedChart == null) {
@@ -357,6 +359,14 @@ export default function SalaComandi() {
     window.history.pushState({ noExit: true }, '');
     const handlePopState = () => {
       if (isDrawerOpenRef.current) {
+        if (
+          activeActionRef.current === 'pasto' &&
+          (addedFoodsRef.current?.length ?? 0) > 0
+        ) {
+          setShowUnsavedMealWarning(true);
+          window.history.pushState({ noExit: true }, '');
+          return;
+        }
         setIsDrawerOpen(false);
         window.history.pushState({ noExit: true }, '');
       } else if (activeActionRef.current && activeActionRef.current !== 'home') {
@@ -421,6 +431,7 @@ export default function SalaComandi() {
   const [foodNameInput, setFoodNameInput] = useState('');
   const [foodWeightInput, setFoodWeightInput] = useState('');
   const [addedFoods, setAddedFoods] = useState([]);
+  const [showUnsavedMealWarning, setShowUnsavedMealWarning] = useState(false);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
   const [inspectedFood, setInspectedFood] = useState(null);
   const [editFoodData, setEditFoodData] = useState(null);
@@ -2015,7 +2026,38 @@ export default function SalaComandi() {
   }, [fullHistory, trendModalMetric, userTargets, trendDays]);
 
   const openDrawer = () => { setActiveAction(null); setIsDrawerOpen(true); };
-  const closeDrawer = () => {
+
+  const finalizeMealBuilderCloseEmpty = useCallback(() => {
+    setShowUnsavedMealWarning(false);
+    setEditingMealId(null);
+    setAddedFoods([]);
+    setSelectedMealCenter(null);
+    setFoodNameInput('');
+    setFoodWeightInput('');
+    setIsBarcodeScannerOpen(false);
+    setActiveAction('home');
+    setIsDrawerOpen(false);
+  }, []);
+
+  const handleAttemptCloseMeal = useCallback(() => {
+    if ((addedFoods?.length ?? 0) > 0) {
+      setShowUnsavedMealWarning(true);
+      return;
+    }
+    finalizeMealBuilderCloseEmpty();
+  }, [addedFoods, finalizeMealBuilderCloseEmpty]);
+
+  /** @param {{ force?: boolean }} [opts] — `force: true` dopo salvataggio pasto (stesso tick: addedFoods non aggiornato ancora). */
+  const closeDrawer = (opts) => {
+    const force = opts && opts.force === true;
+    if (!force && activeAction === 'pasto' && (addedFoods?.length ?? 0) > 0) {
+      setShowUnsavedMealWarning(true);
+      return;
+    }
+    if (activeAction === 'pasto' && (force || (addedFoods?.length ?? 0) === 0)) {
+      finalizeMealBuilderCloseEmpty();
+      return;
+    }
     setEditingMealId(null);
     setAddedFoods([]);
     setIsDrawerOpen(false);
@@ -2592,7 +2634,7 @@ export default function SalaComandi() {
         setSimulatedLog(prev => [...(prev || []).filter(item => (item.type !== 'food' && item.type !== 'recipe') || getSlotKey(item) !== slotToReplace), ...mealItems]);
         setAddedFoods([]);
         setEditingMealId(null);
-        closeDrawer();
+        closeDrawer({ force: true });
         return;
       }
       setDailyLog(nuovoLog);
@@ -2602,7 +2644,7 @@ export default function SalaComandi() {
     } finally {
       setAddedFoods([]);
       setEditingMealId(null);
-      closeDrawer();
+      closeDrawer({ force: true });
     }
   };
 
@@ -6057,6 +6099,97 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
       <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={closeDrawer}></div>
+
+      {showUnsavedMealWarning &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unsaved-meal-warning-title"
+            onClick={() => setShowUnsavedMealWarning(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 100050,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 20,
+              background: 'rgba(0,0,0,0.72)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: 360,
+                borderRadius: 16,
+                padding: '22px 20px 18px',
+                background: 'linear-gradient(165deg, #1e2128 0%, #12141a 100%)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                boxShadow: '0 24px 48px rgba(0,0,0,0.55)',
+              }}
+            >
+              <h3
+                id="unsaved-meal-warning-title"
+                style={{
+                  margin: '0 0 12px',
+                  fontSize: '1.05rem',
+                  fontWeight: 800,
+                  color: '#f5f5f5',
+                  letterSpacing: '0.02em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <span aria-hidden>⚠️</span> Attenzione
+              </h3>
+              <p style={{ margin: '0 0 22px', fontSize: '0.9rem', lineHeight: 1.5, color: 'rgba(226,232,240,0.88)' }}>
+                Hai inserito degli alimenti che non sono stati salvati. Sei sicuro di voler uscire perdendo le modifiche?
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowUnsavedMealWarning(false)}
+                  style={{
+                    width: '100%',
+                    padding: '14px 16px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(0,229,255,0.35)',
+                    background: 'rgba(0,229,255,0.12)',
+                    color: '#00e5ff',
+                    fontSize: '0.9rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Resta
+                </button>
+                <button
+                  type="button"
+                  onClick={finalizeMealBuilderCloseEmpty}
+                  style={{
+                    width: '100%',
+                    padding: '14px 16px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(248,113,113,0.45)',
+                    background: 'rgba(248,113,113,0.12)',
+                    color: '#f87171',
+                    fontSize: '0.9rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Esci e perdi dati
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       
       <div className={`drawer-content ${isDrawerOpen ? 'open' : ''}`}>
         <div style={{ width: '40px', height: '4px', backgroundColor: '#444', borderRadius: '2px', margin: '0 auto 20px auto' }}></div>
@@ -6482,13 +6615,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         {/* VISTA PASTO RAPIDO - CON BOTTONI CANONICI */}
         {activeAction === 'pasto' && (
           <MealBuilder
-            onClose={() => {
-              setActiveAction('home');
-              setEditingMealId(null);
-              setAddedFoods([]);
-              setSelectedMealCenter(null);
-              setIsDrawerOpen(false);
-            }}
+            onClose={handleAttemptCloseMeal}
             mealType={mealType}
             setMealType={setMealType}
             drawerMealTime={drawerMealTime}
