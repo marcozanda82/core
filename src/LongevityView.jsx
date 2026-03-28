@@ -1,5 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { addDays, getTodayString } from './coreEngine';
+import { getTodayString } from './coreEngine';
+import {
+  getAverageForPeriod,
+  calculateConsolidatedAverageScore as calculateAverageScore,
+  calculateProjectedAge,
+} from './longevityStats';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -184,107 +189,27 @@ function BodyCompositionChart({ history }) {
   );
 }
 
-function scoreFromHistoryRecord(r) {
-  if (typeof r?.score === 'number' && !Number.isNaN(r.score)) return r.score;
-  if (typeof r?.masterScore === 'number' && !Number.isNaN(r.masterScore)) return r.masterScore;
-  return null;
-}
-
-function buildScoreDateMap(history) {
-  const byDate = new Map();
-  if (!Array.isArray(history)) return byDate;
-  for (const r of history) {
-    const key = r?.date;
-    const s = scoreFromHistoryRecord(r);
-    if (key && s != null) byDate.set(key, s);
-  }
-  return byDate;
-}
-
-/**
- * Media punteggi su `daysLength` giorni di calendario consecutivi.
- * La fine del periodo è `addDays(anchorDate, -offsetDays)` (0 = periodo che termina nel giorno tracker).
- * Per il giorno uguale ad `anchorDate` si usa `liveTodayScore`.
- * Ritorna null se non c'è alcun punteggio disponibile nel periodo (es. giorno singolo mancante in storico).
- */
-function getAverageForPeriod(history, daysLength, offsetDays, anchorDate, liveTodayScore) {
-  if (!anchorDate || daysLength < 1) return null;
-  const live =
-    typeof liveTodayScore === 'number' && !Number.isNaN(liveTodayScore)
-      ? liveTodayScore
-      : null;
-  const byDate = buildScoreDateMap(history);
-  const periodEnd = addDays(anchorDate, -offsetDays);
-
-  if (daysLength === 1) {
-    if (offsetDays === 0) {
-      return live != null ? live : null;
-    }
-    const s = byDate.get(periodEnd);
-    return s != null && !Number.isNaN(s) ? s : null;
-  }
-
-  const values = [];
-  for (let h = 0; h < daysLength; h++) {
-    const dayStr = addDays(periodEnd, -h);
-    if (dayStr === anchorDate) {
-      if (live != null) values.push(live);
-    } else if (byDate.has(dayStr)) {
-      values.push(byDate.get(dayStr));
-    }
-  }
-  if (values.length === 0) return null;
-  const sum = values.reduce((a, b) => a + b, 0);
-  return sum / values.length;
-}
-
-function calculateAverageScore(days, anchorDate, scoreHistory, todayScore) {
-  const raw = getAverageForPeriod(scoreHistory, days, 0, anchorDate, todayScore);
-  if (raw == null) {
-    const t = typeof todayScore === 'number' && !Number.isNaN(todayScore) ? todayScore : 0;
-    return Math.round(t);
-  }
-  return Math.round(raw);
-}
-
-function calculateProjectedAge(age, score) {
-  if (!age || typeof age !== 'number' || typeof score !== 'number') return null;
-  const maxAge = 100;
-  const baseAge = 85;
-  const minAge = age + age * 0.1;
-
-  if (score >= 50) {
-    return baseAge + ((score - 50) / 50) * (maxAge - baseAge);
-  }
-  return minAge + (score / 50) * (baseAge - minAge);
-}
-
 export default function LongevityView({
   data,
   showPriorityFocus = true,
   userAge,
   bodyMetricsHistory = [],
   scoreHistory = [],
-  todayScore: todayScoreProp,
   periodAnchorDate,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const timeOptions = [
-    { label: 'Oggi', value: 1 },
+    { label: 'Ieri', value: 1 },
     { label: '7g', value: 7 },
     { label: '14g', value: 14 },
     { label: '30g', value: 30 },
   ];
 
   const anchorDate = periodAnchorDate || getTodayString();
-  const todayScore =
-    typeof todayScoreProp === 'number' && !Number.isNaN(todayScoreProp)
-      ? todayScoreProp
-      : data?.score || data?.masterScore || 0;
 
   const averageScore = useMemo(
-    () => calculateAverageScore(timeWindow, anchorDate, scoreHistory, todayScore),
-    [timeWindow, anchorDate, scoreHistory, todayScore]
+    () => calculateAverageScore(timeWindow, anchorDate, scoreHistory),
+    [timeWindow, anchorDate, scoreHistory]
   );
 
   const bioScore =
@@ -294,8 +219,9 @@ export default function LongevityView({
         ? data.masterScore
         : null;
 
+  const hasUserAge = data && typeof userAge === 'number' && !Number.isNaN(userAge);
   const projectedAge =
-    data && typeof userAge === 'number' && !Number.isNaN(userAge) && typeof averageScore === 'number'
+    hasUserAge && typeof averageScore === 'number'
       ? calculateProjectedAge(userAge, averageScore)
       : null;
 
@@ -303,8 +229,8 @@ export default function LongevityView({
     if (!data || typeof userAge !== 'number' || Number.isNaN(userAge)) {
       return { deltaAge: null };
     }
-    const currentAvg = getAverageForPeriod(scoreHistory, timeWindow, 0, anchorDate, todayScore);
-    const previousAvg = getAverageForPeriod(scoreHistory, timeWindow, timeWindow, anchorDate, todayScore);
+    const currentAvg = getAverageForPeriod(scoreHistory, timeWindow, 1, anchorDate, null);
+    const previousAvg = getAverageForPeriod(scoreHistory, timeWindow, timeWindow + 1, anchorDate, null);
     if (currentAvg == null || previousAvg == null) {
       return { deltaAge: null };
     }
@@ -314,7 +240,7 @@ export default function LongevityView({
       return { deltaAge: null };
     }
     return { deltaAge: currentAge - previousAge };
-  }, [data, userAge, scoreHistory, timeWindow, anchorDate, todayScore]);
+  }, [data, userAge, scoreHistory, timeWindow, anchorDate]);
 
   if (!data) {
     return (
@@ -340,7 +266,30 @@ export default function LongevityView({
 
       {/* Cruscotto: Età proiettata o fallback */}
       <div style={{ textAlign: 'center', marginBottom: 30 }}>
-        {projectedAge != null ? (
+        {hasUserAge && averageScore == null ? (
+          <>
+            <div
+              style={{
+                fontSize: '0.95rem',
+                opacity: 0.88,
+                color: '#94a3b8',
+                marginBottom: 16,
+                lineHeight: 1.5,
+                maxWidth: 360,
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }}
+            >
+              Non ci sono ancora abbastanza giorni con dati consolidati nello storico per questo periodo (il giorno corrente è escluso). Registra i giorni precedenti per vedere l&apos;età proiettata.
+            </div>
+            {bioScore != null && (
+              <>
+                <div style={{ fontSize: 48, fontWeight: 'bold', color: getColor(bioScore) }}>{bioScore}</div>
+                <div style={{ fontSize: 16, opacity: 0.7, color: '#a3a3a3', marginTop: 8 }}>Punteggio odierno (non usato per la proiezione)</div>
+              </>
+            )}
+          </>
+        ) : projectedAge != null ? (
           <>
             <div
               style={{
@@ -433,8 +382,8 @@ export default function LongevityView({
             </div>
             <div style={{ fontSize: '0.75rem', opacity: 0.55, marginTop: 10, color: '#94a3b8', lineHeight: 1.4 }}>
               {timeWindow === 1
-                ? 'Proiezione basata solo sulle scelte odierne.'
-                : `Basato sulla media degli ultimi ${timeWindow} giorni (solo giorni con dati disponibili).`}
+                ? 'Proiezione basata sulla giornata di ieri.'
+                : `Basato sulla media degli ultimi ${timeWindow} giorni (escluso oggi).`}
             </div>
           </>
         ) : (

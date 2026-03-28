@@ -94,6 +94,11 @@ import {
   computeLongevityScore,
   buildLongevityExplanation
 } from './coreEngine';
+import {
+  calculateConsolidatedAverageScore,
+  calculateProjectedAge,
+  buildKentuAiVitalsContextParagraph,
+} from './longevityStats';
 
 const CustomDateTick = ({ x, y, payload }) => {
   if (!payload || !payload.value) return null;
@@ -3233,6 +3238,51 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const piccoAnabolico = Math.max(0, ...(anabolicCurve?.map(c => c.anabolicScore) ?? [0]));
       const piccoCortisolo = Math.max(0, ...(cortisolCurve?.map(c => c.cortisolScore) ?? [0]));
 
+      const anchorAi = currentTrackerDate || getTodayString();
+      const lastBodyEntry =
+        Array.isArray(bodyMetricsHistory) && bodyMetricsHistory.length > 0
+          ? bodyMetricsHistory[bodyMetricsHistory.length - 1]
+          : null;
+      const weightKgForAi =
+        lastBodyEntry?.weight != null && Number.isFinite(Number(lastBodyEntry.weight))
+          ? Number(lastBodyEntry.weight)
+          : userProfile?.weight != null && Number.isFinite(Number(userProfile.weight))
+            ? Number(userProfile.weight)
+            : null;
+      let bodyFatPctForAi = null;
+      if (lastBodyEntry?.bodyFat != null && lastBodyEntry.bodyFat !== '') {
+        const n = Number(lastBodyEntry.bodyFat);
+        if (Number.isFinite(n)) bodyFatPctForAi = n;
+      } else if (userProfile?.bodyFat != null && userProfile.bodyFat !== '') {
+        const n = Number(userProfile.bodyFat);
+        if (Number.isFinite(n)) bodyFatPctForAi = n;
+      }
+
+      const avgLong30ForAi = calculateConsolidatedAverageScore(30, anchorAi, longevityScoreHistory);
+      const avgLong7ForAi = calculateConsolidatedAverageScore(7, anchorAi, longevityScoreHistory);
+      const userAgeForAi = calculateAge(birthDate);
+      let projectedAgeForAi = null;
+      if (typeof userAgeForAi === 'number' && !Number.isNaN(userAgeForAi)) {
+        if (avgLong30ForAi != null) projectedAgeForAi = calculateProjectedAge(userAgeForAi, avgLong30ForAi);
+        else if (avgLong7ForAi != null) projectedAgeForAi = calculateProjectedAge(userAgeForAi, avgLong7ForAi);
+      }
+      const longevityMasterFallbackForAi =
+        (typeof longevityEngineScore?.score === 'number' && !Number.isNaN(longevityEngineScore.score)
+          ? longevityEngineScore.score
+          : null) ??
+        (typeof longevityData?.masterScore === 'number' && !Number.isNaN(longevityData.masterScore)
+          ? longevityData.masterScore
+          : null);
+
+      const aiVitalsContextParagraph = buildKentuAiVitalsContextParagraph({
+        weightKg: weightKgForAi,
+        bodyFatPct: bodyFatPctForAi,
+        projectedAge: projectedAgeForAi,
+        avgScore30: avgLong30ForAi,
+        avgScore7: avgLong7ForAi,
+        longevityMasterScoreFallback: longevityMasterFallbackForAi,
+      });
+
       const baseSystemPrompt = `Sei l'assistente di KentuOS. Il tuo scopo è dialogare con l'utente in italiano.
 
 Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino"), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
@@ -3265,7 +3315,7 @@ Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi l
 
 TRACCIAMENTO DEL SONNO E VISION:
 Se l'utente allega uno screenshot di un'app di tracciamento del sonno (es. Mi Fitness) o scrive i dati testualmente, estrai questi valori chiave: Ora di risveglio (es. 06:18 diventa 6.3 in ore decimali), Ore totali di sonno (es. 6 ore e 34 min diventa 6.56), Tempo in fase Profonda in minuti (es. 2h 14m = 134), Tempo in fase REM in minuti, Frequenza cardiaca media (BPM). Rispondi con un breve riepilogo testuale ("Ho letto i dati: hai dormito 6h 34m, recupero profondo ottimo...") e includi un JSON strutturato su una riga: {"action": "log_sleep", "sleepData": {"wakeTime": 6.3, "hours": 6.56, "sleepStart": 23.5, "sleepEnd": 6.3, "deepMin": 134, "remMin": 94, "hr": 56}}. Usa SEMPRE i quick_replies: {"quick_replies": ["Sì, confermo", "No, annulla"]} per la conferma prima del salvataggio.
-${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}`;
+${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZIONE CORPORALE E LONGEVITÀ (contesto utente):\n${aiVitalsContextParagraph}` : ''}`;
 
       const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
       const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
