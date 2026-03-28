@@ -339,9 +339,17 @@ export default function SalaComandi() {
   const [addedFoods, setAddedFoods] = useState([]);
   const [showUnsavedMealWarning, setShowUnsavedMealWarning] = useState(false);
   const addedFoodsRef = useRef(addedFoods);
+  const closeDrawerRef = useRef(null);
   useEffect(() => { isDrawerOpenRef.current = isDrawerOpen; }, [isDrawerOpen]);
   useEffect(() => { activeActionRef.current = activeAction; }, [activeAction]);
-  useEffect(() => { addedFoodsRef.current = addedFoods; }, [addedFoods]);
+  useEffect(() => {
+    if (addedFoodsRef) {
+      addedFoodsRef.current = addedFoods;
+    }
+  }, [addedFoods]);
+  useEffect(() => {
+    closeDrawerRef.current = closeDrawer;
+  });
 
   useEffect(() => {
     if (expandedChart == null) {
@@ -364,22 +372,25 @@ export default function SalaComandi() {
       if (isDrawerOpenRef.current) {
         if (
           activeActionRef.current === 'pasto' &&
-          (addedFoodsRef.current?.length ?? 0) > 0
+          addedFoodsRef.current &&
+          addedFoodsRef.current.length > 0
         ) {
           setShowUnsavedMealWarning(true);
-          window.history.pushState({ noExit: true }, '');
+          window.history.pushState({ drawer: 'open' }, '');
           return;
         }
-        setIsDrawerOpen(false);
+        closeDrawerRef.current?.();
         window.history.pushState({ noExit: true }, '');
-      } else if (activeActionRef.current && activeActionRef.current !== 'home') {
+        return;
+      }
+      if (activeActionRef.current && activeActionRef.current !== 'home') {
         setActiveAction('home');
         window.history.pushState({ noExit: true }, '');
-      } else {
-        const confirmExit = window.confirm('Vuoi uscire da KentuOS?');
-        if (!confirmExit) {
-          window.history.pushState({ noExit: true }, '');
-        }
+        return;
+      }
+      const confirmExit = window.confirm('Vuoi uscire da KentuOS?');
+      if (!confirmExit) {
+        window.history.pushState({ noExit: true }, '');
       }
     };
     window.addEventListener('popstate', handlePopState);
