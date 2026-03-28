@@ -7585,6 +7585,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             scoreHistory={longevityScoreHistory}
             todayScore={longevityTodayScore}
             periodAnchorDate={currentTrackerDate}
+            logForDayEvaluations={activeLog}
+            userTargets={userTargets}
+            energyChartData={chartData}
+            isWaterHydrationAutoPilot={isWaterHydrationAutoPilot}
           />
         </div>
       )}
@@ -8782,6 +8786,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 scoreHistory={longevityScoreHistory}
                 todayScore={longevityTodayScore}
                 periodAnchorDate={currentTrackerDate}
+                logForDayEvaluations={activeLog}
+                userTargets={userTargets}
+                energyChartData={chartData}
+                isWaterHydrationAutoPilot={isWaterHydrationAutoPilot}
               />
             </div>
 

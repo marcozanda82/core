@@ -4,7 +4,7 @@ import {
   calculateConsolidatedAverageScore as calculateAverageScore,
   calculateProjectedAge,
 } from './longevityStats';
-import { getTodayString } from './coreEngine';
+import { getTodayString, computeDayEvaluations } from './coreEngine';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -31,6 +31,14 @@ const MATRIX_PILLAR_LABELS = {
   inflammatory: 'Infiammatorio',
   neuro: 'Neuro / sonno',
 };
+
+/** Stessi indicatori e label del modal «Report Giornaliero» in SalaComandi.jsx */
+const DAY_STAR_EVAL_ROWS = [
+  { key: 'muscle', label: 'Crescita Muscolare', emoji: '💪' },
+  { key: 'fat', label: 'Perdita di Grasso', emoji: '🔥' },
+  { key: 'neuro', label: 'Recupero Neurologico', emoji: '🧠' },
+  { key: 'fast', label: 'Pulizia Cellulare (Digiuno)', emoji: '🕐' },
+];
 
 function formatAxisDate(entry) {
   const ts = Number(entry?.timestamp);
@@ -196,6 +204,12 @@ export default function LongevityView({
   bodyMetricsHistory = [],
   scoreHistory = [],
   periodAnchorDate,
+  /** Log della giornata visualizzata (es. activeLog) per computeDayEvaluations */
+  logForDayEvaluations = null,
+  userTargets = null,
+  /** Punti orari simulazione energia (idratazione) — stesso uso di dailyReportDisplay in SalaComandi */
+  energyChartData = null,
+  isWaterHydrationAutoPilot = false,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const timeOptions = [
@@ -224,6 +238,34 @@ export default function LongevityView({
     hasUserAge && typeof averageScore === 'number'
       ? calculateProjectedAge(userAge, averageScore)
       : null;
+
+  const dayStarReportDisplay = useMemo(() => {
+    const log = logForDayEvaluations;
+    if (!log || !Array.isArray(log)) return null;
+    const foods = log.filter((e) => e.type === 'food' || e.type === 'recipe');
+    if (foods.length === 0 && !log.some((e) => e.type === 'sleep' || e.type === 'workout')) {
+      return null;
+    }
+    const dailyReport = computeDayEvaluations(log, userTargets);
+    if (!dailyReport?.ready) return null;
+
+    const neuroVal = dailyReport.neuro;
+    const neuroScore = typeof neuroVal === 'object' ? neuroVal.score : neuroVal;
+    const neuroReasonBase = typeof neuroVal === 'object' ? neuroVal.reason : '';
+    const chartData = energyChartData;
+    if (!chartData || chartData.length === 0) return dailyReport;
+    const minIdr = Math.min(...chartData.map((p) => p.idratazione ?? 100));
+    const neuroMalus = !isWaterHydrationAutoPilot && minIdr < 45 ? 1 : 0;
+    const neuroReason = neuroMalus
+      ? (neuroReasonBase
+        ? `${neuroReasonBase} DISIDRATAZIONE: Il cervello ha lavorato in condizioni di stress osmotico.`
+        : 'DISIDRATAZIONE: Il cervello ha lavorato in condizioni di stress osmotico.')
+      : neuroReasonBase;
+    return {
+      ...dailyReport,
+      neuro: { score: Math.max(0, neuroScore - neuroMalus), reason: neuroReason },
+    };
+  }, [logForDayEvaluations, userTargets, energyChartData, isWaterHydrationAutoPilot]);
 
   const { deltaAge } = useMemo(() => {
     if (!data || typeof userAge !== 'number' || Number.isNaN(userAge)) {
@@ -435,6 +477,104 @@ export default function LongevityView({
           </p>
         ) : (
           <BodyCompositionChart history={bodyMetricsHistory} />
+        )}
+      </div>
+
+      {/* Report giornaliero a 5 stelle (stessa logica computeDayEvaluations + aggiustamento neuro del modal SalaComandi) */}
+      <div
+        className="chart-card"
+        style={{
+          background: '#111',
+          padding: 16,
+          borderRadius: 12,
+          marginBottom: 24,
+          border: '1px solid #333',
+        }}
+      >
+        <div
+          style={{
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            marginBottom: 10,
+            color: '#e5e5e5',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            borderBottom: '1px solid #222',
+            paddingBottom: 12,
+          }}
+        >
+          <span style={{ color: '#ffc107' }} aria-hidden>★</span>
+          Report giornaliero
+        </div>
+        <p style={{ color: '#888', fontSize: '0.8rem', margin: '0 0 16px' }}>
+          {new Date(`${periodAnchorDate || getTodayString()}T12:00:00`).toLocaleDateString('it-IT', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+          })}
+        </p>
+        {dayStarReportDisplay ? (
+          DAY_STAR_EVAL_ROWS.map(({ key, label, emoji }) => {
+            const item = dayStarReportDisplay[key];
+            const score =
+              typeof item === 'object' && item != null && 'score' in item
+                ? item.score
+                : (Number(item) || 0);
+            const reason =
+              typeof item === 'object' && item != null && 'reason' in item ? item.reason : '';
+            return (
+              <div key={key} style={{ marginBottom: 16 }}>
+                <div
+                  style={{
+                    fontSize: '0.75rem',
+                    color: '#aaa',
+                    marginBottom: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span>
+                    {emoji} {label}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 2 }}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <span
+                      key={n}
+                      style={{
+                        color: n <= score ? '#ffc107' : '#333',
+                        fontSize: '1.1rem',
+                      }}
+                      aria-hidden
+                    >
+                      ★
+                    </span>
+                  ))}
+                </div>
+                {reason ? (
+                  <div
+                    style={{
+                      fontSize: '0.85rem',
+                      color: '#888',
+                      fontStyle: 'italic',
+                      marginTop: 4,
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {reason}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })
+        ) : (
+          <p style={{ margin: 0, fontSize: '0.9rem', color: '#888', lineHeight: 1.5 }}>
+            Nessun dato sufficiente per questa giornata: servono almeno un pasto/ricetta nel diario, oppure sonno o
+            allenamento.
+          </p>
         )}
       </div>
 
