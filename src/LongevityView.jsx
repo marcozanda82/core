@@ -184,30 +184,79 @@ function BodyCompositionChart({ history }) {
   );
 }
 
+function scoreFromHistoryRecord(r) {
+  if (typeof r?.score === 'number' && !Number.isNaN(r.score)) return r.score;
+  if (typeof r?.masterScore === 'number' && !Number.isNaN(r.masterScore)) return r.masterScore;
+  return null;
+}
+
+function buildScoreDateMap(history) {
+  const byDate = new Map();
+  if (!Array.isArray(history)) return byDate;
+  for (const r of history) {
+    const key = r?.date;
+    const s = scoreFromHistoryRecord(r);
+    if (key && s != null) byDate.set(key, s);
+  }
+  return byDate;
+}
+
+/**
+ * Media punteggi su `daysLength` giorni di calendario consecutivi.
+ * La fine del periodo è `addDays(anchorDate, -offsetDays)` (0 = periodo che termina nel giorno tracker).
+ * Per il giorno uguale ad `anchorDate` si usa `liveTodayScore`.
+ * Ritorna null se non c'è alcun punteggio disponibile nel periodo (es. giorno singolo mancante in storico).
+ */
+function getAverageForPeriod(history, daysLength, offsetDays, anchorDate, liveTodayScore) {
+  if (!anchorDate || daysLength < 1) return null;
+  const live =
+    typeof liveTodayScore === 'number' && !Number.isNaN(liveTodayScore)
+      ? liveTodayScore
+      : null;
+  const byDate = buildScoreDateMap(history);
+  const periodEnd = addDays(anchorDate, -offsetDays);
+
+  if (daysLength === 1) {
+    if (offsetDays === 0) {
+      return live != null ? live : null;
+    }
+    const s = byDate.get(periodEnd);
+    return s != null && !Number.isNaN(s) ? s : null;
+  }
+
+  const values = [];
+  for (let h = 0; h < daysLength; h++) {
+    const dayStr = addDays(periodEnd, -h);
+    if (dayStr === anchorDate) {
+      if (live != null) values.push(live);
+    } else if (byDate.has(dayStr)) {
+      values.push(byDate.get(dayStr));
+    }
+  }
+  if (values.length === 0) return null;
+  const sum = values.reduce((a, b) => a + b, 0);
+  return sum / values.length;
+}
+
 function calculateAverageScore(days, anchorDate, scoreHistory, todayScore) {
-  const t = typeof todayScore === 'number' && !Number.isNaN(todayScore) ? todayScore : 0;
-  if (days === 1 || !Array.isArray(scoreHistory) || scoreHistory.length === 0) {
+  const raw = getAverageForPeriod(scoreHistory, days, 0, anchorDate, todayScore);
+  if (raw == null) {
+    const t = typeof todayScore === 'number' && !Number.isNaN(todayScore) ? todayScore : 0;
     return Math.round(t);
   }
-  const byDate = new Map();
-  for (const r of scoreHistory) {
-    const key = r?.date;
-    if (!key) continue;
-    const s =
-      typeof r.score === 'number'
-        ? r.score
-        : typeof r.masterScore === 'number'
-          ? r.masterScore
-          : null;
-    if (s != null && !Number.isNaN(s)) byDate.set(key, s);
+  return Math.round(raw);
+}
+
+function calculateProjectedAge(age, score) {
+  if (!age || typeof age !== 'number' || typeof score !== 'number') return null;
+  const maxAge = 100;
+  const baseAge = 85;
+  const minAge = age + age * 0.1;
+
+  if (score >= 50) {
+    return baseAge + ((score - 50) / 50) * (maxAge - baseAge);
   }
-  const values = [t];
-  for (let i = 1; i < days; i++) {
-    const dStr = addDays(anchorDate, -i);
-    if (byDate.has(dStr)) values.push(byDate.get(dStr));
-  }
-  const sum = values.reduce((a, b) => a + b, 0);
-  return Math.round(sum / values.length);
+  return minAge + (score / 50) * (baseAge - minAge);
 }
 
 export default function LongevityView({
@@ -219,18 +268,6 @@ export default function LongevityView({
   todayScore: todayScoreProp,
   periodAnchorDate,
 }) {
-  const calculateProjectedAge = (age, score) => {
-    if (!age || typeof age !== 'number' || typeof score !== 'number') return null;
-    const maxAge = 100;
-    const baseAge = 85;
-    const minAge = age + (age * 0.1);
-
-    if (score >= 50) {
-      return baseAge + ((score - 50) / 50) * (maxAge - baseAge);
-    }
-    return minAge + (score / 50) * (baseAge - minAge);
-  };
-
   const [timeWindow, setTimeWindow] = useState(30);
   const timeOptions = [
     { label: 'Oggi', value: 1 },
@@ -262,6 +299,23 @@ export default function LongevityView({
       ? calculateProjectedAge(userAge, averageScore)
       : null;
 
+  const { deltaAge } = useMemo(() => {
+    if (!data || typeof userAge !== 'number' || Number.isNaN(userAge)) {
+      return { deltaAge: null };
+    }
+    const currentAvg = getAverageForPeriod(scoreHistory, timeWindow, 0, anchorDate, todayScore);
+    const previousAvg = getAverageForPeriod(scoreHistory, timeWindow, timeWindow, anchorDate, todayScore);
+    if (currentAvg == null || previousAvg == null) {
+      return { deltaAge: null };
+    }
+    const currentAge = calculateProjectedAge(userAge, Math.round(currentAvg));
+    const previousAge = calculateProjectedAge(userAge, Math.round(previousAvg));
+    if (currentAge == null || previousAge == null) {
+      return { deltaAge: null };
+    }
+    return { deltaAge: currentAge - previousAge };
+  }, [data, userAge, scoreHistory, timeWindow, anchorDate, todayScore]);
+
   if (!data) {
     return (
       <div style={{ padding: 20, maxWidth: 600, margin: '0 auto', color: '#e5e5e5' }}>
@@ -288,8 +342,50 @@ export default function LongevityView({
       <div style={{ textAlign: 'center', marginBottom: 30 }}>
         {projectedAge != null ? (
           <>
-            <div style={{ fontSize: '5rem', fontWeight: 900, color: getColor(averageScore), lineHeight: 1.05 }}>
-              {projectedAge.toFixed(1)}
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'flex-end',
+                justifyContent: 'center',
+                gap: 14,
+                lineHeight: 1.05,
+              }}
+            >
+              <div style={{ fontSize: '5rem', fontWeight: 900, color: getColor(averageScore), lineHeight: 1.05 }}>
+                {projectedAge.toFixed(1)}
+              </div>
+              {deltaAge != null && Math.abs(deltaAge) > 0.05 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 4,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '1.15rem',
+                      fontWeight: 600,
+                      padding: '6px 12px',
+                      borderRadius: 999,
+                      background:
+                        deltaAge > 0 ? 'rgba(74, 222, 128, 0.12)' : 'rgba(248, 113, 113, 0.12)',
+                      border:
+                        deltaAge > 0 ? '1px solid rgba(74, 222, 128, 0.35)' : '1px solid rgba(248, 113, 113, 0.35)',
+                      color: deltaAge > 0 ? '#4ade80' : '#f87171',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {deltaAge > 0 ? `↑ +${deltaAge.toFixed(1)}` : `↓ ${deltaAge.toFixed(1)}`}
+                  </div>
+                  <div style={{ fontSize: '0.65rem', fontWeight: 500, color: 'rgba(148, 163, 184, 0.95)', letterSpacing: '0.02em' }}>
+                    vs periodo precedente
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ fontSize: '1.05rem', fontWeight: 600, marginTop: 12, letterSpacing: '0.04em', color: '#e5e5e5' }}>
               Anni di Età Proiettata
