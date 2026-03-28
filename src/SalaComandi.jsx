@@ -336,6 +336,8 @@ export default function SalaComandi() {
 
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
+  const [addedFoods, setAddedFoods] = useState([]);
+  const [showUnsavedMealWarning, setShowUnsavedMealWarning] = useState(false);
   const addedFoodsRef = useRef(addedFoods);
   useEffect(() => { isDrawerOpenRef.current = isDrawerOpen; }, [isDrawerOpen]);
   useEffect(() => { activeActionRef.current = activeAction; }, [activeAction]);
@@ -431,8 +433,6 @@ export default function SalaComandi() {
   const [drawerMealTimeStr, setDrawerMealTimeStr] = useState('12:00');
   const [foodNameInput, setFoodNameInput] = useState('');
   const [foodWeightInput, setFoodWeightInput] = useState('');
-  const [addedFoods, setAddedFoods] = useState([]);
-  const [showUnsavedMealWarning, setShowUnsavedMealWarning] = useState(false);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
   const [inspectedFood, setInspectedFood] = useState(null);
   const [editFoodData, setEditFoodData] = useState(null);
@@ -2026,9 +2026,12 @@ export default function SalaComandi() {
     return computeEvaluationTrend(fullHistory, trendModalMetric, userTargets, trendDays);
   }, [fullHistory, trendModalMetric, userTargets, trendDays]);
 
-  const openDrawer = () => { setActiveAction(null); setIsDrawerOpen(true); };
+  function openDrawer() {
+    setActiveAction(null);
+    setIsDrawerOpen(true);
+  }
 
-  const finalizeMealBuilderCloseEmpty = useCallback(() => {
+  function finalizeMealBuilderCloseEmpty() {
     setShowUnsavedMealWarning(false);
     setEditingMealId(null);
     setAddedFoods([]);
@@ -2038,18 +2041,18 @@ export default function SalaComandi() {
     setIsBarcodeScannerOpen(false);
     setActiveAction('home');
     setIsDrawerOpen(false);
-  }, []);
+  }
 
-  const handleAttemptCloseMeal = useCallback(() => {
+  function handleAttemptCloseMeal() {
     if ((addedFoods?.length ?? 0) > 0) {
       setShowUnsavedMealWarning(true);
       return;
     }
     finalizeMealBuilderCloseEmpty();
-  }, [addedFoods, finalizeMealBuilderCloseEmpty]);
+  }
 
   /** @param {{ force?: boolean }} [opts] — `force: true` dopo salvataggio pasto (stesso tick: addedFoods non aggiornato ancora). */
-  const closeDrawer = (opts) => {
+  function closeDrawer(opts) {
     const force = opts && opts.force === true;
     if (!force && activeAction === 'pasto' && (addedFoods?.length ?? 0) > 0) {
       setShowUnsavedMealWarning(true);
@@ -2063,7 +2066,7 @@ export default function SalaComandi() {
     setAddedFoods([]);
     setIsDrawerOpen(false);
     setTimeout(() => setActiveAction(null), 400);
-  };
+  }
 
   // ============================================================================
   // FUNZIONI CRITICHE CON RETROCOMPATIBILITÀ
