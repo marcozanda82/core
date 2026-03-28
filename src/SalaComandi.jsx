@@ -5130,7 +5130,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         )}
 
       {(activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 70px)', boxSizing: 'border-box', width: '100%' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}>
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato (solo tab Oggi) */}
       {activeBottomTab === 'oggi' && (
       <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(8px, 1vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
@@ -5551,7 +5551,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && activeBottomTab === 'oggi' && (
-        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '8px', padding: '4px 14px 8px', marginBottom: '12px', overflowX: 'hidden', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '8px', padding: '4px 14px 0', marginBottom: 0, overflowX: 'hidden', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {/* --- CRUSCOTTO BIOLOGICO: Anello Calorie + Box Macro Neon + Fase Metabolica --- */}
           {(() => {
             const lastMealHours = Math.floor(fastingData.hoursFasted);
@@ -5676,7 +5676,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                 </div>
                 {/* Macro + Fase: marginTop auto spinge il blocco in basso nello spazio flessibile */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', marginTop: 'auto', gap: '8px', flexShrink: 0 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', marginTop: 'auto', marginBottom: '16px', gap: '8px', flexShrink: 0 }}>
                   {/* Box macronutrienti neon (3 colonne) */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', width: '100%', flexShrink: 0 }}>
                     <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
@@ -7276,7 +7276,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
       )}
       {activeBottomTab === 'longevita' && (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 70px)', boxSizing: 'border-box', width: '100%' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}>
           <LongevityView data={longevityData} showPriorityFocus userAge={userAge} />
         </div>
       )}
@@ -8517,7 +8517,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       )}
 
       {/* Barra Kentu AI + FAB: visibile su Oggi, Analisi e Statistiche (sopra la bottom navigation) */}
-      <div style={{ position: 'fixed', bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))', left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 15px', paddingBottom: '12px', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid #222', zIndex: 9998, boxSizing: 'border-box' }}>
+      <div style={{ position: 'fixed', bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))', left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '15px', paddingRight: '15px', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid rgba(255, 255, 255, 0.08)', zIndex: 9998, boxSizing: 'border-box' }}>
         <div
           onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
           style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '12px 20px', border: '1px solid #333', cursor: 'pointer' }}
