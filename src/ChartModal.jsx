@@ -214,7 +214,7 @@ export default function ChartModal({
         role="dialog"
         aria-modal="true"
         aria-label="Grafico a tutto schermo"
-        style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '100dvh', maxHeight: '100dvh', backgroundColor: '#050508', zIndex: 99999, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}
+        style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '100dvh', maxHeight: '100dvh', backgroundColor: '#050508', zIndex: 100020, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}
       >
         {/* Header */}
         <div style={{ flexShrink: 0, padding: '16px', paddingBottom: '8px' }} onTouchStart={handleModalSwipeStart} onTouchEnd={handleModalSwipeEnd} onMouseDown={handleModalSwipeStartMouse} onMouseUp={handleModalSwipeEndMouse} onMouseLeave={() => { modalSwipeStartXRef.current = null; }}>
