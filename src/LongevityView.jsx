@@ -58,9 +58,6 @@ const SECTION_CARD = {
   border: '1px solid #333',
 };
 
-const STAR_REPORT_FROZEN_TODAY_MSG =
-  'Il report a stelle sarà disponibile da domani mattina, a giornata conclusa, per garantire l\'accuratezza dei dati.';
-
 const PILLAR_KEYS = ['metabolic', 'cardio', 'inflammatory', 'neuro'];
 
 function combinedDayLog(trackerData, dateStr) {
@@ -76,11 +73,12 @@ function dayLogQualifiesForStarEval(L) {
   return foods.length > 0 || L.some((e) => e.type === 'sleep' || e.type === 'workout');
 }
 
-function collectDayLogsInWindow(trackerData, anchorDate, timeWindow) {
+/** `periodEndDate` = ultimo giorno incluso (es. ieri rispetto all’anchor del tracker). */
+function collectDayLogsInWindow(trackerData, periodEndDate, timeWindow) {
   const out = [];
   const tw = Math.max(1, Math.min(366, Number(timeWindow) || 1));
-  for (let i = 1; i <= tw; i++) {
-    const dStr = addDays(anchorDate, -i);
+  for (let i = 0; i < tw; i++) {
+    const dStr = addDays(periodEndDate, -i);
     const L = combinedDayLog(trackerData, dStr);
     if (dayLogQualifiesForStarEval(L)) out.push(L);
   }
@@ -400,6 +398,8 @@ export default function LongevityView({
   ];
 
   const anchorDate = periodAnchorDate || getTodayString();
+  /** Fine comune del periodo statistiche: giorno prima dell’anchor (mai il giorno “live” del tracker). */
+  const statsPeriodEnd = useMemo(() => addDays(anchorDate, -1), [anchorDate]);
 
   const averageScore = useMemo(
     () => calculateAverageScore(timeWindow, anchorDate, scoreHistory),
@@ -419,14 +419,14 @@ export default function LongevityView({
       ? calculateProjectedAge(userAge, averageScore)
       : null;
 
-  /** Pilastri matrice rischi: media sui giorni del periodo (stessa finestra dell’età proiettata). */
+  /** Pilastri: media sui giorni [statsPeriodEnd …], allineata al selettore e a longevityStats (offset 1 sull’anchor). */
   const pillarBreakdownEntries = useMemo(() => {
     if (!fullHistory || !userTargets) return null;
     const sums = { metabolic: 0, cardio: 0, inflammatory: 0, neuro: 0 };
     let count = 0;
     const tw = Math.max(1, Math.min(366, Number(timeWindow) || 1));
-    for (let i = 1; i <= tw; i++) {
-      const dStr = addDays(anchorDate, -i);
+    for (let i = 0; i < tw; i++) {
+      const dStr = addDays(statsPeriodEnd, -i);
       const L = combinedDayLog(fullHistory, dStr);
       if (!dayLogQualifiesForStarEval(L)) continue;
       const m = computeRiskMatrix(fullHistory, userTargets, 1, addDays(dStr, 1));
@@ -438,24 +438,30 @@ export default function LongevityView({
     }
     if (count === 0) return null;
     return PILLAR_KEYS.map((key) => [key, Math.max(0, 100 - sums[key] / count)]);
-  }, [fullHistory, userTargets, anchorDate, timeWindow]);
+  }, [fullHistory, userTargets, statsPeriodEnd, timeWindow]);
 
-  /** Log mediato (o giorno unico) per una sola computeDayEvaluations sul periodo. */
+  /** Log mediato sul periodo che termina in statsPeriodEnd. */
   const mediatedStarLog = useMemo(() => {
     if (!fullHistory || !userTargets) return null;
-    const logs = collectDayLogsInWindow(fullHistory, anchorDate, timeWindow);
+    const logs = collectDayLogsInWindow(fullHistory, statsPeriodEnd, timeWindow);
     return buildMediatedVirtualLog(logs);
-  }, [fullHistory, userTargets, anchorDate, timeWindow]);
+  }, [fullHistory, userTargets, statsPeriodEnd, timeWindow]);
 
-  /** Report a stelle: congelato se anchor è oggi; altrimenti periodo allineato al timeWindow. */
   const dayStarReportDisplay = useMemo(() => {
-    if (anchorDate === getTodayString()) return null;
     if (!mediatedStarLog || mediatedStarLog.length === 0) return null;
     const dailyReport = computeDayEvaluations(mediatedStarLog, userTargets);
     return dailyReport?.ready ? dailyReport : null;
-  }, [anchorDate, mediatedStarLog, userTargets]);
+  }, [mediatedStarLog, userTargets]);
 
-  const isStarReportFrozenToday = anchorDate === getTodayString();
+  const statsPeriodEndLabel = useMemo(
+    () =>
+      new Date(`${statsPeriodEnd}T12:00:00`).toLocaleDateString('it-IT', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      }),
+    [statsPeriodEnd]
+  );
 
   const { deltaAge } = useMemo(() => {
     if (!data || typeof userAge !== 'number' || Number.isNaN(userAge)) {
@@ -518,12 +524,12 @@ export default function LongevityView({
                 marginRight: 'auto',
               }}
             >
-              Non ci sono ancora abbastanza giorni con dati consolidati nello storico per questo periodo (il giorno corrente è escluso). Registra i giorni precedenti per vedere l&apos;età proiettata.
+              Non ci sono ancora abbastanza giorni con dati consolidati nello storico per questo periodo. Registra più giornate passate per vedere l&apos;età proiettata.
             </div>
             {bioScore != null && (
               <>
                 <div style={{ fontSize: 48, fontWeight: 'bold', color: getColor(bioScore) }}>{bioScore}</div>
-                <div style={{ fontSize: 16, opacity: 0.7, color: '#a3a3a3', marginTop: 8 }}>Punteggio odierno (non usato per la proiezione)</div>
+                <div style={{ fontSize: 16, opacity: 0.7, color: '#a3a3a3', marginTop: 8 }}>Punteggio longevità (vista tracker)</div>
               </>
             )}
           </>
@@ -578,9 +584,8 @@ export default function LongevityView({
               Anni di Età Proiettata
             </div>
             <div style={{ fontSize: '0.9rem', opacity: 0.6, marginTop: 10, color: '#a3a3a3' }}>
-              Punteggio longevità medio (
-              {timeWindow > 1 ? `ultimi ${timeWindow} giorni` : 'ieri'}
-              , consolidato, oggi escluso): {averageScore != null ? `${averageScore} / 100` : '—'}
+              Punteggio longevità medio sul periodo selezionato (fine{' '}
+              {statsPeriodEndLabel}): {averageScore != null ? `${averageScore} / 100` : '—'}
             </div>
             <div
               role="tablist"
@@ -621,8 +626,8 @@ export default function LongevityView({
             </div>
             <div style={{ fontSize: '0.75rem', opacity: 0.55, marginTop: 10, color: '#94a3b8', lineHeight: 1.4 }}>
               {timeWindow === 1
-                ? 'Proiezione basata sulla giornata di ieri.'
-                : `Basato sulla media degli ultimi ${timeWindow} giorni (escluso oggi).`}
+                ? `Proiezione basata sulla giornata che termina il ${statsPeriodEndLabel}.`
+                : `Media degli ultimi ${timeWindow} giorni che terminano il ${statsPeriodEndLabel}.`}
             </div>
           </>
         ) : (
@@ -661,8 +666,8 @@ export default function LongevityView({
           </div>
           <div style={{ fontSize: '0.8rem', color: '#888', marginBottom: 14, lineHeight: 1.45 }}>
             {pillarBreakdownEntries
-              ? `Media dei pilastri su ${timeWindow === 1 ? '1 giorno' : `${timeWindow} giorni`} con dati (finestra come il selettore).`
-              : 'Snapshot dal punteggio longevità corrente.'}
+              ? `Media dei pilastri su ${timeWindow === 1 ? '1 giorno' : `${timeWindow} giorni`} con dati; fine periodo: ${statsPeriodEndLabel}.`
+              : 'Snapshot dal punteggio longevità della vista tracker.'}
             {averageScore != null ? (
               <span style={{ display: 'block', marginTop: 6, color: '#94a3b8' }}>
                 Punteggio longevità medio stesso periodo (selettore): {averageScore}/100.
@@ -720,7 +725,7 @@ export default function LongevityView({
           {showPriorityFocus && priorityFocus && (
             <div>
               <div style={{ fontSize: 12, opacity: 0.6, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.04em' }}>
-                PRIORITÀ DI OGGI
+                PRIORITÀ SUGGERITA
               </div>
               <div style={{ fontSize: 18, fontWeight: 'bold', marginTop: 6, color: '#e5e5e5' }}>
                 {priorityFocus.title}
@@ -748,7 +753,7 @@ export default function LongevityView({
         )}
       </div>
 
-      {/* 5. Report a stelle (periodo = timeWindow; oggi congelato) */}
+      {/* 5. Report a stelle (periodo che termina in statsPeriodEnd) */}
       <div style={SECTION_CARD}>
         <div
           style={{
@@ -767,21 +772,11 @@ export default function LongevityView({
           {timeWindow > 1 ? `Valutazione media periodo (${timeWindow} giorni)` : 'Report giornaliero'}
         </div>
         <p style={{ color: '#888', fontSize: '0.8rem', margin: '0 0 16px', lineHeight: 1.45 }}>
-          {isStarReportFrozenToday
-            ? `Riferimento: ${new Date(`${anchorDate}T12:00:00`).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })} (giornata in corso)`
-            : timeWindow > 1
-              ? `Media su log consolidati degli ultimi ${timeWindow} giorni con dati (fino a ieri rispetto alla data del tracker).`
-              : new Date(`${anchorDate}T12:00:00`).toLocaleDateString('it-IT', {
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'long',
-                })}
+          {timeWindow > 1
+            ? `Media su log consolidati degli ultimi ${timeWindow} giorni con dati; fine periodo: ${statsPeriodEndLabel}.`
+            : `Giornata di riferimento: ${statsPeriodEndLabel}.`}
         </p>
-        {isStarReportFrozenToday ? (
-          <p style={{ margin: 0, fontSize: '0.9rem', color: '#94a3b8', lineHeight: 1.55 }}>
-            {STAR_REPORT_FROZEN_TODAY_MSG}
-          </p>
-        ) : dayStarReportDisplay ? (
+        {dayStarReportDisplay ? (
           DAY_STAR_EVAL_ROWS.map(({ key, label, emoji }) => {
             const item = dayStarReportDisplay[key];
             const score =
@@ -839,8 +834,8 @@ export default function LongevityView({
           })
         ) : (
           <p style={{ margin: 0, fontSize: '0.9rem', color: '#888', lineHeight: 1.5 }}>
-            Nessun dato sufficiente per questa giornata: servono almeno un pasto/ricetta nel diario, oppure sonno o
-            allenamento.
+            Nessun dato sufficiente nel periodo selezionato: nei giorni considerati servono almeno un pasto o ricetta nel
+            diario, oppure sonno o allenamento.
           </p>
         )}
       </div>
