@@ -14,6 +14,12 @@ import { ComposedChart, LineChart, Line, XAxis, YAxis, ResponsiveContainer, Refe
 
 import { ref, get, set, push, onValue, update, remove } from 'firebase/database';
 
+import {
+  calculateConsolidatedAverageScore,
+  calculateProjectedAge,
+  buildKentuAiVitalsContextParagraph,
+} from './longevityStats';
+
 import { useFirebase } from './useFirebase';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
@@ -94,11 +100,6 @@ import {
   computeLongevityScore,
   buildLongevityExplanation
 } from './coreEngine';
-import {
-  calculateConsolidatedAverageScore,
-  calculateProjectedAge,
-  buildKentuAiVitalsContextParagraph,
-} from './longevityStats';
 
 const CustomDateTick = ({ x, y, payload }) => {
   if (!payload || !payload.value) return null;

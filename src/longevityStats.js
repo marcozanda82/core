@@ -1,4 +1,4 @@
-import { addDays } from './coreEngine';
+import { addDays } from './calendarDateUtils';
 
 export function scoreFromHistoryRecord(r) {
   if (typeof r?.score === 'number' && !Number.isNaN(r.score)) return r.score;

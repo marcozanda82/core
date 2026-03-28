@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { computeTotali } from './useBiochimico';
+import { addDays } from './calendarDateUtils';
 
 const RADIAN = Math.PI / 180;
 
@@ -41,13 +42,6 @@ function getMondayOfWeek(dateStr) {
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
-}
-
-/** Add n days to dateStr (YYYY-MM-DD), return YYYY-MM-DD. */
-function addDays(dateStr, n) {
-  const d = new Date(dateStr + 'T12:00:00');
-  d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 }
 

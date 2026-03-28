@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { getTodayString } from './coreEngine';
 import {
   getAverageForPeriod,
   calculateConsolidatedAverageScore as calculateAverageScore,
   calculateProjectedAge,
 } from './longevityStats';
+import { getTodayString } from './coreEngine';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -19,11 +19,11 @@ import { Line } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-const getColor = (value) => {
+function getColor(value) {
   if (value >= 75) return '#22c55e'; // verde
   if (value >= 50) return '#facc15'; // giallo
   return '#ef4444'; // rosso
-};
+}
 
 const MATRIX_PILLAR_LABELS = {
   metabolic: 'Metabolico',
