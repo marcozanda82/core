@@ -5,6 +5,7 @@ import {
   calculateProjectedAge,
 } from './longevityStats';
 import { computeTotali } from './useBiochimico';
+import { calculateMetabolicVariance } from './metabolicEngine';
 import {
   getTodayString,
   computeDayEvaluations,
@@ -388,6 +389,8 @@ export default function LongevityView({
   /** Albero storico Firebase (tracker_data) per pilastri e log mediato sul periodo */
   fullHistory = null,
   userTargets = null,
+  /** TDEE / kcal giornalieri di riferimento per il twin metabolico (default: userTargets.kcal) */
+  metabolicTDEE = null,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const timeOptions = [
@@ -461,6 +464,20 @@ export default function LongevityView({
         month: 'long',
       }),
     [statsPeriodEnd]
+  );
+
+  const resolvedMetabolicTDEE = useMemo(() => {
+    if (typeof metabolicTDEE === 'number' && Number.isFinite(metabolicTDEE) && metabolicTDEE > 0) {
+      return metabolicTDEE;
+    }
+    const k = userTargets?.kcal;
+    if (typeof k === 'number' && Number.isFinite(k) && k > 0) return k;
+    return 2000;
+  }, [metabolicTDEE, userTargets?.kcal]);
+
+  const metabolicVariance = useMemo(
+    () => calculateMetabolicVariance(bodyMetricsHistory, fullHistory, resolvedMetabolicTDEE),
+    [bodyMetricsHistory, fullHistory, resolvedMetabolicTDEE]
   );
 
   const { deltaAge } = useMemo(() => {
@@ -744,6 +761,38 @@ export default function LongevityView({
           <span aria-hidden>⚖️</span>
           Trend composizione corporea
         </div>
+        {bodyMetricsHistory.length >= 2 && metabolicVariance && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: 12,
+              borderRadius: 10,
+              background: 'rgba(0, 229, 255, 0.06)',
+              border: '1px dashed rgba(0, 229, 255, 0.35)',
+            }}
+          >
+            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#00e5ff', letterSpacing: '0.08em', marginBottom: 8 }}>
+              DEBUG · Motore metabolico predittivo
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.55 }}>
+              <div>
+                Variazione Reale (ultimi {metabolicVariance.daysBetween} giorni):{' '}
+                <strong style={{ color: '#e5e5e5' }}>{metabolicVariance.actualWeightDelta.toFixed(2)} kg</strong>
+              </div>
+              <div style={{ marginTop: 6 }}>
+                Variazione Teorica stimata:{' '}
+                <strong style={{ color: '#e5e5e5' }}>{metabolicVariance.theoreticalWeightDelta.toFixed(2)} kg</strong>
+              </div>
+              <div style={{ marginTop: 6 }}>
+                Discrepanza Metabolica:{' '}
+                <strong style={{ color: '#e5e5e5' }}>{metabolicVariance.variance.toFixed(2)} kg</strong>
+              </div>
+              <div style={{ marginTop: 8, fontSize: '0.72rem', color: '#64748b' }}>
+                TDEE {resolvedMetabolicTDEE} kcal/dì · Δ kcal cumulato {Math.round(metabolicVariance.cumulativeCaloricDelta)} kcal
+              </div>
+            </div>
+          </div>
+        )}
         {bodyMetricsHistory.length === 0 ? (
           <p style={{ margin: 0, fontSize: '0.9rem', color: '#888', lineHeight: 1.5 }}>
             Nessuna pesata registrata. Usa il tasto + per inserire il tuo primo dato.
