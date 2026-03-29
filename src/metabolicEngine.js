@@ -54,11 +54,12 @@ function calendarDaysSpan(oldDateStr, newDateStr) {
 
 /**
  * Digital twin — confronto variazione di peso reale vs attesa da deficit/surplus cumulato.
+ * Con `bodyFat` su entrambe le ultime pesate: scompone FM/FFM e confronta il Δ grasso col Δ teorico.
  *
  * @param {Array} bodyMetricsHistory — voci con `weight`, `timestamp` e/o `date`
  * @param {object|null} fullHistory — albero tracker_data (come in SalaComandi)
  * @param {number} currentTDEE — fabbisogno giornaliero di riferimento (es. userTargets.kcal)
- * @returns {object|null}
+ * @returns {object|null} — include `actualFatDelta` / `actualLeanDelta` (null se manca bodyFat su una delle due pesate)
  */
 export function calculateMetabolicVariance(bodyMetricsHistory, fullHistory, currentTDEE) {
   const tdee =
@@ -109,7 +110,37 @@ export function calculateMetabolicVariance(bodyMetricsHistory, fullHistory, curr
   }
 
   const theoreticalWeightDelta = cumulativeCaloricDelta / KCAL_PER_KG_BODY_MASS;
-  const variance = actualWeightDelta - theoreticalWeightDelta;
+
+  const rawBfOld = pesataOld?.bodyFat;
+  const rawBfNew = pesataNew?.bodyFat;
+  const bfOld = Number(rawBfOld);
+  const bfNew = Number(rawBfNew);
+  const hasBodyFatOnBoth =
+    rawBfOld != null &&
+    rawBfOld !== '' &&
+    rawBfNew != null &&
+    rawBfNew !== '' &&
+    Number.isFinite(bfOld) &&
+    Number.isFinite(bfNew) &&
+    bfOld >= 0 &&
+    bfNew >= 0;
+
+  let actualFatDelta = null;
+  let actualLeanDelta = null;
+  if (hasBodyFatOnBoth) {
+    const oldFM = rowOld.weight * (bfOld / 100);
+    const newFM = rowNew.weight * (bfNew / 100);
+    actualFatDelta = newFM - oldFM;
+    const oldLBM = rowOld.weight - oldFM;
+    const newLBM = rowNew.weight - newFM;
+    actualLeanDelta = newLBM - oldLBM;
+  }
+
+  const variance =
+    actualFatDelta != null
+      ? actualFatDelta - theoreticalWeightDelta
+      : actualWeightDelta - theoreticalWeightDelta;
+
   const daysBetween = calendarDaysSpan(oldD, newD);
 
   return {
@@ -118,6 +149,8 @@ export function calculateMetabolicVariance(bodyMetricsHistory, fullHistory, curr
     actualWeightDelta,
     theoreticalWeightDelta,
     variance,
+    actualFatDelta,
+    actualLeanDelta,
     daysBetween,
     cumulativeCaloricDelta,
   };

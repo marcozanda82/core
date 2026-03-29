@@ -775,20 +775,65 @@ export default function LongevityView({
               DEBUG · Motore metabolico predittivo
             </div>
             <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.55 }}>
-              <div>
-                Variazione Reale (ultimi {metabolicVariance.daysBetween} giorni):{' '}
-                <strong style={{ color: '#e5e5e5' }}>{metabolicVariance.actualWeightDelta.toFixed(2)} kg</strong>
-              </div>
-              <div style={{ marginTop: 6 }}>
-                Variazione Teorica stimata:{' '}
-                <strong style={{ color: '#e5e5e5' }}>{metabolicVariance.theoreticalWeightDelta.toFixed(2)} kg</strong>
-              </div>
-              <div style={{ marginTop: 6 }}>
-                Discrepanza Metabolica:{' '}
-                <strong style={{ color: '#e5e5e5' }}>{metabolicVariance.variance.toFixed(2)} kg</strong>
-              </div>
+              {metabolicVariance.actualFatDelta != null &&
+              metabolicVariance.actualLeanDelta != null ? (
+                <>
+                  <div>
+                    Variazione Peso Totale:{' '}
+                    <strong style={{ color: '#e5e5e5' }}>
+                      {metabolicVariance.actualWeightDelta.toFixed(2)} kg
+                    </strong>
+                  </div>
+                  <div style={{ marginTop: 4, paddingLeft: 10 }}>
+                    ↳ Di cui Grasso (FM):{' '}
+                    <strong style={{ color: '#e5e5e5' }}>
+                      {metabolicVariance.actualFatDelta.toFixed(2)} kg
+                    </strong>
+                  </div>
+                  <div style={{ marginTop: 4, paddingLeft: 10 }}>
+                    ↳ Di cui Magra (FFM):{' '}
+                    <strong style={{ color: '#e5e5e5' }}>
+                      {metabolicVariance.actualLeanDelta.toFixed(2)} kg
+                    </strong>
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    Variazione Grasso Teorica:{' '}
+                    <strong style={{ color: '#e5e5e5' }}>
+                      {metabolicVariance.theoreticalWeightDelta.toFixed(2)} kg
+                    </strong>
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    Discrepanza Metabolica (su Grasso):{' '}
+                    <strong style={{ color: '#e5e5e5' }}>
+                      {metabolicVariance.variance.toFixed(2)} kg
+                    </strong>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    Variazione Reale (ultimi {metabolicVariance.daysBetween} giorni):{' '}
+                    <strong style={{ color: '#e5e5e5' }}>
+                      {metabolicVariance.actualWeightDelta.toFixed(2)} kg
+                    </strong>
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    Variazione Teorica stimata:{' '}
+                    <strong style={{ color: '#e5e5e5' }}>
+                      {metabolicVariance.theoreticalWeightDelta.toFixed(2)} kg
+                    </strong>
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    Discrepanza Metabolica:{' '}
+                    <strong style={{ color: '#e5e5e5' }}>
+                      {metabolicVariance.variance.toFixed(2)} kg
+                    </strong>
+                  </div>
+                </>
+              )}
               <div style={{ marginTop: 8, fontSize: '0.72rem', color: '#64748b' }}>
-                TDEE {resolvedMetabolicTDEE} kcal/dì · Δ kcal cumulato {Math.round(metabolicVariance.cumulativeCaloricDelta)} kcal
+                TDEE {resolvedMetabolicTDEE} kcal/dì · Δ kcal cumulato{' '}
+                {Math.round(metabolicVariance.cumulativeCaloricDelta)} kcal
               </div>
             </div>
           </div>
