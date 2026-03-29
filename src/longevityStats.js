@@ -116,3 +116,47 @@ export function buildKentuAiVitalsContextParagraph({
     ' Usa questi dati storici per personalizzare i tuoi consigli su nutrizione e stile di vita.';
   return `${vitalsLine}${longevityBit}${tail}`.trim();
 }
+
+/**
+ * Blocco testuale per il system prompt Kentu AI: twin metabolico e ricomposizione FM/FFM
+ * (output di `calculateMetabolicVariance`). Stringa vuota se i dati non bastano.
+ */
+export function buildKentuAiMetabolicRecompositionContext(metabolicVariance) {
+  if (!metabolicVariance || typeof metabolicVariance !== 'object') return '';
+
+  const w = Number(metabolicVariance.actualWeightDelta);
+  const th = Number(metabolicVariance.theoreticalWeightDelta);
+  const v = Number(metabolicVariance.variance);
+  if (!Number.isFinite(w) || !Number.isFinite(th) || !Number.isFinite(v)) return '';
+
+  const fmt = (n) => Number(n).toFixed(2);
+
+  const fatD = metabolicVariance.actualFatDelta;
+  const leanD = metabolicVariance.actualLeanDelta;
+  const hasFmFfm =
+    fatD != null &&
+    leanD != null &&
+    Number.isFinite(Number(fatD)) &&
+    Number.isFinite(Number(leanD));
+
+  if (hasFmFfm) {
+    return `=== ANALISI RICOMPOSIZIONE CORPOREA (Ultime due misurazioni) ===
+- Variazione Peso Totale: ${fmt(w)} kg
+- Variazione Massa Grassa (FM): ${fmt(fatD)} kg
+- Variazione Massa Magra (FFM/Acqua): ${fmt(leanD)} kg
+- Calo Teorico Atteso (da deficit kcal): ${fmt(th)} kg
+- Discrepanza Metabolica: ${fmt(v)} kg
+
+DIRETTIVE SPECIALI PER L'IA SULLA RICOMPOSIZIONE:
+1. Non lodare mai la perdita di peso se la Variazione Massa Magra (FFM) è fortemente negativa (catabolismo). In tal caso, avvisa l'utente e consiglia di aumentare proteine, idratazione o allenamento di resistenza.
+2. Se la Massa Grassa scende ma il Peso Totale è stabile (ricomposizione), congratulati esplicitamente, spiegando che l'allenamento sta preservando il muscolo.
+3. Se la Discrepanza Metabolica è molto positiva (> 0.5kg) e l'utente chiede perché non dimagrisce, spiegagli il concetto di "adattamento metabolico" o di "ritenzione idrica da stress/cortisolo", suggerendo un ricalcolo del TDEE o tecniche di scarico dello stress.`;
+  }
+
+  return `=== ANDAMENTO PESO E BILANCIO ENERGETICO (Ultime due misurazioni, senza scomposizione FM/FFM) ===
+- Variazione Peso Osservata: ${fmt(w)} kg
+- Variazione Teorica Attesa (da deficit/surplus kcal cumulato): ${fmt(th)} kg
+- Discrepanza Metabolica: ${fmt(v)} kg
+
+DIRETTIVA: Se l'utente chiede perché il peso non scende nonostante il deficit, spiega in modo sobrio possibili cause (adattamento metabolico, ritenzione idrica, errori di stima del fabbisogno) e suggerisci di rivalutare il TDEE e lo stress/sonno, senza inventare valori oltre ai numeri forniti.`;
+}

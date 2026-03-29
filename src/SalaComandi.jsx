@@ -18,7 +18,9 @@ import {
   calculateConsolidatedAverageScore,
   calculateProjectedAge,
   buildKentuAiVitalsContextParagraph,
+  buildKentuAiMetabolicRecompositionContext,
 } from './longevityStats';
+import { calculateMetabolicVariance } from './metabolicEngine';
 
 import { useFirebase } from './useFirebase';
 import ChartModal from './ChartModal';
@@ -3503,6 +3505,20 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         longevityMasterScoreFallback: longevityMasterFallbackForAi,
       });
 
+      const currentTdeeForAi =
+        userTargets?.kcal != null &&
+        Number.isFinite(Number(userTargets.kcal)) &&
+        Number(userTargets.kcal) > 0
+          ? Number(userTargets.kcal)
+          : null;
+      const metabolicVarianceForAi = calculateMetabolicVariance(
+        bodyMetricsHistory,
+        fullHistory,
+        currentTdeeForAi
+      );
+      const metabolicRecompositionContext =
+        buildKentuAiMetabolicRecompositionContext(metabolicVarianceForAi);
+
       const baseSystemPrompt = `Sei l'assistente di KentuOS. Il tuo scopo è dialogare con l'utente in italiano.
 
 Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino"), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
@@ -3535,7 +3551,7 @@ Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi l
 
 TRACCIAMENTO DEL SONNO E VISION:
 Se l'utente allega uno screenshot di un'app di tracciamento del sonno (es. Mi Fitness) o scrive i dati testualmente, estrai questi valori chiave: Ora di risveglio (es. 06:18 diventa 6.3 in ore decimali), Ore totali di sonno (es. 6 ore e 34 min diventa 6.56), Tempo in fase Profonda in minuti (es. 2h 14m = 134), Tempo in fase REM in minuti, Frequenza cardiaca media (BPM). Rispondi con un breve riepilogo testuale ("Ho letto i dati: hai dormito 6h 34m, recupero profondo ottimo...") e includi un JSON strutturato su una riga: {"action": "log_sleep", "sleepData": {"wakeTime": 6.3, "hours": 6.56, "sleepStart": 23.5, "sleepEnd": 6.3, "deepMin": 134, "remMin": 94, "hr": 56}}. Usa SEMPRE i quick_replies: {"quick_replies": ["Sì, confermo", "No, annulla"]} per la conferma prima del salvataggio.
-${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZIONE CORPORALE E LONGEVITÀ (contesto utente):\n${aiVitalsContextParagraph}` : ''}`;
+${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZIONE CORPORALE E LONGEVITÀ (contesto utente):\n${aiVitalsContextParagraph}` : ''}${metabolicRecompositionContext ? `\n\n${metabolicRecompositionContext}` : ''}`;
 
       const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
       const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
