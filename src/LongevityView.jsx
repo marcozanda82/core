@@ -5,7 +5,7 @@ import {
   calculateProjectedAge,
 } from './longevityStats';
 import { computeTotali } from './useBiochimico';
-import { calculateMetabolicVariance } from './metabolicEngine';
+import { calculateMetabolicVariance, KCAL_PER_KG_BODY_MASS } from './metabolicEngine';
 import {
   getTodayString,
   computeDayEvaluations,
@@ -461,6 +461,8 @@ export default function LongevityView({
   userTargets = null,
   /** TDEE / kcal giornalieri di riferimento per il twin metabolico (default: userTargets.kcal) */
   metabolicTDEE = null,
+  /** Salva nuovo TDEE su Firebase (es. autopilota metabolico) */
+  onUpdateTDEE = null,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const timeOptions = [
@@ -549,6 +551,32 @@ export default function LongevityView({
     () => calculateMetabolicVariance(bodyMetricsHistory, fullHistory, resolvedMetabolicTDEE),
     [bodyMetricsHistory, fullHistory, resolvedMetabolicTDEE]
   );
+
+  const metabolicAutopilot = useMemo(() => {
+    if (!metabolicVariance) return null;
+    const daysBetween = Number(metabolicVariance.daysBetween);
+    if (!Number.isFinite(daysBetween) || daysBetween < 5) {
+      return { tooSoon: true, daysBetween };
+    }
+    const variance = Number(metabolicVariance.variance);
+    if (!Number.isFinite(variance)) return null;
+    const dailyError = (variance * KCAL_PER_KG_BODY_MASS) / daysBetween;
+    let suggestedCorrection = -Math.round(dailyError);
+    if (suggestedCorrection > 200) suggestedCorrection = 200;
+    if (suggestedCorrection < -200) suggestedCorrection = -200;
+    const currentTDEE = userTargets?.kcal || 2000;
+    const newSuggestedTDEE = Math.max(800, Math.min(12000, Math.round(currentTDEE + suggestedCorrection)));
+    const needsRecalibration = Math.abs(suggestedCorrection) >= 50;
+    return {
+      tooSoon: false,
+      dailyError,
+      suggestedCorrection,
+      currentTDEE,
+      newSuggestedTDEE,
+      needsRecalibration,
+      daysBetween,
+    };
+  }, [metabolicVariance, userTargets?.kcal]);
 
   const { deltaAge } = useMemo(() => {
     if (!data || typeof userAge !== 'number' || Number.isNaN(userAge)) {
@@ -905,6 +933,60 @@ export default function LongevityView({
                 TDEE {resolvedMetabolicTDEE} kcal/dì · Δ kcal cumulato{' '}
                 {Math.round(metabolicVariance.cumulativeCaloricDelta)} kcal
               </div>
+              {metabolicAutopilot != null && (
+                <>
+                  <hr
+                    style={{
+                      border: 'none',
+                      borderTop: '1px solid #333',
+                      margin: '12px 0',
+                    }}
+                  />
+                  {metabolicAutopilot.tooSoon ? (
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', lineHeight: 1.45 }}>
+                      Servono almeno 5 giorni tra le pesate per l&apos;autopilota.
+                    </div>
+                  ) : metabolicAutopilot.needsRecalibration ? (
+                    <div style={{ marginTop: 2 }}>
+                      <div
+                        style={{
+                          fontSize: '0.82rem',
+                          color: '#fcd34d',
+                          lineHeight: 1.5,
+                          marginBottom: 10,
+                        }}
+                      >
+                        ⚠️ Adattamento rilevato: il tuo metabolismo si sta discostando dalla teoria di circa{' '}
+                        {Math.abs(Math.round(metabolicAutopilot.dailyError))} kcal al giorno.
+                      </div>
+                      {typeof onUpdateTDEE === 'function' ? (
+                        <button
+                          type="button"
+                          onClick={() => onUpdateTDEE(metabolicAutopilot.newSuggestedTDEE)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 14px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(14, 165, 233, 0.5)',
+                            background: 'linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%)',
+                            color: '#fff',
+                            fontWeight: 700,
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 12px rgba(14, 165, 233, 0.25)',
+                          }}
+                        >
+                          Ricalibra TDEE a {metabolicAutopilot.newSuggestedTDEE} kcal
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.82rem', color: '#86efac', lineHeight: 1.45 }}>
+                      ✅ TDEE perfettamente allineato al tuo metabolismo reale.
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}

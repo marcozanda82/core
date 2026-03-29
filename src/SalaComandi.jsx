@@ -1610,6 +1610,31 @@ export default function SalaComandi() {
     }).catch(err => console.error("Errore salvataggio profilo:", err));
   };
 
+  /** Ricalibrazione TDEE (kcal) — persistenza in `profile_targets/targets` come nel resto dell'app. */
+  const handleUpdateTDEE = useCallback(
+    async (newKcal) => {
+      const n = Math.round(Number(newKcal));
+      if (!Number.isFinite(n) || n < 800 || n > 12000) {
+        alert('Valore kcal non valido.');
+        return;
+      }
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        alert('Accedi per aggiornare il TDEE.');
+        return;
+      }
+      try {
+        await update(ref(db, `users/${uid}/profile_targets`), { 'targets/kcal': n });
+        setUserTargets((prev) => ({ ...prev, kcal: n }));
+        alert(`TDEE aggiornato con successo a ${n} kcal.`);
+      } catch (err) {
+        console.error('Aggiornamento TDEE:', err);
+        alert('Errore durante il salvataggio del TDEE.');
+      }
+    },
+    [auth, db]
+  );
+
   const handleSaveBodyMetrics = useCallback(async () => {
     const w = parseFloat(String(inputWeight).replace(',', '.'));
     if (!Number.isFinite(w) || w <= 0) {
@@ -7766,6 +7791,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             periodAnchorDate={currentTrackerDate}
             fullHistory={fullHistory}
             userTargets={userTargets}
+            onUpdateTDEE={handleUpdateTDEE}
           />
         </div>
       )}
@@ -8965,6 +8991,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 periodAnchorDate={currentTrackerDate}
                 fullHistory={fullHistory}
                 userTargets={userTargets}
+                onUpdateTDEE={handleUpdateTDEE}
               />
             </div>
 
