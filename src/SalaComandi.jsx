@@ -292,6 +292,150 @@ export function calculateAge(dobString) {
   return age;
 }
 
+/** Alias intestazioni CSV bilance / app salute (Renpho, Xiaomi, Withings, ecc.) */
+const COLUMN_ALIASES = {
+  date: ['date', 'data', 'time', 'ora', 'misurazione', 'measurement'],
+  weight: ['peso', 'weight', 'poid', 'kg', 'lbs'],
+  fat: ['grasso', 'fat', 'adipose', 'bf'],
+  muscle: ['muscol', 'muscle', 'skeletal'],
+  water: ['acqua', 'water', 'hydration', 'eau'],
+  visceral: ['viscerale', 'visceral', 'vfr'],
+};
+
+const CSV_BODY_METRIC_FIELDS = ['date', 'weight', 'fat', 'muscle', 'water', 'visceral'];
+
+function extractNumber(str) {
+  if (str == null) return null;
+  let s = String(str).replace(/[^0-9.,-]/g, '');
+  if (!s || s === '-') return null;
+  const lastComma = s.lastIndexOf(',');
+  if (lastComma !== -1) {
+    s = `${s.slice(0, lastComma).replace(/,/g, '')}.${s.slice(lastComma + 1)}`;
+  }
+  s = s.replace(/,/g, '');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeCsvTimeFragment(timePart) {
+  const t = String(timePart).trim();
+  if (!t) return '12:00:00';
+  if (/^\d{1,2}:\d{2}$/.test(t)) return `${t}:00`;
+  if (/^\d{1,2}:\d{2}:\d{2}/.test(t)) return t.slice(0, 8);
+  return t;
+}
+
+/**
+ * Riconosce YYYY-MM-DD, EU (GG/MM/YYYY o GG-MM-YYYY con primi token) e US MM-DD-YYYY quando ambiguo con trattino.
+ * @returns {{ isoDate: string, timestamp: number } | null}
+ */
+function parseUniversalDate(raw) {
+  if (raw == null || raw === '') return null;
+  const str = String(raw).trim();
+  const [datePart, ...timeRest] = str.split(/\s+/);
+  if (!datePart) return null;
+  const timePart = timeRest.join(' ').trim();
+
+  let year;
+  let month;
+  let day;
+
+  let m = datePart.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (m) {
+    year = Number(m[1]);
+    month = Number(m[2]);
+    day = Number(m[3]);
+  } else {
+    m = datePart.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) {
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      const y = Number(m[3]);
+      if (a > 12) {
+        day = a;
+        month = b;
+        year = y;
+      } else if (b > 12) {
+        month = a;
+        day = b;
+        year = y;
+      } else {
+        day = a;
+        month = b;
+        year = y;
+      }
+    } else {
+      m = datePart.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+      if (m) {
+        const a = Number(m[1]);
+        const b = Number(m[2]);
+        const y = Number(m[3]);
+        if (a > 12) {
+          day = a;
+          month = b;
+          year = y;
+        } else if (b > 12) {
+          month = a;
+          day = b;
+          year = y;
+        } else {
+          month = a;
+          day = b;
+          year = y;
+        }
+      }
+    }
+  }
+
+  if (
+    year == null ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return null;
+  }
+
+  const isoDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const isoTime = normalizeCsvTimeFragment(timePart);
+  const d = new Date(`${isoDate}T${isoTime}`);
+  if (!Number.isFinite(d.getTime())) return null;
+  return { isoDate, timestamp: d.getTime() };
+}
+
+function buildBodyMetricsColumnMap(headerLine) {
+  const headerCells = headerLine
+    .replace(/"/g, '')
+    .toLowerCase()
+    .split(',')
+    .map((h) => h.trim());
+
+  const columnMap = { date: -1, weight: -1, fat: -1, muscle: -1, water: -1, visceral: -1 };
+
+  for (const field of CSV_BODY_METRIC_FIELDS) {
+    const aliases = COLUMN_ALIASES[field];
+    if (!aliases) continue;
+    for (let i = 0; i < headerCells.length; i++) {
+      const h = headerCells[i];
+      if (aliases.some((alias) => h.includes(alias))) {
+        columnMap[field] = i;
+        break;
+      }
+    }
+  }
+
+  if (columnMap.date === -1 || columnMap.weight === -1) {
+    throw new Error(
+      "CSV: intestazione non valida — servono colonne riconoscibili per data e peso (es. 'date'/'data' e 'weight'/'peso')."
+    );
+  }
+
+  return { columnMap, headerCells };
+}
+
 export default function SalaComandi() {
   const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
   const isAuthenticated = !!user;
@@ -1536,54 +1680,32 @@ export default function SalaComandi() {
           return;
         }
 
+        const { columnMap } = buildBodyMetricsColumnMap(lines[0]);
+        const mappedIndices = Object.values(columnMap).filter((idx) => idx >= 0);
+        const maxColIdx = mappedIndices.length ? Math.max(...mappedIndices) : 0;
+
         const payloads = [];
 
         for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].replace(/"/g, '');
-          const cols = line.split(',');
-          if (cols.length < 3) continue;
+          const cols = lines[i].replace(/"/g, '').split(',');
+          if (cols.length <= maxColIdx) continue;
 
-          const dateTimeRaw = (cols[0] || '').trim();
-          const datePart = dateTimeRaw.split(/\s+/)[0];
-          const parts = datePart.split('-');
-          if (parts.length !== 3) continue;
-          const [month, day, year] = parts.map((x) => String(x).trim());
-          if (!year || !month || !day) continue;
-          const isoDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          const dateRaw = (cols[columnMap.date] ?? '').trim();
+          const parsed = parseUniversalDate(dateRaw);
+          const weight = extractNumber(cols[columnMap.weight]);
+          if (parsed == null || weight == null) continue;
 
-          const weightStr = String(cols[1] ?? '')
-            .replace(/kg/gi, '')
-            .replace(',', '.')
-            .trim();
-          const cleanWeight = parseFloat(weightStr);
-          if (!Number.isFinite(cleanWeight) || Number.isNaN(cleanWeight)) continue;
+          const payload = {
+            date: parsed.isoDate,
+            timestamp: parsed.timestamp,
+            weight,
+          };
+          if (columnMap.fat !== -1) payload.bodyFat = extractNumber(cols[columnMap.fat]);
+          if (columnMap.muscle !== -1) payload.muscle = extractNumber(cols[columnMap.muscle]);
+          if (columnMap.water !== -1) payload.water = extractNumber(cols[columnMap.water]);
+          if (columnMap.visceral !== -1) payload.visceral = extractNumber(cols[columnMap.visceral]);
 
-          const fatStr = String(cols[2] ?? '')
-            .replace(/%/g, '')
-            .replace(',', '.')
-            .trim();
-          const cleanFatParsed = parseFloat(fatStr);
-          const cleanFat =
-            Number.isFinite(cleanFatParsed) && !Number.isNaN(cleanFatParsed)
-              ? cleanFatParsed
-              : null;
-
-          const timePart = dateTimeRaw.split(/\s+/)[1];
-          let timestamp = Date.now();
-          if (timePart) {
-            const parsed = new Date(`${isoDate}T${timePart}`);
-            if (Number.isFinite(parsed.getTime())) timestamp = parsed.getTime();
-          } else {
-            const noon = new Date(`${isoDate}T12:00:00`);
-            if (Number.isFinite(noon.getTime())) timestamp = noon.getTime();
-          }
-
-          payloads.push({
-            date: isoDate,
-            weight: cleanWeight,
-            bodyFat: cleanFat,
-            timestamp,
-          });
+          payloads.push(payload);
         }
 
         if (payloads.length === 0) {
@@ -1594,18 +1716,26 @@ export default function SalaComandi() {
         const metricsRef = ref(db, `users/${uid}/body_metrics`);
         const batch = {};
         for (const p of payloads) {
-          batch[push(metricsRef).key] = {
+          const entry = {
             date: p.date,
-            weight: p.weight,
-            bodyFat: p.bodyFat,
             timestamp: p.timestamp,
+            weight: p.weight,
           };
+          if ('bodyFat' in p) entry.bodyFat = p.bodyFat;
+          if ('muscle' in p) entry.muscle = p.muscle;
+          if ('water' in p) entry.water = p.water;
+          if ('visceral' in p) entry.visceral = p.visceral;
+          batch[push(metricsRef).key] = entry;
         }
         await update(metricsRef, batch);
         alert(`✅ Importazione completata! ${payloads.length} misurazioni salvate nel database.`);
       } catch (err) {
         console.error('Errore importazione CSV body metrics:', err);
-        alert('❌ Errore durante la conversione o il salvataggio del CSV. Controlla la console.');
+        alert(
+          err?.message?.startsWith('CSV:')
+            ? err.message
+            : '❌ Errore durante la conversione o il salvataggio del CSV. Controlla la console.'
+        );
       }
     };
     reader.readAsText(file);
