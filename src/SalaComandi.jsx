@@ -4556,6 +4556,26 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const targetKcalForAlerts = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
   const targetMacros = { prot: userTargets?.prot ?? 150, carb: userTargets?.carb ?? 200, fat: userTargets?.fatTotal ?? userTargets?.fat ?? 65 };
   const totalMacrosTimeline = { prot: totali?.prot ?? 0, carb: totali?.carb ?? 0, fat: totali?.fatTotal ?? totali?.fat ?? 0 };
+
+  const remainingKcal = Math.max(0, Math.round(dynamicDailyKcal - (Number(totali?.kcal) || 0)));
+  const remainingPro = Math.max(0, Math.round((targetMacros.prot || 0) - (Number(totali?.prot) || 0)));
+  const remainingCho = Math.max(0, Math.round((targetMacros.carb || 0) - (Number(totali?.carb) || 0)));
+  const remainingFat = Math.max(0, Math.round((targetMacros.fat || 0) - (Number(totali?.fatTotal ?? totali?.fat) || 0)));
+
+  const handleAskDinnerIdeas = () => {
+    const dinnerPrompt = `Sono arrivato a fine giornata e non so cosa mangiare. Ho bisogno di chiudere i miei macro senza alcuno stress o decisioni complicate. 
+Mi mancano circa: ${remainingKcal} kcal (${remainingPro}g Proteine, ${remainingCho}g Carboidrati, ${remainingFat}g Grassi). 
+
+Agisci come uno chef focalizzato sul relax e sulla praticità. 
+NON farmi domande. NON propormi ricette con più di 3-4 ingredienti o cotture lunghe.
+Proponimi ESATTAMENTE 3 opzioni dirette, rassicuranti e facilissime da preparare che centrino (più o meno) questi macro. 
+Indica le grammature stimate a fianco agli ingredienti. Usa un tono calmo e incoraggiante.`;
+    setActiveAction('ai_chat');
+    setIsDrawerOpen(true);
+    setChatInput('');
+    void handleChatSubmit(dinnerPrompt);
+  };
+
   const isNightDeficit = displayTime >= 20 && targetKcalForAlerts > 0 && ((totalCaloriesTimeline || 0) / targetKcalForAlerts) <= 0.60;
   const isProteinSaturated = displayTime <= 15 && (targetMacros?.prot ?? 0) > 0 && ((totalMacrosTimeline.prot || 0) / (targetMacros.prot || 1)) >= 0.90;
   const upcomingWorkout = allNodes.find(n => (n.type === 'workout' || n.type === 'work') && n.time > displayTime && n.time <= displayTime + 2);
@@ -5689,6 +5709,38 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
       )}
 
+      {activeBottomTab === 'oggi' && userProfile?.level === 'pro' && (
+        <button
+          type="button"
+          className="dinner-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleAskDinnerIdeas();
+          }}
+          style={{
+            width: '100%',
+            maxWidth: 420,
+            margin: '0 auto 10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            padding: '11px 16px',
+            borderRadius: 14,
+            border: '1px solid rgba(251, 191, 36, 0.35)',
+            background: 'linear-gradient(145deg, rgba(30, 27, 45, 0.95), rgba(20, 18, 32, 0.98))',
+            color: '#fde68a',
+            fontSize: '0.88rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            boxShadow: '0 4px 20px rgba(251, 146, 60, 0.12), inset 0 1px 0 rgba(255,255,255,0.06)',
+          }}
+        >
+          <span aria-hidden style={{ fontSize: '1.15rem' }}>🍽️</span>
+          Kentu, cosa mangio stasera?
+        </button>
+      )}
+
       {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
         <div style={{ fontSize: '13px', opacity: 0.7, color: '#94a3b8', marginBottom: '6px' }}>
           {homeLongevityInsightLine}
@@ -6391,6 +6443,38 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       </div>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    className="dinner-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAskDinnerIdeas();
+                    }}
+                    style={{
+                      width: '100%',
+                      marginTop: 4,
+                      padding: '12px 14px',
+                      borderRadius: 14,
+                      border: '1px solid rgba(251, 191, 36, 0.35)',
+                      background: 'linear-gradient(145deg, rgba(30, 27, 45, 0.95), rgba(20, 18, 32, 0.98))',
+                      color: '#fde68a',
+                      fontSize: '0.88rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.02em',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      boxShadow: '0 4px 20px rgba(251, 146, 60, 0.12), inset 0 1px 0 rgba(255,255,255,0.06)',
+                      transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                    }}
+                  >
+                    <span aria-hidden style={{ fontSize: '1.15rem' }}>
+                      🍽️
+                    </span>
+                    Kentu, cosa mangio stasera?
+                  </button>
                   {/* Widget Fase Metabolica */}
                   <div style={{ width: '100%', flexShrink: 0, background: '#1a1a1c', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '10px', boxSizing: 'border-box', height: 'auto', minHeight: 'min-content' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
