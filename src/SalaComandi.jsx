@@ -191,6 +191,96 @@ function getZenBreathAudioFade(phaseName, phaseMs) {
   return null;
 }
 
+/**
+ * Pasti unici (ultimi 30 giorni) dal diario storico: label compatta + macro medi per occorrenza, per il prompt "cosa mangio stasera".
+ */
+function buildRecentMealsContextForDinner(fullHistory, anchorDateStr) {
+  if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr) return '';
+
+  const byNorm = new Map();
+
+  for (let i = 0; i < 30; i++) {
+    const dStr = addDays(anchorDateStr, -i);
+    const log = getLogFromStoricoTree(fullHistory, dStr) || [];
+    const foods = log.filter(
+      (item) => item && (item.type === 'food' || item.type === 'recipe' || item.type === 'meal')
+    );
+    if (foods.length === 0) continue;
+
+    const groups = {};
+    foods.forEach((item) => {
+      const timeKey = typeof item.mealTime === 'number' ? String(item.mealTime) : 'unknown';
+      const typeKey = item.mealType || 'pasto';
+      const gid = `${typeKey}_${timeKey}`;
+      if (!groups[gid]) groups[gid] = [];
+      groups[gid].push(item);
+    });
+
+    Object.values(groups).forEach((items) => {
+      if (!items.length) return;
+      const names = [];
+      const seen = new Set();
+      for (const it of items) {
+        const raw = (it.desc || it.name || '').trim();
+        if (!raw) continue;
+        const low = raw.toLowerCase();
+        if (seen.has(low)) continue;
+        seen.add(low);
+        names.push(raw);
+        if (names.length >= 4) break;
+      }
+      if (!names.length) return;
+
+      const displayName = names.slice(0, 3).join(' e ');
+      const norm = displayName
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      let kcal = 0;
+      let prot = 0;
+      let carb = 0;
+      let fat = 0;
+      items.forEach((it) => {
+        kcal += Number(it.kcal || it.cal || 0) || 0;
+        prot += Number(it.prot || it.proteine || 0) || 0;
+        carb += Number(it.carb || it.carboidrati || 0) || 0;
+        fat += Number(it.fatTotal || it.fat || it.grassi || 0) || 0;
+      });
+
+      if (kcal < 10 && prot < 2 && carb < 2 && fat < 2) return;
+
+      const prev = byNorm.get(norm);
+      if (prev) {
+        prev.n += 1;
+        prev.kcal += kcal;
+        prev.prot += prot;
+        prev.carb += carb;
+        prev.fat += fat;
+        if (displayName.length > prev.label.length) prev.label = displayName;
+      } else {
+        byNorm.set(norm, { label: displayName, n: 1, kcal, prot, carb, fat });
+      }
+    });
+  }
+
+  const rows = Array.from(byNorm.values())
+    .map((v) => ({
+      label: v.label.length > 72 ? `${v.label.slice(0, 69)}…` : v.label,
+      n: v.n,
+      kcal: Math.round(v.kcal / v.n),
+      prot: Math.round(v.prot / v.n),
+      carb: Math.round(v.carb / v.n),
+      fat: Math.round(v.fat / v.n)
+    }))
+    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
+    .slice(0, 25);
+
+  return rows.map((r) => `- ${r.label} (~${r.kcal} kcal, P${r.prot} / C${r.carb} / F${r.fat} g)`).join('\n');
+}
+
 const FIREBASE_LOAD_OVERLAY_FADE_MS = 800;
 
 /** Riferimenti stabili per chart vuoto / notte in sospeso (evita ricalcoli longevity ad ogni render). */
@@ -4563,13 +4653,32 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const remainingFat = Math.max(0, Math.round((targetMacros.fat || 0) - (Number(totali?.fatTotal ?? totali?.fat) || 0)));
 
   const handleAskDinnerIdeas = () => {
+    const anchor = currentTrackerDate || getTodayString();
+    const recentMealsContext = buildRecentMealsContextForDinner(fullHistory, anchor);
+    const hasRecentMeals = Boolean(recentMealsContext && recentMealsContext.trim());
+
+    const familiarityBlock = hasRecentMeals
+      ? `STORICO PASTI RECENTI:
+${recentMealsContext}
+
+DIRETTIVA PRIORITARIA DI FAMILIARITÀ:
+1. Analizza i pasti che ho consumato recentemente sopra elencati. 
+2. Se tra questi ce n'è uno che si incastra bene con i macro mancanti (${remainingPro}g P, ${remainingCho}g C, ${remainingFat}g F), proponimelo come PRIMA OPZIONE. Dire: "Ti propongo un tuo classico: [Nome Pasto]".
+3. Le altre 2 opzioni possono essere nuove, ma devono comunque rispettare la regola della semplicità estrema (massimo 3-4 ingredienti).
+4. Ricorda: il mio obiettivo è lo zero stress decisionale. Proponi pasti che sai che ho già in casa o che sono abituato a gestire.`
+      : `STORICO PASTI RECENTI: (nessun pasto registrato negli ultimi 30 giorni nel diario.)
+
+Procedi con le 3 proposte standard come da istruzioni generali: stesso tono calmo e semplicità estrema; non usare la formula "tuo classico" se non hai elenco sopra.`;
+
     const dinnerPrompt = `Sono arrivato a fine giornata e non so cosa mangiare. Ho bisogno di chiudere i miei macro senza alcuno stress o decisioni complicate. 
 Mi mancano circa: ${remainingKcal} kcal (${remainingPro}g Proteine, ${remainingCho}g Carboidrati, ${remainingFat}g Grassi). 
 
 Agisci come uno chef focalizzato sul relax e sulla praticità. 
 NON farmi domande. NON propormi ricette con più di 3-4 ingredienti o cotture lunghe.
 Proponimi ESATTAMENTE 3 opzioni dirette, rassicuranti e facilissime da preparare che centrino (più o meno) questi macro. 
-Indica le grammature stimate a fianco agli ingredienti. Usa un tono calmo e incoraggiante.`;
+Indica le grammature stimate a fianco agli ingredienti. Usa un tono calmo e incoraggiante.
+
+${familiarityBlock}`;
     setActiveAction('ai_chat');
     setIsDrawerOpen(true);
     setChatInput('');
