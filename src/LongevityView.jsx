@@ -30,6 +30,31 @@ import { Line } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
+/** Tooltip composizione: segue X del dato, ancorato in alto sul chartArea per non coprire le curve. */
+Tooltip.positioners.bodyCompositionTopBand = function bodyCompositionTopBand(items) {
+  if (!items?.length) return false;
+  const chart = items[0].chart;
+  const { chartArea } = chart;
+  if (!chartArea || chartArea.width <= 0) return false;
+  let xSum = 0;
+  let n = 0;
+  for (let i = 0; i < items.length; i++) {
+    const el = items[i].element;
+    if (el && typeof el.hasValue === 'function' && el.hasValue()) {
+      const pos = el.tooltipPosition();
+      xSum += pos.x;
+      n += 1;
+    }
+  }
+  if (!n) return false;
+  return {
+    x: xSum / n,
+    y: chartArea.top + 14,
+    xAlign: 'center',
+    yAlign: 'bottom',
+  };
+};
+
 function getColor(value) {
   if (value >= 75) return '#22c55e'; // verde
   if (value >= 50) return '#facc15'; // giallo
@@ -415,24 +440,41 @@ function BodyCompositionChart({ history }) {
             },
           },
           tooltip: {
-            backgroundColor: 'rgba(15,15,18,0.95)',
+            position: 'bodyCompositionTopBand',
+            mode: 'index',
+            intersect: false,
+            caretPadding: 10,
+            caretSize: 5,
+            cornerRadius: 8,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
             titleColor: '#e5e5e5',
-            bodyColor: '#ccc',
-            borderColor: 'rgba(255,255,255,0.1)',
+            bodyColor: '#d4d4d4',
+            borderColor: 'rgba(255,255,255,0.12)',
             borderWidth: 1,
-            filter: (tooltipItem) => {
-              const y = tooltipItem.parsed?.y;
-              return y != null && Number.isFinite(y);
-            },
+            padding: 10,
+            displayColors: false,
+            filter: (tooltipItem) => tooltipItem.datasetIndex === 0,
             callbacks: {
               label: (context) => {
-                const label = context.dataset.label || '';
-                const y = context.parsed.y;
-                if (!Number.isFinite(y)) return '';
-                if (label.startsWith('Peso')) {
-                  return ` ${label}: ${y.toFixed(1)} kg`;
+                const i = context.dataIndex;
+                const parts = [];
+                const w = weightData[i];
+                if (w != null && Number.isFinite(Number(w))) {
+                  parts.push(`Peso: ${Number(w).toFixed(1)}kg`);
                 }
-                return ` ${label}: ${y.toFixed(1)}%`;
+                const bf = fatData[i];
+                if (bf != null && Number.isFinite(Number(bf))) {
+                  parts.push(`Grasso: ${Number(bf).toFixed(1)}%`);
+                }
+                const mus = muscleData[i];
+                if (mus != null && Number.isFinite(Number(mus))) {
+                  parts.push(`Muscoli: ${Number(mus).toFixed(1)}%`);
+                }
+                const wat = waterData[i];
+                if (wat != null && Number.isFinite(Number(wat))) {
+                  parts.push(`Acqua: ${Number(wat).toFixed(1)}%`);
+                }
+                return parts.length ? parts.join(' | ') : '—';
               },
             },
           },
