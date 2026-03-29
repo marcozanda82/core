@@ -1517,62 +1517,95 @@ export default function SalaComandi() {
 
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const text = event.target?.result;
-      if (!text || typeof text !== 'string') return;
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-
-      if (lines.length < 2) {
-        alert('File CSV vuoto o non valido.');
-        return;
-      }
-
-      const updates = {};
-      let count = 0;
-      const uid = userUid;
-
-      for (let i = 1; i < lines.length; i++) {
-        let line = lines[i];
-        if (line.startsWith('"') && line.endsWith('"')) {
-          line = line.substring(1, line.length - 1);
+      try {
+        const text = event.target?.result;
+        if (!text || typeof text !== 'string') {
+          alert('File CSV vuoto o non valido.');
+          return;
         }
-        const cols = line.split('","');
-        if (cols.length < 10) continue;
 
-        const dateString = cols[0];
-        const datePart = dateString.split(' ')[0];
-        const parts = datePart.split('-');
-        if (parts.length < 3) continue;
-        const [month, day, year] = parts;
-        if (!year || !month || !day) continue;
-        const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-
-        const cleanNum = (str) => parseFloat((str || '').replace(/[^0-9.]/g, '')) || 0;
-
-        const bodyMetrics = {
-          weight: cleanNum(cols[1]),
-          bodyFat: cleanNum(cols[2]),
-          muscleMass: cleanNum(cols[3]),
-          water: cleanNum(cols[8]),
-          timestamp: Date.now()
-        };
-
-        if (uid) {
-          const path = `users/${uid}/tracker_data/trackerStorico_${formattedDate}/bodyMetrics`;
-          updates[path] = bodyMetrics;
-          count++;
+        const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        if (lines.length < 2) {
+          alert('File CSV vuoto o non valido.');
+          return;
         }
-      }
 
-      if (count > 0 && uid) {
-        try {
-          await update(ref(db), updates);
-          alert(`✅ Importazione completata! ${count} misurazioni salvate nel database.`);
-        } catch (error) {
-          console.error('Errore importazione batch:', error);
-          alert('❌ Errore durante il salvataggio dei dati.');
+        const uid = userUid;
+        if (!uid) {
+          alert('Accedi per importare le misurazioni.');
+          return;
         }
-      } else if (count === 0) {
-        alert('Nessuna riga valida trovata nel CSV.');
+
+        const payloads = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].replace(/"/g, '');
+          const cols = line.split(',');
+          if (cols.length < 3) continue;
+
+          const dateTimeRaw = (cols[0] || '').trim();
+          const datePart = dateTimeRaw.split(/\s+/)[0];
+          const parts = datePart.split('-');
+          if (parts.length !== 3) continue;
+          const [month, day, year] = parts.map((x) => String(x).trim());
+          if (!year || !month || !day) continue;
+          const isoDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+
+          const weightStr = String(cols[1] ?? '')
+            .replace(/kg/gi, '')
+            .replace(',', '.')
+            .trim();
+          const cleanWeight = parseFloat(weightStr);
+          if (!Number.isFinite(cleanWeight) || Number.isNaN(cleanWeight)) continue;
+
+          const fatStr = String(cols[2] ?? '')
+            .replace(/%/g, '')
+            .replace(',', '.')
+            .trim();
+          const cleanFatParsed = parseFloat(fatStr);
+          const cleanFat =
+            Number.isFinite(cleanFatParsed) && !Number.isNaN(cleanFatParsed)
+              ? cleanFatParsed
+              : null;
+
+          const timePart = dateTimeRaw.split(/\s+/)[1];
+          let timestamp = Date.now();
+          if (timePart) {
+            const parsed = new Date(`${isoDate}T${timePart}`);
+            if (Number.isFinite(parsed.getTime())) timestamp = parsed.getTime();
+          } else {
+            const noon = new Date(`${isoDate}T12:00:00`);
+            if (Number.isFinite(noon.getTime())) timestamp = noon.getTime();
+          }
+
+          payloads.push({
+            date: isoDate,
+            weight: cleanWeight,
+            bodyFat: cleanFat,
+            timestamp,
+          });
+        }
+
+        if (payloads.length === 0) {
+          alert('Nessuna riga valida trovata nel CSV.');
+          return;
+        }
+
+        const metricsRef = ref(db, `users/${uid}/body_metrics`);
+        const batch = {};
+        for (const p of payloads) {
+          batch[push(metricsRef).key] = {
+            date: p.date,
+            weight: p.weight,
+            bodyFat: p.bodyFat,
+            timestamp: p.timestamp,
+          };
+        }
+        await update(metricsRef, batch);
+        alert(`✅ Importazione completata! ${payloads.length} misurazioni salvate nel database.`);
+      } catch (err) {
+        console.error('Errore importazione CSV body metrics:', err);
+        alert('❌ Errore durante la conversione o il salvataggio del CSV. Controlla la console.');
       }
     };
     reader.readAsText(file);
