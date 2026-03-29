@@ -449,6 +449,88 @@ function BodyCompositionChart({ history }) {
   );
 }
 
+function TdeeHistoryLineChart({ history }) {
+  const { chartData, chartOptions } = useMemo(() => {
+    const labels = history.map((h) =>
+      typeof h.date === 'string' && h.date.length >= 10 ? h.date : String(h.date ?? '—')
+    );
+    const data = history.map((h) => (Number.isFinite(Number(h.tdee)) ? Number(h.tdee) : 0));
+    const nums = data.filter((n) => Number.isFinite(n));
+    const minV = nums.length ? Math.min(...nums) : 0;
+    const maxV = nums.length ? Math.max(...nums) : 2000;
+    const span = Math.max(30, maxV - minV);
+    const pad = Math.max(40, Math.round(span * 0.25));
+
+    return {
+      chartData: {
+        labels,
+        datasets: [
+          {
+            label: 'TDEE (kcal)',
+            data,
+            borderColor: '#f97316',
+            backgroundColor: 'rgba(249, 115, 22, 0.2)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 4,
+            pointBackgroundColor: '#f97316',
+            pointBorderColor: '#0a0a0a',
+            pointBorderWidth: 1,
+          },
+        ],
+      },
+      chartOptions: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(15,15,18,0.95)',
+            titleColor: '#e5e5e5',
+            bodyColor: '#cbd5e1',
+            borderColor: 'rgba(255,255,255,0.1)',
+            borderWidth: 1,
+            callbacks: {
+              label: (ctx) => `TDEE: ${ctx.parsed.y} kcal`,
+              afterLabel: (ctx) => {
+                const row = history[ctx.dataIndex];
+                if (!row) return '';
+                const hasMacro =
+                  row.prot != null || row.carb != null || row.fat != null;
+                if (!hasMacro) return '';
+                return `P ${row.prot ?? '—'}g · Carb ${row.carb ?? '—'}g · Fat ${row.fat ?? '—'}g`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(255,255,255,0.06)' },
+            ticks: { color: '#888', maxRotation: 45, font: { size: 10 } },
+            border: { color: 'rgba(255,255,255,0.08)' },
+          },
+          y: {
+            beginAtZero: false,
+            min: Math.max(400, minV - pad),
+            max: maxV + pad,
+            grid: { color: 'rgba(255,255,255,0.06)' },
+            ticks: { color: '#fdba74', font: { size: 10 } },
+            border: { display: false },
+          },
+        },
+      },
+    };
+  }, [history]);
+
+  return (
+    <div style={{ height: 220, width: '100%', position: 'relative' }}>
+      <Line data={chartData} options={chartOptions} />
+    </div>
+  );
+}
+
 export default function LongevityView({
   data,
   showPriorityFocus = true,
@@ -463,6 +545,8 @@ export default function LongevityView({
   metabolicTDEE = null,
   /** Salva nuovo TDEE su Firebase (es. autopilota metabolico) */
   onUpdateTDEE = null,
+  /** Storico ricalibrazioni TDEE (nodo `tdee_history`) */
+  tdeeHistory = [],
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const timeOptions = [
@@ -570,6 +654,24 @@ export default function LongevityView({
       return false;
     });
   }, [bodyMetricsHistory, timeWindow, anchorDate]);
+
+  const chartTdeeHistory = useMemo(() => {
+    const tw = Math.max(1, Math.min(366, Number(timeWindow) || 1));
+    const limitDate = addDays(anchorDate, -(tw === 1 ? 7 : tw));
+    return (tdeeHistory || []).filter((r) => {
+      if (r?.date && typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) {
+        return r.date >= limitDate;
+      }
+      const ts = Number(r?.timestamp);
+      if (Number.isFinite(ts)) {
+        const d = new Date(ts);
+        const offset = d.getTimezoneOffset() * 60000;
+        const dayStr = new Date(d.getTime() - offset).toISOString().slice(0, 10);
+        return dayStr >= limitDate;
+      }
+      return false;
+    });
+  }, [tdeeHistory, timeWindow, anchorDate]);
 
   const metabolicAutopilot = useMemo(() => {
     if (!metabolicVariance) return null;
@@ -871,6 +973,31 @@ export default function LongevityView({
           )}
         </div>
       )}
+
+      {/* Storico TDEE (allineato al timeWindow) */}
+      <div style={SECTION_CARD}>
+        <div
+          style={{
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            marginBottom: 14,
+            color: '#e5e5e5',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span aria-hidden>📈</span>
+          Efficienza Metabolica (Storico TDEE)
+        </div>
+        {chartTdeeHistory.length === 0 ? (
+          <p style={{ margin: 0, fontSize: '0.9rem', color: '#888', lineHeight: 1.5 }}>
+            Nessuna ricalibrazione del TDEE registrata in questo periodo.
+          </p>
+        ) : (
+          <TdeeHistoryLineChart history={chartTdeeHistory} />
+        )}
+      </div>
 
       {/* 4. Trend composizione corporea */}
       <div style={SECTION_CARD}>

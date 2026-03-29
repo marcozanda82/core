@@ -615,6 +615,7 @@ export default function SalaComandi() {
   const [inputFat, setInputFat] = useState('');
   const [bodyMetricsSaveToast, setBodyMetricsSaveToast] = useState(false);
   const [bodyMetricsHistory, setBodyMetricsHistory] = useState([]);
+  const [tdeeHistory, setTdeeHistory] = useState([]);
   const [addChoiceView, setAddChoiceView] = useState('main'); // 'main' | 'stimulant'
   const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
   const [stimulantTime, setStimulantTime] = useState(8);
@@ -1407,6 +1408,7 @@ export default function SalaComandi() {
     if (!user) {
       setIsInitialLoadComplete(false);
       setBodyMetricsHistory([]);
+      setTdeeHistory([]);
       return;
     }
     let unsubToday = null;
@@ -1424,6 +1426,19 @@ export default function SalaComandi() {
         .filter(Boolean);
       arr.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
       setBodyMetricsHistory(arr);
+    });
+
+    const unsubTdeeHistory = onValue(ref(db, `users/${user.uid}/tdee_history`), (snap) => {
+      const val = snap.val();
+      if (!val || typeof val !== 'object') {
+        setTdeeHistory([]);
+        return;
+      }
+      const arr = Object.entries(val)
+        .map(([id, v]) => (v != null && typeof v === 'object' ? { id, ...v } : null))
+        .filter(Boolean);
+      arr.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+      setTdeeHistory(arr);
     });
 
     get(ref(db, basePath)).then(snap => {
@@ -1481,6 +1496,7 @@ export default function SalaComandi() {
 
     return () => {
       unsubBodyMetrics();
+      unsubTdeeHistory();
       unsubToday?.();
     };
   }, [user]);
@@ -1612,11 +1628,14 @@ export default function SalaComandi() {
     }).catch(err => console.error("Errore salvataggio profilo:", err));
   };
 
-  /** Ricalibrazione TDEE (kcal) — persistenza in `profile_targets/targets` come nel resto dell'app. */
+  /**
+   * Autopilota metabolico: TDEE + cascata macro (prot fisse; Δ kcal 50% CHO / 50% grassi).
+   * Firebase usa le chiavi `prot` / `carb` / `fat` | `fatTotal` come nel resto dell’app.
+   */
   const handleUpdateTDEE = useCallback(
     async (newKcal) => {
-      const n = Math.round(Number(newKcal));
-      if (!Number.isFinite(n) || n < 800 || n > 12000) {
+      const requested = Math.round(Number(newKcal));
+      if (!Number.isFinite(requested) || requested < 800 || requested > 12000) {
         alert('Valore kcal non valido.');
         return;
       }
@@ -1625,16 +1644,55 @@ export default function SalaComandi() {
         alert('Accedi per aggiornare il TDEE.');
         return;
       }
+      const oldKcal = userTargets.kcal ?? 2000;
+      const deltaKcal = requested - oldKcal;
+
+      const newPro = Math.round(userTargets.prot ?? userTargets.pro ?? 150);
+      const deltaChoGrams = (deltaKcal * 0.5) / 4;
+      const deltaFatGrams = (deltaKcal * 0.5) / 9;
+      const baseCarb = userTargets.carb ?? userTargets.cho ?? 200;
+      const baseFat = userTargets.fatTotal ?? userTargets.fat ?? 70;
+      const newCho = Math.max(50, Math.round(baseCarb + deltaChoGrams));
+      const newFat = Math.max(30, Math.round(baseFat + deltaFatGrams));
+      const finalKcal = Math.round(newPro * 4 + newCho * 4 + newFat * 9);
+
       try {
-        await update(ref(db, `users/${uid}/profile_targets`), { 'targets/kcal': n });
-        setUserTargets((prev) => ({ ...prev, kcal: n }));
-        alert(`TDEE aggiornato con successo a ${n} kcal.`);
+        await update(ref(db, `users/${uid}/profile_targets`), {
+          'targets/kcal': finalKcal,
+          'targets/prot': newPro,
+          'targets/carb': newCho,
+          'targets/fat': newFat,
+          'targets/fatTotal': newFat,
+        });
+        try {
+          await push(ref(db, `users/${uid}/tdee_history`), {
+            date: new Date().toISOString().split('T')[0],
+            timestamp: Date.now(),
+            tdee: finalKcal,
+            prot: newPro,
+            carb: newCho,
+            fat: newFat,
+          });
+        } catch (histErr) {
+          console.error('Salvataggio tdee_history:', histErr);
+        }
+        setUserTargets((prev) => ({
+          ...prev,
+          kcal: finalKcal,
+          prot: newPro,
+          carb: newCho,
+          fat: newFat,
+          fatTotal: newFat,
+        }));
+        alert(
+          `✅ Autopilota Metabolico attivato!\nNuovo TDEE: ${finalKcal} kcal\nProteine: ${newPro}g (Invariate)\nCarboidrati: ${newCho}g\nGrassi: ${newFat}g`
+        );
       } catch (err) {
         console.error('Aggiornamento TDEE:', err);
         alert('Errore durante il salvataggio del TDEE.');
       }
     },
-    [auth, db]
+    [auth, db, userTargets]
   );
 
   const handleSaveBodyMetrics = useCallback(async () => {
@@ -8012,6 +8070,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             fullHistory={fullHistory}
             userTargets={userTargets}
             onUpdateTDEE={handleUpdateTDEE}
+            tdeeHistory={tdeeHistory}
           />
         </div>
       )}
@@ -9212,6 +9271,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 fullHistory={fullHistory}
                 userTargets={userTargets}
                 onUpdateTDEE={handleUpdateTDEE}
+                tdeeHistory={tdeeHistory}
               />
             </div>
 
