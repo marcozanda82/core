@@ -12,6 +12,9 @@ export default function AiCluster({
   chatImages,
   setChatImages,
   onSendMessage,
+  showDinnerSuggestion,
+  onRequestDinnerSuggestion,
+  onLogDinnerOption,
   showAiSettings,
   setShowAiSettings,
   apiKeys,
@@ -148,6 +151,32 @@ export default function AiCluster({
                   ))}
                 </div>
               )}
+              {msg.dinnerOptions && msg.dinnerOptions.length > 0 && !msg.isTyping && typeof onLogDinnerOption === 'function' && (
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px', marginBottom: '4px', alignItems: 'center' }}>
+                  {msg.dinnerOptions.map((opt, oIdx) => (
+                    <button
+                      key={oIdx}
+                      type="button"
+                      onClick={() => {
+                        onLogDinnerOption(opt);
+                        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        background: 'rgba(251, 191, 36, 0.15)',
+                        color: '#fde68a',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(251, 191, 36, 0.35)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Logga pasto {oIdx + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
           <div ref={chatEndRef} />
@@ -164,6 +193,55 @@ export default function AiCluster({
                 >✕</button>
               </div>
             ))}
+          </div>
+        )}
+        {showDinnerSuggestion && typeof onRequestDinnerSuggestion === 'function' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px', marginBottom: '4px', flexShrink: 0, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              title="Suggerimento cena (macro + storico)"
+              aria-label="Suggerimento cena"
+              onClick={() => {
+                onRequestDinnerSuggestion();
+                setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                border: '1px solid rgba(251, 191, 36, 0.3)',
+                background: 'rgba(30, 27, 45, 0.9)',
+                fontSize: '1.15rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.35)',
+              }}
+            >
+              🍽️
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onRequestDinnerSuggestion();
+                setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '999px',
+                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'rgba(255,255,255,0.04)',
+                color: 'rgba(253, 230, 186, 0.85)',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              Suggerimento cena
+            </button>
           </div>
         )}
         <div className="chat-input-wrapper" style={{ marginTop: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 10px', border: '1px solid #333' }}>

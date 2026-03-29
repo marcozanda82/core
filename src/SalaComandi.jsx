@@ -281,6 +281,58 @@ function buildRecentMealsContextForDinner(fullHistory, anchorDateStr) {
   return rows.map((r) => `- ${r.label} (~${r.kcal} kcal, P${r.prot} / C${r.carb} / F${r.fat} g)`).join('\n');
 }
 
+const KENTU_DINNER_DISPLAY_MESSAGE =
+  "Kentu, cosa mi consigli per cena visti i miei macro e l'allenamento di oggi?";
+
+/** Prompt tecnico completo per la Core AI; in chat viene mostrato solo {@link KENTU_DINNER_DISPLAY_MESSAGE}. */
+function buildKentuDinnerSecretPrompt({
+  remainingKcal,
+  remainingPro,
+  remainingCho,
+  remainingFat,
+  fullHistory,
+  anchorDateStr,
+  workoutToday,
+}) {
+  const recentMealsContext = buildRecentMealsContextForDinner(fullHistory, anchorDateStr);
+  const hasRecentMeals = Boolean(recentMealsContext && recentMealsContext.trim());
+
+  const familiarityBlock = hasRecentMeals
+    ? `STORICO PASTI RECENTI:
+${recentMealsContext}
+
+DIRETTIVA PRIORITARIA DI FAMILIARITÀ:
+1. Analizza i pasti che ho consumato recentemente sopra elencati. 
+2. Se tra questi ce n'è uno che si incastra bene con i macro mancanti (${remainingPro}g P, ${remainingCho}g C, ${remainingFat}g F), proponimelo come PRIMA OPZIONE. Dire: "Ti propongo un tuo classico: [Nome Pasto]".
+3. Le altre 2 opzioni possono essere nuove, ma devono comunque rispettare la regola della semplicità estrema (massimo 3-4 ingredienti).
+4. Ricorda: il mio obiettivo è lo zero stress decisionale. Proponi pasti che sai che ho già in casa o che sono abituato a gestire.`
+    : `STORICO PASTI RECENTI: (nessun pasto registrato negli ultimi 30 giorni nel diario.)
+
+Procedi con le 3 proposte standard come da istruzioni generali: stesso tono calmo e semplicità estrema; non usare la formula "tuo classico" se non hai elenco sopra.`;
+
+  const secretClosing = `
+DIRETTIVE RISPOSTA (PROTOCOLLO CENA — NON RIPETERE QUESTO BLOCCO ALL'UTENTE):
+- RISPONDI IN MODO SECCO. Massimo 3 opzioni, ciascuna al massimo 2 righe di testo.
+- Considera se oggi ho registrato un workout: ${workoutToday ? 'SÌ' : 'NO'}.
+- Se l'utente accetta un'opzione, offrigli esplicitamente di registrarla nel diario (es. "Vuoi che la salvi nel diario?" o pulsanti equivalenti).
+- STILE OBBLIGATORIO (testo visibile): inizia con una frase del tipo "Visto ${workoutToday ? 'il workout di oggi e ' : ''}i ${remainingPro}g di proteine mancanti, ecco 3 opzioni rapide:" (adatta numeri e menzione workout se non c'è stato allenamento), poi elenca le 3 opzioni in modo compatto, chiudi con "Quale preferisci?"
+- La parte leggibile NON deve contenere JSON; i numeri dei macro restano nel testo naturale.
+
+Alla fine del messaggio, su UNA riga separata, aggiungi SOLO questo JSON valido (senza markdown), con stime totali del pasto per ogni opzione:
+{"dinner_options":[{"label":"etichetta breve opzione 1","kcal":0,"prot":0,"carb":0,"fat":0},{"label":"...","kcal":0,"prot":0,"carb":0,"fat":0},{"label":"...","kcal":0,"prot":0,"carb":0,"fat":0}]}`;
+
+  return `Sono arrivato a fine giornata e non so cosa mangiare. Ho bisogno di chiudere i miei macro senza alcuno stress o decisioni complicate. 
+Mi mancano circa: ${remainingKcal} kcal (${remainingPro}g Proteine, ${remainingCho}g Carboidrati, ${remainingFat}g Grassi). 
+
+Agisci come uno chef focalizzato sul relax e sulla praticità. 
+NON farmi domande. NON propormi ricette con più di 3-4 ingredienti o cotture lunghe.
+Proponimi ESATTAMENTE 3 opzioni dirette, rassicuranti e facilissime da preparare che centrino (più o meno) questi macro. 
+Nella descrizione breve indica grammature stimate (max 2 righe per opzione).
+
+${familiarityBlock}
+${secretClosing}`;
+}
+
 const FIREBASE_LOAD_OVERLAY_FADE_MS = 800;
 
 /** Riferimenti stabili per chart vuoto / notte in sospeso (evita ricalcoli longevity ad ogni render). */
@@ -1021,6 +1073,7 @@ export default function SalaComandi() {
     { sender: 'ai', text: 'KentuOS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
   ]);
   const CHAT_HISTORY_WINDOW = 10;
+  const lastDinnerOptionsRef = useRef(null);
   const lastLogFromFirebaseRef = useRef(null);
   const pendingLogRef = useRef(null);
   const pendingNodesRef = useRef(null);
@@ -3528,9 +3581,112 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     }
   };
 
-  const handleChatSubmit = async (optionalReply) => {
-    const userMessage = (optionalReply != null && String(optionalReply).trim()) ? String(optionalReply).trim() : chatInput.trim();
-    if (!userMessage && chatImages.length === 0) return;
+  const handleAutoLogDinner = useCallback(
+    (mealData) => {
+      if (!mealData || typeof mealData !== 'object') return;
+      const defaultStr = decimalToTimeStr(getCurrentTimeRoundedTo15Min());
+      const raw = typeof window !== 'undefined' ? window.prompt('Orario del pasto (HH:MM)', defaultStr) : null;
+      if (raw === null) return;
+      const mealTime = parseTimeStrToDecimal(raw);
+      const t = typeof mealTime === 'number' && !Number.isNaN(mealTime) ? mealTime : getCurrentTimeRoundedTo15Min();
+      const ghostType = getGhostMealType('cena', dailyLog || []);
+      const label = String(mealData.label || mealData.description || 'Cena').trim() || 'Cena';
+      const kcal = Math.max(0, Math.round(Number(mealData.kcal) || 0));
+      const prot = Math.max(0, Math.round((Number(mealData.prot) || 0) * 10) / 10);
+      const carb = Math.max(0, Math.round((Number(mealData.carb) || 0) * 10) / 10);
+      const fat = Math.max(0, Math.round((Number(mealData.fat ?? mealData.fatTotal) || 0) * 10) / 10);
+      const newItem = {
+        id: `kentu_dinner_${Date.now()}`,
+        type: 'food',
+        mealType: ghostType,
+        mealTime: t,
+        desc: label,
+        name: label,
+        qta: 100,
+        weight: 100,
+        kcal,
+        cal: kcal,
+        prot,
+        carb,
+        fatTotal: fat,
+        fat,
+      };
+      Object.keys(TARGETS).forEach((g) => {
+        Object.keys(TARGETS[g] || {}).forEach((k) => {
+          if (newItem[k] == null || newItem[k] === 0) {
+            newItem[k] = getDefaultNutrientValue(k, fullHistory);
+          }
+        });
+      });
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => [...(prev || []), newItem]);
+        setChatHistory((prev) => [...prev, { sender: 'ai', text: 'Cena salvata nel diario! (sandbox)' }]);
+        return;
+      }
+      const nuovoLog = [newItem, ...(dailyLog || [])];
+      setDailyLog(nuovoLog);
+      syncDatiFirebase(nuovoLog, manualNodes);
+      const uid = auth.currentUser?.uid;
+      const dateStr = currentTrackerDate || getTodayString();
+      if (uid && db) {
+        push(ref(db, `users/${uid}/history/${dateStr}/meals`), {
+          label,
+          kcal,
+          prot,
+          carb,
+          fat,
+          mealTime: t,
+          source: 'kentu_dinner',
+          loggedAt: Date.now(),
+        }).catch(() => {});
+      }
+      setChatHistory((prev) => [...prev, { sender: 'ai', text: 'Cena salvata nel diario!' }]);
+    },
+    [
+      dailyLog,
+      manualNodes,
+      syncDatiFirebase,
+      isSimulationMode,
+      fullHistory,
+      currentTrackerDate,
+      auth,
+      db,
+    ]
+  );
+
+  const handleChatSubmit = async (optionalReply, sendMeta) => {
+    const meta = sendMeta && typeof sendMeta === 'object' ? sendMeta : null;
+    const secretPrompt = meta?.secretPrompt != null && String(meta.secretPrompt).trim() ? String(meta.secretPrompt).trim() : '';
+    const displayOverride = meta?.displayText != null && String(meta.displayText).trim() ? String(meta.displayText).trim() : '';
+
+    let userMessage;
+    if (secretPrompt) {
+      userMessage = displayOverride || KENTU_DINNER_DISPLAY_MESSAGE;
+    } else {
+      userMessage = (optionalReply != null && String(optionalReply).trim()) ? String(optionalReply).trim() : chatInput.trim();
+    }
+
+    const apiUserContent = secretPrompt || userMessage;
+    if (!apiUserContent && chatImages.length === 0) return;
+
+    const logPastoKw = /\b(logga\s+pasto|salva(?:\s+la)?\s+cena|registra(?:\s+la)?\s+cena)\b/i;
+    if (!secretPrompt && logPastoKw.test(userMessage) && Array.isArray(lastDinnerOptionsRef.current) && lastDinnerOptionsRef.current.length) {
+      const low = userMessage.toLowerCase();
+      let idx = 0;
+      const n = userMessage.match(/(?:opzione|scelta|#)\s*([1-3])\b/);
+      if (n) idx = Math.min(2, Math.max(0, parseInt(n[1], 10) - 1));
+      else if (/\bseconda\b|\b2\b/.test(low)) idx = 1;
+      else if (/\bterza\b|\b3\b/.test(low)) idx = 2;
+      else if (/\bprima\b|\buno\b/.test(low)) idx = 0;
+      const opts = lastDinnerOptionsRef.current;
+      const chosen = opts[idx];
+      if (chosen) {
+        setChatHistory((prev) => [...prev, { sender: 'user', text: userMessage }]);
+        if (optionalReply == null) setChatInput('');
+        handleAutoLogDinner(chosen);
+        return;
+      }
+    }
 
     if (pendingAiBatch && userMessage) {
       const lowerMsg = userMessage.toLowerCase();
@@ -3736,7 +3892,7 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
       };
       const filtered = recentHistory.filter(m => !isLocalError(m.text));
       const conversationLines = filtered.map(m => (m.sender === 'user' ? 'Utente: ' : 'Assistente: ') + (m.text || '').trim());
-      const apiMessage = userMessage || (chatImages.length > 0 ? `[Allegati ${chatImages.length} screenshot da analizzare]` : '');
+      const apiMessage = apiUserContent || (chatImages.length > 0 ? `[Allegati ${chatImages.length} screenshot da analizzare]` : '');
       conversationLines.push('Utente: ' + apiMessage);
       const conversationText = conversationLines.join('\n');
       const fullPrompt = dynamicSystemPrompt + '\n\n---\nConversazione (rispondi come Assistente all\'ultimo messaggio):\n' + conversationText;
@@ -3946,12 +4102,49 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
           } catch (_) {}
         }
       }
+
+      let dinnerOptions = null;
+      const doIdx = cleanText.indexOf('"dinner_options"');
+      if (doIdx !== -1) {
+        const objStartDo = cleanText.lastIndexOf('{', doIdx);
+        if (objStartDo !== -1) {
+          let depthDo = 0;
+          let objEndDo = objStartDo;
+          for (let i = objStartDo; i < cleanText.length; i++) {
+            if (cleanText[i] === '{') depthDo++;
+            else if (cleanText[i] === '}') {
+              depthDo--;
+              if (depthDo === 0) {
+                objEndDo = i;
+                break;
+              }
+            }
+          }
+          try {
+            const parsedDo = JSON.parse(cleanText.slice(objStartDo, objEndDo + 1));
+            if (Array.isArray(parsedDo.dinner_options) && parsedDo.dinner_options.length) {
+              dinnerOptions = parsedDo.dinner_options.slice(0, 3).filter((o) => o && (o.label || o.description));
+            }
+            cleanText = (cleanText.slice(0, objStartDo) + cleanText.slice(objEndDo + 1)).trim();
+          } catch (_) {}
+        }
+      }
+
       if (!cleanText) cleanText = '✨ Operazione completata.';
+
+      if (dinnerOptions && dinnerOptions.length) {
+        lastDinnerOptionsRef.current = dinnerOptions;
+      }
 
       setChatHistory(prev => {
         const newHist = [...prev];
         newHist.pop();
-        newHist.push({ sender: 'ai', text: cleanText, quickReplies: quickReplies.length > 0 ? quickReplies : undefined });
+        newHist.push({
+          sender: 'ai',
+          text: cleanText,
+          quickReplies: quickReplies.length > 0 ? quickReplies : undefined,
+          dinnerOptions: dinnerOptions && dinnerOptions.length > 0 ? dinnerOptions : undefined,
+        });
         return newHist;
       });
     } catch (e) {
@@ -4652,38 +4845,33 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const remainingCho = Math.max(0, Math.round((targetMacros.carb || 0) - (Number(totali?.carb) || 0)));
   const remainingFat = Math.max(0, Math.round((targetMacros.fat || 0) - (Number(totali?.fatTotal ?? totali?.fat) || 0)));
 
-  const handleAskDinnerIdeas = () => {
+  const requestKentuDinnerSuggestion = useCallback(() => {
     const anchor = currentTrackerDate || getTodayString();
-    const recentMealsContext = buildRecentMealsContextForDinner(fullHistory, anchor);
-    const hasRecentMeals = Boolean(recentMealsContext && recentMealsContext.trim());
-
-    const familiarityBlock = hasRecentMeals
-      ? `STORICO PASTI RECENTI:
-${recentMealsContext}
-
-DIRETTIVA PRIORITARIA DI FAMILIARITÀ:
-1. Analizza i pasti che ho consumato recentemente sopra elencati. 
-2. Se tra questi ce n'è uno che si incastra bene con i macro mancanti (${remainingPro}g P, ${remainingCho}g C, ${remainingFat}g F), proponimelo come PRIMA OPZIONE. Dire: "Ti propongo un tuo classico: [Nome Pasto]".
-3. Le altre 2 opzioni possono essere nuove, ma devono comunque rispettare la regola della semplicità estrema (massimo 3-4 ingredienti).
-4. Ricorda: il mio obiettivo è lo zero stress decisionale. Proponi pasti che sai che ho già in casa o che sono abituato a gestire.`
-      : `STORICO PASTI RECENTI: (nessun pasto registrato negli ultimi 30 giorni nel diario.)
-
-Procedi con le 3 proposte standard come da istruzioni generali: stesso tono calmo e semplicità estrema; non usare la formula "tuo classico" se non hai elenco sopra.`;
-
-    const dinnerPrompt = `Sono arrivato a fine giornata e non so cosa mangiare. Ho bisogno di chiudere i miei macro senza alcuno stress o decisioni complicate. 
-Mi mancano circa: ${remainingKcal} kcal (${remainingPro}g Proteine, ${remainingCho}g Carboidrati, ${remainingFat}g Grassi). 
-
-Agisci come uno chef focalizzato sul relax e sulla praticità. 
-NON farmi domande. NON propormi ricette con più di 3-4 ingredienti o cotture lunghe.
-Proponimi ESATTAMENTE 3 opzioni dirette, rassicuranti e facilissime da preparare che centrino (più o meno) questi macro. 
-Indica le grammature stimate a fianco agli ingredienti. Usa un tono calmo e incoraggiante.
-
-${familiarityBlock}`;
-    setActiveAction('ai_chat');
-    setIsDrawerOpen(true);
+    const workoutToday = (activeLog || []).some((e) => e.type === 'workout' || e.type === 'work');
+    const secretPrompt = buildKentuDinnerSecretPrompt({
+      remainingKcal,
+      remainingPro,
+      remainingCho,
+      remainingFat,
+      fullHistory,
+      anchorDateStr: anchor,
+      workoutToday,
+    });
     setChatInput('');
-    void handleChatSubmit(dinnerPrompt);
-  };
+    void handleChatSubmit(null, {
+      secretPrompt,
+      displayText: KENTU_DINNER_DISPLAY_MESSAGE,
+    });
+  }, [
+    activeLog,
+    currentTrackerDate,
+    fullHistory,
+    remainingKcal,
+    remainingPro,
+    remainingCho,
+    remainingFat,
+    handleChatSubmit,
+  ]);
 
   const isNightDeficit = displayTime >= 20 && targetKcalForAlerts > 0 && ((totalCaloriesTimeline || 0) / targetKcalForAlerts) <= 0.60;
   const isProteinSaturated = displayTime <= 15 && (targetMacros?.prot ?? 0) > 0 && ((totalMacrosTimeline.prot || 0) / (targetMacros.prot || 1)) >= 0.90;
@@ -5818,38 +6006,6 @@ ${familiarityBlock}`;
       </div>
       )}
 
-      {activeBottomTab === 'oggi' && userProfile?.level === 'pro' && (
-        <button
-          type="button"
-          className="dinner-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleAskDinnerIdeas();
-          }}
-          style={{
-            width: '100%',
-            maxWidth: 420,
-            margin: '0 auto 10px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            padding: '11px 16px',
-            borderRadius: 14,
-            border: '1px solid rgba(251, 191, 36, 0.35)',
-            background: 'linear-gradient(145deg, rgba(30, 27, 45, 0.95), rgba(20, 18, 32, 0.98))',
-            color: '#fde68a',
-            fontSize: '0.88rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            boxShadow: '0 4px 20px rgba(251, 146, 60, 0.12), inset 0 1px 0 rgba(255,255,255,0.06)',
-          }}
-        >
-          <span aria-hidden style={{ fontSize: '1.15rem' }}>🍽️</span>
-          Kentu, cosa mangio stasera?
-        </button>
-      )}
-
       {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
         <div style={{ fontSize: '13px', opacity: 0.7, color: '#94a3b8', marginBottom: '6px' }}>
           {homeLongevityInsightLine}
@@ -6552,38 +6708,6 @@ ${familiarityBlock}`;
                       </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="dinner-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAskDinnerIdeas();
-                    }}
-                    style={{
-                      width: '100%',
-                      marginTop: 4,
-                      padding: '12px 14px',
-                      borderRadius: 14,
-                      border: '1px solid rgba(251, 191, 36, 0.35)',
-                      background: 'linear-gradient(145deg, rgba(30, 27, 45, 0.95), rgba(20, 18, 32, 0.98))',
-                      color: '#fde68a',
-                      fontSize: '0.88rem',
-                      fontWeight: 600,
-                      letterSpacing: '0.02em',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      boxShadow: '0 4px 20px rgba(251, 146, 60, 0.12), inset 0 1px 0 rgba(255,255,255,0.06)',
-                      transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                    }}
-                  >
-                    <span aria-hidden style={{ fontSize: '1.15rem' }}>
-                      🍽️
-                    </span>
-                    Kentu, cosa mangio stasera?
-                  </button>
                   {/* Widget Fase Metabolica */}
                   <div style={{ width: '100%', flexShrink: 0, background: '#1a1a1c', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '10px', boxSizing: 'border-box', height: 'auto', minHeight: 'min-content' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -7041,6 +7165,9 @@ ${familiarityBlock}`;
               chatImages={chatImages}
               setChatImages={setChatImages}
               onSendMessage={handleChatSubmit}
+              showDinnerSuggestion={userProfile?.level === 'pro'}
+              onRequestDinnerSuggestion={requestKentuDinnerSuggestion}
+              onLogDinnerOption={handleAutoLogDinner}
               showAiSettings={showAiSettings}
               setShowAiSettings={setShowAiSettings}
               apiKeys={apiKeys}
