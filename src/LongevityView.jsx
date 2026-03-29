@@ -249,7 +249,21 @@ function BodyCompositionChart({ history }) {
       const f = Number(e.bodyFat);
       return Number.isFinite(f) ? f : null;
     });
+    const muscleData = history.map((e) => {
+      if (e.muscle == null || e.muscle === '') return null;
+      const m = Number(e.muscle);
+      return Number.isFinite(m) ? m : null;
+    });
+    const waterData = history.map((e) => {
+      if (e.water == null || e.water === '') return null;
+      const w = Number(e.water);
+      return Number.isFinite(w) ? w : null;
+    });
+
     const hasBodyFatLine = fatData.some((v) => v != null);
+    const hasMuscleLine = muscleData.some((v) => v != null);
+    const hasWaterLine = waterData.some((v) => v != null);
+    const hasRightAxis = hasBodyFatLine || hasMuscleLine || hasWaterLine;
 
     const validWeights = weightData.filter((v) => v != null);
     let wMin = validWeights.length ? Math.min(...validWeights) : 0;
@@ -263,12 +277,14 @@ function BodyCompositionChart({ history }) {
     }
     if (wMin < 1) wMin = 1;
 
-    const validFats = fatData.filter((v) => v != null);
+    const allPctValues = [...fatData, ...muscleData, ...waterData].filter(
+      (v) => v != null && Number.isFinite(v)
+    );
     let fMin = 0;
     let fMax = 40;
-    if (validFats.length > 0) {
-      fMin = Math.min(...validFats) - 2;
-      fMax = Math.max(...validFats) + 2;
+    if (allPctValues.length > 0) {
+      fMin = Math.min(...allPctValues) - 2;
+      fMax = Math.max(...allPctValues) + 2;
       fMin = Math.max(0, fMin);
       fMax = Math.min(100, fMax);
       if (fMin >= fMax) {
@@ -312,6 +328,42 @@ function BodyCompositionChart({ history }) {
       });
     }
 
+    if (hasMuscleLine) {
+      datasets.push({
+        label: 'Muscoli (%)',
+        data: muscleData,
+        borderColor: '#3b82f6',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        tension: 0.3,
+        fill: false,
+        pointRadius: 3,
+        pointBackgroundColor: '#3b82f6',
+        pointBorderColor: '#0a0a0a',
+        pointBorderWidth: 1,
+        yAxisID: 'y1',
+        spanGaps: false,
+      });
+    }
+
+    if (hasWaterLine) {
+      datasets.push({
+        label: 'Acqua (%)',
+        data: waterData,
+        borderColor: '#06b6d4',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        tension: 0.3,
+        fill: false,
+        pointRadius: 3,
+        pointBackgroundColor: '#06b6d4',
+        pointBorderColor: '#0a0a0a',
+        pointBorderWidth: 1,
+        yAxisID: 'y1',
+        spanGaps: false,
+      });
+    }
+
     const scales = {
       x: {
         grid: { display: false },
@@ -329,14 +381,17 @@ function BodyCompositionChart({ history }) {
       },
     };
 
-    if (hasBodyFatLine) {
+    if (hasRightAxis) {
       scales.y1 = {
         type: 'linear',
         position: 'right',
         min: fMin,
         max: fMax,
         grid: { drawOnChartArea: false },
-        ticks: { color: '#ff5e62', font: { size: 11 } },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11 },
+        },
         border: { display: false },
       };
     }
@@ -365,6 +420,21 @@ function BodyCompositionChart({ history }) {
             bodyColor: '#ccc',
             borderColor: 'rgba(255,255,255,0.1)',
             borderWidth: 1,
+            filter: (tooltipItem) => {
+              const y = tooltipItem.parsed?.y;
+              return y != null && Number.isFinite(y);
+            },
+            callbacks: {
+              label: (context) => {
+                const label = context.dataset.label || '';
+                const y = context.parsed.y;
+                if (!Number.isFinite(y)) return '';
+                if (label.startsWith('Peso')) {
+                  return ` ${label}: ${y.toFixed(1)} kg`;
+                }
+                return ` ${label}: ${y.toFixed(1)}%`;
+              },
+            },
           },
         },
         scales,
