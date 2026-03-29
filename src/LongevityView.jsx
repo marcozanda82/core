@@ -552,6 +552,25 @@ export default function LongevityView({
     [bodyMetricsHistory, fullHistory, resolvedMetabolicTDEE]
   );
 
+  /** Solo per il grafico Chart.js: allineato al timeWindow (il twin metabolico usa sempre `bodyMetricsHistory` intero). */
+  const chartBodyMetrics = useMemo(() => {
+    const tw = Math.max(1, Math.min(366, Number(timeWindow) || 1));
+    const limitDate = addDays(anchorDate, -(tw === 1 ? 7 : tw));
+    return bodyMetricsHistory.filter((m) => {
+      if (m?.date && typeof m.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.date)) {
+        return m.date >= limitDate;
+      }
+      const ts = Number(m?.timestamp);
+      if (Number.isFinite(ts)) {
+        const d = new Date(ts);
+        const offset = d.getTimezoneOffset() * 60000;
+        const dayStr = new Date(d.getTime() - offset).toISOString().slice(0, 10);
+        return dayStr >= limitDate;
+      }
+      return false;
+    });
+  }, [bodyMetricsHistory, timeWindow, anchorDate]);
+
   const metabolicAutopilot = useMemo(() => {
     if (!metabolicVariance) return null;
     const daysBetween = Number(metabolicVariance.daysBetween);
@@ -995,7 +1014,7 @@ export default function LongevityView({
             Nessuna pesata registrata. Usa il tasto + per inserire il tuo primo dato.
           </p>
         ) : (
-          <BodyCompositionChart history={bodyMetricsHistory} />
+          <BodyCompositionChart history={chartBodyMetrics} />
         )}
       </div>
 

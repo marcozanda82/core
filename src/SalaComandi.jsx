@@ -466,6 +466,8 @@ export default function SalaComandi() {
   const [activeBottomTab, setActiveBottomTab] = useState('oggi');
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
+  /** Quadrante home (modalità base): kcal | pro | cho | fat */
+  const [activeDialMode, setActiveDialMode] = useState('kcal');
   const [isMealBuilderOpen, setIsMealBuilderOpen] = useState(false);
   const [userModel, setUserModel] = useState(DEFAULT_USER_MODEL);
   const [lastCalibrationWeek, setLastCalibrationWeek] = useState(null);
@@ -4634,6 +4636,67 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return sortedPieData;
   }, [activeLog, userTargets?.kcal, dynamicDailyKcal]);
 
+  const mealPieDisplayData = useMemo(() => {
+    if (activeDialMode === 'kcal') return mealPieData;
+
+    const macroKey =
+      activeDialMode === 'pro' ? 'prot' : activeDialMode === 'cho' ? 'carb' : 'fat';
+    const targetG =
+      activeDialMode === 'pro'
+        ? userTargets?.prot ?? 150
+        : activeDialMode === 'cho'
+          ? userTargets?.carb ?? 200
+          : userTargets?.fatTotal ?? userTargets?.fat ?? 65;
+
+    const mealsOnly = mealPieData.filter((e) => e.id !== 'rimanenti');
+    const slices = mealsOnly.map((m) => ({
+      ...m,
+      value: Math.max(0, Number(m[macroKey]) || 0),
+    }));
+    const consumed = slices.reduce((s, d) => s + d.value, 0);
+    let data = slices.filter((d) => d.value > 0);
+    if (consumed < targetG) {
+      data = [
+        ...data,
+        {
+          name: 'Rimanenti',
+          value: targetG - consumed,
+          macros: null,
+          id: 'rimanenti',
+          fill: 'rgba(255, 255, 255, 0.05)',
+          color: 'rgba(255, 255, 255, 0.05)',
+          prot: 0,
+          carb: 0,
+          fat: 0,
+          timeValue: 0,
+        },
+      ];
+    }
+    if (data.length === 0) {
+      data = [
+        {
+          name: 'Rimanenti',
+          value: targetG,
+          macros: null,
+          id: 'rimanenti',
+          fill: 'rgba(255,255,255,0.05)',
+          color: 'rgba(255,255,255,0.05)',
+          prot: 0,
+          carb: 0,
+          fat: 0,
+          timeValue: 0,
+        },
+      ];
+    }
+    return [...data].sort((a, b) => {
+      if (a.id === 'rimanenti') return 1;
+      if (b.id === 'rimanenti') return -1;
+      const tA = a.timeValue ?? 0;
+      const tB = b.timeValue ?? 0;
+      return (Number(tA) || 0) - (Number(tB) || 0);
+    });
+  }, [mealPieData, activeDialMode, userTargets?.prot, userTargets?.carb, userTargets?.fat, userTargets?.fatTotal]);
+
   const finalChartData = renderDataWithSegments;
   const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : finalChartData;
   const dotYCalorieTimeline = (() => {
@@ -4794,7 +4857,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [activeLog, currentTime, fullHistory, currentTrackerDate]);
 
   const renderCustomizedLabel = (props) => {
-    const { cx, cy, midAngle, outerRadius, value, name, fill, payload, macros } = props;
+    const { cx, cy, midAngle, outerRadius, value, name, fill, payload } = props;
     if (name === 'Rimanenti' || value === 0) return null;
     const radius = outerRadius + 14;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
@@ -4805,11 +4868,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     else if (n.includes('cena')) icon = '🍽️';
     else if (n.includes('colazion')) icon = '🍳';
     else if (n.includes('snack') || n.includes('merenda')) icon = '🫐';
-    const segmentData = { name, value, payload: { color: fill || payload?.color, macros: macros || payload?.macros } };
+    const fullEntry = payload && typeof payload === 'object' ? payload : null;
     return (
       <g
         transform={`translate(${x},${y})`}
-        onClick={() => setSelectedMealCenter(segmentData)}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!fullEntry || fullEntry.id === 'rimanenti') return;
+          setSelectedMealCenter(fullEntry);
+        }}
         style={{ cursor: 'pointer', pointerEvents: 'auto' }}
       >
         <circle cx="0" cy="0" r="16" fill="#111" stroke={fill} strokeWidth="1.5" style={{ filter: `drop-shadow(0 0 4px ${fill}80)` }} />
@@ -4835,7 +4902,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     );
   };
 
-  const selectedMealCenterIndex = selectedMealCenter ? mealPieData.findIndex(e => e.id === selectedMealCenter.id) : -1;
+  const selectedMealCenterIndex = selectedMealCenter
+    ? mealPieDisplayData.findIndex((e) => e.id === selectedMealCenter.id)
+    : -1;
 
   // ========================================================
   // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
@@ -5979,7 +6048,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
-                <div style={{ position: 'relative', width: '310px', height: '310px', margin: '0 auto 0 auto', zIndex: 10, flexShrink: 0 }} onClick={() => setSelectedMealCenter(null)}>
+                <div
+                  style={{ position: 'relative', width: '310px', height: '310px', margin: '0 auto 0 auto', zIndex: 10, flexShrink: 0 }}
+                  onClick={() => {
+                    setSelectedMealCenter(null);
+                    setActiveDialMode('kcal');
+                  }}
+                >
                   <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'visible' }}>
                     {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
                     <div
@@ -5988,9 +6063,30 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         e.stopPropagation();
                         if (selectedMealCenter && selectedMealCenter.id && selectedMealCenter.id !== 'rimanenti') {
                           loadMealToConstructor(selectedMealCenter.id);
+                          return;
                         }
+                        setActiveDialMode('kcal');
                       }}
-                      style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '66%', height: '66%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '3px solid #111', zIndex: 15, boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`, cursor: selectedMealCenter ? 'pointer' : 'default', transition: 'box-shadow 0.2s ease, filter 0.2s ease', pointerEvents: selectedMealCenter ? 'auto' : 'none' }}
+                      style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        width: '66%',
+                        height: '66%',
+                        borderRadius: '50%',
+                        background: '#0a0a0a',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '3px solid #111',
+                        zIndex: 15,
+                        boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`,
+                        cursor: selectedMealCenter ? 'pointer' : 'pointer',
+                        transition: 'box-shadow 0.2s ease, filter 0.2s ease',
+                        pointerEvents: 'auto',
+                      }}
                     >
                       {selectedMealCenter ? (
                         <div className="pieCenterInfo" style={{ textAlign: 'center', cursor: 'pointer' }}>
@@ -6002,9 +6098,26 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                               {`${String(Math.floor(selectedMealCenter.timeValue)).padStart(2, '0')}:${String(Math.round((selectedMealCenter.timeValue % 1) * 60)).padStart(2, '0')}`}
                             </div>
                           )}
-                          <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
-                            {Math.round(selectedMealCenter.kcal ?? selectedMealCenter.value ?? 0)} kcal
-                          </div>
+                          {activeDialMode === 'kcal' && (
+                            <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
+                              {Math.round(selectedMealCenter.kcal ?? selectedMealCenter.value ?? 0)} kcal
+                            </div>
+                          )}
+                          {activeDialMode === 'pro' && (
+                            <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#b666d2', marginTop: '2px' }}>
+                              {Math.round(selectedMealCenter.prot ?? selectedMealCenter.payload?.macros?.pro ?? 0)} g Proteine
+                            </div>
+                          )}
+                          {activeDialMode === 'cho' && (
+                            <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#00ff88', marginTop: '2px' }}>
+                              {Math.round(selectedMealCenter.carb ?? selectedMealCenter.payload?.macros?.carb ?? 0)} g Carboidrati
+                            </div>
+                          )}
+                          {activeDialMode === 'fat' && (
+                            <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#ffd700', marginTop: '2px' }}>
+                              {Math.round(selectedMealCenter.fat ?? selectedMealCenter.payload?.macros?.fat ?? 0)} g Grassi
+                            </div>
+                          )}
                           <div className="pieMealMacros">
                             P {Math.round(selectedMealCenter.prot ?? selectedMealCenter.payload?.macros?.pro ?? 0)}g
                             C {Math.round(selectedMealCenter.carb ?? selectedMealCenter.payload?.macros?.carb ?? 0)}g
@@ -6013,12 +6126,38 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         </div>
                       ) : (
                         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
-                          <div style={{ fontSize: '3rem', fontWeight: 'bold', color: '#ff6b00', textShadow: '0 0 15px rgba(255, 107, 0, 0.6)' }}>
-                            {Math.round(totalCaloriesTimeline || 0)}
+                          <div
+                            style={{
+                              fontSize: '3rem',
+                              fontWeight: 'bold',
+                              color:
+                                activeDialMode === 'pro'
+                                  ? '#b666d2'
+                                  : activeDialMode === 'cho'
+                                    ? '#00ff88'
+                                    : activeDialMode === 'fat'
+                                      ? '#ffd700'
+                                      : '#ff6b00',
+                              textShadow: '0 0 15px rgba(255, 107, 0, 0.35)',
+                            }}
+                          >
+                            {activeDialMode === 'kcal' && Math.round(totalCaloriesTimeline || 0)}
+                            {activeDialMode === 'pro' && Math.round(totali?.prot || 0)}
+                            {activeDialMode === 'cho' && Math.round(totali?.carb || 0)}
+                            {activeDialMode === 'fat' && Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}
                           </div>
-                          <div style={{ color: '#888', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '2px' }}>kcal</div>
+                          <div style={{ color: '#888', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '2px' }}>
+                            {activeDialMode === 'kcal' && 'kcal'}
+                            {activeDialMode === 'pro' && 'g Proteine'}
+                            {activeDialMode === 'cho' && 'g Carboidrati'}
+                            {activeDialMode === 'fat' && 'g Grassi'}
+                          </div>
                           <div style={{ color: '#555', fontSize: '0.8rem', marginTop: '4px' }}>
-                            obiettivo {Math.round(dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2500))}
+                            {activeDialMode === 'kcal' &&
+                              `obiettivo ${Math.round(dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2500))} kcal`}
+                            {activeDialMode === 'pro' && `obiettivo ${Math.round(targetProt)} g`}
+                            {activeDialMode === 'cho' && `obiettivo ${Math.round(targetCarb)} g`}
+                            {activeDialMode === 'fat' && `obiettivo ${Math.round(targetFat)} g`}
                           </div>
                         </div>
                       )}
@@ -6028,7 +6167,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
-                            data={mealPieData}
+                            data={mealPieDisplayData}
                             cx="50%"
                             cy="50%"
                             innerRadius="68%"
@@ -6045,7 +6184,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                             onClick={(data, index, e) => {
                               if (e && e.stopPropagation) e.stopPropagation();
                               if (data.id === 'rimanenti') return;
-                              const pastoCorrente = mealPieData.find(m => m.id === data.id);
+                              const pastoCorrente = mealPieDisplayData.find((m) => m.id === data.id);
                               if (!pastoCorrente) return;
                               const entry = pastoCorrente;
                               const mealName = entry.name || entry.id || 'Pasto';
@@ -6068,7 +6207,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                             }}
                             style={{ cursor: 'pointer', outline: 'none' }}
                           >
-                            {mealPieData.map((entry, index) => {
+                            {mealPieDisplayData.map((entry, index) => {
                               const isSelected = selectedMealCenter && entry.id === selectedMealCenter.id;
                               const hasSelection = !!selectedMealCenter;
                               return (
@@ -6094,19 +6233,100 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', marginBottom: '16px', gap: '8px', flexShrink: 0 }}>
                   {/* Box macronutrienti neon (3 colonne) */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', width: '100%', flexShrink: 0 }}>
-                    <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(ev) => {
+                        if (ev.key === 'Enter' || ev.key === ' ') {
+                          ev.preventDefault();
+                          setActiveDialMode('pro');
+                        }
+                      }}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setActiveDialMode('pro');
+                      }}
+                      style={{
+                        flex: 1,
+                        background: '#1a1a1c',
+                        border: activeDialMode === 'pro' ? '1px solid #b666d2' : '1px solid #333',
+                        borderRadius: '12px',
+                        padding: '8px 4px',
+                        textAlign: 'center',
+                        boxShadow:
+                          activeDialMode === 'pro'
+                            ? '0 0 0 2px rgba(182, 102, 210, 0.45), 0 4px 14px rgba(182, 102, 210, 0.2)'
+                            : '0 4px 10px rgba(0,0,0,0.5)',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                      }}
+                    >
                       <div style={{ color: '#b666d2', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Proteine</div>
                       <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                         {Math.round(totali?.prot || 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetProt)} g</span>
                       </div>
                     </div>
-                    <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(ev) => {
+                        if (ev.key === 'Enter' || ev.key === ' ') {
+                          ev.preventDefault();
+                          setActiveDialMode('cho');
+                        }
+                      }}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setActiveDialMode('cho');
+                      }}
+                      style={{
+                        flex: 1,
+                        background: '#1a1a1c',
+                        border: activeDialMode === 'cho' ? '1px solid #00ff88' : '1px solid #333',
+                        borderRadius: '12px',
+                        padding: '8px 4px',
+                        textAlign: 'center',
+                        boxShadow:
+                          activeDialMode === 'cho'
+                            ? '0 0 0 2px rgba(0, 255, 136, 0.35), 0 4px 14px rgba(0, 255, 136, 0.15)'
+                            : '0 4px 10px rgba(0,0,0,0.5)',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                      }}
+                    >
                       <div style={{ color: '#00ff88', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Carboidrati</div>
                       <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                         {Math.round(totali?.carb || 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetCarb)} g</span>
                       </div>
                     </div>
-                    <div style={{ flex: 1, background: '#1a1a1c', border: '1px solid #333', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(ev) => {
+                        if (ev.key === 'Enter' || ev.key === ' ') {
+                          ev.preventDefault();
+                          setActiveDialMode('fat');
+                        }
+                      }}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setActiveDialMode('fat');
+                      }}
+                      style={{
+                        flex: 1,
+                        background: '#1a1a1c',
+                        border: activeDialMode === 'fat' ? '1px solid #ffd700' : '1px solid #333',
+                        borderRadius: '12px',
+                        padding: '8px 4px',
+                        textAlign: 'center',
+                        boxShadow:
+                          activeDialMode === 'fat'
+                            ? '0 0 0 2px rgba(255, 215, 0, 0.4), 0 4px 14px rgba(255, 215, 0, 0.12)'
+                            : '0 4px 10px rgba(0,0,0,0.5)',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                      }}
+                    >
                       <div style={{ color: '#ffd700', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Grassi</div>
                       <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                         {Math.round(totali?.fatTotal ?? totali?.fat ?? 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetFat)} g</span>
