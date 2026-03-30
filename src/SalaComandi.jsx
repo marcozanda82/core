@@ -6272,27 +6272,106 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             order: activeBottomTab === 'analisi' ? 2 : 0,
           }}
         >
-          {/* Dashboard Allarmi: pill a capo, tutte visibili */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'flex-start', paddingBottom: '10px', alignItems: 'center' }}>
-            {(() => {
-              const activeAlerts = [];
-              if (hasCrashRisk) activeAlerts.push('glicemia');
-              if (hasWaterRisk) activeAlerts.push('idratazione');
-              if (hasCortisolRisk) activeAlerts.push('cortisolo');
-              if (hasDigestionRisk) activeAlerts.push('digestione');
-              return (
-                <>
-            <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''} ${activeAlerts.includes('percent') ? 'telemetry-btn-alarm' : ''}`}>⚡ %</button>
-            <button type="button" onClick={() => setChartUnit('calorieTimeline')} className={`telemetry-btn ${chartUnit === 'calorieTimeline' ? 'active' : ''} ${activeAlerts.includes('calorieTimeline') ? 'telemetry-btn-alarm' : ''}`} style={chartUnit === 'calorieTimeline' ? { color: '#ff9800', borderColor: '#ff9800' } : undefined}>📈 CUMUL</button>
-            <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert telemetry-btn-alarm' : ''}`}>🩸 GLICEM</button>
-            <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water telemetry-btn-alarm' : ''}`}>💧 IDRAT</button>
-            <button type="button" onClick={() => setChartUnit('neuro')} className={`telemetry-btn ${chartUnit === 'neuro' ? 'active' : ''} ${activeAlerts.includes('neuro') ? 'telemetry-btn-alarm' : ''}`} style={chartUnit === 'neuro' ? { color: '#6366f1', borderColor: '#6366f1' } : undefined}>🧠 NEURO</button>
-            <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol telemetry-btn-alarm' : ''}`}>🧠 CORTISOL</button>
-            <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert telemetry-btn-alarm' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGEST</button>
-                </>
-              );
-            })()}
-          </div>
+          {/* Dashboard Allarmi: Analisi = riga scrollabile icona+testo; Oggi Pro = pill compatte */}
+          {activeBottomTab === 'analisi' ? (
+            <div className="chart-selector-container">
+              {(() => {
+                const activeAlerts = [];
+                if (hasCrashRisk) activeAlerts.push('glicemia');
+                if (hasWaterRisk) activeAlerts.push('idratazione');
+                if (hasCortisolRisk) activeAlerts.push('cortisolo');
+                if (hasDigestionRisk) activeAlerts.push('digestione');
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setChartUnit('percent')}
+                      aria-pressed={chartUnit === 'percent'}
+                      className={`chart-selector-btn${chartUnit === 'percent' ? ' active' : ''}${activeAlerts.includes('percent') ? ' chart-selector-alarm' : ''}`}
+                    >
+                      <span className="chart-btn-icon">⚡</span>
+                      <span className="chart-btn-label">TDEE</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartUnit('calorieTimeline')}
+                      aria-pressed={chartUnit === 'calorieTimeline'}
+                      className={`chart-selector-btn chart-selector-btn--cumul${chartUnit === 'calorieTimeline' ? ' active' : ''}${activeAlerts.includes('calorieTimeline') ? ' chart-selector-alarm' : ''}`}
+                    >
+                      <span className="chart-btn-icon">🔥</span>
+                      <span className="chart-btn-label">Kcal</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartUnit('glicemia')}
+                      aria-pressed={chartUnit === 'glicemia'}
+                      className={`chart-selector-btn chart-selector-btn--blood${chartUnit === 'glicemia' ? ' active' : ''}${hasCrashRisk && chartUnit !== 'glicemia' ? ' pulse-alert chart-selector-alarm' : ''}`}
+                    >
+                      <span className="chart-btn-icon">🩸</span>
+                      <span className="chart-btn-label">Glic</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartUnit('idratazione')}
+                      aria-pressed={chartUnit === 'idratazione'}
+                      className={`chart-selector-btn chart-selector-btn--water${chartUnit === 'idratazione' ? ' active' : ''}${hasWaterRisk && chartUnit !== 'idratazione' ? ' pulse-alert-water chart-selector-alarm' : ''}`}
+                    >
+                      <span className="chart-btn-icon">💧</span>
+                      <span className="chart-btn-label">Acqua</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartUnit('neuro')}
+                      aria-pressed={chartUnit === 'neuro'}
+                      className={`chart-selector-btn chart-selector-btn--neuro${chartUnit === 'neuro' ? ' active' : ''}${activeAlerts.includes('neuro') ? ' chart-selector-alarm' : ''}`}
+                    >
+                      <span className="chart-btn-icon">🧠</span>
+                      <span className="chart-btn-label">Neuro</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartUnit('cortisolo')}
+                      aria-pressed={chartUnit === 'cortisolo'}
+                      className={`chart-selector-btn chart-selector-btn--cortisol${chartUnit === 'cortisolo' ? ' active' : ''}${hasCortisolRisk && chartUnit !== 'cortisolo' ? ' pulse-alert-cortisol chart-selector-alarm' : ''}`}
+                    >
+                      <span className="chart-btn-icon">😰</span>
+                      <span className="chart-btn-label">Stress</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartUnit('digestione')}
+                      aria-pressed={chartUnit === 'digestione'}
+                      className={`chart-selector-btn chart-selector-btn--digest${chartUnit === 'digestione' ? ' active' : ''}${hasDigestionRisk && chartUnit !== 'digestione' ? ' pulse-alert chart-selector-alarm' : ''}`}
+                    >
+                      <span className="chart-btn-icon">🥑</span>
+                      <span className="chart-btn-label">Macro</span>
+                    </button>
+                  </>
+                );
+              })()}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'flex-start', paddingBottom: '10px', alignItems: 'center' }}>
+              {(() => {
+                const activeAlerts = [];
+                if (hasCrashRisk) activeAlerts.push('glicemia');
+                if (hasWaterRisk) activeAlerts.push('idratazione');
+                if (hasCortisolRisk) activeAlerts.push('cortisolo');
+                if (hasDigestionRisk) activeAlerts.push('digestione');
+                return (
+                  <>
+                    <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''} ${activeAlerts.includes('percent') ? 'telemetry-btn-alarm' : ''}`}>⚡ %</button>
+                    <button type="button" onClick={() => setChartUnit('calorieTimeline')} className={`telemetry-btn ${chartUnit === 'calorieTimeline' ? 'active' : ''} ${activeAlerts.includes('calorieTimeline') ? 'telemetry-btn-alarm' : ''}`} style={chartUnit === 'calorieTimeline' ? { color: '#ff9800', borderColor: '#ff9800' } : undefined}>📈 CUMUL</button>
+                    <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert telemetry-btn-alarm' : ''}`}>🩸 GLICEM</button>
+                    <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water telemetry-btn-alarm' : ''}`}>💧 IDRAT</button>
+                    <button type="button" onClick={() => setChartUnit('neuro')} className={`telemetry-btn ${chartUnit === 'neuro' ? 'active' : ''} ${activeAlerts.includes('neuro') ? 'telemetry-btn-alarm' : ''}`} style={chartUnit === 'neuro' ? { color: '#6366f1', borderColor: '#6366f1' } : undefined}>🧠 NEURO</button>
+                    <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol telemetry-btn-alarm' : ''}`}>🧠 CORTISOL</button>
+                    <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert telemetry-btn-alarm' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGEST</button>
+                  </>
+                );
+              })()}
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', marginTop: '6px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: `1px solid ${metabolicState.color}40` }}>
             <span style={{ fontSize: '0.7rem', color: '#888' }}>Radar metabolico:</span>
             <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
