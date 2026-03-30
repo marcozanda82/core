@@ -29,8 +29,6 @@ import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
-import OptimizationCard from './OptimizationCard';
-import { buildOptimizationDailyDataFromLog } from './optimizationIndex';
 import { useSmartKentuTriggers } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
@@ -2609,10 +2607,6 @@ export default function SalaComandi() {
   const baseKcal = (userTargets.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
   const { totali, obiettiviPasti } = useBiochimico(activeLog, baseKcal);
   const targetKcal = baseKcal + (totali?.workout ?? 0);
-  const optimizationDailyDataForUi = useMemo(
-    () => buildOptimizationDailyDataFromLog(activeLog),
-    [activeLog]
-  );
 
   // Macro giornalieri reali (solo da dailyLog) per MealBuilder — mai undefined per evitare NaN nelle barre
   const macroDailyReals = useMemo(() => {
@@ -6955,18 +6949,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           />
         )}
       </>
-      )}
-
-      {activeBottomTab === 'analisi' && (
-        <div style={{ width: '100%', padding: '10px 12px 18px', flexShrink: 0, boxSizing: 'border-box' }}>
-          <OptimizationCard
-            dailyData={optimizationDailyDataForUi}
-            targets={{
-              kcal: userTargets?.kcal ?? baseKcal ?? 2000,
-              prot: userTargets?.prot ?? 150,
-            }}
-          />
-        </div>
       )}
 
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
