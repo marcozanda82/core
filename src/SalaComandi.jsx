@@ -6264,7 +6264,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       <>
       {/* Cruscotto energetico giornaliero 0-24h */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
-        <div style={{ flexShrink: 0, marginBottom: '10px' }}>
+        <div
+          className="analisi-pre-chart-controls"
+          style={{
+            flexShrink: 0,
+            marginBottom: '10px',
+            order: activeBottomTab === 'analisi' ? 2 : 0,
+          }}
+        >
           {/* Dashboard Allarmi: pill a capo, tutte visibili */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'flex-start', paddingBottom: '10px', alignItems: 'center' }}>
             {(() => {
@@ -6305,6 +6312,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           </div>
         </div>
+        <div
+          className="analisi-top-visual-container"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            order: activeBottomTab === 'analisi' ? 1 : 0,
+          }}
+        >
         <div className="chart-wrapper" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="chartTitle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
@@ -6609,6 +6624,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             {/* SPACER PER PULSANTIERA: permette di scrollare oltre la fine del grafico */}
             <div style={{ width: '80px', flexShrink: 0 }} />
           </div>
+        </div>
         </div>
         </div>
         </div>

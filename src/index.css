@@ -163,3 +163,13 @@ html, body, #root {
     opacity: 1;
   }
 }
+
+/* Vista Analisi: grafico + barra nodi in cima, stabilità layout */
+.analisi-top-visual-container {
+  width: 100%;
+  flex-shrink: 0;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
