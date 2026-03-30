@@ -106,6 +106,9 @@ import {
   buildLongevityExplanation
 } from './coreEngine';
 
+/** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
+const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'longevita'];
+
 const CustomDateTick = ({ x, y, payload }) => {
   if (!payload || !payload.value) return null;
   const parts = String(payload.value).split('-');
@@ -609,6 +612,94 @@ export default function SalaComandi() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   const [activeBottomTab, setActiveBottomTab] = useState('oggi');
+  const [mainTabTouchStartX, setMainTabTouchStartX] = useState(null);
+  const [mainTabTouchEndX, setMainTabTouchEndX] = useState(null);
+  const mainTabTouchStartXRef = useRef(null);
+  const mainTabTouchEndXRef = useRef(null);
+  const mainTabTouchStartYRef = useRef(null);
+  const mainTabTouchEndYRef = useRef(null);
+  const mainTabSwipeIgnoreRef = useRef(false);
+
+  const handleMainTabTouchStart = useCallback((e) => {
+    const el = e.target;
+    if (el && typeof el.closest === 'function') {
+      if (el.closest('.chart-scroll-container') || el.closest('.mini-timeline-hitbox')) {
+        mainTabSwipeIgnoreRef.current = true;
+        return;
+      }
+    }
+    mainTabSwipeIgnoreRef.current = false;
+    const touch = e.targetTouches[0];
+    if (!touch) return;
+    setMainTabTouchEndX(null);
+    mainTabTouchEndXRef.current = null;
+    setMainTabTouchStartX(touch.clientX);
+    mainTabTouchStartXRef.current = touch.clientX;
+    mainTabTouchStartYRef.current = touch.clientY;
+    mainTabTouchEndYRef.current = touch.clientY;
+  }, []);
+
+  const handleMainTabTouchMove = useCallback((e) => {
+    if (mainTabSwipeIgnoreRef.current) return;
+    const touch = e.targetTouches[0];
+    if (!touch) return;
+    setMainTabTouchEndX(touch.clientX);
+    mainTabTouchEndXRef.current = touch.clientX;
+    mainTabTouchEndYRef.current = touch.clientY;
+  }, []);
+
+  const handleMainTabTouchEnd = useCallback(
+    (e) => {
+      if (mainTabSwipeIgnoreRef.current) {
+        mainTabSwipeIgnoreRef.current = false;
+        setMainTabTouchStartX(null);
+        setMainTabTouchEndX(null);
+        mainTabTouchStartXRef.current = null;
+        mainTabTouchEndXRef.current = null;
+        return;
+      }
+      const startX = mainTabTouchStartXRef.current;
+      const endX = mainTabTouchEndXRef.current ?? e.changedTouches?.[0]?.clientX ?? null;
+      const startY = mainTabTouchStartYRef.current;
+      const endY = mainTabTouchEndYRef.current ?? e.changedTouches?.[0]?.clientY ?? null;
+      setMainTabTouchStartX(null);
+      setMainTabTouchEndX(null);
+      mainTabTouchStartXRef.current = null;
+      mainTabTouchEndXRef.current = null;
+
+      if (startX == null || endX == null) return;
+
+      const minSwipeDistance = 50;
+      const distance = startX - endX;
+      const absDx = Math.abs(distance);
+      const absDy = Math.abs((startY ?? 0) - (endY ?? 0));
+      if (absDx < minSwipeDistance) return;
+      if (absDx <= absDy * 1.25) return;
+
+      const idx = MAIN_BOTTOM_TAB_ORDER.indexOf(activeBottomTab);
+      if (idx < 0) return;
+
+      if (distance > minSwipeDistance) {
+        if (idx < MAIN_BOTTOM_TAB_ORDER.length - 1) {
+          setActiveBottomTab(MAIN_BOTTOM_TAB_ORDER[idx + 1]);
+        }
+      } else if (distance < -minSwipeDistance) {
+        if (idx > 0) {
+          setActiveBottomTab(MAIN_BOTTOM_TAB_ORDER[idx - 1]);
+        }
+      }
+    },
+    [activeBottomTab]
+  );
+
+  const handleMainTabTouchCancel = useCallback(() => {
+    mainTabSwipeIgnoreRef.current = false;
+    setMainTabTouchStartX(null);
+    setMainTabTouchEndX(null);
+    mainTabTouchStartXRef.current = null;
+    mainTabTouchEndXRef.current = null;
+  }, []);
+
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
   /** Quadrante home (modalità base): kcal | pro | cho | fat */
@@ -6105,7 +6196,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         )}
 
       {(activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}>
+      <div
+        className="main-tab-swipe-area"
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}
+        onTouchStart={handleMainTabTouchStart}
+        onTouchMove={handleMainTabTouchMove}
+        onTouchEnd={handleMainTabTouchEnd}
+        onTouchCancel={handleMainTabTouchCancel}
+      >
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato (solo tab Oggi) */}
       {activeBottomTab === 'oggi' && (
       <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(8px, 1vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
@@ -8511,7 +8609,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
 
       {activeBottomTab === 'longevita' && (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}>
+        <div
+          className="main-tab-swipe-area"
+          style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}
+          onTouchStart={handleMainTabTouchStart}
+          onTouchMove={handleMainTabTouchMove}
+          onTouchEnd={handleMainTabTouchEnd}
+          onTouchCancel={handleMainTabTouchCancel}
+        >
           <LongevityView
             data={longevityData}
             showPriorityFocus
