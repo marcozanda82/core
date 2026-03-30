@@ -597,14 +597,6 @@ export default function LongevityView({
   ];
 
   const anchorDate = periodAnchorDate || getTodayString();
-  const optimizationDayLog = useMemo(
-    () => (fullHistory && anchorDate ? getLogFromStoricoTree(fullHistory, anchorDate) : []) || [],
-    [fullHistory, anchorDate]
-  );
-  const optimizationDailyData = useMemo(
-    () => buildOptimizationDailyDataFromLog(optimizationDayLog),
-    [optimizationDayLog]
-  );
   /** Fine comune del periodo statistiche: giorno prima dell’anchor (mai il giorno “live” del tracker). */
   const statsPeriodEnd = useMemo(() => addDays(anchorDate, -1), [anchorDate]);
 
@@ -647,6 +639,11 @@ export default function LongevityView({
     const logs = collectDayLogsInWindow(fullHistory, statsPeriodEnd, timeWindow);
     return buildMediatedVirtualLog(logs);
   }, [fullHistory, userTargets, statsPeriodEnd, timeWindow]);
+
+  const optimizationDailyData = useMemo(
+    () => buildOptimizationDailyDataFromLog(mediatedStarLog || []),
+    [mediatedStarLog]
+  );
 
   const dayStarReportDisplay = useMemo(() => {
     if (!mediatedStarLog || mediatedStarLog.length === 0) return null;
