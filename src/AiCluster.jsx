@@ -15,6 +15,7 @@ export default function AiCluster({
   showDinnerSuggestion,
   onRequestDinnerSuggestion,
   onLogDinnerOption,
+  onLoadAgenda,
   showAiSettings,
   setShowAiSettings,
   apiKeys,
@@ -175,6 +176,29 @@ export default function AiCluster({
                       Logga pasto {oIdx + 1}
                     </button>
                   ))}
+                </div>
+              )}
+              {msg.agendaOptions && msg.agendaOptions.length > 0 && !msg.isTyping && typeof onLoadAgenda === 'function' && (
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px', marginBottom: '4px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onLoadAgenda(msg.agendaOptions);
+                      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                    }}
+                    style={{
+                      padding: '10px 16px',
+                      background: 'rgba(0, 229, 255, 0.12)',
+                      color: '#7dd3fc',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(0, 229, 255, 0.35)',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Carica attività nel diario
+                  </button>
                 </div>
               )}
             </div>

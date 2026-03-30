@@ -37,8 +37,8 @@ function dinnerLoggedToday(log) {
 }
 
 /**
- * Notifiche proattive Kentu: finestre orarie sonno (mattina) e cena (sera).
- * @returns {{ activeTrigger: 'sleep'|'dinner'|null, chatNotificationBadge: boolean, dismissKentuSleepTrigger: function, dismissKentuDinnerTrigger: function, dismissKentuActiveTrigger: function }}
+ * Notifiche proattive Kentu: sonno (mattina) → agenda giornaliera → cena (sera).
+ * @returns {{ activeTrigger: 'sleep'|'agenda'|'dinner'|null, chatNotificationBadge: boolean, dismissKentuSleepTrigger: function, dismissKentuDinnerTrigger: function, dismissKentuAgendaTrigger: function, dismissKentuActiveTrigger: function }}
  */
 export function useSmartKentuTriggers(activeLog, trackerDateStr) {
   const [tick, setTick] = useState(0);
@@ -53,18 +53,21 @@ export function useSmartKentuTriggers(activeLog, trackerDateStr) {
   const rawTrigger = useMemo(() => {
     void tick;
     const h = new Date().getHours();
-    if (h >= 6 && h <= 11) {
-      if (!sleepDataComplete(activeLog)) return 'sleep';
+    if (h >= 6 && h < 11) {
+      const sleepHandled = sleepDataComplete(activeLog) || dismissed.sleep;
+      if (!sleepHandled) return 'sleep';
+      if (!dismissed.agenda) return 'agenda';
     }
     if (h >= 17 && h <= 21) {
       if (!dinnerLoggedToday(activeLog)) return 'dinner';
     }
     return null;
-  }, [activeLog, tick]);
+  }, [activeLog, dismissed.sleep, dismissed.agenda, tick]);
 
   const activeTrigger = useMemo(() => {
     if (!rawTrigger) return null;
     if (rawTrigger === 'sleep' && dismissed.sleep) return null;
+    if (rawTrigger === 'agenda' && dismissed.agenda) return null;
     if (rawTrigger === 'dinner' && dismissed.dinner) return null;
     return rawTrigger;
   }, [rawTrigger, dismissed]);
@@ -79,10 +82,16 @@ export function useSmartKentuTriggers(activeLog, trackerDateStr) {
     setTick((t) => t + 1);
   }, [trackerDateStr]);
 
+  const dismissKentuAgendaTrigger = useCallback(() => {
+    writeDismissPatch(trackerDateStr, { agenda: true });
+    setTick((t) => t + 1);
+  }, [trackerDateStr]);
+
   const dismissKentuActiveTrigger = useCallback(() => {
     if (activeTrigger === 'sleep') dismissKentuSleepTrigger();
     else if (activeTrigger === 'dinner') dismissKentuDinnerTrigger();
-  }, [activeTrigger, dismissKentuSleepTrigger, dismissKentuDinnerTrigger]);
+    else if (activeTrigger === 'agenda') dismissKentuAgendaTrigger();
+  }, [activeTrigger, dismissKentuSleepTrigger, dismissKentuDinnerTrigger, dismissKentuAgendaTrigger]);
 
   const chatNotificationBadge = activeTrigger != null;
 
@@ -91,6 +100,7 @@ export function useSmartKentuTriggers(activeLog, trackerDateStr) {
     chatNotificationBadge,
     dismissKentuSleepTrigger,
     dismissKentuDinnerTrigger,
+    dismissKentuAgendaTrigger,
     dismissKentuActiveTrigger,
   };
 }

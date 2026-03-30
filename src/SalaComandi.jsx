@@ -287,6 +287,103 @@ function buildRecentMealsContextForDinner(fullHistory, anchorDateStr) {
   return rows.map((r) => `- ${r.label} (~${r.kcal} kcal, P${r.prot} / C${r.carb} / F${r.fat} g)`).join('\n');
 }
 
+/**
+ * Ultime ~30 giorni: attività / allenamenti dal diario storico, medie durata e kcal per tipo.
+ */
+function buildRecentActivitiesContext(fullHistory, anchorDateStr) {
+  if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr) return '';
+
+  const byNorm = new Map();
+
+  for (let i = 0; i < 30; i++) {
+    const dStr = addDays(anchorDateStr, -i);
+    const log = getLogFromStoricoTree(fullHistory, dStr) || [];
+    const acts = log.filter(
+      (item) =>
+        item &&
+        (item.type === 'workout' ||
+          item.type === 'work' ||
+          item.type === 'activity' ||
+          item.type === 'cognitive')
+    );
+    acts.forEach((item) => {
+      const raw = (item.desc || item.name || item.label || '').trim();
+      if (!raw) return;
+      const norm = raw
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const durH = Number(item.duration);
+      const hours = Number.isFinite(durH) && durH > 0 ? durH : null;
+      const kcal = Number(item.kcal || item.cal || 0) || 0;
+      const prev = byNorm.get(norm);
+      if (prev) {
+        prev.n += 1;
+        if (hours != null) {
+          prev.durSum += hours;
+          prev.durCount += 1;
+        }
+        prev.kcal += kcal;
+        if (raw.length > prev.label.length) prev.label = raw;
+      } else {
+        byNorm.set(norm, {
+          label: raw,
+          n: 1,
+          durSum: hours != null ? hours : 0,
+          durCount: hours != null ? 1 : 0,
+          kcal,
+        });
+      }
+    });
+  }
+
+  const rows = Array.from(byNorm.values())
+    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
+    .slice(0, 20)
+    .map((v) => {
+      const avgK = Math.round(v.kcal / Math.max(1, v.n));
+      let durPart = 'n/d';
+      if (v.durCount > 0) {
+        const avgH = v.durSum / v.durCount;
+        if (avgH >= 1) durPart = `${avgH.toFixed(1).replace(/\.0$/, '')}h`;
+        else if (avgH > 0) durPart = `${Math.round(avgH * 60)}min`;
+      }
+      return `- ${v.label.length > 56 ? `${v.label.slice(0, 53)}…` : v.label} (media ${durPart}, ~${avgK} kcal)`;
+    });
+
+  return rows.join('\n');
+}
+
+function buildKentuAgendaSecretPrompt(userMessage, activitiesContext, mealsContext) {
+  const act =
+    activitiesContext && String(activitiesContext).trim()
+      ? String(activitiesContext).trim()
+      : '(nessuna attività strutturata negli ultimi 30 giorni nel diario)';
+  const meals =
+    mealsContext && String(mealsContext).trim()
+      ? String(mealsContext).trim()
+      : '(nessun pasto recente rilevante nel diario)';
+  const safeUser = String(userMessage || '').trim() || '(nessun dettaglio fornito)';
+  return `L'utente ha questi piani per oggi: ${safeUser}
+
+STORICO ATTIVITÀ:
+${act}
+
+STORICO PASTI:
+${meals}
+
+DIRETTIVE:
+1. Trova le attività nello storico che combaciano con i piani di oggi. Se non ci sono, stima tu calorie e durata.
+2. Genera una strategia nutrizionale rapida per supportare questo specifico carico di lavoro (es. quando inserire i carboidrati per l'allenamento gambe), usando i pasti dello storico se possibile.
+3. Rispondi in modo discorsivo ma conciso.
+4. Alla fine, allega un blocco JSON chiamato agenda_options contenente un array delle attività individuate, con "name", "duration" (in minuti) e "kcal" stimate.
+
+Formato esatto dell'ultima riga (solo JSON valido, senza markdown):
+{"agenda_options":[{"name":"etichetta breve","duration":90,"kcal":300}]}`;
+}
+
 const KENTU_DINNER_DISPLAY_MESSAGE =
   "Kentu, cosa mi consigli per cena visti i miei macro e l'allenamento di oggi?";
 
@@ -1198,6 +1295,8 @@ export default function SalaComandi() {
   ]);
   const CHAT_HISTORY_WINDOW = 10;
   const lastDinnerOptionsRef = useRef(null);
+  const lastAgendaOptionsRef = useRef(null);
+  const kentuAgendaAwaitingRef = useRef(false);
   const lastLogFromFirebaseRef = useRef(null);
   const pendingLogRef = useRef(null);
   const pendingNodesRef = useRef(null);
@@ -3710,6 +3809,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     chatNotificationBadge: kentuChatNotificationBadge,
     dismissKentuSleepTrigger,
     dismissKentuDinnerTrigger,
+    dismissKentuAgendaTrigger,
     dismissKentuActiveTrigger,
   } = useSmartKentuTriggers(activeLog, currentTrackerDate);
 
@@ -3786,6 +3886,70 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     ]
   );
 
+  const handleAutoLogAgenda = useCallback(
+    (agendaOptions) => {
+      if (!Array.isArray(agendaOptions) || agendaOptions.length === 0) return;
+      const dateStr = currentTrackerDate || getTodayString();
+      const uid = auth.currentUser?.uid;
+      const n = agendaOptions.length;
+      const newItems = agendaOptions.map((opt, idx) => {
+        const name = String(opt?.name || opt?.label || 'Attività').trim() || 'Attività';
+        const durMin = Math.max(15, Math.round(Number(opt?.duration) || 60));
+        const kcal = Math.max(0, Math.round(Number(opt?.kcal) || 0));
+        const durationH = Math.max(0.25, durMin / 60);
+        const spreadT = n <= 1 ? 12 : 8 + (idx / Math.max(1, n - 1)) * 10;
+        const mealTime = Math.min(22.75, Math.round(spreadT * 4) / 4);
+        return {
+          id: `kentu_agenda_${Date.now()}_${idx}`,
+          type: 'workout',
+          workoutType: 'misto',
+          desc: name.toUpperCase(),
+          name,
+          kcal,
+          cal: kcal,
+          duration: durationH,
+          mealTime,
+          time: mealTime,
+        };
+      });
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => [...newItems, ...(prev || [])]);
+        dismissKentuAgendaTrigger();
+        lastAgendaOptionsRef.current = null;
+        setChatHistory((prev) => [...prev, { sender: 'ai', text: 'Attività caricate nella timeline! (sandbox)' }]);
+        return;
+      }
+      const nuovoLog = [...newItems, ...(dailyLog || [])];
+      setDailyLog(nuovoLog);
+      syncDatiFirebase(nuovoLog, manualNodes);
+      if (uid && db) {
+        newItems.forEach((item) => {
+          push(ref(db, `users/${uid}/history/${dateStr}/activities`), {
+            name: item.name,
+            durationMin: Math.round(Math.max(15, (item.duration || 0.25) * 60)),
+            kcal: item.kcal,
+            mealTime: item.mealTime,
+            source: 'kentu_agenda',
+            loggedAt: Date.now(),
+          }).catch(() => {});
+        });
+      }
+      dismissKentuAgendaTrigger();
+      lastAgendaOptionsRef.current = null;
+      setChatHistory((prev) => [...prev, { sender: 'ai', text: 'Attività caricate nella timeline!' }]);
+    },
+    [
+      dailyLog,
+      manualNodes,
+      syncDatiFirebase,
+      isSimulationMode,
+      currentTrackerDate,
+      auth,
+      db,
+      dismissKentuAgendaTrigger,
+    ]
+  );
+
   const handleChatSubmit = async (optionalReply, sendMeta) => {
     const meta = sendMeta && typeof sendMeta === 'object' ? sendMeta : null;
     const trimQuick = optionalReply != null ? String(optionalReply).trim() : '';
@@ -3819,17 +3983,40 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const displayOverride = meta?.displayText != null && String(meta.displayText).trim() ? String(meta.displayText).trim() : '';
 
     let userMessage;
+    let apiUserContent;
+
     if (secretPrompt) {
       userMessage = displayOverride || KENTU_DINNER_DISPLAY_MESSAGE;
+      apiUserContent = secretPrompt;
+    } else if (kentuAgendaAwaitingRef.current) {
+      const agendaText =
+        optionalReply != null && String(optionalReply).trim()
+          ? String(optionalReply).trim()
+          : chatInput.trim();
+      if (agendaText) {
+        userMessage = agendaText;
+        const anchorAg = currentTrackerDate || getTodayString();
+        const actCtx = buildRecentActivitiesContext(fullHistory, anchorAg);
+        const mealCtx = buildRecentMealsContextForDinner(fullHistory, anchorAg);
+        apiUserContent = buildKentuAgendaSecretPrompt(agendaText, actCtx, mealCtx);
+        kentuAgendaAwaitingRef.current = false;
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem(`kentu_agenda_secret_sent_${anchorAg}`, '1');
+        }
+      } else {
+        userMessage = '';
+        apiUserContent = '';
+      }
     } else {
-      userMessage = (optionalReply != null && String(optionalReply).trim()) ? String(optionalReply).trim() : chatInput.trim();
+      userMessage = optionalReply != null && String(optionalReply).trim() ? String(optionalReply).trim() : chatInput.trim();
+      apiUserContent = userMessage;
     }
 
-    const apiUserContent = secretPrompt || userMessage;
     if (!apiUserContent && chatImages.length === 0) return;
 
     if ((meta?.fromInput || meta?.fromQuickReply) && !secretPrompt) {
-      dismissKentuActiveTrigger();
+      if (kentuActiveTrigger === 'sleep') dismissKentuSleepTrigger();
+      else if (kentuActiveTrigger === 'dinner') dismissKentuDinnerTrigger();
     }
 
     const logPastoKw = /\b(logga\s+pasto|salva(?:\s+la)?\s+cena|registra(?:\s+la)?\s+cena)\b/i;
@@ -4293,10 +4480,40 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
         }
       }
 
+      let agendaOptions = null;
+      const aoIdx = cleanText.indexOf('"agenda_options"');
+      if (aoIdx !== -1) {
+        const objStartAo = cleanText.lastIndexOf('{', aoIdx);
+        if (objStartAo !== -1) {
+          let depthAo = 0;
+          let objEndAo = objStartAo;
+          for (let i = objStartAo; i < cleanText.length; i++) {
+            if (cleanText[i] === '{') depthAo++;
+            else if (cleanText[i] === '}') {
+              depthAo--;
+              if (depthAo === 0) {
+                objEndAo = i;
+                break;
+              }
+            }
+          }
+          try {
+            const parsedAo = JSON.parse(cleanText.slice(objStartAo, objEndAo + 1));
+            if (Array.isArray(parsedAo.agenda_options) && parsedAo.agenda_options.length) {
+              agendaOptions = parsedAo.agenda_options.filter((o) => o && (o.name || o.label));
+            }
+            cleanText = (cleanText.slice(0, objStartAo) + cleanText.slice(objEndAo + 1)).trim();
+          } catch (_) {}
+        }
+      }
+
       if (!cleanText) cleanText = '✨ Operazione completata.';
 
       if (dinnerOptions && dinnerOptions.length) {
         lastDinnerOptionsRef.current = dinnerOptions;
+      }
+      if (agendaOptions && agendaOptions.length) {
+        lastAgendaOptionsRef.current = agendaOptions;
       }
 
       setChatHistory(prev => {
@@ -4307,6 +4524,7 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
           text: cleanText,
           quickReplies: quickReplies.length > 0 ? quickReplies : undefined,
           dinnerOptions: dinnerOptions && dinnerOptions.length > 0 ? dinnerOptions : undefined,
+          agendaOptions: agendaOptions && agendaOptions.length > 0 ? agendaOptions : undefined,
         });
         return newHist;
       });
@@ -5083,6 +5301,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   requestKentuDinnerSuggestionRef.current = requestKentuDinnerSuggestion;
 
   useEffect(() => {
+    if (kentuActiveTrigger !== 'agenda') kentuAgendaAwaitingRef.current = false;
+  }, [kentuActiveTrigger]);
+
+  useEffect(() => {
     if (activeAction !== 'ai_chat' || !kentuActiveTrigger) return;
     const date = currentTrackerDate || getTodayString();
     if (kentuActiveTrigger === 'sleep') {
@@ -5101,6 +5323,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           },
         ];
       });
+      return;
+    }
+    if (kentuActiveTrigger === 'agenda') {
+      const k = `kentu_pro_agenda_shown_${date}`;
+      const sentKey = `kentu_agenda_secret_sent_${date}`;
+      const alreadySent =
+        typeof window !== 'undefined' && window.sessionStorage.getItem(sentKey);
+      if (!alreadySent) kentuAgendaAwaitingRef.current = true;
+      if (typeof window !== 'undefined' && !window.localStorage.getItem(k)) {
+        window.localStorage.setItem(k, '1');
+        setChatHistory((prev) => {
+          const needle = 'Che programmi hai per oggi';
+          if (prev.some((m) => m.sender === 'ai' && typeof m.text === 'string' && m.text.includes(needle))) return prev;
+          return [
+            ...prev,
+            {
+              sender: 'ai',
+              text: 'Buongiorno! Ho registrato i dati del sonno. Che programmi hai per oggi? (es. Lavoro al pc, perizie, allenamento)',
+            },
+          ];
+        });
+      }
       return;
     }
     if (kentuActiveTrigger === 'dinner') {
@@ -7547,6 +7791,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               showDinnerSuggestion
               onRequestDinnerSuggestion={requestKentuDinnerSuggestion}
               onLogDinnerOption={handleAutoLogDinner}
+              onLoadAgenda={handleAutoLogAgenda}
               showAiSettings={showAiSettings}
               setShowAiSettings={setShowAiSettings}
               apiKeys={apiKeys}
