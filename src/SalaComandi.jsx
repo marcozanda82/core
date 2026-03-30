@@ -612,6 +612,7 @@ export default function SalaComandi() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   const [activeBottomTab, setActiveBottomTab] = useState('oggi');
+  const [slideDirection, setSlideDirection] = useState('slide-none');
   const [mainTabTouchStartX, setMainTabTouchStartX] = useState(null);
   const [mainTabTouchEndX, setMainTabTouchEndX] = useState(null);
   const mainTabTouchStartXRef = useRef(null);
@@ -681,13 +682,42 @@ export default function SalaComandi() {
 
       if (distance > minSwipeDistance) {
         if (idx < MAIN_BOTTOM_TAB_ORDER.length - 1) {
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate(15);
+          }
+          setSlideDirection('slide-left');
           setActiveBottomTab(MAIN_BOTTOM_TAB_ORDER[idx + 1]);
         }
       } else if (distance < -minSwipeDistance) {
         if (idx > 0) {
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate(15);
+          }
+          setSlideDirection('slide-right');
           setActiveBottomTab(MAIN_BOTTOM_TAB_ORDER[idx - 1]);
         }
       }
+    },
+    [activeBottomTab]
+  );
+
+  const handleBottomNavTabSelect = useCallback(
+    (tabId) => {
+      if (tabId === 'menu') {
+        setActiveAction('menu_secondary');
+        setIsDrawerOpen(true);
+        return;
+      }
+      const fromIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(activeBottomTab);
+      const toIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(tabId);
+      if (tabId !== activeBottomTab && toIdx >= 0 && fromIdx >= 0) {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate(15);
+        }
+        if (toIdx > fromIdx) setSlideDirection('slide-left');
+        else if (toIdx < fromIdx) setSlideDirection('slide-right');
+      }
+      setActiveBottomTab(tabId);
     },
     [activeBottomTab]
   );
@@ -6195,15 +6225,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         )}
 
-      {(activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
+      {MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab) && (
       <div
-        className="main-tab-swipe-area"
-        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}
+        key={activeBottomTab}
+        className={`main-tab-swipe-area ${slideDirection}`}
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}
         onTouchStart={handleMainTabTouchStart}
         onTouchMove={handleMainTabTouchMove}
         onTouchEnd={handleMainTabTouchEnd}
         onTouchCancel={handleMainTabTouchCancel}
       >
+      {(activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}>
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato (solo tab Oggi) */}
       {activeBottomTab === 'oggi' && (
       <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(8px, 1vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
@@ -7122,6 +7155,26 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               );
             })()}
           </div>
+        </div>
+      )}
+      </div>
+      )}
+      {activeBottomTab === 'longevita' && (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}>
+          <LongevityView
+            data={longevityData}
+            showPriorityFocus
+            userAge={userAge}
+            bodyMetricsHistory={bodyMetricsHistory}
+            scoreHistory={longevityScoreHistory}
+            todayScore={longevityTodayScore}
+            periodAnchorDate={currentTrackerDate}
+            fullHistory={fullHistory}
+            userTargets={userTargets}
+            onUpdateTDEE={handleUpdateTDEE}
+            tdeeHistory={tdeeHistory}
+            onProjectedAgeInsightRequest={handleProjectedAgeInsightRequest}
+          />
         </div>
       )}
       </div>
@@ -8608,31 +8661,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       </div>
 
-      {activeBottomTab === 'longevita' && (
-        <div
-          className="main-tab-swipe-area"
-          style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}
-          onTouchStart={handleMainTabTouchStart}
-          onTouchMove={handleMainTabTouchMove}
-          onTouchEnd={handleMainTabTouchEnd}
-          onTouchCancel={handleMainTabTouchCancel}
-        >
-          <LongevityView
-            data={longevityData}
-            showPriorityFocus
-            userAge={userAge}
-            bodyMetricsHistory={bodyMetricsHistory}
-            scoreHistory={longevityScoreHistory}
-            todayScore={longevityTodayScore}
-            periodAnchorDate={currentTrackerDate}
-            fullHistory={fullHistory}
-            userTargets={userTargets}
-            onUpdateTDEE={handleUpdateTDEE}
-            tdeeHistory={tdeeHistory}
-            onProjectedAgeInsightRequest={handleProjectedAgeInsightRequest}
-          />
-        </div>
-      )}
       {showProfile && (
         <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.9)', zIndex: 100020, overflowY: 'auto', padding: '20px' }}>
           <div style={{ background: '#1e1e1e', padding: '30px', borderRadius: '16px', maxWidth: '600px', margin: '0 auto', color: '#fff' }}>
@@ -9966,14 +9994,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <button
             key={t.id}
             type="button"
-            onClick={() => {
-              if (t.id === 'menu') {
-                setActiveAction('menu_secondary');
-                setIsDrawerOpen(true);
-                return;
-              }
-              setActiveBottomTab(t.id);
-            }}
+            onClick={() => handleBottomNavTabSelect(t.id)}
             style={{
               background: 'transparent',
               border: 'none',
