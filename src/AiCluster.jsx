@@ -141,7 +141,7 @@ export default function AiCluster({
                       key={rIdx}
                       type="button"
                       onClick={() => {
-                        onSendMessage(reply);
+                        onSendMessage(reply, { fromQuickReply: true });
                         setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                       }}
                       style={{ padding: '8px 15px', background: '#00e5ff', color: '#000', borderRadius: '20px', border: 'none', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
@@ -221,27 +221,6 @@ export default function AiCluster({
             >
               🍽️
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                onRequestDinnerSuggestion();
-                setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-              }}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '999px',
-                border: '1px solid rgba(255,255,255,0.08)',
-                background: 'rgba(255,255,255,0.04)',
-                color: 'rgba(253, 230, 186, 0.85)',
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              Suggerimento cena
-            </button>
           </div>
         )}
         <div className="chat-input-wrapper" style={{ marginTop: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 10px', border: '1px solid #333' }}>
@@ -274,7 +253,7 @@ export default function AiCluster({
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                onSendMessage();
+                onSendMessage(undefined, { fromInput: true });
                 setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
               }
             }}
@@ -284,7 +263,7 @@ export default function AiCluster({
             type="button"
             className={`chat-send-btn ${(chatInput.trim() || chatImages.length > 0) ? 'has-text' : ''}`}
             onClick={() => {
-              onSendMessage();
+              onSendMessage(undefined, { fromInput: true });
               setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
             style={{ background: (chatInput.trim() || chatImages.length > 0) ? '#b388ff' : '#fff', color: (chatInput.trim() || chatImages.length > 0) ? '#fff' : '#000', border: 'none', width: 40, height: 40, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '1.1rem', flexShrink: 0 }}

@@ -589,6 +589,8 @@ export default function LongevityView({
   onUpdateTDEE = null,
   /** Storico ricalibrazioni TDEE (nodo `tdee_history`) */
   tdeeHistory = [],
+  /** Click su età proiettata / freccia trend → insight AI (gestito dal genitore) */
+  onProjectedAgeInsightRequest = null,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const timeOptions = [
@@ -813,51 +815,83 @@ export default function LongevityView({
           </>
         ) : projectedAge != null ? (
           <>
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'flex-end',
-                justifyContent: 'center',
-                gap: 14,
-                lineHeight: 1.05,
-              }}
-            >
-              <div style={{ fontSize: '5rem', fontWeight: 900, color: getColor(averageScore), lineHeight: 1.05 }}>
-                {projectedAge.toFixed(1)}
-              </div>
-              {deltaAge != null && Math.abs(deltaAge) > 0.05 && (
+            {(() => {
+              const ageBlock = (
                 <div
                   style={{
                     display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 4,
-                    marginBottom: 10,
+                    flexWrap: 'wrap',
+                    alignItems: 'flex-end',
+                    justifyContent: 'center',
+                    gap: 14,
+                    lineHeight: 1.05,
                   }}
                 >
-                  <div
-                    style={{
-                      fontSize: '1.15rem',
-                      fontWeight: 600,
-                      padding: '6px 12px',
-                      borderRadius: 999,
-                      background:
-                        deltaAge > 0 ? 'rgba(74, 222, 128, 0.12)' : 'rgba(248, 113, 113, 0.12)',
-                      border:
-                        deltaAge > 0 ? '1px solid rgba(74, 222, 128, 0.35)' : '1px solid rgba(248, 113, 113, 0.35)',
-                      color: deltaAge > 0 ? '#4ade80' : '#f87171',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {deltaAge > 0 ? `↑ +${deltaAge.toFixed(1)}` : `↓ ${deltaAge.toFixed(1)}`}
+                  <div style={{ fontSize: '5rem', fontWeight: 900, color: getColor(averageScore), lineHeight: 1.05 }}>
+                    {projectedAge.toFixed(1)}
                   </div>
-                  <div style={{ fontSize: '0.65rem', fontWeight: 500, color: 'rgba(148, 163, 184, 0.95)', letterSpacing: '0.02em' }}>
-                    vs periodo precedente
-                  </div>
+                  {deltaAge != null && Math.abs(deltaAge) > 0.05 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 4,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '1.15rem',
+                          fontWeight: 600,
+                          padding: '6px 12px',
+                          borderRadius: 999,
+                          background:
+                            deltaAge > 0 ? 'rgba(74, 222, 128, 0.12)' : 'rgba(248, 113, 113, 0.12)',
+                          border:
+                            deltaAge > 0 ? '1px solid rgba(74, 222, 128, 0.35)' : '1px solid rgba(248, 113, 113, 0.35)',
+                          color: deltaAge > 0 ? '#4ade80' : '#f87171',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {deltaAge > 0 ? `↑ +${deltaAge.toFixed(1)}` : `↓ ${deltaAge.toFixed(1)}`}
+                      </div>
+                      <div style={{ fontSize: '0.65rem', fontWeight: 500, color: 'rgba(148, 163, 184, 0.95)', letterSpacing: '0.02em' }}>
+                        vs periodo precedente
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+              if (typeof onProjectedAgeInsightRequest !== 'function') return ageBlock;
+              return (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onProjectedAgeInsightRequest({
+                      projectedAge,
+                      deltaAge,
+                      averageScore,
+                      timeWindow,
+                    })
+                  }
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    margin: 0,
+                    padding: '4px 8px 12px',
+                    background: 'transparent',
+                    border: '1px solid rgba(148, 163, 184, 0.22)',
+                    borderRadius: 14,
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                  }}
+                  aria-label="Apri insight età proiettata"
+                >
+                  {ageBlock}
+                </button>
+              );
+            })()}
             <div style={{ fontSize: '1.05rem', fontWeight: 600, marginTop: 12, letterSpacing: '0.04em', color: '#e5e5e5' }}>
               Anni di Età Proiettata
             </div>

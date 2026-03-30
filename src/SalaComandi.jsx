@@ -17,6 +17,7 @@ import { ref, get, set, push, onValue, update, remove } from 'firebase/database'
 import {
   calculateConsolidatedAverageScore,
   calculateProjectedAge,
+  getAverageForPeriod,
   buildKentuAiVitalsContextParagraph,
   buildKentuAiMetabolicRecompositionContext,
 } from './longevityStats';
@@ -29,6 +30,8 @@ import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
+import ProjectedAgeInsightModal from './ProjectedAgeInsightModal';
+import { useSmartKentuTriggers } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
   RADIAN,
@@ -3581,6 +3584,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     }
   };
 
+  const {
+    activeTrigger: kentuActiveTrigger,
+    chatNotificationBadge: kentuChatNotificationBadge,
+    dismissKentuSleepTrigger,
+    dismissKentuDinnerTrigger,
+    dismissKentuActiveTrigger,
+  } = useSmartKentuTriggers(activeLog, currentTrackerDate);
+
   const handleAutoLogDinner = useCallback(
     (mealData) => {
       if (!mealData || typeof mealData !== 'object') return;
@@ -3656,6 +3667,33 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const handleChatSubmit = async (optionalReply, sendMeta) => {
     const meta = sendMeta && typeof sendMeta === 'object' ? sendMeta : null;
+    const trimQuick = optionalReply != null ? String(optionalReply).trim() : '';
+    if (trimQuick === 'Ho dormito 7h bene' || trimQuick === 'Ho dormito male') {
+      dismissKentuSleepTrigger();
+      const hours = trimQuick === 'Ho dormito 7h bene' ? 7 : 5.5;
+      const quality = trimQuick === 'Ho dormito 7h bene' ? 'buona' : 'scarsa';
+      const sleepEntry = {
+        type: 'sleep',
+        id: `sleep_smart_${Date.now()}`,
+        wakeTime: 7.5,
+        hours,
+        deepMin: 45,
+        remMin: 90,
+        hr: 58,
+        quality,
+      };
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
+        setChatHistory((prev) => [...prev, { sender: 'user', text: trimQuick }, { sender: 'ai', text: 'Registrato una stima del sonno (sandbox). Dal diario puoi rifinire i valori.' }]);
+        return;
+      }
+      const nuovoLog = [...(dailyLog || []), sleepEntry];
+      setDailyLog(nuovoLog);
+      syncDatiFirebase(nuovoLog, manualNodes);
+      setChatHistory((prev) => [...prev, { sender: 'user', text: trimQuick }, { sender: 'ai', text: 'Perfetto, ho salvato una stima del sonno. Puoi correggere i dettagli dal diario se serve.' }]);
+      return;
+    }
+
     const secretPrompt = meta?.secretPrompt != null && String(meta.secretPrompt).trim() ? String(meta.secretPrompt).trim() : '';
     const displayOverride = meta?.displayText != null && String(meta.displayText).trim() ? String(meta.displayText).trim() : '';
 
@@ -3668,6 +3706,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
     const apiUserContent = secretPrompt || userMessage;
     if (!apiUserContent && chatImages.length === 0) return;
+
+    if ((meta?.fromInput || meta?.fromQuickReply) && !secretPrompt) {
+      dismissKentuActiveTrigger();
+    }
 
     const logPastoKw = /\b(logga\s+pasto|salva(?:\s+la)?\s+cena|registra(?:\s+la)?\s+cena)\b/i;
     if (!secretPrompt && logPastoKw.test(userMessage) && Array.isArray(lastDinnerOptionsRef.current) && lastDinnerOptionsRef.current.length) {
@@ -4663,6 +4705,47 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return out.sort((a, b) => a.date.localeCompare(b.date));
   }, [fullHistory, userTargets, currentTrackerDate]);
 
+  const [projectedAgeInsightOpen, setProjectedAgeInsightOpen] = useState(false);
+  const [projectedAgeInsightContext, setProjectedAgeInsightContext] = useState('');
+
+  const handleProjectedAgeInsightRequest = useCallback(
+    (lvPayload) => {
+      const { projectedAge, deltaAge, averageScore, timeWindow } = lvPayload || {};
+      const sleep = (activeLog || []).find((e) => e?.type === 'sleep');
+      const sleepLine = sleep
+        ? `Sonno oggi nel diario: ~${sleep.hours ?? sleep.duration ?? '?'}h.`
+        : 'Sonno oggi: non registrato nel diario.';
+      const workouts = (activeLog || []).filter((e) => e?.type === 'workout' || e?.type === 'work').length;
+      const bm = bodyMetricsHistory || [];
+      const last = bm.length ? bm[bm.length - 1] : null;
+      const prev = bm.length > 1 ? bm[bm.length - 2] : null;
+      let bodyLine = 'Composizione corporea: dati ultimi log non sufficienti per un delta.';
+      if (last && prev) {
+        const dw = Number(last.weight) - Number(prev.weight);
+        const df = Number(last.bodyFat) - Number(prev.bodyFat);
+        if (Number.isFinite(dw) || Number.isFinite(df)) {
+          bodyLine = `Ultimi due log composizione: Δ peso ${Number.isFinite(dw) ? `${dw >= 0 ? '+' : ''}${dw.toFixed(1)} kg` : 'n/d'}; Δ grasso % ${Number.isFinite(df) ? `${df >= 0 ? '+' : ''}${df.toFixed(1)} pp` : 'n/d'}.`;
+        }
+      }
+      const anchor = currentTrackerDate || getTodayString();
+      const tw = Math.max(1, Math.min(366, Number(timeWindow) || 30));
+      const curAvg = getAverageForPeriod(longevityScoreHistory, tw, 1, anchor, null);
+      const prevAvg = getAverageForPeriod(longevityScoreHistory, tw, tw + 1, anchor, null);
+      const ctx = [
+        `Età cronologica utente: ${userAge != null ? `${userAge} anni` : 'n/d'}.`,
+        `Età biologica proiettata (media su ${tw}g): ${projectedAge != null ? projectedAge.toFixed(1) : 'n/d'} anni.`,
+        `Variazione proiettata vs periodo precedente (stessa finestra): ${deltaAge != null ? `${deltaAge > 0 ? '+' : ''}${deltaAge.toFixed(2)} anni (positivo = miglioramento)` : 'n/d'}.`,
+        `Punteggio longevità — media periodo corrente: ${curAvg != null ? curAvg.toFixed(1) : 'n/d'}, periodo precedente: ${prevAvg != null ? prevAvg.toFixed(1) : 'n/d'}. Score selettore vista: ${averageScore != null ? averageScore : 'n/d'}/100.`,
+        sleepLine,
+        `Voci allenamento/lavoro registrate oggi: ${workouts}.`,
+        bodyLine,
+      ].join('\n');
+      setProjectedAgeInsightContext(ctx);
+      setProjectedAgeInsightOpen(true);
+    },
+    [activeLog, bodyMetricsHistory, currentTrackerDate, longevityScoreHistory, userAge]
+  );
+
   /** Punteggio “oggi” (giorno tracker): motore longevità se calendario = oggi, altrimenti matrice su quel giorno. */
   const longevityTodayScore = useMemo(() => {
     if (!fullHistory || !userTargets) return 0;
@@ -4846,6 +4929,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const remainingFat = Math.max(0, Math.round((targetMacros.fat || 0) - (Number(totali?.fatTotal ?? totali?.fat) || 0)));
 
   const requestKentuDinnerSuggestion = useCallback(() => {
+    dismissKentuDinnerTrigger();
     const anchor = currentTrackerDate || getTodayString();
     const workoutToday = (activeLog || []).some((e) => e.type === 'workout' || e.type === 'work');
     const secretPrompt = buildKentuDinnerSecretPrompt({
@@ -4871,7 +4955,40 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     remainingCho,
     remainingFat,
     handleChatSubmit,
+    dismissKentuDinnerTrigger,
   ]);
+
+  const requestKentuDinnerSuggestionRef = useRef(requestKentuDinnerSuggestion);
+  requestKentuDinnerSuggestionRef.current = requestKentuDinnerSuggestion;
+
+  useEffect(() => {
+    if (activeAction !== 'ai_chat' || !kentuActiveTrigger) return;
+    const date = currentTrackerDate || getTodayString();
+    if (kentuActiveTrigger === 'sleep') {
+      const k = `kentu_pro_sleep_shown_${date}`;
+      if (typeof window !== 'undefined' && window.localStorage.getItem(k)) return;
+      if (typeof window !== 'undefined') window.localStorage.setItem(k, '1');
+      setChatHistory((prev) => {
+        const needle = 'mancano i dati del sonno';
+        if (prev.some((m) => m.sender === 'ai' && typeof m.text === 'string' && m.text.includes(needle))) return prev;
+        return [
+          ...prev,
+          {
+            sender: 'ai',
+            text: 'Buongiorno! L\'energia stamattina risulta bassa perché mancano i dati del sonno. Vuoi che li registriamo al volo per ricalibrare la giornata?',
+            quickReplies: ['Ho dormito 7h bene', 'Ho dormito male'],
+          },
+        ];
+      });
+      return;
+    }
+    if (kentuActiveTrigger === 'dinner') {
+      const k = `kentu_pro_dinner_auto_${date}`;
+      if (typeof window !== 'undefined' && window.localStorage.getItem(k)) return;
+      if (typeof window !== 'undefined') window.localStorage.setItem(k, '1');
+      requestKentuDinnerSuggestionRef.current();
+    }
+  }, [activeAction, kentuActiveTrigger, currentTrackerDate]);
 
   const isNightDeficit = displayTime >= 20 && targetKcalForAlerts > 0 && ((totalCaloriesTimeline || 0) / targetKcalForAlerts) <= 0.60;
   const isProteinSaturated = displayTime <= 15 && (targetMacros?.prot ?? 0) > 0 && ((totalMacrosTimeline.prot || 0) / (targetMacros.prot || 1)) >= 0.90;
@@ -7114,7 +7231,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button className="action-btn" onClick={() => { setShowProfile(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">⚙️</span><span className="action-label">Profilo & Target</span></button>
               <button className="action-btn" onClick={() => setActiveAction('strategia')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>🎯</span><span className="action-label" style={{ color: '#00e5ff' }}>Protocollo</span></button>
               <button className="action-btn" onClick={() => setActiveAction('focus')}><img src="/icon-neural-128.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 192, 45, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#fbc02d' }}>Neural Reset</span></button>
-              <button className="action-btn" onClick={() => setActiveAction('ai_chat')} style={{ background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
+              <button type="button" className="action-btn" onClick={() => setActiveAction('ai_chat')} style={{ position: 'relative', background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
+                {kentuChatNotificationBadge ? (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      top: 6,
+                      right: 8,
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      background: '#f59e0b',
+                      boxShadow: '0 0 8px rgba(245, 158, 11, 0.65)',
+                      zIndex: 2,
+                    }}
+                  />
+                ) : null}
                 <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#b388ff' }}>Core AI</span>
               </button>
             </div>
@@ -7165,7 +7298,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               chatImages={chatImages}
               setChatImages={setChatImages}
               onSendMessage={handleChatSubmit}
-              showDinnerSuggestion={userProfile?.level === 'pro'}
+              showDinnerSuggestion
               onRequestDinnerSuggestion={requestKentuDinnerSuggestion}
               onLogDinnerOption={handleAutoLogDinner}
               showAiSettings={showAiSettings}
@@ -8391,6 +8524,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             userTargets={userTargets}
             onUpdateTDEE={handleUpdateTDEE}
             tdeeHistory={tdeeHistory}
+            onProjectedAgeInsightRequest={handleProjectedAgeInsightRequest}
           />
         </div>
       )}
@@ -9592,6 +9726,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 userTargets={userTargets}
                 onUpdateTDEE={handleUpdateTDEE}
                 tdeeHistory={tdeeHistory}
+                onProjectedAgeInsightRequest={handleProjectedAgeInsightRequest}
               />
             </div>
 
@@ -9673,8 +9808,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       <div style={{ position: 'fixed', bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))', left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '15px', paddingRight: '15px', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid rgba(255, 255, 255, 0.08)', zIndex: 9998, boxSizing: 'border-box' }}>
         <div
           onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
-          style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '12px 20px', border: '1px solid #333', cursor: 'pointer' }}
+          style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '12px 20px', border: '1px solid #333', cursor: 'pointer' }}
         >
+          {kentuChatNotificationBadge ? (
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                top: 8,
+                right: 14,
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: '#f59e0b',
+                boxShadow: '0 0 10px rgba(245, 158, 11, 0.7)',
+                pointerEvents: 'none',
+              }}
+            />
+          ) : null}
           <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-fab" width={22} height={22} decoding="async" />
           <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
         </div>
@@ -9749,6 +9900,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     <>
       <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} />
       {salaContent}
+      <ProjectedAgeInsightModal
+        open={projectedAgeInsightOpen}
+        onClose={() => setProjectedAgeInsightOpen(false)}
+        contextBlock={projectedAgeInsightContext}
+        callGeminiAPIWithRotation={callGeminiAPIWithRotation}
+      />
     </>
   );
 }
