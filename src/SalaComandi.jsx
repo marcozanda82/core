@@ -17,7 +17,6 @@ import { ref, get, set, push, onValue, update, remove } from 'firebase/database'
 import {
   calculateConsolidatedAverageScore,
   calculateProjectedAge,
-  getAverageForPeriod,
   buildKentuAiVitalsContextParagraph,
   buildKentuAiMetabolicRecompositionContext,
 } from './longevityStats';
@@ -30,7 +29,8 @@ import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
-import ProjectedAgeInsightModal from './ProjectedAgeInsightModal';
+import OptimizationCard from './OptimizationCard';
+import { buildOptimizationDailyDataFromLog } from './optimizationIndex';
 import { useSmartKentuTriggers } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
@@ -2609,6 +2609,10 @@ export default function SalaComandi() {
   const baseKcal = (userTargets.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
   const { totali, obiettiviPasti } = useBiochimico(activeLog, baseKcal);
   const targetKcal = baseKcal + (totali?.workout ?? 0);
+  const optimizationDailyDataForUi = useMemo(
+    () => buildOptimizationDailyDataFromLog(activeLog),
+    [activeLog]
+  );
 
   // Macro giornalieri reali (solo da dailyLog) per MealBuilder — mai undefined per evitare NaN nelle barre
   const macroDailyReals = useMemo(() => {
@@ -5044,47 +5048,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return out.sort((a, b) => a.date.localeCompare(b.date));
   }, [fullHistory, userTargets, currentTrackerDate]);
 
-  const [projectedAgeInsightOpen, setProjectedAgeInsightOpen] = useState(false);
-  const [projectedAgeInsightContext, setProjectedAgeInsightContext] = useState('');
-
-  const handleProjectedAgeInsightRequest = useCallback(
-    (lvPayload) => {
-      const { projectedAge, deltaAge, averageScore, timeWindow } = lvPayload || {};
-      const sleep = (activeLog || []).find((e) => e?.type === 'sleep');
-      const sleepLine = sleep
-        ? `Sonno oggi nel diario: ~${sleep.hours ?? sleep.duration ?? '?'}h.`
-        : 'Sonno oggi: non registrato nel diario.';
-      const workouts = (activeLog || []).filter((e) => e?.type === 'workout' || e?.type === 'work').length;
-      const bm = bodyMetricsHistory || [];
-      const last = bm.length ? bm[bm.length - 1] : null;
-      const prev = bm.length > 1 ? bm[bm.length - 2] : null;
-      let bodyLine = 'Composizione corporea: dati ultimi log non sufficienti per un delta.';
-      if (last && prev) {
-        const dw = Number(last.weight) - Number(prev.weight);
-        const df = Number(last.bodyFat) - Number(prev.bodyFat);
-        if (Number.isFinite(dw) || Number.isFinite(df)) {
-          bodyLine = `Ultimi due log composizione: Δ peso ${Number.isFinite(dw) ? `${dw >= 0 ? '+' : ''}${dw.toFixed(1)} kg` : 'n/d'}; Δ grasso % ${Number.isFinite(df) ? `${df >= 0 ? '+' : ''}${df.toFixed(1)} pp` : 'n/d'}.`;
-        }
-      }
-      const anchor = currentTrackerDate || getTodayString();
-      const tw = Math.max(1, Math.min(366, Number(timeWindow) || 30));
-      const curAvg = getAverageForPeriod(longevityScoreHistory, tw, 1, anchor, null);
-      const prevAvg = getAverageForPeriod(longevityScoreHistory, tw, tw + 1, anchor, null);
-      const ctx = [
-        `Età cronologica utente: ${userAge != null ? `${userAge} anni` : 'n/d'}.`,
-        `Età biologica proiettata (media su ${tw}g): ${projectedAge != null ? projectedAge.toFixed(1) : 'n/d'} anni.`,
-        `Variazione proiettata vs periodo precedente (stessa finestra): ${deltaAge != null ? `${deltaAge > 0 ? '+' : ''}${deltaAge.toFixed(2)} anni (positivo = miglioramento)` : 'n/d'}.`,
-        `Punteggio longevità — media periodo corrente: ${curAvg != null ? curAvg.toFixed(1) : 'n/d'}, periodo precedente: ${prevAvg != null ? prevAvg.toFixed(1) : 'n/d'}. Score selettore vista: ${averageScore != null ? averageScore : 'n/d'}/100.`,
-        sleepLine,
-        `Voci allenamento/lavoro registrate oggi: ${workouts}.`,
-        bodyLine,
-      ].join('\n');
-      setProjectedAgeInsightContext(ctx);
-      setProjectedAgeInsightOpen(true);
-    },
-    [activeLog, bodyMetricsHistory, currentTrackerDate, longevityScoreHistory, userAge]
-  );
-
   /** Punteggio “oggi” (giorno tracker): motore longevità se calendario = oggi, altrimenti matrice su quel giorno. */
   const longevityTodayScore = useMemo(() => {
     if (!fullHistory || !userTargets) return 0;
@@ -6994,6 +6957,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </>
       )}
 
+      {activeBottomTab === 'analisi' && (
+        <div style={{ width: '100%', padding: '10px 12px 18px', flexShrink: 0, boxSizing: 'border-box' }}>
+          <OptimizationCard
+            dailyData={optimizationDailyDataForUi}
+            targets={{
+              kcal: userTargets?.kcal ?? baseKcal ?? 2000,
+              prot: userTargets?.prot ?? 150,
+            }}
+          />
+        </div>
+      )}
+
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && activeBottomTab === 'oggi' && (
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '8px', padding: '4px 14px 0', marginBottom: 0, overflowX: 'hidden', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
@@ -7512,7 +7487,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             userTargets={userTargets}
             onUpdateTDEE={handleUpdateTDEE}
             tdeeHistory={tdeeHistory}
-            onProjectedAgeInsightRequest={handleProjectedAgeInsightRequest}
           />
         </div>
       )}
@@ -10199,7 +10173,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 userTargets={userTargets}
                 onUpdateTDEE={handleUpdateTDEE}
                 tdeeHistory={tdeeHistory}
-                onProjectedAgeInsightRequest={handleProjectedAgeInsightRequest}
               />
             </div>
 
@@ -10366,12 +10339,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     <>
       <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} />
       {salaContent}
-      <ProjectedAgeInsightModal
-        open={projectedAgeInsightOpen}
-        onClose={() => setProjectedAgeInsightOpen(false)}
-        contextBlock={projectedAgeInsightContext}
-        callGeminiAPIWithRotation={callGeminiAPIWithRotation}
-      />
     </>
   );
 }

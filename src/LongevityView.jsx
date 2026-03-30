@@ -1,9 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import {
-  getAverageForPeriod,
-  calculateConsolidatedAverageScore as calculateAverageScore,
-  calculateProjectedAge,
-} from './longevityStats';
+import { calculateConsolidatedAverageScore as calculateAverageScore } from './longevityStats';
+import OptimizationCard from './OptimizationCard';
+import { buildOptimizationDailyDataFromLog } from './optimizationIndex';
 import { computeTotali } from './useBiochimico';
 import { calculateMetabolicVariance, KCAL_PER_KG_BODY_MASS } from './metabolicEngine';
 import {
@@ -589,8 +587,6 @@ export default function LongevityView({
   onUpdateTDEE = null,
   /** Storico ricalibrazioni TDEE (nodo `tdee_history`) */
   tdeeHistory = [],
-  /** Click su età proiettata / freccia trend → insight AI (gestito dal genitore) */
-  onProjectedAgeInsightRequest = null,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const timeOptions = [
@@ -601,6 +597,14 @@ export default function LongevityView({
   ];
 
   const anchorDate = periodAnchorDate || getTodayString();
+  const optimizationDayLog = useMemo(
+    () => (fullHistory && anchorDate ? getLogFromStoricoTree(fullHistory, anchorDate) : []) || [],
+    [fullHistory, anchorDate]
+  );
+  const optimizationDailyData = useMemo(
+    () => buildOptimizationDailyDataFromLog(optimizationDayLog),
+    [optimizationDayLog]
+  );
   /** Fine comune del periodo statistiche: giorno prima dell’anchor (mai il giorno “live” del tracker). */
   const statsPeriodEnd = useMemo(() => addDays(anchorDate, -1), [anchorDate]);
 
@@ -615,12 +619,6 @@ export default function LongevityView({
       : data && typeof data.masterScore === 'number'
         ? data.masterScore
         : null;
-
-  const hasUserAge = data && typeof userAge === 'number' && !Number.isNaN(userAge);
-  const projectedAge =
-    hasUserAge && typeof averageScore === 'number'
-      ? calculateProjectedAge(userAge, averageScore)
-      : null;
 
   /** Pilastri: media sui giorni [statsPeriodEnd …], allineata al selettore e a longevityStats (offset 1 sull’anchor). */
   const pillarBreakdownEntries = useMemo(() => {
@@ -743,23 +741,6 @@ export default function LongevityView({
     };
   }, [metabolicVariance, userTargets?.kcal]);
 
-  const { deltaAge } = useMemo(() => {
-    if (!data || typeof userAge !== 'number' || Number.isNaN(userAge)) {
-      return { deltaAge: null };
-    }
-    const currentAvg = getAverageForPeriod(scoreHistory, timeWindow, 1, anchorDate, null);
-    const previousAvg = getAverageForPeriod(scoreHistory, timeWindow, timeWindow + 1, anchorDate, null);
-    if (currentAvg == null || previousAvg == null) {
-      return { deltaAge: null };
-    }
-    const currentAge = calculateProjectedAge(userAge, Math.round(currentAvg));
-    const previousAge = calculateProjectedAge(userAge, Math.round(previousAvg));
-    if (currentAge == null || previousAge == null) {
-      return { deltaAge: null };
-    }
-    return { deltaAge: currentAge - previousAge };
-  }, [data, userAge, scoreHistory, timeWindow, anchorDate]);
-
   if (!data) {
     return (
       <div style={{ padding: 20, maxWidth: 600, margin: '0 auto', color: '#e5e5e5' }}>
@@ -785,189 +766,53 @@ export default function LongevityView({
   return (
     <div style={{ padding: 20, maxWidth: 600, margin: '0 auto' }}>
 
-      {/* 1. Proiezione età + selettore temporale */}
+      {/* 1. Indice di ottimizzazione (giorno del tracker) + finestra per i pilastri sotto */}
       <div style={{ ...SECTION_CARD, textAlign: 'center' }}>
-        <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', marginBottom: 14 }}>
-          Età proiettata
+        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', marginBottom: 12 }}>
+          Indice sul giorno del tracker ({anchorDate})
         </div>
-        {hasUserAge && averageScore == null ? (
-          <>
-            <div
-              style={{
-                fontSize: '0.95rem',
-                opacity: 0.88,
-                color: '#94a3b8',
-                marginBottom: 16,
-                lineHeight: 1.5,
-                maxWidth: 360,
-                marginLeft: 'auto',
-                marginRight: 'auto',
-              }}
-            >
-              Non ci sono ancora abbastanza giorni con dati consolidati nello storico per questo periodo. Registra più giornate passate per vedere l&apos;età proiettata.
-            </div>
-            {bioScore != null && (
-              <>
-                <div style={{ fontSize: 48, fontWeight: 'bold', color: getColor(bioScore) }}>{bioScore}</div>
-                <div style={{ fontSize: 16, opacity: 0.7, color: '#a3a3a3', marginTop: 8 }}>Punteggio longevità (vista tracker)</div>
-              </>
-            )}
-          </>
-        ) : projectedAge != null ? (
-          <>
-            {(() => {
-              const ageBlock = (
-                <div
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'flex-end',
-                    justifyContent: 'center',
-                    gap: 14,
-                    lineHeight: 1.05,
-                  }}
-                >
-                  <div style={{ fontSize: '5rem', fontWeight: 900, color: getColor(averageScore), lineHeight: 1.05 }}>
-                    {projectedAge.toFixed(1)}
-                  </div>
-                  {deltaAge != null && Math.abs(deltaAge) > 0.05 && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 4,
-                        marginBottom: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: '1.15rem',
-                          fontWeight: 600,
-                          padding: '6px 12px',
-                          borderRadius: 999,
-                          background:
-                            deltaAge > 0 ? 'rgba(74, 222, 128, 0.12)' : 'rgba(248, 113, 113, 0.12)',
-                          border:
-                            deltaAge > 0 ? '1px solid rgba(74, 222, 128, 0.35)' : '1px solid rgba(248, 113, 113, 0.35)',
-                          color: deltaAge > 0 ? '#4ade80' : '#f87171',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {deltaAge > 0 ? `↑ +${deltaAge.toFixed(1)}` : `↓ ${deltaAge.toFixed(1)}`}
-                      </div>
-                      <div style={{ fontSize: '0.65rem', fontWeight: 500, color: 'rgba(148, 163, 184, 0.95)', letterSpacing: '0.02em' }}>
-                        vs periodo precedente
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-              if (typeof onProjectedAgeInsightRequest !== 'function') return ageBlock;
-              return (
-                <button
-                  type="button"
-                  onClick={() =>
-                    onProjectedAgeInsightRequest({
-                      projectedAge,
-                      deltaAge,
-                      averageScore,
-                      timeWindow,
-                    })
-                  }
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    margin: 0,
-                    padding: '4px 8px 12px',
-                    background: 'transparent',
-                    border: '1px solid rgba(148, 163, 184, 0.22)',
-                    borderRadius: 14,
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                  }}
-                  aria-label="Apri insight età proiettata"
-                >
-                  {ageBlock}
-                </button>
-              );
-            })()}
-            <div style={{ fontSize: '1.05rem', fontWeight: 600, marginTop: 12, letterSpacing: '0.04em', color: '#e5e5e5' }}>
-              Anni di Età Proiettata
-            </div>
-            <div style={{ fontSize: '0.9rem', opacity: 0.6, marginTop: 10, color: '#a3a3a3' }}>
-              Punteggio longevità medio sul periodo selezionato (fine{' '}
-              {statsPeriodEndLabel}): {averageScore != null ? `${averageScore} / 100` : '—'}
-            </div>
-            <div
-              role="tablist"
-              aria-label="Periodo media mobile età proiettata"
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                justifyContent: 'center',
-                gap: 8,
-                marginTop: 16,
-              }}
-            >
-              {timeOptions.map((opt) => {
-                const active = timeWindow === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setTimeWindow(opt.value)}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: 999,
-                      border: active ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.12)',
-                      background: active ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
-                      color: active ? '#fff' : 'rgba(255,255,255,0.75)',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      transition: 'background 0.15s, border-color 0.15s',
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: '0.75rem', opacity: 0.55, marginTop: 10, color: '#94a3b8', lineHeight: 1.4 }}>
-              {timeWindow === 1
-                ? `Proiezione basata sulla giornata che termina il ${statsPeriodEndLabel}.`
-                : `Media degli ultimi ${timeWindow} giorni che terminano il ${statsPeriodEndLabel}.`}
-            </div>
-          </>
-        ) : (
-          <>
-            <div
-              style={{
-                fontSize: '0.95rem',
-                opacity: 0.85,
-                color: '#94a3b8',
-                marginBottom: 20,
-                lineHeight: 1.45,
-                maxWidth: 340,
-                marginLeft: 'auto',
-                marginRight: 'auto',
-              }}
-            >
-              Inserisci la tua Data di Nascita nel Profilo (Menu ≡) per sbloccare la tua Età Proiettata.
-            </div>
-            {bioScore != null && (
-              <>
-                <div style={{ fontSize: 64, fontWeight: 'bold', color: getColor(bioScore) }}>
-                  {bioScore}
-                </div>
-                <div style={{ fontSize: 18, opacity: 0.7, color: '#a3a3a3' }}>Punteggio statistiche</div>
-              </>
-            )}
-          </>
-        )}
+        <OptimizationCard dailyData={optimizationDailyData} targets={userTargets} />
+        <div
+          role="tablist"
+          aria-label="Periodo dettaglio pilastri"
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            gap: 8,
+            marginTop: 18,
+          }}
+        >
+          {timeOptions.map((opt) => {
+            const active = timeWindow === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTimeWindow(opt.value)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 999,
+                  border: active ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.12)',
+                  background: active ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+                  color: active ? '#fff' : 'rgba(255,255,255,0.75)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s, border-color 0.15s',
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: '0.72rem', opacity: 0.55, marginTop: 8, color: '#94a3b8', lineHeight: 1.4 }}>
+          Punteggio longevità medio (fine {statsPeriodEndLabel}): {averageScore != null ? `${averageScore} / 100` : '—'}
+          {bioScore != null ? ` · Score vista tracker: ${bioScore}` : ''}
+        </div>
       </div>
 
       {/* 2. Dettaglio parametri (pilastri) */}
