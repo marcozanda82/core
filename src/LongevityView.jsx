@@ -767,10 +767,15 @@ export default function LongevityView({
     <div style={{ padding: 20, maxWidth: 600, margin: '0 auto' }}>
 
       {/* 1. Indice di ottimizzazione (giorno del tracker) + finestra per i pilastri sotto */}
-      <div style={{ ...SECTION_CARD, textAlign: 'center' }}>
-        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', marginBottom: 12 }}>
-          Indice sul giorno del tracker ({anchorDate})
-        </div>
+      <div
+        style={{
+          ...SECTION_CARD,
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+          textAlign: 'center',
+        }}
+      >
         <OptimizationCard dailyData={optimizationDailyData} targets={userTargets} />
         <div
           role="tablist"
