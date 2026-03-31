@@ -763,7 +763,53 @@ export default function LongevityView({
   return (
     <div style={{ padding: 20, maxWidth: 600, margin: '0 auto' }}>
 
-      {/* 1. Indice di ottimizzazione (giorno del tracker) + finestra per i pilastri sotto */}
+      <div
+        role="tablist"
+        aria-label="Periodo dettaglio pilastri"
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          gap: 8,
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+          padding: '16px 20px',
+          margin: '0 -20px 24px -20px',
+          backgroundColor: 'rgba(17, 17, 17, 0.85)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
+        {timeOptions.map((opt) => {
+          const active = timeWindow === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setTimeWindow(opt.value)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 999,
+                border: active ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.12)',
+                background: active ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+                color: active ? '#fff' : 'rgba(255,255,255,0.75)',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.15s, border-color 0.15s',
+              }}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 1. Indice di ottimizzazione (giorno del tracker) + didascalia periodo */}
       <div
         style={{
           ...SECTION_CARD,
@@ -774,43 +820,6 @@ export default function LongevityView({
         }}
       >
         <OptimizationCard dailyData={optimizationDailyData} targets={userTargets} />
-        <div
-          role="tablist"
-          aria-label="Periodo dettaglio pilastri"
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            justifyContent: 'center',
-            gap: 8,
-            marginTop: 18,
-          }}
-        >
-          {timeOptions.map((opt) => {
-            const active = timeWindow === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setTimeWindow(opt.value)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 999,
-                  border: active ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.12)',
-                  background: active ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
-                  color: active ? '#fff' : 'rgba(255,255,255,0.75)',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'background 0.15s, border-color 0.15s',
-                }}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
         <div style={{ fontSize: '0.72rem', opacity: 0.55, marginTop: 8, color: '#94a3b8', lineHeight: 1.4 }}>
           Punteggio longevità medio (fine {statsPeriodEndLabel}): {averageScore != null ? `${averageScore} / 100` : '—'}
           {bioScore != null ? ` · Score vista tracker: ${bioScore}` : ''}
