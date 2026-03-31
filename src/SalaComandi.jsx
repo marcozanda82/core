@@ -196,7 +196,7 @@ function getZenBreathAudioFade(phaseName, phaseMs) {
 }
 
 /**
- * Pasti unici (ultimi 30 giorni) dal diario storico: label compatta + macro medi per occorrenza, per il prompt "cosa mangio stasera".
+ * Pasti unici (ultimi 30 giorni) dal diario storico: label compatta + macro medi per occorrenza (contesto agenda Kentu).
  */
 function buildRecentMealsContextForDinner(fullHistory, anchorDateStr) {
   if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr) return '';
@@ -382,56 +382,22 @@ Formato esatto dell'ultima riga (solo JSON valido, senza markdown):
 {"agenda_options":[{"name":"etichetta breve","duration":90,"kcal":300}]}`;
 }
 
-const KENTU_DINNER_DISPLAY_MESSAGE =
-  "Kentu, cosa mi consigli per cena visti i miei macro e l'allenamento di oggi?";
+/** Ore decimali di sonno da addormentamento a risveglio (attraversa mezzanotte). */
+function computeSleepDurationHours(bedDecimal, wakeDecimal) {
+  const b = Number(bedDecimal);
+  const w = Number(wakeDecimal);
+  if (!Number.isFinite(b) || !Number.isFinite(w)) return 0;
+  let dur = w - b;
+  if (dur <= 0) dur += 24;
+  return Math.round(Math.min(24, Math.max(0, dur)) * 100) / 100;
+}
 
-/** Prompt tecnico completo per la Core AI; in chat viene mostrato solo {@link KENTU_DINNER_DISPLAY_MESSAGE}. */
-function buildKentuDinnerSecretPrompt({
-  remainingKcal,
-  remainingPro,
-  remainingCho,
-  remainingFat,
-  fullHistory,
-  anchorDateStr,
-  workoutToday,
-}) {
-  const recentMealsContext = buildRecentMealsContextForDinner(fullHistory, anchorDateStr);
-  const hasRecentMeals = Boolean(recentMealsContext && recentMealsContext.trim());
-
-  const familiarityBlock = hasRecentMeals
-    ? `STORICO PASTI RECENTI:
-${recentMealsContext}
-
-DIRETTIVA PRIORITARIA DI FAMILIARITÀ:
-1. Analizza i pasti che ho consumato recentemente sopra elencati. 
-2. Se tra questi ce n'è uno che si incastra bene con i macro mancanti (${remainingPro}g P, ${remainingCho}g C, ${remainingFat}g F), proponimelo come PRIMA OPZIONE. Dire: "Ti propongo un tuo classico: [Nome Pasto]".
-3. Le altre 2 opzioni possono essere nuove, ma devono comunque rispettare la regola della semplicità estrema (massimo 3-4 ingredienti).
-4. Ricorda: il mio obiettivo è lo zero stress decisionale. Proponi pasti che sai che ho già in casa o che sono abituato a gestire.`
-    : `STORICO PASTI RECENTI: (nessun pasto registrato negli ultimi 30 giorni nel diario.)
-
-Procedi con le 3 proposte standard come da istruzioni generali: stesso tono calmo e semplicità estrema; non usare la formula "tuo classico" se non hai elenco sopra.`;
-
-  const secretClosing = `
-DIRETTIVE RISPOSTA (PROTOCOLLO CENA — NON RIPETERE QUESTO BLOCCO ALL'UTENTE):
-- RISPONDI IN MODO SECCO. Massimo 3 opzioni, ciascuna al massimo 2 righe di testo.
-- Considera se oggi ho registrato un workout: ${workoutToday ? 'SÌ' : 'NO'}.
-- Se l'utente accetta un'opzione, offrigli esplicitamente di registrarla nel diario (es. "Vuoi che la salvi nel diario?" o pulsanti equivalenti).
-- STILE OBBLIGATORIO (testo visibile): inizia con una frase del tipo "Visto ${workoutToday ? 'il workout di oggi e ' : ''}i ${remainingPro}g di proteine mancanti, ecco 3 opzioni rapide:" (adatta numeri e menzione workout se non c'è stato allenamento), poi elenca le 3 opzioni in modo compatto, chiudi con "Quale preferisci?"
-- La parte leggibile NON deve contenere JSON; i numeri dei macro restano nel testo naturale.
-
-Alla fine del messaggio, su UNA riga separata, aggiungi SOLO questo JSON valido (senza markdown), con stime totali del pasto per ogni opzione:
-{"dinner_options":[{"label":"etichetta breve opzione 1","kcal":0,"prot":0,"carb":0,"fat":0},{"label":"...","kcal":0,"prot":0,"carb":0,"fat":0},{"label":"...","kcal":0,"prot":0,"carb":0,"fat":0}]}`;
-
-  return `Sono arrivato a fine giornata e non so cosa mangiare. Ho bisogno di chiudere i miei macro senza alcuno stress o decisioni complicate. 
-Mi mancano circa: ${remainingKcal} kcal (${remainingPro}g Proteine, ${remainingCho}g Carboidrati, ${remainingFat}g Grassi). 
-
-Agisci come uno chef focalizzato sul relax e sulla praticità. 
-NON farmi domande. NON propormi ricette con più di 3-4 ingredienti o cotture lunghe.
-Proponimi ESATTAMENTE 3 opzioni dirette, rassicuranti e facilissime da preparare che centrino (più o meno) questi macro. 
-Nella descrizione breve indica grammature stimate (max 2 righe per opzione).
-
-${familiarityBlock}
-${secretClosing}`;
+function getMealTimeFromLogItem(item) {
+  if (!item) return null;
+  const mt = Number(item.mealTime);
+  if (Number.isFinite(mt)) return mt;
+  const t = Number(item.time);
+  return Number.isFinite(t) ? t : null;
 }
 
 const FIREBASE_LOAD_OVERLAY_FADE_MS = 800;
@@ -1013,6 +979,28 @@ export default function SalaComandi() {
   const [alcoholForm, setAlcoholForm] = useState({ subtype: 'vino', ml: 150, abv: 12, timeStr: '20:00' });
   const [showSncPopup, setShowSncPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
+  /** null | { editingId: string | null } — editingId null = nuovo sonno */
+  const [sleepModal, setSleepModal] = useState(null);
+  const [sleepFormBedStr, setSleepFormBedStr] = useState('23:00');
+  const [sleepFormWakeStr, setSleepFormWakeStr] = useState('07:00');
+
+  useEffect(() => {
+    if (sleepModal == null) return;
+    const logSrc = isSimulationMode ? (simulatedLog || []) : dailyLog;
+    const item = sleepModal.editingId
+      ? logSrc.find((e) => e && e.id === sleepModal.editingId && e.type === 'sleep')
+      : null;
+    if (item) {
+      const bed = Number(item.bedtime ?? item.sleepStart);
+      const wake = Number(item.wakeTime ?? item.sleepEnd);
+      setSleepFormBedStr(decimalToTimeStr(Number.isFinite(bed) ? bed : 23));
+      setSleepFormWakeStr(decimalToTimeStr(Number.isFinite(wake) ? wake : 7.5));
+    } else {
+      setSleepFormBedStr('23:00');
+      setSleepFormWakeStr('07:00');
+    }
+  }, [sleepModal, isSimulationMode, dailyLog, simulatedLog]);
+
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
   const [editingQuickNode, setEditingQuickNode] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
@@ -2799,8 +2787,22 @@ export default function SalaComandi() {
     }));
     const canonical = items.length > 0 ? toCanonicalMealType(items[0].mealType) : toCanonicalMealType(String(mTypeOrId).split('_')[0]);
 
+    let parsedTimeFromId = null;
+    const idStr = String(mTypeOrId);
+    const u = idStr.lastIndexOf('_');
+    if (u > 0) {
+      const p = Number(idStr.slice(u + 1));
+      if (Number.isFinite(p)) parsedTimeFromId = p;
+    }
+    const fromFirst = items.length > 0 ? getMealTimeFromLogItem(items[0]) : null;
+    const t =
+      fromFirst != null
+        ? fromFirst
+        : parsedTimeFromId != null
+          ? parsedTimeFromId
+          : getDefaultMealTime(canonical);
+
     setMealType(canonical);
-    const t = items.length > 0 && typeof items[0].mealTime === 'number' ? items[0].mealTime : getDefaultMealTime(canonical);
     setDrawerMealTime(t);
     setDrawerMealTimeStr(decimalToTimeStr(t));
     setAddedFoods(items);
@@ -2831,7 +2833,8 @@ export default function SalaComandi() {
     const first = (activeLog || []).find(item =>
       (item.type === 'food' || item.type === 'recipe') && equivalents.includes(item.mealType)
     );
-    if (first != null && typeof first.mealTime === 'number') return first.mealTime;
+    const fromFirst = first != null ? getMealTimeFromLogItem(first) : null;
+    if (fromFirst != null) return fromFirst;
     
     if (!fullStorico) return getCurrentTimeRoundedTo15Min();
     const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
@@ -3240,7 +3243,10 @@ export default function SalaComandi() {
     try {
       const currentTargetType = mealType;
       const uniqueBatchId = Date.now();
-      const timeToUse = typeof drawerMealTime === 'number' ? drawerMealTime : 12;
+      const timeToUse =
+        typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime)
+          ? drawerMealTime
+          : getCurrentTimeRoundedTo15Min();
       const safeDailyLog = dailyLog || [];
       const ourSlot = getGhostMealType(currentTargetType, safeDailyLog);
       const slotToReplace = editingMealId || ourSlot;
@@ -3285,7 +3291,12 @@ export default function SalaComandi() {
   const handleMealBuilderSave = useCallback((payload = {}) => {
     setIsMealBuilderOpen(false);
     if (payload?.items?.length) {
-      const timeToUse = typeof payload.timing === 'number' ? payload.timing : (typeof drawerMealTime === 'number' ? drawerMealTime : 12);
+      const timeToUse =
+        typeof payload.timing === 'number' && !Number.isNaN(payload.timing)
+          ? payload.timing
+          : typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime)
+            ? drawerMealTime
+            : getCurrentTimeRoundedTo15Min();
       const logToUse = isSimulationMode ? (simulatedLog || []) : dailyLog;
       const ourSlot = getGhostMealType(payload.mealType || mealType, logToUse);
       const mealItems = payload.items.map((f, index) => ({
@@ -3437,11 +3448,10 @@ export default function SalaComandi() {
           payload: { macros: { pro: prot, carb, fat } }
         });
 
-        // BUGFIX: Riapriamo il Modale con la lista degli alimenti e il tasto Modifica
-        setSelectedNodeReport(node);
+        setSelectedNodeReport({ type: 'meal', id: slotId, name: `${baseName}${timeLabel}` });
         return;
       }
-      loadMealToConstructor(node.id);
+      setSelectedNodeReport({ type: 'meal', id: slotId });
       return;
     }
 
@@ -3471,7 +3481,7 @@ export default function SalaComandi() {
     }
 
     setSelectedNodeReport(node);
-  }, [manualNodes, dailyLog, activeLog, syncDatiFirebase, setManualNodes, isSimulationMode, loadMealToConstructor, MEAL_LABELS_SAVE, getFoodItemsForMealSlot]);
+  }, [manualNodes, dailyLog, activeLog, syncDatiFirebase, setManualNodes, isSimulationMode, MEAL_LABELS_SAVE, getFoodItemsForMealSlot]);
 
   const handleSaveAlcohol = () => {
     if (isSimulationMode) return;
@@ -3806,7 +3816,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     activeTrigger: kentuActiveTrigger,
     chatNotificationBadge: kentuChatNotificationBadge,
     dismissKentuSleepTrigger,
-    dismissKentuDinnerTrigger,
     dismissKentuAgendaTrigger,
     dismissKentuActiveTrigger,
   } = useSmartKentuTriggers(activeLog, currentTrackerDate);
@@ -3955,11 +3964,19 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       dismissKentuSleepTrigger();
       const hours = trimQuick === 'Ho dormito 7h bene' ? 7 : 5.5;
       const quality = trimQuick === 'Ho dormito 7h bene' ? 'buona' : 'scarsa';
+      const wakeTime = 7.5;
+      let bedtime = wakeTime - hours;
+      if (bedtime < 0) bedtime += 24;
       const sleepEntry = {
         type: 'sleep',
         id: `sleep_smart_${Date.now()}`,
-        wakeTime: 7.5,
+        wakeTime,
+        bedtime,
+        sleepStart: bedtime,
+        sleepEnd: wakeTime,
         hours,
+        duration: hours,
+        sleepHours: hours,
         deepMin: 45,
         remMin: 90,
         hr: 58,
@@ -3984,7 +4001,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     let apiUserContent;
 
     if (secretPrompt) {
-      userMessage = displayOverride || KENTU_DINNER_DISPLAY_MESSAGE;
+      userMessage = displayOverride || 'Richiesta assistente';
       apiUserContent = secretPrompt;
     } else if (kentuAgendaAwaitingRef.current) {
       const agendaText =
@@ -4014,7 +4031,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
     if ((meta?.fromInput || meta?.fromQuickReply) && !secretPrompt) {
       if (kentuActiveTrigger === 'sleep') dismissKentuSleepTrigger();
-      else if (kentuActiveTrigger === 'dinner') dismissKentuDinnerTrigger();
     }
 
     const logPastoKw = /\b(logga\s+pasto|salva(?:\s+la)?\s+cena|registra(?:\s+la)?\s+cena)\b/i;
@@ -4043,14 +4059,26 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       if (pendingAiBatch.type === 'sleep' && isConfirm && pendingAiBatch.data) {
         const d = pendingAiBatch.data;
+        const bed = Number(d.bedtime ?? d.sleepStart);
+        const wake = Number(d.wakeTime ?? d.sleepEnd);
+        let hoursVal = Number(d.hours ?? d.duration ?? d.sleepHours);
+        if (!Number.isFinite(hoursVal) || hoursVal <= 0) {
+          hoursVal = computeSleepDurationHours(bed, wake);
+        }
+        if (!Number.isFinite(hoursVal) || hoursVal <= 0) hoursVal = 7;
         const sleepEntry = {
           type: 'sleep',
           id: `sleep_${Date.now()}`,
-          wakeTime: d.wakeTime,
-          hours: d.hours,
+          wakeTime: Number.isFinite(wake) ? wake : 7.5,
+          bedtime: Number.isFinite(bed) ? bed : undefined,
+          sleepStart: Number.isFinite(bed) ? bed : undefined,
+          sleepEnd: Number.isFinite(wake) ? wake : undefined,
+          hours: hoursVal,
+          duration: hoursVal,
+          sleepHours: hoursVal,
           deepMin: d.deepMin,
           remMin: d.remMin,
-          hr: d.hr
+          hr: d.hr,
         };
         if (isSimulationMode) {
           setSimulatedLog(prev => [...(prev || []), sleepEntry]);
@@ -5219,44 +5247,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const targetMacros = { prot: userTargets?.prot ?? 150, carb: userTargets?.carb ?? 200, fat: userTargets?.fatTotal ?? userTargets?.fat ?? 65 };
   const totalMacrosTimeline = { prot: totali?.prot ?? 0, carb: totali?.carb ?? 0, fat: totali?.fatTotal ?? totali?.fat ?? 0 };
 
-  const remainingKcal = Math.max(0, Math.round(dynamicDailyKcal - (Number(totali?.kcal) || 0)));
-  const remainingPro = Math.max(0, Math.round((targetMacros.prot || 0) - (Number(totali?.prot) || 0)));
-  const remainingCho = Math.max(0, Math.round((targetMacros.carb || 0) - (Number(totali?.carb) || 0)));
-  const remainingFat = Math.max(0, Math.round((targetMacros.fat || 0) - (Number(totali?.fatTotal ?? totali?.fat) || 0)));
-
-  const requestKentuDinnerSuggestion = useCallback(() => {
-    dismissKentuDinnerTrigger();
-    const anchor = currentTrackerDate || getTodayString();
-    const workoutToday = (activeLog || []).some((e) => e.type === 'workout' || e.type === 'work');
-    const secretPrompt = buildKentuDinnerSecretPrompt({
-      remainingKcal,
-      remainingPro,
-      remainingCho,
-      remainingFat,
-      fullHistory,
-      anchorDateStr: anchor,
-      workoutToday,
-    });
-    setChatInput('');
-    void handleChatSubmit(null, {
-      secretPrompt,
-      displayText: KENTU_DINNER_DISPLAY_MESSAGE,
-    });
-  }, [
-    activeLog,
-    currentTrackerDate,
-    fullHistory,
-    remainingKcal,
-    remainingPro,
-    remainingCho,
-    remainingFat,
-    handleChatSubmit,
-    dismissKentuDinnerTrigger,
-  ]);
-
-  const requestKentuDinnerSuggestionRef = useRef(requestKentuDinnerSuggestion);
-  requestKentuDinnerSuggestionRef.current = requestKentuDinnerSuggestion;
-
   useEffect(() => {
     if (kentuActiveTrigger !== 'agenda') kentuAgendaAwaitingRef.current = false;
   }, [kentuActiveTrigger]);
@@ -5303,12 +5293,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         });
       }
       return;
-    }
-    if (kentuActiveTrigger === 'dinner') {
-      const k = `kentu_pro_dinner_auto_${date}`;
-      if (typeof window !== 'undefined' && window.localStorage.getItem(k)) return;
-      if (typeof window !== 'undefined') window.localStorage.setItem(k, '1');
-      requestKentuDinnerSuggestionRef.current();
     }
   }, [activeAction, kentuActiveTrigger, currentTrackerDate]);
 
@@ -6981,7 +6965,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (selectedMealCenter && selectedMealCenter.id && selectedMealCenter.id !== 'rimanenti') {
-                          loadMealToConstructor(selectedMealCenter.id);
+                          const sel = selectedMealCenter;
+                          const mealName = sel.name || sel.label || sel.id || 'Pasto';
+                          setSelectedNodeReport({
+                            type: 'meal',
+                            id: String(sel.id),
+                            name: mealName,
+                          });
                           return;
                         }
                         setActiveDialMode('kcal');
@@ -7117,12 +7107,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
                               const exactId = logItems.length > 0 ? logItems[0].mealType : genericId;
 
+                              if (selectedMealCenter && selectedMealCenter.id === data.id) {
+                                setSelectedNodeReport({
+                                  type: 'meal',
+                                  id: exactId,
+                                  name: mealName,
+                                });
+                                return;
+                              }
                               setSelectedMealCenter(pastoCorrente);
-                              setSelectedNodeReport({
-                                type: 'meal',
-                                id: exactId,
-                                name: mealName
-                              });
+                              setSelectedNodeReport(null);
                             }}
                             style={{ cursor: 'pointer', outline: 'none' }}
                           >
@@ -7744,8 +7738,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               chatImages={chatImages}
               setChatImages={setChatImages}
               onSendMessage={handleChatSubmit}
-              showDinnerSuggestion
-              onRequestDinnerSuggestion={requestKentuDinnerSuggestion}
               onLogDinnerOption={handleAutoLogDinner}
               onLoadAgenda={handleAutoLogAgenda}
               showAiSettings={showAiSettings}
@@ -8104,8 +8096,26 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ color: '#4ba3e3', fontWeight: 'bold', fontSize: '1.1rem' }}>🌙 Riposo Notturno</span>
-                      <span style={{ color: '#888', fontSize: '0.9rem' }}>
-                        Sveglia ore {Math.floor(item.wakeTime)}:{String(Math.round((item.wakeTime % 1) * 60)).padStart(2, '0')}
+                      <span style={{ color: '#888', fontSize: '0.85rem', textAlign: 'right' }}>
+                        {(() => {
+                          const bed = item.bedtime ?? item.sleepStart;
+                          const wak = item.wakeTime ?? item.sleepEnd;
+                          const bedStr =
+                            typeof bed === 'number' && Number.isFinite(bed)
+                              ? `${Math.floor(bed)}:${String(Math.round((bed % 1) * 60)).padStart(2, '0')}`
+                              : '—';
+                          const wakeStr =
+                            typeof wak === 'number' && Number.isFinite(wak)
+                              ? `${Math.floor(wak)}:${String(Math.round((wak % 1) * 60)).padStart(2, '0')}`
+                              : '—';
+                          return (
+                            <>
+                              Addormentato {bedStr}
+                              <br />
+                              Risveglio {wakeStr}
+                            </>
+                          );
+                        })()}
                       </span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '5px' }}>
@@ -8126,13 +8136,22 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         <div style={{ color: '#00e5ff', fontWeight: 'bold' }}>{item.remMin != null ? `${Math.floor(item.remMin / 60)}h ${item.remMin % 60}m` : '--'}</div>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => removeLogItem(item.id)}
-                      style={{ alignSelf: 'flex-end', background: 'transparent', border: 'none', color: '#ff4d4d', fontSize: '0.8rem', cursor: 'pointer', marginTop: '5px' }}
-                    >
-                      Rimuovi dati
-                    </button>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => setSleepModal({ editingId: item.id })}
+                        style={{ background: 'transparent', border: '1px solid #4ba3e3', color: '#4ba3e3', fontSize: '0.8rem', cursor: 'pointer', padding: '6px 12px', borderRadius: '8px' }}
+                      >
+                        Modifica
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeLogItem(item.id)}
+                        style={{ background: 'transparent', border: 'none', color: '#ff4d4d', fontSize: '0.8rem', cursor: 'pointer', padding: '6px 0' }}
+                      >
+                        Rimuovi dati
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {workoutsLog.length > 0 && (
@@ -9191,24 +9210,229 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <h3>Dati sonno mancanti</h3>
             <p>Per calcolare correttamente l'energia della giornata inserisci i dati del sonno.</p>
             <div className="sleepPromptActions">
-              <button onClick={() => {
-                setShowSleepPrompt(false);
-              }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSleepPrompt(false);
+                  setSleepModal({ editingId: null });
+                }}
+              >
                 Inserisci sonno
               </button>
-              <button onClick={() => {
-                const sleepEntry = { type: 'sleep', hours: 7, deepMin: 60, remMin: 60, wakeTime: 7.5 };
-                if (isSimulationMode) {
-                  setSimulatedLog(prev => [...(prev || []), sleepEntry]);
-                } else {
-                  setDailyLog(prev => [...prev, sleepEntry]);
-                }
-                setShowSleepPrompt(false);
-              }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const bed = 23;
+                  const wake = 6;
+                  const hours = computeSleepDurationHours(bed, wake);
+                  const sleepEntry = {
+                    type: 'sleep',
+                    id: `sleep_avg_${Date.now()}`,
+                    hours,
+                    duration: hours,
+                    sleepHours: hours,
+                    deepMin: 60,
+                    remMin: 60,
+                    wakeTime: wake,
+                    bedtime: bed,
+                    sleepStart: bed,
+                    sleepEnd: wake,
+                  };
+                  if (isSimulationMode) {
+                    setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
+                  } else {
+                    const next = [...(dailyLog || []), sleepEntry];
+                    setDailyLog(next);
+                    syncDatiFirebase(next, manualNodes || []);
+                  }
+                  setShowSleepPrompt(false);
+                }}
+              >
                 Usa valori medi
               </button>
-              <button onClick={() => setShowSleepPrompt(false)}>
+              <button type="button" onClick={() => setShowSleepPrompt(false)}>
                 Dopo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sleepModal != null && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'rgba(0,0,0,0.85)',
+            zIndex: 100025,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+          onClick={() => setSleepModal(null)}
+        >
+          <div
+            className="modal-content"
+            style={{
+              background: '#1a1a20',
+              color: '#fff',
+              padding: '24px',
+              borderRadius: '16px',
+              width: '100%',
+              maxWidth: '380px',
+              border: '1px solid #333',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 8px 0', color: '#4ba3e3', fontSize: '1.05rem' }}>
+              {sleepModal.editingId ? 'Modifica sonno' : 'Registra sonno'}
+            </h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.45 }}>
+              Inserisci ora di addormentamento e di risveglio; la durata si calcola automaticamente (anche oltre mezzanotte).
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px' }}>
+              <div>
+                <label style={{ display: 'block', color: '#aaa', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 600 }}>
+                  Ora in cui ti sei addormentato
+                </label>
+                <input
+                  type="time"
+                  value={sleepFormBedStr}
+                  onChange={(e) => setSleepFormBedStr(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '10px',
+                    background: '#111',
+                    border: '1px solid #444',
+                    color: '#fff',
+                    fontSize: '1rem',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', color: '#aaa', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 600 }}>
+                  Ora del risveglio
+                </label>
+                <input
+                  type="time"
+                  value={sleepFormWakeStr}
+                  onChange={(e) => setSleepFormWakeStr(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '10px',
+                    background: '#111',
+                    border: '1px solid #444',
+                    color: '#fff',
+                    fontSize: '1rem',
+                  }}
+                />
+              </div>
+            </div>
+            <div
+              style={{
+                marginBottom: '18px',
+                padding: '12px',
+                borderRadius: '10px',
+                background: 'rgba(75, 163, 227, 0.12)',
+                border: '1px solid rgba(75, 163, 227, 0.35)',
+                fontSize: '0.9rem',
+                color: '#e2e8f0',
+              }}
+            >
+              Durata stimata:{' '}
+              <strong style={{ color: '#4ba3e3' }}>
+                {(() => {
+                  const dur = computeSleepDurationHours(
+                    parseTimeStrToDecimal(sleepFormBedStr),
+                    parseTimeStrToDecimal(sleepFormWakeStr)
+                  );
+                  const hh = Math.floor(dur);
+                  const mm = Math.round((dur % 1) * 60);
+                  return `${hh}h ${String(mm).padStart(2, '0')}m`;
+                })()}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setSleepModal(null)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  background: '#333',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                }}
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const bedDec = parseTimeStrToDecimal(sleepFormBedStr);
+                  const wakeDec = parseTimeStrToDecimal(sleepFormWakeStr);
+                  const hours = computeSleepDurationHours(bedDec, wakeDec);
+                  if (!(hours > 0)) {
+                    window.alert('Controlla gli orari di addormentamento e risveglio.');
+                    return;
+                  }
+                  const id = sleepModal.editingId || `sleep_${Date.now()}`;
+                  const logLook = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
+                  const existing = sleepModal.editingId
+                    ? logLook.find((e) => e && e.id === sleepModal.editingId && e.type === 'sleep')
+                    : null;
+                  const entry = {
+                    type: 'sleep',
+                    id,
+                    wakeTime: wakeDec,
+                    bedtime: bedDec,
+                    sleepStart: bedDec,
+                    sleepEnd: wakeDec,
+                    hours,
+                    duration: hours,
+                    sleepHours: hours,
+                    deepMin: existing?.deepMin ?? 60,
+                    remMin: existing?.remMin ?? 60,
+                    ...(existing?.hr != null ? { hr: existing.hr } : {}),
+                    ...(existing?.quality != null ? { quality: existing.quality } : {}),
+                  };
+                  if (isSimulationMode) {
+                    setSimulatedLog((prev) => {
+                      const base = prev || [];
+                      const rest = sleepModal.editingId ? base.filter((e) => e.id !== sleepModal.editingId) : base;
+                      return [...rest, entry];
+                    });
+                  } else {
+                    const base = dailyLog || [];
+                    const rest = sleepModal.editingId ? base.filter((e) => e.id !== sleepModal.editingId) : base;
+                    const next = [...rest, entry];
+                    setDailyLog(next);
+                    syncDatiFirebase(next, manualNodes || []);
+                  }
+                  setSleepModal(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  background: '#4ba3e3',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '10px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                }}
+              >
+                Salva
               </button>
             </div>
           </div>
@@ -9292,7 +9516,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </h2>
             {(() => {
               const nodeTime = selectedNodeReport.type === 'meal'
-                ? ((activeLog || []).find(item => getSlotKey(item) === String(selectedNodeReport.id))?.mealTime) ?? 12
+                ? (() => {
+                    const m = (activeLog || []).find(item => getSlotKey(item) === String(selectedNodeReport.id));
+                    const t = m != null ? getMealTimeFromLogItem(m) : null;
+                    return t != null ? t : 12;
+                  })()
                 : (selectedNodeReport.time ?? 12);
               const currentHour = displayTime ?? currentTime;
               const isFuture = nodeTime > currentHour;
@@ -9430,9 +9658,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 setSelectedNodeReport(null);
                 if (node.type === 'meal') {
                   loadMealToConstructor(node.id);
-                  setDrawerMealTime(node.time ?? 12);
-                  setDrawerMealTimeStr(decimalToTimeStr(node.time ?? 12));
-                  setIsDrawerOpen(true);
                 } else {
                   setEditingWorkoutId(node.id);
                   setWorkoutType(node.subType || (node.type === 'work' ? 'lavoro' : 'pesi'));
