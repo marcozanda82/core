@@ -29,7 +29,12 @@ import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
-import { useSmartKentuTriggers } from './useSmartKentuTriggers';
+import {
+  useSmartKentuTriggers,
+  checkMorningBriefing,
+  getMorningBriefingVerdict,
+  markMorningBriefingShown,
+} from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
   RADIAN,
@@ -3818,7 +3823,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     dismissKentuSleepTrigger,
     dismissKentuAgendaTrigger,
     dismissKentuActiveTrigger,
-  } = useSmartKentuTriggers(activeLog, currentTrackerDate);
+  } = useSmartKentuTriggers(activeLog, currentTrackerDate, fullHistory, userTargets);
 
   const handleAutoLogDinner = useCallback(
     (mealData) => {
@@ -3960,6 +3965,28 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const handleChatSubmit = async (optionalReply, sendMeta) => {
     const meta = sendMeta && typeof sendMeta === 'object' ? sendMeta : null;
     const trimQuick = optionalReply != null ? String(optionalReply).trim() : '';
+
+    if (meta?.morningBriefingReply && meta?.fromQuickReply) {
+      const { status, activity } = meta.morningBriefingReply;
+      if (
+        (status === 'deficit' || status === 'surplus') &&
+        (activity === 'weights' || activity === 'cardio' || activity === 'rest')
+      ) {
+        const verdict = getMorningBriefingVerdict(status, activity);
+        const userText = trimQuick;
+        setChatHistory((prev) => {
+          const stripped = prev.map((m) =>
+            m.morningBriefing && Array.isArray(m.quickReplies)
+              ? { ...m, quickReplies: undefined }
+              : m
+          );
+          return [...stripped, { sender: 'user', text: userText }, { sender: 'ai', text: verdict }];
+        });
+        if (optionalReply == null) setChatInput('');
+        return;
+      }
+    }
+
     if (trimQuick === 'Ho dormito 7h bene' || trimQuick === 'Ho dormito male') {
       dismissKentuSleepTrigger();
       const hours = trimQuick === 'Ho dormito 7h bene' ? 7 : 5.5;
@@ -5294,7 +5321,32 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       }
       return;
     }
-  }, [activeAction, kentuActiveTrigger, currentTrackerDate]);
+    if (kentuActiveTrigger === 'morning_briefing') {
+      const date = currentTrackerDate || getTodayString();
+      const br = checkMorningBriefing(fullHistory, userTargets, date);
+      if (!br) return;
+      markMorningBriefingShown(date);
+      setChatHistory((prev) => {
+        const needle = 'Ho analizzato i dati di ieri';
+        if (prev.some((m) => m.sender === 'ai' && typeof m.text === 'string' && m.text.includes(needle))) {
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            sender: 'ai',
+            text: `Buongiorno! Ho analizzato i dati di ieri: hai chiuso in ${br.status === 'deficit' ? 'deficit calorico' : 'surplus calorico'}. Per calibrare il digiuno e il timing dei pasti di oggi, dimmi: che livello di attività hai in programma?`,
+            quickReplies: [
+              '🏋️ Pesi / Alta intensità',
+              '🏃‍♂️ Cardio / Attivo',
+              '🧘‍♂️ Riposo / Scrivania',
+            ],
+            morningBriefing: { status: br.status },
+          },
+        ];
+      });
+    }
+  }, [activeAction, kentuActiveTrigger, currentTrackerDate, fullHistory, userTargets]);
 
   const isNightDeficit = displayTime >= 20 && targetKcalForAlerts > 0 && ((totalCaloriesTimeline || 0) / targetKcalForAlerts) <= 0.60;
   const isProteinSaturated = displayTime <= 15 && (targetMacros?.prot ?? 0) > 0 && ((totalMacrosTimeline.prot || 0) / (targetMacros.prot || 1)) >= 0.90;

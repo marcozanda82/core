@@ -135,19 +135,32 @@ export default function AiCluster({
               </div>
               {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && (
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
-                  {msg.quickReplies.map((reply, rIdx) => (
-                    <button
-                      key={rIdx}
-                      type="button"
-                      onClick={() => {
-                        onSendMessage(reply, { fromQuickReply: true });
-                        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                      }}
-                      style={{ padding: '8px 15px', background: '#00e5ff', color: '#000', borderRadius: '20px', border: 'none', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
-                    >
-                      {reply}
-                    </button>
-                  ))}
+                  {msg.quickReplies.map((reply, rIdx) => {
+                    const morningActivityIds = ['weights', 'cardio', 'rest'];
+                    return (
+                      <button
+                        key={rIdx}
+                        type="button"
+                        onClick={() => {
+                          if (msg.morningBriefing?.status && morningActivityIds[rIdx]) {
+                            onSendMessage(reply, {
+                              fromQuickReply: true,
+                              morningBriefingReply: {
+                                status: msg.morningBriefing.status,
+                                activity: morningActivityIds[rIdx],
+                              },
+                            });
+                          } else {
+                            onSendMessage(reply, { fromQuickReply: true });
+                          }
+                          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                        }}
+                        style={{ padding: '8px 15px', background: '#00e5ff', color: '#000', borderRadius: '20px', border: 'none', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        {reply}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
               {msg.dinnerOptions && msg.dinnerOptions.length > 0 && !msg.isTyping && typeof onLogDinnerOption === 'function' && (
