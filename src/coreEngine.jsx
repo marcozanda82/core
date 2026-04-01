@@ -686,6 +686,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           neuralEnergy += effect * PHYSIOLOGY_CONFIG.napSncBoost;
           currentCortisol -= effect * PHYSIOLOGY_CONFIG.napCortisolReduction;
           currentNeuro = Math.min(100, currentNeuro + effect * 35);
+          if (node.time >= h && node.time < h + 1) {
+            const napMins = (node.duration || 1) * 60;
+            const energyBoost = Math.round(calculateNapBoost(napMins));
+            currentEnergy = Math.min(100, currentEnergy + energyBoost);
+          }
         }
       }
       if (node.type === 'meditation') {
@@ -1802,10 +1807,15 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
   const napBreakdownRows = [];
   let napGain = 0;
   sleepEntries.forEach((entry) => {
-    const durH = Number(entry.hours ?? entry.duration ?? entry.sleepHours ?? 0) || 0;
-    if (durH <= 0 || durH >= NIGHT_SLEEP_MIN_HOURS) return;
+    const rawH = entry.hours ?? entry.duration ?? entry.sleepHours ?? 0;
+    const durH =
+      typeof rawH === 'string' && String(rawH).trim() !== ''
+        ? Number(String(rawH).trim().replace(',', '.'))
+        : Number(rawH);
+    if (!Number.isFinite(durH) || durH <= 0 || durH >= NIGHT_SLEEP_MIN_HOURS) return;
     const napMinutes = durH * 60;
     const boost = Math.round(calculateNapBoost(napMinutes));
+    console.log('KENTU DEBUG - Sonnellino processato:', { durH, napMinutes, boost });
     if (boost <= 0) return;
     napGain += boost;
     napBreakdownRows.push({
@@ -1853,13 +1863,17 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
       type: 'negative',
     });
   });
-  napBreakdownRows.forEach((row) => breakdown.push(row));
+  breakdown.push(...napBreakdownRows);
 
-  let preNap = startEnergy - basalDrain - mealDrain - workoutDrain;
-  preNap = Math.round(preNap * 10) / 10;
-  preNap = Math.min(maxCapacity, Math.max(5, preNap));
-  let currentEnergy = Math.round(preNap + napGain);
-  currentEnergy = Math.max(5, currentEnergy);
+  let preNapEnergy = startEnergy - basalDrain - mealDrain - workoutDrain;
+  preNapEnergy = Math.round(preNapEnergy * 10) / 10;
+  preNapEnergy = Math.min(maxCapacity, Math.max(5, preNapEnergy));
+  let finalEnergy = Math.round(preNapEnergy + napGain);
+  finalEnergy = Math.max(5, finalEnergy);
+  if (napGain <= 0) {
+    finalEnergy = Math.min(100, finalEnergy);
+  }
+  const currentEnergy = finalEnergy;
 
   return {
     currentEnergy,
