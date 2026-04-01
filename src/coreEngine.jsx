@@ -1655,14 +1655,39 @@ function pickMainSleepEntry(sleepEntries) {
   return best;
 }
 
+function sumFoodKcalFromLogForBattery(log) {
+  let total = 0;
+  for (const e of log || []) {
+    if (!e) continue;
+    if (e.type === 'food' || e.type === 'recipe' || e.type === 'meal') {
+      total += Number(e.kcal ?? e.cal ?? 0) || 0;
+    }
+  }
+  return total;
+}
+
+/** Stesso criterio di getYesterdayCalorieStatus (ieri vs 0.9× TDEE), senza dipendenza circolare. */
+function yesterdayCalorieDeficit(fullHistory, anchorDateStr, userTargets) {
+  if (!userTargets || typeof fullHistory !== 'object') return false;
+  const tdee = Number(userTargets?.kcal);
+  if (!Number.isFinite(tdee) || tdee <= 0) return false;
+  const anchor = anchorDateStr && String(anchorDateStr).trim() ? String(anchorDateStr).slice(0, 10) : getTodayString();
+  const yLog = getLogFromStoricoTree(fullHistory, addDays(anchor, -1)) || [];
+  const kcal = sumFoodKcalFromLogForBattery(yLog);
+  return kcal < tdee * 0.9;
+}
+
 /**
  * Body Battery: debito sonno, partenza da sonno notturno, decadimento dalle 7:00, pasti (max 3), allenamenti, sonnellini.
- * @returns {{ currentEnergy: number, maxCapacity: number, breakdown: Array<{ label: string, value: number, type: 'positive'|'negative'|'neutral' }> }}
+ * @param {object} [userTargets] — se presente, ieri in deficit calorico aumenta il costo workout (−30 vs −20).
+ * @returns {{ currentEnergy: number, maxCapacity: number, hasNapBoost: boolean, breakdown: Array<{ label: string, value: number, type: 'positive'|'negative'|'neutral' }> }}
  */
-export function calculateBodyBattery(fullHistory, anchorDate, activeLog) {
+export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTargets) {
   const breakdown = [];
   const anchor = anchorDate && String(anchorDate).trim() ? String(anchorDate).slice(0, 10) : getTodayString();
   const log = Array.isArray(activeLog) ? activeLog : [];
+  const deficitYesterday = yesterdayCalorieDeficit(fullHistory, anchor, userTargets);
+  const workoutPenalty = deficitYesterday ? 30 : 20;
 
   const isToday = anchor === getTodayString();
   let nowDec;
@@ -1774,12 +1799,20 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog) {
     }
     workouts.push(i);
   }
-  const workoutDrain = workouts.length * 20;
+  const workoutDrain = workouts.length * workoutPenalty;
   workouts.forEach((w, idx) => {
     const name = (w.desc || w.name || `Sessione ${idx + 1}`).toString().trim().slice(0, 24);
+    const woLabel =
+      deficitYesterday && workoutPenalty === 30
+        ? name
+          ? `Allenamento · ${name} (deficit ieri)`
+          : 'Allenamento (deficit ieri)'
+        : name
+          ? `Allenamento · ${name}`
+          : 'Allenamento';
     breakdown.push({
-      label: name ? `Allenamento · ${name}` : 'Allenamento',
-      value: -20,
+      label: woLabel,
+      value: -workoutPenalty,
       type: 'negative',
     });
   });
@@ -1791,18 +1824,22 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog) {
     if (mainNight && e === mainNight) continue;
     napGain += 15;
     breakdown.push({
-      label: 'Sonnellino',
+      label: 'Sonnellino · boost recupero',
       value: 15,
       type: 'positive',
     });
   }
 
-  let currentEnergy = startEnergy - basalDrain - mealDrain - workoutDrain + napGain;
-  currentEnergy = Math.round(Math.min(100, Math.max(5, currentEnergy)));
+  let preNap = startEnergy - basalDrain - mealDrain - workoutDrain;
+  preNap = Math.round(preNap * 10) / 10;
+  preNap = Math.min(maxCapacity, Math.max(5, preNap));
+  let currentEnergy = Math.round(preNap + napGain);
+  currentEnergy = Math.max(5, currentEnergy);
 
   return {
     currentEnergy,
     maxCapacity,
+    hasNapBoost: napGain > 0,
     breakdown,
   };
 }

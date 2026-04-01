@@ -8,7 +8,7 @@
  * 
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { ComposedChart, LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
 
@@ -117,87 +117,100 @@ function formatBodyBatteryValue(v) {
   return `${n > 0 ? '+' : ''}${n}%`;
 }
 
-/** Batteria verticale Body Battery (TopBar + modale). */
-function EnergyBattery({ percentage, size = 'small' }) {
-  const p = Math.min(100, Math.max(0, Number(percentage) || 0));
+/** Arco semicircolare Body Battery — look neon sottile; 💤 cyan se boost sonnellino. */
+function EnergyArc({ percentage, size = 'small', hasNapBoost = false }) {
+  const filterUid = useId().replace(/:/g, '');
+  const energyVal = Number(percentage);
+  const arcP = Math.min(100, Math.max(0, Number.isFinite(energyVal) ? energyVal : 0));
   const large = size === 'large';
-  const w = large ? 60 : 24;
-  const h = large ? 120 : 48;
-  const fillColor = p > 70 ? '#22c55e' : p >= 30 ? '#facc15' : '#ef4444';
-  const capW = Math.max(10, Math.round(w * 0.42));
+  const w = large ? 200 : 52;
+  const h = large ? 118 : 38;
+  const r = large ? 82 : 21;
+  const sw = large ? 5 : 2.25;
+  const cx = w / 2;
+  const cy = h - (large ? 10 : 7);
+  const x1 = cx - r;
+  const x2 = cx + r;
+  const arcLen = Math.PI * r;
+  const dashOffset = arcLen * (1 - arcP / 100);
+  const gid = `${large ? 'eaL' : 'eaS'}_${filterUid}`;
+  const pctRounded = Math.round(Number.isFinite(energyVal) ? energyVal : 0);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: large ? 10 : 0 }}>
-      <div style={{ position: 'relative', width: w, height: h, marginTop: 6 }}>
-        <div
-          style={{
-            position: 'absolute',
-            top: -6,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: capW,
-            height: 5,
-            background: '#71717a',
-            borderRadius: '3px 3px 0 0',
-            zIndex: 2,
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            border: '2px solid #a1a1aa',
-            borderRadius: 8,
-            background: '#27272a',
-            overflow: 'hidden',
-            boxSizing: 'border-box',
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              width: '100%',
-              height: `${p}%`,
-              background: fillColor,
-              transition: 'height 0.45s ease-out',
-            }}
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        gap: large ? 8 : 2,
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: large ? 8 : 4 }}>
+        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', overflow: 'visible' }} aria-hidden>
+          <defs>
+            <filter id={gid} x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation={large ? 3.2 : 1.4} result="b" />
+              <feMerge>
+                <feMergeNode in="b" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <path
+            d={`M ${x1} ${cy} A ${r} ${r} 0 0 1 ${x2} ${cy}`}
+            fill="none"
+            stroke="#27272a"
+            strokeWidth={sw + 1}
+            strokeLinecap="round"
+            opacity={0.95}
           />
-          <div
+          <path
+            d={`M ${x1} ${cy} A ${r} ${r} 0 0 1 ${x2} ${cy}`}
+            fill="none"
+            stroke="#4ade80"
+            strokeWidth={sw}
+            strokeLinecap="round"
+            strokeDasharray={arcLen}
+            strokeDashoffset={dashOffset}
+            style={{ transition: 'stroke-dashoffset 0.55s ease-out', filter: `url(#${gid})` }}
+          />
+        </svg>
+        {hasNapBoost ? (
+          <span
             style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
+              fontSize: large ? '1.75rem' : '0.85rem',
+              lineHeight: 1,
+              filter: 'drop-shadow(0 0 6px rgba(34,211,238,0.85))',
+              color: '#22d3ee',
+              marginBottom: large ? 18 : 4,
             }}
+            title="Boost sonnellino"
+            aria-hidden
           >
-            <span
-              style={{
-                fontSize: large ? '1.05rem' : '0.58rem',
-                fontWeight: 800,
-                color: '#fafafa',
-                textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-                lineHeight: 1,
-              }}
-            >
-              {Math.round(p)}%
-            </span>
-          </div>
-        </div>
+            💤
+          </span>
+        ) : null}
       </div>
+      <span
+        style={{
+          fontSize: large ? '1.35rem' : '0.62rem',
+          fontWeight: 800,
+          color: '#ecfdf5',
+          letterSpacing: large ? '0.06em' : '-0.02em',
+          textShadow: '0 0 12px rgba(74,222,128,0.45)',
+          lineHeight: 1,
+        }}
+      >
+        {pctRounded}%
+      </span>
     </div>
   );
 }
 
 function BodyBatteryModal({ onClose, batteryData }) {
   if (!batteryData) return null;
-  const { currentEnergy, maxCapacity, breakdown } = batteryData;
+  const { currentEnergy, maxCapacity, breakdown, hasNapBoost } = batteryData;
   return (
     <div
       role="presentation"
@@ -241,11 +254,16 @@ function BodyBatteryModal({ onClose, batteryData }) {
             ✕
           </button>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '18px' }}>
-          <EnergyBattery percentage={currentEnergy} size="large" />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '14px' }}>
+          <EnergyArc percentage={currentEnergy} size="large" hasNapBoost={!!hasNapBoost} />
         </div>
+        {hasNapBoost ? (
+          <p style={{ margin: '0 0 8px 0', fontSize: '0.72rem', color: '#22d3ee', textAlign: 'center', fontWeight: 600 }}>
+            Sonnellino attivo — recupero extra
+          </p>
+        ) : null}
         <p style={{ margin: '0 0 6px 0', fontSize: '0.7rem', color: '#71717a', textAlign: 'center' }}>
-          Tetto {maxCapacity}%
+          Tetto teorico {maxCapacity}% · energia attuale {currentEnergy}%
         </p>
         <h3
           id="body-battery-title"
@@ -281,7 +299,7 @@ function BodyBatteryModal({ onClose, batteryData }) {
                   textAlign: 'right',
                   whiteSpace: 'nowrap',
                   color:
-                    row.type === 'positive' ? '#38bdf8' : row.type === 'negative' ? '#f97316' : '#a1a1aa',
+                    row.type === 'positive' ? '#22d3ee' : row.type === 'negative' ? '#f97316' : '#a1a1aa',
                 }}
               >
                 {formatBodyBatteryValue(row.value)}
@@ -6084,8 +6102,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [activeLog, currentTime, fullHistory, currentDateObj]);
 
   const bodyBattery = useMemo(
-    () => calculateBodyBattery(fullHistory, currentTrackerDate, activeLog),
-    [fullHistory, currentTrackerDate, activeLog]
+    () => calculateBodyBattery(fullHistory, currentTrackerDate, activeLog, userTargets),
+    [fullHistory, currentTrackerDate, activeLog, userTargets]
   );
 
   const renderCustomizedLabel = (props) => {
@@ -6799,7 +6817,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               }}
               style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}
             >
-              <EnergyBattery percentage={bodyBattery?.currentEnergy ?? 0} size="small" />
+              <EnergyArc
+                percentage={bodyBattery?.currentEnergy ?? 0}
+                size="small"
+                hasNapBoost={!!bodyBattery?.hasNapBoost}
+              />
               <span style={{ fontSize: '0.65rem', color: '#a1a1aa', marginTop: '4px' }}>🔋 Energia</span>
             </div>
           </div>
