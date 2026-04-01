@@ -54,7 +54,6 @@ import {
   getGhostMealType,
   getSlotKey,
   decimalToTimeStr,
-  computeBaselineEnergy,
   computeDigestiveLoad,
   responseCurve,
   PHYSIOLOGY_CONFIG,
@@ -62,14 +61,6 @@ import {
   computeAccumuloSNC,
   generateRealEnergyData,
   computeMetabolicStress,
-  computeEnergyForecast,
-  explainEnergyCrash,
-  simulateSnackIntervention,
-  simulateCoffeeIntervention,
-  simulateWaterIntervention,
-  simulateInterventions,
-  formatTimeForInsight,
-  generateDailyInsights,
   generateAnabolicCurve,
   generateCortisolCurve,
   getWorkoutTrafficLight,
@@ -1142,10 +1133,6 @@ export default function SalaComandi() {
   const [simulatedLog, setSimulatedLog] = useState(null);
   const coreOsClickCount = useRef(0);
   const coreOsClickTimer = useRef(null);
-  const [dailyInsights, setDailyInsights] = useState([]);
-  const [energyForecast, setEnergyForecast] = useState(null);
-  const [crashExplanation, setCrashExplanation] = useState(null);
-
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
   const [addedFoods, setAddedFoods] = useState([]);
@@ -5626,21 +5613,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       setShowSleepPrompt(true);
     }
   }, [sleepStatus, showSleepPrompt, activeLog]);
-
-  useEffect(() => {
-    if (!chartData || chartData.length === 0) {
-      setEnergyForecast(null);
-      setCrashExplanation(null);
-      setDailyInsights([]);
-      return;
-    }
-    const forecast = computeEnergyForecast(chartData);
-    setEnergyForecast(forecast);
-    const explanation = explainEnergyCrash(chartData, forecast);
-    setCrashExplanation(explanation);
-    const insights = generateDailyInsights(chartData);
-    setDailyInsights(insights);
-  }, [chartData]);
 
   const anabolicCurve = useMemo(() => generateAnabolicCurve(activeLog), [activeLog]);
   const cortisolCurve = useMemo(() => generateCortisolCurve(activeLog, manualNodes), [activeLog, manualNodes]);
