@@ -33,6 +33,8 @@ import {
   useSmartKentuTriggers,
   checkMorningBriefing,
   getMorningBriefingVerdict,
+  getYesterdayCalorieStatus,
+  buildPostWorkoutCoachMessage,
   markMorningBriefingShown,
 } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
@@ -399,6 +401,118 @@ function getMealTimeFromLogItem(item) {
   if (Number.isFinite(mt)) return mt;
   const t = Number(item.time);
   return Number.isFinite(t) ? t : null;
+}
+
+function normalizeWorkoutSearchKey(str) {
+  return String(str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function formatDecimalHourIt(dec) {
+  const d = Number(dec);
+  if (!Number.isFinite(d)) return '';
+  let h = Math.floor(d);
+  let m = Math.round((d - h) * 60);
+  if (m >= 60) {
+    h += Math.floor(m / 60);
+    m %= 60;
+  }
+  h %= 24;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function parseFlexibleTimeToDecimal(text) {
+  const s = String(text || '').trim().toLowerCase();
+  const m = s.match(/\b(\d{1,2})[:h.](\d{2})\b/);
+  if (m) {
+    const h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    if (h >= 0 && h <= 23 && min >= 0 && min < 60) return Math.round((h + min / 60) * 100) / 100;
+  }
+  const m2 = s.match(/\b(\d{1,2})\s*,\s*(\d{2})\b/);
+  if (m2) {
+    const h = parseInt(m2[1], 10);
+    const min = parseInt(m2[2], 10);
+    if (h >= 0 && h <= 23 && min >= 0 && min < 60) return Math.round((h + min / 60) * 100) / 100;
+  }
+  const m3 = s.match(/\b(\d{1,2})\s*(?:e\s*mezza)\b/);
+  if (m3) {
+    const h = parseInt(m3[1], 10);
+    if (h >= 0 && h < 24) return h + 0.5;
+  }
+  return null;
+}
+
+function extractWorkoutSearchKeysFromMessage(normMsg) {
+  const parts = normMsg.split(/\s+/).filter(Boolean);
+  const skip = new Set([
+    'oggi', 'stasera', 'ieri', 'allenamento', 'di', 'il', 'la', 'lo', 'per', 'un', 'una', 'ho', 'fare', 'faccio', 'faro', 'farò',
+    'programmo', 'voglio', 'devo', 'andare', 'in', 'palestra', 'con', 'del', 'dei', 'della',
+  ]);
+  return [...new Set(parts.filter((p) => p.length > 2 && !skip.has(p)))];
+}
+
+/** Rileva intento allenamento in chat (solo giorno corrente, prima della chiamata API). */
+function detectWorkoutIntentFromChat(raw) {
+  const m = String(raw || '').trim();
+  if (m.length < 4) return null;
+  const norm = normalizeWorkoutSearchKey(m);
+  if (/\b(ho mangiato|logga\s+pasto|registra(?:\s+il)?\s*pasto)\b/i.test(m) && !/\ballenamento\b|\bpalestra\b|\bpesi\b/i.test(m)) {
+    return null;
+  }
+  const hasStrong =
+    /\ballenamento\b|\bpalestra\b|\bpesi\b|workout|crossfit|push\s*day|pull\s*day|leg\s*day|\bcardio\b|\bcorsa\b|\bhiit\b/i.test(m);
+  const hasBody = /\b(petto|schiena|gambe|braccia|glutei|spalle|bicipiti|tricipiti|addome|dorso|quadricipiti|polpacci)\b/i.test(m);
+  if (!hasStrong) {
+    if (!hasBody) return null;
+    if (!/\b(faccio|farò|faro|oggi|stasera|programmo|voglio|allen)\b/i.test(norm)) return null;
+  }
+  let activity = 'weights';
+  if (/\bcorsa\b|\bcardio\b|\bcamminata\b|\bhiit\b|bike|spinning|ellittica|nuot/i.test(m)) activity = 'cardio';
+
+  let displayLabel = m.replace(/\s+/g, ' ');
+  const am = m.match(/\ballenamento\s+(?:di\s+|da\s+)?([^.!?\n]{2,40})/i);
+  if (am) displayLabel = am[1].trim().replace(/\s+$/,'');
+  else {
+    const bm = m.match(/\b(petto|schiena|gambe|braccia|glutei|spalle|bicipiti|tricipiti|push|pull|legs|dorso)\b/i);
+    if (bm) displayLabel = bm[0];
+  }
+
+  const keys = extractWorkoutSearchKeysFromMessage(normalizeWorkoutSearchKey(displayLabel));
+  const fullKeys = [...new Set([...keys, normalizeWorkoutSearchKey(displayLabel)])].filter(Boolean);
+  if (fullKeys.length === 0) fullKeys.push(normalizeWorkoutSearchKey(displayLabel));
+  return { displayLabel, activity, searchKeys: fullKeys };
+}
+
+function findLastMatchingWorkoutSlot(fullHistory, anchorDateStr, searchKeys) {
+  if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr || !searchKeys?.length) return null;
+  for (let i = 1; i < 90; i++) {
+    const dStr = addDays(anchorDateStr, -i);
+    const log = getLogFromStoricoTree(fullHistory, dStr) || [];
+    const workouts = log.filter(
+      (e) => e && (e.type === 'workout' || e.type === 'work' || e.type === 'activity' || e.type === 'cognitive')
+    );
+    for (const w of workouts) {
+      const desc = normalizeWorkoutSearchKey((w.desc || w.name || w.label || '').trim());
+      if (!desc) continue;
+      const hit = searchKeys.some(
+        (k) =>
+          k.length >= 3 &&
+          (desc.includes(k) || k.includes(desc.slice(0, Math.min(14, desc.length))))
+      );
+      if (hit) {
+        const t = getMealTimeFromLogItem(w) ?? (typeof w.time === 'number' ? w.time : null);
+        if (t != null && Number.isFinite(t)) {
+          return { decimalHour: t, sourceLabel: w.desc || w.name || '' };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 const FIREBASE_LOAD_OVERLAY_FADE_MS = 800;
@@ -1284,6 +1398,10 @@ export default function SalaComandi() {
   const lastDinnerOptionsRef = useRef(null);
   const lastAgendaOptionsRef = useRef(null);
   const kentuAgendaAwaitingRef = useRef(false);
+  /** Flusso chat: conferma orario allenamento prima del log. */
+  const pendingWorkoutFlowRef = useRef(null);
+  /** Contesto per prompt AI: allenamento programmato nel futuro (no pasti "adesso"). */
+  const scheduledWorkoutContextRef = useRef(null);
   const lastLogFromFirebaseRef = useRef(null);
   const pendingLogRef = useRef(null);
   const pendingNodesRef = useRef(null);
@@ -1316,6 +1434,10 @@ export default function SalaComandi() {
     const offset = currentDateObj.getTimezoneOffset() * 60000;
     return new Date(currentDateObj.getTime() - offset).toISOString().slice(0, 10);
   }, [currentDateObj]);
+
+  useEffect(() => {
+    scheduledWorkoutContextRef.current = null;
+  }, [currentTrackerDate]);
 
   const selectedNodeReportPrevRef = useRef(null);
   useEffect(() => {
@@ -3961,6 +4083,78 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const meta = sendMeta && typeof sendMeta === 'object' ? sendMeta : null;
     const trimQuick = optionalReply != null ? String(optionalReply).trim() : '';
 
+    const flushWorkoutLogFromChat = (decimalHour, displayDesc, activity) => {
+      const t = Math.round(Math.min(23.75, Math.max(0, Number(decimalHour))) * 100) / 100;
+      const label = (String(displayDesc || 'Allenamento').trim() || 'Allenamento');
+      const upper = label.toUpperCase();
+      const kcal = activity === 'cardio' ? 350 : 280;
+      const duration = activity === 'cardio' ? 0.75 : 1;
+      const newItem = {
+        id: `wk_chat_${Date.now()}`,
+        type: 'workout',
+        workoutType: activity === 'cardio' ? 'cardio' : 'pesi',
+        desc: upper,
+        name: label,
+        kcal,
+        cal: kcal,
+        duration,
+        mealTime: t,
+        time: t,
+      };
+      const anchor = currentTrackerDate || getTodayString();
+      const yStatus = getYesterdayCalorieStatus(fullHistory, userTargets, anchor);
+      const coach = buildPostWorkoutCoachMessage(yStatus, activity, label);
+      const nowDec = new Date().getHours() + new Date().getMinutes() / 60;
+      if (anchor === getTodayString() && t > nowDec + 0.2) {
+        scheduledWorkoutContextRef.current = { workoutDecimalHour: t, label, dateStr: anchor };
+      } else if (anchor === getTodayString()) {
+        scheduledWorkoutContextRef.current = null;
+      }
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => [newItem, ...(prev || [])]);
+        setChatHistory((prev) => [...prev, { sender: 'ai', text: `Registrato (sandbox) alle ${formatDecimalHourIt(t)}. ${coach}` }]);
+        return;
+      }
+      const nuovoLog = [newItem, ...(dailyLog || [])];
+      setDailyLog(nuovoLog);
+      syncDatiFirebase(nuovoLog, manualNodes);
+      setChatHistory((prev) => [...prev, { sender: 'ai', text: `Allenamento salvato alle ${formatDecimalHourIt(t)}. ${coach}` }]);
+    };
+
+    if (meta?.fromQuickReply && meta?.workoutTimeReply && pendingWorkoutFlowRef.current?.kind === 'await_confirm') {
+      const p = pendingWorkoutFlowRef.current;
+      pendingWorkoutFlowRef.current = null;
+      const userText = trimQuick || 'Ok';
+      if (meta.workoutTimeReply === 'accept') {
+        setChatHistory((prev) => {
+          const stripped = prev.map((m) =>
+            m.workoutTimeConfirm && Array.isArray(m.quickReplies) ? { ...m, quickReplies: undefined } : m
+          );
+          return [...stripped, { sender: 'user', text: userText }];
+        });
+        flushWorkoutLogFromChat(p.suggestedDecimal, p.displayLabel, p.activity);
+      } else {
+        pendingWorkoutFlowRef.current = {
+          kind: 'await_custom_time',
+          displayLabel: p.displayLabel,
+          activity: p.activity,
+          searchKeys: p.searchKeys || [],
+        };
+        setChatHistory((prev) => {
+          const stripped = prev.map((m) =>
+            m.workoutTimeConfirm && Array.isArray(m.quickReplies) ? { ...m, quickReplies: undefined } : m
+          );
+          return [
+            ...stripped,
+            { sender: 'user', text: userText },
+            { sender: 'ai', text: 'Ok. A che ora lo programmiamo oggi? (es. 19:30 o 19,45)' },
+          ];
+        });
+      }
+      if (optionalReply == null) setChatInput('');
+      return;
+    }
+
     if (meta?.morningBriefingReply && meta?.fromQuickReply) {
       const { status, activity } = meta.morningBriefingReply;
       if (
@@ -4049,11 +4243,26 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       apiUserContent = userMessage;
     }
 
-    if (!apiUserContent && chatImages.length === 0) return;
-
-    if ((meta?.fromInput || meta?.fromQuickReply) && !secretPrompt) {
-      if (kentuActiveTrigger === 'sleep') dismissKentuSleepTrigger();
+    if (!secretPrompt && pendingWorkoutFlowRef.current?.kind === 'await_custom_time' && userMessage) {
+      const parsedT = parseFlexibleTimeToDecimal(userMessage);
+      if (parsedT == null) {
+        setChatHistory((prev) => [
+          ...prev,
+          { sender: 'user', text: userMessage },
+          { sender: 'ai', text: 'Non ho capito l\'orario. Prova con il formato 19:30 o 19,45.' },
+        ]);
+        if (optionalReply == null) setChatInput('');
+        return;
+      }
+      const p = pendingWorkoutFlowRef.current;
+      pendingWorkoutFlowRef.current = null;
+      setChatHistory((prev) => [...prev, { sender: 'user', text: userMessage }]);
+      flushWorkoutLogFromChat(parsedT, p.displayLabel, p.activity);
+      if (optionalReply == null) setChatInput('');
+      return;
     }
+
+    if (!apiUserContent && chatImages.length === 0) return;
 
     const logPastoKw = /\b(logga\s+pasto|salva(?:\s+la)?\s+cena|registra(?:\s+la)?\s+cena)\b/i;
     if (!secretPrompt && logPastoKw.test(userMessage) && Array.isArray(lastDinnerOptionsRef.current) && lastDinnerOptionsRef.current.length) {
@@ -4105,6 +4314,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         if (isSimulationMode) {
           setSimulatedLog(prev => [...(prev || []), sleepEntry]);
           setPendingAiBatch(null);
+          dismissKentuSleepTrigger();
           setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Ho registrato i dati del sonno (sandbox).' }]);
           if (optionalReply == null) setChatInput('');
           return;
@@ -4113,6 +4323,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         setDailyLog(nuovoLog);
         syncDatiFirebase(nuovoLog, manualNodes);
         setPendingAiBatch(null);
+        dismissKentuSleepTrigger();
         setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Ho registrato i dati del sonno nel diario. La curva del cortisolo terrà conto dell\'ora di risveglio.' }]);
         if (optionalReply == null) setChatInput('');
         return;
@@ -4167,6 +4378,42 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Operazione annullata. Cosa vuoi fare ora?' }]);
         if (optionalReply == null) setChatInput('');
         return;
+      }
+    }
+
+    const isTrackerToday = (currentTrackerDate || getTodayString()) === getTodayString();
+    if (
+      !secretPrompt &&
+      isTrackerToday &&
+      userMessage &&
+      chatImages.length === 0 &&
+      !kentuAgendaAwaitingRef.current
+    ) {
+      const wIntent = detectWorkoutIntentFromChat(userMessage);
+      if (wIntent) {
+        const slot = findLastMatchingWorkoutSlot(fullHistory, currentTrackerDate || getTodayString(), wIntent.searchKeys);
+        if (slot) {
+          pendingWorkoutFlowRef.current = {
+            kind: 'await_confirm',
+            displayLabel: wIntent.displayLabel,
+            activity: wIntent.activity,
+            searchKeys: wIntent.searchKeys,
+            suggestedDecimal: slot.decimalHour,
+          };
+          const timeStr = formatDecimalHourIt(slot.decimalHour);
+          setChatHistory((prev) => [
+            ...prev,
+            { sender: 'user', text: userMessage },
+            {
+              sender: 'ai',
+              text: `Ricevuto, preparo il piano per l'allenamento ${wIntent.displayLabel}. Di solito ti alleni alle ${timeStr}, va bene questo orario anche per oggi?`,
+              quickReplies: ['Sì, va bene', 'No, un altro orario'],
+              workoutTimeConfirm: true,
+            },
+          ]);
+          if (optionalReply == null) setChatInput('');
+          return;
+        }
       }
     }
 
@@ -4248,6 +4495,22 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const metabolicRecompositionContext =
         buildKentuAiMetabolicRecompositionContext(metabolicVarianceForAi);
 
+      const swCtx = scheduledWorkoutContextRef.current;
+      const swAnchor = currentTrackerDate || getTodayString();
+      let scheduledWorkoutPromptExtra = '';
+      if (
+        swCtx &&
+        swCtx.dateStr === swAnchor &&
+        typeof swCtx.workoutDecimalHour === 'number'
+      ) {
+        const wh = formatDecimalHourIt(swCtx.workoutDecimalHour);
+        const nowDecAi = new Date().getHours() + new Date().getMinutes() / 60;
+        if (swCtx.workoutDecimalHour > nowDecAi - 0.5) {
+          const safeLab = String(swCtx.label || '').replace(/"/g, "'").slice(0, 80);
+          scheduledWorkoutPromptExtra = `\n\nREGOLA ORARIO ALLENAMENTO: L'utente ha confermato un allenamento «${safeLab}» alle ${wh} di oggi. Finché non è passata quell'ora (finestra pre-workout ~90 min prima della sessione), NON proporre pasti "adesso", colazione immediata o spuntini fuori contesto: ragiona solo in termini di pre-workout (prima della sessione) e post-workout (dopo), con orari dei pasti allineati all'allenamento.`;
+        }
+      }
+
       const baseSystemPrompt = `Sei l'assistente di KentuOS. Il tuo scopo è dialogare con l'utente in italiano.
 
 Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino"), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
@@ -4280,7 +4543,7 @@ Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi l
 
 TRACCIAMENTO DEL SONNO E VISION:
 Se l'utente allega uno screenshot di un'app di tracciamento del sonno (es. Mi Fitness) o scrive i dati testualmente, estrai questi valori chiave: Ora di risveglio (es. 06:18 diventa 6.3 in ore decimali), Ore totali di sonno (es. 6 ore e 34 min diventa 6.56), Tempo in fase Profonda in minuti (es. 2h 14m = 134), Tempo in fase REM in minuti, Frequenza cardiaca media (BPM). Rispondi con un breve riepilogo testuale ("Ho letto i dati: hai dormito 6h 34m, recupero profondo ottimo...") e includi un JSON strutturato su una riga: {"action": "log_sleep", "sleepData": {"wakeTime": 6.3, "hours": 6.56, "sleepStart": 23.5, "sleepEnd": 6.3, "deepMin": 134, "remMin": 94, "hr": 56}}. Usa SEMPRE i quick_replies: {"quick_replies": ["Sì, confermo", "No, annulla"]} per la conferma prima del salvataggio.
-${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZIONE CORPORALE E LONGEVITÀ (contesto utente):\n${aiVitalsContextParagraph}` : ''}${metabolicRecompositionContext ? `\n\n${metabolicRecompositionContext}` : ''}`;
+${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZIONE CORPORALE E LONGEVITÀ (contesto utente):\n${aiVitalsContextParagraph}` : ''}${metabolicRecompositionContext ? `\n\n${metabolicRecompositionContext}` : ''}${scheduledWorkoutPromptExtra}`;
 
       const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
       const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
@@ -5298,12 +5561,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       const date = currentTrackerDate || getTodayString();
       const br = checkMorningBriefing(fullHistory, userTargets, date);
       if (!br) return;
-      markMorningBriefingShown(date);
       setChatHistory((prev) => {
         const needle = 'Ho analizzato i dati di ieri';
         if (prev.some((m) => m.sender === 'ai' && typeof m.text === 'string' && m.text.includes(needle))) {
           return prev;
         }
+        markMorningBriefingShown(date);
         return [
           ...prev,
           {
@@ -9253,6 +9516,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     setDailyLog(next);
                     syncDatiFirebase(next, manualNodes || []);
                   }
+                  dismissKentuSleepTrigger();
                   setShowSleepPrompt(false);
                 }}
               >
@@ -9427,6 +9691,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     setDailyLog(next);
                     syncDatiFirebase(next, manualNodes || []);
                   }
+                  dismissKentuSleepTrigger();
                   setSleepModal(null);
                 }}
                 style={{

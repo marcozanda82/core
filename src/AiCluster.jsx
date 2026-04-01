@@ -142,7 +142,12 @@ export default function AiCluster({
                         key={rIdx}
                         type="button"
                         onClick={() => {
-                          if (msg.morningBriefing?.status && morningActivityIds[rIdx]) {
+                          if (msg.workoutTimeConfirm) {
+                            onSendMessage(reply, {
+                              fromQuickReply: true,
+                              workoutTimeReply: rIdx === 0 ? 'accept' : 'reject',
+                            });
+                          } else if (msg.morningBriefing?.status && morningActivityIds[rIdx]) {
                             onSendMessage(reply, {
                               fromQuickReply: true,
                               morningBriefingReply: {

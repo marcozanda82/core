@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { addDays } from './calendarDateUtils';
 import { getLogFromStoricoTree } from './coreEngine';
 
@@ -93,6 +93,45 @@ export function getMorningBriefingVerdict(yesterdayStatus, activity) {
   return '🟡 Situazione intermedia. Puoi mantenere il digiuno per un po\', ma ascolta il corpo. Al primo segnale di stanchezza o calo di focus, rompi il digiuno con una fonte di proteine e grassi buoni.';
 }
 
+/**
+ * Bilancio ieri vs TDEE (stessa logica di checkMorningBriefing).
+ * @returns {'deficit'|'surplus'|null}
+ */
+export function getYesterdayCalorieStatus(fullHistory, userTargets, anchorDateStr) {
+  const dateStr = anchorDateStr && String(anchorDateStr).trim() ? String(anchorDateStr).trim() : null;
+  if (!dateStr) return null;
+  const tdee = Number(userTargets?.kcal);
+  if (!Number.isFinite(tdee) || tdee <= 0) return null;
+  if (!fullHistory || typeof fullHistory !== 'object') return null;
+  const yesterday = addDays(dateStr, -1);
+  const log = getLogFromStoricoTree(fullHistory, yesterday) || [];
+  const kcal = sumFoodKcalFromLog(log);
+  const threshold = tdee * 0.9;
+  return kcal < threshold ? 'deficit' : 'surplus';
+}
+
+/**
+ * Verdetto Kentu dopo log allenamento: incrocia ieri + tipo sessione + etichetta.
+ */
+export function buildPostWorkoutCoachMessage(yesterdayStatus, activity, workoutLabel) {
+  const safe = String(workoutLabel || 'allenamento').trim() || 'allenamento';
+  const base =
+    yesterdayStatus === 'deficit' || yesterdayStatus === 'surplus'
+      ? getMorningBriefingVerdict(yesterdayStatus, activity)
+      : '📊 Dati sulle calorie di ieri incompleti: resta prudente con digiuno prolungato prima di sforzi intensi.';
+
+  if (yesterdayStatus === 'deficit' && activity === 'weights') {
+    return `${base} Visto il deficit di ieri, «${safe}» è impegnativo: tieni pronta una quota proteica (25–40g) entro 1–2 ore dal workout; se sei a digiuno, almeno 20g proteine 60–90 min prima o uno shake subito dopo.`;
+  }
+  if (activity === 'weights') {
+    return `${base} Per «${safe}»: idratazione durante la sessione; post-workout bilancia proteine con un po' di carboidrato se la prossima cena è lontana.`;
+  }
+  if (activity === 'cardio') {
+    return `${base} Per il cardio («${safe}»): se l'orario è distante dai pasti, uno spuntino leggero 1–2h prima va bene; recupera liquidi e sodio se la sessione è lunga.`;
+  }
+  return `${base} (Allenamento «${safe}» registrato.)`;
+}
+
 function morningBriefingShownForDate(trackerDateStr) {
   if (typeof window === 'undefined' || !trackerDateStr) return true;
   return window.localStorage.getItem(`${LS_MORNING_BRIEFING_SHOWN}_${trackerDateStr}`) === '1';
@@ -109,11 +148,21 @@ export function markMorningBriefingShown(trackerDateStr) {
  */
 export function useSmartKentuTriggers(activeLog, trackerDateStr, fullHistory, userTargets) {
   const [tick, setTick] = useState(0);
+  const prevSleepCompleteRef = useRef(false);
 
   useEffect(() => {
     const id = window.setInterval(() => setTick((t) => t + 1), 60000);
     return () => window.clearInterval(id);
   }, []);
+
+  /** Ricalcolo immediato dei trigger quando il sonno diventa completo nel log (es. conferma da chat/screenshot). */
+  useEffect(() => {
+    const complete = sleepDataComplete(activeLog);
+    if (complete && !prevSleepCompleteRef.current) {
+      setTick((t) => t + 1);
+    }
+    prevSleepCompleteRef.current = complete;
+  }, [activeLog]);
 
   const dismissed = useMemo(() => readDismiss(trackerDateStr), [trackerDateStr, tick]);
 
