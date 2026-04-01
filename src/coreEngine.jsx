@@ -1655,16 +1655,9 @@ function pickMainSleepEntry(sleepEntries) {
   return best;
 }
 
-function wakeDecimalFromSleepEntry(e, fallback = 7) {
-  if (!e) return fallback;
-  const w = Number(e.wakeTime ?? e.sleepEnd);
-  if (Number.isFinite(w)) return w;
-  return fallback;
-}
-
 /**
- * Body Battery 2.0: debito sonno (media 3 giorni), partenza da sonno stanotte, decadimento e costi giornata.
- * @returns {{ currentEnergy: number, maxCapacity: number, breakdown: Array<{ label: string, valueString: string, type: 'positive'|'negative'|'neutral' }> }}
+ * Body Battery: debito sonno, partenza da sonno notturno, decadimento dalle 7:00, pasti (max 3), allenamenti, sonnellini.
+ * @returns {{ currentEnergy: number, maxCapacity: number, breakdown: Array<{ label: string, value: number, type: 'positive'|'negative'|'neutral' }> }}
  */
 export function calculateBodyBattery(fullHistory, anchorDate, activeLog) {
   const breakdown = [];
@@ -1697,26 +1690,22 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog) {
   let maxCapacity = 100;
   if (countPast > 0) {
     const avgSleep = sumPast / countPast;
-    if (avgSleep < 7.5) {
-      maxCapacity = Math.max(70, Math.round(100 - (7.5 - avgSleep) * 10));
+    if (avgSleep < 7) {
+      maxCapacity = Math.max(70, 100 - (7 - avgSleep) * 10);
     }
-    breakdown.push({
-      label: '📉 Debito sonno (media 3 gg)',
-      valueString: `${avgSleep.toFixed(1)} h${avgSleep < 7.5 ? ` → tetto ${maxCapacity}%` : ' → tetto 100%'}`,
-      type: avgSleep < 7.5 ? 'negative' : 'neutral',
-    });
-  } else {
-    breakdown.push({
-      label: '📉 Debito sonno (media 3 gg)',
-      valueString: 'Dati insufficienti',
-      type: 'neutral',
-    });
   }
+  maxCapacity = Math.round(maxCapacity);
+
+  const debtVal = maxCapacity - 100;
+  breakdown.push({
+    label: 'Debito sonno (media 3 notti)',
+    value: Math.round(debtVal * 10) / 10,
+    type: debtVal < 0 ? 'negative' : 'neutral',
+  });
 
   const sleepsToday = log.filter((e) => e && e.type === 'sleep');
   let mainNight = pickMainSleepEntry(sleepsToday);
   let nightHours = mainNight ? sleepHoursFromEntry(mainNight) : null;
-  let wakeDec = wakeDecimalFromSleepEntry(mainNight, 7);
 
   if (nightHours == null) {
     const yLog = getLogFromStoricoTree(fullHistory, addDays(anchor, -1)) || [];
@@ -1726,81 +1715,71 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog) {
     if (yh != null) {
       nightHours = yh;
       mainNight = mainY;
-      wakeDec = wakeDecimalFromSleepEntry(mainY, wakeDec);
     }
   }
 
   let nightUsedEstimate = false;
   if (nightHours == null) {
-    nightHours = 7.5;
+    nightHours = 7;
     nightUsedEstimate = true;
   }
 
   let startEnergy = maxCapacity;
-  if (nightHours < 7.5) {
-    startEnergy = maxCapacity - (7.5 - nightHours) * 10;
+  if (nightHours < 7) {
+    startEnergy = maxCapacity - (7 - nightHours) * 10;
   }
-  startEnergy = Math.min(maxCapacity, Math.max(5, Math.round(startEnergy)));
+  startEnergy = Math.round(Math.min(maxCapacity, Math.max(5, startEnergy)));
 
-  if (nightUsedEstimate) {
-    breakdown.push({
-      label: '🛌 Sonno di stanotte',
-      valueString: 'Non registrato (stima 7.5 h)',
-      type: 'neutral',
-    });
-  } else {
-    breakdown.push({
-      label: '🛌 Sonno di stanotte',
-      valueString: `${nightHours.toFixed(1)} h → partenza ${startEnergy}%`,
-      type: 'neutral',
-    });
-  }
-
-  const hoursAwake = Math.max(0, nowDec - wakeDec);
-  const basalDrain = hoursAwake * 1.5;
+  const nightDelta = startEnergy - maxCapacity;
   breakdown.push({
-    label: '⏳ Decadimento basale',
-    valueString: `−${Math.round(basalDrain * 10) / 10}% (${hoursAwake.toFixed(1)} h sveglio)`,
+    label: nightUsedEstimate ? 'Sonno notturno (stima)' : 'Sonno notturno',
+    value: Math.round(nightDelta * 10) / 10,
+    type: 'neutral',
+  });
+
+  const hoursFromSeven = isToday ? Math.max(0, nowDec - 7) : Math.max(0, 24 - 7);
+  const basalDrain = hoursFromSeven * 1.5;
+  const basalRounded = Math.round(basalDrain * 10) / 10;
+  breakdown.push({
+    label: 'Tempo sveglio',
+    value: -basalRounded,
     type: 'negative',
   });
 
-  const slots = new Set();
+  const mealItems = [];
   for (const item of log) {
-    if (!item || item.type !== 'food') continue;
-    const t = Number(item.mealTime ?? item.time);
-    const pastOrUnknown =
-      !Number.isFinite(t) ? nowDec >= 23.5 : t <= nowDec;
-    if (!pastOrUnknown) continue;
-    const c = toCanonicalMealType(item.mealType);
-    if (c === 'colazione' || c === 'pranzo' || c === 'cena') slots.add(c);
-  }
-
-  const mealLabels = { colazione: '🍳 Colazione', pranzo: '🍝 Pranzo', cena: '🌙 Cena' };
-  let mealDrain = 0;
-  for (const s of ['colazione', 'pranzo', 'cena']) {
-    if (slots.has(s)) {
-      mealDrain += 5;
-      breakdown.push({
-        label: mealLabels[s],
-        valueString: '−5%',
-        type: 'negative',
-      });
+    if (!item || (item.type !== 'food' && item.type !== 'recipe')) continue;
+    if (isToday) {
+      const t = Number(item.mealTime ?? item.time);
+      if (Number.isFinite(t) && t > nowDec) continue;
     }
+    mealItems.push(item);
+    if (mealItems.length >= 3) break;
   }
-
-  const workouts = log.filter((i) => {
-    if (!i || (i.type !== 'workout' && i.type !== 'work')) return false;
-    const t = Number(i.mealTime ?? i.time);
-    if (!Number.isFinite(t)) return nowDec >= 23.5;
-    return t <= nowDec;
-  });
-  let workoutDrain = 0;
-  workouts.forEach((w, idx) => {
-    workoutDrain += 20;
-    const name = (w.desc || w.name || `Sessione ${idx + 1}`).toString().slice(0, 28);
+  const mealDrain = mealItems.length * 5;
+  mealItems.forEach((_, idx) => {
     breakdown.push({
-      label: `🏋️ ${name}`,
-      valueString: '−20%',
+      label: mealItems.length > 1 ? `Pasto ${idx + 1}` : 'Pasto',
+      value: -5,
+      type: 'negative',
+    });
+  });
+
+  const workouts = [];
+  for (const i of log) {
+    if (!i || (i.type !== 'workout' && i.type !== 'work')) continue;
+    if (isToday) {
+      const t = Number(i.mealTime ?? i.time);
+      if (Number.isFinite(t) && t > nowDec) continue;
+    }
+    workouts.push(i);
+  }
+  const workoutDrain = workouts.length * 20;
+  workouts.forEach((w, idx) => {
+    const name = (w.desc || w.name || `Sessione ${idx + 1}`).toString().trim().slice(0, 24);
+    breakdown.push({
+      label: name ? `Allenamento · ${name}` : 'Allenamento',
+      value: -20,
       type: 'negative',
     });
   });
@@ -1812,8 +1791,8 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog) {
     if (mainNight && e === mainNight) continue;
     napGain += 15;
     breakdown.push({
-      label: '😴 Sonnellino',
-      valueString: '+15%',
+      label: 'Sonnellino',
+      value: 15,
       type: 'positive',
     });
   }
@@ -1821,7 +1800,11 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog) {
   let currentEnergy = startEnergy - basalDrain - mealDrain - workoutDrain + napGain;
   currentEnergy = Math.round(Math.min(100, Math.max(5, currentEnergy)));
 
-  return { currentEnergy, maxCapacity, breakdown };
+  return {
+    currentEnergy,
+    maxCapacity,
+    breakdown,
+  };
 }
 
 /**

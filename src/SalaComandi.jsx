@@ -26,7 +26,6 @@ import { useFirebase } from './useFirebase';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import AiCluster from './AiCluster';
-import { EnergyGauge } from './EnergyGauge';
 import MealBuilder from './MealBuilder';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
@@ -112,24 +111,107 @@ import {
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
 const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'longevita'];
 
+function formatBodyBatteryValue(v) {
+  const n = Math.round(Number(v) * 10) / 10;
+  if (n === 0) return '0%';
+  return `${n > 0 ? '+' : ''}${n}%`;
+}
+
+/** Batteria verticale Body Battery (TopBar + modale). */
+function EnergyBattery({ percentage, size = 'small' }) {
+  const p = Math.min(100, Math.max(0, Number(percentage) || 0));
+  const large = size === 'large';
+  const w = large ? 60 : 24;
+  const h = large ? 120 : 48;
+  const fillColor = p > 70 ? '#22c55e' : p >= 30 ? '#facc15' : '#ef4444';
+  const capW = Math.max(10, Math.round(w * 0.42));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: large ? 10 : 0 }}>
+      <div style={{ position: 'relative', width: w, height: h, marginTop: 6 }}>
+        <div
+          style={{
+            position: 'absolute',
+            top: -6,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: capW,
+            height: 5,
+            background: '#71717a',
+            borderRadius: '3px 3px 0 0',
+            zIndex: 2,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            border: '2px solid #a1a1aa',
+            borderRadius: 8,
+            background: '#27272a',
+            overflow: 'hidden',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              width: '100%',
+              height: `${p}%`,
+              background: fillColor,
+              transition: 'height 0.45s ease-out',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+            }}
+          >
+            <span
+              style={{
+                fontSize: large ? '1.05rem' : '0.58rem',
+                fontWeight: 800,
+                color: '#fafafa',
+                textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+                lineHeight: 1,
+              }}
+            >
+              {Math.round(p)}%
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BodyBatteryModal({ onClose, batteryData }) {
   if (!batteryData) return null;
   const { currentEnergy, maxCapacity, breakdown } = batteryData;
   return (
     <div
       role="presentation"
-      className="modal-overlay"
       onClick={onClose}
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,0.88)',
+        background: 'rgba(0,0,0,0.72)',
         zIndex: 100030,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '20px',
-        backdropFilter: 'blur(6px)',
+        backdropFilter: 'blur(5px)',
       }}
     >
       <div
@@ -138,49 +220,46 @@ function BodyBatteryModal({ onClose, batteryData }) {
         aria-labelledby="body-battery-title"
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: 'linear-gradient(165deg, #16161c 0%, #0d0d12 100%)',
-          border: '1px solid #2a2a32',
-          borderRadius: '20px',
-          padding: '22px 20px 20px',
+          background: 'linear-gradient(165deg, #18181b 0%, #0c0c0f 100%)',
+          border: '1px solid #3f3f46',
+          borderRadius: '18px',
+          padding: '24px 20px 20px',
           width: '100%',
-          maxWidth: '380px',
-          maxHeight: '88vh',
+          maxWidth: '360px',
+          maxHeight: '90vh',
           overflowY: 'auto',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.65)',
+          boxShadow: '0 24px 48px rgba(0,0,0,0.55)',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-          <h3 id="body-battery-title" style={{ margin: 0, color: '#e5e5e5', fontSize: '0.95rem', letterSpacing: '0.12em', fontWeight: 700 }}>
-            MOTORE ENERGIA
-          </h3>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-8px' }}>
           <button
             type="button"
             onClick={onClose}
-            style={{ background: 'none', border: 'none', color: '#71717a', fontSize: '1.35rem', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
+            style={{ background: 'none', border: 'none', color: '#71717a', fontSize: '1.35rem', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}
             aria-label="Chiudi"
           >
             ✕
           </button>
         </div>
-        <p style={{ margin: '0 0 16px 0', fontSize: '0.72rem', color: '#71717a', letterSpacing: '0.04em' }}>
-          Body Battery 2.0 · tetto {maxCapacity}%
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '20px' }}>
-          <EnergyGauge percentage={currentEnergy} size="large" />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '18px' }}>
+          <EnergyBattery percentage={currentEnergy} size="large" />
         </div>
-        <div
+        <p style={{ margin: '0 0 6px 0', fontSize: '0.7rem', color: '#71717a', textAlign: 'center' }}>
+          Tetto {maxCapacity}%
+        </p>
+        <h3
+          id="body-battery-title"
           style={{
-            fontSize: '0.65rem',
+            margin: '0 0 14px 0',
+            color: '#e4e4e7',
+            fontSize: '0.88rem',
             fontWeight: 700,
-            color: '#a1a1aa',
-            letterSpacing: '0.14em',
-            marginBottom: '10px',
-            borderBottom: '1px solid #27272f',
-            paddingBottom: '8px',
+            textAlign: 'center',
+            letterSpacing: '0.04em',
           }}
         >
-          ESTRATTO CONTO
-        </div>
+          Estratto Conto Energia
+        </h3>
         <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
           {(breakdown || []).map((row, i) => (
             <li
@@ -190,22 +269,22 @@ function BodyBatteryModal({ onClose, batteryData }) {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 gap: '12px',
-                padding: '11px 0',
-                borderBottom: i < (breakdown || []).length - 1 ? '1px solid #222228' : 'none',
+                padding: '10px 0',
+                borderBottom: i < (breakdown || []).length - 1 ? '1px solid #27272a' : 'none',
               }}
             >
-              <span style={{ color: '#d4d4d8', fontSize: '0.82rem', lineHeight: 1.35 }}>{row.label}</span>
+              <span style={{ color: '#d4d4d8', fontSize: '0.8rem', lineHeight: 1.35 }}>{row.label}</span>
               <span
                 style={{
                   fontWeight: 600,
-                  fontSize: '0.82rem',
+                  fontSize: '0.8rem',
                   textAlign: 'right',
                   whiteSpace: 'nowrap',
                   color:
-                    row.type === 'positive' ? '#4ade80' : row.type === 'negative' ? '#fb923c' : '#94a3b8',
+                    row.type === 'positive' ? '#38bdf8' : row.type === 'negative' ? '#f97316' : '#a1a1aa',
                 }}
               >
-                {row.valueString}
+                {formatBodyBatteryValue(row.value)}
               </span>
             </li>
           ))}
@@ -215,16 +294,15 @@ function BodyBatteryModal({ onClose, batteryData }) {
           onClick={onClose}
           style={{
             width: '100%',
-            marginTop: '18px',
+            marginTop: '20px',
             padding: '12px',
-            background: '#00e5ff',
-            color: '#0a0a0a',
+            background: '#3f3f46',
+            color: '#fafafa',
             border: 'none',
-            borderRadius: '12px',
-            fontWeight: 700,
-            fontSize: '0.85rem',
+            borderRadius: '10px',
+            fontWeight: 600,
+            fontSize: '0.88rem',
             cursor: 'pointer',
-            letterSpacing: '0.06em',
           }}
         >
           Chiudi
@@ -1526,7 +1604,7 @@ export default function SalaComandi() {
   const [fullHistory, setFullHistory] = useState({});
   const [showReport, setShowReport] = useState(false);
   const [showMetabolicPopup, setShowMetabolicPopup] = useState(false);
-  const [showBodyBatteryModal, setShowBodyBatteryModal] = useState(false);
+  const [showBatteryModal, setShowBatteryModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [trendModalMetric, setTrendModalMetric] = useState(null);
   const [trendDays, setTrendDays] = useState(30);
@@ -6712,39 +6790,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               tabIndex={0}
               aria-label={`Body Battery ${bodyBattery?.currentEnergy ?? 0} per cento. Apri dettaglio.`}
               title="Body Battery — dettaglio"
-              onClick={() => setShowBodyBatteryModal(true)}
+              onClick={() => setShowBatteryModal(true)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  setShowBodyBatteryModal(true);
+                  setShowBatteryModal(true);
                 }
               }}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '2px 4px',
-                flexShrink: 0,
-                cursor: 'pointer',
-                pointerEvents: 'auto',
-                background: 'transparent',
-                border: 'none',
-                borderRadius: '10px',
-              }}
+              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}
             >
-              <EnergyGauge percentage={bodyBattery?.currentEnergy ?? 0} size="small" />
-              <span
-                style={{
-                  fontSize: '0.65rem',
-                  fontWeight: '600',
-                  color: '#a1a1aa',
-                  marginTop: '4px',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                🔋 Energia
-              </span>
+              <EnergyBattery percentage={bodyBattery?.currentEnergy ?? 0} size="small" />
+              <span style={{ fontSize: '0.65rem', color: '#a1a1aa', marginTop: '4px' }}>🔋 Energia</span>
             </div>
           </div>
         </div>
@@ -10257,8 +10313,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
 
-      {showBodyBatteryModal && (
-        <BodyBatteryModal onClose={() => setShowBodyBatteryModal(false)} batteryData={bodyBattery} />
+      {showBatteryModal && (
+        <BodyBatteryModal onClose={() => setShowBatteryModal(false)} batteryData={bodyBattery} />
       )}
 
       {/* POP-UP FASE METABOLICA */}
