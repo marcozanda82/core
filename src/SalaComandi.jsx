@@ -6623,7 +6623,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div
               aria-label="Energia"
               title="Energia"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px 4px', flexShrink: 0, pointerEvents: 'none' }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '2px 4px',
+                flexShrink: 0,
+                pointerEvents: 'none',
+              }}
             >
               <div style={{ position: 'relative', width: '52px', height: '26px' }}>
                 <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }} aria-hidden>
@@ -6640,13 +6648,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     fontWeight: 'bold',
                     color: '#e5e5e5',
                     lineHeight: 1,
-                    pointerEvents: 'none',
                     whiteSpace: 'nowrap',
                   }}
                 >
                   {Math.round(Number(bodyBatteryData?.level) || 0)}%
                 </div>
               </div>
+              <span
+                style={{
+                  fontSize: '0.65rem',
+                  fontWeight: '600',
+                  color: '#a1a1aa',
+                  marginTop: '4px',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                🔋 Energia
+              </span>
             </div>
           </div>
         </div>
