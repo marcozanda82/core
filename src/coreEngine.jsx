@@ -304,7 +304,29 @@ const PHYSIOLOGY_CONFIG = {
  */
 function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, currentTime = null, accumuloSNC = 0) {
   const log = dailyLog || [];
-  const isWaterAutoPilot = computeWaterHydrationAutoPilot(log, timelineNodes);
+  const graphTimelineNodes = Array.isArray(timelineNodes) ? [...timelineNodes] : [];
+  // Sonnellini dal log (sleep secondari) → nodi 'nap' per grafici energia / neuro
+  const allSleepsForChart = log.filter(e => e && e.type === 'sleep');
+  let mainSleepForChart = null;
+  let maxSleepDur = -1;
+  allSleepsForChart.forEach(s => {
+    const d = Number(s.hours ?? s.duration ?? s.sleepHours ?? 0) || 0;
+    if (d > maxSleepDur) {
+      maxSleepDur = d;
+      mainSleepForChart = s;
+    }
+  });
+  allSleepsForChart.forEach(s => {
+    if (s !== mainSleepForChart) {
+      const dur = Number(s.hours ?? s.duration ?? s.sleepHours ?? 1) || 1;
+      const startT = Number(s.sleepStart ?? s.time ?? s.bedtime ?? 15) || 15;
+      if (dur > 0) {
+        graphTimelineNodes.push({ type: 'nap', time: startT, duration: dur });
+      }
+    }
+  });
+
+  const isWaterAutoPilot = computeWaterHydrationAutoPilot(log, graphTimelineNodes);
   const maxEnergyCap = Math.max(0, Math.min(100, 100 - (Number(accumuloSNC) || 0) * 0.25));
   const ideal = idealStrategy || {};
   const model = {
@@ -323,12 +345,12 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   });
   load = Math.max(0, Math.min(100, load));
 
-  const realBaseline = computeBaselineEnergy(log, timelineNodes);
+  const realBaseline = computeBaselineEnergy(log, graphTimelineNodes);
   let baselineEnergy = Math.max(55, Math.min(95, realBaseline));
 
   const sleepNode =
     log.find(e => e.type === 'sleep') ||
-    (timelineNodes || []).find(n => n.type === 'sleep');
+    graphTimelineNodes.find(n => n.type === 'sleep');
   const wakeTime = sleepNode?.wakeTime ?? 7.5;
   const sleepEnd = sleepNode?.sleepEnd != null ? sleepNode.sleepEnd : wakeTime;
   const nightStartEnergy =
@@ -469,7 +491,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       neuralEnergy += circadianAwake;
     }
 
-    (timelineNodes || []).forEach(node => {
+    graphTimelineNodes.forEach(node => {
       if (node.type === 'meal') {
         if (node.time >= h && node.time < h + 1) hadMealThisHour = true;
         const timeSince = h - node.time;
@@ -521,7 +543,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     load = Math.max(0, Math.min(100, load));
 
     let gl = 85;
-    (timelineNodes || []).forEach(node => {
+    graphTimelineNodes.forEach(node => {
       if (node.type === 'meal') {
         const diff = h - node.time;
         if (diff >= 0 && diff <= 3) {
@@ -567,7 +589,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       metabolicEnergy += fatBurnSupport;
     }
 
-    (timelineNodes || []).forEach(node => {
+    graphTimelineNodes.forEach(node => {
       if ((node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') && h >= node.time && h <= node.time + (node.duration || 1)) {
         gl -= 15 * model.carbCrashSensitivity;
       }
@@ -586,7 +608,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
     if (!isWaterAutoPilot) {
       currentHydration -= PHYSIOLOGY_CONFIG.hydrationDecayPerHour;
-      (timelineNodes || []).forEach(node => {
+      graphTimelineNodes.forEach(node => {
         if (node.type === 'water' && node.time >= h && node.time < h + 1) {
           const ml = node.ml ?? node.amount ?? 250;
           currentHydration += (ml / (dailyWaterGoal || 2500)) * 45;
@@ -607,7 +629,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       currentHydration = Math.max(0, Math.min(100, currentHydration));
     } else {
       currentHydration = 100;
-      (timelineNodes || []).forEach(node => {
+      graphTimelineNodes.forEach(node => {
         if (node.type === 'alcohol' && node.time >= h && node.time < h + 1) {
           const diuresi = getPureAlcoholGrams(node) * 10;
           currentHydration -= (diuresi / (dailyWaterGoal || 2500)) * 45;
@@ -641,7 +663,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     currentCortisol += (cortisolBase - currentCortisol) * 0.3;
     if (currentEnergy < 35) { currentCortisol += 8; globalCortisolRisk = true; }
     if (!isWaterAutoPilot && currentHydration < 45) { currentCortisol += 6 * model.hydrationSensitivity; globalCortisolRisk = true; }
-    (timelineNodes || []).forEach(node => {
+    graphTimelineNodes.forEach(node => {
       if (h >= node.time && h < node.time + (node.duration || 1)) {
         if (node.type === 'workout') {
           currentCortisol += 5 * model.stressSensitivity;
@@ -653,7 +675,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         }
       }
     });
-    (timelineNodes || []).forEach(node => {
+    graphTimelineNodes.forEach(node => {
       if (node.type === 'stimulant') {
         const timeSince = h - node.time;
         const effect = responseCurve(timeSince, 1.5, 4);
@@ -664,7 +686,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         }
       }
     });
-    (timelineNodes || []).forEach(node => {
+    graphTimelineNodes.forEach(node => {
       if (node.type === 'nap') {
         const timeSince = h - node.time;
         const duration = node.duration ?? 0.25;
@@ -673,6 +695,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
           const effect = responseCurve(timeSince, 0.3, effectWindow);
           neuralEnergy += effect * PHYSIOLOGY_CONFIG.napSncBoost;
           currentCortisol -= effect * PHYSIOLOGY_CONFIG.napCortisolReduction;
+          currentNeuro = Math.min(100, currentNeuro + effect * 35);
         }
       }
       if (node.type === 'meditation') {
@@ -704,7 +727,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     } else {
       currentNeuro -= 1.2;
     }
-    (timelineNodes || []).forEach(node => {
+    graphTimelineNodes.forEach(node => {
       if ((node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') && h >= node.time && h <= node.time + (node.duration || 1)) {
         const drain = node.type === 'workout' ? 12 : (node.type === 'cognitive' ? 5 : 6);
         currentNeuro -= (drain / Math.max(0.5, (node.duration || 1)));
@@ -1743,8 +1766,16 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
     type: debtVal < 0 ? 'negative' : 'neutral',
   });
 
-  const sleepsToday = log.filter((e) => e && e.type === 'sleep');
-  let mainNight = pickMainSleepEntry(sleepsToday);
+  const sleepEntries = log.filter((e) => e && e.type === 'sleep');
+  let mainNight = null;
+  let maxSleepHours = -1;
+  sleepEntries.forEach((s) => {
+    const d = Number(s.hours ?? s.duration ?? s.sleepHours ?? 0) || 0;
+    if (d > maxSleepHours) {
+      maxSleepHours = d;
+      mainNight = s;
+    }
+  });
   let nightHours = mainNight ? sleepHoursFromEntry(mainNight) : null;
 
   if (nightHours == null) {
@@ -1833,20 +1864,20 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
   });
 
   let napGain = 0;
-  for (const e of sleepsToday) {
-    const h = sleepHoursFromEntry(e);
-    if (h == null || h >= 3) continue;
-    if (mainNight && e === mainNight) continue;
-    const napMinutes = h * 60;
+  sleepEntries.forEach((nap) => {
+    if (nap === mainNight) return;
+    const durH = Number(nap.hours ?? nap.duration ?? nap.sleepHours ?? 0) || 0;
+    if (durH <= 0) return;
+    const napMinutes = durH * 60;
     const boost = Math.round(calculateNapBoost(napMinutes));
-    if (boost <= 0) continue;
+    if (boost <= 0) return;
     napGain += boost;
     breakdown.push({
       label: `Sonnellino (${Math.round(napMinutes)}m)`,
       value: boost,
       type: 'positive',
     });
-  }
+  });
 
   let preNap = startEnergy - basalDrain - mealDrain - workoutDrain;
   preNap = Math.round(preNap * 10) / 10;
