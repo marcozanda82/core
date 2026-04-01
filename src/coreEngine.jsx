@@ -305,24 +305,13 @@ const PHYSIOLOGY_CONFIG = {
 function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, currentTime = null, accumuloSNC = 0) {
   const log = dailyLog || [];
   const graphTimelineNodes = Array.isArray(timelineNodes) ? [...timelineNodes] : [];
-  // Sonnellini dal log (sleep secondari) → nodi 'nap' per grafici energia / neuro
+  // Sonnellini: sleep con durata < 3 h → nodi 'nap' (anche se unici nel log); notte principale resta type sleep nel log
   const allSleepsForChart = log.filter(e => e && e.type === 'sleep');
-  let mainSleepForChart = null;
-  let maxSleepDur = -1;
   allSleepsForChart.forEach(s => {
-    const d = Number(s.hours ?? s.duration ?? s.sleepHours ?? 0) || 0;
-    if (d > maxSleepDur) {
-      maxSleepDur = d;
-      mainSleepForChart = s;
-    }
-  });
-  allSleepsForChart.forEach(s => {
-    if (s !== mainSleepForChart) {
-      const dur = Number(s.hours ?? s.duration ?? s.sleepHours ?? 1) || 1;
+    const dur = Number(s.hours ?? s.duration ?? s.sleepHours ?? 0) || 0;
+    if (dur > 0 && dur < NIGHT_SLEEP_MIN_HOURS) {
       const startT = Number(s.sleepStart ?? s.time ?? s.bedtime ?? 15) || 15;
-      if (dur > 0) {
-        graphTimelineNodes.push({ type: 'nap', time: startT, duration: dur });
-      }
+      graphTimelineNodes.push({ type: 'nap', time: startT, duration: dur });
     }
   });
 
@@ -349,6 +338,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   let baselineEnergy = Math.max(55, Math.min(95, realBaseline));
 
   const sleepNode =
+    pickMainNightSleepEntry(log.filter(e => e && e.type === 'sleep')) ||
     log.find(e => e.type === 'sleep') ||
     graphTimelineNodes.find(n => n.type === 'sleep');
   const wakeTime = sleepNode?.wakeTime ?? 7.5;
@@ -1664,13 +1654,21 @@ function sleepHoursFromEntry(e) {
   return h;
 }
 
-function pickMainSleepEntry(sleepEntries) {
+/** Soglia ore: sotto = sonnellino, da qui in su = sonno notturno principale. */
+const NIGHT_SLEEP_MIN_HOURS = 3;
+
+/**
+ * Tra le entry type sleep, sceglie il sonno principale: durata >= NIGHT_SLEEP_MIN_HOURS, la più lunga.
+ * Sonnellini puri (< 3 h) non competono come "notte".
+ */
+function pickMainNightSleepEntry(sleepEntries) {
   if (!sleepEntries || sleepEntries.length === 0) return null;
   let best = null;
   let bestH = -1;
   for (const e of sleepEntries) {
+    if (!e || e.type !== 'sleep') continue;
     const h = sleepHoursFromEntry(e);
-    if (h != null && h > bestH) {
+    if (h != null && h >= NIGHT_SLEEP_MIN_HOURS && h > bestH) {
       bestH = h;
       best = e;
     }
@@ -1742,7 +1740,7 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
     const dStr = addDays(anchor, -i);
     const dayLog = getLogFromStoricoTree(fullHistory, dStr) || [];
     const sleeps = dayLog.filter((e) => e && e.type === 'sleep');
-    const main = pickMainSleepEntry(sleeps);
+    const main = pickMainNightSleepEntry(sleeps);
     const h = main ? sleepHoursFromEntry(main) : null;
     if (h != null) {
       sumPast += h;
@@ -1762,34 +1760,12 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
   const debtVal = maxCapacity - 100;
 
   const sleepEntries = log.filter((e) => e && e.type === 'sleep');
-  let mainNight = null;
-  let maxSleepHours = -1;
-  sleepEntries.forEach((s) => {
-    const d = Number(s.hours ?? s.duration ?? s.sleepHours ?? 0) || 0;
-    if (d > maxSleepHours) {
-      maxSleepHours = d;
-      mainNight = s;
-    }
-  });
-  let nightHours = mainNight ? sleepHoursFromEntry(mainNight) : null;
+  const mainNight = pickMainNightSleepEntry(sleepEntries);
+  const nightHours = mainNight ? sleepHoursFromEntry(mainNight) : null;
 
-  if (nightHours == null) {
-    const yLog = getLogFromStoricoTree(fullHistory, addDays(anchor, -1)) || [];
-    const ySleeps = yLog.filter((e) => e && e.type === 'sleep');
-    const mainY = pickMainSleepEntry(ySleeps);
-    const yh = mainY ? sleepHoursFromEntry(mainY) : null;
-    if (yh != null) {
-      nightHours = yh;
-      mainNight = mainY;
-    }
-  }
-
-  if (nightHours == null) {
-    nightHours = 7;
-  }
-
+  /** Senza sonno notturno (≥3 h) nel log odierno: partenza solo da maxCapacity (debito 3 notti), senza fallback ieri né stima 7 h. */
   let startEnergy = maxCapacity;
-  if (nightHours < 7) {
+  if (nightHours != null && nightHours < 7) {
     startEnergy = maxCapacity - (7 - nightHours) * 10;
   }
   startEnergy = Math.round(Math.min(maxCapacity, Math.max(5, startEnergy)));
@@ -1825,17 +1801,16 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
 
   const napBreakdownRows = [];
   let napGain = 0;
-  sleepEntries.forEach((nap) => {
-    if (nap === mainNight) return;
-    const durH = Number(nap.hours ?? nap.duration ?? nap.sleepHours ?? 0) || 0;
-    if (durH <= 0) return;
+  sleepEntries.forEach((entry) => {
+    const durH = Number(entry.hours ?? entry.duration ?? entry.sleepHours ?? 0) || 0;
+    if (durH <= 0 || durH >= NIGHT_SLEEP_MIN_HOURS) return;
     const napMinutes = durH * 60;
     const boost = Math.round(calculateNapBoost(napMinutes));
     if (boost <= 0) return;
     napGain += boost;
     napBreakdownRows.push({
       label: `Sonnellino (${Math.round(napMinutes)}m)`,
-      value: boost,
+      value: Math.abs(boost),
       type: 'positive',
     });
   });
