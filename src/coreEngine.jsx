@@ -1634,6 +1634,196 @@ function getLogFromStoricoTree(tree, dateStr) {
   return normalizeLogData(asArray);
 }
 
+function sleepHoursFromEntry(e) {
+  if (!e || e.type !== 'sleep') return null;
+  const h = Number(e.hours ?? e.duration ?? e.sleepHours);
+  if (!Number.isFinite(h) || h <= 0) return null;
+  return h;
+}
+
+function pickMainSleepEntry(sleepEntries) {
+  if (!sleepEntries || sleepEntries.length === 0) return null;
+  let best = null;
+  let bestH = -1;
+  for (const e of sleepEntries) {
+    const h = sleepHoursFromEntry(e);
+    if (h != null && h > bestH) {
+      bestH = h;
+      best = e;
+    }
+  }
+  return best;
+}
+
+function wakeDecimalFromSleepEntry(e, fallback = 7) {
+  if (!e) return fallback;
+  const w = Number(e.wakeTime ?? e.sleepEnd);
+  if (Number.isFinite(w)) return w;
+  return fallback;
+}
+
+/**
+ * Body Battery 2.0: debito sonno (media 3 giorni), partenza da sonno stanotte, decadimento e costi giornata.
+ * @returns {{ currentEnergy: number, maxCapacity: number, breakdown: Array<{ label: string, valueString: string, type: 'positive'|'negative'|'neutral' }> }}
+ */
+export function calculateBodyBattery(fullHistory, anchorDate, activeLog) {
+  const breakdown = [];
+  const anchor = anchorDate && String(anchorDate).trim() ? String(anchorDate).slice(0, 10) : getTodayString();
+  const log = Array.isArray(activeLog) ? activeLog : [];
+
+  const isToday = anchor === getTodayString();
+  let nowDec;
+  if (isToday) {
+    const d = new Date();
+    nowDec = d.getHours() + d.getMinutes() / 60;
+  } else {
+    nowDec = 24;
+  }
+
+  let sumPast = 0;
+  let countPast = 0;
+  for (let i = 1; i <= 3; i++) {
+    const dStr = addDays(anchor, -i);
+    const dayLog = getLogFromStoricoTree(fullHistory, dStr) || [];
+    const sleeps = dayLog.filter((e) => e && e.type === 'sleep');
+    const main = pickMainSleepEntry(sleeps);
+    const h = main ? sleepHoursFromEntry(main) : null;
+    if (h != null) {
+      sumPast += h;
+      countPast += 1;
+    }
+  }
+
+  let maxCapacity = 100;
+  if (countPast > 0) {
+    const avgSleep = sumPast / countPast;
+    if (avgSleep < 7.5) {
+      maxCapacity = Math.max(70, Math.round(100 - (7.5 - avgSleep) * 10));
+    }
+    breakdown.push({
+      label: '📉 Debito sonno (media 3 gg)',
+      valueString: `${avgSleep.toFixed(1)} h${avgSleep < 7.5 ? ` → tetto ${maxCapacity}%` : ' → tetto 100%'}`,
+      type: avgSleep < 7.5 ? 'negative' : 'neutral',
+    });
+  } else {
+    breakdown.push({
+      label: '📉 Debito sonno (media 3 gg)',
+      valueString: 'Dati insufficienti',
+      type: 'neutral',
+    });
+  }
+
+  const sleepsToday = log.filter((e) => e && e.type === 'sleep');
+  let mainNight = pickMainSleepEntry(sleepsToday);
+  let nightHours = mainNight ? sleepHoursFromEntry(mainNight) : null;
+  let wakeDec = wakeDecimalFromSleepEntry(mainNight, 7);
+
+  if (nightHours == null) {
+    const yLog = getLogFromStoricoTree(fullHistory, addDays(anchor, -1)) || [];
+    const ySleeps = yLog.filter((e) => e && e.type === 'sleep');
+    const mainY = pickMainSleepEntry(ySleeps);
+    const yh = mainY ? sleepHoursFromEntry(mainY) : null;
+    if (yh != null) {
+      nightHours = yh;
+      mainNight = mainY;
+      wakeDec = wakeDecimalFromSleepEntry(mainY, wakeDec);
+    }
+  }
+
+  let nightUsedEstimate = false;
+  if (nightHours == null) {
+    nightHours = 7.5;
+    nightUsedEstimate = true;
+  }
+
+  let startEnergy = maxCapacity;
+  if (nightHours < 7.5) {
+    startEnergy = maxCapacity - (7.5 - nightHours) * 10;
+  }
+  startEnergy = Math.min(maxCapacity, Math.max(5, Math.round(startEnergy)));
+
+  if (nightUsedEstimate) {
+    breakdown.push({
+      label: '🛌 Sonno di stanotte',
+      valueString: 'Non registrato (stima 7.5 h)',
+      type: 'neutral',
+    });
+  } else {
+    breakdown.push({
+      label: '🛌 Sonno di stanotte',
+      valueString: `${nightHours.toFixed(1)} h → partenza ${startEnergy}%`,
+      type: 'neutral',
+    });
+  }
+
+  const hoursAwake = Math.max(0, nowDec - wakeDec);
+  const basalDrain = hoursAwake * 1.5;
+  breakdown.push({
+    label: '⏳ Decadimento basale',
+    valueString: `−${Math.round(basalDrain * 10) / 10}% (${hoursAwake.toFixed(1)} h sveglio)`,
+    type: 'negative',
+  });
+
+  const slots = new Set();
+  for (const item of log) {
+    if (!item || item.type !== 'food') continue;
+    const t = Number(item.mealTime ?? item.time);
+    const pastOrUnknown =
+      !Number.isFinite(t) ? nowDec >= 23.5 : t <= nowDec;
+    if (!pastOrUnknown) continue;
+    const c = toCanonicalMealType(item.mealType);
+    if (c === 'colazione' || c === 'pranzo' || c === 'cena') slots.add(c);
+  }
+
+  const mealLabels = { colazione: '🍳 Colazione', pranzo: '🍝 Pranzo', cena: '🌙 Cena' };
+  let mealDrain = 0;
+  for (const s of ['colazione', 'pranzo', 'cena']) {
+    if (slots.has(s)) {
+      mealDrain += 5;
+      breakdown.push({
+        label: mealLabels[s],
+        valueString: '−5%',
+        type: 'negative',
+      });
+    }
+  }
+
+  const workouts = log.filter((i) => {
+    if (!i || (i.type !== 'workout' && i.type !== 'work')) return false;
+    const t = Number(i.mealTime ?? i.time);
+    if (!Number.isFinite(t)) return nowDec >= 23.5;
+    return t <= nowDec;
+  });
+  let workoutDrain = 0;
+  workouts.forEach((w, idx) => {
+    workoutDrain += 20;
+    const name = (w.desc || w.name || `Sessione ${idx + 1}`).toString().slice(0, 28);
+    breakdown.push({
+      label: `🏋️ ${name}`,
+      valueString: '−20%',
+      type: 'negative',
+    });
+  });
+
+  let napGain = 0;
+  for (const e of sleepsToday) {
+    const h = sleepHoursFromEntry(e);
+    if (h == null || h >= 3) continue;
+    if (mainNight && e === mainNight) continue;
+    napGain += 15;
+    breakdown.push({
+      label: '😴 Sonnellino',
+      valueString: '+15%',
+      type: 'positive',
+    });
+  }
+
+  let currentEnergy = startEnergy - basalDrain - mealDrain - workoutDrain + napGain;
+  currentEnergy = Math.round(Math.min(100, Math.max(5, currentEnergy)));
+
+  return { currentEnergy, maxCapacity, breakdown };
+}
+
 /**
  * Valutazioni a stelle del report giornaliero (stessa logica della dashboard).
  * Richiede un log normalizzato (es. da activeLog o da getLogFromStoricoTree).

@@ -26,6 +26,7 @@ import { useFirebase } from './useFirebase';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import AiCluster from './AiCluster';
+import { EnergyGauge } from './EnergyGauge';
 import MealBuilder from './MealBuilder';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
@@ -104,11 +105,134 @@ import {
   computeRiskMatrix,
   computeLongevityMasterScoreFromMatrix,
   computeLongevityScore,
-  buildLongevityExplanation
+  buildLongevityExplanation,
+  calculateBodyBattery
 } from './coreEngine';
 
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
 const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'longevita'];
+
+function BodyBatteryModal({ onClose, batteryData }) {
+  if (!batteryData) return null;
+  const { currentEnergy, maxCapacity, breakdown } = batteryData;
+  return (
+    <div
+      role="presentation"
+      className="modal-overlay"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.88)',
+        zIndex: 100030,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        backdropFilter: 'blur(6px)',
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="body-battery-title"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'linear-gradient(165deg, #16161c 0%, #0d0d12 100%)',
+          border: '1px solid #2a2a32',
+          borderRadius: '20px',
+          padding: '22px 20px 20px',
+          width: '100%',
+          maxWidth: '380px',
+          maxHeight: '88vh',
+          overflowY: 'auto',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.65)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+          <h3 id="body-battery-title" style={{ margin: 0, color: '#e5e5e5', fontSize: '0.95rem', letterSpacing: '0.12em', fontWeight: 700 }}>
+            MOTORE ENERGIA
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', color: '#71717a', fontSize: '1.35rem', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
+            aria-label="Chiudi"
+          >
+            ✕
+          </button>
+        </div>
+        <p style={{ margin: '0 0 16px 0', fontSize: '0.72rem', color: '#71717a', letterSpacing: '0.04em' }}>
+          Body Battery 2.0 · tetto {maxCapacity}%
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '20px' }}>
+          <EnergyGauge percentage={currentEnergy} size="large" />
+        </div>
+        <div
+          style={{
+            fontSize: '0.65rem',
+            fontWeight: 700,
+            color: '#a1a1aa',
+            letterSpacing: '0.14em',
+            marginBottom: '10px',
+            borderBottom: '1px solid #27272f',
+            paddingBottom: '8px',
+          }}
+        >
+          ESTRATTO CONTO
+        </div>
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          {(breakdown || []).map((row, i) => (
+            <li
+              key={i}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '11px 0',
+                borderBottom: i < (breakdown || []).length - 1 ? '1px solid #222228' : 'none',
+              }}
+            >
+              <span style={{ color: '#d4d4d8', fontSize: '0.82rem', lineHeight: 1.35 }}>{row.label}</span>
+              <span
+                style={{
+                  fontWeight: 600,
+                  fontSize: '0.82rem',
+                  textAlign: 'right',
+                  whiteSpace: 'nowrap',
+                  color:
+                    row.type === 'positive' ? '#4ade80' : row.type === 'negative' ? '#fb923c' : '#94a3b8',
+                }}
+              >
+                {row.valueString}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            width: '100%',
+            marginTop: '18px',
+            padding: '12px',
+            background: '#00e5ff',
+            color: '#0a0a0a',
+            border: 'none',
+            borderRadius: '12px',
+            fontWeight: 700,
+            fontSize: '0.85rem',
+            cursor: 'pointer',
+            letterSpacing: '0.06em',
+          }}
+        >
+          Chiudi
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const CustomDateTick = ({ x, y, payload }) => {
   if (!payload || !payload.value) return null;
@@ -1402,6 +1526,7 @@ export default function SalaComandi() {
   const [fullHistory, setFullHistory] = useState({});
   const [showReport, setShowReport] = useState(false);
   const [showMetabolicPopup, setShowMetabolicPopup] = useState(false);
+  const [showBodyBatteryModal, setShowBodyBatteryModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [trendModalMetric, setTrendModalMetric] = useState(null);
   const [trendDays, setTrendDays] = useState(30);
@@ -5880,48 +6005,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return { hoursFasted, timeString, phaseName, phaseColor, phaseDesc, progress };
   }, [activeLog, currentTime, fullHistory, currentDateObj]);
 
-  const bodyBatteryData = useMemo(() => {
-    const log = activeLog || [];
-    const sleepNode = log.find(i => i.type === 'sleep');
-    const wakeTime = sleepNode?.wakeTime ?? 7.5;
-    let startingBattery;
-    if (sleepNode?.hours != null) {
-      const sleepHours = sleepNode.hours ?? 8.0;
-      startingBattery = Math.min(100, Math.max(0, 100 - ((8 - sleepHours) * 10)));
-    } else {
-      const yesterday = new Date(currentTrackerDate + 'T12:00:00');
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().slice(0, 10);
-      const yesterdayNode = fullHistory?.[TRACKER_STORICO_KEY(yesterdayStr)];
-      const rawYesterday = yesterdayNode?.log;
-      const yesterdayLog = Array.isArray(rawYesterday) ? rawYesterday : Object.values(rawYesterday || {});
-      const yesterdaySleep = yesterdayLog.find(i => i?.type === 'sleep');
-      if (yesterdaySleep?.hours != null) {
-        const yWake = yesterdaySleep?.wakeTime ?? 7.5;
-        const ySleepHours = yesterdaySleep.hours ?? 8.0;
-        const yStart = Math.min(100, Math.max(0, 100 - ((8 - ySleepHours) * 10)));
-        let yHoursAwake = 24 - yWake;
-        if (yHoursAwake < 0) yHoursAwake = 0;
-        const yTimeDrain = yHoursAwake * 3.5;
-        const yWorkoutCount = yesterdayLog.filter(i => i?.type === 'workout' && (i.mealTime ?? i.time ?? 0) <= 24).length;
-        const yWorkoutDrain = yWorkoutCount * 15;
-        startingBattery = Math.max(0, Math.min(100, Math.round(yStart - yTimeDrain - yWorkoutDrain)));
-      } else {
-        startingBattery = 40;
-      }
-    }
-    let hoursAwake = currentTime - wakeTime;
-    if (hoursAwake < 0) hoursAwake = 0;
-    const timeDrain = hoursAwake * 3.5;
-    const workoutCount = log.filter(i => i.type === 'workout' && i.mealTime <= currentTime).length;
-    const workoutDrain = workoutCount * 15;
-    let currentBattery = startingBattery - timeDrain - workoutDrain;
-    currentBattery = Math.max(0, Math.min(100, currentBattery));
-    let batteryColor = '#00e676'; let batteryIcon = '🔋';
-    if (currentBattery <= 20) { batteryColor = '#ff4d4d'; batteryIcon = '🪫'; }
-    else if (currentBattery <= 50) { batteryColor = '#ffea00'; }
-    return { level: Math.round(currentBattery), color: batteryColor, icon: batteryIcon };
-  }, [activeLog, currentTime, fullHistory, currentTrackerDate]);
+  const bodyBattery = useMemo(
+    () => calculateBodyBattery(fullHistory, currentTrackerDate, activeLog),
+    [fullHistory, currentTrackerDate, activeLog]
+  );
 
   const renderCustomizedLabel = (props) => {
     const { cx, cy, midAngle, outerRadius, value, name, fill, payload } = props;
@@ -6621,8 +6708,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               </button>
             )}
             <div
-              aria-label="Energia"
-              title="Energia"
+              role="button"
+              tabIndex={0}
+              aria-label={`Body Battery ${bodyBattery?.currentEnergy ?? 0} per cento. Apri dettaglio.`}
+              title="Body Battery — dettaglio"
+              onClick={() => setShowBodyBatteryModal(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setShowBodyBatteryModal(true);
+                }
+              }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -6630,30 +6726,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 justifyContent: 'center',
                 padding: '2px 4px',
                 flexShrink: 0,
-                pointerEvents: 'none',
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: '10px',
               }}
             >
-              <div style={{ position: 'relative', width: '52px', height: '26px' }}>
-                <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }} aria-hidden>
-                  <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
-                  <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData?.color || '#00e5ff'} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - ((bodyBatteryData?.level || 0) / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
-                </svg>
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    bottom: '2px',
-                    transform: 'translateX(-50%)',
-                    fontSize: '0.75rem',
-                    fontWeight: 'bold',
-                    color: '#e5e5e5',
-                    lineHeight: 1,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {Math.round(Number(bodyBatteryData?.level) || 0)}%
-                </div>
-              </div>
+              <EnergyGauge percentage={bodyBattery?.currentEnergy ?? 0} size="small" />
               <span
                 style={{
                   fontSize: '0.65rem',
@@ -10175,6 +10255,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </button>
           </div>
         </div>
+      )}
+
+      {showBodyBatteryModal && (
+        <BodyBatteryModal onClose={() => setShowBodyBatteryModal(false)} batteryData={bodyBattery} />
       )}
 
       {/* POP-UP FASE METABOLICA */}
