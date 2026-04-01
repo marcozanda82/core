@@ -68,9 +68,10 @@ function logAlreadyHasDinner(log) {
 
 /**
  * Briefing serale: macro rimanenti per la cena (solo giorno corrente, 17:30–22:00).
- * @returns {{ type: 'evening_briefing', missingKcal: number, missingPro: number, handled: false } | null}
+ * @param {number} [maxCapacity=100] Tetto Body Battery (debito sonno); sotto 85 → isHighDebt.
+ * @returns {{ type: 'evening_briefing', missingKcal: number, missingPro: number, handled: false, isHighDebt?: true } | null}
  */
-export function checkEveningBriefing(activeLog, userTargets, anchorDate) {
+export function checkEveningBriefing(activeLog, userTargets, anchorDate, maxCapacity = 100) {
   if (!isEveningBriefingTimeWindow()) return null;
 
   const dateStr = anchorDate && String(anchorDate).trim() ? String(anchorDate).trim().slice(0, 10) : null;
@@ -93,7 +94,16 @@ export function checkEveningBriefing(activeLog, userTargets, anchorDate) {
 
   if (missingKcal <= 200) return null;
 
-  return { type: 'evening_briefing', missingKcal, missingPro, handled: false };
+  const cap = Number(maxCapacity);
+  const isHighDebt = Number.isFinite(cap) && cap < 85;
+
+  return {
+    type: 'evening_briefing',
+    missingKcal,
+    missingPro,
+    handled: false,
+    ...(isHighDebt ? { isHighDebt: true } : {}),
+  };
 }
 
 /** Finestra storica sonno + agenda (stessa logica precedente: prima delle 11:00). */
@@ -206,7 +216,7 @@ export function markEveningBriefingShown(trackerDateStr) {
  * Notifiche proattive Kentu: sonno (mattina) → agenda → morning briefing (digiuno/colazione).
  * @returns {{ activeTrigger: 'sleep'|'agenda'|'morning_briefing'|'evening_briefing'|null, chatNotificationBadge: boolean, dismissKentuSleepTrigger: function, dismissKentuAgendaTrigger: function, dismissKentuActiveTrigger: function }}
  */
-export function useSmartKentuTriggers(activeLog, trackerDateStr, fullHistory, userTargets) {
+export function useSmartKentuTriggers(activeLog, trackerDateStr, fullHistory, userTargets, bodyBatteryMaxCapacity = 100) {
   const [tick, setTick] = useState(0);
   const prevSleepCompleteRef = useRef(false);
 
@@ -246,13 +256,13 @@ export function useSmartKentuTriggers(activeLog, trackerDateStr, fullHistory, us
       return 'morning_briefing';
     }
 
-    const evening = checkEveningBriefing(activeLog, userTargets, dateStr);
+    const evening = checkEveningBriefing(activeLog, userTargets, dateStr, bodyBatteryMaxCapacity);
     if (evening && !eveningBriefingShownForDate(dateStr)) {
       return 'evening_briefing';
     }
 
     return null;
-  }, [activeLog, dismissed.sleep, dismissed.agenda, tick, fullHistory, userTargets, trackerDateStr]);
+  }, [activeLog, dismissed.sleep, dismissed.agenda, tick, fullHistory, userTargets, trackerDateStr, bodyBatteryMaxCapacity]);
 
   const activeTrigger = useMemo(() => {
     if (!rawTrigger) return null;

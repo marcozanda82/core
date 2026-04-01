@@ -4127,13 +4127,18 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     }
   };
 
+  const bodyBattery = useMemo(
+    () => calculateBodyBattery(fullHistory, currentTrackerDate, activeLog, userTargets),
+    [fullHistory, currentTrackerDate, activeLog, userTargets]
+  );
+
   const {
     activeTrigger: kentuActiveTrigger,
     chatNotificationBadge: kentuChatNotificationBadge,
     dismissKentuSleepTrigger,
     dismissKentuAgendaTrigger,
     dismissKentuActiveTrigger,
-  } = useSmartKentuTriggers(activeLog, currentTrackerDate, fullHistory, userTargets);
+  } = useSmartKentuTriggers(activeLog, currentTrackerDate, fullHistory, userTargets, bodyBattery?.maxCapacity ?? 100);
 
   const handleAutoLogDinner = useCallback(
     (mealData) => {
@@ -5794,7 +5799,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     }
     if (kentuActiveTrigger === 'evening_briefing') {
       const evDate = currentTrackerDate || getTodayString();
-      const ev = checkEveningBriefing(activeLog, userTargets, evDate);
+      const ev = checkEveningBriefing(activeLog, userTargets, evDate, bodyBattery?.maxCapacity ?? 100);
       if (!ev) return;
       setChatHistory((prev) => {
         const needle = 'È quasi ora di cena';
@@ -5805,18 +5810,21 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         markEveningBriefingShown(evDate);
         const mk = Math.max(0, ev.missingKcal);
         const mp = Math.max(0, ev.missingPro);
+        const debtWarn = ev.isHighDebt
+          ? 'Oggi la tua capacità di recupero è ridotta dal debito di sonno. Sarebbe meglio evitare allenamenti pesanti stasera per non alzare troppo il cortisolo e proteggere il riposo notturno.\n\n'
+          : '';
         return [
           ...prev,
           {
             sender: 'ai',
-            text: `Buonasera! È quasi ora di cena. Per chiudere la giornata in modo ottimale hai a disposizione circa ${mk} kcal e ti servono ${mp}g di proteine. Vuoi che ti calcoli un'opzione perfetta e veloce da registrare?`,
+            text: `${debtWarn}Buonasera! È quasi ora di cena. Per chiudere la giornata in modo ottimale hai a disposizione circa ${mk} kcal e ti servono ${mp}g di proteine. Vuoi che ti calcoli un'opzione perfetta e veloce da registrare?`,
             quickReplies: ['🍽️ Sì, proponi la cena perfetta', '✋ No, ci penso io'],
             eveningBriefing: { missingKcal: ev.missingKcal, missingPro: ev.missingPro },
           },
         ];
       });
     }
-  }, [activeAction, kentuActiveTrigger, currentTrackerDate, fullHistory, userTargets, activeLog]);
+  }, [activeAction, kentuActiveTrigger, currentTrackerDate, fullHistory, userTargets, activeLog, bodyBattery?.maxCapacity]);
 
   const isNightDeficit = displayTime >= 20 && targetKcalForAlerts > 0 && ((totalCaloriesTimeline || 0) / targetKcalForAlerts) <= 0.60;
   const isProteinSaturated = displayTime <= 15 && (targetMacros?.prot ?? 0) > 0 && ((totalMacrosTimeline.prot || 0) / (targetMacros.prot || 1)) >= 0.90;
@@ -6132,11 +6140,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     else if (hoursFasted >= 4) { phaseName = 'DIGIUNO / CATABOLISMO'; phaseColor = '#00e5ff'; phaseDesc = 'Esaurimento scorte • Calo insulina'; progress = ((hoursFasted - 4) / 8) * 100; }
     return { hoursFasted, timeString, phaseName, phaseColor, phaseDesc, progress };
   }, [activeLog, currentTime, fullHistory, currentDateObj]);
-
-  const bodyBattery = useMemo(
-    () => calculateBodyBattery(fullHistory, currentTrackerDate, activeLog, userTargets),
-    [fullHistory, currentTrackerDate, activeLog, userTargets]
-  );
 
   const renderCustomizedLabel = (props) => {
     const { cx, cy, midAngle, outerRadius, value, name, fill, payload } = props;
