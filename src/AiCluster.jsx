@@ -84,6 +84,15 @@ export default function AiCluster({
                               fromQuickReply: true,
                               workoutTimeReply: rIdx === 0 ? 'accept' : 'reject',
                             });
+                          } else if (msg.eveningBriefing && (rIdx === 0 || rIdx === 1)) {
+                            onSendMessage(reply, {
+                              fromQuickReply: true,
+                              eveningBriefingReply: {
+                                action: rIdx === 0 ? 'yes' : 'no',
+                                missingKcal: msg.eveningBriefing.missingKcal,
+                                missingPro: msg.eveningBriefing.missingPro,
+                              },
+                            });
                           } else if (msg.morningBriefing?.status && morningActivityIds[rIdx]) {
                             onSendMessage(reply, {
                               fromQuickReply: true,

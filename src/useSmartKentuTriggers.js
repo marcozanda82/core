@@ -1,9 +1,11 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { addDays } from './calendarDateUtils';
-import { getLogFromStoricoTree } from './coreEngine';
+import { getLogFromStoricoTree, getTodayString } from './coreEngine';
+import { computeTotali } from './useBiochimico';
 
 const LS_DISMISS = 'kentu_smart_trigger_dismiss_v1';
 const LS_MORNING_BRIEFING_SHOWN = 'kentu_morning_briefing_shown_v1';
+const LS_EVENING_BRIEFING_SHOWN = 'kentu_evening_briefing_shown_v1';
 
 function readDismiss(dateStr) {
   if (typeof window === 'undefined' || !dateStr) return {};
@@ -44,6 +46,54 @@ function isMorningBriefingTimeWindow() {
   const now = new Date();
   const decimal = now.getHours() + now.getMinutes() / 60;
   return decimal >= 6 && decimal <= 11.5;
+}
+
+function isEveningBriefingTimeWindow() {
+  if (typeof window === 'undefined') return false;
+  const now = new Date();
+  const decimal = now.getHours() + now.getMinutes() / 60;
+  return decimal >= 17.5 && decimal <= 22;
+}
+
+/** True se nel log c’è già un pasto catalogato come cena / dinner. */
+function logAlreadyHasDinner(log) {
+  for (const e of log || []) {
+    if (!e) continue;
+    if (e.type !== 'food' && e.type !== 'recipe' && e.type !== 'meal') continue;
+    const mt = String(e.mealType || '').toLowerCase();
+    if (mt === 'cena' || mt === 'dinner') return true;
+  }
+  return false;
+}
+
+/**
+ * Briefing serale: macro rimanenti per la cena (solo giorno corrente, 17:30–22:00).
+ * @returns {{ type: 'evening_briefing', missingKcal: number, missingPro: number, handled: false } | null}
+ */
+export function checkEveningBriefing(activeLog, userTargets, anchorDate) {
+  if (!isEveningBriefingTimeWindow()) return null;
+
+  const dateStr = anchorDate && String(anchorDate).trim() ? String(anchorDate).trim().slice(0, 10) : null;
+  if (!dateStr || dateStr !== getTodayString()) return null;
+
+  const log = Array.isArray(activeLog) ? activeLog : [];
+  if (logAlreadyHasDinner(log)) return null;
+
+  const targetKcal = Number(userTargets?.kcal);
+  const targetPro = Number(userTargets?.prot ?? userTargets?.pro);
+  if (!Number.isFinite(targetKcal) || targetKcal <= 0) return null;
+  if (!Number.isFinite(targetPro) || targetPro < 0) return null;
+
+  const totali = computeTotali(log);
+  const currentKcal = Number(totali?.kcal) || 0;
+  const currentPro = Number(totali?.prot) || 0;
+
+  const missingKcal = Math.round(targetKcal - currentKcal);
+  const missingPro = Math.round(targetPro - currentPro);
+
+  if (missingKcal <= 200) return null;
+
+  return { type: 'evening_briefing', missingKcal, missingPro, handled: false };
 }
 
 /** Finestra storica sonno + agenda (stessa logica precedente: prima delle 11:00). */
@@ -142,9 +192,19 @@ export function markMorningBriefingShown(trackerDateStr) {
   window.localStorage.setItem(`${LS_MORNING_BRIEFING_SHOWN}_${trackerDateStr}`, '1');
 }
 
+function eveningBriefingShownForDate(trackerDateStr) {
+  if (typeof window === 'undefined' || !trackerDateStr) return true;
+  return window.localStorage.getItem(`${LS_EVENING_BRIEFING_SHOWN}_${trackerDateStr}`) === '1';
+}
+
+export function markEveningBriefingShown(trackerDateStr) {
+  if (typeof window === 'undefined' || !trackerDateStr) return;
+  window.localStorage.setItem(`${LS_EVENING_BRIEFING_SHOWN}_${trackerDateStr}`, '1');
+}
+
 /**
  * Notifiche proattive Kentu: sonno (mattina) → agenda → morning briefing (digiuno/colazione).
- * @returns {{ activeTrigger: 'sleep'|'agenda'|'morning_briefing'|null, chatNotificationBadge: boolean, dismissKentuSleepTrigger: function, dismissKentuAgendaTrigger: function, dismissKentuActiveTrigger: function }}
+ * @returns {{ activeTrigger: 'sleep'|'agenda'|'morning_briefing'|'evening_briefing'|null, chatNotificationBadge: boolean, dismissKentuSleepTrigger: function, dismissKentuAgendaTrigger: function, dismissKentuActiveTrigger: function }}
  */
 export function useSmartKentuTriggers(activeLog, trackerDateStr, fullHistory, userTargets) {
   const [tick, setTick] = useState(0);
@@ -184,6 +244,11 @@ export function useSmartKentuTriggers(activeLog, trackerDateStr, fullHistory, us
       dismissed.agenda
     ) {
       return 'morning_briefing';
+    }
+
+    const evening = checkEveningBriefing(activeLog, userTargets, dateStr);
+    if (evening && !eveningBriefingShownForDate(dateStr)) {
+      return 'evening_briefing';
     }
 
     return null;

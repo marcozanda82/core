@@ -32,10 +32,12 @@ import HomeView from './components/HomeView';
 import {
   useSmartKentuTriggers,
   checkMorningBriefing,
+  checkEveningBriefing,
   getMorningBriefingVerdict,
   getYesterdayCalorieStatus,
   buildPostWorkoutCoachMessage,
   markMorningBriefingShown,
+  markEveningBriefingShown,
 } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
@@ -4367,6 +4369,37 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
     }
 
+    if (meta?.fromQuickReply && meta?.eveningBriefingReply) {
+      const { action, missingKcal, missingPro } = meta.eveningBriefingReply;
+      const userText = trimQuick || '';
+      const dateEv = currentTrackerDate || getTodayString();
+      markEveningBriefingShown(dateEv);
+      if (action === 'no') {
+        setChatHistory((prev) => {
+          const stripped = prev.map((m) =>
+            m.eveningBriefing && Array.isArray(m.quickReplies) ? { ...m, quickReplies: undefined } : m
+          );
+          return [...stripped, { sender: 'user', text: userText }, { sender: 'ai', text: 'Perfetto, buona serata! 🌙' }];
+        });
+        if (optionalReply == null) setChatInput('');
+        return;
+      }
+      if (action === 'yes') {
+        const mk = Math.max(0, Math.round(Number(missingKcal) || 0));
+        const mp = Math.max(0, Math.round(Number(missingPro) || 0));
+        const secretPrompt = `L'utente vuole un consiglio per la cena. Deve rientrare in ${mk} kcal e contenere circa ${mp}g di proteine. Fornisci un'unica ricetta bilanciata e semplice, e alla fine chiedi 'Vuoi che la registri nel diario?'`;
+        setChatHistory((prev) =>
+          prev.map((m) => (m.eveningBriefing && Array.isArray(m.quickReplies) ? { ...m, quickReplies: undefined } : m))
+        );
+        if (optionalReply == null) setChatInput('');
+        await handleChatSubmit(null, {
+          secretPrompt,
+          displayText: userText || '🍽️ Sì, proponi la cena perfetta',
+        });
+        return;
+      }
+    }
+
     if (trimQuick === 'Ho dormito 7h bene' || trimQuick === 'Ho dormito male') {
       dismissKentuSleepTrigger();
       const hours = trimQuick === 'Ho dormito 7h bene' ? 7 : 5.5;
@@ -5757,8 +5790,33 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           },
         ];
       });
+      return;
     }
-  }, [activeAction, kentuActiveTrigger, currentTrackerDate, fullHistory, userTargets]);
+    if (kentuActiveTrigger === 'evening_briefing') {
+      const evDate = currentTrackerDate || getTodayString();
+      const ev = checkEveningBriefing(activeLog, userTargets, evDate);
+      if (!ev) return;
+      setChatHistory((prev) => {
+        const needle = 'È quasi ora di cena';
+        if (prev.some((m) => m.sender === 'ai' && typeof m.text === 'string' && m.text.includes(needle))) {
+          markEveningBriefingShown(evDate);
+          return prev;
+        }
+        markEveningBriefingShown(evDate);
+        const mk = Math.max(0, ev.missingKcal);
+        const mp = Math.max(0, ev.missingPro);
+        return [
+          ...prev,
+          {
+            sender: 'ai',
+            text: `Buonasera! È quasi ora di cena. Per chiudere la giornata in modo ottimale hai a disposizione circa ${mk} kcal e ti servono ${mp}g di proteine. Vuoi che ti calcoli un'opzione perfetta e veloce da registrare?`,
+            quickReplies: ['🍽️ Sì, proponi la cena perfetta', '✋ No, ci penso io'],
+            eveningBriefing: { missingKcal: ev.missingKcal, missingPro: ev.missingPro },
+          },
+        ];
+      });
+    }
+  }, [activeAction, kentuActiveTrigger, currentTrackerDate, fullHistory, userTargets, activeLog]);
 
   const isNightDeficit = displayTime >= 20 && targetKcalForAlerts > 0 && ((totalCaloriesTimeline || 0) / targetKcalForAlerts) <= 0.60;
   const isProteinSaturated = displayTime <= 15 && (targetMacros?.prot ?? 0) > 0 && ((totalMacrosTimeline.prot || 0) / (targetMacros.prot || 1)) >= 0.90;
