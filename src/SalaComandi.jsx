@@ -6625,11 +6625,27 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               title="Energia"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px 4px', flexShrink: 0, pointerEvents: 'none' }}
             >
-              <div style={{ width: '52px', height: '26px' }}>
+              <div style={{ position: 'relative', width: '52px', height: '26px' }}>
                 <svg viewBox="0 0 100 50" style={{ width: '100%', height: '100%', overflow: 'visible' }} aria-hidden>
                   <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#222" strokeWidth="12" strokeLinecap="round" />
                   <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke={bodyBatteryData?.color || '#00e5ff'} strokeWidth="12" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 - ((bodyBatteryData?.level || 0) / 100) * 125.6} style={{ transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s' }} />
                 </svg>
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    bottom: '2px',
+                    transform: 'translateX(-50%)',
+                    fontSize: '0.75rem',
+                    fontWeight: 'bold',
+                    color: '#e5e5e5',
+                    lineHeight: 1,
+                    pointerEvents: 'none',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {Math.round(Number(bodyBatteryData?.level) || 0)}%
+                </div>
               </div>
             </div>
           </div>
