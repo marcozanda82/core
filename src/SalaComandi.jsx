@@ -4748,6 +4748,8 @@ REGOLA MOLTIPLICATORE: Se l'utente indica quantità a pezzi (es. "3 gallette di 
 
 Puoi anche proporre alternative dal database e chiedere conferma; alla conferma restituisci l'array JSON. In alternativa, per un singolo inserimento legacy, puoi usare {"action":"insert","food":{"desc":"nome","qta":grammi,"mealType":"pranzo"}}.
 
+SONNO (ZERO FORM — solo messaggio testuale, niente screenshot Mi Fitness): Se l'utente riferisce di aver dormito (sonno notturno o sonnellino/pisolino), estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). Restituisci RIGOROSAMENTE un JSON con questo formato: {"action":"add_sleep","hours":<numero_ore>}. Non aggiungere alcun testo fuori dal JSON.
+
 Database alimenti noti: ${foodDbNames.length ? foodDbNames.join(', ') : 'nessuno'}.
 
 Contesto: Pagina ${paginaAttuale}. Rischio stress serale ${energyAt20 != null && energyAt20 < 40 ? 'ALTO' : 'Basso'}. [STRATEGIA: ...]. [ALLENAMENTO: desc | kcal]. Rispondi in modo naturale e breve.
@@ -4771,7 +4773,7 @@ REGOLA PER SPIEGAZIONE GRAFICI:
 Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi livelli (es. "spiegami il grafico viola", "perché l'anabolismo è basso?"), usa i dati forniti per fargli un'analisi personalizzata. Spiega che il grafico viola (Cortisolo) indica lo stress nervoso (che sale con lavoro e allenamento), mentre la curva azzurra/verde (Sintesi proteica) indica il nutrimento muscolare. Sii un analista biochimico chiaro e diretto.
 
 RICONOSCIMENTO SONNO CONVERSAZIONALE (solo durata, senza screenshot Mi Fitness):
-Se l'utente riferisce di aver dormito (sonno notturno, sonnellino o pisolino) e NON stai estraendo un report completo da screenshot con sveglia/addormentamento/deep/REM, estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). In quel caso restituisci RIGOROSAMENTE un solo JSON, senza altro testo prima o dopo: {"action":"add_sleep","hours":<numero>}. Non usare add_sleep insieme a log_sleep nella stessa risposta.
+Se l'utente descrive solo quanto ha dormito (notte o pisolino) e NON stai estraendo un report Mi Fitness con sveglia/addormentamento/deep/REM, applica la regola SONNO (ZERO FORM) del prompt base: solo il JSON add_sleep, senza testo extra. Non usare add_sleep insieme a log_sleep nella stessa risposta.
 
 TRACCIAMENTO DEL SONNO E VISION:
 Se l'utente allega uno screenshot di un'app di tracciamento del sonno (es. Mi Fitness) o scrive i dati testualmente, estrai questi valori chiave: Ora di risveglio (es. 06:18 diventa 6.3 in ore decimali), Ore totali di sonno (es. 6 ore e 34 min diventa 6.56), Tempo in fase Profonda in minuti (es. 2h 14m = 134), Tempo in fase REM in minuti, Frequenza cardiaca media (BPM). Rispondi con un breve riepilogo testuale ("Ho letto i dati: hai dormito 6h 34m, recupero profondo ottimo...") e includi un JSON strutturato su una riga: {"action": "log_sleep", "sleepData": {"wakeTime": 6.3, "hours": 6.56, "sleepStart": 23.5, "sleepEnd": 6.3, "deepMin": 134, "remMin": 94, "hr": 56}}. Usa SEMPRE i quick_replies: {"quick_replies": ["Sì, confermo", "No, annulla"]} per la conferma prima del salvataggio.
@@ -4848,9 +4850,9 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
           try {
             const addParsed = JSON.parse(responseText.slice(addObjStart, addObjEnd + 1));
             if (addParsed && addParsed.action === 'add_sleep') {
-              const hRaw = Number(addParsed.hours);
-              if (Number.isFinite(hRaw) && hRaw > 0 && hRaw <= 24) {
-                addSleepHours = Math.round(hRaw * 1000) / 1000;
+              const sleepHoursParsed = Number(addParsed.hours) || 0;
+              if (Number.isFinite(sleepHoursParsed) && sleepHoursParsed > 0 && sleepHoursParsed <= 24) {
+                addSleepHours = Math.round(sleepHoursParsed * 1000) / 1000;
               }
             }
           } catch (_) {}
@@ -4900,16 +4902,21 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
       }
 
       if (addSleepHours != null) {
+        const sleepHours = addSleepHours;
         const timeDec = new Date().getHours() + new Date().getMinutes() / 60;
         const sleepEntry = {
-          id: Date.now(),
+          id: Date.now().toString(),
           type: 'sleep',
-          hours: addSleepHours,
-          duration: addSleepHours,
-          sleepHours: addSleepHours,
+          hours: sleepHours,
+          duration: sleepHours,
+          sleepHours: sleepHours,
           time: timeDec,
         };
-        const hoursLabel = String(Math.round(addSleepHours * 100) / 100).replace('.', ',');
+        const hoursDisplay = String(Math.round(sleepHours * 100) / 100).replace('.', ',');
+        const testoRisposta =
+          sleepHours < 3
+            ? `Ho registrato il tuo sonnellino di ${Math.round(sleepHours * 60)} minuti. Body Battery ricalcolata!`
+            : `Ho registrato ${hoursDisplay} ore di sonno. Body Battery aggiornata!`;
         if (isSimulationMode) {
           setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
         } else {
@@ -4923,7 +4930,7 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
           next.pop();
           next.push({
             sender: 'ai',
-            text: `Ho registrato le tue ${hoursLabel} ore di sonno. La tua Body Battery è stata aggiornata!`,
+            text: testoRisposta,
           });
           return next;
         });
