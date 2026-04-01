@@ -1678,7 +1678,22 @@ function yesterdayCalorieDeficit(fullHistory, anchorDateStr, userTargets) {
 }
 
 /**
- * Body Battery: debito sonno, partenza da sonno notturno, decadimento dalle 7:00, pasti (max 3), allenamenti, sonnellini.
+ * Curva fisiologica del boost da sonnellino (interpolazione lineare a tratti, massimo 30).
+ * @param {number} minutes Durata del sonnellino in minuti.
+ * @returns {number} Punti boost (prima di eventuale arrotondamento nel chiamante).
+ */
+export function calculateNapBoost(minutes) {
+  const t = Number(minutes);
+  if (!Number.isFinite(t) || t <= 0) return 0;
+  if (t <= 20) return (10 / 20) * t;
+  if (t <= 30) return 10 + ((15 - 10) / (30 - 20)) * (t - 20);
+  if (t <= 50) return 15 + ((8 - 15) / (50 - 30)) * (t - 30);
+  if (t <= 90) return 8 + ((30 - 8) / (90 - 50)) * (t - 50);
+  return 30;
+}
+
+/**
+ * Body Battery: debito sonno, partenza da sonno notturno, decadimento dalle 7:00, pasti (max 3), allenamenti, sonnellini (boost da curva sui minuti).
  * @param {object} [userTargets] — se presente, ieri in deficit calorico aumenta il costo workout (−30 vs −20).
  * @returns {{ currentEnergy: number, maxCapacity: number, hasNapBoost: boolean, breakdown: Array<{ label: string, value: number, type: 'positive'|'negative'|'neutral' }> }}
  */
@@ -1822,10 +1837,13 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
     const h = sleepHoursFromEntry(e);
     if (h == null || h >= 3) continue;
     if (mainNight && e === mainNight) continue;
-    napGain += 15;
+    const napMinutes = h * 60;
+    const boost = Math.round(calculateNapBoost(napMinutes));
+    if (boost <= 0) continue;
+    napGain += boost;
     breakdown.push({
-      label: 'Sonnellino · boost recupero',
-      value: 15,
+      label: `Sonnellino (${Math.round(napMinutes)}m)`,
+      value: boost,
       type: 'positive',
     });
   }
