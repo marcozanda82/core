@@ -1760,11 +1760,6 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
   maxCapacity = Math.round(maxCapacity);
 
   const debtVal = maxCapacity - 100;
-  breakdown.push({
-    label: 'Debito sonno (media 3 notti)',
-    value: Math.round(debtVal * 10) / 10,
-    type: debtVal < 0 ? 'negative' : 'neutral',
-  });
 
   const sleepEntries = log.filter((e) => e && e.type === 'sleep');
   let mainNight = null;
@@ -1789,10 +1784,8 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
     }
   }
 
-  let nightUsedEstimate = false;
   if (nightHours == null) {
     nightHours = 7;
-    nightUsedEstimate = true;
   }
 
   let startEnergy = maxCapacity;
@@ -1801,21 +1794,9 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
   }
   startEnergy = Math.round(Math.min(maxCapacity, Math.max(5, startEnergy)));
 
-  const nightDelta = startEnergy - maxCapacity;
-  breakdown.push({
-    label: nightUsedEstimate ? 'Sonno notturno (stima)' : 'Sonno notturno',
-    value: Math.round(nightDelta * 10) / 10,
-    type: 'neutral',
-  });
-
   const hoursFromSeven = isToday ? Math.max(0, nowDec - 7) : Math.max(0, 24 - 7);
   const basalDrain = hoursFromSeven * 1.5;
   const basalRounded = Math.round(basalDrain * 10) / 10;
-  breakdown.push({
-    label: 'Tempo sveglio',
-    value: -basalRounded,
-    type: 'negative',
-  });
 
   const mealItems = [];
   for (const item of log) {
@@ -1827,14 +1808,9 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
     mealItems.push(item);
     if (mealItems.length >= 3) break;
   }
-  const mealDrain = mealItems.length * 5;
-  mealItems.forEach((_, idx) => {
-    breakdown.push({
-      label: mealItems.length > 1 ? `Pasto ${idx + 1}` : 'Pasto',
-      value: -5,
-      type: 'negative',
-    });
-  });
+  const mealCount = mealItems.length;
+  const mealDrain = mealCount * 5;
+  const totalMealCost = mealDrain;
 
   const workouts = [];
   for (const i of log) {
@@ -1846,6 +1822,46 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
     workouts.push(i);
   }
   const workoutDrain = workouts.length * workoutPenalty;
+
+  const napBreakdownRows = [];
+  let napGain = 0;
+  sleepEntries.forEach((nap) => {
+    if (nap === mainNight) return;
+    const durH = Number(nap.hours ?? nap.duration ?? nap.sleepHours ?? 0) || 0;
+    if (durH <= 0) return;
+    const napMinutes = durH * 60;
+    const boost = Math.round(calculateNapBoost(napMinutes));
+    if (boost <= 0) return;
+    napGain += boost;
+    napBreakdownRows.push({
+      label: `Sonnellino (${Math.round(napMinutes)}m)`,
+      value: boost,
+      type: 'positive',
+    });
+  });
+
+  breakdown.push({
+    label: 'Ricarica Notturna',
+    value: Math.round(startEnergy),
+    type: 'positive',
+  });
+  breakdown.push({
+    label: 'Debito sonno (media 3 notti)',
+    value: Math.round(debtVal * 10) / 10,
+    type: debtVal < 0 ? 'negative' : 'neutral',
+  });
+  breakdown.push({
+    label: 'Tempo sveglio',
+    value: -Math.abs(basalRounded),
+    type: 'negative',
+  });
+  if (mealCount > 0) {
+    breakdown.push({
+      label: `Costo digestivo (${mealCount} pasti)`,
+      value: -Math.abs(totalMealCost),
+      type: 'negative',
+    });
+  }
   workouts.forEach((w, idx) => {
     const name = (w.desc || w.name || `Sessione ${idx + 1}`).toString().trim().slice(0, 24);
     const woLabel =
@@ -1858,26 +1874,11 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
           : 'Allenamento';
     breakdown.push({
       label: woLabel,
-      value: -workoutPenalty,
+      value: -Math.abs(workoutPenalty),
       type: 'negative',
     });
   });
-
-  let napGain = 0;
-  sleepEntries.forEach((nap) => {
-    if (nap === mainNight) return;
-    const durH = Number(nap.hours ?? nap.duration ?? nap.sleepHours ?? 0) || 0;
-    if (durH <= 0) return;
-    const napMinutes = durH * 60;
-    const boost = Math.round(calculateNapBoost(napMinutes));
-    if (boost <= 0) return;
-    napGain += boost;
-    breakdown.push({
-      label: `Sonnellino (${Math.round(napMinutes)}m)`,
-      value: boost,
-      type: 'positive',
-    });
-  });
+  napBreakdownRows.forEach((row) => breakdown.push(row));
 
   let preNap = startEnergy - basalDrain - mealDrain - workoutDrain;
   preNap = Math.round(preNap * 10) / 10;

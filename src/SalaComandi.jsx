@@ -4770,6 +4770,9 @@ LETTURA DEI GRAFICI ODIERNI:
 REGOLA PER SPIEGAZIONE GRAFICI:
 Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi livelli (es. "spiegami il grafico viola", "perché l'anabolismo è basso?"), usa i dati forniti per fargli un'analisi personalizzata. Spiega che il grafico viola (Cortisolo) indica lo stress nervoso (che sale con lavoro e allenamento), mentre la curva azzurra/verde (Sintesi proteica) indica il nutrimento muscolare. Sii un analista biochimico chiaro e diretto.
 
+RICONOSCIMENTO SONNO CONVERSAZIONALE (solo durata, senza screenshot Mi Fitness):
+Se l'utente riferisce di aver dormito (sonno notturno, sonnellino o pisolino) e NON stai estraendo un report completo da screenshot con sveglia/addormentamento/deep/REM, estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). In quel caso restituisci RIGOROSAMENTE un solo JSON, senza altro testo prima o dopo: {"action":"add_sleep","hours":<numero>}. Non usare add_sleep insieme a log_sleep nella stessa risposta.
+
 TRACCIAMENTO DEL SONNO E VISION:
 Se l'utente allega uno screenshot di un'app di tracciamento del sonno (es. Mi Fitness) o scrive i dati testualmente, estrai questi valori chiave: Ora di risveglio (es. 06:18 diventa 6.3 in ore decimali), Ore totali di sonno (es. 6 ore e 34 min diventa 6.56), Tempo in fase Profonda in minuti (es. 2h 14m = 134), Tempo in fase REM in minuti, Frequenza cardiaca media (BPM). Rispondi con un breve riepilogo testuale ("Ho letto i dati: hai dormito 6h 34m, recupero profondo ottimo...") e includi un JSON strutturato su una riga: {"action": "log_sleep", "sleepData": {"wakeTime": 6.3, "hours": 6.56, "sleepStart": 23.5, "sleepEnd": 6.3, "deepMin": 134, "remMin": 94, "hr": 56}}. Usa SEMPRE i quick_replies: {"quick_replies": ["Sì, confermo", "No, annulla"]} per la conferma prima del salvataggio.
 ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZIONE CORPORALE E LONGEVITÀ (contesto utente):\n${aiVitalsContextParagraph}` : ''}${metabolicRecompositionContext ? `\n\n${metabolicRecompositionContext}` : ''}${scheduledWorkoutPromptExtra}`;
@@ -4825,6 +4828,35 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
         } catch (_) {}
       }
 
+      let addSleepHours = null;
+      const addSleepMarker = responseText.indexOf('"add_sleep"');
+      if (addSleepMarker !== -1) {
+        let addObjStart = responseText.lastIndexOf('{', addSleepMarker);
+        if (addObjStart !== -1) {
+          let depthAs = 0;
+          let addObjEnd = addObjStart;
+          for (let i = addObjStart; i < responseText.length; i++) {
+            if (responseText[i] === '{') depthAs++;
+            else if (responseText[i] === '}') {
+              depthAs--;
+              if (depthAs === 0) {
+                addObjEnd = i;
+                break;
+              }
+            }
+          }
+          try {
+            const addParsed = JSON.parse(responseText.slice(addObjStart, addObjEnd + 1));
+            if (addParsed && addParsed.action === 'add_sleep') {
+              const hRaw = Number(addParsed.hours);
+              if (Number.isFinite(hRaw) && hRaw > 0 && hRaw <= 24) {
+                addSleepHours = Math.round(hRaw * 1000) / 1000;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
       let sleepDataPayload = null;
       const logSleepIdx = responseText.indexOf('"log_sleep"');
       if (logSleepIdx === -1) {
@@ -4863,8 +4895,39 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
           } catch (_) {}
         }
       }
-      if (sleepDataPayload) {
+      if (sleepDataPayload && addSleepHours == null) {
         setPendingAiBatch({ type: 'sleep', data: sleepDataPayload });
+      }
+
+      if (addSleepHours != null) {
+        const timeDec = new Date().getHours() + new Date().getMinutes() / 60;
+        const sleepEntry = {
+          id: Date.now(),
+          type: 'sleep',
+          hours: addSleepHours,
+          duration: addSleepHours,
+          sleepHours: addSleepHours,
+          time: timeDec,
+        };
+        const hoursLabel = String(Math.round(addSleepHours * 100) / 100).replace('.', ',');
+        if (isSimulationMode) {
+          setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
+        } else {
+          const nuovoLogSleep = [...(dailyLog || []), sleepEntry];
+          setDailyLog(nuovoLogSleep);
+          syncDatiFirebase(nuovoLogSleep, manualNodes);
+        }
+        dismissKentuSleepTrigger();
+        setChatHistory((prev) => {
+          const next = [...prev];
+          next.pop();
+          next.push({
+            sender: 'ai',
+            text: `Ho registrato le tue ${hoursLabel} ore di sonno. La tua Body Battery è stata aggiornata!`,
+          });
+          return next;
+        });
+        return;
       }
 
       const itemsToSave = itemsArray != null ? itemsArray : (insertPayload ? [insertPayload] : []);
@@ -4970,6 +5033,27 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
             else if (cleanText[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
           }
           cleanText = (cleanText.slice(0, idx) + cleanText.slice(end + 1)).trim();
+        }
+      }
+      {
+        const asIdx = cleanText.indexOf('"add_sleep"');
+        if (asIdx !== -1) {
+          const idxAs = cleanText.lastIndexOf('{', asIdx);
+          if (idxAs !== -1) {
+            let depthAs = 0;
+            let endAs = idxAs;
+            for (let i = idxAs; i < cleanText.length; i++) {
+              if (cleanText[i] === '{') depthAs++;
+              else if (cleanText[i] === '}') {
+                depthAs--;
+                if (depthAs === 0) {
+                  endAs = i;
+                  break;
+                }
+              }
+            }
+            cleanText = (cleanText.slice(0, idxAs) + cleanText.slice(endAs + 1)).trim();
+          }
         }
       }
       cleanText = cleanText.replace(/\[STRATEGIA:\s*[^\]]+\]/gi, '').replace(/\[ALLENAMENTO:\s*[^\]]+\]/gi, '').trim();
