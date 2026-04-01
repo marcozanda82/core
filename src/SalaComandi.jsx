@@ -1001,24 +1001,6 @@ export default function SalaComandi() {
   }, []);
   const TELEMETRY_TABS = ['macro', 'bilanci', 'amino', 'vit', 'min', 'fat'];
   const telemetryScrollRef = useRef(null);
-  const popupTelemetryScrollRef = useRef(null);
-  const handlePopupTelemetryScroll = (e) => {
-    const { scrollLeft, clientWidth } = e.target;
-    const pageIndex = Math.round(scrollLeft / clientWidth);
-    const activeTab = TELEMETRY_TABS[pageIndex];
-    if (activeTab && activeTab !== telemetrySubTab) {
-      setTelemetrySubTab(activeTab);
-    }
-  };
-
-  const scrollToPopupTelemetryTab = (tabName) => {
-    setTelemetrySubTab(tabName);
-    const index = TELEMETRY_TABS.indexOf(tabName);
-    if (popupTelemetryScrollRef.current && index !== -1) {
-      const container = popupTelemetryScrollRef.current;
-      container.scrollTo({ left: index * container.clientWidth, behavior: 'smooth' });
-    }
-  };
   const [expandedStoricoDate, setExpandedStoricoDate] = useState(null);
 
   // STRATEGIA E DATABASE
@@ -1419,7 +1401,6 @@ export default function SalaComandi() {
   const [fullStorico, setFullStorico] = useState(null);
   const [fullHistory, setFullHistory] = useState({});
   const [showReport, setShowReport] = useState(false);
-  const [showTelemetryPopup, setShowTelemetryPopup] = useState(false);
   const [showMetabolicPopup, setShowMetabolicPopup] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [trendModalMetric, setTrendModalMetric] = useState(null);
@@ -4427,7 +4408,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad, currentTime, accumuloSNC);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
-      const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Core AI' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
+      const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Kentu' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
 
       const currentDecimalTime = new Date().getHours() + (new Date().getMinutes() / 60);
       const roundedTime = Math.round(currentDecimalTime * 2) / 2;
@@ -7959,7 +7940,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     }}
                   />
                 ) : null}
-                <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#b388ff' }}>Core AI</span>
+                <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#b388ff' }}>Kentu</span>
               </button>
             </div>
           </div>
@@ -7991,44 +7972,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
         {/* VISTA CHAT AI */}
         {activeAction === 'ai_chat' && (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', paddingRight: '15px' }}>
-              <button
-                type="button"
-                onClick={() => { if (typeof setExpandedChart === 'function') setExpandedChart('percent'); }}
-                style={{ background: 'rgba(0, 229, 255, 0.1)', border: '1px solid #00e5ff', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                title="Apri Telemetria Avanzata"
-              >
-                ⚗️
-              </button>
-            </div>
-            <AiCluster
-              chatHistory={chatHistory}
-              chatInput={chatInput}
-              setChatInput={setChatInput}
-              chatImages={chatImages}
-              setChatImages={setChatImages}
-              onSendMessage={handleChatSubmit}
-              onLogDinnerOption={handleAutoLogDinner}
-              onLoadAgenda={handleAutoLogAgenda}
-              showAiSettings={showAiSettings}
-              setShowAiSettings={setShowAiSettings}
-              apiKeys={apiKeys}
-              onKeyChange={handleKeyChange}
-              onRemoveKey={handleRemoveKey}
-              onAddKey={handleAddKey}
-              onSaveApiCluster={saveApiCluster}
-              onBack={() => setActiveAction(null)}
-              displayTime={displayTime ?? currentTime}
-              energy={chartData?.find(p => p.time === Math.floor(displayTime ?? currentTime))?.energy ?? 50}
-              cortisolo={chartData?.find(p => p.time === Math.floor(displayTime ?? currentTime))?.cortisolo ?? 25}
-              activeAlerts={activeAlertsArray}
-              dailyLog={activeLog}
-              buildGlobalAIPrompt={buildGlobalAIPrompt}
-              callGeminiAPIWithRotation={callGeminiAPIWithRotation}
-              onAnalysisResult={(text) => setChatHistory(prev => [...prev, { sender: 'ai', text }])}
-            />
-          </>
+          <AiCluster
+            chatHistory={chatHistory}
+            chatInput={chatInput}
+            setChatInput={setChatInput}
+            chatImages={chatImages}
+            setChatImages={setChatImages}
+            onSendMessage={handleChatSubmit}
+            onLogDinnerOption={handleAutoLogDinner}
+            onLoadAgenda={handleAutoLogAgenda}
+            showAiSettings={showAiSettings}
+            setShowAiSettings={setShowAiSettings}
+            apiKeys={apiKeys}
+            onKeyChange={handleKeyChange}
+            onRemoveKey={handleRemoveKey}
+            onAddKey={handleAddKey}
+            onSaveApiCluster={saveApiCluster}
+            onBack={() => setActiveAction(null)}
+          />
         )}
 
         {/* VISTA ACQUA */}
@@ -10053,103 +10014,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
 
-      {showTelemetryPopup && (
-        <div className="modal-overlay" onClick={() => setShowTelemetryPopup(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.85)', zIndex: 100020, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px' }}>
-          
-          {/* Contenitore Modale: 90vh di altezza, layout Flex a colonna */}
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: '#1e1e1e', color: '#fff', padding: '20px', borderRadius: '20px', width: '100%', maxWidth: '500px', height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
-            
-            {/* Header Fisso */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #333', paddingBottom: '12px', flexShrink: 0 }}>
-              <h2 style={{ margin: 0, color: '#00e676', fontSize: '1.2rem', letterSpacing: '2px' }}>📊 TELEMETRIA</h2>
-              <button type="button" onClick={() => setShowTelemetryPopup(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '1.5rem', cursor: 'pointer', padding: '0 10px' }}>✕</button>
-            </div>
-            
-            {/* Bottoni Navigazione Fissi - sticky per non essere coperti allo scroll */}
-            <div style={{ position: 'sticky', top: 0, zIndex: 50, background: '#1e1e1e', paddingBottom: '10px', flexShrink: 0, display: 'flex', gap: '8px', marginBottom: '5px', overflowX: 'auto' }}>
-              {TELEMETRY_TABS.map(t => (
-                <button 
-                  key={t} 
-                  type="button" 
-                  onClick={() => scrollToPopupTelemetryTab(t)} 
-                  style={{ padding: '10px 18px', fontSize: '0.75rem', fontWeight: 'bold', background: telemetrySubTab === t ? '#00e676' : '#111', color: telemetrySubTab === t ? '#000' : '#888', border: 'none', borderRadius: '20px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: 'pointer', transition: '0.3s' }}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-
-            {/* Carosello Elastico: Prende tutto lo spazio verticale rimanente, solo quest'area scrolla */}
-            <div className="telemetry-carousel" ref={popupTelemetryScrollRef} onScroll={handlePopupTelemetryScroll} style={{ flex: 1, minHeight: 0, margin: 0, paddingBottom: '10px', overflowY: 'auto' }}>
-              
-              {/* Pagina MACRO */}
-              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
-                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
-                  {renderProgressBar('Calorie', totali.kcal || 0, dynamicDailyKcal, 'kcal', 'kcal')} 
-                  {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')} 
-                  {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')} 
-                  {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')}
-                </div>
-              </div>
-
-              {/* Pagina BILANCI */}
-              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
-                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
-                  <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px', marginTop: 0 }}>RAPPORTI BIOCHIMICI</h4>
-                  {renderRatioBar('Equilibrio Elettrolitico (Idratazione)', 'Sodio (Na)', totali?.na, 'Potassio (K)', totali?.k, 'Ideale: Na < K', (Number(totali?.na) || 0) < (Number(totali?.k) || 0))}
-                  {renderRatioBar('Indice Infiammatorio (Grassi)', 'Omega 6', totali?.omega6, 'Omega 3', totali?.omega3, 'Ideale: W6:W3 < 4:1', (Number(totali?.omega6) || 0) <= (Number(totali?.omega3) || 1) * 4)}
-                </div>
-              </div>
-
-              {/* Pagina AMINOACIDI */}
-              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
-                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
-                  {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.amino[k], 'mg', k))}
-                </div>
-              </div>
-
-              {/* Pagina VITAMINE */}
-              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
-                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
-                  {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.vit[k], k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))}
-                </div>
-              </div>
-
-              {/* Pagina MINERALI */}
-              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
-                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
-                  {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.min[k], k === 'se' ? 'µg' : 'mg', k))}
-                </div>
-              </div>
-
-              {/* Pagina FAT (Grassi) */}
-              <div className="telemetry-carousel-slide" style={{ overflowY: 'auto', height: '100%', paddingRight: '5px' }}>
-                <div style={{ background: '#111', padding: '20px', borderRadius: '15px', minHeight: '100%' }}>
-                  {renderProgressBar('Grassi Totali', totali.fatTotal || totali.fat || 0, userTargets.fatTotal ?? userTargets.fat ?? 70, 'g', 'fatTotal')} 
-                  {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))}
-                  {(() => {
-                    const omega3 = totali?.omega3 || 0;
-                    const omega6 = totali?.omega6 || 0;
-                    const omegaRatio = omega3 > 0 ? (omega6 / omega3).toFixed(1) : 'N/A';
-                    const ratioColor = omegaRatio !== 'N/A' && Number(omegaRatio) <= 4 ? '#00e676' : '#ef4444';
-                    return (
-                      <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', textAlign: 'center', border: `1px solid ${ratioColor}33` }}>
-                        <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Rapporto Omega-6 : Omega-3</div>
-                        <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: ratioColor }}>
-                          {omegaRatio} <span style={{ fontSize: '1rem', color: '#666' }}>: 1</span>
-                        </div>
-                        <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '5px' }}>Target salute ideale: inferiore a 4:1</div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* MODAL REPORT GIORNALIERO A 5 STELLE */}
       {showReportModal && dailyReport?.ready && dailyReportDisplay && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100020, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={() => setShowReportModal(false)}>
@@ -10696,7 +10560,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             />
           ) : null}
           <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-fab" width={22} height={22} decoding="async" />
-          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Core AI...</span>
+          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Kentu...</span>
         </div>
         <button type="button" onClick={() => { setShowChoiceModal(false); setIsDrawerOpen(true); setActiveAction(null); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
       </div>
