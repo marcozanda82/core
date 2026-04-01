@@ -118,7 +118,7 @@ function formatBodyBatteryValue(v) {
 }
 
 /** Arco semicircolare Body Battery — look neon sottile; 💤 cyan se boost sonnellino. */
-function EnergyArc({ percentage, size = 'small', hasNapBoost = false }) {
+function EnergyArc({ percentage, size = 'small', hasNapBoost = false, showText = true }) {
   const filterUid = useId().replace(/:/g, '');
   const energyVal = Number(percentage);
   const arcP = Math.min(100, Math.max(0, Number.isFinite(energyVal) ? energyVal : 0));
@@ -192,18 +192,20 @@ function EnergyArc({ percentage, size = 'small', hasNapBoost = false }) {
           </span>
         ) : null}
       </div>
-      <span
-        style={{
-          fontSize: large ? '1.35rem' : '0.62rem',
-          fontWeight: 800,
-          color: '#ecfdf5',
-          letterSpacing: large ? '0.06em' : '-0.02em',
-          textShadow: '0 0 12px rgba(74,222,128,0.45)',
-          lineHeight: 1,
-        }}
-      >
-        {pctRounded}%
-      </span>
+      {showText ? (
+        <span
+          style={{
+            fontSize: large ? '1.35rem' : '0.62rem',
+            fontWeight: 800,
+            color: '#ecfdf5',
+            letterSpacing: large ? '0.06em' : '-0.02em',
+            textShadow: '0 0 12px rgba(74,222,128,0.45)',
+            lineHeight: 1,
+          }}
+        >
+          {pctRounded}%
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -6821,8 +6823,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 percentage={bodyBattery?.currentEnergy ?? 0}
                 size="small"
                 hasNapBoost={!!bodyBattery?.hasNapBoost}
+                showText={false}
               />
-              <span style={{ fontSize: '0.65rem', color: '#a1a1aa', marginTop: '4px' }}>🔋 Energia</span>
+              <span style={{ fontSize: '0.7rem', color: '#a1a1aa', marginTop: '4px', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                🔋 Energia {bodyBattery?.currentEnergy ?? 0}%
+              </span>
             </div>
           </div>
         </div>
