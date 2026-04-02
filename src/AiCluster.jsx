@@ -4,6 +4,12 @@
  */
 import React, { useRef, useEffect } from 'react';
 
+/** Allinea a stripInvisibleContextFromVisibleUserText in SalaComandi (contesto API non visibile). */
+function stripInvisibleContextFromBubble(text) {
+  if (text == null || typeof text !== 'string') return text;
+  return text.replace(/\[CONTEXT_LIVE:[^\]]*\]\s*/gi, '').trim();
+}
+
 export default function AiCluster({
   chatHistory,
   chatInput,
@@ -68,7 +74,17 @@ export default function AiCluster({
           {chatHistory.map((msg, idx) => (
             <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'ai' ? 'flex-start' : 'flex-end', width: '100%' }}>
               <div className={`chat-bubble ${msg.sender === 'ai' ? 'bubble-ai' : 'bubble-user'}`}>
-                {msg.isTyping ? (<div className="typing-indicator"><div className="dot"></div><div className="dot"></div><div className="dot"></div></div>) : (msg.text)}
+                {msg.isTyping ? (
+                  <div className="typing-indicator">
+                    <div className="dot"></div>
+                    <div className="dot"></div>
+                    <div className="dot"></div>
+                  </div>
+                ) : msg.sender === 'user' ? (
+                  stripInvisibleContextFromBubble(msg.text)
+                ) : (
+                  msg.text
+                )}
               </div>
               {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && (
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>

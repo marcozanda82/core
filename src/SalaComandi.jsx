@@ -176,6 +176,72 @@ function findRecentFoodHabit(query, foodDb, flatLog) {
   };
 }
 
+/** Rimuove il prefisso iniettato per l'API dalla cronologia conversazione inviata all'API. */
+function stripInvisibleContextFromVisibleUserText(text) {
+  if (text == null || typeof text !== 'string') return text;
+  return text.replace(/\[CONTEXT_LIVE:[^\]]*\]\s*/gi, '').trim();
+}
+
+/**
+ * Ultimi N alimenti/ricette distinti dai log degli ultimi `numDays` giorni (più recenti per primi).
+ */
+function collectDispensaProbableFoods(fullHistory, anchorDateStr, maxDistinct, numDays) {
+  if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr || maxDistinct <= 0) return 'n/d';
+  const seen = new Set();
+  const out = [];
+  const days = Math.max(1, Math.min(14, numDays || 4));
+  for (let d = 0; d < days; d++) {
+    const dStr = addDays(anchorDateStr, -d);
+    const rawLog = getLogFromStoricoTree(fullHistory, dStr) || [];
+    const log = normalizeLogData(Array.isArray(rawLog) ? rawLog : Object.values(rawLog));
+    for (let i = 0; i < log.length; i++) {
+      const item = log[i];
+      if (!item || (item.type !== 'food' && item.type !== 'recipe')) continue;
+      const raw = (item.desc || item.name || '').trim();
+      if (!raw) continue;
+      const key = raw
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(raw.length > 48 ? `${raw.slice(0, 45)}…` : raw);
+      if (out.length >= maxDistinct) return out.join(', ');
+    }
+  }
+  return out.length ? out.join(', ') : 'nessun dato recente';
+}
+
+/**
+ * Contesto live iniettato nell'ultimo messaggio utente verso l'API (non mostrato in UI se non salvato nel testo).
+ */
+function getInvisibleContext({
+  bodyBatteryPercent,
+  dynamicDailyKcal,
+  totali,
+  userTargets,
+  fullHistory,
+  anchorDateStr,
+}) {
+  const bb = Math.round(Number(bodyBatteryPercent) || 0);
+  const dynK = Number(dynamicDailyKcal) || 0;
+  const eatenK = Number(totali?.kcal) || 0;
+  const resKcal = Math.round(Math.max(0, dynK - eatenK));
+  const tProt = Number(userTargets?.prot ?? 150);
+  const tCarb = Number(userTargets?.carb ?? 200);
+  const tFat = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 65);
+  const eProt = Number(totali?.prot) || 0;
+  const eCarb = Number(totali?.carb) || 0;
+  const eFat = Number(totali?.fatTotal ?? totali?.fat) || 0;
+  const rProt = Math.max(0, Math.round((tProt - eProt) * 10) / 10);
+  const rCarb = Math.max(0, Math.round((tCarb - eCarb) * 10) / 10);
+  const rFat = Math.max(0, Math.round((tFat - eFat) * 10) / 10);
+  const dispensa = collectDispensaProbableFoods(fullHistory, anchorDateStr, 10, 4);
+  const nota =
+    'L\'utente soffre di problemi di cortisolo alto quando chiede consigli sulla cena.';
+  return `[CONTEXT_LIVE: BB: ${bb}%, Residuo: ${resKcal}kcal, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}]`;
+}
+
 function formatBodyBatteryValue(v) {
   const n = Math.round(Number(v) * 10) / 10;
   if (n === 0) return '0%';
@@ -4975,6 +5041,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       const baseSystemPrompt = `Sei l'assistente di KentuOS. Il tuo scopo è dialogare con l'utente in italiano.
 
+LOGICA DI RACCOMANDAZIONE INTELLIGENTE: Quando l'utente chiede consigli su cosa mangiare (es. "Cosa mangio per cena?"):
+1. Analizza i macro residui dal blocco [CONTEXT_LIVE] nell'ultimo messaggio utente per avvicinarti al fabbisogno giornaliero (senza ignorare equilibrio e contesto).
+2. Dai priorità assoluta agli ingredienti elencati in "Dispensa" in [CONTEXT_LIVE]: è molto probabile che l'utente li abbia già in casa.
+3. Se è ora di cena o il tema è serale, proponi pasti coerenti con la Nota in [CONTEXT_LIVE] sul cortisolo: carboidrati complessi, evita eccessi di grassi saturi o caffeina serale.
+4. Presenta la proposta in STILE LAVAGNA con i macro totali stimati della ricetta (kcal e grammi P/C/F se possibile).
+
 STILE DI COMUNICAZIONE TASSATIVO (STILE LAVAGNA/COACH): Non usare MAI paragrafi lunghi o muri di testo. Sei un coach operativo. Le tue risposte devono essere visive, telegrafiche e strutturate come una lavagna tattica.
 Usa SEMPRE questa struttura per ogni messaggio di testo normale (non vale quando un'altra regola impone SOLO JSON o SOLO array, senza testo libero):
 1. Un titolo breve in grassetto con un'emoji (es. **🎯 Status attuale**).
@@ -5030,8 +5102,29 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
         return t.startsWith('❌') || t.includes('Errore Server') || t.includes('Nessuna API Key');
       };
       const filtered = recentHistory.filter(m => !isLocalError(m.text));
-      const conversationLines = filtered.map(m => (m.sender === 'user' ? 'Utente: ' : 'Assistente: ') + (m.text || '').trim());
-      const apiMessage = apiUserContent || (chatImages.length > 0 ? `[Allegati ${chatImages.length} screenshot da analizzare]` : '');
+      const conversationLines = filtered.map((m) => {
+        const raw = (m.text || '').trim();
+        const lineText =
+          m.sender === 'user' ? stripInvisibleContextFromVisibleUserText(raw) : raw;
+        return (m.sender === 'user' ? 'Utente: ' : 'Assistente: ') + lineText;
+      });
+      const burnedKcalContext = (activeLog || [])
+        .filter((item) => item.type === 'workout')
+        .reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
+      const dynamicDailyKcalContext = (userTargets?.kcal ?? 2000) + burnedKcalContext;
+      const contextString = getInvisibleContext({
+        bodyBatteryPercent: bodyBattery?.currentEnergy ?? 0,
+        dynamicDailyKcal: dynamicDailyKcalContext,
+        totali,
+        userTargets,
+        fullHistory,
+        anchorDateStr: currentTrackerDate || getTodayString(),
+      });
+      const rawLastUserForApi =
+        apiUserContent || (chatImages.length > 0 ? `[Allegati ${chatImages.length} screenshot da analizzare]` : '');
+      const apiMessage = rawLastUserForApi
+        ? `${contextString} ${rawLastUserForApi}`.trim()
+        : contextString;
       conversationLines.push('Utente: ' + apiMessage);
       const conversationText = conversationLines.join('\n');
       const fullPrompt = dynamicSystemPrompt + '\n\n---\nConversazione (rispondi come Assistente all\'ultimo messaggio):\n' + conversationText;
