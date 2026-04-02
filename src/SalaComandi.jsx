@@ -242,6 +242,61 @@ function getInvisibleContext({
   return `[CONTEXT_LIVE: BB: ${bb}%, Residuo: ${resKcal}kcal, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}]`;
 }
 
+/**
+ * Estrae [MEAL_PROPOSAL:{...}] dalla risposta AI e restituisce JSON validato + testo senza il blocco.
+ */
+function extractAndStripMealProposal(rawText) {
+  const text = rawText == null ? '' : String(rawText);
+  const tag = '[MEAL_PROPOSAL:';
+  const i = text.indexOf(tag);
+  if (i === -1) return { stripped: text, proposal: null };
+  const jsonStart = i + tag.length;
+  if (text[jsonStart] !== '{') return { stripped: text, proposal: null };
+  let depth = 0;
+  let j = jsonStart;
+  for (; j < text.length; j++) {
+    const c = text[j];
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) {
+        j++;
+        break;
+      }
+    }
+  }
+  if (depth !== 0) return { stripped: text, proposal: null };
+  let k = j;
+  while (k < text.length && /\s/.test(text[k])) k++;
+  const endBlock = k < text.length && text[k] === ']' ? k + 1 : j;
+  const jsonStr = text.slice(jsonStart, j);
+  let proposal = null;
+  try {
+    const parsed = JSON.parse(jsonStr);
+    if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+      proposal = {
+        title: parsed.title != null ? String(parsed.title) : undefined,
+        timeString: parsed.timeString != null ? String(parsed.timeString) : undefined,
+        items: parsed.items.map((row, idx) => ({
+          id: row.id != null ? String(row.id) : `ing_${idx}`,
+          name: String(row.name || row.desc || 'Alimento').trim(),
+          qty: Number(row.qty ?? row.weight ?? row.qta) > 0 ? Number(row.qty ?? row.weight ?? row.qta) : 100,
+          dbKey: row.dbKey != null ? String(row.dbKey) : undefined,
+          why: row.why != null ? String(row.why) : row.perche != null ? String(row.perche) : '',
+          estKcal: row.estKcal,
+          estPro: row.estPro,
+          estCar: row.estCar,
+          estFat: row.estFat,
+        })),
+      };
+    }
+  } catch (_) {
+    proposal = null;
+  }
+  const stripped = (text.slice(0, i) + text.slice(endBlock)).replace(/\s+/g, ' ').trim();
+  return { stripped, proposal };
+}
+
 function formatBodyBatteryValue(v) {
   const n = Math.round(Number(v) * 10) / 10;
   if (n === 0) return '0%';
@@ -5048,6 +5103,8 @@ LOGICA DI RACCOMANDAZIONE INTELLIGENTE: Quando l'utente chiede consigli su cosa 
 4. Presenta la proposta in STILE LAVAGNA con i macro totali stimati della ricetta (kcal e grammi P/C/F se possibile).
 5. DIGESTIVE SAFETY GATE — Quando consigli un workout, calcola la somma tra i macro residui (da [CONTEXT_LIVE]) e il costo del workout. Se il totale calorico risultante per la cena supera le 900-1000 kcal (o se il volume di cibo previsto è eccessivo per l'orario), sconsiglia l'allenamento intenso. Spiega chiaramente che un pasto troppo pesante comprometterebbe il recupero e la gestione del cortisolo serale, suggerendo invece un pasto bilanciato e il rinvio dell'attività.
 
+CARTA MENU (MEAL_PROPOSAL): Quando proponi una cena concreta con ingredienti e grammi (contesto consiglio pasto / cena), NON scrivere una ricetta lunga in prose. Rispondi SOLO con il blocco dati su UNA riga così (nessun altro testo prima o dopo): [MEAL_PROPOSAL:{"title":"Proposta Cena Anti-Cortisolo","timeString":"HH:mm","items":[{"id":"id_univoco","name":"Nome alimento","qty":grammi,"dbKey":"chiave_opzionale_foodDb","why":"motivo breve","estKcal":n,"estPro":n,"estCar":n,"estFat":n}]}] — id univoco per ogni voce (es. salmone_1); qty in grammi; stime macro per quella quantità; dbKey solo se corrisponde al database noto.
+
 STILE DI COMUNICAZIONE TASSATIVO (STILE LAVAGNA/COACH): Non usare MAI paragrafi lunghi o muri di testo. Sei un coach operativo. Le tue risposte devono essere visive, telegrafiche e strutturate come una lavagna tattica.
 Usa SEMPRE questa struttura per ogni messaggio di testo normale (non vale quando un'altra regola impone SOLO JSON o SOLO array, senza testo libero):
 1. Un titolo breve in grassetto con un'emoji (es. **🎯 Status attuale**).
@@ -5628,7 +5685,9 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         }
       }
 
-      let cleanText = responseText;
+      const mealProposalExtract = extractAndStripMealProposal(responseText);
+      let cleanText = mealProposalExtract.stripped;
+      const mealProposalForUi = mealProposalExtract.proposal;
       const stripInsertStart = cleanText.indexOf('{"action":"insert"');
       if (stripInsertStart !== -1) {
         let depth = 0;
@@ -5803,7 +5862,8 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         }
       }
 
-      if (!cleanText) cleanText = '✨ Operazione completata.';
+      if (!cleanText && !mealProposalForUi) cleanText = '✨ Operazione completata.';
+      if (mealProposalForUi) cleanText = '';
 
       if (dinnerOptions && dinnerOptions.length) {
         lastDinnerOptionsRef.current = dinnerOptions;
@@ -5818,8 +5878,13 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         newHist.push({
           sender: 'ai',
           text: cleanText,
-          quickReplies: quickReplies.length > 0 ? quickReplies : undefined,
-          dinnerOptions: dinnerOptions && dinnerOptions.length > 0 ? dinnerOptions : undefined,
+          mealProposal: mealProposalForUi || undefined,
+          quickReplies:
+            mealProposalForUi || quickReplies.length === 0 ? undefined : quickReplies,
+          dinnerOptions:
+            mealProposalForUi || !dinnerOptions || dinnerOptions.length === 0
+              ? undefined
+              : dinnerOptions,
           agendaOptions: agendaOptions && agendaOptions.length > 0 ? agendaOptions : undefined,
         });
         return newHist;
@@ -5833,6 +5898,44 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
       });
     }
   };
+
+  const handleMealProposalConfirm = useCallback(
+    (proposal, selectedItems) => {
+      if (!selectedItems?.length) return;
+      const timeStr =
+        (proposal?.timeString && String(proposal.timeString).trim()) ||
+        decimalToTimeStr(getCurrentTimeRoundedTo15Min());
+      let mealDec = parseFlexibleTimeToDecimal(timeStr);
+      if (mealDec == null) mealDec = getCurrentTimeRoundedTo15Min();
+      const items = selectedItems.map((it) => ({
+        name: String(it.name || '').trim(),
+        qty: Math.max(1, Number(it.qty) || 100),
+        matchedKey: it.dbKey != null && foodDb[it.dbKey] != null ? it.dbKey : undefined,
+        estKcal: it.estKcal,
+        estPro: it.estPro,
+        estCar: it.estCar,
+        estFat: it.estFat,
+      }));
+      const testo = commitAddFoodChatPayload({ timeString: timeStr, mealDec, items });
+      setChatHistory((prev) => {
+        const withoutCard = prev.filter((m) => !m.mealProposal);
+        return [...withoutCard, { sender: 'ai', text: testo || 'Pasto registrato. 🥗' }];
+      });
+    },
+    [commitAddFoodChatPayload, foodDb, getCurrentTimeRoundedTo15Min]
+  );
+
+  const handleMealProposalCancel = useCallback(() => {
+    setChatHistory((prev) => prev.filter((m) => !m.mealProposal));
+  }, []);
+
+  const handleMealProposalSwap = useCallback(
+    (itemId) => {
+      const safe = String(itemId ?? '').replace(/'/g, "'");
+      handleChatSubmit(`Sostituisci l'ingrediente con ID: '${safe}'`, { fromInput: true });
+    },
+    [handleChatSubmit]
+  );
 
   const generateFoodWithAI = async (foodName) => {
     const name = (foodName || foodNameInput || '').trim();
@@ -8967,6 +9070,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             onSendMessage={handleChatSubmit}
             onLogDinnerOption={handleAutoLogDinner}
             onLoadAgenda={handleAutoLogAgenda}
+            onMealProposalConfirm={handleMealProposalConfirm}
+            onMealProposalCancel={handleMealProposalCancel}
+            onMealProposalSwap={handleMealProposalSwap}
             showAiSettings={showAiSettings}
             setShowAiSettings={setShowAiSettings}
             apiKeys={apiKeys}
