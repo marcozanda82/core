@@ -4981,11 +4981,26 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
 
       if (addWorkoutPayload != null) {
         const { title: wTitle, duration: wDuration, calories: wCalories } = addWorkoutPayload;
-        const timeDec = new Date().getHours() + new Date().getMinutes() / 60;
+        const currentD = new Date();
+        const timeDec = currentD.getHours() + currentD.getMinutes() / 60;
+        const oraString = currentD.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
         const durationHours = Math.max(1 / 60, wDuration / 60);
+        const titleLower = wTitle.toLowerCase();
         const isCardioHint = /corr|corsa|run|bike|cicl|spinning|nuot|swim|remier|rowing|ellitt|walk|cammin|cardio|hiit|saltell|jump/i.test(wTitle);
+        const isPcOrCognitive = /lavoro\s*(al\s*)?pc|pc\b|smart\s*working|scrivania|studio|desk|videocal|zoom|call da|programm/i.test(titleLower);
+        const isWorkGeneric = /(\blavoro\b|meeting|riunione|ufficio\b)/i.test(titleLower) && !/lavoro\s*al\s*pc|pc\b|scrivania/i.test(titleLower);
+        let workoutTypeForLog = isCardioHint ? 'cardio' : 'pesi';
+        let timelineNodeType = 'workout';
+        if (isPcOrCognitive) {
+          timelineNodeType = 'cognitive';
+          workoutTypeForLog = /studio|studiare|leggere|libro/i.test(titleLower) ? 'studio' : 'lavoro_pc';
+        } else if (isWorkGeneric) {
+          timelineNodeType = 'work';
+          workoutTypeForLog = 'lavoro';
+        }
+        const workoutId = Date.now().toString();
         const workoutEntry = {
-          id: Date.now().toString(),
+          id: workoutId,
           type: 'workout',
           title: wTitle,
           name: wTitle,
@@ -4995,9 +5010,29 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
           calories: wCalories,
           kcal: wCalories,
           cal: wCalories,
-          workoutType: isCardioHint ? 'cardio' : 'pesi',
+          workoutType: workoutTypeForLog,
           time: timeDec,
           mealTime: timeDec,
+          ora: oraString,
+          timeString: oraString,
+        };
+        const timelineNode = {
+          id: workoutId,
+          type: timelineNodeType,
+          time: timeDec,
+          duration: durationHours,
+          kcal: wCalories,
+          icon:
+            timelineNodeType === 'cognitive'
+              ? workoutTypeForLog === 'studio'
+                ? '📚'
+                : '💻'
+              : timelineNodeType === 'work'
+                ? '💼'
+                : '🏋️',
+          subType: workoutTypeForLog,
+          name: wTitle,
+          muscles: [],
         };
         const testoRisposta = `🎯 **Workout Registrato**
 - **Attività:** ${wTitle}
@@ -5011,10 +5046,15 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         }
         if (isSimulationMode) {
           setSimulatedLog((prev) => [workoutEntry, ...(prev || [])]);
+          setSimulationNodes((prev) =>
+            [...(prev || []), timelineNode].sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
+          );
         } else {
           const nuovoLogWo = [workoutEntry, ...(dailyLog || [])];
+          const nextManual = [...manualNodes, timelineNode].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
           setDailyLog(nuovoLogWo);
-          syncDatiFirebase(nuovoLogWo, manualNodes);
+          setManualNodes(nextManual);
+          syncDatiFirebase(nuovoLogWo, nextManual);
         }
         setChatHistory((prev) => {
           const next = [...prev];

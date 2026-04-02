@@ -315,6 +315,41 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     }
   });
 
+  /** Allenamenti nel diario senza nodo timeline (es. log da chat): replica la shape di manualNodes, duration in ore, kcal sempre > 0 per il modello. */
+  const seenTimelineIds = new Set(graphTimelineNodes.map((n) => n && n.id).filter(Boolean));
+  log.forEach((entry) => {
+    if (!entry || entry.type !== 'workout') return;
+    const idStr = entry.id != null ? String(entry.id) : '';
+    if (idStr && seenTimelineIds.has(idStr)) return;
+    const timeT = Number(entry.time ?? entry.mealTime);
+    if (!Number.isFinite(timeT)) return;
+    let durH = Number(entry.duration);
+    if (!Number.isFinite(durH) || durH <= 0 || durH > 36) {
+      const dm = Number(entry.durationMinutes);
+      durH = Number.isFinite(dm) && dm > 0 ? Math.max(1 / 60, dm / 60) : 1;
+    }
+    let kcal = Number(entry.kcal ?? entry.cal ?? entry.calories ?? 0);
+    if (!Number.isFinite(kcal) || kcal < 0) kcal = 0;
+    if (kcal === 0) {
+      kcal = Math.max(15, Math.round(durH * 60 * 4));
+    }
+    const label = String(entry.title ?? entry.name ?? entry.desc ?? '').toLowerCase();
+    const isCognitive = /lavoro\s*(al\s*)?pc|pc\b|smart\s*working|scrivania|studio|desk|videocal|zoom|call da|programm/i.test(label);
+    const isWorkNode = /(\blavoro\b|meeting|riunione|ufficio\b)/i.test(label) && !/lavoro\s*al\s*pc|pc\b|scrivania/i.test(label);
+    const nodeType = isCognitive ? 'cognitive' : isWorkNode ? 'work' : 'workout';
+    const nid = idStr || `logworkout_${timeT}_${Math.round(durH * 1000)}`;
+    graphTimelineNodes.push({
+      id: nid,
+      type: nodeType,
+      time: timeT,
+      duration: Math.max(0.25, durH),
+      kcal,
+      subType: entry.workoutType || 'pesi',
+      name: entry.title || entry.name || entry.desc,
+    });
+    if (idStr) seenTimelineIds.add(idStr);
+  });
+
   const isWaterAutoPilot = computeWaterHydrationAutoPilot(log, graphTimelineNodes);
   const maxEnergyCap = Math.max(0, Math.min(100, 100 - (Number(accumuloSNC) || 0) * 0.25));
   const ideal = idealStrategy || {};
