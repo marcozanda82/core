@@ -4757,7 +4757,7 @@ Puoi anche proporre alternative dal database e chiedere conferma; alla conferma 
 
 SONNO (ZERO FORM — solo messaggio testuale, niente screenshot Mi Fitness): Se l'utente riferisce di aver dormito (sonno notturno o sonnellino/pisolino), estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). Restituisci RIGOROSAMENTE un JSON con questo formato: {"action":"add_sleep","hours":<numero_ore>}. Non aggiungere alcun testo fuori dal JSON.
 
-ALLENAMENTO (ZERO FORM — solo messaggio testuale): Se l'utente riferisce di essersi allenato o di aver fatto un'attività fisica (es. "ho corso per 40 minuti"), estrai l'attività e la durata in minuti. Se le calorie non sono specificate, stima un valore medio realistico per quel tipo di attività e durata. Restituisci RIGOROSAMENTE un JSON con questo formato: {"action":"add_workout","title":"nome_attività","duration":<minuti>,"calories":<kcal_stimate>}. Non aggiungere alcun testo fuori dal JSON. Non usare add_workout nella stessa risposta di add_sleep o log_sleep.
+ALLENAMENTO (ZERO FORM — solo messaggio testuale): Se l'utente riferisce di essersi allenato o di aver fatto un'attività fisica, estrai titolo, orario di INIZIO esatto e durata in minuti. SLOT FILLING SEVERO: se mancano dati cruciali (orario esatto di inizio o durata in minuti), NON inventarli: imposta "timeString" a null o "" e "duration" a null. Non usare add_workout finché l'utente non ha fornito entrambi in modo chiaro nel messaggio. Se le calorie non sono note, puoi stimarle solo quando durata e orario sono entrambi presenti; altrimenti "calories" può essere null. Formato JSON obbligatorio: {"action":"add_workout","title":"nome_attività","timeString":"HH:mm","duration":<minuti_intero>,"calories":<kcal_o_null>}. timeString in 24h (es. "18:30"). Restituisci RIGOROSAMENTE solo questo JSON senza altro testo. Non usare add_workout nella stessa risposta di add_sleep o log_sleep.
 
 Database alimenti noti: ${foodDbNames.length ? foodDbNames.join(', ') : 'nessuno'}.
 
@@ -4869,6 +4869,7 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
       }
 
       let addWorkoutPayload = null;
+      let addWorkoutSlotError = false;
       const addWorkoutMarker = responseText.indexOf('"add_workout"');
       if (addWorkoutMarker !== -1) {
         let woObjStart = responseText.lastIndexOf('{', addWorkoutMarker);
@@ -4888,14 +4889,34 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
           try {
             const woParsed = JSON.parse(responseText.slice(woObjStart, woObjEnd + 1));
             if (woParsed && woParsed.action === 'add_workout') {
-              const wTitle = (woParsed.title != null && String(woParsed.title).trim()) ? String(woParsed.title).trim() : 'Allenamento';
-              let wDuration = Number(woParsed.duration) || 0;
-              let wCalories = Number(woParsed.calories) || 0;
-              if (!Number.isFinite(wDuration) || wDuration <= 0) wDuration = 30;
-              if (!Number.isFinite(wCalories) || wCalories <= 0) {
-                wCalories = Math.max(80, Math.round(wDuration * 8));
+              const timeStrRaw = woParsed.timeString != null ? String(woParsed.timeString).trim() : '';
+              const timeDecFromSlot = timeStrRaw ? parseFlexibleTimeToDecimal(timeStrRaw) : null;
+              const durRaw = woParsed.duration;
+              const wDuration =
+                durRaw === null || durRaw === undefined || durRaw === ''
+                  ? NaN
+                  : Number(durRaw);
+              const hasValidDuration = Number.isFinite(wDuration) && wDuration > 0;
+              const hasValidTimeString = timeStrRaw.length > 0 && timeDecFromSlot != null;
+              if (!hasValidDuration || !hasValidTimeString) {
+                addWorkoutSlotError = true;
+              } else {
+                const wTitle =
+                  woParsed.title != null && String(woParsed.title).trim()
+                    ? String(woParsed.title).trim()
+                    : 'Allenamento';
+                let wCalories = Number(woParsed.calories);
+                if (!Number.isFinite(wCalories) || wCalories <= 0) {
+                  wCalories = Math.max(80, Math.round(wDuration * 8));
+                }
+                addWorkoutPayload = {
+                  title: wTitle,
+                  duration: wDuration,
+                  calories: wCalories,
+                  timeString: timeStrRaw,
+                  timeDec: timeDecFromSlot,
+                };
               }
-              addWorkoutPayload = { title: wTitle, duration: wDuration, calories: wCalories };
             }
           } catch (_) {}
         }
@@ -4979,11 +5000,20 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
         return;
       }
 
+      if (addWorkoutSlotError) {
+        const missingText =
+          "Mi mancano alcuni dettagli per registrare l'allenamento. A che ora hai iniziato e quanto è durato?";
+        setChatHistory((prev) => {
+          const next = [...prev];
+          next.pop();
+          next.push({ sender: 'ai', text: missingText });
+          return next;
+        });
+        return;
+      }
+
       if (addWorkoutPayload != null) {
-        const { title: wTitle, duration: wDuration, calories: wCalories } = addWorkoutPayload;
-        const currentD = new Date();
-        const timeDec = currentD.getHours() + currentD.getMinutes() / 60;
-        const oraString = currentD.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+        const { title: wTitle, duration: wDuration, calories: wCalories, timeString: oraString, timeDec } = addWorkoutPayload;
         const durationHours = Math.max(1 / 60, wDuration / 60);
         const titleLower = wTitle.toLowerCase();
         const isCardioHint = /corr|corsa|run|bike|cicl|spinning|nuot|swim|remier|rowing|ellitt|walk|cammin|cardio|hiit|saltell|jump/i.test(wTitle);
