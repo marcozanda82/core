@@ -4757,6 +4757,8 @@ Puoi anche proporre alternative dal database e chiedere conferma; alla conferma 
 
 SONNO (ZERO FORM — solo messaggio testuale, niente screenshot Mi Fitness): Se l'utente riferisce di aver dormito (sonno notturno o sonnellino/pisolino), estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). Restituisci RIGOROSAMENTE un JSON con questo formato: {"action":"add_sleep","hours":<numero_ore>}. Non aggiungere alcun testo fuori dal JSON.
 
+ALLENAMENTO (ZERO FORM — solo messaggio testuale): Se l'utente riferisce di essersi allenato o di aver fatto un'attività fisica (es. "ho corso per 40 minuti"), estrai l'attività e la durata in minuti. Se le calorie non sono specificate, stima un valore medio realistico per quel tipo di attività e durata. Restituisci RIGOROSAMENTE un JSON con questo formato: {"action":"add_workout","title":"nome_attività","duration":<minuti>,"calories":<kcal_stimate>}. Non aggiungere alcun testo fuori dal JSON. Non usare add_workout nella stessa risposta di add_sleep o log_sleep.
+
 Database alimenti noti: ${foodDbNames.length ? foodDbNames.join(', ') : 'nessuno'}.
 
 Contesto: Pagina ${paginaAttuale}. Rischio stress serale ${energyAt20 != null && energyAt20 < 40 ? 'ALTO' : 'Basso'}. [STRATEGIA: ...]. [ALLENAMENTO: desc | kcal]. Applica lo STILE LAVAGNA/COACH sopra.
@@ -4866,6 +4868,39 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
         }
       }
 
+      let addWorkoutPayload = null;
+      const addWorkoutMarker = responseText.indexOf('"add_workout"');
+      if (addWorkoutMarker !== -1) {
+        let woObjStart = responseText.lastIndexOf('{', addWorkoutMarker);
+        if (woObjStart !== -1) {
+          let depthWo = 0;
+          let woObjEnd = woObjStart;
+          for (let i = woObjStart; i < responseText.length; i++) {
+            if (responseText[i] === '{') depthWo++;
+            else if (responseText[i] === '}') {
+              depthWo--;
+              if (depthWo === 0) {
+                woObjEnd = i;
+                break;
+              }
+            }
+          }
+          try {
+            const woParsed = JSON.parse(responseText.slice(woObjStart, woObjEnd + 1));
+            if (woParsed && woParsed.action === 'add_workout') {
+              const wTitle = (woParsed.title != null && String(woParsed.title).trim()) ? String(woParsed.title).trim() : 'Allenamento';
+              let wDuration = Number(woParsed.duration) || 0;
+              let wCalories = Number(woParsed.calories) || 0;
+              if (!Number.isFinite(wDuration) || wDuration <= 0) wDuration = 30;
+              if (!Number.isFinite(wCalories) || wCalories <= 0) {
+                wCalories = Math.max(80, Math.round(wDuration * 8));
+              }
+              addWorkoutPayload = { title: wTitle, duration: wDuration, calories: wCalories };
+            }
+          } catch (_) {}
+        }
+      }
+
       let sleepDataPayload = null;
       const logSleepIdx = responseText.indexOf('"log_sleep"');
       if (logSleepIdx === -1) {
@@ -4932,6 +4967,55 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
           syncDatiFirebase(nuovoLogSleep, manualNodes);
         }
         dismissKentuSleepTrigger();
+        setChatHistory((prev) => {
+          const next = [...prev];
+          next.pop();
+          next.push({
+            sender: 'ai',
+            text: testoRisposta,
+          });
+          return next;
+        });
+        return;
+      }
+
+      if (addWorkoutPayload != null) {
+        const { title: wTitle, duration: wDuration, calories: wCalories } = addWorkoutPayload;
+        const timeDec = new Date().getHours() + new Date().getMinutes() / 60;
+        const durationHours = Math.max(1 / 60, wDuration / 60);
+        const isCardioHint = /corr|corsa|run|bike|cicl|spinning|nuot|swim|remier|rowing|ellitt|walk|cammin|cardio|hiit|saltell|jump/i.test(wTitle);
+        const workoutEntry = {
+          id: Date.now().toString(),
+          type: 'workout',
+          title: wTitle,
+          name: wTitle,
+          desc: wTitle.toUpperCase(),
+          durationMinutes: wDuration,
+          duration: durationHours,
+          calories: wCalories,
+          kcal: wCalories,
+          cal: wCalories,
+          workoutType: isCardioHint ? 'cardio' : 'pesi',
+          time: timeDec,
+          mealTime: timeDec,
+        };
+        const testoRisposta = `🎯 **Workout Registrato**
+- **Attività:** ${wTitle}
+- **Durata:** ${wDuration} min
+- **Spesa energetica:** ~${wCalories} kcal
+
+Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
+        const anchorWo = currentTrackerDate || getTodayString();
+        if (anchorWo === getTodayString()) {
+          scheduledWorkoutContextRef.current = null;
+        }
+        if (isSimulationMode) {
+          setSimulatedLog((prev) => [workoutEntry, ...(prev || [])]);
+        } else {
+          const nuovoLogWo = [workoutEntry, ...(dailyLog || [])];
+          setDailyLog(nuovoLogWo);
+          syncDatiFirebase(nuovoLogWo, manualNodes);
+        }
         setChatHistory((prev) => {
           const next = [...prev];
           next.pop();
@@ -5067,6 +5151,27 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
               }
             }
             cleanText = (cleanText.slice(0, idxAs) + cleanText.slice(endAs + 1)).trim();
+          }
+        }
+      }
+      {
+        const awIdx = cleanText.indexOf('"add_workout"');
+        if (awIdx !== -1) {
+          const idxAw = cleanText.lastIndexOf('{', awIdx);
+          if (idxAw !== -1) {
+            let depthAw = 0;
+            let endAw = idxAw;
+            for (let i = idxAw; i < cleanText.length; i++) {
+              if (cleanText[i] === '{') depthAw++;
+              else if (cleanText[i] === '}') {
+                depthAw--;
+                if (depthAw === 0) {
+                  endAw = i;
+                  break;
+                }
+              }
+            }
+            cleanText = (cleanText.slice(0, idxAw) + cleanText.slice(endAw + 1)).trim();
           }
         }
       }
