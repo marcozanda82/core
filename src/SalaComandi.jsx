@@ -104,6 +104,78 @@ import {
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
 const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'longevita'];
 
+/**
+ * Match migliore sul database alimenti: esatto > bidirezionale (includes) con score da differenza di lunghezza.
+ * @param {string} searchQuery
+ * @param {Record<string, { desc?: string, name?: string }>} db
+ * @returns {string|null} chiave dell'entry nel db o null
+ */
+function findBestFoodMatch(searchQuery, db) {
+  if (!searchQuery || !db) return null;
+  const query = searchQuery.toLowerCase().trim();
+  if (!query) return null;
+  let bestMatchKey = null;
+  let bestScore = -1;
+
+  for (const key in db) {
+    if (!Object.prototype.hasOwnProperty.call(db, key)) continue;
+    const item = db[key];
+    const dbName = (item.desc || item.name || '').toLowerCase().trim();
+    if (!dbName) continue;
+
+    if (dbName === query) return key;
+
+    if (dbName.includes(query) || query.includes(dbName)) {
+      const lengthDiff = Math.abs(dbName.length - query.length);
+      const score = 1000 - lengthDiff;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatchKey = key;
+      }
+    }
+  }
+  return bestMatchKey;
+}
+
+/**
+ * Abitudine / recency: match su foodDb + ultima grammatura usata nello storico (log più recenti per primi).
+ * @param {string} query
+ * @param {Record<string, object>} foodDb
+ * @param {Array} flatLog — es. dailyLog (+ simulated) già normalizzato; ordine [più recente, …]
+ */
+function findRecentFoodHabit(query, foodDb, flatLog) {
+  if (!query || !foodDb) return null;
+  const bestKey = findBestFoodMatch(query, foodDb);
+  if (!bestKey) return null;
+  const item = foodDb[bestKey];
+  if (!item) return null;
+  const logArr = Array.isArray(flatLog) ? flatLog : [];
+  let lastQty = null;
+  for (let i = 0; i < logArr.length; i++) {
+    const e = logArr[i];
+    if (e.type !== 'food' && e.type !== 'recipe') continue;
+    const nm = e.desc || e.name;
+    if (!nm || typeof nm !== 'string') continue;
+    const k = findBestFoodMatch(nm.trim(), foodDb);
+    if (k === bestKey) {
+      const q = Number(e.qta ?? e.weight);
+      if (Number.isFinite(q) && q > 0) {
+        lastQty = Math.round(q);
+        break;
+      }
+    }
+  }
+  const dq = Number(item.defaultQty);
+  const defaultQty =
+    lastQty != null ? lastQty : Number.isFinite(dq) && dq > 0 ? Math.round(dq) : 150;
+  return {
+    dbKey: bestKey,
+    name: item.desc || item.name || query,
+    qty: defaultQty,
+  };
+}
+
 function formatBodyBatteryValue(v) {
   const n = Math.round(Number(v) * 10) / 10;
   if (n === 0) return '0%';
@@ -1122,6 +1194,8 @@ export default function SalaComandi() {
   }, []);
 
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
+  /** add_food con qty mancante: proposta da abitudine DB + storico, in attesa di Sì/No */
+  const [pendingHabit, setPendingHabit] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
   /** Quadrante home (modalità base): kcal | pro | cho | fat */
   const [activeDialMode, setActiveDialMode] = useState('kcal');
@@ -3342,13 +3416,16 @@ export default function SalaComandi() {
     return def > 0 ? def : (nutrientKey === 'fibre' ? 3 : nutrientKey === 'omega3' ? 0.3 : nutrientKey === 'mg' ? 25 : 10);
   }, [fullHistory]);
 
-  // Estrazione dati da DB
-  const estraiDatiFoodDb = useCallback((nome, qta, pastoType) => {
+  // Estrazione dati da DB (preferredDbKey: da findBestFoodMatch nel flusso add_food)
+  const estraiDatiFoodDb = useCallback((nome, qta, pastoType, preferredDbKey) => {
     const foodItem = Object.assign(
       { id: Date.now() + Math.random(), type: 'food', mealType: pastoType, desc: nome, qta, weight: qta, kcal: 0, cal: 0 },
       ...Object.keys(TARGETS).flatMap(g => Object.keys(TARGETS[g]).map(k => ({ [k]: undefined })))
     );
-    const dbKey = Object.keys(foodDb).find(k => foodDb[k].desc?.toLowerCase().includes(nome.toLowerCase()));
+    const dbKey =
+      preferredDbKey != null && foodDb[preferredDbKey] != null
+        ? preferredDbKey
+        : Object.keys(foodDb).find(k => foodDb[k].desc?.toLowerCase().includes(nome.toLowerCase()));
     if (dbKey) {
       const dbF = foodDb[dbKey];
       if (dbF.isRecipe && Array.isArray(dbF.ingredients) && dbF.ingredients.length > 0) {
@@ -3427,6 +3504,119 @@ export default function SalaComandi() {
     }
     return foodItem;
   }, [foodDb, getAverageEstimate, fullHistory]);
+
+  /** Salvataggio pasto da payload add_food / pendingHabit; items possono includere matchedKey (abitudine). */
+  const commitAddFoodChatPayload = useCallback(
+    (payload) => {
+      const { timeString: oraStringFood, mealDec: mealDecFood, items: addFoodItems } = payload || {};
+      if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
+      const predictedMealType = predictMealType(mealDecFood);
+      const batchGhostTypeFood = getGhostMealType(predictedMealType, dailyLog || []);
+      const batchIdFood = `batch_${Date.now()}`;
+
+      const alimentiProcessatiFood = addFoodItems
+        .map((item, index) => {
+          const name = item.name;
+          const qty = Math.max(1, Number(item.qty));
+          const matchedKey =
+            item.matchedKey != null && foodDb[item.matchedKey] != null
+              ? item.matchedKey
+              : findBestFoodMatch(name, foodDb);
+          if (matchedKey != null) {
+            const dati = estraiDatiFoodDb(name, qty, batchGhostTypeFood, matchedKey);
+            const isRecipe = dati.type === 'recipe';
+            return {
+              ...dati,
+              id: dati.id || `ai_${batchIdFood}_${index}`,
+              mealType: batchGhostTypeFood,
+              mealTime: mealDecFood,
+              batchId: batchIdFood,
+              isEstimated: false,
+              type: isRecipe ? 'recipe' : 'food',
+            };
+          }
+          const qSafe = Math.max(5, qty);
+          let kcal = Number(item.estKcal);
+          let prot = Number(item.estPro);
+          let carb = Number(item.estCar);
+          let fat = Number(item.estFat);
+          if (!Number.isFinite(kcal) || kcal <= 0) {
+            kcal = Math.max(10, Math.round((getAverageEstimate('kcal', name) / 100) * qSafe));
+          }
+          if (!Number.isFinite(prot) || prot < 0) {
+            prot = (getAverageEstimate('prot', name) / 100) * qSafe;
+          }
+          if (!Number.isFinite(carb) || carb < 0) {
+            carb = (getAverageEstimate('carb', name) / 100) * qSafe;
+          }
+          if (!Number.isFinite(fat) || fat < 0) {
+            fat = (getAverageEstimate('fatTotal', name) / 100) * qSafe;
+          }
+          const baseEst = estraiDatiFoodDb(name, qty, batchGhostTypeFood);
+          return {
+            ...baseEst,
+            id: `ai_food_${batchIdFood}_${index}`,
+            type: 'food',
+            mealType: batchGhostTypeFood,
+            desc: name,
+            name,
+            qta: qSafe,
+            weight: qSafe,
+            kcal,
+            cal: kcal,
+            prot,
+            carb,
+            fatTotal: fat,
+            fat,
+            mealTime: mealDecFood,
+            batchId: batchIdFood,
+            isEstimated: true,
+          };
+        })
+        .filter(Boolean);
+
+      const totKcal = Math.round(
+        alimentiProcessatiFood.reduce((s, f) => s + (Number(f.kcal) || Number(f.cal) || 0), 0)
+      );
+      const totPro =
+        Math.round(alimentiProcessatiFood.reduce((s, f) => s + (Number(f.prot) || 0), 0) * 10) / 10;
+      const totCar =
+        Math.round(alimentiProcessatiFood.reduce((s, f) => s + (Number(f.carb) || 0), 0) * 10) / 10;
+      const totFat =
+        Math.round(alimentiProcessatiFood.reduce((s, f) => s + (Number(f.fatTotal ?? f.fat) || 0), 0) * 10) /
+        10;
+      const testoRispostaFood = `🎯 **Pasto Registrato**
+- **Orario:** ${oraStringFood}
+- **Kcal Totali:** ${totKcal}
+- **Proteine:** ${totPro}g
+- **Carboidrati:** ${totCar}g
+- **Grassi:** ${totFat}g
+
+Ottimo! Diario aggiornato. 🥗`;
+
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => [...alimentiProcessatiFood, ...(prev || [])]);
+      } else {
+        const nuovoLogFood = [...alimentiProcessatiFood, ...(dailyLog || [])];
+        setDailyLog(nuovoLogFood);
+        syncDatiFirebase(nuovoLogFood, manualNodes);
+      }
+      return testoRispostaFood;
+    },
+    [
+      predictMealType,
+      getGhostMealType,
+      dailyLog,
+      foodDb,
+      estraiDatiFoodDb,
+      getAverageEstimate,
+      isSimulationMode,
+      setSimulatedLog,
+      setDailyLog,
+      syncDatiFirebase,
+      manualNodes,
+    ]
+  );
 
   const handleAddFoodManual = () => {
     if (!foodNameInput || !foodWeightInput) return;
@@ -4472,6 +4662,49 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       apiUserContent = userMessage;
     }
 
+    if (pendingHabit && userMessage && !secretPrompt) {
+      const userTextLower = userMessage.trim().toLowerCase();
+      const isHabitYes =
+        userTextLower === 'si' ||
+        userTextLower === 'sì' ||
+        userTextLower === 'confermo' ||
+        userTextLower === 'ok' ||
+        userTextLower === 'va bene';
+      const isHabitNo =
+        userTextLower === 'no' ||
+        userTextLower.includes('cambia') ||
+        userTextLower.includes('annulla');
+      if (isHabitYes) {
+        const ph = pendingHabit;
+        setPendingHabit(null);
+        commitAddFoodChatPayload(ph);
+        const summary = (ph.items || [])
+          .map((it) => `${it.qty}g di ${it.name}`)
+          .join(', ');
+        setChatHistory((prev) => [
+          ...prev,
+          { sender: 'user', text: userMessage },
+          { sender: 'ai', text: `Perfetto! Ho registrato ${summary || 'il pasto'}. 🥗` },
+        ]);
+        if (optionalReply == null) setChatInput('');
+        return;
+      }
+      if (isHabitNo) {
+        setPendingHabit(null);
+        setChatHistory((prev) => [
+          ...prev,
+          { sender: 'user', text: userMessage },
+          {
+            sender: 'ai',
+            text: 'Nessun problema. Quanti grammi e quale alimento esattamente?',
+          },
+        ]);
+        if (optionalReply == null) setChatInput('');
+        return;
+      }
+      setPendingHabit(null);
+    }
+
     if (!secretPrompt && pendingWorkoutFlowRef.current?.kind === 'await_custom_time' && userMessage) {
       const parsedT = parseFlexibleTimeToDecimal(userMessage);
       if (parsedT == null) {
@@ -4749,7 +4982,7 @@ Usa SEMPRE questa struttura per ogni messaggio di testo normale (non vale quando
 3. Grassetti per evidenziare numeri, calorie o parole chiave.
 4. Una domanda secca finale per richiedere un'azione rapida.
 
-Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino"), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
+Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino") SENZA indicare un orario del pasto in modo da poter usare add_food (vedi PASTI ZERO FORM), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
 
 REGOLA MOLTIPLICATORE: Se l'utente indica quantità a pezzi (es. "3 gallette di riso", "2 uova"), stima il peso di UNA singola unità, moltiplicalo per la quantità, e inserisci il PESO TOTALE IN GRAMMI nel campo "weight" (es. 2 uova ≈ 120g, 3 gallette ≈ 30g totali). Un solo alimento = array con un elemento [{"name":"...", "weight": N, "mealType":"..."}].
 
@@ -4758,6 +4991,8 @@ Puoi anche proporre alternative dal database e chiedere conferma; alla conferma 
 SONNO (ZERO FORM — solo messaggio testuale, niente screenshot Mi Fitness): Se l'utente riferisce di aver dormito (sonno notturno o sonnellino/pisolino), estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). Restituisci RIGOROSAMENTE un JSON con questo formato: {"action":"add_sleep","hours":<numero_ore>}. Non aggiungere alcun testo fuori dal JSON.
 
 ALLENAMENTO (ZERO FORM — solo messaggio testuale): Se l'utente riferisce di essersi allenato o di aver fatto un'attività fisica, estrai titolo, orario di INIZIO esatto e durata in minuti. SLOT FILLING SEVERO: se mancano dati cruciali (orario esatto di inizio o durata in minuti), NON inventarli: imposta "timeString" a null o "" e "duration" a null. Non usare add_workout finché l'utente non ha fornito entrambi in modo chiaro nel messaggio. Se le calorie non sono note, puoi stimarle solo quando durata e orario sono entrambi presenti; altrimenti "calories" può essere null. Formato JSON obbligatorio: {"action":"add_workout","title":"nome_attività","timeString":"HH:mm","duration":<minuti_intero>,"calories":<kcal_o_null>}. timeString in 24h (es. "18:30"). Restituisci RIGOROSAMENTE solo questo JSON senza altro testo. Non usare add_workout nella stessa risposta di add_sleep o log_sleep.
+
+PASTI (ZERO FORM — add_food): Se l'utente riferisce di aver mangiato, estrai l'orario del pasto (timeString HH:mm) e una lista di alimenti con le rispettive quantità in grammi. Per ogni alimento fornisci anche una tua stima biochimica dei macronutrienti per quella specifica quantità nei campi estKcal (kcal), estPro (proteine g), estCar (carboidrati g), estFat (grassi g). SLOT FILLING SEVERO: se manca l'orario o la quantità in grammi di un alimento, NON inventarli: usa timeString null o "" e qty null. Restituisci RIGOROSAMENTE solo questo JSON senza altro testo: {"action":"add_food","timeString":"HH:mm","items":[{"name":"nome_alimento","qty":grammi,"estKcal":stima,"estPro":stima,"estCar":stima,"estFat":stima}]}. Non mischiare add_food con add_sleep, add_workout o log_sleep. Per elenchi senza orario/chiarezza per add_food usa l'array JSON legacy descritto sopra.
 
 Database alimenti noti: ${foodDbNames.length ? foodDbNames.join(', ') : 'nessuno'}.
 
@@ -4824,7 +5059,7 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
       }
 
       const arrayStart = responseText.indexOf('[');
-      if (itemsArray == null && arrayStart !== -1) {
+      if (itemsArray == null && arrayStart !== -1 && responseText.indexOf('"add_food"') === -1) {
         let depth = 0;
         let arrayEnd = arrayStart;
         for (let i = arrayStart; i < responseText.length; i++) {
@@ -4922,6 +5157,113 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
         }
       }
 
+      let addFoodPayload = null;
+      let addFoodHabitProposal = null;
+      let addFoodSlotError = false;
+      const habitLogFlat = normalizeLogData([
+        ...(Array.isArray(dailyLog) ? dailyLog : []),
+        ...(Array.isArray(simulatedLog) ? simulatedLog : []),
+      ]);
+      const addFoodMarker = responseText.indexOf('"add_food"');
+      if (addFoodMarker !== -1) {
+        let afObjStart = responseText.lastIndexOf('{', addFoodMarker);
+        if (afObjStart !== -1) {
+          let depthAf = 0;
+          let afObjEnd = afObjStart;
+          for (let i = afObjStart; i < responseText.length; i++) {
+            if (responseText[i] === '{') depthAf++;
+            else if (responseText[i] === '}') {
+              depthAf--;
+              if (depthAf === 0) {
+                afObjEnd = i;
+                break;
+              }
+            }
+          }
+          try {
+            const afParsed = JSON.parse(responseText.slice(afObjStart, afObjEnd + 1));
+            if (afParsed && afParsed.action === 'add_food') {
+              const timeStrRaw = afParsed.timeString != null ? String(afParsed.timeString).trim() : '';
+              const mealDecFromSlot = timeStrRaw ? parseFlexibleTimeToDecimal(timeStrRaw) : null;
+              const hasValidTimeString = timeStrRaw.length > 0 && mealDecFromSlot != null;
+              const itemsRaw = afParsed.items;
+              const itemsArr = Array.isArray(itemsRaw) ? itemsRaw : [];
+              if (!hasValidTimeString || itemsArr.length === 0) {
+                addFoodSlotError = true;
+              } else {
+                let slotInvalid = false;
+                let needsHabitConfirm = false;
+                const normalizedItems = [];
+                for (const it of itemsArr) {
+                  const nm = it?.name != null ? String(it.name).trim() : '';
+                  if (!nm) {
+                    slotInvalid = true;
+                    break;
+                  }
+                  const qtyN = Number(it?.qty);
+                  const qtyOk = Number.isFinite(qtyN) && qtyN > 0;
+                  if (qtyOk) {
+                    normalizedItems.push({
+                      name: nm,
+                      qty: qtyN,
+                      estKcal: it?.estKcal,
+                      estPro: it?.estPro,
+                      estCar: it?.estCar,
+                      estFat: it?.estFat,
+                    });
+                  } else {
+                    const habit = findRecentFoodHabit(nm, foodDb, habitLogFlat);
+                    if (!habit) {
+                      slotInvalid = true;
+                      break;
+                    }
+                    needsHabitConfirm = true;
+                    normalizedItems.push({
+                      name: habit.name,
+                      qty: habit.qty,
+                      estKcal: it?.estKcal,
+                      estPro: it?.estPro,
+                      estCar: it?.estCar,
+                      estFat: it?.estFat,
+                      matchedKey: habit.dbKey,
+                    });
+                  }
+                }
+                if (slotInvalid) addFoodSlotError = true;
+                else if (needsHabitConfirm) {
+                  addFoodHabitProposal = {
+                    timeString: timeStrRaw,
+                    mealDec: mealDecFromSlot,
+                    items: normalizedItems,
+                  };
+                } else {
+                  addFoodPayload = {
+                    timeString: timeStrRaw,
+                    mealDec: mealDecFromSlot,
+                    items: normalizedItems,
+                  };
+                }
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (addFoodHabitProposal != null) {
+        setPendingHabit(addFoodHabitProposal);
+        const bullets = addFoodHabitProposal.items
+          .map((it) => `- **Alimento:** ${it.name}\n- **Quantità:** ${it.qty}g`)
+          .join('\n\n');
+        const msg = `🎯 **Conferma Abitudine**\n${bullets}\n\nConfermi questo inserimento? (Sì/No)`;
+        setChatHistory((prev) => {
+          const next = [...prev];
+          next.pop();
+          next.push({ sender: 'ai', text: msg });
+          return next;
+        });
+        return;
+      }
+
       let sleepDataPayload = null;
       const logSleepIdx = responseText.indexOf('"log_sleep"');
       if (logSleepIdx === -1) {
@@ -5012,6 +5354,18 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
         return;
       }
 
+      if (addFoodSlotError) {
+        const missingFoodText =
+          'Mi mancano dei dettagli per registrare il pasto. A che ora hai mangiato e quanti grammi erano all\'incirca?';
+        setChatHistory((prev) => {
+          const next = [...prev];
+          next.pop();
+          next.push({ sender: 'ai', text: missingFoodText });
+          return next;
+        });
+        return;
+      }
+
       if (addWorkoutPayload != null) {
         const { title: wTitle, duration: wDuration, calories: wCalories, timeString: oraString, timeDec } = addWorkoutPayload;
         const durationHours = Math.max(1 / 60, wDuration / 60);
@@ -5092,6 +5446,20 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
           next.push({
             sender: 'ai',
             text: testoRisposta,
+          });
+          return next;
+        });
+        return;
+      }
+
+      if (addFoodPayload != null) {
+        const testoRispostaFood = commitAddFoodChatPayload(addFoodPayload);
+        setChatHistory((prev) => {
+          const next = [...prev];
+          next.pop();
+          next.push({
+            sender: 'ai',
+            text: testoRispostaFood || 'Pasto registrato. 🥗',
           });
           return next;
         });
@@ -5242,6 +5610,27 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
               }
             }
             cleanText = (cleanText.slice(0, idxAw) + cleanText.slice(endAw + 1)).trim();
+          }
+        }
+      }
+      {
+        const afIdx = cleanText.indexOf('"add_food"');
+        if (afIdx !== -1) {
+          const idxAf = cleanText.lastIndexOf('{', afIdx);
+          if (idxAf !== -1) {
+            let depthAf = 0;
+            let endAf = idxAf;
+            for (let i = idxAf; i < cleanText.length; i++) {
+              if (cleanText[i] === '{') depthAf++;
+              else if (cleanText[i] === '}') {
+                depthAf--;
+                if (depthAf === 0) {
+                  endAf = i;
+                  break;
+                }
+              }
+            }
+            cleanText = (cleanText.slice(0, idxAf) + cleanText.slice(endAf + 1)).trim();
           }
         }
       }
