@@ -2055,34 +2055,46 @@ export default function SalaComandi() {
   };
 
   const computedMealNodes = useMemo(() => {
-    const bySlot = {};
-    (activeLog || []).forEach(f => {
-      const slotKey = getSlotKey(f);
-      if (slotKey) {
-        const foodKcal = Number(f.kcal ?? f.cal ?? 0) || 0;
-        if (!bySlot[slotKey]) {
-          bySlot[slotKey] = {
-            mealType: f.mealType,
-            originalTypes: new Set(),
-            time: typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 12,
-            strategyKey: getStrategyKey(toCanonicalMealType(f.mealType)),
-            kcal: foodKcal
-          };
-        } else {
-          bySlot[slotKey].kcal += foodKcal;
-        }
-        bySlot[slotKey].originalTypes.add(f.mealType);
+    const groups = {};
+    (activeLog || []).forEach((f) => {
+      if (f.type !== 'food' && f.type !== 'recipe') return;
+      const typeKey = f.mealType || 'pasto';
+      const timeKey =
+        typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime)
+          ? String(f.mealTime)
+          : 'unknown';
+      const mealId = `${typeKey}_${timeKey}`;
+      const foodKcal = Number(f.kcal ?? f.cal ?? 0) || 0;
+      if (!groups[mealId]) {
+        groups[mealId] = {
+          mealId,
+          mealType: typeKey,
+          originalTypes: new Set(),
+          time: typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 12,
+          strategyKey: getStrategyKey(toCanonicalMealType(String(typeKey).split('_')[0])),
+          kcal: 0,
+          items: [],
+        };
+      }
+      groups[mealId].kcal += foodKcal;
+      groups[mealId].originalTypes.add(f.mealType);
+      groups[mealId].items.push({ ...f });
+      if (typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime)) {
+        groups[mealId].time = f.mealTime;
       }
     });
 
-    return Object.values(bySlot).map(m => ({
-      id: m.mealType,
+    return Object.values(groups).map((m) => ({
+      id: m.mealId,
+      mealId: m.mealId,
       type: 'meal',
       time: m.time,
+      mealType: m.mealType,
       strategyKey: m.strategyKey,
       kcal: m.kcal ?? 0,
       originalTypes: Array.from(m.originalTypes),
-      icon: getMealIcon(m.mealType.split('_')[0])
+      items: m.items,
+      icon: getMealIcon(String(m.mealType).split('_')[0]),
     }));
   }, [activeLog]);
 
@@ -2872,7 +2884,8 @@ export default function SalaComandi() {
         if (confirmDelete) {
           if (dragType === 'meal') {
             const { itemIds } = draggingNode;
-            const newLog = dailyLog.filter(item => !(itemIds && itemIds.includes(item.id)));
+            const idSet = new Set((itemIds || []).map((x) => String(x)));
+            const newLog = dailyLog.filter((item) => !idSet.has(String(item.id)));
             const newNodes = manualNodes;
             setDailyLog(newLog);
             syncDatiFirebase(newLog, newNodes);
@@ -2888,8 +2901,9 @@ export default function SalaComandi() {
         } else {
           if (dragType === 'meal') {
             const { itemIds, originalTime: origTime } = draggingNode;
-            const next = dailyLog.map(item =>
-              itemIds && itemIds.includes(item.id) ? { ...item, mealTime: origTime } : item
+            const idSet = new Set((itemIds || []).map((x) => String(x)));
+            const next = dailyLog.map((item) =>
+              idSet.has(String(item.id)) ? { ...item, mealTime: origTime } : item
             );
             setDailyLog(next);
             syncDatiFirebase(next, manualNodes);
@@ -2904,8 +2918,9 @@ export default function SalaComandi() {
       } else {
         if (dragType === 'meal') {
           const { itemIds } = draggingNode;
-          const nextLog = dailyLog.map(item =>
-            itemIds && itemIds.includes(item.id) ? { ...item, mealTime: finalTimeRounded } : item
+          const idSet = new Set((itemIds || []).map((x) => String(x)));
+          const nextLog = dailyLog.map((item) =>
+            idSet.has(String(item.id)) ? { ...item, mealTime: finalTimeRounded } : item
           );
           setDailyLog(nextLog);
           syncDatiFirebase(nextLog, manualNodes);
@@ -3885,14 +3900,18 @@ Ottimo! Diario aggiornato. 🥗`;
         id: f.id || `f_${uniqueBatchId}_${index}`
       }));
 
-      const rest = safeDailyLog.filter(item => {
-        if (item.type !== 'food' && item.type !== 'recipe') return true;
-        return getSlotKey(item) !== slotToReplace;
-      });
+      const foodsToRemove = getFoodItemsForMealSlot(safeDailyLog, String(slotToReplace));
+      const removeSet = new Set(foodsToRemove);
+      const rest = safeDailyLog.filter((item) => !removeSet.has(item));
 
       const nuovoLog = [...mealItems, ...rest];
       if (isSimulationMode) {
-        setSimulatedLog(prev => [...(prev || []).filter(item => (item.type !== 'food' && item.type !== 'recipe') || getSlotKey(item) !== slotToReplace), ...mealItems]);
+        setSimulatedLog((prev) => {
+          const p = prev || [];
+          const toRm = getFoodItemsForMealSlot(p, String(slotToReplace));
+          const rm = new Set(toRm);
+          return [...p.filter((item) => !rm.has(item)), ...mealItems];
+        });
         setAddedFoods([]);
         setEditingMealId(null);
         closeDrawer({ force: true });
@@ -3925,6 +3944,7 @@ Ottimo! Diario aggiornato. 🥗`;
             : getCurrentTimeRoundedTo15Min();
       const logToUse = isSimulationMode ? (simulatedLog || []) : dailyLog;
       const ourSlot = getGhostMealType(payload.mealType || mealType, logToUse);
+      const slotToReplace = editingMealId || ourSlot;
       const mealItems = payload.items.map((f, index) => ({
         ...f,
         type: f.type === 'recipe' ? 'recipe' : 'food',
@@ -3932,18 +3952,20 @@ Ottimo! Diario aggiornato. 🥗`;
         mealTime: timeToUse,
         id: f.id || `f_${Date.now()}_${index}`
       }));
+      const foodsToRemove = getFoodItemsForMealSlot(logToUse, String(slotToReplace));
+      const removeSet = new Set(foodsToRemove);
+      const dailyLogRest = logToUse.filter((item) => !removeSet.has(item));
+      const nextLog = [...mealItems, ...dailyLogRest];
       if (isSimulationMode) {
-        setSimulatedLog(prev => {
-          const rest = (prev || []).filter(item => (item.type !== 'food' && item.type !== 'recipe') || getSlotKey(item) !== ourSlot);
-          return [...mealItems, ...rest];
-        });
+        setSimulatedLog(nextLog);
+        setEditingMealId(null);
         return;
       }
-      const dailyLogRest = dailyLog.filter(item => (item.type !== 'food' && item.type !== 'recipe') || getSlotKey(item) !== ourSlot);
-      setDailyLog([...mealItems, ...dailyLogRest]);
-      syncDatiFirebase([...mealItems, ...dailyLogRest], manualNodes);
+      setDailyLog(nextLog);
+      syncDatiFirebase(nextLog, manualNodes);
+      setEditingMealId(null);
     }
-  }, [dailyLog, simulatedLog, isSimulationMode, manualNodes, mealType, drawerMealTime, syncDatiFirebase]);
+  }, [dailyLog, simulatedLog, isSimulationMode, manualNodes, mealType, drawerMealTime, syncDatiFirebase, editingMealId, getFoodItemsForMealSlot]);
 
   const handleNodeClick = (node) => {
     setSelectedNodeReport(node);
@@ -3987,9 +4009,13 @@ Ottimo! Diario aggiornato. 🥗`;
       longPressMoveCleanupRef.current = null;
       target.setPointerCapture(e.pointerId);
       dragOffsetYRef.current = 0;
-      const itemIds = node.type === 'meal'
-        ? (activeLog || []).filter(item => getSlotKey(item) === String(node.id)).map(i => i.id)
-        : [];
+      const mealSlotForDrag = String(node.mealId || node.id);
+      const itemIds =
+        node.type === 'meal'
+          ? getFoodItemsForMealSlot(activeLog || [], mealSlotForDrag)
+              .map((i) => i.id)
+              .filter((id) => id != null)
+          : [];
       setDraggingNode({
         id: node.id,
         type: node.type,
@@ -4042,8 +4068,11 @@ Ottimo! Diario aggiornato. 🥗`;
     if (isSimulationMode) return;
 
     if (node.type === 'meal') {
-      const slotId = typeof node.time === 'number' && !Number.isNaN(node.time) ? `${node.id}_${node.time}` : String(node.id);
-      const foodsForSlot = getFoodItemsForMealSlot(activeLog, slotId);
+      const slotId = String(node.mealId || node.id);
+      const foodsForSlot =
+        Array.isArray(node.items) && node.items.length > 0
+          ? node.items
+          : getFoodItemsForMealSlot(activeLog, slotId);
       if (foodsForSlot.length > 0) {
         const toN = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (Number(v) || 0);
         const kcal = foodsForSlot.reduce((a, f) => a + toN(f.kcal ?? f.cal), 0);
@@ -4074,10 +4103,24 @@ Ottimo! Diario aggiornato. 🥗`;
           payload: { macros: { pro: prot, carb, fat } }
         });
 
-        setSelectedNodeReport({ type: 'meal', id: slotId, name: `${baseName}${timeLabel}` });
+        setSelectedNodeReport({
+          type: 'meal',
+          id: slotId,
+          mealId: slotId,
+          name: `${baseName}${timeLabel}`,
+          time: typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : foodsForSlot[0]?.mealTime,
+          items: foodsForSlot.map((x) => ({ ...x })),
+        });
         return;
       }
-      setSelectedNodeReport({ type: 'meal', id: slotId });
+      setSelectedNodeReport({
+        type: 'meal',
+        id: slotId,
+        mealId: slotId,
+        name: 'Pasto',
+        time: typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12,
+        items: [],
+      });
       return;
     }
 
@@ -6002,10 +6045,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   
   const foodsLog = activeLog.filter(item => item.type === 'food' || item.type === 'recipe');
   const groupedFoods = foodsLog.reduce((acc, food) => {
-    const slotKey = getSlotKey(food);
-    if (slotKey) {
-      (acc[slotKey] = acc[slotKey] || []).push(food);
-    }
+    const typeKey = food.mealType || 'pasto';
+    const timeKey =
+      typeof food.mealTime === 'number' && !Number.isNaN(food.mealTime)
+        ? String(food.mealTime)
+        : 'unknown';
+    const slotKey = `${typeKey}_${timeKey}`;
+    (acc[slotKey] = acc[slotKey] || []).push(food);
     return acc;
   }, {});
   
@@ -8308,10 +8354,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         if (selectedMealCenter && selectedMealCenter.id && selectedMealCenter.id !== 'rimanenti') {
                           const sel = selectedMealCenter;
                           const mealName = sel.name || sel.label || sel.id || 'Pasto';
+                          const slotId = String(sel.id);
+                          const detailItems = getFoodItemsForMealSlot(activeLog || [], slotId);
                           setSelectedNodeReport({
                             type: 'meal',
-                            id: String(sel.id),
+                            id: slotId,
+                            mealId: slotId,
                             name: mealName,
+                            time: sel.timeValue,
+                            items: detailItems.map((x) => ({ ...x })),
                           });
                           return;
                         }
@@ -8438,21 +8489,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                               if (!pastoCorrente) return;
                               const entry = pastoCorrente;
                               const mealName = entry.name || entry.id || 'Pasto';
-                              let genericId = entry.id ? String(entry.id).toLowerCase() : String(mealName).toLowerCase().split(' ')[0];
-
-                              const canonical = toCanonicalMealType(genericId);
-
-                              const logItems = (activeLog || []).filter(
-                                (f) => (f.type === 'food' || f.type === 'recipe') && toCanonicalMealType(f.mealType) === canonical
-                              );
-
-                              const exactId = logItems.length > 0 ? logItems[0].mealType : genericId;
+                              const compositeId = String(entry.id);
 
                               if (selectedMealCenter && selectedMealCenter.id === data.id) {
+                                const detailItems = getFoodItemsForMealSlot(activeLog || [], compositeId);
                                 setSelectedNodeReport({
                                   type: 'meal',
-                                  id: exactId,
+                                  id: compositeId,
+                                  mealId: compositeId,
                                   name: mealName,
+                                  time: entry.timeValue,
+                                  items: detailItems.map((x) => ({ ...x })),
                                 });
                                 return;
                               }
@@ -10841,12 +10888,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {selectedNodeReport.type === 'meal' ? '🍽️ Dettaglio Pasto' : '💪 Dettaglio Attività'}
             </h2>
             {(() => {
+              const mealSlotKey = String(selectedNodeReport.mealId || selectedNodeReport.id);
               const nodeTime = selectedNodeReport.type === 'meal'
-                ? (() => {
-                    const m = (activeLog || []).find(item => getSlotKey(item) === String(selectedNodeReport.id));
-                    const t = m != null ? getMealTimeFromLogItem(m) : null;
-                    return t != null ? t : 12;
-                  })()
+                ? (typeof selectedNodeReport.time === 'number' && !Number.isNaN(selectedNodeReport.time)
+                    ? selectedNodeReport.time
+                    : (() => {
+                        const list = getFoodItemsForMealSlot(activeLog || [], mealSlotKey);
+                        const t = list[0] != null ? getMealTimeFromLogItem(list[0]) : null;
+                        return t != null ? t : 12;
+                      })())
                 : (selectedNodeReport.time ?? 12);
               const currentHour = displayTime ?? currentTime;
               const isFuture = nodeTime > currentHour;
@@ -10863,7 +10913,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             {selectedNodeReport.type === 'meal' ? (
               <div>
                 {(() => {
-                  const items = (activeLog || []).filter(item => getSlotKey(item) === String(selectedNodeReport.id));
+                  const slotKey = String(selectedNodeReport.mealId || selectedNodeReport.id);
+                  const items =
+                    Array.isArray(selectedNodeReport.items) && selectedNodeReport.items.length > 0
+                      ? selectedNodeReport.items
+                      : getFoodItemsForMealSlot(activeLog || [], slotKey);
                   if (items.length === 0) return <p>Nessun alimento trovato.</p>;
 
                   const totals = items.reduce((acc, item) => {
@@ -10983,7 +11037,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 const node = selectedNodeReport;
                 setSelectedNodeReport(null);
                 if (node.type === 'meal') {
-                  loadMealToConstructor(node.id);
+                  loadMealToConstructor(String(node.mealId || node.id));
                 } else {
                   setEditingWorkoutId(node.id);
                   setWorkoutType(node.subType || (node.type === 'work' ? 'lavoro' : 'pesi'));
