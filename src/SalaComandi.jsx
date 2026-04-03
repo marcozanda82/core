@@ -27,6 +27,8 @@ import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
+import DailyMacroSheet from './DailyMacroSheet';
+import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
 import {
@@ -1436,6 +1438,7 @@ export default function SalaComandi() {
   /** add_food con qty mancante: proposta da abitudine DB + storico, in attesa di Sì/No */
   const [pendingHabit, setPendingHabit] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
+  const [dailyMacroSheetOpen, setDailyMacroSheetOpen] = useState(false);
   /** Quadrante home (modalità base): kcal | pro | cho | fat */
   const [activeDialMode, setActiveDialMode] = useState('kcal');
   const [isMealBuilderOpen, setIsMealBuilderOpen] = useState(false);
@@ -8687,7 +8690,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           });
                           return;
                         }
-                        setActiveDialMode('kcal');
+                        setDailyMacroSheetOpen(true);
                       }}
                       style={{
                         position: 'absolute',
@@ -8705,10 +8708,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                         border: '3px solid #111',
                         zIndex: 15,
                         boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`,
-                        cursor: selectedMealCenter ? 'pointer' : 'pointer',
+                        cursor: 'pointer',
                         transition: 'box-shadow 0.2s ease, filter 0.2s ease',
                         pointerEvents: 'auto',
                       }}
+                      title={!selectedMealCenter ? 'Apri raggi X giornalieri' : undefined}
                     >
                       {selectedMealCenter ? (
                         <div className="pieCenterInfo" style={{ textAlign: 'center', cursor: 'pointer' }}>
@@ -10649,27 +10653,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           document.body
         )}
 
-        {/* Modale Info alimento */}
-        {selectedFoodForInfo && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }} onClick={() => setSelectedFoodForInfo(null)}>
-            <div style={{ background: '#111', border: '1px solid #333', borderRadius: '16px', maxWidth: '400px', width: '100%', maxHeight: '80vh', overflow: 'auto', padding: '20px' }} onClick={e => e.stopPropagation()}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ margin: 0, fontSize: '1rem', color: '#00e5ff' }}>{selectedFoodForInfo.desc || selectedFoodForInfo.name}</h3>
-                <button style={{ background: 'none', border: 'none', color: '#888', fontSize: '1.2rem', cursor: 'pointer' }} onClick={() => setSelectedFoodForInfo(null)}>✕</button>
-              </div>
-              <p style={{ fontSize: '0.75rem', color: '#888', marginBottom: '12px' }}>{(selectedFoodForInfo.qta ?? selectedFoodForInfo.weight ?? 100)} g</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem' }}>
-                <span style={{ color: '#aaa' }}>Kcal</span><span style={{ color: '#fff' }}>{Math.round(selectedFoodForInfo.kcal ?? selectedFoodForInfo.cal ?? 0)}</span>
-                <span style={{ color: '#aaa' }}>Proteine</span><span style={{ color: '#fff' }}>{(Number(selectedFoodForInfo.prot) ?? 0).toFixed(1)} g</span>
-                <span style={{ color: '#aaa' }}>Carboidrati</span><span style={{ color: '#fff' }}>{(Number(selectedFoodForInfo.carb) ?? 0).toFixed(1)} g</span>
-                <span style={{ color: '#aaa' }}>Grassi</span><span style={{ color: '#fff' }}>{(Number(selectedFoodForInfo.fatTotal) ?? 0).toFixed(1)} g</span>
-                <span style={{ color: '#aaa' }}>Fibre</span><span style={{ color: '#fff' }}>{(Number(selectedFoodForInfo.fibre) ?? 0).toFixed(1)} g</span>
-              </div>
-              <div style={{ marginTop: '16px', fontSize: '0.7rem', color: '#666' }}>Vitamine e minerali disponibili nel motore biochimico (40+ parametri) sono inclusi nel calcolo giornaliero.</div>
-            </div>
-          </div>
-        )}
-
         {/* Modale Edit quantità */}
         {selectedFoodForEdit && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }} onClick={() => setSelectedFoodForEdit(null)}>
@@ -10711,6 +10694,22 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         )}
 
       </div>
+
+      {createPortal(
+        <>
+          <DailyMacroSheet
+            open={dailyMacroSheetOpen}
+            onClose={() => setDailyMacroSheetOpen(false)}
+            dailyLog={activeLog || []}
+            userTargets={userTargets}
+            dailyKcalTarget={dynamicDailyKcal}
+          />
+          {selectedFoodForInfo ? (
+            <FoodLabelModal foodItem={selectedFoodForInfo} foodDb={foodDb} onClose={() => setSelectedFoodForInfo(null)} />
+          ) : null}
+        </>,
+        document.body
+      )}
 
       {showProfile && (
         <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.9)', zIndex: 100020, overflowY: 'auto', padding: '20px' }}>
@@ -11313,6 +11312,28 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', minWidth: 0 }}>
                                   {item.name || item.desc}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedFoodForInfo(item);
+                                    }}
+                                    title="Etichetta nutrizionale"
+                                    aria-label="Etichetta nutrizionale"
+                                    style={{
+                                      opacity: 0.4,
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#94a3b8',
+                                      cursor: 'pointer',
+                                      fontSize: '0.65rem',
+                                      padding: '0 4px',
+                                      lineHeight: 1,
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    ℹ
+                                  </button>
                                   {recipeExpandableModal && (
                                     <button
                                       type="button"

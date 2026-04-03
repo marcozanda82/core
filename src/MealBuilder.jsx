@@ -1579,6 +1579,29 @@ export default function MealBuilder({
                             </button>
                           ) : null}
                           <span className="food-pill-name">{food.desc || food.name}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedFoodForInfo(food);
+                            }}
+                            title="Etichetta nutrizionale"
+                            aria-label="Etichetta nutrizionale"
+                            style={{
+                              flexShrink: 0,
+                              opacity: 0.42,
+                              background: 'none',
+                              border: 'none',
+                              color: '#94a3b8',
+                              cursor: 'pointer',
+                              fontSize: '0.68rem',
+                              padding: '0 2px',
+                              lineHeight: 1,
+                              fontWeight: 600,
+                            }}
+                          >
+                            ℹ
+                          </button>
                           {isRecipeItem && (
                             <span style={{ fontSize: '0.58rem', padding: '2px 8px', borderRadius: '8px', background: 'rgba(179, 136, 255, 0.25)', color: '#c4b5fd', fontWeight: 700, letterSpacing: '0.04em' }}>RICETTA</span>
                           )}
@@ -1603,7 +1626,6 @@ export default function MealBuilder({
                           <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, step)} title={`+${step}g`} aria-label={`+${step}g`}>+</button>
                         </>
                         <div className="food-pill-actions" style={{ marginLeft: '4px' }}>
-                          <button type="button" className="food-pill-btn" onClick={() => setSelectedFoodForInfo(food)} title="Info macro/micro">ℹ️</button>
                           {isRecipeItem ? (
                             <button type="button" className="food-pill-btn" onClick={() => handleEditAddedRecipe(food.id)} title="Modifica bozza ricetta">✏️</button>
                           ) : (
