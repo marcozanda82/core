@@ -1918,6 +1918,196 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
   };
 }
 
+/** Log diario + nodi timeline (acqua, alcol, …) per un giorno del tracker. */
+export function getCombinedDayLogAndManualNodes(trackerData, dateStr) {
+  if (!trackerData || typeof trackerData !== 'object' || !dateStr) return [];
+  const log = normalizeLogData(getLogFromStoricoTree(trackerData, dateStr) || []);
+  const node = trackerData[TRACKER_STORICO_KEY(dateStr)];
+  const manual = Array.isArray(node?.manualNodes) ? node.manualNodes : [];
+  return [...log, ...manual];
+}
+
+/** Keyword italiane (e comuni) per intercettare alcol in nome/descrizione senza campo dedicato. */
+export const alcoholKeywords = [
+  'vino',
+  'birra',
+  'cocktail',
+  'spritz',
+  'amaro',
+  'vodka',
+  'gin',
+  'rum',
+  'prosecco',
+  'champagne',
+  'liquore',
+];
+
+function alcoholSearchTextFromNode(node) {
+  if (!node || typeof node !== 'object') return '';
+  const parts = [
+    node.desc,
+    node.name,
+    node.label,
+    node.foodName,
+    node.title,
+    node.nome,
+  ];
+  return parts
+    .filter((x) => x != null && String(x).trim() !== '')
+    .map((x) => String(x).toLowerCase())
+    .join(' ');
+}
+
+/** Prima keyword trovata in `text` (substring), o null. */
+export function matchAlcoholKeyword(text) {
+  const t = String(text || '').toLowerCase();
+  if (!t) return null;
+  for (let k = 0; k < alcoholKeywords.length; k++) {
+    const kw = alcoholKeywords[k];
+    if (t.includes(kw)) return kw;
+  }
+  return null;
+}
+
+/**
+ * Stima grammi etanolo da voce food/recipe/meal-item quando manca pureAlcohol.
+ * Birra: ~1–1,25 unità UK / 330 ml se non c’è ABV (default 5%).
+ */
+function estimatePureAlcoholGramsFromFoodLikeNode(node, matchedKw) {
+  if (!node) return 0;
+  const pa = Number(node.pureAlcohol ?? node.ethanolG ?? node.alcoholG);
+  if (Number.isFinite(pa) && pa > 0) return pa;
+
+  let ml = Number(node.ml ?? node.volume ?? node.volumeMl) || 0;
+  let abv = Number(node.abv ?? node.alcoholPercent) || 0;
+  if (ml > 0 && abv > 0) return ml * (abv / 100) * 0.8;
+
+  const kcal = Number(node.kcal ?? node.cal) || 0;
+  if (kcal > 0) return kcal / 7;
+
+  const qty = Number(node.grams ?? node.g ?? node.quantity ?? node.portionG ?? node.weight ?? node.portion) || 0;
+  const qtyLooksLikeMl = qty >= 40 && qty <= 2500;
+
+  if (matchedKw === 'birra') {
+    const beerMl = ml > 0 ? ml : qtyLooksLikeMl ? qty : 330;
+    const effAbv = abv > 0 ? abv : 5;
+    return beerMl * (effAbv / 100) * 0.8;
+  }
+  if (matchedKw === 'vino' || matchedKw === 'prosecco' || matchedKw === 'champagne') {
+    const wineMl = ml > 0 ? ml : qtyLooksLikeMl ? qty : 150;
+    const effAbv = abv > 0 ? abv : 12;
+    return wineMl * (effAbv / 100) * 0.8;
+  }
+  if (
+    matchedKw === 'vodka' ||
+    matchedKw === 'gin' ||
+    matchedKw === 'rum' ||
+    matchedKw === 'amaro' ||
+    matchedKw === 'liquore'
+  ) {
+    const spiritMl = ml > 0 ? ml : qtyLooksLikeMl ? Math.min(qty, 100) : 45;
+    const effAbv = abv > 0 ? abv : 38;
+    return spiritMl * (effAbv / 100) * 0.8;
+  }
+  if (matchedKw === 'cocktail' || matchedKw === 'spritz') {
+    const mixMl = ml > 0 ? ml : qtyLooksLikeMl ? qty : 200;
+    const effAbv = abv > 0 ? abv : 14;
+    return mixMl * (effAbv / 100) * 0.8;
+  }
+  /* Keyword generica: consumo forfettario ~1,25 unità UK */
+  return 1.25 * 8;
+}
+
+const LEGACY_ALCOHOL_DESC_RE =
+  /\b(birra|vino|vodka|whisky|whiskey|rum|gin|cocktail|prosecco|spritz|spumante|champagne|alcol|superalcol)\b/i;
+
+function addAlcoholFromFoodLikeNode(node, addG) {
+  const text = alcoholSearchTextFromNode(node);
+  let kw = matchAlcoholKeyword(text);
+  if (!kw && LEGACY_ALCOHOL_DESC_RE.test(text)) {
+    if (/\bbirra\b/i.test(text)) kw = 'birra';
+    else if (/\bvino\b|\bprosecco\b|\bspumante\b|\bchampagne\b/i.test(text)) kw = 'vino';
+    else if (/\brum\b|\bgin\b|\bvodka\b/i.test(text)) kw = 'rum';
+    else if (/\bcocktail\b|\bspritz\b/i.test(text)) kw = 'cocktail';
+    else kw = 'liquore';
+  }
+  if (!kw) return;
+  const est = estimatePureAlcoholGramsFromFoodLikeNode(node, kw);
+  if (est > 0) addG(est);
+}
+
+/**
+ * Grammi di etanolo puro nel giorno: `type: 'alcohol'`, pasti con `items`, food/recipe con keyword IT + euristica volumi.
+ */
+export function sumPureAlcoholGramsForDay(trackerData, dateStr) {
+  const items = getCombinedDayLogAndManualNodes(trackerData, dateStr);
+  let g = 0;
+  const addG = (x) => {
+    const n = Number(x);
+    if (Number.isFinite(n) && n > 0) g += n;
+  };
+
+  for (let i = 0; i < items.length; i++) {
+    const node = items[i];
+    if (!node) continue;
+
+    if (node.type === 'alcohol') {
+      const pa = Number(node.pureAlcohol);
+      if (Number.isFinite(pa) && pa > 0) {
+        addG(pa);
+        continue;
+      }
+      const ml = Number(node.ml) || 0;
+      const abv = Number(node.abv) || 0;
+      if (ml > 0 && abv > 0) addG(ml * (abv / 100) * 0.8);
+      else {
+        const kw = matchAlcoholKeyword(alcoholSearchTextFromNode(node)) || 'liquore';
+        addG(estimatePureAlcoholGramsFromFoodLikeNode(node, kw));
+      }
+      continue;
+    }
+
+    if (node.type === 'meal') {
+      if (Array.isArray(node.items) && node.items.length > 0) {
+        for (let j = 0; j < node.items.length; j++) {
+          const sub = node.items[j];
+          if (!sub) continue;
+          if (sub.type === 'food' || sub.type === 'recipe' || sub.type === 'single' || !sub.type) {
+            addAlcoholFromFoodLikeNode(sub, addG);
+          }
+        }
+      } else {
+        addAlcoholFromFoodLikeNode(node, addG);
+      }
+      continue;
+    }
+
+    if (node.type === 'food' || node.type === 'recipe' || node.type === 'single' || !node.type) {
+      addAlcoholFromFoodLikeNode(node, addG);
+    }
+  }
+  return g;
+}
+
+/** ~8 g etanolo = 1 unità alcolica (UK). */
+export function pureAlcoholGramsToUkUnits(grams) {
+  const x = Number(grams);
+  if (!Number.isFinite(x) || x <= 0) return 0;
+  return Math.round((x / 8) * 10) / 10;
+}
+
+/**
+ * Valore "Ricarica Notturna" dalla Body Battery (proxy energia al mattino dopo il sonno registrato quel giorno).
+ */
+export function getMorningRechargeFromBodyBattery(trackerData, dateStr, userTargets) {
+  const combined = getCombinedDayLogAndManualNodes(trackerData, dateStr);
+  const bb = calculateBodyBattery(trackerData, dateStr, combined, userTargets);
+  const row = bb.breakdown?.find((b) => String(b.label || '').includes('Ricarica Notturna'));
+  if (row != null && Number.isFinite(Number(row.value))) return Math.round(Number(row.value) * 10) / 10;
+  const ce = Number(bb.currentEnergy);
+  return Number.isFinite(ce) ? ce : null;
+}
+
 /**
  * Valutazioni a stelle del report giornaliero (stessa logica della dashboard).
  * Richiede un log normalizzato (es. da activeLog o da getLogFromStoricoTree).

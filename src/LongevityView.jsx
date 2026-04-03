@@ -27,6 +27,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import { KentuDisciplineTrendChart, AlcoholRecoveryComposedChart } from './LifestyleTelemetryCharts';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -839,8 +840,11 @@ export default function LongevityView({
   tdeeHistory = [],
   /** Errori predizione vs pesate reali (`predictive_body_calibration.errors` su Firebase) */
   predictionCalibration = null,
+  /** Punteggio longevità del giorno tracker (live) per il trend Kentu */
+  todayScore = null,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
+  const [telemetryTab, setTelemetryTab] = useState('fisiologia');
   const timeOptions = [
     { label: 'Ieri', value: 1 },
     { label: '7g', value: 7 },
@@ -1080,6 +1084,49 @@ export default function LongevityView({
         })}
       </div>
 
+      <div
+        role="tablist"
+        aria-label="Telemetria: fisiologia o stile di vita"
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          gap: 10,
+          marginBottom: 20,
+        }}
+      >
+        {[
+          { id: 'fisiologia', label: 'Fisiologia' },
+          { id: 'stile', label: 'Stile di vita' },
+        ].map(({ id, label }) => {
+          const active = telemetryTab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setTelemetryTab(id)}
+              style={{
+                padding: '8px 18px',
+                borderRadius: 999,
+                border: active ? '1px solid rgba(168, 85, 247, 0.55)' : '1px solid rgba(255,255,255,0.12)',
+                background: active ? 'rgba(168, 85, 247, 0.18)' : 'transparent',
+                color: active ? '#e9d5ff' : 'rgba(255,255,255,0.75)',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                letterSpacing: '0.04em',
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {telemetryTab === 'fisiologia' && (
+      <>
       {/* 1. Indice di ottimizzazione (giorno del tracker) + didascalia periodo */}
       <div
         style={{
@@ -1469,6 +1516,61 @@ export default function LongevityView({
           </p>
         )}
       </div>
+      </>
+      )}
+
+      {telemetryTab === 'stile' && (
+        <div style={SECTION_CARD}>
+          <div
+            style={{
+              fontSize: '1rem',
+              fontWeight: 'bold',
+              marginBottom: 8,
+              color: '#e5e5e5',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              borderBottom: '1px solid #2a2a2a',
+              paddingBottom: 12,
+            }}
+          >
+            <span aria-hidden>📡</span>
+            Telemetria avanzata · Stile di vita
+          </div>
+          <p style={{ margin: '0 0 18px', fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.5 }}>
+            Trend comportamentali separati dal cruscotto quotidiano: disciplina (Kentu Score da storico rischi) e impatto
+            dell&apos;alcol sul recupero (Body Battery / ricarica notturna del giorno dopo).
+          </p>
+
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#c4b5fd', marginBottom: 10 }}>
+              Kentu Score — trend disciplina
+            </div>
+            <p style={{ margin: '0 0 10px', fontSize: '0.72rem', color: '#888', lineHeight: 1.45 }}>
+              Media mobile a 5 giorni sul punteggio longevità (matrice rischi giornaliera, 0–100). Valori più alti =
+              minore rischio aggregato nel periodo.
+            </p>
+            <KentuDisciplineTrendChart
+              scoreHistory={scoreHistory}
+              anchorDate={anchorDate}
+              timeWindow={timeWindow}
+              todayScore={todayScore}
+            />
+          </div>
+
+          <div>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#a78bfa', marginBottom: 10 }}>
+              Alcol vs recupero
+            </div>
+            <AlcoholRecoveryComposedChart
+              fullHistory={fullHistory}
+              userTargets={userTargets}
+              anchorDate={anchorDate}
+              timeWindow={timeWindow}
+            />
+          </div>
+        </div>
+      )}
 
     </div>
   );
