@@ -13,6 +13,8 @@ import {
   computeRiskMatrix,
   getSlotKey,
   getEquivalentMealTypes,
+  buildPredictiveCompositionDailyRows,
+  computePredictionReliabilityPercent,
 } from './coreEngine';
 import {
   Chart as ChartJS,
@@ -260,8 +262,256 @@ function formatAxisDate(entry) {
   return '—';
 }
 
-function BodyCompositionChart({ history }) {
+function formatAxisFromIso(iso) {
+  if (!iso || typeof iso !== 'string') return '—';
+  const p = iso.split('-');
+  if (p.length !== 3) return '—';
+  return `${p[2]}/${p[1]}`;
+}
+
+/** Grafico composizione: storico pesate e/o serie predittiva (peso + kg muscolatura stimata, tratteggio su stime). */
+function BodyCompositionChart({ history, predictiveDailyRows }) {
   const { chartData, chartOptions } = useMemo(() => {
+    if (predictiveDailyRows && predictiveDailyRows.length > 0) {
+      const rows = predictiveDailyRows;
+      const labels = rows.map((r) => formatAxisFromIso(r.isoDate));
+      const weightData = rows.map((r) => (Number.isFinite(Number(r.weightKg)) ? Number(r.weightKg) : null));
+      const muscleKgData = rows.map((r) =>
+        Number.isFinite(Number(r.muscleMassKg)) ? Number(r.muscleMassKg) : null
+      );
+      const fatData = rows.map((r) =>
+        r.bodyFat != null && Number.isFinite(Number(r.bodyFat)) ? Number(r.bodyFat) : null
+      );
+      const musclePctData = rows.map((r) =>
+        r.musclePct != null && Number.isFinite(Number(r.musclePct)) ? Number(r.musclePct) : null
+      );
+      const waterData = rows.map((r) =>
+        r.waterPct != null && Number.isFinite(Number(r.waterPct)) ? Number(r.waterPct) : null
+      );
+
+      const hasBodyFatLine = fatData.some((v) => v != null);
+      const hasMusclePctLine = musclePctData.some((v) => v != null);
+      const hasWaterLine = waterData.some((v) => v != null);
+      const hasRightAxis = hasBodyFatLine || hasMusclePctLine || hasWaterLine;
+
+      const kgVals = [...weightData, ...muscleKgData].filter((v) => v != null && Number.isFinite(v));
+      let wMin = kgVals.length ? Math.min(...kgVals) : 0;
+      let wMax = kgVals.length ? Math.max(...kgVals) : 80;
+      wMin -= 2;
+      wMax += 2;
+      if (wMin < 1) wMin = 1;
+      if (wMax <= wMin) wMax = wMin + 5;
+
+      const allPctValues = [...fatData, ...musclePctData, ...waterData].filter(
+        (v) => v != null && Number.isFinite(v)
+      );
+      let fMin = 0;
+      let fMax = 40;
+      if (allPctValues.length > 0) {
+        fMin = Math.min(...allPctValues) - 2;
+        fMax = Math.max(...allPctValues) + 2;
+        fMin = Math.max(0, fMin);
+        fMax = Math.min(100, fMax);
+        if (fMin >= fMax) fMax = fMin + 5;
+      }
+
+      const datasets = [
+        {
+          label: 'Peso (kg)',
+          data: weightData,
+          borderColor: '#00d2ff',
+          backgroundColor: 'rgba(0, 210, 255, 0.08)',
+          borderWidth: 3,
+          tension: 0.25,
+          fill: false,
+          segment: {
+            borderDash: (ctx) => {
+              const r0 = rows[ctx.p0DataIndex];
+              const r1 = rows[ctx.p1DataIndex];
+              if (!r0 || !r1) return undefined;
+              if (r0.weightIsReal && r1.weightIsReal) return undefined;
+              return [6, 4];
+            },
+          },
+          pointRadius: (ctx) => (rows[ctx.dataIndex]?.weightIsReal ? 4 : 0),
+          pointHoverRadius: (ctx) => (rows[ctx.dataIndex]?.weightIsReal ? 5 : 3),
+          pointBackgroundColor: '#00d2ff',
+          pointBorderColor: '#0a0a0a',
+          pointBorderWidth: 1,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Massa muscolare stimata (kg)',
+          data: muscleKgData,
+          borderColor: '#22d3ee',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          tension: 0.25,
+          fill: false,
+          segment: {
+            borderDash: (ctx) => {
+              const r0 = rows[ctx.p0DataIndex];
+              const r1 = rows[ctx.p1DataIndex];
+              if (!r0 || !r1) return undefined;
+              if (r0.muscleMassIsReal && r1.muscleMassIsReal) return undefined;
+              return [5, 5];
+            },
+          },
+          pointRadius: (ctx) => (rows[ctx.dataIndex]?.muscleMassIsReal ? 3 : 0),
+          pointHoverRadius: 4,
+          pointBackgroundColor: '#22d3ee',
+          pointBorderColor: '#0a0a0a',
+          pointBorderWidth: 1,
+          yAxisID: 'y',
+        },
+      ];
+
+      if (hasBodyFatLine) {
+        datasets.push({
+          label: 'Massa Grassa (%)',
+          data: fatData,
+          borderColor: '#ff5e62',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [5, 5],
+          tension: 0.3,
+          fill: false,
+          pointRadius: 3,
+          pointBackgroundColor: '#ff5e62',
+          pointBorderColor: '#0a0a0a',
+          pointBorderWidth: 1,
+          yAxisID: 'y1',
+          spanGaps: false,
+        });
+      }
+
+      if (hasMusclePctLine) {
+        datasets.push({
+          label: 'Muscoli (%)',
+          data: musclePctData,
+          borderColor: '#3b82f6',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          tension: 0.3,
+          fill: false,
+          pointRadius: 3,
+          pointBackgroundColor: '#3b82f6',
+          pointBorderColor: '#0a0a0a',
+          pointBorderWidth: 1,
+          yAxisID: 'y1',
+          spanGaps: false,
+        });
+      }
+
+      if (hasWaterLine) {
+        datasets.push({
+          label: 'Acqua (%)',
+          data: waterData,
+          borderColor: '#06b6d4',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          tension: 0.3,
+          fill: false,
+          pointRadius: 3,
+          pointBackgroundColor: '#06b6d4',
+          pointBorderColor: '#0a0a0a',
+          pointBorderWidth: 1,
+          yAxisID: 'y1',
+          spanGaps: false,
+        });
+      }
+
+      const scales = {
+        x: {
+          grid: { display: false },
+          ticks: { color: '#888', maxRotation: 45, font: { size: 11 } },
+          border: { color: 'rgba(255,255,255,0.08)' },
+        },
+        y: {
+          type: 'linear',
+          position: 'left',
+          min: wMin,
+          max: wMax,
+          grid: { color: 'rgba(255,255,255,0.06)', drawBorder: false },
+          ticks: { color: '#7dd3fc', font: { size: 11 } },
+          border: { display: false },
+        },
+      };
+
+      if (hasRightAxis) {
+        scales.y1 = {
+          type: 'linear',
+          position: 'right',
+          min: fMin,
+          max: fMax,
+          grid: { drawOnChartArea: false },
+          ticks: { color: '#94a3b8', font: { size: 11 } },
+          border: { display: false },
+        };
+      }
+
+      return {
+        chartData: { labels, datasets },
+        chartOptions: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top',
+              align: 'end',
+              labels: {
+                color: 'rgba(255, 255, 255, 0.7)',
+                usePointStyle: true,
+                boxWidth: 8,
+                font: { size: 11 },
+              },
+            },
+            tooltip: {
+              position: 'bodyCompositionTopBand',
+              mode: 'index',
+              intersect: false,
+              caretPadding: 10,
+              caretSize: 5,
+              cornerRadius: 8,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              titleColor: '#e5e5e5',
+              bodyColor: '#d4d4d4',
+              borderColor: 'rgba(255,255,255,0.12)',
+              borderWidth: 1,
+              padding: 10,
+              displayColors: false,
+              callbacks: {
+                label: (context) => {
+                  const i = context.dataIndex;
+                  const ds = context.dataset.label || '';
+                  const w = weightData[i];
+                  const mk = muscleKgData[i];
+                  if (ds.includes('Peso')) {
+                    const est = rows[i]?.weightIsReal ? '' : ' (stima)';
+                    return w != null ? `Peso${est}: ${Number(w).toFixed(2)} kg` : '—';
+                  }
+                  if (ds.includes('muscolare')) {
+                    const est = rows[i]?.muscleMassIsReal ? '' : ' (stima)';
+                    return mk != null ? `Muscolo${est}: ${Number(mk).toFixed(2)} kg` : '—';
+                  }
+                  const bf = fatData[i];
+                  const mus = musclePctData[i];
+                  const wat = waterData[i];
+                  if (bf != null) return `Grasso: ${Number(bf).toFixed(1)}%`;
+                  if (mus != null) return `Muscoli %: ${Number(mus).toFixed(1)}%`;
+                  if (wat != null) return `Acqua: ${Number(wat).toFixed(1)}%`;
+                  return ds;
+                },
+              },
+            },
+          },
+          scales,
+        },
+      };
+    }
+
     const labels = history.map(formatAxisDate);
     const weightData = history.map((e) => {
       const w = Number(e.weight);
@@ -480,7 +730,7 @@ function BodyCompositionChart({ history }) {
         scales,
       },
     };
-  }, [history]);
+  }, [history, predictiveDailyRows]);
 
   return (
     <div style={{ height: '250px', width: '100%', position: 'relative' }}>
@@ -587,6 +837,8 @@ export default function LongevityView({
   onUpdateTDEE = null,
   /** Storico ricalibrazioni TDEE (nodo `tdee_history`) */
   tdeeHistory = [],
+  /** Errori predizione vs pesate reali (`predictive_body_calibration.errors` su Firebase) */
+  predictionCalibration = null,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const timeOptions = [
@@ -693,6 +945,25 @@ export default function LongevityView({
       return false;
     });
   }, [bodyMetricsHistory, timeWindow, anchorDate]);
+
+  const compositionPredictiveRows = useMemo(() => {
+    if (!fullHistory || userTargets == null || !(Number(userTargets.kcal) > 0)) return null;
+    const tw = Math.max(1, Math.min(366, Number(timeWindow) || 1));
+    const limitDate = addDays(anchorDate, -(tw === 1 ? 7 : tw));
+    const rows = buildPredictiveCompositionDailyRows({
+      fullHistory,
+      bodyMetricsHistory,
+      rangeStartIso: limitDate,
+      rangeEndIso: anchorDate,
+      baseTdeeKcal: userTargets.kcal,
+    });
+    return rows.length > 0 ? rows : null;
+  }, [fullHistory, userTargets, timeWindow, anchorDate, bodyMetricsHistory]);
+
+  const compositionReliabilityPct = useMemo(
+    () => computePredictionReliabilityPercent(predictionCalibration?.errors),
+    [predictionCalibration?.errors]
+  );
 
   const chartTdeeHistory = useMemo(() => {
     const tw = Math.max(1, Math.min(366, Number(timeWindow) || 1));
@@ -1073,7 +1344,42 @@ export default function LongevityView({
             Nessuna pesata registrata. Usa il tasto + per inserire il tuo primo dato.
           </p>
         ) : (
-          <BodyCompositionChart history={chartBodyMetrics} />
+          <>
+            {compositionReliabilityPct != null && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(34, 211, 238, 0.35)',
+                  background: 'rgba(34, 211, 238, 0.08)',
+                  fontSize: '0.78rem',
+                  color: '#a5f3fc',
+                  lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ color: '#22d3ee' }}>Trend di affidabilità stime</strong>
+                {' — '}
+                confronto tra peso previsto dal motore energetico e pesate reali: indicatore{' '}
+                <strong>{compositionReliabilityPct}%</strong>
+                {compositionReliabilityPct >= 75
+                  ? ' (allineamento buono).'
+                  : compositionReliabilityPct >= 45
+                    ? ' (da monitorare).'
+                    : ' (alta divergenza: continua a pesarti con costanza).'}
+              </div>
+            )}
+            <BodyCompositionChart
+              history={chartBodyMetrics}
+              predictiveDailyRows={compositionPredictiveRows}
+            />
+            {compositionPredictiveRows && (
+              <p style={{ margin: '10px 0 0', fontSize: '0.68rem', color: '#666', lineHeight: 1.4 }}>
+                Linea continua e punti visibili = pesata reale o dato impedenziometrico; tratteggio = giorni stimati dal
+                bilancio energetico (7700 kcal ≈ 1 kg). La massa muscolare in kg segue la stessa logica.
+              </p>
+            )}
+          </>
         )}
       </div>
 

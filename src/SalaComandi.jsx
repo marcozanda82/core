@@ -98,7 +98,10 @@ import {
   computeLongevityMasterScoreFromMatrix,
   computeLongevityScore,
   buildLongevityExplanation,
-  calculateBodyBattery
+  calculateBodyBattery,
+  getEndOfDayPredictedWeightForCalibration,
+  evaluatePersistentTdeeCalibration,
+  metricEntryToIsoDay,
 } from './coreEngine';
 
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
@@ -1535,6 +1538,7 @@ export default function SalaComandi() {
   const [inputFat, setInputFat] = useState('');
   const [bodyMetricsSaveToast, setBodyMetricsSaveToast] = useState(false);
   const [bodyMetricsHistory, setBodyMetricsHistory] = useState([]);
+  const [predictiveCalibration, setPredictiveCalibration] = useState({ errors: [] });
   const [tdeeHistory, setTdeeHistory] = useState([]);
   const [addChoiceView, setAddChoiceView] = useState('main'); // 'main' | 'stimulant'
   const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
@@ -2372,6 +2376,7 @@ export default function SalaComandi() {
     if (!user) {
       setIsInitialLoadComplete(false);
       setBodyMetricsHistory([]);
+      setPredictiveCalibration({ errors: [] });
       setTdeeHistory([]);
       return;
     }
@@ -2404,6 +2409,21 @@ export default function SalaComandi() {
       arr.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
       setTdeeHistory(arr);
     });
+
+    const unsubPredictiveCalibration = onValue(
+      ref(db, `users/${user.uid}/predictive_body_calibration`),
+      (calSnap) => {
+        const v = calSnap.val();
+        if (!v || typeof v !== 'object') {
+          setPredictiveCalibration({ errors: [] });
+          return;
+        }
+        setPredictiveCalibration({
+          errors: Array.isArray(v.errors) ? v.errors : [],
+          updatedAt: v.updatedAt,
+        });
+      }
+    );
 
     get(ref(db, basePath)).then(snap => {
       const tree = snap.exists() ? snap.val() : null;
@@ -2461,6 +2481,7 @@ export default function SalaComandi() {
     return () => {
       unsubBodyMetrics();
       unsubTdeeHistory();
+      unsubPredictiveCalibration();
       unsubToday?.();
     };
   }, [user]);
@@ -2674,11 +2695,12 @@ export default function SalaComandi() {
     const fatRaw = String(inputFat ?? '').trim();
     const parsedFat = fatRaw === '' ? null : parseFloat(fatRaw.replace(',', '.'));
     const bodyFat = parsedFat != null && Number.isFinite(parsedFat) ? parsedFat : null;
+    const weighDate = getTodayString();
     const payload = {
       weight: w,
       bodyFat,
       timestamp: Date.now(),
-      date: new Date().toISOString()
+      date: weighDate,
     };
     const profileUpdates = { 'profile/weight': w };
     if (bodyFat != null) profileUpdates['profile/bodyFat'] = bodyFat;
@@ -2691,11 +2713,53 @@ export default function SalaComandi() {
       setInputFat('');
       setBodyMetricsSaveToast(true);
       setTimeout(() => setBodyMetricsSaveToast(false), 3500);
+
+      try {
+        const baseK = userTargets?.kcal ?? 2000;
+        const historyForPred = (bodyMetricsHistory || []).filter(
+          (e) => metricEntryToIsoDay(e) !== weighDate
+        );
+        const predicted = getEndOfDayPredictedWeightForCalibration({
+          fullHistory,
+          bodyMetricsHistory: historyForPred,
+          baseTdeeKcal: baseK,
+          targetIsoDate: weighDate,
+        });
+        if (predicted != null && Number.isFinite(predicted)) {
+          const errorKg = w - predicted;
+          const calRef = ref(db, `users/${uid}/predictive_body_calibration`);
+          const calSnap = await get(calRef);
+          const prev = calSnap.exists() ? calSnap.val() : {};
+          let errs = Array.isArray(prev.errors) ? [...prev.errors] : [];
+          errs = errs.filter((e) => e && e.date !== weighDate);
+          errs.push({ date: weighDate, errorKg, actual: w, predicted, ts: Date.now() });
+          errs = errs.slice(-12);
+          await set(calRef, { errors: errs, updatedAt: Date.now() });
+          const ev = evaluatePersistentTdeeCalibration(errs);
+          if (ev.shouldAdjust) {
+            const newK = Math.round(baseK + ev.suggestedDeltaKcal);
+            if (newK >= 800 && newK <= 12000) {
+              await handleUpdateTDEE(newK);
+            }
+          }
+        }
+      } catch (calErr) {
+        console.warn('Motore predittivo / calibrazione TDEE:', calErr);
+      }
     } catch (err) {
       console.error('Salvataggio composizione corporea:', err);
       alert('Errore durante il salvataggio. Riprova.');
     }
-  }, [auth, db, inputWeight, inputFat]);
+  }, [
+    auth,
+    db,
+    inputWeight,
+    inputFat,
+    bodyMetricsHistory,
+    fullHistory,
+    userTargets?.kcal,
+    handleUpdateTDEE,
+  ]);
 
   useEffect(() => {
     if (!showWeightModal) return;
@@ -8945,6 +9009,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             userTargets={userTargets}
             onUpdateTDEE={handleUpdateTDEE}
             tdeeHistory={tdeeHistory}
+            predictionCalibration={predictiveCalibration}
           />
         </div>
       )}
@@ -11728,6 +11793,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 userTargets={userTargets}
                 onUpdateTDEE={handleUpdateTDEE}
                 tdeeHistory={tdeeHistory}
+                predictionCalibration={predictiveCalibration}
               />
             </div>
 

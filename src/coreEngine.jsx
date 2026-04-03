@@ -3273,6 +3273,275 @@ export function buildLongevityExplanation(result) {
   return parts.slice(0, 3).join(' ');
 }
 
+// =============================================================================
+// Motore predittivo composizione corporea + calibrazione TDEE (energia vs peso)
+// =============================================================================
+
+/** kcal teoriche per ~1 kg di variazione di massa corporea da bilancio energetico. */
+export const KCAL_PER_KG_ENERGY_BALANCE = 7700;
+
+export function sumFoodKcalAndProtein(dailyLog) {
+  const L = normalizeLogData(Array.isArray(dailyLog) ? dailyLog : Object.values(dailyLog || {}));
+  let kcal = 0;
+  let prot = 0;
+  for (let i = 0; i < L.length; i++) {
+    const e = L[i];
+    if (e.type !== 'food' && e.type !== 'recipe') continue;
+    kcal += Number(e.kcal ?? e.cal) || 0;
+    prot += Number(e.prot ?? e.proteine) || 0;
+  }
+  return { kcal, prot };
+}
+
+export function sumWorkoutBurnKcal(dailyLog) {
+  const L = normalizeLogData(Array.isArray(dailyLog) ? dailyLog : Object.values(dailyLog || {}));
+  return L.filter((e) => e.type === 'workout').reduce(
+    (s, e) => s + (Number(e.kcal ?? e.cal) || 0),
+    0
+  );
+}
+
+export function dayHasWeightsStrengthWorkout(dailyLog) {
+  const L = normalizeLogData(Array.isArray(dailyLog) ? dailyLog : Object.values(dailyLog || {}));
+  return L.some((x) => {
+    if (x.type !== 'workout') return false;
+    const sub = String(x.subType ?? x.workoutType ?? x.desc ?? x.name ?? '').toLowerCase();
+    return (
+      sub.includes('pesi') ||
+      sub.includes('pesist') ||
+      sub.includes('weight') ||
+      sub.includes('strength') ||
+      sub === 'hiit' ||
+      x.workoutType === 'pesi'
+    );
+  });
+}
+
+/** Variazione di massa corporea (kg) da bilancio kcal vs TDEE dinamico del giorno. */
+export function estimateBodyMassDeltaFromEnergyBalance(intakeKcal, dynamicTdeeKcal) {
+  const bal = Number(intakeKcal) - Number(dynamicTdeeKcal);
+  if (!Number.isFinite(bal)) return 0;
+  return bal / KCAL_PER_KG_ENERGY_BALANCE;
+}
+
+/**
+ * Parte della variazione di massa attribuita alla componente magra (per serie massa muscolare stimata).
+ * Surplus: più quota magra con proteine alte e pesi; deficit: tutela magra con stessi fattori.
+ */
+export function estimateLeanMassDeltaKg(totalDeltaKg, bodyWeightKg, proteinG, hasWeightsWorkout) {
+  const w = Math.max(Number(bodyWeightKg) || 70, 40);
+  const p = Math.max(Number(proteinG) || 0, 0);
+  const protPerKg = p / w;
+  const pf = Math.max(0, Math.min(1, (protPerKg - 0.85) / 0.95));
+  const wb = hasWeightsWorkout ? 1 : 0;
+  if (totalDeltaKg >= 0) {
+    const leanShare = 0.13 + 0.24 * pf + 0.11 * wb;
+    const clamped = Math.max(0.07, Math.min(0.5, leanShare));
+    return totalDeltaKg * clamped;
+  }
+  const leanLossShare = 0.34 - 0.15 * pf - 0.11 * wb;
+  const clampedLoss = Math.max(0.11, Math.min(0.44, leanLossShare));
+  return totalDeltaKg * clampedLoss;
+}
+
+export function metricEntryToIsoDay(entry) {
+  if (!entry) return null;
+  if (entry.date && /^\d{4}-\d{2}-\d{2}$/.test(String(entry.date))) return String(entry.date);
+  const ts = Number(entry.timestamp);
+  if (Number.isFinite(ts)) {
+    const d = new Date(ts);
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().slice(0, 10);
+  }
+  const iso = entry.date != null ? String(entry.date).slice(0, 10) : '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  return null;
+}
+
+function inferMuscleMassKgFromMetric(entry) {
+  const w = Number(entry?.weight);
+  if (!Number.isFinite(w) || w <= 0) return null;
+  if (entry.muscle != null && entry.muscle !== '') {
+    const m = Number(entry.muscle);
+    if (Number.isFinite(m) && m > 0 && m <= 100) return (w * m) / 100;
+  }
+  if (entry.bodyFat != null && entry.bodyFat !== '') {
+    const bf = Number(entry.bodyFat);
+    if (Number.isFinite(bf) && bf >= 0 && bf < 99) {
+      const lean = w * (1 - bf / 100);
+      return Math.max(0, lean * 0.42);
+    }
+  }
+  return Math.max(0, w * 0.36);
+}
+
+/**
+ * Serie giornaliera peso + massa muscolare stimata (kg). Giorni con pesata reale: reset al valore misurato.
+ * @returns {Array<{ isoDate: string, weightKg: number, weightIsReal: boolean, muscleMassKg: number, muscleMassIsReal: boolean, bodyFat: number|null, musclePct: number|null, waterPct: number|null }>}
+ */
+export function buildPredictiveCompositionDailyRows({
+  fullHistory,
+  bodyMetricsHistory,
+  rangeStartIso,
+  rangeEndIso,
+  baseTdeeKcal,
+}) {
+  if (
+    !fullHistory ||
+    typeof fullHistory !== 'object' ||
+    !rangeStartIso ||
+    !rangeEndIso ||
+    compareIsoDate(rangeStartIso, rangeEndIso) > 0
+  ) {
+    return [];
+  }
+  const baseTdee = Number(baseTdeeKcal);
+  if (!Number.isFinite(baseTdee) || baseTdee < 800) return [];
+
+  const sorted = [...(bodyMetricsHistory || [])]
+    .filter((e) => e && Number(e.weight) > 0)
+    .sort((a, b) => {
+      const da = metricEntryToIsoDay(a) || '';
+      const db = metricEntryToIsoDay(b) || '';
+      if (da !== db) return da < db ? -1 : 1;
+      return (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0);
+    });
+
+  const realByDay = new Map();
+  for (let i = 0; i < sorted.length; i++) {
+    const e = sorted[i];
+    const day = metricEntryToIsoDay(e);
+    if (!day) continue;
+    const w = Number(e.weight);
+    if (!Number.isFinite(w) || w <= 0) continue;
+    realByDay.set(day, {
+      weight: w,
+      bodyFat: e.bodyFat != null && e.bodyFat !== '' ? Number(e.bodyFat) : null,
+      muscle: e.muscle != null && e.muscle !== '' ? Number(e.muscle) : null,
+      water: e.water != null && e.water !== '' ? Number(e.water) : null,
+    });
+  }
+
+  let carryW = null;
+  let carryM = null;
+  for (let i = 0; i < sorted.length; i++) {
+    const e = sorted[i];
+    const day = metricEntryToIsoDay(e);
+    if (!day || compareIsoDate(day, rangeStartIso) >= 0) break;
+    carryW = Number(e.weight);
+    carryM = inferMuscleMassKgFromMetric(e);
+  }
+
+  const rows = [];
+  let d = rangeStartIso;
+  while (compareIsoDate(d, rangeEndIso) <= 0) {
+    const log = normalizeLogData(getLogFromStoricoTree(fullHistory, d) || []);
+    const { kcal, prot } = sumFoodKcalAndProtein(log);
+    const burn = sumWorkoutBurnKcal(log);
+    const tdeeDyn = baseTdee + burn;
+    const hasW = dayHasWeightsStrengthWorkout(log);
+    const real = realByDay.get(d);
+
+    if (real) {
+      carryW = real.weight;
+      carryM = inferMuscleMassKgFromMetric({ weight: real.weight, bodyFat: real.bodyFat, muscle: real.muscle });
+      const muscleMassIsReal = real.muscle != null && Number.isFinite(Number(real.muscle));
+      rows.push({
+        isoDate: d,
+        weightKg: carryW,
+        weightIsReal: true,
+        muscleMassKg: carryM,
+        muscleMassIsReal: muscleMassIsReal,
+        bodyFat: real.bodyFat != null && Number.isFinite(real.bodyFat) ? real.bodyFat : null,
+        musclePct: real.muscle != null && Number.isFinite(real.muscle) ? real.muscle : null,
+        waterPct: real.water != null && Number.isFinite(real.water) ? real.water : null,
+      });
+    } else if (carryW != null && carryM != null) {
+      const dW = estimateBodyMassDeltaFromEnergyBalance(kcal, tdeeDyn);
+      const dLean = estimateLeanMassDeltaKg(dW, carryW, prot, hasW);
+      carryW += dW;
+      carryM += dLean;
+      rows.push({
+        isoDate: d,
+        weightKg: carryW,
+        weightIsReal: false,
+        muscleMassKg: carryM,
+        muscleMassIsReal: false,
+        bodyFat: null,
+        musclePct: null,
+        waterPct: null,
+      });
+    }
+
+    d = addDays(d, 1);
+  }
+
+  return rows;
+}
+
+function compareIsoDate(a, b) {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/** Peso stimato a fine giornata (per confronto con pesata reale e calibrazione TDEE). */
+export function getEndOfDayPredictedWeightForCalibration({
+  fullHistory,
+  bodyMetricsHistory,
+  baseTdeeKcal,
+  targetIsoDate,
+}) {
+  if (!targetIsoDate) return null;
+  const rangeStart = addDays(targetIsoDate, -220);
+  const rows = buildPredictiveCompositionDailyRows({
+    fullHistory,
+    bodyMetricsHistory,
+    rangeStartIso: rangeStart,
+    rangeEndIso: targetIsoDate,
+    baseTdeeKcal,
+  });
+  if (!rows.length) return null;
+  const last = rows[rows.length - 1];
+  if (last.isoDate !== targetIsoDate) return null;
+  const w = Number(last.weightKg);
+  return Number.isFinite(w) ? w : null;
+}
+
+/**
+ * Ultime 3 pesate con scostamento persistente (stesso segno, |err| > soglia) → suggerisce correzione TDEE (kcal).
+ */
+export function evaluatePersistentTdeeCalibration(errorRows, thresholdKg = 0.28) {
+  const last3 = (errorRows || []).slice(-3);
+  if (last3.length < 3) return { shouldAdjust: false, suggestedDeltaKcal: 0, meanErrorKg: 0 };
+  const th = Number(thresholdKg) || 0.28;
+  const signs = last3.map((e) => {
+    const err = Number(e.errorKg);
+    if (!Number.isFinite(err)) return 0;
+    if (err > th) return 1;
+    if (err < -th) return -1;
+    return 0;
+  });
+  if (signs.some((s) => s === 0)) return { shouldAdjust: false, suggestedDeltaKcal: 0, meanErrorKg: 0 };
+  if (!(signs[0] === signs[1] && signs[1] === signs[2])) {
+    return { shouldAdjust: false, suggestedDeltaKcal: 0, meanErrorKg: 0 };
+  }
+  const mean =
+    (Number(last3[0].errorKg) + Number(last3[1].errorKg) + Number(last3[2].errorKg)) / 3;
+  const rawDelta = Math.round((-mean * KCAL_PER_KG_ENERGY_BALANCE) / 14);
+  const suggestedDeltaKcal = Math.max(-280, Math.min(280, rawDelta));
+  return { shouldAdjust: true, suggestedDeltaKcal, meanErrorKg: mean };
+}
+
+/** Indice 0–100: quanto le ultime pesate si avvicinano alla stima (errore assoluto basso). */
+export function computePredictionReliabilityPercent(errorRows, maxRecent = 8) {
+  const slice = (errorRows || []).slice(-maxRecent);
+  if (!slice.length) return null;
+  const abs = slice.map((e) => Math.abs(Number(e.errorKg))).filter((x) => Number.isFinite(x));
+  if (!abs.length) return null;
+  const mae = abs.reduce((a, b) => a + b, 0) / abs.length;
+  return Math.max(0, Math.min(100, Math.round(100 - mae * 42)));
+}
+
 export {
   RADIAN,
   getTodayString,
