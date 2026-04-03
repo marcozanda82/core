@@ -55,14 +55,15 @@ function getMondayOfWeek(dateStr) {
  */
 const MEAL_TYPE_GROUPS = {
   colazione: ['merenda1', 'colazione'],
+  merenda_am: ['merenda_am'],
   pranzo: ['pranzo'],
-  spuntino: ['merenda2', 'spuntino', 'snack'], // merenda2 = spuntino pomeridiano, snack = generico
-  cena: ['cena']
+  merenda_pm: ['merenda_pm', 'merenda2', 'spuntino', 'snack'],
+  cena: ['cena'],
 };
 
 /** 
  * Mappa inversa: da qualsiasi ID al gruppo canonico.
- * 'merenda1' → 'colazione', 'spuntino' → 'spuntino', 'snack' → 'spuntino'
+ * 'merenda1' → 'colazione', 'merenda2'|'snack' → 'merenda_pm'
  */
 const MEAL_TYPE_TO_CANONICAL = {};
 Object.entries(MEAL_TYPE_GROUPS).forEach(([canonical, aliases]) => {
@@ -299,7 +300,7 @@ const PHYSIOLOGY_CONFIG = {
 /**
  * Dati reali + ideali per il cruscotto energetico 0-24h: 25 punti (ore 0..24).
  * timelineNodes: array di { id, type: 'meal'|'work'|'workout', time, duration?, kcal?, icon }.
- * idealStrategy: { colazione, pranzo, spuntino, cena, allenamento } kcal obiettivo.
+ * idealStrategy: { colazione, merenda_am, pranzo, merenda_pm, cena, allenamento } kcal obiettivo (legacy: spuntino → merenda_pm).
  * Restituisce { chartData, realTotals } per grafico doppia curva e semafori.
  */
 function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, currentTime = null, accumuloSNC = 0) {
@@ -385,30 +386,35 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   const sleepStart = sleepNode?.sleepStart ?? 0;
   const wake = sleepEnd;
 
-  // Mappa da canonical strategy key a array di mealType equivalenti
-  const strategyToMealTypes = {
-    colazione: ['merenda1', 'colazione'],
-    pranzo: ['pranzo'],
-    spuntino: ['merenda2', 'spuntino', 'snack'],
-    cena: ['cena']
+  const defaultIdealKcalForStrategy = (sk, idealObj) => {
+    const legacySnack = Number(idealObj?.merenda_pm ?? idealObj?.spuntino) || 250;
+    const defaults = {
+      colazione: 400,
+      merenda_am: 200,
+      pranzo: 700,
+      merenda_pm: legacySnack,
+      cena: 500,
+    };
+    if (defaults[sk] != null) return defaults[sk];
+    if (sk === 'spuntino') return legacySnack;
+    return 500;
   };
 
   let workoutKcal = 0;
-  const realTotals = { colazione: 0, pranzo: 0, spuntino: 0, cena: 0, allenamento: 0 };
-  
+  const realTotals = { colazione: 0, merenda_am: 0, pranzo: 0, merenda_pm: 0, cena: 0, allenamento: 0 };
+
   log.forEach(entry => {
     const kcal = Number(entry.kcal ?? entry.cal ?? 0) || 0;
     if (entry.type === 'workout') {
       workoutKcal += kcal;
       return;
     }
-    // Trova a quale strategia appartiene questo mealType
+    if (entry.type !== 'food' && entry.type !== 'recipe') return;
     const entryMealType = entry.mealType || 'cena';
-    for (const [strategyKey, mealTypes] of Object.entries(strategyToMealTypes)) {
-      if (mealTypes.includes(entryMealType)) {
-        realTotals[strategyKey] = (realTotals[strategyKey] || 0) + kcal;
-        break;
-      }
+    const base = String(entryMealType).split('_')[0];
+    const canon = toCanonicalMealType(base);
+    if (Object.prototype.hasOwnProperty.call(realTotals, canon)) {
+      realTotals[canon] = (realTotals[canon] || 0) + kcal;
     }
   });
   realTotals.allenamento = workoutKcal;
@@ -523,7 +529,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         if (timeSince >= 0 && timeSince <= 3) {
           const mealEffect = responseCurve(timeSince, 1, 3);
           const realK = node.kcal || node.cal || 500;
-          const idealK = Number(ideal[node.strategyKey]) || (node.strategyKey === 'spuntino' ? 250 : 500);
+          const sk = node.strategyKey === 'spuntino' ? 'merenda_pm' : node.strategyKey;
+          const idealK = Number(ideal[node.strategyKey] ?? ideal[sk]) || defaultIdealKcalForStrategy(sk, ideal);
           metabolicEnergy += mealEffect * (realK / 20);
           currentIdealEnergy += mealEffect * (idealK / 20);
         }
@@ -1365,11 +1372,17 @@ const TRACKER_STORICO_KEY = (date) => `trackerStorico_${date}`;
 
 /** Mappa descrizione pasto (vecchio formato) -> mealId canonico. */
 const DESC_TO_MEAL_ID = {
-  colazione: 'merenda1', 'merenda am': 'merenda1', merenda1: 'merenda1',
+  colazione: 'merenda1',
+  'merenda am': 'merenda_am',
+  merenda_am: 'merenda_am',
+  merenda1: 'merenda1',
   pranzo: 'pranzo',
-  'merenda pm': 'merenda2', merenda2: 'merenda2', 
-  spuntino: 'snack', snack: 'snack', // TUTTI gli snack vanno a 'snack'
-  cena: 'cena'
+  'merenda pm': 'merenda_pm',
+  merenda_pm: 'merenda_pm',
+  merenda2: 'merenda_pm',
+  spuntino: 'merenda_pm',
+  snack: 'merenda_pm',
+  cena: 'cena',
 };
 
 function inferMealType(entry) {
@@ -1544,16 +1557,168 @@ function normalizeLogData(rawLog) {
 }
 
 /** Ricostruisce la struttura a "cartelle" (meal/items) per Firebase a partire dal dailyLog piatto. */
-const MEAL_ORDER_SAVE = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'];
-const MEAL_LABELS_SAVE = { 
-  merenda1: 'Colazione', 
-  pranzo: 'Pranzo', 
-  merenda2: 'Merenda PM', 
-  cena: 'Cena', 
-  snack: 'Snack',
-  spuntino: 'Snack',
-  colazione: 'Colazione'
+const MEAL_ORDER_SAVE = ['merenda1', 'merenda_am', 'pranzo', 'merenda_pm', 'cena', 'merenda2', 'snack'];
+
+const MEAL_LABELS_SAVE = {
+  merenda1: 'Colazione',
+  colazione: 'Colazione',
+  merenda_am: 'Merenda AM',
+  pranzo: 'Pranzo',
+  merenda_pm: 'Merenda PM',
+  merenda2: 'Merenda PM',
+  spuntino: 'Merenda PM',
+  snack: 'Merenda PM',
+  cena: 'Cena',
 };
+
+/** Elenco tipi pasto per UI (5 pasti + alias legacy in ordine salvataggio). */
+export const MEAL_TYPES = [
+  { id: 'merenda1', label: 'Colazione' },
+  { id: 'merenda_am', label: 'Merenda AM' },
+  { id: 'pranzo', label: 'Pranzo' },
+  { id: 'merenda_pm', label: 'Merenda PM' },
+  { id: 'cena', label: 'Cena' },
+];
+
+/** Slot proteici dinamici (esclusa colazione, quota fissa). */
+const PROTEIN_DYNAMIC_SLOTS = ['merenda_am', 'pranzo', 'merenda_pm', 'cena'];
+
+const SLOT_DEADLINE_HOUR = {
+  merenda_am: 11,
+  pranzo: 16,
+  merenda_pm: 19,
+  cena: 24,
+};
+
+const BREAKFAST_PROT_RATIO = 0.25;
+const BREAKFAST_KCAL_RATIO = 0.22;
+
+function sumMacroInCanonicalSlot(log, canonicalSlot, macro) {
+  const L = log || [];
+  let s = 0;
+  for (let i = 0; i < L.length; i++) {
+    const e = L[i];
+    if (!e || (e.type !== 'food' && e.type !== 'recipe')) continue;
+    const base = String(e.mealType || '').split('_')[0];
+    if (toCanonicalMealType(base) !== canonicalSlot) continue;
+    if (macro === 'kcal') s += Number(e.kcal ?? e.cal) || 0;
+    else if (macro === 'prot') s += Number(e.prot ?? e.proteine) || 0;
+    else if (macro === 'carb') s += Number(e.carb ?? e.carboidrati) || 0;
+    else if (macro === 'fat') s += Number(e.fatTotal ?? e.fat ?? e.grassi) || 0;
+  }
+  return s;
+}
+
+function slotHasLoggedFood(log, canonicalSlot) {
+  return sumMacroInCanonicalSlot(log, canonicalSlot, 'kcal') > 5 || sumMacroInCanonicalSlot(log, canonicalSlot, 'prot') > 0.5;
+}
+
+function isSlotSkippedForDynamic(slot, hour, currentCanon, log) {
+  if (slot === currentCanon) return false;
+  if (slotHasLoggedFood(log, slot)) return false;
+  const dl = SLOT_DEADLINE_HOUR[slot] ?? 24;
+  return hour >= dl;
+}
+
+/**
+ * Target macro per il pasto corrente: colazione con quota fissa; altri 4 slot con proteine/kcal
+ * ricalcolate se un pasto non è stato registrato entro la finestra (deadline) — quota spalmata sugli slot attivi.
+ * Carboidrati più alti a cena, grassi relativamente più alti a pranzo.
+ */
+export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, options = {}) {
+  const hour = Number(options.currentDecimalHour);
+  const h = Number.isFinite(hour) ? hour : 12;
+  const log = Array.isArray(dailyLog) ? dailyLog : [];
+
+  const Tkcal = Number(userTargets?.kcal ?? 2000) || 2000;
+  const Tprot = Number(userTargets?.prot ?? 150) || 150;
+  const Tcarb = Number(userTargets?.carb ?? 200) || 200;
+  const Tfat = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 60) || 60;
+  const Tfibre = Number(userTargets?.fibre ?? 30) || 30;
+
+  const baseMt = String(currentMealType || 'pranzo').split('_')[0];
+  const canon = toCanonicalMealType(baseMt);
+
+  if (canon === 'colazione') {
+    const rkcal = Tkcal * BREAKFAST_KCAL_RATIO;
+    const rprot = Tprot * BREAKFAST_PROT_RATIO;
+    return {
+      kcal: Math.round(rkcal),
+      prot: Math.round(rprot * 10) / 10,
+      carb: Math.round(Tcarb * 0.22 * 10) / 10,
+      fat: Math.round(Tfat * 0.22 * 10) / 10,
+      fibre: Math.max(2, Math.round(Tfibre * BREAKFAST_KCAL_RATIO * 10) / 10),
+    };
+  }
+
+  const P = Tprot * (1 - BREAKFAST_PROT_RATIO);
+  const Kpool = Tkcal * (1 - BREAKFAST_KCAL_RATIO);
+
+  const perP = P / PROTEIN_DYNAMIC_SLOTS.length;
+  const perK = Kpool / PROTEIN_DYNAMIC_SLOTS.length;
+
+  const skipped = PROTEIN_DYNAMIC_SLOTS.filter((slot) => isSlotSkippedForDynamic(slot, h, canon, log));
+  let recCount = PROTEIN_DYNAMIC_SLOTS.length - skipped.length;
+  if (recCount <= 0) recCount = 1;
+
+  const bonusP = (skipped.length * perP) / recCount;
+  const bonusK = (skipped.length * perK) / recCount;
+
+  const eatenP = sumMacroInCanonicalSlot(log, canon, 'prot');
+  const eatenK = sumMacroInCanonicalSlot(log, canon, 'kcal');
+
+  let targetProt = perP + bonusP - eatenP;
+  let targetKcal = perK + bonusK - eatenK;
+
+  targetProt = Math.max(10, Math.round(targetProt * 10) / 10);
+  targetKcal = Math.max(150, Math.round(targetKcal));
+
+  const protKcal = targetProt * 4;
+  let remKcal = Math.max(80, targetKcal - protKcal);
+
+  let carbEnergyRatio = 0.42;
+  let fatEnergyRatio = 0.36;
+  if (canon === 'pranzo') {
+    carbEnergyRatio = 0.36;
+    fatEnergyRatio = 0.44;
+  } else if (canon === 'cena') {
+    carbEnergyRatio = 0.5;
+    fatEnergyRatio = 0.24;
+  } else if (canon === 'merenda_am' || canon === 'merenda_pm') {
+    carbEnergyRatio = 0.46;
+    fatEnergyRatio = 0.34;
+  }
+
+  const targetCarb = Math.max(5, Math.round(((remKcal * carbEnergyRatio) / 4) * 10) / 10);
+  const targetFat = Math.max(3, Math.round(((remKcal * fatEnergyRatio) / 9) * 10) / 10);
+
+  const Cpool = Tcarb * (1 - BREAKFAST_KCAL_RATIO);
+  const Fpool = Tfat * (1 - BREAKFAST_KCAL_RATIO);
+  const perC = Cpool / PROTEIN_DYNAMIC_SLOTS.length;
+  const perF = Fpool / PROTEIN_DYNAMIC_SLOTS.length;
+  const eatenC = sumMacroInCanonicalSlot(log, canon, 'carb');
+  const eatenF = sumMacroInCanonicalSlot(log, canon, 'fat');
+  const bonusC = (skipped.length * perC) / recCount;
+  const bonusF = (skipped.length * perF) / recCount;
+  let poolCarb = perC + bonusC - eatenC;
+  let poolFat = perF + bonusF - eatenF;
+  poolCarb = Math.max(targetCarb * 0.75, Math.min(targetCarb * 1.35, poolCarb));
+  poolFat = Math.max(targetFat * 0.75, Math.min(targetFat * 1.35, poolFat));
+
+  const blend = 0.55;
+  const finalCarb = Math.round((targetCarb * blend + poolCarb * (1 - blend)) * 10) / 10;
+  const finalFat = Math.round((targetFat * blend + poolFat * (1 - blend)) * 10) / 10;
+
+  const fibreSlot = Math.max(2, Math.round((Tfibre / PROTEIN_DYNAMIC_SLOTS.length + (skipped.length * (Tfibre / PROTEIN_DYNAMIC_SLOTS.length)) / recCount) * 10) / 10);
+
+  return {
+    kcal: targetKcal,
+    prot: targetProt,
+    carb: finalCarb,
+    fat: finalFat,
+    fibre: fibreSlot,
+  };
+}
 
 /** Importanza dinamica dei nodi per vista grafico: quali tipi evidenziare. */
 const NODE_IMPORTANCE = {
@@ -2693,7 +2858,17 @@ function calibrateUserModel(weeklyData, currentModel) {
  * Used for weekly calibration. actualEnergy and sleep quality default to predicted/0 when not available.
  */
 function buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, weekStartMonday) {
-  const mealTypesToStrategy = { merenda1: 'colazione', colazione: 'colazione', pranzo: 'pranzo', merenda2: 'spuntino', spuntino: 'spuntino', snack: 'spuntino', cena: 'cena' };
+  const mealTypesToStrategy = {
+    merenda1: 'colazione',
+    colazione: 'colazione',
+    merenda_am: 'merenda_am',
+    pranzo: 'pranzo',
+    merenda2: 'merenda_pm',
+    merenda_pm: 'merenda_pm',
+    spuntino: 'merenda_pm',
+    snack: 'merenda_pm',
+    cena: 'cena',
+  };
   let predictedEnergySum = 0;
   let daysWithPrediction = 0;
   let caffeineEvents = 0;
@@ -2710,7 +2885,8 @@ function buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, weekS
     log.forEach(entry => {
       if (entry?.type === 'food') {
         const t = typeof entry.mealTime === 'number' ? entry.mealTime : 12;
-        const strategyKey = mealTypesToStrategy[entry.mealType?.split('_')[0]] || 'cena';
+        const base = entry.mealType?.split('_')[0];
+        const strategyKey = mealTypesToStrategy[base] || toCanonicalMealType(base) || 'cena';
         timelineNodes.push({ type: 'meal', time: t, strategyKey, kcal: entry.kcal ?? entry.cal ?? 0 });
       } else if (entry?.type === 'workout' || entry?.type === 'work') {
         const isCognitive = entry.type === 'workout' && (entry.workoutType === 'studio' || entry.workoutType === 'lavoro_pc');

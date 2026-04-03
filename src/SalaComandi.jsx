@@ -105,7 +105,27 @@ import {
   getLastMealMacrosForTrainingWave,
   getTrainingWaveCurves,
   buildTrainingWaveContextSnippet,
+  getDynamicMealTargets,
 } from './coreEngine';
+
+function migrateIdealStrategy(raw) {
+  const defaults = {
+    colazione: 400,
+    merenda_am: 200,
+    pranzo: 700,
+    merenda_pm: 250,
+    cena: 500,
+    allenamento: 300,
+  };
+  if (!raw || typeof raw !== 'object') return { ...defaults };
+  const legacySnack = Number(raw.merenda_pm ?? raw.spuntino) || 250;
+  const next = { ...defaults, ...raw };
+  if (next.merenda_pm == null || Number.isNaN(Number(next.merenda_pm))) next.merenda_pm = legacySnack;
+  if (next.merenda_am == null || Number.isNaN(Number(next.merenda_am))) {
+    next.merenda_am = Math.min(320, Math.round(legacySnack * 0.82));
+  }
+  return next;
+}
 
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
 const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'longevita'];
@@ -1955,8 +1975,12 @@ export default function SalaComandi() {
   const sncStressLevel = accumuloSNC;
 
   const [idealStrategy, setIdealStrategy] = useState(() => {
-    const saved = localStorage.getItem('vyta_idealStrategy');
-    return saved ? JSON.parse(saved) : { colazione: 400, pranzo: 700, spuntino: 250, cena: 500, allenamento: 300 };
+    try {
+      const saved = localStorage.getItem('vyta_idealStrategy');
+      return migrateIdealStrategy(saved ? JSON.parse(saved) : null);
+    } catch {
+      return migrateIdealStrategy(null);
+    }
   });
 
   const [manualNodes, setManualNodes] = useState(() => {
@@ -2141,13 +2165,15 @@ export default function SalaComandi() {
 
   const getStrategyKey = (mealType) => {
     const map = {
-      'merenda1': 'colazione',
-      'colazione': 'colazione',
-      'merenda2': 'spuntino',
-      'spuntino': 'spuntino',
-      'snack': 'spuntino',
-      'pranzo': 'pranzo',
-      'cena': 'cena'
+      merenda1: 'colazione',
+      colazione: 'colazione',
+      merenda_am: 'merenda_am',
+      pranzo: 'pranzo',
+      merenda2: 'merenda_pm',
+      merenda_pm: 'merenda_pm',
+      spuntino: 'merenda_pm',
+      snack: 'merenda_pm',
+      cena: 'cena',
     };
     return map[mealType] || mealType;
   };
@@ -3368,10 +3394,21 @@ export default function SalaComandi() {
   // FUNZIONI CRITICHE CON RETROCOMPATIBILITÀ
   // ============================================================================
 
+  const mealIdFromCanonical = (c) => {
+    const x = String(c || '');
+    if (x === 'colazione') return 'merenda1';
+    if (x === 'merenda_pm' || x === 'spuntino' || x === 'snack' || x === 'merenda2') return 'merenda_pm';
+    if (x === 'merenda_am') return 'merenda_am';
+    if (x === 'pranzo') return 'pranzo';
+    if (x === 'cena') return 'cena';
+    return x || 'pranzo';
+  };
+
   const fallbackPredict = (now) => {
     if (now >= 5 && now < 10) return 'merenda1';
-    if (now >= 10 && now < 14.5) return 'pranzo';
-    if (now >= 14.5 && now < 18) return 'snack';
+    if (now >= 10 && now < 12.5) return 'merenda_am';
+    if (now >= 12.5 && now < 14.5) return 'pranzo';
+    if (now >= 14.5 && now < 18.5) return 'merenda_pm';
     return 'cena';
   };
 
@@ -3416,7 +3453,7 @@ export default function SalaComandi() {
       }
     });
     if (minDiff > 3) return fallbackPredict(targetTime);
-    return bestMatch;
+    return mealIdFromCanonical(bestMatch);
   };
 
   /** Alimenti del diario che appartengono allo slot pasto (mealType o composito mealType_decimalTime come nel Pie). */
@@ -3485,7 +3522,7 @@ export default function SalaComandi() {
           ? parsedTimeFromId
           : getDefaultMealTime(canonical);
 
-    setMealType(canonical);
+    setMealType(mealIdFromCanonical(canonical));
     setDrawerMealTime(t);
     setDrawerMealTimeStr(decimalToTimeStr(t));
     setAddedFoods(items);
@@ -3510,30 +3547,44 @@ export default function SalaComandi() {
   };
 
   const getDefaultMealTime = (mealTypeKey) => {
+    const DEFAULT_SLOT_TIME = {
+      merenda1: 8,
+      colazione: 8,
+      merenda_am: 10.5,
+      pranzo: 13,
+      merenda_pm: 16.5,
+      merenda2: 16.5,
+      spuntino: 16.5,
+      snack: 16.5,
+      cena: 20,
+    };
+    const fallbackFromSlot = () => {
+      const defT = DEFAULT_SLOT_TIME[mealTypeKey];
+      return typeof defT === 'number' ? defT : getCurrentTimeRoundedTo15Min();
+    };
+
     const equivalents = getEquivalentMealTypes(mealTypeKey);
-    
-    // Cerca nel dailyLog corrente
+
     const first = (activeLog || []).find(item =>
       (item.type === 'food' || item.type === 'recipe') && equivalents.includes(item.mealType)
     );
     const fromFirst = first != null ? getMealTimeFromLogItem(first) : null;
     if (fromFirst != null) return fromFirst;
-    
-    if (!fullStorico) return getCurrentTimeRoundedTo15Min();
+
+    if (!fullStorico) return fallbackFromSlot();
     const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
     keys.sort((a, b) => b.localeCompare(a));
     const todayKey = TRACKER_STORICO_KEY(getTodayString());
-    
+
     for (const key of keys) {
       if (key === todayKey) continue;
       const dayData = fullStorico[key];
-      // Cerca in mealTimes con qualsiasi equivalente
       for (const eq of equivalents) {
         const t = dayData?.mealTimes?.[eq];
         if (typeof t === 'number') return t;
       }
     }
-    return getCurrentTimeRoundedTo15Min();
+    return fallbackFromSlot();
   };
 
   const handleTimeInput = (value) => {
@@ -5874,7 +5925,9 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         pairs.forEach(pair => {
           const [key, val] = pair.split('=').map(s => (s || '').trim().toLowerCase());
           const numVal = parseFloat(val);
-          if (!isNaN(numVal) && key && newStrategy[key] !== undefined) newStrategy[key] = numVal;
+          if (isNaN(numVal) || !key) return;
+          const stratKey = key === 'spuntino' ? 'merenda_pm' : key;
+          if (newStrategy[stratKey] !== undefined) newStrategy[stratKey] = numVal;
         });
         setIdealStrategy(newStrategy);
       }
@@ -6491,12 +6544,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     if (!node?.log) return null;
     const raw = node.log;
     const yesterdayLog = normalizeLogData(Array.isArray(raw) ? raw : Object.values(raw));
-    const mealTypesToStrategy = { merenda1: 'colazione', colazione: 'colazione', pranzo: 'pranzo', merenda2: 'spuntino', spuntino: 'spuntino', snack: 'spuntino', cena: 'cena' };
+    const mealTypesToStrategy = {
+      merenda1: 'colazione',
+      colazione: 'colazione',
+      merenda_am: 'merenda_am',
+      pranzo: 'pranzo',
+      merenda2: 'merenda_pm',
+      merenda_pm: 'merenda_pm',
+      spuntino: 'merenda_pm',
+      snack: 'merenda_pm',
+      cena: 'cena',
+    };
     const yesterdayNodes = [];
     yesterdayLog.forEach(entry => {
       if (entry?.type === 'food' || entry?.type === 'recipe') {
         const t = typeof entry.mealTime === 'number' ? entry.mealTime : 12;
-        const strategyKey = mealTypesToStrategy[entry.mealType?.split('_')[0]] || 'cena';
+        const base = entry.mealType?.split('_')[0];
+        const strategyKey = mealTypesToStrategy[base] || toCanonicalMealType(base) || 'cena';
         yesterdayNodes.push({ type: 'meal', time: t, strategyKey, kcal: entry.kcal ?? entry.cal ?? 0 });
       } else if (entry?.type === 'workout' || entry?.type === 'work') {
         yesterdayNodes.push({ type: 'workout', time: entry.time ?? entry.mealTime ?? 12, duration: entry.duration ?? 1, kcal: entry.kcal ?? entry.cal ?? 300 });
@@ -7141,24 +7205,47 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return acc;
   }, {});
 
-  const strategyKeyForMeal = {
-    merenda1: 'colazione',
-    pranzo: 'pranzo',
-    merenda2: 'spuntino',
-    cena: 'cena',
-    snack: 'spuntino'
-  }[mealType] || mealType;
+  const dailyLogForDynamicTargets = useMemo(() => {
+    const log = activeLog || [];
+    if (!editingMealId) return log;
+    const items = getFoodItemsForMealSlot(log, editingMealId);
+    const keys = new Set(
+      items.map((f) => {
+        const base = String(f.mealType ?? '').split('_')[0];
+        const t = typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 'na';
+        return `${base}|${t}`;
+      })
+    );
+    return log.filter((e) => {
+      if (e.type !== 'food' && e.type !== 'recipe') return true;
+      const base = String(e.mealType ?? '').split('_')[0];
+      const t = typeof e.mealTime === 'number' && !Number.isNaN(e.mealTime) ? e.mealTime : 'na';
+      return !keys.has(`${base}|${t}`);
+    });
+  }, [activeLog, editingMealId, getFoodItemsForMealSlot]);
 
-  const targetKcalPasto = idealStrategy[strategyKeyForMeal] || (userTargets.kcal ?? 2000) / 4;
+  const targetMacrosPasto = useMemo(() => {
+    const h =
+      typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime)
+        ? drawerMealTime
+        : typeof displayTime === 'number' && !Number.isNaN(displayTime)
+          ? displayTime
+          : 12;
+    const Tkcal = dynamicDailyKcal ?? userTargets?.kcal ?? 2000;
+    return getDynamicMealTargets(mealType, dailyLogForDynamicTargets, {
+      kcal: Tkcal,
+      prot: userTargets?.prot ?? 150,
+      carb: userTargets?.carb ?? 200,
+      fatTotal: userTargets?.fatTotal ?? userTargets?.fat ?? 60,
+      fat: userTargets?.fat ?? userTargets?.fatTotal ?? 60,
+      fibre: userTargets?.fibre ?? 30,
+    }, { currentDecimalHour: h });
+  }, [mealType, dailyLogForDynamicTargets, userTargets, dynamicDailyKcal, drawerMealTime, displayTime]);
+
+  const strategyKeyForMeal = getStrategyKey(toCanonicalMealType(String(mealType || 'pranzo').split('_')[0]));
+  const targetKcalPasto = idealStrategy[strategyKeyForMeal] ?? targetMacrosPasto.kcal;
   const dailyKcal = userTargets.kcal ?? 2000;
-  const ratio = dailyKcal > 0 ? targetKcalPasto / dailyKcal : 0.25;
-  const targetMacrosPasto = {
-    kcal: targetKcalPasto,
-    prot: (userTargets.prot ?? 150) * ratio,
-    carb: (userTargets.carb ?? 200) * ratio,
-    fat: (userTargets.fatTotal ?? userTargets.fat ?? 60) * ratio,
-    fibre: (userTargets.fibre ?? 30) * ratio
-  };
+  const ratio = dailyKcal > 0 ? targetMacrosPasto.kcal / dailyKcal : 0.25;
 
   const isReadyToDelete = draggingNode && Math.abs(dragOffsetY) > 50;
 

@@ -4,6 +4,7 @@
  */
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { TARGETS } from './useBiochimico';
+import { MEAL_TYPES } from './coreEngine';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -145,13 +146,6 @@ function buildFoodDbEntryPer100FromNormalized(desc, per100) {
   });
   return entry;
 }
-
-const MEAL_BUTTONS = [
-  { label: 'Colazione', id: 'merenda1' },
-  { label: 'Snack', id: 'snack' },
-  { label: 'Pranzo', id: 'pranzo' },
-  { label: 'Cena', id: 'cena' }
-];
 
 function parseRecipeIngredientsFromAI(text) {
   const cleaned = String(text || '')
@@ -742,49 +736,30 @@ export default function MealBuilder({
     };
   }, [addedFoods]);
 
-  const isCena = mealType === 'cena';
   const dailyGoals = useMemo(() => ({
     kcal: (dynamicDailyKcal ?? userTargets?.kcal ?? 2000) || 2000,
     prot: (userTargets?.prot ?? 150) || 150,
     carb: (userTargets?.carb ?? 200) || 200,
     fat: (userTargets?.fatTotal ?? userTargets?.fat ?? 60) || 60
   }), [dynamicDailyKcal, userTargets]);
-  const consumedSoFar = useMemo(() => ({
-    kcal: totali?.kcal ?? 0,
-    prot: totali?.prot ?? 0,
-    carb: totali?.carb ?? 0,
-    fat: totali?.fatTotal ?? totali?.fat ?? 0
-  }), [totali]);
-
-  /* In modifica pasto (editingMealId): non azzerare i target: usa totali ESCLUSO il pasto in editing così la rimanenza non va a 0 */
-  const consumedSoFarForRemainder = useMemo(() => {
-    if (!editingMealId) return consumedSoFar;
-    return {
-      kcal: Math.max(0, (consumedSoFar.kcal ?? 0) - (currentMealMacros.kcal ?? 0)),
-      prot: Math.max(0, (consumedSoFar.prot ?? 0) - (currentMealMacros.prot ?? 0)),
-      carb: Math.max(0, (consumedSoFar.carb ?? 0) - (currentMealMacros.carb ?? 0)),
-      fat: Math.max(0, (consumedSoFar.fat ?? 0) - (currentMealMacros.fat ?? 0))
-    };
-  }, [editingMealId, consumedSoFar, currentMealMacros]);
-
   const targetMacros = useMemo(() => {
-    if (isCena) {
+    if (targetMacrosPasto && targetMacrosPasto.kcal != null) {
       return {
-        kcal: Math.max(1, (dailyGoals.kcal || 2000) - (consumedSoFarForRemainder.kcal ?? 0)),
-        prot: Math.max(1, (dailyGoals.prot || 150) - (consumedSoFarForRemainder.prot ?? 0)),
-        carb: Math.max(1, (dailyGoals.carb || 200) - (consumedSoFarForRemainder.carb ?? 0)),
-        fat: Math.max(1, (dailyGoals.fat || 60) - (consumedSoFarForRemainder.fat ?? 0)),
-        fibre: Math.max(0, (userTargets?.fibre ?? 30) - (totali?.fibre ?? 0))
+        kcal: targetMacrosPasto.kcal,
+        prot: targetMacrosPasto.prot,
+        carb: targetMacrosPasto.carb,
+        fat: targetMacrosPasto.fat,
+        fibre: targetMacrosPasto.fibre ?? Math.max(2, (userTargets?.fibre ?? 30) * (ratio || 0.2)),
       };
     }
     return {
-      kcal: (targetMacrosPasto?.kcal ?? (dailyGoals.kcal || 2000) * 0.25) || 500,
-      prot: (targetMacrosPasto?.prot ?? (dailyGoals.prot || 150) * 0.25) || 38,
-      carb: (targetMacrosPasto?.carb ?? (dailyGoals.carb || 200) * 0.25) || 50,
-      fat: (targetMacrosPasto?.fat ?? (dailyGoals.fat || 60) * 0.25) || 15,
-      fibre: (targetMacrosPasto?.fibre ?? (userTargets?.fibre ?? 30) * 0.25) || 8
+      kcal: (dailyGoals.kcal || 2000) * 0.25 || 500,
+      prot: (dailyGoals.prot || 150) * 0.25 || 38,
+      carb: (dailyGoals.carb || 200) * 0.25 || 50,
+      fat: (dailyGoals.fat || 60) * 0.25 || 15,
+      fibre: (userTargets?.fibre ?? 30) * 0.25 || 8,
     };
-  }, [isCena, dailyGoals, consumedSoFarForRemainder, targetMacrosPasto, userTargets?.fibre, totali?.fibre]);
+  }, [targetMacrosPasto, dailyGoals, userTargets?.fibre, ratio]);
 
   return (
     <div className="view-animate">
@@ -794,9 +769,10 @@ export default function MealBuilder({
         <div style={{ width: '70px' }}></div>
       </div>
       <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px' }}>
-        {MEAL_BUTTONS.map(({ label, id }) => (
+        {MEAL_TYPES.map(({ label, id }) => (
           <button
             key={id}
+            type="button"
             className={`type-btn ${mealType === id ? 'active' : ''}`}
             onClick={() => setMealType(id)}
             style={{ whiteSpace: 'nowrap', padding: '12px 15px' }}
