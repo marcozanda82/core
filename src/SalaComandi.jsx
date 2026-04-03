@@ -9562,10 +9562,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     return (
                       <div key={slotKey} style={{ marginBottom: '20px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                          <h4 style={{ fontSize: '0.7rem', color: '#888', letterSpacing: '1px', margin: 0, cursor: 'pointer', flex: 1 }} onClick={() => setSelectedNodeReport({ id: slotKey, type: 'meal' })}>
+                          <h4 style={{ fontSize: '0.7rem', color: '#888', letterSpacing: '1px', margin: 0, cursor: 'pointer', flex: 1 }} onClick={() => setSelectedNodeReport({ id: slotKey, mealId: slotKey, type: 'meal' })}>
                             {label}
                           </h4>
-                          <button type="button" className="food-pill-btn" onClick={() => setSelectedNodeReport({ id: slotKey, type: 'meal' })} title="Dettaglio pasto">✏️</button>
+                          <button type="button" className="food-pill-btn" onClick={() => setSelectedNodeReport({ id: slotKey, mealId: slotKey, type: 'meal' })} title="Dettaglio pasto">✏️</button>
                         </div>
                         {items.map(food => {
                           const recipeExpandable = (food.type === 'recipe' || food.isRecipe === true)
@@ -9575,7 +9575,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           const recipeExpanded = recipeKey && !!expandedRecipes[recipeKey];
                           return (
                             <div key={food.id} style={{ marginBottom: '8px' }}>
-                              <div className="food-pill" style={{ borderLeft: '3px solid #333', cursor: 'pointer' }} onClick={() => setSelectedNodeReport({ id: slotKey, type: 'meal' })}>
+                              <div className="food-pill" style={{ borderLeft: '3px solid #333', cursor: 'pointer' }} onClick={() => setSelectedNodeReport({ id: slotKey, mealId: slotKey, type: 'meal' })}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, flex: 1 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
                                     <span className="food-pill-name">{food.desc || food.name}</span>
@@ -9600,7 +9600,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                                 </div>
                                 <div className="food-pill-actions" onClick={(e) => e.stopPropagation()}>
                                   <button className="food-pill-btn" onClick={(e) => { e.stopPropagation(); setSelectedFoodForInfo(food); }} title="Info macro/micro">ℹ️</button>
-                                  <button className="food-pill-btn" onClick={(e) => { e.stopPropagation(); setSelectedNodeReport({ id: slotKey, type: 'meal' }); }} title="Dettaglio pasto">✏️</button>
+                                  <button className="food-pill-btn" onClick={(e) => { e.stopPropagation(); setSelectedNodeReport({ id: slotKey, mealId: slotKey, type: 'meal' }); }} title="Dettaglio pasto">✏️</button>
                                   <div style={{ fontSize: '0.75rem', color: '#888', marginRight: '10px' }}>{Math.round(food.kcal || food.cal || 0)} kcal</div>
                                   <button className="food-pill-btn btn-delete" onClick={(e) => { e.stopPropagation(); removeLogItem(food.id); }}>✕</button>
                                 </div>
