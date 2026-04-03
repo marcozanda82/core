@@ -13,6 +13,7 @@ import {
   computeRiskMatrix,
   getSlotKey,
   getEquivalentMealTypes,
+  toCanonicalMealType,
   buildPredictiveCompositionDailyRows,
   computePredictionReliabilityPercent,
 } from './coreEngine';
@@ -141,11 +142,13 @@ function buildMediatedVirtualLog(dayLogs) {
     sumK += t.kcal ?? 0;
     sumC += t.carb ?? 0;
 
-    const foods = L.filter((e) => e.type === 'food');
+    const foods = L.filter((e) => e.type === 'food' || e.type === 'recipe');
     const bySlot = {};
     foods.forEach((f) => {
-      const slot = getSlotKey(f) || f.mealType || 'other';
-      bySlot[slot] = (bySlot[slot] || 0) + (Number(f.prot ?? f.pro) || 0);
+      const raw = getSlotKey(f) || f.mealType || 'other';
+      const base = String(raw).split('_')[0];
+      const slotCanon = toCanonicalMealType(base);
+      bySlot[slotCanon] = (bySlot[slotCanon] || 0) + (Number(f.prot ?? f.pro) || 0);
     });
     hpSum += Object.values(bySlot).filter((x) => x >= 20).length;
 
@@ -200,16 +203,18 @@ function buildMediatedVirtualLog(dayLogs) {
   const avgSleep = nSleep ? sumSleep / nSleep : 0;
   const avgFirst = sumFirst / nWithFoods;
   const avgLast = sumLast / nWithFoods;
-  const targetHi = Math.max(0, Math.min(4, Math.round(hpSum / n)));
+  const targetHi = Math.max(0, Math.min(5, Math.round(hpSum / n)));
 
-  const mealTypes = ['colazione', 'pranzo', 'spuntino', 'cena'];
+  /** Cinque slot ufficiali (stessi id usati nel diario / KentuOS). */
+  const mealTypes = ['merenda1', 'merenda_am', 'pranzo', 'merenda_pm', 'cena'];
+  const nMeals = mealTypes.length;
   const span = Math.max(0.5, avgLast - avgFirst);
-  const step = span / 3;
-  const times = [avgFirst, avgFirst + step, avgFirst + 2 * step, avgLast].map((x) =>
-    Math.min(23.99, Math.max(0, x))
+  const step = nMeals > 1 ? span / (nMeals - 1) : 0;
+  const times = Array.from({ length: nMeals }, (_, i) =>
+    Math.min(23.99, Math.max(0, avgFirst + i * step))
   );
 
-  let slotProt = [avgP / 4, avgP / 4, avgP / 4, avgP / 4];
+  let slotProt = Array(nMeals).fill(avgP / nMeals);
   let hi = slotProt.filter((x) => x >= 20).length;
   for (let guard = 0; guard < 40 && hi < targetHi && avgP > 0; guard++) {
     const idx = slotProt.indexOf(Math.min(...slotProt));
@@ -221,7 +226,7 @@ function buildMediatedVirtualLog(dayLogs) {
   }
 
   const remCarb = Math.max(0, avgC - avgDinnerCho);
-  const otherCarb = remCarb / 3;
+  const otherCarb = remCarb / Math.max(1, nMeals - 1);
 
   const virt = [];
   mealTypes.forEach((mealType, i) => {
@@ -231,7 +236,7 @@ function buildMediatedVirtualLog(dayLogs) {
       mealTime: times[i],
       prot: slotProt[i],
       carb: mealType === 'cena' ? avgDinnerCho : otherCarb,
-      kcal: avgK / 4,
+      kcal: avgK / nMeals,
     });
   });
   if (avgSleep > 0) {

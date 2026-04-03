@@ -1580,54 +1580,35 @@ export const MEAL_TYPES = [
   { id: 'cena', label: 'Cena' },
 ];
 
-/** Slot proteici dinamici (esclusa colazione, quota fissa). */
+/** Slot da ripartizione dinamica (ordine cronologico; la colazione non entra nel divisore). */
 const PROTEIN_DYNAMIC_SLOTS = ['merenda_am', 'pranzo', 'merenda_pm', 'cena'];
-
-const SLOT_DEADLINE_HOUR = {
-  merenda_am: 11,
-  pranzo: 16,
-  merenda_pm: 19,
-  cena: 24,
-};
 
 const BREAKFAST_PROT_RATIO = 0.25;
 const BREAKFAST_KCAL_RATIO = 0.22;
 
-function sumMacroInCanonicalSlot(log, canonicalSlot, macro) {
+/** Somma macro su tutti food/ricette del log (il chiamante può già aver escluso lo slot in editing). */
+function sumMacroAllFood(log, macro) {
   const L = log || [];
   let s = 0;
   for (let i = 0; i < L.length; i++) {
     const e = L[i];
     if (!e || (e.type !== 'food' && e.type !== 'recipe')) continue;
-    const base = String(e.mealType || '').split('_')[0];
-    if (toCanonicalMealType(base) !== canonicalSlot) continue;
     if (macro === 'kcal') s += Number(e.kcal ?? e.cal) || 0;
     else if (macro === 'prot') s += Number(e.prot ?? e.proteine) || 0;
     else if (macro === 'carb') s += Number(e.carb ?? e.carboidrati) || 0;
     else if (macro === 'fat') s += Number(e.fatTotal ?? e.fat ?? e.grassi) || 0;
+    else if (macro === 'fibre') s += Number(e.fibre) || 0;
   }
   return s;
 }
 
-function slotHasLoggedFood(log, canonicalSlot) {
-  return sumMacroInCanonicalSlot(log, canonicalSlot, 'kcal') > 5 || sumMacroInCanonicalSlot(log, canonicalSlot, 'prot') > 0.5;
-}
-
-function isSlotSkippedForDynamic(slot, hour, currentCanon, log) {
-  if (slot === currentCanon) return false;
-  if (slotHasLoggedFood(log, slot)) return false;
-  const dl = SLOT_DEADLINE_HOUR[slot] ?? 24;
-  return hour >= dl;
-}
-
 /**
- * Target macro per il pasto corrente: colazione con quota fissa; altri 4 slot con proteine/kcal
- * ricalcolate se un pasto non è stato registrato entro la finestra (deadline) — quota spalmata sugli slot attivi.
- * Carboidrati più alti a cena, grassi relativamente più alti a pranzo.
+ * Target macro per il pasto corrente.
+ * Colazione: quota fissa sul fabbisogno. Altri 4 slot: residui giornalieri / slot rimanenti (dal corrente alla cena inclusi).
+ * Proteine: (Tprot − assunto) / slotRimanenti; se già a quota, minimo 20 g (MPS). Kcal/carb/grassi/fibre: stesso principio sui residui,
+ * con carboidrati più alti a cena e grassi più alti a pranzo (split energetico sulle kcal del pasto dopo le proteine).
  */
 export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, options = {}) {
-  const hour = Number(options.currentDecimalHour);
-  const h = Number.isFinite(hour) ? hour : 12;
   const log = Array.isArray(dailyLog) ? dailyLog : [];
 
   const Tkcal = Number(userTargets?.kcal ?? 2000) || 2000;
@@ -1651,30 +1632,38 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
     };
   }
 
-  const P = Tprot * (1 - BREAKFAST_PROT_RATIO);
-  const Kpool = Tkcal * (1 - BREAKFAST_KCAL_RATIO);
+  let slotIndex = PROTEIN_DYNAMIC_SLOTS.indexOf(canon);
+  if (slotIndex < 0) slotIndex = 1;
+  const remainingSlots = Math.max(1, PROTEIN_DYNAMIC_SLOTS.length - slotIndex);
 
-  const perP = P / PROTEIN_DYNAMIC_SLOTS.length;
-  const perK = Kpool / PROTEIN_DYNAMIC_SLOTS.length;
+  const consumedKcal = sumMacroAllFood(log, 'kcal');
+  const consumedProt = sumMacroAllFood(log, 'prot');
+  const consumedCarb = sumMacroAllFood(log, 'carb');
+  const consumedFat = sumMacroAllFood(log, 'fat');
+  const consumedFibre = sumMacroAllFood(log, 'fibre');
 
-  const skipped = PROTEIN_DYNAMIC_SLOTS.filter((slot) => isSlotSkippedForDynamic(slot, h, canon, log));
-  let recCount = PROTEIN_DYNAMIC_SLOTS.length - skipped.length;
-  if (recCount <= 0) recCount = 1;
+  const remKcal = Tkcal - consumedKcal;
+  const remProt = Tprot - consumedProt;
+  const remCarb = Tcarb - consumedCarb;
+  const remFat = Tfat - consumedFat;
+  const remFibre = Tfibre - consumedFibre;
 
-  const bonusP = (skipped.length * perP) / recCount;
-  const bonusK = (skipped.length * perK) / recCount;
+  let targetKcal = Math.round(remKcal / remainingSlots);
+  targetKcal = Math.max(150, targetKcal);
 
-  const eatenP = sumMacroInCanonicalSlot(log, canon, 'prot');
-  const eatenK = sumMacroInCanonicalSlot(log, canon, 'kcal');
+  const rawProtTarget = remProt / remainingSlots;
+  let targetProt = Math.round(rawProtTarget * 10) / 10;
+  if (consumedProt >= Tprot) {
+    targetProt = Math.max(20, rawProtTarget);
+  } else {
+    targetProt = Math.max(10, targetProt);
+  }
 
-  let targetProt = perP + bonusP - eatenP;
-  let targetKcal = perK + bonusK - eatenK;
-
-  targetProt = Math.max(10, Math.round(targetProt * 10) / 10);
-  targetKcal = Math.max(150, Math.round(targetKcal));
+  const baseCarbResidual = remCarb / remainingSlots;
+  const baseFatResidual = remFat / remainingSlots;
 
   const protKcal = targetProt * 4;
-  let remKcal = Math.max(80, targetKcal - protKcal);
+  let remKcalAfterProt = Math.max(80, targetKcal - protKcal);
 
   let carbEnergyRatio = 0.42;
   let fatEnergyRatio = 0.36;
@@ -1689,27 +1678,20 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
     fatEnergyRatio = 0.34;
   }
 
-  const targetCarb = Math.max(5, Math.round(((remKcal * carbEnergyRatio) / 4) * 10) / 10);
-  const targetFat = Math.max(3, Math.round(((remKcal * fatEnergyRatio) / 9) * 10) / 10);
-
-  const Cpool = Tcarb * (1 - BREAKFAST_KCAL_RATIO);
-  const Fpool = Tfat * (1 - BREAKFAST_KCAL_RATIO);
-  const perC = Cpool / PROTEIN_DYNAMIC_SLOTS.length;
-  const perF = Fpool / PROTEIN_DYNAMIC_SLOTS.length;
-  const eatenC = sumMacroInCanonicalSlot(log, canon, 'carb');
-  const eatenF = sumMacroInCanonicalSlot(log, canon, 'fat');
-  const bonusC = (skipped.length * perC) / recCount;
-  const bonusF = (skipped.length * perF) / recCount;
-  let poolCarb = perC + bonusC - eatenC;
-  let poolFat = perF + bonusF - eatenF;
-  poolCarb = Math.max(targetCarb * 0.75, Math.min(targetCarb * 1.35, poolCarb));
-  poolFat = Math.max(targetFat * 0.75, Math.min(targetFat * 1.35, poolFat));
+  const carbFromKcal = (remKcalAfterProt * carbEnergyRatio) / 4;
+  const fatFromKcal = (remKcalAfterProt * fatEnergyRatio) / 9;
 
   const blend = 0.55;
-  const finalCarb = Math.round((targetCarb * blend + poolCarb * (1 - blend)) * 10) / 10;
-  const finalFat = Math.round((targetFat * blend + poolFat * (1 - blend)) * 10) / 10;
+  const finalCarb = Math.max(
+    5,
+    Math.round((carbFromKcal * blend + baseCarbResidual * (1 - blend)) * 10) / 10
+  );
+  const finalFat = Math.max(
+    3,
+    Math.round((fatFromKcal * blend + baseFatResidual * (1 - blend)) * 10) / 10
+  );
 
-  const fibreSlot = Math.max(2, Math.round((Tfibre / PROTEIN_DYNAMIC_SLOTS.length + (skipped.length * (Tfibre / PROTEIN_DYNAMIC_SLOTS.length)) / recCount) * 10) / 10);
+  const fibreSlot = Math.max(2, Math.round((remFibre / remainingSlots) * 10) / 10);
 
   return {
     kcal: targetKcal,

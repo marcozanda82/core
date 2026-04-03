@@ -3404,6 +3404,55 @@ export default function SalaComandi() {
     return x || 'pranzo';
   };
 
+  /** Vocabolario AI (5 slot) → id salvati nel diario (merenda1, merenda_am, …). */
+  const normalizeAiMealTypeToStorageId = (raw, decimalHourInfer) => {
+    const inferH =
+      typeof decimalHourInfer === 'number' && !Number.isNaN(decimalHourInfer)
+        ? decimalHourInfer
+        : new Date().getHours() + new Date().getMinutes() / 60;
+    const snackByTime = inferH < 12 ? 'merenda_am' : 'merenda_pm';
+    const k = String(raw ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ');
+    if (!k) return snackByTime;
+    const phraseExact = {
+      colazione: 'merenda1',
+      merenda1: 'merenda1',
+      breakfast: 'merenda1',
+      'spuntino mattina': 'merenda_am',
+      'spuntino di metà mattina': 'merenda_am',
+      'spuntino di meta mattina': 'merenda_am',
+      'metà mattina': 'merenda_am',
+      'meta mattina': 'merenda_am',
+      'merenda am': 'merenda_am',
+      merenda_am: 'merenda_am',
+      pranzo: 'pranzo',
+      lunch: 'pranzo',
+      'spuntino pomeridiano': 'merenda_pm',
+      'spuntino pomeriggio': 'merenda_pm',
+      'merenda pm': 'merenda_pm',
+      merenda_pm: 'merenda_pm',
+      merenda2: 'merenda_pm',
+      'pre-nanna': 'merenda_pm',
+      'pre nanna': 'merenda_pm',
+      'merenda serale': 'merenda_pm',
+      'spuntino serale': 'merenda_pm',
+      cena: 'cena',
+      dinner: 'cena',
+      'pasto serale': 'cena',
+    };
+    if (Object.prototype.hasOwnProperty.call(phraseExact, k)) return phraseExact[k];
+    if (k === 'spuntino' || k === 'snack' || k === 'merenda') return snackByTime;
+    const base = k.includes(' ') ? k.replace(/\s/g, '_') : k;
+    const canon = toCanonicalMealType(base);
+    const id = mealIdFromCanonical(canon);
+    const allowed = new Set(['merenda1', 'merenda_am', 'pranzo', 'merenda_pm', 'cena']);
+    if (allowed.has(id)) return id;
+    return snackByTime;
+  };
+
   const fallbackPredict = (now) => {
     if (now >= 5 && now < 10) return 'merenda1';
     if (now >= 10 && now < 12.5) return 'merenda_am';
@@ -4475,7 +4524,6 @@ Ottimo! Diario aggiornato. 🥗`;
     closeDrawer();
   };
 
-  const PASTO_ALIAS_TO_ID = { colazione: 'merenda1', 'spuntino mattina': 'merenda1', pranzo: 'pranzo', 'spuntino pomeriggio': 'merenda2', cena: 'cena', snack: 'snack' };
   const processTestoAI = (testo) => {
     let trovati = 0;
     const batchId = Date.now();
@@ -4483,25 +4531,25 @@ Ottimo! Diario aggiornato. 🥗`;
     const nuoviWorkout = [];
     const ghostTypesCache = {};
 
-    const regexFood = /\[(.*?)\s*\|\s*([0-9.,]+)\s*\|\s*(colazione|spuntino\s*mattina|pranzo|spuntino\s*pomeriggio|cena|snack)\]/gi;
+    const regexFood = /\[(.*?)\s*\|\s*([0-9.,]+)\s*\|\s*([^\|\]]+?)\]/gi;
     let matchFood;
     while ((matchFood = regexFood.exec(testo)) !== null) {
       trovati++;
       const nome = matchFood[1].trim();
       const qta = parseFloat(String(matchFood[2]).replace(',', '.')) || 0;
       const pastoString = String(matchFood[3]).trim().toLowerCase().replace(/\s+/g, ' ');
-      const pastoCanonical = PASTO_ALIAS_TO_ID[pastoString] || toCanonicalMealType(pastoString);
-      if (!ghostTypesCache[pastoCanonical]) {
-        ghostTypesCache[pastoCanonical] = getGhostMealType(pastoCanonical, [...(dailyLog || []), ...nuoviAlimenti]);
+      const pastoStorage = normalizeAiMealTypeToStorageId(pastoString, getCurrentTimeRoundedTo15Min());
+      if (!ghostTypesCache[pastoStorage]) {
+        ghostTypesCache[pastoStorage] = getGhostMealType(pastoStorage, [...(dailyLog || []), ...nuoviAlimenti]);
       }
-      const finalMealType = ghostTypesCache[pastoCanonical];
+      const finalMealType = ghostTypesCache[pastoStorage];
       const item = estraiDatiFoodDb(nome, qta, finalMealType);
       nuoviAlimenti.push({
         ...item,
         id: `f_${batchId}_${trovati}`,
-        mealTime: getDefaultMealTime(pastoCanonical)
+        mealTime: getDefaultMealTime(pastoStorage)
       });
-      ghostTypesCache[pastoCanonical] = getGhostMealType(pastoCanonical, [...(dailyLog || []), ...nuoviAlimenti]);
+      ghostTypesCache[pastoStorage] = getGhostMealType(pastoStorage, [...(dailyLog || []), ...nuoviAlimenti]);
     }
 
     const regexWorkout = /\[ALLENAMENTO:\s*([^|\]]+?)\s*\|\s*([0-9.,]+)\]/gi;
@@ -5173,8 +5221,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       if (Array.isArray(pendingAiBatch) && isConfirm) {
         const baseMealTime = getCurrentTimeRoundedTo15Min();
         const predictedType = predictMealType(baseMealTime);
-        const dominantMealType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(pendingAiBatch[0]?.mealType) ? pendingAiBatch[0].mealType : predictedType;
         const sharedMealTime = typeof pendingAiBatch[0]?.mealTime === 'number' ? pendingAiBatch[0].mealTime : baseMealTime;
+        const rawMt0 = pendingAiBatch[0]?.mealType;
+        const dominantMealType =
+          rawMt0 != null && String(rawMt0).trim() !== ''
+            ? normalizeAiMealTypeToStorageId(rawMt0, sharedMealTime)
+            : predictedType;
         const batchGhostType = getGhostMealType(dominantMealType, dailyLog || []);
         const batchId = `batch_${Date.now()}`;
         const alimentiProcessati = pendingAiBatch
@@ -5372,11 +5424,16 @@ Usa SEMPRE questa struttura per ogni messaggio di testo normale (non vale quando
 3. Grassetti per evidenziare numeri, calorie o parole chiave.
 4. Una domanda secca finale per richiedere un'azione rapida.
 
-Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino") SENZA indicare un orario del pasto in modo da poter usare add_food (vedi PASTI ZERO FORM), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi). mealType: merenda1, pranzo, merenda2, cena, snack.
+Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino") SENZA indicare un orario del pasto in modo da poter usare add_food (vedi PASTI ZERO FORM), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi).
+
+VOCABOLARIO PASTI (campo mealType — TASSATIVO): usa solo uno di questi cinque valori stringa: "colazione", "merenda_am", "pranzo", "merenda_pm", "cena".
+TRADUZIONE / MAPPING: "spuntino di metà mattina", "spuntino mattina", "merenda di metà mattina" → "merenda_am". "Spuntino pomeridiano", "merenda del pomeriggio" → "merenda_pm". "Pre-nanna", "merenda serale", "spuntino serale" (leggero prima della cena principale) → "merenda_pm". Pasto principale di sera / cena → "cena". Colazione → "colazione". Pranzo → "pranzo".
+Se l'utente dice solo "spuntino", "merenda" o "snack" senza specificare: deduci dall'orario del messaggio dell'utente (o dall'orario che ha indicato): se prima delle 12:00 → "merenda_am", altrimenti → "merenda_pm".
+Compatibilità deprecata (accettata dal parser ma da evitare in nuovo output): "merenda1" = colazione, "merenda2"/"snack" = merenda_pm.
 
 REGOLA MOLTIPLICATORE: Se l'utente indica quantità a pezzi (es. "3 gallette di riso", "2 uova"), stima il peso di UNA singola unità, moltiplicalo per la quantità, e inserisci il PESO TOTALE IN GRAMMI nel campo "weight" (es. 2 uova ≈ 120g, 3 gallette ≈ 30g totali). Un solo alimento = array con un elemento [{"name":"...", "weight": N, "mealType":"..."}].
 
-Puoi anche proporre alternative dal database e chiedere conferma; alla conferma restituisci l'array JSON. In alternativa, per un singolo inserimento legacy, puoi usare {"action":"insert","food":{"desc":"nome","qta":grammi,"mealType":"pranzo"}}.
+Puoi anche proporre alternative dal database e chiedere conferma; alla conferma restituisci l'array JSON. In alternativa, per un singolo inserimento legacy, puoi usare {"action":"insert","food":{"desc":"nome","qta":grammi,"mealType":"pranzo"}} (mealType sempre uno dei cinque slot ufficiali sopra).
 
 SONNO (ZERO FORM — solo messaggio testuale, niente screenshot Mi Fitness): Se l'utente riferisce di aver dormito (sonno notturno o sonnellino/pisolino), estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). Restituisci RIGOROSAMENTE un JSON con questo formato: {"action":"add_sleep","hours":<numero_ore>}. Non aggiungere alcun testo fuori dal JSON.
 
@@ -5883,8 +5940,12 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
       if (itemsToSave.length > 0) {
         const baseMealTime = getCurrentTimeRoundedTo15Min();
         const predictedType = predictMealType(baseMealTime);
-        const dominantMealType = ['merenda1', 'pranzo', 'merenda2', 'cena', 'snack'].includes(itemsToSave[0]?.mealType) ? itemsToSave[0].mealType : predictedType;
         const sharedMealTime = typeof itemsToSave[0]?.mealTime === 'number' ? itemsToSave[0].mealTime : baseMealTime;
+        const rawMtSave = itemsToSave[0]?.mealType;
+        const dominantMealType =
+          rawMtSave != null && String(rawMtSave).trim() !== ''
+            ? normalizeAiMealTypeToStorageId(rawMtSave, sharedMealTime)
+            : predictedType;
         const batchGhostType = getGhostMealType(dominantMealType, dailyLog || []);
         const batchId = `batch_${Date.now()}`;
 
