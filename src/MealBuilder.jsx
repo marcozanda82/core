@@ -761,6 +761,9 @@ export default function MealBuilder({
     };
   }, [targetMacrosPasto, dailyGoals, userTargets?.fibre, ratio]);
 
+  const baseMealTypeKey = String(mealType || '').split('_')[0].toLowerCase();
+  const isCena = baseMealTypeKey === 'cena';
+
   return (
     <div className="view-animate">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
