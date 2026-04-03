@@ -2184,6 +2184,26 @@ export function getLastMealMacrosForTrainingWave(trackerData, anchorDateStr, cur
   };
 }
 
+/** Ora del giorno in ore decimali [0,24) da somma base + delta. */
+function normalizeDayClockHours(hours) {
+  let x = Number(hours);
+  if (!Number.isFinite(x)) return 0;
+  x = (x % 24) + 24;
+  if (x >= 24) x %= 24;
+  return x;
+}
+
+/** Formato HH:mm (24h) da ore di orologio decimali. */
+export function decimalHoursToHHmmIt(clockDec) {
+  const t = normalizeDayClockHours(clockDec);
+  let totalMin = Math.round(t * 60);
+  if (totalMin < 0) totalMin = 0;
+  if (totalMin >= 24 * 60) totalMin = 24 * 60 - 1;
+  const h = Math.floor(totalMin / 60) % 24;
+  const m = totalMin % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 /**
  * Training Wave: prossime 4 ore — digestione (log), glicemia (campana CHO), neuro (veglia + stress + cortisolo serale).
  * Finestra ottimale: digestionLoad < 30% e glucoseAvailability > 60% e neuro “safe”.
@@ -2232,7 +2252,7 @@ export function getTrainingWaveCurves(lastMeal, currentTime, options = {}) {
       100 * bell * carbScale + (1 - carbScale) * Math.max(0, 48 - hSince * 6.5);
     glucoseAvailability = Math.max(0, Math.min(100, glucoseAvailability));
 
-    const tClock = (ct + deltaHours) % 24;
+    const tClock = normalizeDayClockHours(ct + deltaHours);
     let hoursAwake = tClock - wake;
     if (hoursAwake < 0) hoursAwake += 24;
     let neuroReadiness = 100 - hoursAwake * 3.8 - stressLoad * 0.32;
@@ -2278,6 +2298,21 @@ export function getTrainingWaveCurves(lastMeal, currentTime, options = {}) {
     }
   });
 
+  let firstSweet = -1;
+  let lastSweet = -1;
+  for (let i = 0; i < series.length; i++) {
+    if (series[i].inSweetSpot) {
+      if (firstSweet < 0) firstSweet = i;
+      lastSweet = i;
+    }
+  }
+  let windowStartStr = '';
+  let windowEndStr = '';
+  if (firstSweet >= 0 && lastSweet >= 0) {
+    windowStartStr = decimalHoursToHHmmIt(series[firstSweet].hourClock);
+    windowEndStr = decimalHoursToHHmmIt(series[lastSweet].hourClock);
+  }
+
   return {
     series,
     digestionLoad: digestionLoadArr,
@@ -2286,6 +2321,8 @@ export function getTrainingWaveCurves(lastMeal, currentTime, options = {}) {
     waveState,
     crestIndex,
     surfDeltaHours: series[crestIndex]?.deltaHours ?? 0,
+    windowStartStr,
+    windowEndStr,
     nowSnapshot: {
       digestionLoad: now.digestionLoad,
       glucoseAvailability: now.glucoseAvailability,
@@ -2296,14 +2333,13 @@ export function getTrainingWaveCurves(lastMeal, currentTime, options = {}) {
   };
 }
 
-/** Riga testuale per [CONTEXT_LIVE] — stato onda e percentuali sintetiche. */
+/** Riga testuale per [CONTEXT_LIVE] — finestra oraria ideale (prossime 4h del modello). */
 export function buildTrainingWaveContextSnippet(waveResult) {
-  if (!waveResult?.nowSnapshot) return '';
-  const { waveState, nowSnapshot } = waveResult;
-  const e = Math.round(nowSnapshot.glucoseAvailability);
-  const d = Math.round(nowSnapshot.digestionLoad);
-  const neuroStress = Math.round(100 - nowSnapshot.neuroReadiness);
-  return `STATO ONDA: ${waveState}. Energia: +${e}%, Digestione: -${d}%, Stress Neuro: ${neuroStress}%.`;
+  if (!waveResult) return '';
+  const a = String(waveResult.windowStartStr || '').trim();
+  const b = String(waveResult.windowEndStr || '').trim();
+  if (a && b) return `Finestra allenamento ideale: dalle ${a} alle ${b}.`;
+  return 'Finestra allenamento ideale: Domani.';
 }
 
 /**

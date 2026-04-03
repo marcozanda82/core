@@ -29,7 +29,6 @@ import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
-import { TrainingWaveChart } from './TrainingWaveChart';
 import {
   useSmartKentuTriggers,
   checkMorningBriefing,
@@ -1907,7 +1906,6 @@ export default function SalaComandi() {
   const [fullStorico, setFullStorico] = useState(null);
   const [fullHistory, setFullHistory] = useState({});
   const [showReport, setShowReport] = useState(false);
-  const [showMetabolicPopup, setShowMetabolicPopup] = useState(false);
   const [showBatteryModal, setShowBatteryModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [trendModalMetric, setTrendModalMetric] = useState(null);
@@ -5309,10 +5307,10 @@ LOGICA DI RACCOMANDAZIONE INTELLIGENTE: Quando l'utente chiede consigli su cosa 
 3. Se è ora di cena o il tema è serale, proponi pasti coerenti con la Nota in [CONTEXT_LIVE] sul cortisolo: carboidrati complessi, evita eccessi di grassi saturi o caffeina serale.
 4. Presenta la proposta in STILE LAVAGNA con i macro totali stimati della ricetta (kcal e grammi P/C/F se possibile).
 5. DIGESTIVE SAFETY GATE — Quando consigli un workout, calcola la somma tra i macro residui (da [CONTEXT_LIVE]) e il costo del workout. Se il totale calorico risultante per la cena supera le 900-1000 kcal (o se il volume di cibo previsto è eccessivo per l'orario), sconsiglia l'allenamento intenso. Spiega chiaramente che un pasto troppo pesante comprometterebbe il recupero e la gestione del cortisolo serale, suggerendo invece un pasto bilanciato e il rinvio dell'attività.
-6. TRAINING WAVE (ORARIO ALLENAMENTO): Quando l'utente chiede se può allenarsi o qual è il momento migliore, analizza sempre lo [STATO ONDA] nel [CONTEXT_LIVE].
-- Se stato = 'Wait': Sconsiglia l'allenamento immediato. Spiega in modo telegrafico che la digestione (-Y%) sta richiamando sangue e suggerisci di aspettare che l'energia arrivi al picco.
-- Se stato = 'Optimal': Dai il via libera assoluto. Sottolinea che l'energia è al picco (+X%) e lo stress è sotto controllo.
-- Se stato = 'Missed' o se il Safety Gate 'Stress Neuro' è troppo alto: Blocca l'allenamento intenso. Spiega che la finestra energetica è chiusa o il sistema nervoso è troppo affaticato, suggerendo un riposo attivo o lo shift a domani.
+6. TRAINING WAVE (ORARIO ALLENAMENTO): In [CONTEXT_LIVE] c'è la riga «Finestra allenamento ideale: dalle HH:mm alle HH:mm.» oppure «Finestra allenamento ideale: Domani.» (nessuna finestra nelle prossime 4h del modello). Quando l'utente chiede se può allenarsi o quando conviene, usa quell'orario e l'ora attuale del messaggio.
+- Prima dell'inizio della finestra: sconsiglia l'immediato; spiega in modo telegrafico (digestione/recupero) e indica di spostare l'allenamento dentro la finestra indicata.
+- Con ora attuale dentro HH:mm–HH:mm: via libera per sessione ben pianificata; ricorda che è la finestra prevista dal modello.
+- Dopo la fine o se compare solo «Domani»: niente finestra utile nell'orizzonte — evita HIIT intenso, preferisci riposo attivo o ripresa il giorno dopo.
 
 CARTA MENU (MEAL_PROPOSAL): Quando proponi una cena concreta con ingredienti e grammi (contesto consiglio pasto / cena), NON scrivere una ricetta lunga in prose. Rispondi SOLO con il blocco dati su UNA riga così (nessun altro testo prima o dopo): [MEAL_PROPOSAL:{"title":"Proposta Cena Anti-Cortisolo","timeString":"HH:mm","items":[{"id":"id_univoco","name":"Nome alimento","qty":grammi,"dbKey":"chiave_opzionale_foodDb","why":"motivo breve","estKcal":n,"estPro":n,"estCar":n,"estFat":n}]}] — id univoco per ogni voce (es. salmone_1); qty in grammi; stime macro per quella quantità; dbKey solo se corrisponde al database noto.
 
@@ -7809,20 +7807,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .telemetry-btn-alarm { box-shadow: 0 0 8px rgba(255, 50, 50, 0.8); border: 1px solid #ff4444 !important; animation: pulseAlertOpacity 2s infinite; }
           @keyframes pulseAlertOpacity { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
 
-          @keyframes trainingWaveSweetGlow {
-            0%, 100% {
-              box-shadow: 0 0 14px rgba(56, 189, 248, 0.35), 0 0 32px rgba(14, 165, 233, 0.18);
-              border-color: rgba(56, 189, 248, 0.42);
-            }
-            50% {
-              box-shadow: 0 0 22px rgba(56, 189, 248, 0.55), 0 0 48px rgba(125, 211, 252, 0.28);
-              border-color: rgba(125, 211, 252, 0.65);
-            }
-          }
-          .training-wave-widget--sweet-spot {
-            animation: trainingWaveSweetGlow 2.4s ease-in-out infinite;
-          }
-
           /* Barre Live Telemetria */
           @keyframes neonPulse {
             0% { filter: brightness(1); opacity: 0.8; }
@@ -8529,8 +8513,10 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             const targetProt = userTargets?.prot ?? 150;
             const targetCarb = userTargets?.carb ?? 200;
             const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
-            const trainingSweet = !!trainingWaveResult?.nowSnapshot?.inSweetSpot;
-            const waveStateShort = trainingWaveResult?.waveState ?? '';
+            const winStart = trainingWaveResult?.windowStartStr || '';
+            const winEnd = trainingWaveResult?.windowEndStr || '';
+            const finestraAllenamento =
+              winStart && winEnd ? `${winStart} - ${winEnd}` : 'Domani';
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
@@ -8830,24 +8816,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       </div>
                     </div>
                   </div>
-                  {/* Widget Fase Metabolica + Training Wave */}
+                  {/* Widget Fase Metabolica */}
                   <div
-                    role="button"
-                    tabIndex={0}
-                    className={trainingSweet ? 'training-wave-widget--sweet-spot' : undefined}
-                    onClick={() => setShowMetabolicPopup(true)}
-                    onKeyDown={(ev) => {
-                      if (ev.key === 'Enter' || ev.key === ' ') {
-                        ev.preventDefault();
-                        setShowMetabolicPopup(true);
-                      }
-                    }}
-                    aria-label="Fase metabolica e training wave, apri dettaglio"
                     style={{
                       width: '100%',
                       flexShrink: 0,
                       background: '#1a1a1c',
-                      border: trainingSweet ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
                       borderRadius: '16px',
                       padding: '14px 16px',
                       display: 'flex',
@@ -8857,8 +8832,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       boxSizing: 'border-box',
                       height: 'auto',
                       minHeight: 'min-content',
-                      transition: 'border-color 0.3s ease',
-                      cursor: 'pointer',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -8869,19 +8842,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           <div style={{ color: faseColor, fontSize: '1rem', fontWeight: 'bold', letterSpacing: '1px' }}>{faseLabel}</div>
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ color: '#aaa', fontSize: '0.85rem' }}>⏱ Da {lastMealHours}h {lastMealMinutes}m</div>
-                        {waveStateShort ? (
-                          <div style={{ fontSize: '0.62rem', color: trainingSweet ? '#7dd3fc' : '#64748b', marginTop: 2, fontWeight: 600 }}>
-                            Onda: {waveStateShort === 'Optimal' ? 'Sweet spot' : waveStateShort === 'Wait' ? 'Attendi' : 'Fuori finestra'}
-                          </div>
-                        ) : null}
-                      </div>
+                      <div style={{ color: '#aaa', fontSize: '0.85rem' }}>⏱ Da {lastMealHours}h {lastMealMinutes}m</div>
                     </div>
-                    <TrainingWaveChart waveResult={trainingWaveResult} variant="sparkline" height={38} />
-                    <p style={{ margin: 0, fontSize: '0.58rem', color: '#57534e', lineHeight: 1.35 }}>
-                      Training Wave (4h): verde = energia, rosso = digestione. Tocca per aprire Stato metabolico e il grafico completo.
-                    </p>
+                    <div style={{ fontSize: '0.7rem', color: '#737373', lineHeight: 1.4 }}>
+                      Finestra allenamento: <span style={{ color: '#a3a3a3' }}>{finestraAllenamento}</span>
+                    </div>
                     <div style={{ height: '4px', background: '#333', borderRadius: '2px', overflow: 'hidden' }}>
                       <div style={{ width: `${isAssorbimento ? 40 : Math.min(100, (fastingData.hoursFasted / 16) * 100)}%`, height: '100%', background: faseColor, boxShadow: `0 0 8px ${faseColor}` }}></div>
                     </div>
@@ -8936,7 +8901,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               faseColor = '#ffea00';
             }
             return (
-          <div role="button" tabIndex={0} onClick={() => setShowMetabolicPopup(true)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowMetabolicPopup(true); } }} style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '10px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)', flexShrink: 0, cursor: 'pointer' }}>
+          <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '10px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)', flexShrink: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '1.1rem', filter: `drop-shadow(0 0 5px ${faseColor})` }}>⏳</span>
@@ -11552,34 +11517,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
       {showBatteryModal && (
         <BodyBatteryModal onClose={() => setShowBatteryModal(false)} batteryData={bodyBattery} />
-      )}
-
-      {/* POP-UP FASE METABOLICA */}
-      {showMetabolicPopup && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100020, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }}>
-          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '25px', maxWidth: '400px', width: '100%', position: 'relative', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '15px', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
-              🧬 Stato Metabolico
-            </h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.75rem', marginBottom: '10px', lineHeight: 1.45 }}>
-              Training Wave — prossime 4 ore: area scura = stress neuro alto (no HIIT aggressivo). 🏄‍♂️ sulla cresta della disponibilità energetica.
-            </p>
-            <div style={{ marginBottom: '16px', height: '200px' }}>
-              <TrainingWaveChart waveResult={trainingWaveResult} variant="full" height={200} />
-            </div>
-            <p style={{ color: '#aaa', fontSize: '0.9rem', lineHeight: 1.5 }}>
-              Il tuo corpo attraversa diverse fasi durante la giornata:
-            </p>
-            <ul style={{ color: '#ccc', fontSize: '0.85rem', lineHeight: 1.6, paddingLeft: '20px', marginBottom: '20px' }}>
-              <li><strong style={{ color: '#00e5ff' }}>Lipolisi Basale:</strong> Attiva al mattino o a digiuno. Il corpo usa i grassi per l'energia base. È sano e non intacca il muscolo.</li>
-              <li><strong style={{ color: '#00e676' }}>Anabolismo:</strong> Attiva dopo i pasti. Il corpo costruisce e ripara i tessuti muscolari (Fondamentale post-allenamento).</li>
-              <li><strong style={{ color: '#ef4444' }}>Catabolismo:</strong> Allarme rosso. L'energia è sotto la soglia critica; il corpo smonta le fibre muscolari per sopravvivere. Avviene dopo sforzi intensi senza nutrizione.</li>
-            </ul>
-            <button type="button" onClick={() => setShowMetabolicPopup(false)} style={{ background: '#333', color: '#fff', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
-              Ho capito
-            </button>
-          </div>
-        </div>
       )}
 
       {showSncPopup && (
