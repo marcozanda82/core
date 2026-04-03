@@ -2109,6 +2109,204 @@ export function getMorningRechargeFromBodyBattery(trackerData, dateStr, userTarg
 }
 
 /**
+ * Ultimo pasto “effettivo” per la Training Wave: macro aggregate e ore da quel pasto a `currentTimeDecimal`.
+ */
+export function getLastMealMacrosForTrainingWave(trackerData, anchorDateStr, currentTimeDecimal) {
+  const ct = Number(currentTimeDecimal);
+  if (!trackerData || !anchorDateStr || !Number.isFinite(ct)) {
+    return { kcal: 0, carb: 0, fat: 0, hoursSinceMeal: 8, mealTime: null, fromYesterday: false };
+  }
+
+  const todayLog = normalizeLogData(getLogFromStoricoTree(trackerData, anchorDateStr) || []);
+  const todayFoods = todayLog.filter(
+    (i) =>
+      (i.type === 'food' || i.type === 'recipe') &&
+      typeof i.mealTime === 'number' &&
+      !Number.isNaN(i.mealTime) &&
+      i.mealTime <= ct
+  );
+  todayFoods.sort((a, b) => b.mealTime - a.mealTime);
+
+  if (todayFoods.length > 0) {
+    const lastT = todayFoods[0].mealTime;
+    const bucket = todayFoods.filter((i) => Math.abs(i.mealTime - lastT) < 0.02);
+    let kcal = 0;
+    let carb = 0;
+    let fat = 0;
+    bucket.forEach((i) => {
+      kcal += Number(i.kcal ?? i.cal) || 0;
+      carb += Number(i.carb ?? i.carboidrati) || 0;
+      fat += Number(i.fatTotal ?? i.fat ?? i.grassi) || 0;
+    });
+    return {
+      kcal,
+      carb,
+      fat,
+      hoursSinceMeal: Math.max(0, ct - lastT),
+      mealTime: lastT,
+      fromYesterday: false,
+    };
+  }
+
+  const prevStr = addDays(anchorDateStr, -1);
+  const yNode = trackerData[TRACKER_STORICO_KEY(prevStr)];
+  const rawY = yNode?.log ?? yNode?.dati?.log;
+  const yLog = normalizeLogData(Array.isArray(rawY) ? rawY : Object.values(rawY || {}));
+  const yFoods = yLog.filter((i) => i.type === 'food' || i.type === 'recipe');
+  let maxT = -1;
+  yFoods.forEach((m) => {
+    const t = yNode?.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
+    if (t > maxT) maxT = t;
+  });
+  if (maxT < 0) {
+    return { kcal: 0, carb: 0, fat: 0, hoursSinceMeal: Math.min(18, ct + 6), mealTime: null, fromYesterday: false };
+  }
+  const bucket = yFoods.filter((m) => {
+    const t = yNode?.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
+    return Math.abs(t - maxT) < 0.02;
+  });
+  let kcal = 0;
+  let carb = 0;
+  let fat = 0;
+  bucket.forEach((i) => {
+    kcal += Number(i.kcal ?? i.cal) || 0;
+    carb += Number(i.carb ?? i.carboidrati) || 0;
+    fat += Number(i.fatTotal ?? i.fat ?? i.grassi) || 0;
+  });
+  const hoursSinceMeal = 24 - maxT + ct;
+  return {
+    kcal,
+    carb,
+    fat,
+    hoursSinceMeal: Math.max(0, hoursSinceMeal),
+    mealTime: maxT,
+    fromYesterday: true,
+  };
+}
+
+/**
+ * Training Wave: prossime 4 ore — digestione (log), glicemia (campana CHO), neuro (veglia + stress + cortisolo serale).
+ * Finestra ottimale: digestionLoad < 30% e glucoseAvailability > 60% e neuro “safe”.
+ */
+export function getTrainingWaveCurves(lastMeal, currentTime, options = {}) {
+  let ct = Number(currentTime);
+  if (!Number.isFinite(ct)) ct = 12;
+  const wakeHour = Number(options.wakeHour);
+  const wake = Number.isFinite(wakeHour) ? wakeHour : 7;
+  const stressLoad = Math.max(0, Math.min(100, Number(options.stressLoad) || 0));
+  const steps = Math.max(9, Math.min(49, Number(options.steps) || 25));
+  const cortisolEveningAmp = Number(options.cortisolEveningAmp);
+  const eveningAmp = Number.isFinite(cortisolEveningAmp) ? cortisolEveningAmp : 0.38;
+
+  const lm = lastMeal && typeof lastMeal === 'object' ? lastMeal : {};
+  const kcal = Math.max(0, Number(lm.kcal) || 0);
+  const carb = Math.max(0, Number(lm.carb) || 0);
+  const fat = Math.max(0, Number(lm.fat) || 0);
+  const hoursSinceMealBase = Math.max(0, Number(lm.hoursSinceMeal) || 0);
+
+  const mealHeaviness = 1 + (kcal / 520) * 0.42 + (fat / 45) * 0.55;
+  const digestionTau = 0.95 * mealHeaviness;
+
+  const durationHours = 4;
+  const series = [];
+  const digestionLoadArr = [];
+  const glucoseAvailabilityArr = [];
+  const neuroReadinessArr = [];
+
+  for (let i = 0; i < steps; i++) {
+    const deltaHours = (durationHours * i) / (steps - 1);
+    const hSince = hoursSinceMealBase + deltaHours;
+
+    const denom = Math.log(1 + 4 / Math.max(0.12, digestionTau));
+    const logRatio = Math.log(1 + Math.max(0.02, hSince) / Math.max(0.12, digestionTau)) / denom;
+    let digestionLoad = 100 * Math.max(0, Math.min(1, 1 - 0.94 * logRatio));
+    if (hSince < 0.06) digestionLoad = Math.max(digestionLoad, 95);
+    digestionLoad = Math.max(0, Math.min(100, digestionLoad));
+
+    const carbRef = Math.max(8, carb);
+    const peakH = 0.75 + Math.min(2.1, carbRef / 85);
+    const sigma = 0.65 + carbRef / 110;
+    const bell = Math.exp(-0.5 * ((hSince - peakH) / sigma) ** 2);
+    const carbScale = Math.min(1, carbRef / 28);
+    let glucoseAvailability =
+      100 * bell * carbScale + (1 - carbScale) * Math.max(0, 48 - hSince * 6.5);
+    glucoseAvailability = Math.max(0, Math.min(100, glucoseAvailability));
+
+    const tClock = (ct + deltaHours) % 24;
+    let hoursAwake = tClock - wake;
+    if (hoursAwake < 0) hoursAwake += 24;
+    let neuroReadiness = 100 - hoursAwake * 3.8 - stressLoad * 0.32;
+    if (tClock >= 18 && tClock <= 23.5) {
+      neuroReadiness -= (tClock - 18) * eveningAmp * 7.5;
+    }
+    neuroReadiness -= stressLoad * 0.22;
+    neuroReadiness = Math.max(0, Math.min(100, neuroReadiness));
+
+    const neuroGateUnsafe = neuroReadiness < 40 || stressLoad > 72;
+    const inSweetSpot =
+      digestionLoad < 30 && glucoseAvailability > 60 && !neuroGateUnsafe;
+
+    const labelMin = Math.round(deltaHours * 60);
+    const row = {
+      deltaHours,
+      label: labelMin <= 0 ? 'Ora' : `+${labelMin}m`,
+      hourClock: tClock,
+      digestionLoad,
+      glucoseAvailability,
+      neuroReadiness,
+      neuroGateUnsafe,
+      inSweetSpot,
+    };
+    series.push(row);
+    digestionLoadArr.push(digestionLoad);
+    glucoseAvailabilityArr.push(glucoseAvailability);
+    neuroReadinessArr.push(neuroReadiness);
+  }
+
+  const now = series[0];
+  const futureSweet = series.some((r, idx) => idx > 0 && r.inSweetSpot);
+  let waveState = 'Missed';
+  if (now.inSweetSpot) waveState = 'Optimal';
+  else if (futureSweet) waveState = 'Wait';
+
+  let crestIndex = 0;
+  let bestG = -1;
+  series.forEach((r, idx) => {
+    if (r.glucoseAvailability > bestG) {
+      bestG = r.glucoseAvailability;
+      crestIndex = idx;
+    }
+  });
+
+  return {
+    series,
+    digestionLoad: digestionLoadArr,
+    glucoseAvailability: glucoseAvailabilityArr,
+    neuroReadiness: neuroReadinessArr,
+    waveState,
+    crestIndex,
+    surfDeltaHours: series[crestIndex]?.deltaHours ?? 0,
+    nowSnapshot: {
+      digestionLoad: now.digestionLoad,
+      glucoseAvailability: now.glucoseAvailability,
+      neuroReadiness: now.neuroReadiness,
+      neuroGateUnsafe: now.neuroGateUnsafe,
+      inSweetSpot: now.inSweetSpot,
+    },
+  };
+}
+
+/** Riga testuale per [CONTEXT_LIVE] — stato onda e percentuali sintetiche. */
+export function buildTrainingWaveContextSnippet(waveResult) {
+  if (!waveResult?.nowSnapshot) return '';
+  const { waveState, nowSnapshot } = waveResult;
+  const e = Math.round(nowSnapshot.glucoseAvailability);
+  const d = Math.round(nowSnapshot.digestionLoad);
+  const neuroStress = Math.round(100 - nowSnapshot.neuroReadiness);
+  return `STATO ONDA: ${waveState}. Energia: +${e}%, Digestione: -${d}%, Stress Neuro: ${neuroStress}%.`;
+}
+
+/**
  * Valutazioni a stelle del report giornaliero (stessa logica della dashboard).
  * Richiede un log normalizzato (es. da activeLog o da getLogFromStoricoTree).
  */

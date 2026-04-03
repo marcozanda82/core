@@ -29,6 +29,7 @@ import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
+import { TrainingWaveChart } from './TrainingWaveChart';
 import {
   useSmartKentuTriggers,
   checkMorningBriefing,
@@ -102,6 +103,9 @@ import {
   getEndOfDayPredictedWeightForCalibration,
   evaluatePersistentTdeeCalibration,
   metricEntryToIsoDay,
+  getLastMealMacrosForTrainingWave,
+  getTrainingWaveCurves,
+  buildTrainingWaveContextSnippet,
 } from './coreEngine';
 
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
@@ -225,6 +229,7 @@ function getInvisibleContext({
   userTargets,
   fullHistory,
   anchorDateStr,
+  trainingWaveSnippet,
 }) {
   const bb = Math.round(Number(bodyBatteryPercent) || 0);
   const dynK = Number(dynamicDailyKcal) || 0;
@@ -242,7 +247,8 @@ function getInvisibleContext({
   const dispensa = collectDispensaProbableFoods(fullHistory, anchorDateStr, 10, 4);
   const nota =
     'L\'utente soffre di problemi di cortisolo alto quando chiede consigli sulla cena.';
-  return `[CONTEXT_LIVE: BB: ${bb}%, Residuo: ${resKcal}kcal, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}]`;
+  const wave = trainingWaveSnippet ? ` ${trainingWaveSnippet}` : '';
+  return `[CONTEXT_LIVE: BB: ${bb}%, Residuo: ${resKcal}kcal, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}.${wave}]`;
 }
 
 /** Totali kcal/P/C/F solo da voci food/recipe nel log giornaliero. */
@@ -5303,6 +5309,10 @@ LOGICA DI RACCOMANDAZIONE INTELLIGENTE: Quando l'utente chiede consigli su cosa 
 3. Se è ora di cena o il tema è serale, proponi pasti coerenti con la Nota in [CONTEXT_LIVE] sul cortisolo: carboidrati complessi, evita eccessi di grassi saturi o caffeina serale.
 4. Presenta la proposta in STILE LAVAGNA con i macro totali stimati della ricetta (kcal e grammi P/C/F se possibile).
 5. DIGESTIVE SAFETY GATE — Quando consigli un workout, calcola la somma tra i macro residui (da [CONTEXT_LIVE]) e il costo del workout. Se il totale calorico risultante per la cena supera le 900-1000 kcal (o se il volume di cibo previsto è eccessivo per l'orario), sconsiglia l'allenamento intenso. Spiega chiaramente che un pasto troppo pesante comprometterebbe il recupero e la gestione del cortisolo serale, suggerendo invece un pasto bilanciato e il rinvio dell'attività.
+6. TRAINING WAVE (ORARIO ALLENAMENTO): Quando l'utente chiede se può allenarsi o qual è il momento migliore, analizza sempre lo [STATO ONDA] nel [CONTEXT_LIVE].
+- Se stato = 'Wait': Sconsiglia l'allenamento immediato. Spiega in modo telegrafico che la digestione (-Y%) sta richiamando sangue e suggerisci di aspettare che l'energia arrivi al picco.
+- Se stato = 'Optimal': Dai il via libera assoluto. Sottolinea che l'energia è al picco (+X%) e lo stress è sotto controllo.
+- Se stato = 'Missed' o se il Safety Gate 'Stress Neuro' è troppo alto: Blocca l'allenamento intenso. Spiega che la finestra energetica è chiusa o il sistema nervoso è troppo affaticato, suggerendo un riposo attivo o lo shift a domani.
 
 CARTA MENU (MEAL_PROPOSAL): Quando proponi una cena concreta con ingredienti e grammi (contesto consiglio pasto / cena), NON scrivere una ricetta lunga in prose. Rispondi SOLO con il blocco dati su UNA riga così (nessun altro testo prima o dopo): [MEAL_PROPOSAL:{"title":"Proposta Cena Anti-Cortisolo","timeString":"HH:mm","items":[{"id":"id_univoco","name":"Nome alimento","qty":grammi,"dbKey":"chiave_opzionale_foodDb","why":"motivo breve","estKcal":n,"estPro":n,"estCar":n,"estFat":n}]}] — id univoco per ogni voce (es. salmone_1); qty in grammi; stime macro per quella quantità; dbKey solo se corrisponde al database noto.
 
@@ -5378,6 +5388,7 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
         userTargets,
         fullHistory,
         anchorDateStr: currentTrackerDate || getTodayString(),
+        trainingWaveSnippet: buildTrainingWaveContextSnippet(trainingWaveResult),
       });
       const rawLastUserForApi =
         apiUserContent || (chatImages.length > 0 ? `[Allegati ${chatImages.length} screenshot da analizzare]` : '');
@@ -7204,6 +7215,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     return { hoursFasted, timeString, phaseName, phaseColor, phaseDesc, progress };
   }, [activeLog, currentTime, fullHistory, currentDateObj]);
 
+  const trainingWaveResult = useMemo(() => {
+    const anchor = currentTrackerDate || getTodayString();
+    const lastMeal = getLastMealMacrosForTrainingWave(fullHistory, anchor, displayTime);
+    const sveglia = Number(userTargets?.sveglia);
+    return getTrainingWaveCurves(lastMeal, displayTime, {
+      wakeHour: Number.isFinite(sveglia) ? sveglia : 7,
+      stressLoad: Number(accumuloSNC) || 0,
+      steps: 25,
+    });
+  }, [fullHistory, currentTrackerDate, displayTime, userTargets?.sveglia, accumuloSNC]);
+
   const renderCustomizedLabel = (props) => {
     const { cx, cy, midAngle, outerRadius, value, name, fill, payload } = props;
     if (name === 'Rimanenti' || value === 0) return null;
@@ -7786,6 +7808,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           @keyframes pulseCortisol { 0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); } 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); } }
           .telemetry-btn-alarm { box-shadow: 0 0 8px rgba(255, 50, 50, 0.8); border: 1px solid #ff4444 !important; animation: pulseAlertOpacity 2s infinite; }
           @keyframes pulseAlertOpacity { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
+          @keyframes trainingWaveSweetGlow {
+            0%, 100% {
+              box-shadow: 0 0 14px rgba(56, 189, 248, 0.35), 0 0 32px rgba(14, 165, 233, 0.18);
+              border-color: rgba(56, 189, 248, 0.42);
+            }
+            50% {
+              box-shadow: 0 0 22px rgba(56, 189, 248, 0.55), 0 0 48px rgba(125, 211, 252, 0.28);
+              border-color: rgba(125, 211, 252, 0.65);
+            }
+          }
+          .training-wave-widget--sweet-spot {
+            animation: trainingWaveSweetGlow 2.4s ease-in-out infinite;
+          }
 
           /* Barre Live Telemetria */
           @keyframes neonPulse {
@@ -8493,6 +8529,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             const targetProt = userTargets?.prot ?? 150;
             const targetCarb = userTargets?.carb ?? 200;
             const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
+            const trainingSweet = !!trainingWaveResult?.nowSnapshot?.inSweetSpot;
+            const waveStateShort = trainingWaveResult?.waveState ?? '';
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
@@ -8792,8 +8830,37 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                       </div>
                     </div>
                   </div>
-                  {/* Widget Fase Metabolica */}
-                  <div style={{ width: '100%', flexShrink: 0, background: '#1a1a1c', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '10px', boxSizing: 'border-box', height: 'auto', minHeight: 'min-content' }}>
+                  {/* Widget Fase Metabolica + Training Wave */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className={trainingSweet ? 'training-wave-widget--sweet-spot' : undefined}
+                    onClick={() => setShowMetabolicPopup(true)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === 'Enter' || ev.key === ' ') {
+                        ev.preventDefault();
+                        setShowMetabolicPopup(true);
+                      }
+                    }}
+                    aria-label="Fase metabolica e training wave, apri dettaglio"
+                    style={{
+                      width: '100%',
+                      flexShrink: 0,
+                      background: '#1a1a1c',
+                      border: trainingSweet ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: '16px',
+                      padding: '14px 16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      gap: '10px',
+                      boxSizing: 'border-box',
+                      height: 'auto',
+                      minHeight: 'min-content',
+                      transition: 'border-color 0.3s ease',
+                      cursor: 'pointer',
+                    }}
+                  >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span>⏳</span>
@@ -8802,8 +8869,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                           <div style={{ color: faseColor, fontSize: '1rem', fontWeight: 'bold', letterSpacing: '1px' }}>{faseLabel}</div>
                         </div>
                       </div>
-                      <div style={{ color: '#aaa', fontSize: '0.85rem' }}>⏱ Da {lastMealHours}h {lastMealMinutes}m</div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ color: '#aaa', fontSize: '0.85rem' }}>⏱ Da {lastMealHours}h {lastMealMinutes}m</div>
+                        {waveStateShort ? (
+                          <div style={{ fontSize: '0.62rem', color: trainingSweet ? '#7dd3fc' : '#64748b', marginTop: 2, fontWeight: 600 }}>
+                            Onda: {waveStateShort === 'Optimal' ? 'Sweet spot' : waveStateShort === 'Wait' ? 'Attendi' : 'Fuori finestra'}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
+                    <TrainingWaveChart waveResult={trainingWaveResult} variant="sparkline" height={38} />
+                    <p style={{ margin: 0, fontSize: '0.58rem', color: '#57534e', lineHeight: 1.35 }}>
+                      Training Wave (4h): verde = energia, rosso = digestione. Tocca per aprire Stato metabolico e il grafico completo.
+                    </p>
                     <div style={{ height: '4px', background: '#333', borderRadius: '2px', overflow: 'hidden' }}>
                       <div style={{ width: `${isAssorbimento ? 40 : Math.min(100, (fastingData.hoursFasted / 16) * 100)}%`, height: '100%', background: faseColor, boxShadow: `0 0 8px ${faseColor}` }}></div>
                     </div>
@@ -11483,6 +11561,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '15px', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
               🧬 Stato Metabolico
             </h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.75rem', marginBottom: '10px', lineHeight: 1.45 }}>
+              Training Wave — prossime 4 ore: area scura = stress neuro alto (no HIIT aggressivo). 🏄‍♂️ sulla cresta della disponibilità energetica.
+            </p>
+            <div style={{ marginBottom: '16px', height: '200px' }}>
+              <TrainingWaveChart waveResult={trainingWaveResult} variant="full" height={200} />
+            </div>
             <p style={{ color: '#aaa', fontSize: '0.9rem', lineHeight: 1.5 }}>
               Il tuo corpo attraversa diverse fasi durante la giornata:
             </p>
