@@ -54,16 +54,14 @@ function getMondayOfWeek(dateStr) {
  * Questo risolve il problema dei dati storici con 'spuntino' vs nuovi 'snack'.
  */
 const MEAL_TYPE_GROUPS = {
-  colazione: ['merenda1', 'colazione'],
-  merenda_am: ['merenda_am'],
+  colazione: ['colazione', 'merenda1'],
+  snack: ['snack', 'merenda_am', 'merenda_pm', 'merenda2', 'spuntino'],
   pranzo: ['pranzo'],
-  merenda_pm: ['merenda_pm', 'merenda2', 'spuntino', 'snack'],
   cena: ['cena'],
 };
 
-/** 
- * Mappa inversa: da qualsiasi ID al gruppo canonico.
- * 'merenda1' → 'colazione', 'merenda2'|'snack' → 'merenda_pm'
+/**
+ * Mappa inversa: merenda1→colazione; merenda_am/pm/merenda2/spuntino→snack.
  */
 const MEAL_TYPE_TO_CANONICAL = {};
 Object.entries(MEAL_TYPE_GROUPS).forEach(([canonical, aliases]) => {
@@ -115,7 +113,7 @@ function getMealIcon(label) {
 function getGhostMealType(baseType, log) {
   const base = String(baseType || '').split('_')[0];
   const canonical = toCanonicalMealType(base);
-  const existingFoods = (log || []).filter(i => i.type === 'food');
+  const existingFoods = (log || []).filter(i => i.type === 'food' || i.type === 'recipe');
   let maxSuffix = 0;
   let baseExists = false;
   existingFoods.forEach(f => {
@@ -300,7 +298,7 @@ const PHYSIOLOGY_CONFIG = {
 /**
  * Dati reali + ideali per il cruscotto energetico 0-24h: 25 punti (ore 0..24).
  * timelineNodes: array di { id, type: 'meal'|'work'|'workout', time, duration?, kcal?, icon }.
- * idealStrategy: { colazione, merenda_am, pranzo, merenda_pm, cena, allenamento } kcal obiettivo (legacy: spuntino → merenda_pm).
+ * idealStrategy: { colazione, snack, pranzo, cena, allenamento } kcal obiettivo (legacy: merenda_am/pm/spuntino → snack).
  * Restituisce { chartData, realTotals } per grafico doppia curva e semafori.
  */
 function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, currentTime = null, accumuloSNC = 0) {
@@ -387,21 +385,21 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   const wake = sleepEnd;
 
   const defaultIdealKcalForStrategy = (sk, idealObj) => {
-    const legacySnack = Number(idealObj?.merenda_pm ?? idealObj?.spuntino) || 250;
+    const legacySnack =
+      Number(idealObj?.snack ?? idealObj?.merenda_pm ?? idealObj?.merenda_am ?? idealObj?.spuntino) || 250;
     const defaults = {
       colazione: 400,
-      merenda_am: 200,
+      snack: legacySnack,
       pranzo: 700,
-      merenda_pm: legacySnack,
       cena: 500,
     };
     if (defaults[sk] != null) return defaults[sk];
-    if (sk === 'spuntino') return legacySnack;
+    if (sk === 'merenda_am' || sk === 'merenda_pm' || sk === 'spuntino') return legacySnack;
     return 500;
   };
 
   let workoutKcal = 0;
-  const realTotals = { colazione: 0, merenda_am: 0, pranzo: 0, merenda_pm: 0, cena: 0, allenamento: 0 };
+  const realTotals = { colazione: 0, snack: 0, pranzo: 0, cena: 0, allenamento: 0 };
 
   log.forEach(entry => {
     const kcal = Number(entry.kcal ?? entry.cal ?? 0) || 0;
@@ -529,7 +527,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         if (timeSince >= 0 && timeSince <= 3) {
           const mealEffect = responseCurve(timeSince, 1, 3);
           const realK = node.kcal || node.cal || 500;
-          const sk = node.strategyKey === 'spuntino' ? 'merenda_pm' : node.strategyKey;
+          let sk = node.strategyKey;
+          if (sk === 'spuntino' || sk === 'merenda_pm' || sk === 'merenda_am' || sk === 'merenda2') sk = 'snack';
           const idealK = Number(ideal[node.strategyKey] ?? ideal[sk]) || defaultIdealKcalForStrategy(sk, ideal);
           metabolicEnergy += mealEffect * (realK / 20);
           currentIdealEnergy += mealEffect * (idealK / 20);
@@ -1372,16 +1371,16 @@ const TRACKER_STORICO_KEY = (date) => `trackerStorico_${date}`;
 
 /** Mappa descrizione pasto (vecchio formato) -> mealId canonico. */
 const DESC_TO_MEAL_ID = {
-  colazione: 'merenda1',
-  'merenda am': 'merenda_am',
-  merenda_am: 'merenda_am',
-  merenda1: 'merenda1',
+  colazione: 'colazione',
+  merenda1: 'colazione',
+  'merenda am': 'snack',
+  merenda_am: 'snack',
   pranzo: 'pranzo',
-  'merenda pm': 'merenda_pm',
-  merenda_pm: 'merenda_pm',
-  merenda2: 'merenda_pm',
-  spuntino: 'merenda_pm',
-  snack: 'merenda_pm',
+  'merenda pm': 'snack',
+  merenda_pm: 'snack',
+  merenda2: 'snack',
+  spuntino: 'snack',
+  snack: 'snack',
   cena: 'cena',
 };
 
@@ -1557,33 +1556,31 @@ function normalizeLogData(rawLog) {
 }
 
 /** Ricostruisce la struttura a "cartelle" (meal/items) per Firebase a partire dal dailyLog piatto. */
-const MEAL_ORDER_SAVE = ['merenda1', 'merenda_am', 'pranzo', 'merenda_pm', 'cena', 'merenda2', 'snack'];
+const MEAL_ORDER_SAVE = ['colazione', 'snack', 'pranzo', 'cena', 'merenda1', 'merenda_am', 'merenda_pm', 'merenda2'];
 
 const MEAL_LABELS_SAVE = {
-  merenda1: 'Colazione',
   colazione: 'Colazione',
-  merenda_am: 'Merenda AM',
+  merenda1: 'Colazione',
+  snack: 'Snack',
+  merenda_am: 'Snack',
+  merenda_pm: 'Snack',
+  merenda2: 'Snack',
+  spuntino: 'Snack',
   pranzo: 'Pranzo',
-  merenda_pm: 'Merenda PM',
-  merenda2: 'Merenda PM',
-  spuntino: 'Merenda PM',
-  snack: 'Merenda PM',
   cena: 'Cena',
 };
 
-/** Elenco tipi pasto per UI (5 pasti + alias legacy in ordine salvataggio). */
+/** Quattro pasti ufficiali (id salvati nel diario). */
 export const MEAL_TYPES = [
-  { id: 'merenda1', label: 'Colazione' },
-  { id: 'merenda_am', label: 'Merenda AM' },
+  { id: 'colazione', label: 'Colazione' },
+  { id: 'snack', label: 'Snack' },
   { id: 'pranzo', label: 'Pranzo' },
-  { id: 'merenda_pm', label: 'Merenda PM' },
   { id: 'cena', label: 'Cena' },
 ];
 
-/** Slot da ripartizione dinamica (ordine cronologico; la colazione non entra nel divisore). */
-const PROTEIN_DYNAMIC_SLOTS = ['merenda_am', 'pranzo', 'merenda_pm', 'cena'];
+/** Pasti proteici massimi al giorno (colazione esclusa dal conteggio). */
+const PROTEIN_MEALS_PER_DAY = 4;
 
-const BREAKFAST_PROT_RATIO = 0.25;
 const BREAKFAST_KCAL_RATIO = 0.22;
 
 /** Somma macro su tutti food/ricette del log (il chiamante può già aver escluso lo slot in editing). */
@@ -1602,13 +1599,28 @@ function sumMacroAllFood(log, macro) {
   return s;
 }
 
+/** Conta i pasti già registrati oggi diversi dalla colazione (slot distinti per mealType + mealTime). */
+function countLoggedProteinMealSlots(log) {
+  const seen = new Set();
+  for (const e of log || []) {
+    if (!e || (e.type !== 'food' && e.type !== 'recipe')) continue;
+    const mt = String(e.mealType || 'pasto');
+    const base = mt.split('_')[0];
+    if (toCanonicalMealType(base) === 'colazione') continue;
+    const t = typeof e.mealTime === 'number' && !Number.isNaN(e.mealTime) ? e.mealTime : 'na';
+    seen.add(`${mt}|${t}`);
+  }
+  return seen.size;
+}
+
 /**
- * Target macro per il pasto corrente.
- * Colazione: quota fissa sul fabbisogno. Altri 4 slot: residui giornalieri / slot rimanenti (dal corrente alla cena inclusi).
- * Proteine: (Tprot − assunto) / slotRimanenti; se già a quota, minimo 20 g (MPS). Kcal/carb/grassi/fibre: stesso principio sui residui,
- * con carboidrati più alti a cena e grassi più alti a pranzo (split energetico sulle kcal del pasto dopo le proteine).
+ * Target macro: colazione con proteine fisse 15 g (fuori dal pool degli slot proteici).
+ * Altri pasti: 4 «gettoni» proteici al giorno; slot rimanenti = max(1, 4 − pasti già loggati non-colazione).
+ * Proteine = (Tprot − assunto totale inclusa colazione) / slotRimanenti. Kcal/carb/grassi/fibre sui residui con blend:
+ * più carb a cena (isCena), più grassi a pranzo (isPranzo), snack intermedio.
  */
 export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, options = {}) {
+  void options;
   const log = Array.isArray(dailyLog) ? dailyLog : [];
 
   const Tkcal = Number(userTargets?.kcal ?? 2000) || 2000;
@@ -1622,19 +1634,17 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
 
   if (canon === 'colazione') {
     const rkcal = Tkcal * BREAKFAST_KCAL_RATIO;
-    const rprot = Tprot * BREAKFAST_PROT_RATIO;
     return {
       kcal: Math.round(rkcal),
-      prot: Math.round(rprot * 10) / 10,
-      carb: Math.round(Tcarb * 0.22 * 10) / 10,
-      fat: Math.round(Tfat * 0.22 * 10) / 10,
+      prot: 15,
+      carb: Math.round(Tcarb * BREAKFAST_KCAL_RATIO * 10) / 10,
+      fat: Math.round(Tfat * BREAKFAST_KCAL_RATIO * 10) / 10,
       fibre: Math.max(2, Math.round(Tfibre * BREAKFAST_KCAL_RATIO * 10) / 10),
     };
   }
 
-  let slotIndex = PROTEIN_DYNAMIC_SLOTS.indexOf(canon);
-  if (slotIndex < 0) slotIndex = 1;
-  const remainingSlots = Math.max(1, PROTEIN_DYNAMIC_SLOTS.length - slotIndex);
+  const pastiGiaFatti = countLoggedProteinMealSlots(log);
+  const remainingSlots = Math.max(1, PROTEIN_MEALS_PER_DAY - pastiGiaFatti);
 
   const consumedKcal = sumMacroAllFood(log, 'kcal');
   const consumedProt = sumMacroAllFood(log, 'prot');
@@ -1665,17 +1675,19 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
   const protKcal = targetProt * 4;
   let remKcalAfterProt = Math.max(80, targetKcal - protKcal);
 
+  const isCena = canon === 'cena';
+  const isPranzo = canon === 'pranzo';
   let carbEnergyRatio = 0.42;
   let fatEnergyRatio = 0.36;
-  if (canon === 'pranzo') {
+  if (isPranzo) {
     carbEnergyRatio = 0.36;
     fatEnergyRatio = 0.44;
-  } else if (canon === 'cena') {
+  } else if (isCena) {
     carbEnergyRatio = 0.5;
     fatEnergyRatio = 0.24;
-  } else if (canon === 'merenda_am' || canon === 'merenda_pm') {
-    carbEnergyRatio = 0.46;
-    fatEnergyRatio = 0.34;
+  } else {
+    carbEnergyRatio = 0.41;
+    fatEnergyRatio = 0.38;
   }
 
   const carbFromKcal = (remKcalAfterProt * carbEnergyRatio) / 4;
@@ -2841,14 +2853,14 @@ function calibrateUserModel(weeklyData, currentModel) {
  */
 function buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, weekStartMonday) {
   const mealTypesToStrategy = {
-    merenda1: 'colazione',
     colazione: 'colazione',
-    merenda_am: 'merenda_am',
+    merenda1: 'colazione',
+    snack: 'snack',
+    merenda_am: 'snack',
+    merenda_pm: 'snack',
+    merenda2: 'snack',
+    spuntino: 'snack',
     pranzo: 'pranzo',
-    merenda2: 'merenda_pm',
-    merenda_pm: 'merenda_pm',
-    spuntino: 'merenda_pm',
-    snack: 'merenda_pm',
     cena: 'cena',
   };
   let predictedEnergySum = 0;
@@ -2865,7 +2877,7 @@ function buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, weekS
     const manualNodes = node?.manualNodes ?? [];
     const timelineNodes = [];
     log.forEach(entry => {
-      if (entry?.type === 'food') {
+      if (entry?.type === 'food' || entry?.type === 'recipe') {
         const t = typeof entry.mealTime === 'number' ? entry.mealTime : 12;
         const base = entry.mealType?.split('_')[0];
         const strategyKey = mealTypesToStrategy[base] || toCanonicalMealType(base) || 'cena';

@@ -1,5 +1,5 @@
-export const MEALS = ['Merenda AM', 'Pranzo', 'Merenda PM', 'Cena'];
-export const MEAL_KEYS = ['merenda1', 'pranzo', 'merenda2', 'cena'];
+export const MEALS = ['Colazione', 'Snack', 'Pranzo', 'Cena'];
+export const MEAL_KEYS = ['colazione', 'snack', 'pranzo', 'cena'];
 
 export const MACRO_KEYS = ['kcal', 'prot', 'carb', 'fat', 'fibre'];
 

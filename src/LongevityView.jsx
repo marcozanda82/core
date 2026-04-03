@@ -203,10 +203,10 @@ function buildMediatedVirtualLog(dayLogs) {
   const avgSleep = nSleep ? sumSleep / nSleep : 0;
   const avgFirst = sumFirst / nWithFoods;
   const avgLast = sumLast / nWithFoods;
-  const targetHi = Math.max(0, Math.min(5, Math.round(hpSum / n)));
+  const targetHi = Math.max(0, Math.min(4, Math.round(hpSum / n)));
 
-  /** Cinque slot ufficiali (stessi id usati nel diario / KentuOS). */
-  const mealTypes = ['merenda1', 'merenda_am', 'pranzo', 'merenda_pm', 'cena'];
+  /** Quattro pasti ufficiali (allineati a KentuOS). */
+  const mealTypes = ['colazione', 'snack', 'pranzo', 'cena'];
   const nMeals = mealTypes.length;
   const span = Math.max(0.5, avgLast - avgFirst);
   const step = nMeals > 1 ? span / (nMeals - 1) : 0;

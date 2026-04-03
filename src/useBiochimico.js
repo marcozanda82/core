@@ -21,11 +21,28 @@ export const DEFAULT_TARGETS = {
 /** Elenco piatto di tutte le chiavi nutrizionali (macro + amino + vit + min + fat) per iterazione */
 const ALL_NUTRIENT_KEYS = Object.values(TARGETS).flatMap(g => Object.keys(g));
 
-/** Ordine pasti per calcolo a cascata (prima merenda1, poi pranzo, ecc.) */
-export const MEAL_ORDER = ['merenda1', 'pranzo', 'merenda2', 'cena'];
+/** Ordine pasti per calcolo a cascata (4 pasti ufficiali). */
+export const MEAL_ORDER = ['colazione', 'snack', 'pranzo', 'cena'];
 
-/** Peso percentuale ideale per pasto (somma = 1). Usato per distribuire il target e per delta correction. */
-export const MEAL_WEIGHTS = { merenda1: 0.15, pranzo: 0.35, merenda2: 0.15, cena: 0.35 };
+/** Peso percentuale ideale per pasto (somma = 1). */
+export const MEAL_WEIGHTS = { colazione: 0.2, snack: 0.15, pranzo: 0.35, cena: 0.3 };
+
+const LEGACY_MEAL_TO_BUCKET = {
+  merenda1: 'colazione',
+  colazione: 'colazione',
+  snack: 'snack',
+  merenda_am: 'snack',
+  merenda_pm: 'snack',
+  merenda2: 'snack',
+  spuntino: 'snack',
+  pranzo: 'pranzo',
+  cena: 'cena',
+};
+
+function bucketMealTypeForBio(mt) {
+  const base = String(mt || '').split('_')[0];
+  return LEGACY_MEAL_TO_BUCKET[base] || (MEAL_ORDER.includes(base) ? base : 'pranzo');
+}
 
 /**
  * Restituisce il target giornaliero per una chiave (cerca in tutti i gruppi).
@@ -130,7 +147,7 @@ function computeConsumedPerMeal(dailyLog) {
   MEAL_ORDER.forEach(m => { consumed[m] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { consumed[m][k] = 0; }); });
   dailyLog.forEach(item => {
     if ((item.type !== 'food' && item.type !== 'recipe') || !item.mealType) return;
-    const meal = MEAL_ORDER.includes(item.mealType) ? item.mealType : 'pranzo';
+    const meal = bucketMealTypeForBio(item.mealType);
     if (!consumed[meal]) consumed[meal] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { if (!consumed[meal][k]) consumed[meal][k] = 0; });
     consumed[meal].kcal += Number(item.kcal || item.cal || 0) || 0;
     ALL_NUTRIENT_KEYS.forEach(k => {

@@ -803,7 +803,7 @@ export default function MealBuilder({
             setDrawerMealTimeStr(decimalToTimeStr(v));
             if (newTimeStr) {
               const hour = parseInt(newTimeStr.split(':')[0], 10);
-              if (hour >= 5 && hour < 11) setMealType('merenda1');
+              if (hour >= 5 && hour < 11) setMealType('colazione');
               else if (hour >= 11 && hour < 15) setMealType('pranzo');
               else if (hour >= 19 && hour <= 22) setMealType('cena');
               else setMealType('snack');

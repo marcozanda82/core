@@ -111,19 +111,19 @@ import {
 function migrateIdealStrategy(raw) {
   const defaults = {
     colazione: 400,
-    merenda_am: 200,
+    snack: 250,
     pranzo: 700,
-    merenda_pm: 250,
     cena: 500,
     allenamento: 300,
   };
   if (!raw || typeof raw !== 'object') return { ...defaults };
-  const legacySnack = Number(raw.merenda_pm ?? raw.spuntino) || 250;
+  const legacySnack =
+    Number(raw.snack ?? raw.merenda_pm ?? raw.merenda_am ?? raw.spuntino) || 250;
   const next = { ...defaults, ...raw };
-  if (next.merenda_pm == null || Number.isNaN(Number(next.merenda_pm))) next.merenda_pm = legacySnack;
-  if (next.merenda_am == null || Number.isNaN(Number(next.merenda_am))) {
-    next.merenda_am = Math.min(320, Math.round(legacySnack * 0.82));
-  }
+  if (next.snack == null || Number.isNaN(Number(next.snack))) next.snack = legacySnack;
+  delete next.merenda_am;
+  delete next.merenda_pm;
+  delete next.spuntino;
   return next;
 }
 
@@ -2165,17 +2165,17 @@ export default function SalaComandi() {
 
   const getStrategyKey = (mealType) => {
     const map = {
-      merenda1: 'colazione',
       colazione: 'colazione',
-      merenda_am: 'merenda_am',
+      merenda1: 'colazione',
+      snack: 'snack',
+      merenda_am: 'snack',
+      merenda_pm: 'snack',
+      merenda2: 'snack',
+      spuntino: 'snack',
       pranzo: 'pranzo',
-      merenda2: 'merenda_pm',
-      merenda_pm: 'merenda_pm',
-      spuntino: 'merenda_pm',
-      snack: 'merenda_pm',
       cena: 'cena',
     };
-    return map[mealType] || mealType;
+    return map[mealType] || toCanonicalMealType(mealType) || mealType;
   };
 
   const computedMealNodes = useMemo(() => {
@@ -3395,69 +3395,61 @@ export default function SalaComandi() {
   // ============================================================================
 
   const mealIdFromCanonical = (c) => {
-    const x = String(c || '');
-    if (x === 'colazione') return 'merenda1';
-    if (x === 'merenda_pm' || x === 'spuntino' || x === 'snack' || x === 'merenda2') return 'merenda_pm';
-    if (x === 'merenda_am') return 'merenda_am';
-    if (x === 'pranzo') return 'pranzo';
-    if (x === 'cena') return 'cena';
-    return x || 'pranzo';
+    const canon = toCanonicalMealType(String(c || '').split('_')[0]);
+    if (canon === 'colazione') return 'colazione';
+    if (canon === 'snack') return 'snack';
+    if (canon === 'pranzo') return 'pranzo';
+    if (canon === 'cena') return 'cena';
+    return canon || 'pranzo';
   };
 
-  /** Vocabolario AI (5 slot) → id salvati nel diario (merenda1, merenda_am, …). */
+  /** Vocabolario AI → id diario: colazione, snack, pranzo, cena. */
   const normalizeAiMealTypeToStorageId = (raw, decimalHourInfer) => {
     const inferH =
       typeof decimalHourInfer === 'number' && !Number.isNaN(decimalHourInfer)
         ? decimalHourInfer
         : new Date().getHours() + new Date().getMinutes() / 60;
-    const snackByTime = inferH < 12 ? 'merenda_am' : 'merenda_pm';
     const k = String(raw ?? '')
       .trim()
       .toLowerCase()
       .replace(/_/g, ' ')
       .replace(/\s+/g, ' ');
-    if (!k) return snackByTime;
+    if (!k) return 'snack';
     const phraseExact = {
-      colazione: 'merenda1',
-      merenda1: 'merenda1',
-      breakfast: 'merenda1',
-      'spuntino mattina': 'merenda_am',
-      'spuntino di metà mattina': 'merenda_am',
-      'spuntino di meta mattina': 'merenda_am',
-      'metà mattina': 'merenda_am',
-      'meta mattina': 'merenda_am',
-      'merenda am': 'merenda_am',
-      merenda_am: 'merenda_am',
+      colazione: 'colazione',
+      merenda1: 'colazione',
+      breakfast: 'colazione',
       pranzo: 'pranzo',
       lunch: 'pranzo',
-      'spuntino pomeridiano': 'merenda_pm',
-      'spuntino pomeriggio': 'merenda_pm',
-      'merenda pm': 'merenda_pm',
-      merenda_pm: 'merenda_pm',
-      merenda2: 'merenda_pm',
-      'pre-nanna': 'merenda_pm',
-      'pre nanna': 'merenda_pm',
-      'merenda serale': 'merenda_pm',
-      'spuntino serale': 'merenda_pm',
       cena: 'cena',
       dinner: 'cena',
       'pasto serale': 'cena',
+      snack: 'snack',
+      spuntino: 'snack',
+      merenda: 'snack',
+      merenda_am: 'snack',
+      merenda_pm: 'snack',
+      merenda2: 'snack',
+      'merenda am': 'snack',
+      'merenda pm': 'snack',
+      'spuntino mattina': 'snack',
+      'spuntino pomeridiano': 'snack',
+      'spuntino pomeriggio': 'snack',
     };
     if (Object.prototype.hasOwnProperty.call(phraseExact, k)) return phraseExact[k];
-    if (k === 'spuntino' || k === 'snack' || k === 'merenda') return snackByTime;
     const base = k.includes(' ') ? k.replace(/\s/g, '_') : k;
     const canon = toCanonicalMealType(base);
     const id = mealIdFromCanonical(canon);
-    const allowed = new Set(['merenda1', 'merenda_am', 'pranzo', 'merenda_pm', 'cena']);
+    const allowed = new Set(['colazione', 'snack', 'pranzo', 'cena']);
     if (allowed.has(id)) return id;
-    return snackByTime;
+    return 'snack';
   };
 
   const fallbackPredict = (now) => {
-    if (now >= 5 && now < 10) return 'merenda1';
-    if (now >= 10 && now < 12.5) return 'merenda_am';
+    if (now >= 5 && now < 10) return 'colazione';
+    if (now >= 10 && now < 12.5) return 'snack';
     if (now >= 12.5 && now < 14.5) return 'pranzo';
-    if (now >= 14.5 && now < 18.5) return 'merenda_pm';
+    if (now >= 14.5 && now < 19) return 'snack';
     return 'cena';
   };
 
@@ -3597,14 +3589,14 @@ export default function SalaComandi() {
 
   const getDefaultMealTime = (mealTypeKey) => {
     const DEFAULT_SLOT_TIME = {
-      merenda1: 8,
       colazione: 8,
+      merenda1: 8,
+      snack: 10.5,
       merenda_am: 10.5,
-      pranzo: 13,
       merenda_pm: 16.5,
       merenda2: 16.5,
       spuntino: 16.5,
-      snack: 16.5,
+      pranzo: 13,
       cena: 20,
     };
     const fallbackFromSlot = () => {
@@ -5426,10 +5418,9 @@ Usa SEMPRE questa struttura per ogni messaggio di testo normale (non vale quando
 
 Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino") SENZA indicare un orario del pasto in modo da poter usare add_food (vedi PASTI ZERO FORM), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi).
 
-VOCABOLARIO PASTI (campo mealType — TASSATIVO): usa solo uno di questi cinque valori stringa: "colazione", "merenda_am", "pranzo", "merenda_pm", "cena".
-TRADUZIONE / MAPPING: "spuntino di metà mattina", "spuntino mattina", "merenda di metà mattina" → "merenda_am". "Spuntino pomeridiano", "merenda del pomeriggio" → "merenda_pm". "Pre-nanna", "merenda serale", "spuntino serale" (leggero prima della cena principale) → "merenda_pm". Pasto principale di sera / cena → "cena". Colazione → "colazione". Pranzo → "pranzo".
-Se l'utente dice solo "spuntino", "merenda" o "snack" senza specificare: deduci dall'orario del messaggio dell'utente (o dall'orario che ha indicato): se prima delle 12:00 → "merenda_am", altrimenti → "merenda_pm".
-Compatibilità deprecata (accettata dal parser ma da evitare in nuovo output): "merenda1" = colazione, "merenda2"/"snack" = merenda_pm.
+VOCABOLARIO PASTI (campo mealType — TASSATIVO): usa solo questi quattro valori: "colazione", "snack", "pranzo", "cena".
+Qualsiasi spuntino o merenda (mattina o pomeriggio) → "snack". Pasto principale di mezzogiorno → "pranzo". Cena → "cena". Colazione → "colazione".
+Compatibilità deprecata accettata dal parser: "merenda1"→colazione, "merenda_am"/"merenda_pm"/"merenda2"/"spuntino"→snack.
 
 REGOLA MOLTIPLICATORE: Se l'utente indica quantità a pezzi (es. "3 gallette di riso", "2 uova"), stima il peso di UNA singola unità, moltiplicalo per la quantità, e inserisci il PESO TOTALE IN GRAMMI nel campo "weight" (es. 2 uova ≈ 120g, 3 gallette ≈ 30g totali). Un solo alimento = array con un elemento [{"name":"...", "weight": N, "mealType":"..."}].
 
@@ -5987,7 +5978,7 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
           const [key, val] = pair.split('=').map(s => (s || '').trim().toLowerCase());
           const numVal = parseFloat(val);
           if (isNaN(numVal) || !key) return;
-          const stratKey = key === 'spuntino' ? 'merenda_pm' : key;
+          const stratKey = key === 'spuntino' || key === 'merenda_pm' || key === 'merenda_am' ? 'snack' : key;
           if (newStrategy[stratKey] !== undefined) newStrategy[stratKey] = numVal;
         });
         setIdealStrategy(newStrategy);
@@ -6606,14 +6597,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const raw = node.log;
     const yesterdayLog = normalizeLogData(Array.isArray(raw) ? raw : Object.values(raw));
     const mealTypesToStrategy = {
-      merenda1: 'colazione',
       colazione: 'colazione',
-      merenda_am: 'merenda_am',
+      merenda1: 'colazione',
+      snack: 'snack',
+      merenda_am: 'snack',
+      merenda_pm: 'snack',
+      merenda2: 'snack',
+      spuntino: 'snack',
       pranzo: 'pranzo',
-      merenda2: 'merenda_pm',
-      merenda_pm: 'merenda_pm',
-      spuntino: 'merenda_pm',
-      snack: 'merenda_pm',
       cena: 'cena',
     };
     const yesterdayNodes = [];
