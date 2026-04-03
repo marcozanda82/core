@@ -232,6 +232,9 @@ export default function AiCluster({
               { key: 'yesterday', label: '🔍 Analisi Ieri' },
               { key: 'mealIdea', label: '💡 Idea Pasto' },
               { key: 'nutrCheck', label: '⚖️ Check Alimentare' },
+              { key: 'trainingCheck', label: '🏃‍♂️ Posso allenarmi?' },
+              { key: 'monthlyReport', label: '📅 Report Mensile' },
+              { key: 'habitScan', label: '🔍 Analisi Abitudini' },
             ].map(({ key, label }) => (
               <button
                 key={key}

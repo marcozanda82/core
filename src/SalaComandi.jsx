@@ -109,6 +109,9 @@ import {
   buildTrainingWaveContextSnippet,
   getDynamicMealTargets,
   generateLocalNutritionalAudit,
+  generateLocalTrainingAdvice,
+  generateLocalMonthlyAudit,
+  generateLocalHabitScanner,
 } from './coreEngine';
 
 function migrateIdealStrategy(raw) {
@@ -5091,6 +5094,39 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       return;
     }
 
+    const TRAINING_LOCAL_TRIGGER = '🏃‍♂️ Posso allenarmi?';
+    if (!secretPrompt && String(userMessage || '').trim() === TRAINING_LOCAL_TRIGGER) {
+      const advice = generateLocalTrainingAdvice(trainingWaveResult);
+      setChatHistory((prev) => [...prev, { sender: 'user', text: TRAINING_LOCAL_TRIGGER }]);
+      if (optionalReply == null) setChatInput('');
+      window.setTimeout(() => {
+        setChatHistory((prev) => [...prev, { sender: 'ai', text: advice }]);
+      }, 300);
+      return;
+    }
+
+    const MONTHLY_AUDIT_TRIGGER = '📅 Report Mensile';
+    if (!secretPrompt && String(userMessage || '').trim() === MONTHLY_AUDIT_TRIGGER) {
+      const reportText = generateLocalMonthlyAudit(fullHistory, userTargets, bodyMetricsHistory);
+      setChatHistory((prev) => [...prev, { sender: 'user', text: MONTHLY_AUDIT_TRIGGER }]);
+      if (optionalReply == null) setChatInput('');
+      window.setTimeout(() => {
+        setChatHistory((prev) => [...prev, { sender: 'ai', text: reportText }]);
+      }, 300);
+      return;
+    }
+
+    const HABIT_SCAN_TRIGGER = '🔍 Analisi Abitudini';
+    if (!secretPrompt && String(userMessage || '').trim() === HABIT_SCAN_TRIGGER) {
+      const habitText = generateLocalHabitScanner(fullHistory);
+      setChatHistory((prev) => [...prev, { sender: 'user', text: HABIT_SCAN_TRIGGER }]);
+      if (optionalReply == null) setChatInput('');
+      window.setTimeout(() => {
+        setChatHistory((prev) => [...prev, { sender: 'ai', text: habitText }]);
+      }, 400);
+      return;
+    }
+
     if (pendingHabit && userMessage && !secretPrompt) {
       const userTextLower = userMessage.trim().toLowerCase();
       const isHabitYes =
@@ -9497,6 +9533,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 });
               } else if (kind === 'nutrCheck') {
                 void handleChatSubmit('⚖️ Check Alimentare', { fromQuickReply: true });
+              } else if (kind === 'trainingCheck') {
+                void handleChatSubmit('🏃‍♂️ Posso allenarmi?', { fromQuickReply: true });
+              } else if (kind === 'monthlyReport') {
+                void handleChatSubmit('📅 Report Mensile', { fromQuickReply: true });
+              } else if (kind === 'habitScan') {
+                void handleChatSubmit('🔍 Analisi Abitudini', { fromQuickReply: true });
               }
             }}
             onLogDinnerOption={handleAutoLogDinner}

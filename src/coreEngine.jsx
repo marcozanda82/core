@@ -3063,6 +3063,213 @@ export function computeRiskMatrix(trackerData, userTargets, daysBack = 7, refere
   };
 }
 
+/**
+ * Consiglio allenamento locale dall’onda (training wave), senza API.
+ * @param {object} waveResult — output di getTrainingWaveCurves
+ */
+export function generateLocalTrainingAdvice(waveResult) {
+  const wr = waveResult && typeof waveResult === 'object' ? waveResult : {};
+  const state = String(wr.waveState || 'Missed');
+  const end = String(wr.windowEndStr || '').trim() || '—';
+  const start = String(wr.windowStartStr || '').trim() || '—';
+
+  let minuti = null;
+  const ser = wr.series;
+  if (Array.isArray(ser) && ser.length > 0) {
+    let firstSweet = -1;
+    for (let i = 0; i < ser.length; i++) {
+      if (ser[i].inSweetSpot) {
+        firstSweet = i;
+        break;
+      }
+    }
+    if (firstSweet > 0) {
+      const t0 = Number(ser[0].hourClock);
+      const t1 = Number(ser[firstSweet].hourClock);
+      if (Number.isFinite(t0) && Number.isFinite(t1)) {
+        let diffH = t1 - t0;
+        if (diffH < 0) diffH += 24;
+        minuti = Math.max(1, Math.round(diffH * 60));
+      }
+    }
+  }
+
+  if (state === 'Optimal') {
+    return `🏃‍♂️ ORA! Sei nell'Onda Perfetta. Digestione completata e glucosio al picco. Hai tempo fino alle ${end}.`;
+  }
+  if (state === 'Wait') {
+    const m = minuti != null ? String(minuti) : '—';
+    return `⏳ Aspetta. Il sangue è ancora impegnato nella digestione. L'onda ideale parte alle ${start} (tra circa ${m} min).`;
+  }
+  return "📉 Finestra chiusa. O è passato troppo tempo dal pasto o il Safety Gate dello Stress è attivo. Meglio un recupero attivo o allenarsi domani.";
+}
+
+/**
+ * Report 30 giorni locale: proteine, alcol, peso (opzionale da body_metrics), Kentu Score medio da matrice rischi.
+ * @param {object} fullHistory — albero tracker_data
+ * @param {object} userTargets
+ * @param {Array} [bodyMetricsHistory] — voci { date?, weight, timestamp? } da Firebase body_metrics (per il delta peso)
+ */
+export function generateLocalMonthlyAudit(fullHistory, userTargets, bodyMetricsHistory) {
+  const anchor = getTodayString();
+  const targetProt = Number(userTargets?.prot ?? userTargets?.pro ?? DEFAULT_TARGETS.prot) || 150;
+  let protOkDays = 0;
+  let alcoholDayCount = 0;
+  const kentuScores = [];
+
+  for (let i = 0; i < 30; i++) {
+    const dStr = addDays(anchor, -i);
+    const rawLog = getLogFromStoricoTree(fullHistory, dStr) || [];
+    const log = normalizeLogData(Array.isArray(rawLog) ? rawLog : Object.values(rawLog || {}));
+    const node = fullHistory[TRACKER_STORICO_KEY(dStr)];
+    const manualNodes = Array.isArray(node?.manualNodes) ? node.manualNodes : [];
+    const allEntries = [...log, ...manualNodes];
+    if (allEntries.length === 0) continue;
+
+    const hasFood = log.some((e) => e.type === 'food' || e.type === 'recipe');
+    if (hasFood) {
+      const t = computeTotali(log);
+      if ((Number(t.prot) || 0) >= targetProt * 0.9) protOkDays++;
+    }
+    if (allEntries.some((e) => e.type === 'alcohol')) alcoholDayCount++;
+
+    const matrix = computeRiskMatrix(fullHistory, userTargets, 1, addDays(dStr, 1));
+    const sc = computeLongevityMasterScoreFromMatrix(matrix);
+    if (typeof sc === 'number' && !Number.isNaN(sc)) kentuScores.push(sc);
+  }
+
+  const proteinPct = Math.round((protOkDays / 30) * 100);
+  const cleanDays = Math.max(0, 30 - alcoholDayCount);
+  const avgKentu = kentuScores.length
+    ? Math.round(kentuScores.reduce((a, b) => a + b, 0) / kentuScores.length)
+    : null;
+
+  let deltaStr = 'n/d';
+  if (Array.isArray(bodyMetricsHistory) && bodyMetricsHistory.length > 0) {
+    const startD = addDays(anchor, -29);
+    const dated = bodyMetricsHistory
+      .map((h) => {
+        const d =
+          typeof h.date === 'string' && h.date.length >= 10
+            ? h.date.slice(0, 10)
+            : typeof h.timestamp === 'number'
+              ? new Date(h.timestamp).toISOString().slice(0, 10)
+              : '';
+        const w = Number(h.weight);
+        return d && Number.isFinite(w) ? { d, w } : null;
+      })
+      .filter(Boolean)
+      .filter((x) => x.d >= startD && x.d <= anchor)
+      .sort((a, b) => a.d.localeCompare(b.d));
+    if (dated.length >= 2) {
+      const delta = Math.round((dated[dated.length - 1].w - dated[0].w) * 10) / 10;
+      deltaStr = delta > 0 ? `+${delta}` : `${delta}`;
+    } else if (dated.length === 1) {
+      deltaStr = '0';
+    }
+  }
+
+  const scoreStr = avgKentu != null ? String(avgKentu) : 'n/d';
+  return `📅 REPORT 30 GG: Proteine centrate al ${proteinPct}%, ${cleanDays} giorni 'Clean' senza alcol. Peso: ${deltaStr}kg. Kentu Score medio: ${scoreStr}.`;
+}
+
+const HABIT_SCAN_SUGAR_KEYS = ['zuccheri', 'sugars', 'sugar'];
+
+function habitScanSumSugar(items) {
+  let s = 0;
+  (items || []).forEach((item) => {
+    HABIT_SCAN_SUGAR_KEYS.forEach((k) => {
+      const n = Number(item[k]);
+      if (Number.isFinite(n)) s += n;
+    });
+  });
+  return s;
+}
+
+function habitScanIsDinnerMealType(mealType) {
+  const base = String(mealType || '').split('_')[0];
+  return toCanonicalMealType(base) === 'cena';
+}
+
+/**
+ * Scanner abitudini su finestra 14 giorni (dati disponibili in fullHistory).
+ * @param {object} fullHistory — albero tracker_data
+ */
+export function generateLocalHabitScanner(fullHistory) {
+  if (!fullHistory || typeof fullHistory !== 'object') {
+    return '🟢 Nessuna cattiva abitudine rilevata! I tuoi pattern degli ultimi 14 giorni sono solidi e puliti. Continua così.';
+  }
+
+  const anchor = getTodayString();
+  let heavyDinners = 0;
+  let proteinBinging = 0;
+  let alcoholDays = 0;
+  let sugarSpikes = 0;
+
+  for (let i = 0; i < 14; i++) {
+    const dStr = addDays(anchor, -i);
+    const rawLog = getLogFromStoricoTree(fullHistory, dStr) || [];
+    const log = normalizeLogData(Array.isArray(rawLog) ? rawLog : Object.values(rawLog || {}));
+    const node = fullHistory[TRACKER_STORICO_KEY(dStr)];
+    const manualNodes = Array.isArray(node?.manualNodes) ? node.manualNodes : [];
+
+    const foods = log.filter((e) => e.type === 'food' || e.type === 'recipe');
+    if (foods.length === 0 && manualNodes.length === 0) continue;
+
+    if ([...log, ...manualNodes].some((e) => e.type === 'alcohol')) alcoholDays++;
+
+    if (foods.length === 0) continue;
+
+    let dinnerFat = 0;
+    let dinnerCarb = 0;
+    let dinnerProt = 0;
+    let totalProt = 0;
+    foods.forEach((item) => {
+      const prot = Number(item.prot) || 0;
+      totalProt += prot;
+      if (habitScanIsDinnerMealType(item.mealType)) {
+        dinnerFat += Number(item.fatTotal ?? item.fat) || 0;
+        dinnerCarb += Number(item.carb) || 0;
+        dinnerProt += prot;
+      }
+    });
+
+    if (dinnerFat > 25 || dinnerCarb > 80) heavyDinners++;
+
+    if (totalProt > 0 && dinnerProt > totalProt * 0.5) proteinBinging++;
+
+    if (habitScanSumSugar(foods) > 50) sugarSpikes++;
+  }
+
+  const alerts = [];
+  if (heavyDinners >= 4) {
+    alerts.push(
+      `🔴 Abitudine Rilevata: Cene Pesanti. Negli ultimi 14 giorni hai fatto ${heavyDinners} cene troppo ricche di grassi o carboidrati. Stai cronicizzando lo stress notturno e sabotando il sonno.`
+    );
+  }
+  if (proteinBinging >= 4) {
+    alerts.push(
+      `🔴 Abitudine Rilevata: Procrastinazione Proteica. Tendi a mangiare pochissime proteine di giorno e abbuffarti a cena (${proteinBinging} volte di recente). Il corpo non riesce ad assorbirle tutte insieme. Sforzati di usare gli snack.`
+    );
+  }
+  if (alcoholDays >= 4) {
+    alerts.push(
+      `🔴 Abitudine Rilevata: Frequenza Alcolica. L'alcol sta diventando un'abitudine (${alcoholDays} giorni su 14). Questo deprime costantemente il Kentu Score e il recupero del sistema nervoso.`
+    );
+  }
+  if (sugarSpikes >= 4) {
+    alerts.push(
+      `🔴 Abitudine Rilevata: Montagne Russe Glicemiche. Hai superato la soglia degli zuccheri ${sugarSpikes} volte. Stai abituando il corpo a dipendere dai picchi insulinici.`
+    );
+  }
+
+  if (alerts.length === 0) {
+    return '🟢 Nessuna cattiva abitudine rilevata! I tuoi pattern degli ultimi 14 giorni sono solidi e puliti. Continua così.';
+  }
+
+  return ['🔍 Analisi abitudini (ultimi 14 giorni)', '', ...alerts.map((a) => `• ${a}`)].join('\n');
+}
+
 function clampLongevityComponent(n) {
   if (typeof n !== 'number' || Number.isNaN(n)) return 0;
   return Math.max(0, Math.min(100, Math.round(n)));
