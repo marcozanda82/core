@@ -5082,11 +5082,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       apiUserContent = userMessage;
     }
 
-    const NUTR_CHECK_TRIGGER = '⚖️ Check Alimentare';
-    if (!secretPrompt && String(userMessage || '').trim() === NUTR_CHECK_TRIGGER) {
+    const NUTR_CHECK_TRIGGER = '⚖️ Check Oggi';
+    const NUTR_CHECK_TRIGGER_LEGACY = '⚖️ Check Alimentare';
+    const userTrim = String(userMessage || '').trim();
+    if (!secretPrompt && (userTrim === NUTR_CHECK_TRIGGER || userTrim === NUTR_CHECK_TRIGGER_LEGACY)) {
       const auditLog = activeLog || [];
       const auditText = generateLocalNutritionalAudit(auditLog, userTargets);
-      setChatHistory((prev) => [...prev, { sender: 'user', text: NUTR_CHECK_TRIGGER }]);
+      const userLine = userTrim === NUTR_CHECK_TRIGGER_LEGACY ? NUTR_CHECK_TRIGGER_LEGACY : NUTR_CHECK_TRIGGER;
+      setChatHistory((prev) => [...prev, { sender: 'user', text: userLine }]);
       if (optionalReply == null) setChatInput('');
       window.setTimeout(() => {
         setChatHistory((prev) => [...prev, { sender: 'ai', text: auditText }]);
@@ -5105,10 +5108,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       return;
     }
 
-    const MONTHLY_AUDIT_TRIGGER = '📅 Report Mensile';
-    if (!secretPrompt && String(userMessage || '').trim() === MONTHLY_AUDIT_TRIGGER) {
+    const MONTHLY_AUDIT_TRIGGER = '📅 Report Mese';
+    const MONTHLY_AUDIT_TRIGGER_LEGACY = '📅 Report Mensile';
+    if (!secretPrompt && (userTrim === MONTHLY_AUDIT_TRIGGER || userTrim === MONTHLY_AUDIT_TRIGGER_LEGACY)) {
       const reportText = generateLocalMonthlyAudit(fullHistory, userTargets, bodyMetricsHistory);
-      setChatHistory((prev) => [...prev, { sender: 'user', text: MONTHLY_AUDIT_TRIGGER }]);
+      const userLine = userTrim === MONTHLY_AUDIT_TRIGGER_LEGACY ? MONTHLY_AUDIT_TRIGGER_LEGACY : MONTHLY_AUDIT_TRIGGER;
+      setChatHistory((prev) => [...prev, { sender: 'user', text: userLine }]);
       if (optionalReply == null) setChatInput('');
       window.setTimeout(() => {
         setChatHistory((prev) => [...prev, { sender: 'ai', text: reportText }]);
@@ -5116,10 +5121,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       return;
     }
 
-    const HABIT_SCAN_TRIGGER = '🔍 Analisi Abitudini';
-    if (!secretPrompt && String(userMessage || '').trim() === HABIT_SCAN_TRIGGER) {
+    const METABOLIC_SCAN_TRIGGER = '🧬 Scanner Metabolico';
+    const HABIT_SCAN_TRIGGER_LEGACY = '🔍 Analisi Abitudini';
+    if (!secretPrompt && (userTrim === METABOLIC_SCAN_TRIGGER || userTrim === HABIT_SCAN_TRIGGER_LEGACY)) {
       const habitText = generateLocalHabitScanner(fullHistory);
-      setChatHistory((prev) => [...prev, { sender: 'user', text: HABIT_SCAN_TRIGGER }]);
+      const userLine = userTrim === HABIT_SCAN_TRIGGER_LEGACY ? HABIT_SCAN_TRIGGER_LEGACY : METABOLIC_SCAN_TRIGGER;
+      setChatHistory((prev) => [...prev, { sender: 'user', text: userLine }]);
       if (optionalReply == null) setChatInput('');
       window.setTimeout(() => {
         setChatHistory((prev) => [...prev, { sender: 'ai', text: habitText }]);
@@ -9531,14 +9538,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   secretPrompt: buildMealIdeaFromDispensaSecretPrompt(),
                   displayText: '💡 Idea Pasto',
                 });
-              } else if (kind === 'nutrCheck') {
-                void handleChatSubmit('⚖️ Check Alimentare', { fromQuickReply: true });
+              } else if (kind === 'checkOggi') {
+                void handleChatSubmit('⚖️ Check Oggi', { fromQuickReply: true });
               } else if (kind === 'trainingCheck') {
                 void handleChatSubmit('🏃‍♂️ Posso allenarmi?', { fromQuickReply: true });
-              } else if (kind === 'monthlyReport') {
-                void handleChatSubmit('📅 Report Mensile', { fromQuickReply: true });
-              } else if (kind === 'habitScan') {
-                void handleChatSubmit('🔍 Analisi Abitudini', { fromQuickReply: true });
+              } else if (kind === 'reportMese') {
+                void handleChatSubmit('📅 Report Mese', { fromQuickReply: true });
+              } else if (kind === 'scannerMetabolico') {
+                void handleChatSubmit('🧬 Scanner Metabolico', { fromQuickReply: true });
               }
             }}
             onLogDinnerOption={handleAutoLogDinner}

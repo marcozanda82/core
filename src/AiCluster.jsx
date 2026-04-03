@@ -219,44 +219,85 @@ export default function AiCluster({
         {typeof onChatQuickAction === 'function' && !chatInput.trim() && chatImages.length === 0 && (
           <div
             style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '8px',
               marginTop: '8px',
-              marginBottom: '4px',
+              marginBottom: '6px',
               flexShrink: 0,
+              padding: '10px 10px 12px',
+              borderRadius: '14px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'linear-gradient(165deg, rgba(22,24,30,0.95) 0%, rgba(12,14,18,0.98) 100%)',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
             }}
           >
+            <div
+              style={{
+                fontSize: '0.58rem',
+                letterSpacing: '0.22em',
+                textTransform: 'uppercase',
+                color: 'rgba(148,163,184,0.85)',
+                marginBottom: '8px',
+                fontWeight: 700,
+              }}
+            >
+              Pannello comandi
+            </div>
             {[
-              { key: 'briefing', label: '📊 Briefing' },
-              { key: 'yesterday', label: '🔍 Analisi Ieri' },
-              { key: 'mealIdea', label: '💡 Idea Pasto' },
-              { key: 'nutrCheck', label: '⚖️ Check Alimentare' },
-              { key: 'trainingCheck', label: '🏃‍♂️ Posso allenarmi?' },
-              { key: 'monthlyReport', label: '📅 Report Mensile' },
-              { key: 'habitScan', label: '🔍 Analisi Abitudini' },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => {
-                  onChatQuickAction(key);
-                  setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                }}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '999px',
-                  border: '1px solid rgba(179, 136, 255, 0.45)',
-                  background: 'rgba(179, 136, 255, 0.12)',
-                  color: '#e9d5ff',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  letterSpacing: '0.02em',
-                }}
-              >
-                {label}
-              </button>
+              {
+                title: 'Coach & dispensa',
+                keys: [
+                  { key: 'briefing', label: '📊 Briefing' },
+                  { key: 'yesterday', label: '🔍 Analisi Ieri' },
+                  { key: 'mealIdea', label: '💡 Idea Pasto' },
+                ],
+              },
+              {
+                title: 'Controlli fisiologici',
+                keys: [
+                  { key: 'checkOggi', label: '⚖️ Check Oggi' },
+                  { key: 'trainingCheck', label: '🏃‍♂️ Posso allenarmi?' },
+                  { key: 'reportMese', label: '📅 Report Mese' },
+                  { key: 'scannerMetabolico', label: '🧬 Scanner Metabolico' },
+                ],
+              },
+            ].map((section) => (
+              <div key={section.title} style={{ marginBottom: section.title === 'Coach & dispensa' ? '12px' : 0 }}>
+                <div
+                  style={{
+                    fontSize: '0.62rem',
+                    color: '#7dd3fc',
+                    letterSpacing: '0.06em',
+                    marginBottom: '6px',
+                    fontWeight: 600,
+                  }}
+                >
+                  {section.title}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {section.keys.map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        onChatQuickAction(key);
+                        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '999px',
+                        border: '1px solid rgba(0, 229, 255, 0.28)',
+                        background: 'rgba(0, 229, 255, 0.08)',
+                        color: '#e0f2fe',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        letterSpacing: '0.02em',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}

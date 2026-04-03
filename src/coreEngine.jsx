@@ -3173,38 +3173,64 @@ export function generateLocalMonthlyAudit(fullHistory, userTargets, bodyMetricsH
   return `📅 REPORT 30 GG: Proteine centrate al ${proteinPct}%, ${cleanDays} giorni 'Clean' senza alcol. Peso: ${deltaStr}kg. Kentu Score medio: ${scoreStr}.`;
 }
 
-const HABIT_SCAN_SUGAR_KEYS = ['zuccheri', 'sugars', 'sugar'];
-
-function habitScanSumSugar(items) {
-  let s = 0;
-  (items || []).forEach((item) => {
-    HABIT_SCAN_SUGAR_KEYS.forEach((k) => {
-      const n = Number(item[k]);
-      if (Number.isFinite(n)) s += n;
-    });
-  });
-  return s;
-}
-
 function habitScanIsDinnerMealType(mealType) {
   const base = String(mealType || '').split('_')[0];
   return toCanonicalMealType(base) === 'cena';
 }
 
+/** Minuti da mezzanotte da ora decimale (es. 19.5 → 1170). */
+function habitScanDecimalHourToMinutes(dec) {
+  const h = Number(dec);
+  if (!Number.isFinite(h)) return null;
+  const c = ((h % 24) + 24) % 24;
+  return Math.round(c * 60);
+}
+
+/** Media orario cena (minuti) per il giorno; null se nessuna cena con mealTime valido. */
+function habitScanDinnerTimeMinutes(foods) {
+  const mins = [];
+  (foods || []).forEach((item) => {
+    if (item.type !== 'food' && item.type !== 'recipe') return;
+    if (!habitScanIsDinnerMealType(item.mealType)) return;
+    const m = habitScanDecimalHourToMinutes(item.mealTime);
+    if (m != null) mins.push(m);
+  });
+  if (mins.length === 0) return null;
+  return Math.round(mins.reduce((a, b) => a + b, 0) / mins.length);
+}
+
+function habitScanDayFiberTotal(foods) {
+  let f = 0;
+  (foods || []).forEach((item) => {
+    if (item.type !== 'food' && item.type !== 'recipe') return;
+    f += Number(item.fibre) || 0;
+  });
+  return f;
+}
+
 /**
- * Scanner abitudini su finestra 14 giorni (dati disponibili in fullHistory).
- * @param {object} fullHistory — albero tracker_data
+ * Scanner metabolico / comportamentale su 14 giorni (fullHistory).
+ * Contatori: cene pesanti, procrastinazione proteica, alcol, picchi glicemici (carb nudi), fibre basse, shock fibre, orari cena.
  */
 export function generateLocalHabitScanner(fullHistory) {
+  const green =
+    '🟢 Ecosistema in Equilibrio: Nessuna anomalia fisiologica cronica rilevata negli ultimi 14 giorni. Ottimo lavoro.';
+
   if (!fullHistory || typeof fullHistory !== 'object') {
-    return '🟢 Nessuna cattiva abitudine rilevata! I tuoi pattern degli ultimi 14 giorni sono solidi e puliti. Continua così.';
+    return `${green}`;
   }
 
   const anchor = getTodayString();
   let heavyDinners = 0;
   let proteinBinging = 0;
   let alcoholDays = 0;
-  let sugarSpikes = 0;
+  let glycemicSpikes = 0;
+  let lowFiberDays = 0;
+  let fiberShocks = 0;
+  const dinnerTimes = [];
+
+  /** @type {{ date: string, fiber: number, hasFood: boolean }[]} */
+  const fiberByDay = [];
 
   for (let i = 0; i < 14; i++) {
     const dStr = addDays(anchor, -i);
@@ -3214,11 +3240,19 @@ export function generateLocalHabitScanner(fullHistory) {
     const manualNodes = Array.isArray(node?.manualNodes) ? node.manualNodes : [];
 
     const foods = log.filter((e) => e.type === 'food' || e.type === 'recipe');
-    if (foods.length === 0 && manualNodes.length === 0) continue;
+    if (foods.length === 0 && manualNodes.length === 0) {
+      fiberByDay.push({ date: dStr, fiber: 0, hasFood: false });
+      continue;
+    }
 
     if ([...log, ...manualNodes].some((e) => e.type === 'alcohol')) alcoholDays++;
 
+    const dayFiber = habitScanDayFiberTotal(foods);
+    fiberByDay.push({ date: dStr, fiber: dayFiber, hasFood: foods.length > 0 });
+
     if (foods.length === 0) continue;
+
+    if (dayFiber < 15) lowFiberDays++;
 
     let dinnerFat = 0;
     let dinnerCarb = 0;
@@ -3232,42 +3266,73 @@ export function generateLocalHabitScanner(fullHistory) {
         dinnerCarb += Number(item.carb) || 0;
         dinnerProt += prot;
       }
+      const carb = Number(item.carb) || 0;
+      const fib = Number(item.fibre) || 0;
+      if (carb > 50 && fib < 5) glycemicSpikes++;
     });
 
     if (dinnerFat > 25 || dinnerCarb > 80) heavyDinners++;
 
     if (totalProt > 0 && dinnerProt > totalProt * 0.5) proteinBinging++;
 
-    if (habitScanSumSugar(foods) > 50) sugarSpikes++;
+    const dm = habitScanDinnerTimeMinutes(foods);
+    if (dm != null) dinnerTimes.push(dm);
+  }
+
+  fiberByDay.sort((a, b) => a.date.localeCompare(b.date));
+  for (let j = 1; j < fiberByDay.length; j++) {
+    const prev = fiberByDay[j - 1];
+    const cur = fiberByDay[j];
+    if (!prev.hasFood || !cur.hasFood) continue;
+    if (Math.abs(cur.fiber - prev.fiber) >= 20) fiberShocks++;
   }
 
   const alerts = [];
   if (heavyDinners >= 4) {
     alerts.push(
-      `🔴 Abitudine Rilevata: Cene Pesanti. Negli ultimi 14 giorni hai fatto ${heavyDinners} cene troppo ricche di grassi o carboidrati. Stai cronicizzando lo stress notturno e sabotando il sonno.`
+      `🔴 Stress Serale: ${heavyDinners} cene pesanti. Stai cronicizzando il cortisolo notturno e ostacolando la rigenerazione cellulare.`
     );
   }
   if (proteinBinging >= 4) {
     alerts.push(
-      `🔴 Abitudine Rilevata: Procrastinazione Proteica. Tendi a mangiare pochissime proteine di giorno e abbuffarti a cena (${proteinBinging} volte di recente). Il corpo non riesce ad assorbirle tutte insieme. Sforzati di usare gli snack.`
+      `🔴 Assorbimento Proteico: Concentri le proteine a cena. Rischio di malassorbimento gastrico e putrefazione. Distribuiscile meglio.`
     );
   }
   if (alcoholDays >= 4) {
     alerts.push(
-      `🔴 Abitudine Rilevata: Frequenza Alcolica. L'alcol sta diventando un'abitudine (${alcoholDays} giorni su 14). Questo deprime costantemente il Kentu Score e il recupero del sistema nervoso.`
+      `🔴 Infiammazione Epatica: Alcol presente in ${alcoholDays} giorni. Questo deprime il recupero del Sistema Nervoso.`
     );
   }
-  if (sugarSpikes >= 4) {
+  if (glycemicSpikes >= 5) {
     alerts.push(
-      `🔴 Abitudine Rilevata: Montagne Russe Glicemiche. Hai superato la soglia degli zuccheri ${sugarSpikes} volte. Stai abituando il corpo a dipendere dai picchi insulinici.`
+      `🔴 Allarme Glicemico: ${glycemicSpikes} pasti con carboidrati 'nudi' (poche fibre). Rischio di infiammazione vascolare e insulino-resistenza.`
     );
+  }
+  if (lowFiberDays >= 5) {
+    alerts.push(
+      `🔴 Ristagno Intestinale: ${lowFiberDays} giorni a bassissime fibre (<15g). Rischio disbiosi e infiammazione silente.`
+    );
+  }
+  if (fiberShocks >= 3) {
+    alerts.push(
+      `🔴 Shock Fermentativo: ${fiberShocks} sbalzi violenti di fibre da un giorno all'altro. È la causa principale del tuo gonfiore e gas intestinale. Sii più costante.`
+    );
+  }
+  if (dinnerTimes.length >= 2) {
+    const mn = Math.min(...dinnerTimes);
+    const mx = Math.max(...dinnerTimes);
+    if (mx - mn > 120) {
+      alerts.push(
+        `🔴 Social Jetlag: Orari della cena sballati di oltre 2 ore. Disorienti gli enzimi digestivi.`
+      );
+    }
   }
 
   if (alerts.length === 0) {
-    return '🟢 Nessuna cattiva abitudine rilevata! I tuoi pattern degli ultimi 14 giorni sono solidi e puliti. Continua così.';
+    return green;
   }
 
-  return ['🔍 Analisi abitudini (ultimi 14 giorni)', '', ...alerts.map((a) => `• ${a}`)].join('\n');
+  return ['🧬 REFERTO SCANNER METABOLICO (14 GG):', '', ...alerts.map((a) => `• ${a}`)].join('\n');
 }
 
 function clampLongevityComponent(n) {
