@@ -18,6 +18,7 @@ export default function AiCluster({
   chatImages,
   setChatImages,
   onSendMessage,
+  onChatQuickAction,
   onLogDinnerOption,
   onLoadAgenda,
   onMealProposalConfirm,
@@ -212,6 +213,46 @@ export default function AiCluster({
                   style={{ position: 'absolute', top: '-5px', right: '-5px', background: '#ff4d4d', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontSize: '0.7rem' }}
                 >✕</button>
               </div>
+            ))}
+          </div>
+        )}
+        {typeof onChatQuickAction === 'function' && !chatInput.trim() && chatImages.length === 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              marginTop: '8px',
+              marginBottom: '4px',
+              flexShrink: 0,
+            }}
+          >
+            {[
+              { key: 'briefing', label: '📊 Briefing' },
+              { key: 'yesterday', label: '🔍 Analisi Ieri' },
+              { key: 'mealIdea', label: '💡 Idea Pasto' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  onChatQuickAction(key);
+                  setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '999px',
+                  border: '1px solid rgba(179, 136, 255, 0.45)',
+                  background: 'rgba(179, 136, 255, 0.12)',
+                  color: '#e9d5ff',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  letterSpacing: '0.02em',
+                }}
+              >
+                {label}
+              </button>
             ))}
           </div>
         )}

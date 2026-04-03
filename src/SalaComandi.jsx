@@ -242,6 +242,96 @@ function getInvisibleContext({
   return `[CONTEXT_LIVE: BB: ${bb}%, Residuo: ${resKcal}kcal, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}]`;
 }
 
+/** Totali kcal/P/C/F solo da voci food/recipe nel log giornaliero. */
+function aggregateFoodRecipeDayTotals(log) {
+  const list = normalizeLogData(Array.isArray(log) ? log : Object.values(log || {}));
+  let kcal = 0;
+  let prot = 0;
+  let carb = 0;
+  let fat = 0;
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (!item || (item.type !== 'food' && item.type !== 'recipe')) continue;
+    kcal += Number(item.kcal ?? item.cal) || 0;
+    prot += Number(item.prot ?? item.proteine) || 0;
+    carb += Number(item.carb ?? item.carboidrati) || 0;
+    fat += Number(item.fatTotal ?? item.fat ?? item.grassi) || 0;
+  }
+  return { kcal, prot, carb, fat };
+}
+
+/**
+ * Prompt nascosto per Quick Action "Briefing": solo numeri locali, niente domanda generica.
+ */
+function buildQuickBriefingSecretPrompt({
+  bodyBatteryPercent,
+  dynamicDailyKcal,
+  totali,
+  userTargets,
+}) {
+  const bb = Math.round(Number(bodyBatteryPercent) || 0);
+  const dynK = Math.round(Number(dynamicDailyKcal) || 0);
+  const eatenK = Math.round(Number(totali?.kcal) || 0);
+  const resKcal = Math.max(0, dynK - eatenK);
+  const tProt = Number(userTargets?.prot ?? 150);
+  const tCarb = Number(userTargets?.carb ?? 200);
+  const tFat = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 65);
+  const eProt = Number(totali?.prot) || 0;
+  const eCarb = Number(totali?.carb) || 0;
+  const eFat = Number(totali?.fatTotal ?? totali?.fat) || 0;
+  const rProt = Math.max(0, Math.round((tProt - eProt) * 10) / 10);
+  const rCarb = Math.max(0, Math.round((tCarb - eCarb) * 10) / 10);
+  const rFat = Math.max(0, Math.round((tFat - eFat) * 10) / 10);
+  return (
+    `QUICK_ACTION=BRIEFING. Sintesi operativa solo da questi dati (non chiedere altri dati): ` +
+    `BB ${bb}% · budget kcal giornaliero ~${dynK} · assunte ${eatenK}kcal · residuo ~${resKcal}kcal · ` +
+    `macro residui ${rProt}g P / ${rCarb}g C / ${rFat}g F. ` +
+    `Applica REGOLE DI STILE Quick Action (Lavagna, max 3 elenchi, zero intro/outro).`
+  );
+}
+
+/**
+ * Prompt nascosto "Analisi ieri": solo scostamenti vs target da log storico (local-first).
+ */
+function buildYesterdayGapSecretPrompt(fullHistory, anchorDateStr, userTargets) {
+  const anchor = anchorDateStr || getTodayString();
+  const yStr = addDays(anchor, -1);
+  const rawLog = getLogFromStoricoTree(fullHistory, yStr) || [];
+  const agg = aggregateFoodRecipeDayTotals(rawLog);
+  const tK = Number(userTargets?.kcal ?? 2000);
+  const tP = Number(userTargets?.prot ?? 150);
+  const tC = Number(userTargets?.carb ?? 200);
+  const tF = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 65);
+  const thin = agg.kcal < 5 && agg.prot < 1 && agg.carb < 1 && agg.fat < 1;
+  const gaps = [];
+  if (thin) {
+    gaps.push('log alimenti vuoto o quasi per quel giorno');
+  } else {
+    const dk = agg.kcal - tK;
+    if (Math.abs(dk) > 120) gaps.push(`kcal ${Math.round(agg.kcal)} vs target ${Math.round(tK)} (${dk > 0 ? '+' : ''}${Math.round(dk)})`);
+    const dp = agg.prot - tP;
+    if (Math.abs(dp) > 15) gaps.push(`prot ${Math.round(agg.prot)}g vs ${Math.round(tP)}g (${dp > 0 ? '+' : ''}${Math.round(dp)}g)`);
+    const dc = agg.carb - tC;
+    if (Math.abs(dc) > 30) gaps.push(`carb ${Math.round(agg.carb)}g vs ${Math.round(tC)}g (${dc > 0 ? '+' : ''}${Math.round(dc)}g)`);
+    const df = agg.fat - tF;
+    if (Math.abs(df) > 15) gaps.push(`grassi ${Math.round(agg.fat)}g vs ${Math.round(tF)}g (${df > 0 ? '+' : ''}${Math.round(df)}g)`);
+  }
+  if (gaps.length === 0) gaps.push('nessuno scostamento macro/kcal rilevante vs target');
+  return (
+    `QUICK_ACTION=ANALISI_IERI. Giorno ${yStr}. Solo questi fatti (non inventare, non elencare ogni pasto): ${gaps.join(' · ')}. ` +
+    `Interpreta come coach: cosa correggere oggi. REGOLE DI STILE Quick Action (Lavagna, max 3 elenchi, zero intro/outro).`
+  );
+}
+
+/** Quick Action "Idea pasto": forza solo MEAL_PROPOSAL; Dispensa e macro sono in [CONTEXT_LIVE]. */
+function buildMealIdeaFromDispensaSecretPrompt() {
+  return (
+    `QUICK_ACTION=IDEA_PASTO. Usa ESCLUSIVAMENTE [CONTEXT_LIVE] per macro residui e Dispensa probabile. ` +
+    `Proponi UN pasto con ingredienti prioritariamente dalla Dispensa. ` +
+    `Rispondi SOLO con il blocco [MEAL_PROPOSAL:{...}] su una riga (CARTA MENU), zero testo prima o dopo.`
+  );
+}
+
 /**
  * Estrae [MEAL_PROPOSAL:{...}] dalla risposta AI e restituisce JSON validato + testo senza il blocco.
  */
@@ -5139,6 +5229,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       const baseSystemPrompt = `Sei l'assistente di KentuOS. Il tuo scopo è dialogare con l'utente in italiano.
 
+REGOLE DI STILE (PRIORITÀ): Sintesi brutale. Al massimo 3 elenchi puntati per messaggio (quando usi elenchi). Vietate introduzioni tipo "Ecco il tuo briefing" / "Ecco un riepilogo" e conclusioni tipo "Spero di esserti stato utile" / "Fammi sapere": vai dritto al sodo.
+QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=BRIEFING o QUICK_ACTION=ANALISI_IERI: rispondi ESCLUSIVAMENTE in formato Lavagna (emoji + dato per riga, elenchi puntati essenziali), rispettando il tetto di 3 elenchi e le REGOLE DI STILE sopra.
+QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=IDEA_PASTO: rispondi ESCLUSIVAMENTE con il blocco [MEAL_PROPOSAL:{...}] su una riga come da CARTA MENU; nessun altro testo (la Dispensa è in [CONTEXT_LIVE]).
+
 LOGICA DI RACCOMANDAZIONE INTELLIGENTE: Quando l'utente chiede consigli su cosa mangiare (es. "Cosa mangio per cena?"):
 1. Analizza i macro residui dal blocco [CONTEXT_LIVE] nell'ultimo messaggio utente per avvicinarti al fabbisogno giornaliero (senza ignorare equilibrio e contesto).
 2. Dai priorità assoluta agli ingredienti elencati in "Dispensa" in [CONTEXT_LIVE]: è molto probabile che l'utente li abbia già in casa.
@@ -9115,6 +9209,30 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             chatImages={chatImages}
             setChatImages={setChatImages}
             onSendMessage={handleChatSubmit}
+            onChatQuickAction={(kind) => {
+              const anchor = currentTrackerDate || getTodayString();
+              const burnedKcalContext = (activeLog || [])
+                .filter((item) => item.type === 'workout')
+                .reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
+              const dynamicDailyKcalCtx = (userTargets?.kcal ?? 2000) + burnedKcalContext;
+              if (kind === 'briefing') {
+                const secret = buildQuickBriefingSecretPrompt({
+                  bodyBatteryPercent: bodyBattery?.currentEnergy ?? 0,
+                  dynamicDailyKcal: dynamicDailyKcalCtx,
+                  totali,
+                  userTargets,
+                });
+                void handleChatSubmit(null, { secretPrompt: secret, displayText: '📊 Briefing' });
+              } else if (kind === 'yesterday') {
+                const secret = buildYesterdayGapSecretPrompt(fullHistory, anchor, userTargets);
+                void handleChatSubmit(null, { secretPrompt: secret, displayText: '🔍 Analisi Ieri' });
+              } else if (kind === 'mealIdea') {
+                void handleChatSubmit(null, {
+                  secretPrompt: buildMealIdeaFromDispensaSecretPrompt(),
+                  displayText: '💡 Idea Pasto',
+                });
+              }
+            }}
             onLogDinnerOption={handleAutoLogDinner}
             onLoadAgenda={handleAutoLogAgenda}
             onMealProposalConfirm={handleMealProposalConfirm}
