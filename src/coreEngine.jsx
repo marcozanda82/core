@@ -1,7 +1,7 @@
 
 
 import React from 'react';
-import { computeTotali } from './useBiochimico';
+import { computeTotali, DEFAULT_TARGETS } from './useBiochimico';
 import { addDays } from './calendarDateUtils';
 
 const RADIAN = Math.PI / 180;
@@ -4124,6 +4124,99 @@ export function evaluatePersistentTdeeCalibration(errorRows, thresholdKg = 0.28)
   const rawDelta = Math.round((-mean * KCAL_PER_KG_ENERGY_BALANCE) / 14);
   const suggestedDeltaKcal = Math.max(-280, Math.min(280, rawDelta));
   return { shouldAdjust: true, suggestedDeltaKcal, meanErrorKg: mean };
+}
+
+const SUGAR_AUDIT_KEYS = ['zuccheri', 'sugars', 'sugar'];
+
+function sumMacrosFromLogSlice(log, mealPredicate) {
+  let prot = 0;
+  let carb = 0;
+  let fat = 0;
+  let sugar = 0;
+  (log || []).forEach((item) => {
+    if (item.type !== 'food' && item.type !== 'recipe') return;
+    const mt = String(item.mealType || '').split('_')[0];
+    if (mealPredicate && !mealPredicate(mt, item)) return;
+    prot += Number(item.prot) || 0;
+    carb += Number(item.carb) || 0;
+    fat += Number(item.fatTotal ?? item.fat) || 0;
+    SUGAR_AUDIT_KEYS.forEach((k) => {
+      const n = Number(item[k]);
+      if (Number.isFinite(n)) sugar += n;
+    });
+  });
+  return { prot, carb, fat, sugar };
+}
+
+/**
+ * Audit nutrizionale locale (nessuna API): totali giornalieri, focus cena, messaggi e suggerimento per domani.
+ * @param {Array} dailyLog — log del giorno (food / recipe)
+ * @param {object} userTargets — obiettivi utente (prot, carb, fatTotal|fat, …)
+ * @returns {string} testo formattato per la chat
+ */
+export function generateLocalNutritionalAudit(dailyLog, userTargets) {
+  const errors = [];
+  const successes = [];
+  const tgt = userTargets && typeof userTargets === 'object' ? userTargets : {};
+
+  const targetProt = Number(tgt.prot ?? tgt.pro ?? DEFAULT_TARGETS.prot) || 0;
+  const thresholdProt = targetProt > 0 ? targetProt * 0.9 : 0;
+
+  const total = sumMacrosFromLogSlice(dailyLog, null);
+  const cena = sumMacrosFromLogSlice(dailyLog, (mt) => toCanonicalMealType(mt) === 'cena');
+
+  const prot = total.prot;
+  const carb = total.carb;
+  const totalFat = total.fat;
+  const sugarTotal = total.sugar;
+  const cenaFat = cena.fat;
+  const cenaCarb = cena.carb;
+
+  if (targetProt > 0 && prot < thresholdProt) {
+    const gap = Math.max(0, Math.round((thresholdProt - prot) * 10) / 10);
+    errors.push(`🔴 Mancano le proteine (${gap}g). Hai perso potenziale di sintesi muscolare.`);
+  } else if (targetProt > 0 && prot >= targetProt) {
+    successes.push('🟢 Target proteico centrato in pieno.');
+  }
+
+  const dinnerLipidHeavy =
+    (totalFat > 0 && cenaFat > 0.35 * totalFat) || cenaFat > 25;
+  if (dinnerLipidHeavy) {
+    errors.push('🔴 Cena troppo lipidica. I grassi la sera rallentano la digestione e alzano lo stress notturno.');
+  }
+
+  if (cenaCarb > 40) {
+    successes.push('🟢 Ottima quota di carboidrati a cena per favorire il recupero.');
+  }
+
+  if (sugarTotal > 50) {
+    errors.push('🔴 Troppi zuccheri semplici oggi. Attenzione ai picchi glicemici.');
+  }
+
+  let tip = '';
+  if (targetProt > 0 && prot < thresholdProt) {
+    tip = '💡 Domani assicurati di non saltare gli snack per distribuire le proteine.';
+  } else if (dinnerLipidHeavy) {
+    tip = "💡 Domani sposta l'olio e i condimenti pesanti a pranzo.";
+  } else {
+    tip = '💡 Continua così: equilibrio e recupero sono sulla buona strada.';
+  }
+
+  const lines = [
+    '📋 Check alimentare (locale)',
+    '',
+    `— Oggi: proteine ${Math.round(prot * 10) / 10}g · carboidrati ${Math.round(carb * 10) / 10}g · grassi ${Math.round(totalFat * 10) / 10}g · zuccheri semplici ~${Math.round(sugarTotal * 10) / 10}g`,
+    `— Cena: carboidrati ${Math.round(cenaCarb * 10) / 10}g · grassi ${Math.round(cenaFat * 10) / 10}g`,
+    '',
+  ];
+  if (errors.length) {
+    lines.push('Da migliorare:', ...errors.map((e) => `• ${e}`), '');
+  }
+  if (successes.length) {
+    lines.push('Punti positivi:', ...successes.map((s) => `• ${s}`), '');
+  }
+  lines.push(tip);
+  return lines.join('\n');
 }
 
 /** Indice 0–100: quanto le ultime pesate si avvicinano alla stima (errore assoluto basso). */

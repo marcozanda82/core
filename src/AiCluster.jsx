@@ -231,6 +231,7 @@ export default function AiCluster({
               { key: 'briefing', label: '📊 Briefing' },
               { key: 'yesterday', label: '🔍 Analisi Ieri' },
               { key: 'mealIdea', label: '💡 Idea Pasto' },
+              { key: 'nutrCheck', label: '⚖️ Check Alimentare' },
             ].map(({ key, label }) => (
               <button
                 key={key}

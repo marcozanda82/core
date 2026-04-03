@@ -108,6 +108,7 @@ import {
   getTrainingWaveCurves,
   buildTrainingWaveContextSnippet,
   getDynamicMealTargets,
+  generateLocalNutritionalAudit,
 } from './coreEngine';
 
 function migrateIdealStrategy(raw) {
@@ -5078,6 +5079,18 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       apiUserContent = userMessage;
     }
 
+    const NUTR_CHECK_TRIGGER = '⚖️ Check Alimentare';
+    if (!secretPrompt && String(userMessage || '').trim() === NUTR_CHECK_TRIGGER) {
+      const auditLog = activeLog || [];
+      const auditText = generateLocalNutritionalAudit(auditLog, userTargets);
+      setChatHistory((prev) => [...prev, { sender: 'user', text: NUTR_CHECK_TRIGGER }]);
+      if (optionalReply == null) setChatInput('');
+      window.setTimeout(() => {
+        setChatHistory((prev) => [...prev, { sender: 'ai', text: auditText }]);
+      }, 300);
+      return;
+    }
+
     if (pendingHabit && userMessage && !secretPrompt) {
       const userTextLower = userMessage.trim().toLowerCase();
       const isHabitYes =
@@ -9482,6 +9495,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   secretPrompt: buildMealIdeaFromDispensaSecretPrompt(),
                   displayText: '💡 Idea Pasto',
                 });
+              } else if (kind === 'nutrCheck') {
+                void handleChatSubmit('⚖️ Check Alimentare', { fromQuickReply: true });
               }
             }}
             onLogDinnerOption={handleAutoLogDinner}
