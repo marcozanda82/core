@@ -120,7 +120,7 @@ export default function HomeView({
           letterSpacing: '0.5px',
           color: '#e8e8e8'
         }}>
-          Longevity Score
+          Indice benessere routine
         </div>
       </motion.div>
 
@@ -156,7 +156,7 @@ export default function HomeView({
             letterSpacing: '0.5px',
             color: '#e8e8e8'
           }}>
-            TODAY FOCUS
+            Focus di oggi
           </div>
 
           <div style={{
@@ -263,7 +263,7 @@ export default function HomeView({
             boxShadow: '0 10px 25px rgba(34,197,94,0.3)'
           }}
         >
-          + Add Event
+          + Aggiungi evento
         </motion.button>
       ) : null}
 

@@ -3095,13 +3095,13 @@ export function generateLocalTrainingAdvice(waveResult) {
   }
 
   if (state === 'Optimal') {
-    return `🏃‍♂️ ORA! Sei nell'Onda Perfetta. Digestione completata e glucosio al picco. Hai tempo fino alle ${end}.`;
+    return `Stato attuale: energia e digestione favorevoli all'allenamento.\n\nCosa fare ora: puoi allenarti: finestra ideale fino alle ${end}.\n\nPerché: stomaco libero e carburante disponibile per lo sforzo.`;
   }
   if (state === 'Wait') {
     const m = minuti != null ? String(minuti) : '—';
-    return `⏳ Aspetta. Il sangue è ancora impegnato nella digestione. L'onda ideale parte alle ${start} (tra circa ${m} min).`;
+    return `Stato attuale: digestione ancora in corso.\n\nCosa fare ora: aspetta circa ${m} min; la finestra consigliata apre alle ${start}.\n\nPerché: allenarsi ora può abbassare energia e alzare lo stress.`;
   }
-  return "📉 Finestra chiusa. O è passato troppo tempo dal pasto o il Safety Gate dello Stress è attivo. Meglio un recupero attivo o allenarsi domani.";
+  return "Stato attuale: non è il momento migliore (pasto recente o stress elevato in questa fascia).\n\nCosa fare ora: preferisci una passeggiata leggera o riprova domani.\n\nPerché: così proteggi energia e recupero.";
 }
 
 /**
@@ -3170,7 +3170,7 @@ export function generateLocalMonthlyAudit(fullHistory, userTargets, bodyMetricsH
   }
 
   const scoreStr = avgKentu != null ? String(avgKentu) : 'n/d';
-  return `📅 REPORT 30 GG: Proteine centrate al ${proteinPct}%, ${cleanDays} giorni 'Clean' senza alcol. Peso: ${deltaStr}kg. Kentu Score medio: ${scoreStr}.`;
+  return `📅 Trend mensile (30 gg)\n\n• Proteine in linea con l'obiettivo: ${proteinPct}% dei giorni\n• Giorni senza alcol: ${cleanDays}\n• Peso (variazione nel periodo): ${deltaStr} kg\n• Indice di costanza routine: ${scoreStr}`;
 }
 
 function habitScanIsDinnerMealType(mealType) {
@@ -3209,13 +3209,12 @@ function habitScanDayFiberTotal(foods) {
 }
 
 /**
- * Scanner metabolico / comportamentale su 14 giorni (fullHistory).
- * Contatori: cene pesanti, procrastinazione proteica, alcol, picchi glicemici (carb nudi), fibre basse, shock fibre, orari cena.
+ * Sintesi abitudini su 14 giorni (fullHistory) — testi orientati all'utente.
  */
 export function generateLocalHabitScanner(fullHistory) {
   const greenLine =
-    '• 🟢 Ecosistema in Equilibrio: Nessuna anomalia fisiologica cronica rilevata negli ultimi 14 giorni. Ottimo lavoro.';
-  const refertoHeader = '🧬 REFERTO SCANNER METABOLICO (14 GG):';
+    '• Stato attuale: nessun segnale forte negli ultimi 14 giorni. Buon equilibrio.\n\n• Cosa fare ora: mantieni ritmo pasti e fibre costanti.\n\n• Perché: così energia e digestione restano stabili.';
+  const refertoHeader = '📊 Stato attuale (ultime 2 settimane)';
 
   if (!fullHistory || typeof fullHistory !== 'object') {
     return [refertoHeader, '', greenLine].join('\n');
@@ -3291,32 +3290,32 @@ export function generateLocalHabitScanner(fullHistory) {
   const alerts = [];
   if (heavyDinners >= 4) {
     alerts.push(
-      `🔴 Stress Serale: ${heavyDinners} cene pesanti. Stai cronicizzando il cortisolo notturno e ostacolando la rigenerazione cellulare.`
+      `Stress serale: ${heavyDinners} cene molto pesanti. Il corpo resta più “acceso” la notte: preferisci cene più leggere e fisse.`
     );
   }
   if (proteinBinging >= 4) {
     alerts.push(
-      `🔴 Assorbimento Proteico: Concentri le proteine a cena. Rischio di malassorbimento gastrico e putrefazione. Distribuiscile meglio.`
+      `Energia e digestione: troppe proteine concentrate a cena. Spostane parte a pranzo o spuntino per digerire meglio.`
     );
   }
   if (alcoholDays >= 4) {
     alerts.push(
-      `🔴 Infiammazione Epatica: Alcol presente in ${alcoholDays} giorni. Questo deprime il recupero del Sistema Nervoso.`
+      `Recupero: alcol in ${alcoholDays} giorni su 14. Riduci le giornate con drink per alzare energia e sonno.`
     );
   }
   if (glycemicSpikes >= 5) {
     alerts.push(
-      `🔴 Allarme Glicemico: ${glycemicSpikes} pasti con carboidrati 'nudi' (poche fibre). Rischio di infiammazione vascolare e insulino-resistenza.`
+      `Energia in calo dopo i pasti: ${glycemicSpikes} volte carboidrati senza abbastanza fibre. Aggiungi verdura/legumi accanto agli amidi.`
     );
   }
   if (lowFiberDays >= 5) {
     alerts.push(
-      `🔴 Ristagno Intestinale: ${lowFiberDays} giorni a bassissime fibre (<15g). Rischio disbiosi e infiammazione silente.`
+      `Digestione: ${lowFiberDays} giorni con poche fibre. Sale gradualmente con verdura a ogni pasto.`
     );
   }
   if (fiberShocks >= 3) {
     alerts.push(
-      `🔴 Shock Fermentativo: ${fiberShocks} sbalzi violenti di fibre da un giorno all'altro. È la causa principale del tuo gonfiore e gas intestinale. Sii più costante.`
+      `Digestione instabile: ${fiberShocks} salti bruschi di fibre tra un giorno e l’altro. Meglio aumentare piano e restare costanti (meno gonfiore).`
     );
   }
   if (dinnerTimes.length >= 2) {
@@ -3324,7 +3323,7 @@ export function generateLocalHabitScanner(fullHistory) {
     const mx = Math.max(...dinnerTimes);
     if (mx - mn > 120) {
       alerts.push(
-        `🔴 Social Jetlag: Orari della cena sballati di oltre 2 ore. Disorienti gli enzimi digestivi.`
+        `Orari cena molto diversi tra loro (oltre 2 ore): fissa un orario simile ogni sera per sonno e stress più bassi.`
       );
     }
   }
@@ -3333,7 +3332,7 @@ export function generateLocalHabitScanner(fullHistory) {
     return [refertoHeader, '', greenLine].join('\n');
   }
 
-  return [refertoHeader, '', ...alerts.map((a) => `• ${a}`)].join('\n');
+  return [refertoHeader, '', '• Cosa fare ora: applica una modifica alla volta (pasti più regolari, fibre stabili, cena più leggera).', '', ...alerts.map((a) => `• ${a}`)].join('\n');
 }
 
 function clampLongevityComponent(n) {
@@ -4447,48 +4446,48 @@ export function generateLocalNutritionalAudit(dailyLog, userTargets) {
 
   if (targetProt > 0 && prot < thresholdProt) {
     const gap = Math.max(0, Math.round((thresholdProt - prot) * 10) / 10);
-    errors.push(`🔴 Mancano le proteine (${gap}g). Hai perso potenziale di sintesi muscolare.`);
+    errors.push(`Proteine sotto obiettivo (mancano ~${gap}g): distribuiscile meglio nella giornata per energia stabile.`);
   } else if (targetProt > 0 && prot >= targetProt) {
-    successes.push('🟢 Target proteico centrato in pieno.');
+    successes.push('Proteine in linea con il tuo obiettivo.');
   }
 
   const dinnerLipidHeavy =
     (totalFat > 0 && cenaFat > 0.35 * totalFat) || cenaFat > 25;
   if (dinnerLipidHeavy) {
-    errors.push('🔴 Cena troppo lipidica. I grassi la sera rallentano la digestione e alzano lo stress notturno.');
+    errors.push('Cena molto grassa: la sera rallenta la digestione e può alzare lo stress notturno.');
   }
 
   if (cenaCarb > 40) {
-    successes.push('🟢 Ottima quota di carboidrati a cena per favorire il recupero.');
+    successes.push('Carboidrati a cena utili al recupero.');
   }
 
   if (sugarTotal > 50) {
-    errors.push('🔴 Troppi zuccheri semplici oggi. Attenzione ai picchi glicemici.');
+    errors.push('Zuccheri semplici alti oggi: possibili cali di energia dopo i pasti.');
   }
 
   let tip = '';
   if (targetProt > 0 && prot < thresholdProt) {
-    tip = '💡 Domani assicurati di non saltare gli snack per distribuire le proteine.';
+    tip = 'Domani non saltare spuntini: porta proteine anche a metà mattina o pomeriggio.';
   } else if (dinnerLipidHeavy) {
-    tip = "💡 Domani sposta l'olio e i condimenti pesanti a pranzo.";
+    tip = 'Domani sposta condimenti e grassi principali a pranzo.';
   } else {
-    tip = '💡 Continua così: equilibrio e recupero sono sulla buona strada.';
+    tip = 'Ottimo equilibrio: mantieni questo ritmo.';
   }
 
   const lines = [
-    '📋 Check alimentare (locale)',
+    '📋 Bilancio di oggi',
     '',
-    `• Oggi: proteine ${Math.round(prot * 10) / 10}g · carboidrati ${Math.round(carb * 10) / 10}g · grassi ${Math.round(totalFat * 10) / 10}g · zuccheri semplici ~${Math.round(sugarTotal * 10) / 10}g`,
+    `• Stato attuale: proteine ${Math.round(prot * 10) / 10}g · carboidrati ${Math.round(carb * 10) / 10}g · grassi ${Math.round(totalFat * 10) / 10}g · zuccheri semplici ~${Math.round(sugarTotal * 10) / 10}g`,
     `• Cena: carboidrati ${Math.round(cenaCarb * 10) / 10}g · grassi ${Math.round(cenaFat * 10) / 10}g`,
     '',
   ];
   if (errors.length) {
-    lines.push('Da migliorare:', ...errors.map((e) => `• ${e}`), '');
+    lines.push('Da sistemare:', ...errors.map((e) => `• ${e}`), '');
   }
   if (successes.length) {
-    lines.push('Punti positivi:', ...successes.map((s) => `• ${s}`), '');
+    lines.push('Va bene:', ...successes.map((s) => `• ${s}`), '');
   }
-  lines.push(`• ${tip}`);
+  lines.push(`• Cosa fare ora: ${tip}`);
   return lines.join('\n');
 }
 
