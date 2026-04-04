@@ -1,5 +1,5 @@
 /**
- * AiCluster.jsx — Metabolic AI Coach: insight cards, hub azioni, input.
+ * AiCluster.jsx — KentuOS: superficie AI premium (insight cards, hub strumenti, input).
  */
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import MenuProposalCard from './MenuProposalCard';
@@ -25,18 +25,24 @@ function splitAiMessageSections(text) {
   return s.split(/\n{2,}/).map((block) => block.replace(/\r\n/g, '\n'));
 }
 
-/** Tre azioni principali (carico cognitivo ridotto). */
-const PRIMARY_HUB_ACTIONS = [
-  { key: 'briefing', icon: 'chart', title: 'La tua giornata', desc: 'Energia e priorità', highlight: true },
-  { key: 'yesterday', icon: 'search', title: 'Trend', desc: 'Ieri vs obiettivi' },
-  { key: 'mealIdea', icon: 'bulb', title: 'Cosa mangiare ora', desc: 'Da ciò che hai in casa' },
-];
-
-const SECONDARY_HUB_ACTIONS = [
-  { key: 'checkOggi', icon: 'scales', title: 'Bilancio di oggi', desc: 'Pasti e macro' },
-  { key: 'trainingCheck', icon: 'run', title: 'Allenamento consigliato', desc: 'Momento migliore' },
-  { key: 'reportMese', icon: 'calendar', title: 'Trend mensile', desc: 'Ultimi 30 giorni' },
-  { key: 'scannerMetabolico', icon: 'dna', title: 'Stato attuale', desc: 'Ultime 2 settimane' },
+const COMMAND_HUB_SECTIONS = [
+  {
+    title: 'Coach & dispensa',
+    items: [
+      { key: 'briefing', icon: 'chart', title: 'Briefing', desc: 'Sintesi giornata', highlight: true },
+      { key: 'yesterday', icon: 'search', title: 'Analisi ieri', desc: 'Gap e trend' },
+      { key: 'mealIdea', icon: 'bulb', title: 'Idea pasto', desc: 'Dalla dispensa' },
+    ],
+  },
+  {
+    title: 'Controlli fisiologici',
+    items: [
+      { key: 'checkOggi', icon: 'scales', title: 'Check oggi', desc: 'Audit nutrizionale' },
+      { key: 'trainingCheck', icon: 'run', title: 'Workout', desc: 'Onda energetica' },
+      { key: 'reportMese', icon: 'calendar', title: 'Report mese', desc: 'Trend 30 gg' },
+      { key: 'scannerMetabolico', icon: 'dna', title: 'Scanner', desc: 'Analisi 14 gg' },
+    ],
+  },
 ];
 
 export default function AiCluster({
@@ -87,7 +93,7 @@ export default function AiCluster({
           <img src="/nuovo%20logo%20trasparente2.png" alt="Kentu" decoding="async" />
           <div className="kentu-os-status">
             <span className="kentu-os-status__pulse" aria-hidden />
-            Metabolic AI Coach · online
+            KentuOS · ONLINE
           </div>
         </div>
         <KentuButton
@@ -103,7 +109,7 @@ export default function AiCluster({
       {showAiSettings && (
         <div className="kentu-card kentu-card--settings" style={{ marginBottom: 14 }}>
           <p className="kentu-insight-sub" style={{ marginBottom: 12 }}>
-            Chiavi API (backup)
+            Cluster nodi API (fallback)
           </p>
           {apiKeys.map((key, idx) => (
             <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -183,7 +189,7 @@ export default function AiCluster({
                 )
               ) : (
                 <div className="kentu-user-capsule">
-                  <div className="kentu-user-capsule__label">Messaggio</div>
+                  <div className="kentu-user-capsule__label">Input</div>
                   {stripInvisibleContextFromBubble(msg.text)}
                 </div>
               )}
@@ -299,7 +305,7 @@ export default function AiCluster({
             <button type="button" className="kentu-hub-toggle" onClick={() => setIsPanelOpen((o) => !o)} aria-expanded={isPanelOpen}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <KentuIcon name="sliders" size={22} />
-                <span>{isPanelOpen ? 'Chiudi strumenti' : 'Strumenti coach'}</span>
+                <span>{isPanelOpen ? 'Chiudi strumenti' : 'Strumenti sistema'}</span>
               </span>
               <span style={{ display: 'flex', color: 'var(--kentu-text-muted)', transform: isPanelOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}>
                 <KentuIcon name="caret" size={20} />
@@ -307,45 +313,28 @@ export default function AiCluster({
             </button>
             {isPanelOpen && (
               <div className="kentu-card kentu-hub-panel">
-                <div className="kentu-hub-section-title">Metabolic AI Coach</div>
-                <div style={{ fontSize: 11, color: 'var(--kentu-text-muted)', marginBottom: 12, lineHeight: 1.4 }}>
-                  Ottimizza energia e stress — inizia da qui (3 azioni)
-                </div>
-                <div className="kentu-hub-grid kentu-hub-grid--primary">
-                  {PRIMARY_HUB_ACTIONS.map(({ key, icon, title: tileTitle, desc, highlight }) => (
-                    <KentuGridItem
-                      key={key}
-                      icon={icon}
-                      title={tileTitle}
-                      subtitle={desc}
-                      highlighted={!!highlight}
-                      onClick={() => {
-                        onChatQuickAction(key);
-                        setIsPanelOpen(false);
-                        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                      }}
-                    />
-                  ))}
-                </div>
-                <details className="kentu-hub-details">
-                  <summary className="kentu-hub-details__summary">Altri strumenti</summary>
-                  <div className="kentu-hub-grid" style={{ marginTop: 12 }}>
-                    {SECONDARY_HUB_ACTIONS.map(({ key, icon, title: tileTitle, desc }) => (
-                      <KentuGridItem
-                        key={key}
-                        icon={icon}
-                        title={tileTitle}
-                        subtitle={desc}
-                        highlighted={false}
-                        onClick={() => {
-                          onChatQuickAction(key);
-                          setIsPanelOpen(false);
-                          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                        }}
-                      />
-                    ))}
+                <div className="kentu-hub-section-title">Dashboard comandi</div>
+                {COMMAND_HUB_SECTIONS.map((section, secIdx) => (
+                  <div key={section.title} style={{ marginBottom: secIdx < COMMAND_HUB_SECTIONS.length - 1 ? 18 : 0 }}>
+                    <div className="kentu-hub-group-label">{section.title}</div>
+                    <div className="kentu-hub-grid">
+                      {section.items.map(({ key, icon, title: tileTitle, desc, highlight }) => (
+                        <KentuGridItem
+                          key={key}
+                          icon={icon}
+                          title={tileTitle}
+                          subtitle={desc}
+                          highlighted={!!highlight}
+                          onClick={() => {
+                            onChatQuickAction(key);
+                            setIsPanelOpen(false);
+                            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                          }}
+                        />
+                      ))}
+                    </div>
                   </div>
-                </details>
+                ))}
               </div>
             )}
           </div>
@@ -382,7 +371,7 @@ export default function AiCluster({
           <input
             type="text"
             className="chat-input"
-            placeholder={chatImages.length > 0 ? 'Commento alle immagini…' : 'Chiedi al coach energia, stress o pasti…'}
+            placeholder={chatImages.length > 0 ? 'Commento immagini…' : 'Query sistema…'}
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => {

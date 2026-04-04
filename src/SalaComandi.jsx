@@ -1,6 +1,6 @@
 /**
  * SalaComandi.jsx — Porting React da index stabile (HTML).
- * Calcoli nutrizionali ed energetici (logica in useBiochimico.js):
+ * MOTORE BIOCHIMICO (logica pura in useBiochimico.js):
  * - 40+ parametri: TARGETS + computeTotali (amino, vit, min, omega dal DB cibi).
  * - Delta correction: calcolaObiettiviPastoConArray in useMemo (target pasti a cascata).
  * - Firebase: intero albero tracker_data scaricato (get), poi onValue solo per oggi.
@@ -42,7 +42,6 @@ import {
   markEveningBriefingShown,
 } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
-import { getStressLabel, clampStressValue, getStressAccentColor, formatStressWithPercent } from './stressLabels';
 import {
   RADIAN,
   getTodayString,
@@ -1510,7 +1509,7 @@ export default function SalaComandi() {
         window.history.pushState({ noExit: true }, '');
         return;
       }
-      const confirmExit = window.confirm('Vuoi uscire dall’app?');
+      const confirmExit = window.confirm('Vuoi uscire da KentuOS?');
       if (!confirmExit) {
         window.history.pushState({ noExit: true }, '');
       }
@@ -1907,11 +1906,7 @@ export default function SalaComandi() {
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
   const [chatHistory, setChatHistory] = useState([
-    {
-      sender: 'ai',
-      text:
-        'Metabolic AI Coach · collegato al tuo diario.\n\nStato: pronto a leggere energia e stress della giornata.\n\nOra: apri Strumenti e scegli «La tua giornata» oppure scrivi cosa vuoi ottimizzare.',
-    },
+    { sender: 'ai', text: 'KentuOS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
   ]);
   const CHAT_HISTORY_WINDOW = 10;
   const lastDinnerOptionsRef = useRef(null);
@@ -5087,19 +5082,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       apiUserContent = userMessage;
     }
 
+    const NUTR_CHECK_TRIGGER = '⚖️ Check Oggi';
+    const NUTR_CHECK_TRIGGER_LEGACY = '⚖️ Check Alimentare';
     const userTrim = String(userMessage || '').trim();
-    const NUTR_CHECK_TRIGGER = '⚖️ Bilancio di oggi';
-    const NUTR_CHECK_TRIGGER_LEGACY = '⚖️ Check Oggi';
-    const NUTR_CHECK_TRIGGER_LEGACY2 = '⚖️ Check Alimentare';
-    if (!secretPrompt && (userTrim === NUTR_CHECK_TRIGGER || userTrim === NUTR_CHECK_TRIGGER_LEGACY || userTrim === NUTR_CHECK_TRIGGER_LEGACY2)) {
+    if (!secretPrompt && (userTrim === NUTR_CHECK_TRIGGER || userTrim === NUTR_CHECK_TRIGGER_LEGACY)) {
       const auditLog = activeLog || [];
       const auditText = generateLocalNutritionalAudit(auditLog, userTargets);
-      const userLine =
-        userTrim === NUTR_CHECK_TRIGGER_LEGACY2
-          ? NUTR_CHECK_TRIGGER_LEGACY2
-          : userTrim === NUTR_CHECK_TRIGGER_LEGACY
-            ? NUTR_CHECK_TRIGGER_LEGACY
-            : NUTR_CHECK_TRIGGER;
+      const userLine = userTrim === NUTR_CHECK_TRIGGER_LEGACY ? NUTR_CHECK_TRIGGER_LEGACY : NUTR_CHECK_TRIGGER;
       setChatHistory((prev) => [...prev, { sender: 'user', text: userLine }]);
       if (optionalReply == null) setChatInput('');
       window.setTimeout(() => {
@@ -5108,12 +5097,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       return;
     }
 
-    const TRAINING_LOCAL_TRIGGER = '🏃 Allenamento consigliato';
-    const TRAINING_LOCAL_TRIGGER_LEGACY = '🏃‍♂️ Posso allenarmi?';
-    if (!secretPrompt && (String(userMessage || '').trim() === TRAINING_LOCAL_TRIGGER || String(userMessage || '').trim() === TRAINING_LOCAL_TRIGGER_LEGACY)) {
+    const TRAINING_LOCAL_TRIGGER = '🏃‍♂️ Posso allenarmi?';
+    if (!secretPrompt && String(userMessage || '').trim() === TRAINING_LOCAL_TRIGGER) {
       const advice = generateLocalTrainingAdvice(trainingWaveResult);
-      const userLine = String(userMessage || '').trim() === TRAINING_LOCAL_TRIGGER_LEGACY ? TRAINING_LOCAL_TRIGGER_LEGACY : TRAINING_LOCAL_TRIGGER;
-      setChatHistory((prev) => [...prev, { sender: 'user', text: userLine }]);
+      setChatHistory((prev) => [...prev, { sender: 'user', text: TRAINING_LOCAL_TRIGGER }]);
       if (optionalReply == null) setChatInput('');
       window.setTimeout(() => {
         setChatHistory((prev) => [...prev, { sender: 'ai', text: advice }]);
@@ -5121,17 +5108,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       return;
     }
 
-    const MONTHLY_AUDIT_TRIGGER = '📅 Trend mensile';
-    const MONTHLY_AUDIT_TRIGGER_LEGACY = '📅 Report Mese';
-    const MONTHLY_AUDIT_TRIGGER_LEGACY2 = '📅 Report Mensile';
-    if (!secretPrompt && (userTrim === MONTHLY_AUDIT_TRIGGER || userTrim === MONTHLY_AUDIT_TRIGGER_LEGACY || userTrim === MONTHLY_AUDIT_TRIGGER_LEGACY2)) {
+    const MONTHLY_AUDIT_TRIGGER = '📅 Report Mese';
+    const MONTHLY_AUDIT_TRIGGER_LEGACY = '📅 Report Mensile';
+    if (!secretPrompt && (userTrim === MONTHLY_AUDIT_TRIGGER || userTrim === MONTHLY_AUDIT_TRIGGER_LEGACY)) {
       const reportText = generateLocalMonthlyAudit(fullHistory, userTargets, bodyMetricsHistory);
-      const userLine =
-        userTrim === MONTHLY_AUDIT_TRIGGER_LEGACY2
-          ? MONTHLY_AUDIT_TRIGGER_LEGACY2
-          : userTrim === MONTHLY_AUDIT_TRIGGER_LEGACY
-            ? MONTHLY_AUDIT_TRIGGER_LEGACY
-            : MONTHLY_AUDIT_TRIGGER;
+      const userLine = userTrim === MONTHLY_AUDIT_TRIGGER_LEGACY ? MONTHLY_AUDIT_TRIGGER_LEGACY : MONTHLY_AUDIT_TRIGGER;
       setChatHistory((prev) => [...prev, { sender: 'user', text: userLine }]);
       if (optionalReply == null) setChatInput('');
       window.setTimeout(() => {
@@ -5140,17 +5121,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       return;
     }
 
-    const METABOLIC_SCAN_TRIGGER = '📊 Stato attuale';
-    const METABOLIC_SCAN_TRIGGER_LEGACY = '🧬 Scanner Metabolico';
+    const METABOLIC_SCAN_TRIGGER = '🧬 Scanner Metabolico';
     const HABIT_SCAN_TRIGGER_LEGACY = '🔍 Analisi Abitudini';
-    if (!secretPrompt && (userTrim === METABOLIC_SCAN_TRIGGER || userTrim === METABOLIC_SCAN_TRIGGER_LEGACY || userTrim === HABIT_SCAN_TRIGGER_LEGACY)) {
+    if (!secretPrompt && (userTrim === METABOLIC_SCAN_TRIGGER || userTrim === HABIT_SCAN_TRIGGER_LEGACY)) {
       const habitText = generateLocalHabitScanner(fullHistory);
-      const userLine =
-        userTrim === HABIT_SCAN_TRIGGER_LEGACY
-          ? HABIT_SCAN_TRIGGER_LEGACY
-          : userTrim === METABOLIC_SCAN_TRIGGER_LEGACY
-            ? METABOLIC_SCAN_TRIGGER_LEGACY
-            : METABOLIC_SCAN_TRIGGER;
+      const userLine = userTrim === HABIT_SCAN_TRIGGER_LEGACY ? HABIT_SCAN_TRIGGER_LEGACY : METABOLIC_SCAN_TRIGGER;
       setChatHistory((prev) => [...prev, { sender: 'user', text: userLine }]);
       if (optionalReply == null) setChatInput('');
       window.setTimeout(() => {
@@ -5283,7 +5258,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         syncDatiFirebase(nuovoLog, manualNodes);
         setPendingAiBatch(null);
         dismissKentuSleepTrigger();
-        setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: "Ho registrato il sonno nel diario. Useremo l'ora di risveglio per stimare energia e stress nella giornata." }]);
+        setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Ho registrato i dati del sonno nel diario. La curva del cortisolo terrà conto dell\'ora di risveglio.' }]);
         if (optionalReply == null) setChatInput('');
         return;
       }
@@ -5390,7 +5365,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad, currentTime, accumuloSNC);
       const chartData = energyResult?.chartData || [];
       const energyAt20 = chartData[20]?.energy;
-      const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Coach metabolico' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
+      const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Kentu' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
 
       const currentDecimalTime = new Date().getHours() + (new Date().getMinutes() / 60);
       const roundedTime = Math.round(currentDecimalTime * 2) / 2;
@@ -5474,16 +5449,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         }
       }
 
-      const baseSystemPrompt = `Sei il Metabolic AI Coach dell'app Kentu. Parli italiano. Il tuo obiettivo è aiutare l'utente a ottimizzare energia e stress (cortisolo) ogni giorno.
+      const baseSystemPrompt = `Sei l'assistente di KentuOS. Il tuo scopo è dialogare con l'utente in italiano.
 
-STRUTTURA OBBLIGATORIA (testo libero, salvo regole che impongono solo JSON): organizza così, con etichette chiare su righe proprie:
-• Stato attuale: sintesi breve di energia/stress/pasti rispetto al contesto.
-• Cosa fare ora: un solo passo concreto o scelta A/B.
-• Perché (semplice): max 2 frasi, linguaggio quotidiano. Niente gergo da laboratorio.
+TONO (CO-PILOTA METABOLICO): Sei un Co-Pilota Metabolico di altissimo livello. Sii assertivo, tecnico ma immediato. NON usare toni timidi o accomodanti (es. "Vuoi che ti aiuti?", "Fammi sapere se ti va"). Usa toni direttivi (es. "Ottimizzo i macronutrienti per il recupero", "Sposta 15g di grassi a pranzo"). Chiudi con un'azione netta o una scelta binaria, senza ipersimpatia.
 
-TONO: assertivo e chiaro. NON usare toni timidi (es. "Vuoi che ti aiuti?"). Preferisci "Ottimizzo X per Y", "Sposta 15g di grassi a pranzo". Evita termini interni tipo "motore", "scanner", "sync", "biochimico" rivolti all'utente.
-
-FORMATO "AI CARD" / DASHBOARD TESTUALE: Usa separatori tra blocchi (riga vuota tra sezioni), intestazioni chiare con emoji (es. riga dedicata "📊 STRATEGIA NUTRIZIONALE"). Quando riassumi macronutrienti, metriche, stress o allineamento agli obiettivi, usa SEMPRE barre visive fatte di caratteri/emoji per indicare riempimento o allerta, con una riga per metrica.
+FORMATO "AI CARD" / DASHBOARD TESTUALE: Rispondi come una dashboard leggibile nel testo. Usa separatori tra blocchi (riga vuota tra sezioni), intestazioni chiare con emoji (es. riga dedicata "📊 STRATEGIA NUTRIZIONALE"). Quando riassumi macronutrienti, metriche, stress o allineamento agli obiettivi, usa SEMPRE barre visive fatte di caratteri/emoji per indicare riempimento o allerta, con una riga per metrica.
 Esempio di formato obbligatorio (adatta numeri e testi al contesto):
 📊 STRATEGIA NUTRIZIONALE
 🔻 Carbo: [███░░░░░░░] Riduci zuccheri serali
@@ -5516,7 +5486,7 @@ Per ogni messaggio di testo normale (non vale quando un'altra regola impone SOLO
 2. Metriche chiave: dove possibile, una riga con barra [████░░] + etichetta breve.
 3. Elenchi puntati sintetici per dettagli o opzioni.
 4. Grassetti su numeri, kcal, grammi P/C/F quando usi markdown.
-5. Chiusura assertiva: imperativo o scelta A/B, non inviti vaghi.
+5. Chiusura assertiva: imperativo o scelta A/B (coerente col TONO Co-Pilota), non inviti vaghi.
 
 Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino") SENZA indicare un orario del pasto in modo da poter usare add_food (vedi PASTI ZERO FORM), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi).
 
@@ -5532,7 +5502,7 @@ SONNO (ZERO FORM — solo messaggio testuale, niente screenshot Mi Fitness): Se 
 
 ALLENAMENTO (ZERO FORM — solo messaggio testuale): Se l'utente riferisce di essersi allenato o di aver fatto un'attività fisica, estrai titolo, orario di INIZIO esatto e durata in minuti. SLOT FILLING SEVERO: se mancano dati cruciali (orario esatto di inizio o durata in minuti), NON inventarli: imposta "timeString" a null o "" e "duration" a null. Non usare add_workout finché l'utente non ha fornito entrambi in modo chiaro nel messaggio. Se le calorie non sono note, puoi stimarle solo quando durata e orario sono entrambi presenti; altrimenti "calories" può essere null. Formato JSON obbligatorio: {"action":"add_workout","title":"nome_attività","timeString":"HH:mm","duration":<minuti_intero>,"calories":<kcal_o_null>}. timeString in 24h (es. "18:30"). Restituisci RIGOROSAMENTE solo questo JSON senza altro testo. Non usare add_workout nella stessa risposta di add_sleep o log_sleep.
 
-PASTI (ZERO FORM — add_food): Se l'utente riferisce di aver mangiato, estrai l'orario del pasto (timeString HH:mm) e una lista di alimenti con le rispettive quantità in grammi. Per ogni alimento fornisci anche una tua stima nutrizionale dei macronutrienti per quella specifica quantità nei campi estKcal (kcal), estPro (proteine g), estCar (carboidrati g), estFat (grassi g). SLOT FILLING SEVERO: se manca l'orario o la quantità in grammi di un alimento, NON inventarli: usa timeString null o "" e qty null. Restituisci RIGOROSAMENTE solo questo JSON senza altro testo: {"action":"add_food","timeString":"HH:mm","items":[{"name":"nome_alimento","qty":grammi,"estKcal":stima,"estPro":stima,"estCar":stima,"estFat":stima}]}. Non mischiare add_food con add_sleep, add_workout o log_sleep. Per elenchi senza orario/chiarezza per add_food usa l'array JSON legacy descritto sopra.
+PASTI (ZERO FORM — add_food): Se l'utente riferisce di aver mangiato, estrai l'orario del pasto (timeString HH:mm) e una lista di alimenti con le rispettive quantità in grammi. Per ogni alimento fornisci anche una tua stima biochimica dei macronutrienti per quella specifica quantità nei campi estKcal (kcal), estPro (proteine g), estCar (carboidrati g), estFat (grassi g). SLOT FILLING SEVERO: se manca l'orario o la quantità in grammi di un alimento, NON inventarli: usa timeString null o "" e qty null. Restituisci RIGOROSAMENTE solo questo JSON senza altro testo: {"action":"add_food","timeString":"HH:mm","items":[{"name":"nome_alimento","qty":grammi,"estKcal":stima,"estPro":stima,"estCar":stima,"estFat":stima}]}. Non mischiare add_food con add_sleep, add_workout o log_sleep. Per elenchi senza orario/chiarezza per add_food usa l'array JSON legacy descritto sopra.
 
 Database alimenti noti: ${foodDbNames.length ? foodDbNames.join(', ') : 'nessuno'}.
 
@@ -5542,16 +5512,16 @@ QUICK REPLIES (OBBLIGATORIO QUANDO SERVE UNA SCELTA): Se chiedi conferma, propon
 
       const dynamicSystemPrompt = `${baseSystemPrompt}
 
-CONTESTO LIVE (per te, non ripetere jargon all'utente):
+DATI BIOCHIMICI IN TEMPO REALE DELL'UTENTE:
 - Ora locale: ${new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
-- Stress (lettura utente): ${getStressLabel(currentCortisolScore)} (${Math.round(clampStressValue(currentCortisolScore))}%)
+- Livello di Cortisolo stimato (0-100): ${Math.round(currentCortisolScore)}
 
-REGOLA STRESS SERALE (PASTI):
-Se l'utente chiede consigli per un pasto (in particolare la cena), considera lo stress stimato. Se è medio-alto la sera, privilegia pasti calmanti (carboidrati complessi, magnesio, omega 3, triptofano), evita cene solo proteiche se lo stress è alto. Spiega in modo semplice, senza termini tecnici interni.
+REGOLA BIOCHIMICA FONDAMENTALE (RECUPERO NERVOSO):
+Se l'utente chiede consigli per un pasto (in particolar modo la cena) o valuta opzioni alimentari, devi analizzare il livello di Cortisolo. Se il cortisolo è medio-alto in orario serale, è un segnale di allarme per il sistema nervoso. In questo caso, DEVI prioritizzare suggerimenti nutrizionali calmanti: proponi fonti di carboidrati complessi (che aiutano ad abbassare il cortisolo e favoriscono il sonno), alimenti ricchi di magnesio, omega 3 o triptofano. Evita di proporre pasti serali composti solo da proteine magre se lo stress è alto. Tono assertivo e focalizzato sul recupero: niente linguaggio timido o ipersimpatia.
 
 LETTURA DEI GRAFICI ODIERNI:
 - Picco massimo Sintesi Proteica oggi: ${Math.round(piccoAnabolico)}%
-- Picco massimo stress oggi: ${getStressLabel(piccoCortisolo)} (${clampStressValue(piccoCortisolo)}%)
+- Picco massimo Cortisolo oggi: ${Math.round(piccoCortisolo)}
 
 REGOLA PER SPIEGAZIONE GRAFICI:
 Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi livelli (es. "spiegami il grafico viola", "perché l'anabolismo è basso?"), usa i dati forniti per fargli un'analisi personalizzata. Spiega che il grafico viola (Cortisolo) indica lo stress nervoso (che sale con lavoro e allenamento), mentre la curva azzurra/verde (Sintesi proteica) indica il nutrimento muscolare. Sii chiaro e diretto ma SEMPRE in formato lavagna: titolo+emoji, elenco puntato sintetico, grassetti sui numeri, domanda finale — niente paragrafi lunghi.
@@ -7665,7 +7635,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                   <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [formatStressWithPercent(value), 'Stress']} labelFormatter={(label) => `Ore ${label}:00`} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [value, 'Cortisolo']} labelFormatter={(label) => `Ore ${label}:00`} />
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={dotCortisolo} isFront r={10} fill="#9c27b0" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="cortisoloPast" stroke="#9c27b0" fill="url(#colorCortisoloFullscreen)" strokeWidth={2} connectNulls={false} isAnimationActive={false} />
@@ -8245,55 +8215,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       </div>
       )}
 
-      {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && (
-        <div
-          style={{
-            marginBottom: 14,
-            padding: '14px 16px',
-            borderRadius: 16,
-            background: 'rgba(15,23,42,0.55)',
-            border: '1px solid rgba(99,102,241,0.22)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-          }}
-        >
-          <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#64748b', fontWeight: 800, marginBottom: 4 }}>
-            Metabolic AI Coach
-          </div>
-          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 14, lineHeight: 1.45 }}>
-            Ottimizza energia e stress ogni giorno
-          </div>
-          <div style={{ display: 'flex', gap: 22, alignItems: 'flex-end', marginBottom: 12, flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ fontSize: 36, fontWeight: 800, color: '#e2e8f0', lineHeight: 1 }}>
-                {Math.round(Number(bodyBattery?.currentEnergy) || 0)}
-                <span style={{ fontSize: 16, opacity: 0.65 }}>%</span>
-              </div>
-              <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#64748b', marginTop: 4 }}>Energia</div>
-            </div>
-            <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.08)', minHeight: 48 }} />
-            <div>
-              <div
-                style={{
-                  fontSize: 32,
-                  fontWeight: 800,
-                  lineHeight: 1.1,
-                  color: getStressAccentColor(dotCortisolo),
-                }}
-              >
-                {getStressLabel(dotCortisolo)}
-              </div>
-              <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#64748b', marginTop: 4 }}>Stress</div>
-              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2, opacity: 0.9 }}>({clampStressValue(dotCortisolo)}%)</div>
-            </div>
-          </div>
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: '#cbd5e1' }}>
-            {(trafficLight?.msg && String(trafficLight.msg).length < 200 ? trafficLight.msg : null) ||
-              homeLongevityInsightLine ||
-              'Prossimo passo: allinea pasti e riposo con l’energia che vuoi avere più tardi.'}
-          </p>
+      {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
+        <div style={{ fontSize: '13px', opacity: 0.7, color: '#94a3b8', marginBottom: '6px' }}>
+          {homeLongevityInsightLine}
         </div>
-      )}
+      ) : null}
 
       {(activeBottomTab === 'analisi' || (activeBottomTab === 'oggi' && userProfile?.level === 'pro')) && (
       <>
@@ -8408,7 +8334,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', marginTop: '6px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: `1px solid ${metabolicState.color}40` }}>
-            <span style={{ fontSize: '0.7rem', color: '#888' }}>Quadro giornata:</span>
+            <span style={{ fontSize: '0.7rem', color: '#888' }}>Radar metabolico:</span>
             <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
             <span style={{ fontSize: '0.65rem', color: '#666' }}>🩸 {Math.round(gl)} · ⚙️ {Math.round(dig)}%</span>
           </div>
@@ -8443,7 +8369,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button type="button" onClick={handleUndo} disabled={historyIndex <= 0} title="Annulla" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: historyIndex <= 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: historyIndex <= 0 ? '#444' : '#00e5ff', fontSize: '1.1rem', cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer' }} aria-label="Annulla">↩</button>
               <button type="button" onClick={handleRedo} disabled={historyIndex >= historyStack.length - 1} title="Ripeti" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: historyIndex >= historyStack.length - 1 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: historyIndex >= historyStack.length - 1 ? '#444' : '#00e5ff', fontSize: '1.1rem', cursor: historyIndex >= historyStack.length - 1 ? 'not-allowed' : 'pointer' }} aria-label="Ripeti">↪</button>
               {chartUnit === 'idratazione' && isWaterHydrationAutoPilot && (
-                <span title="Nessun dato acqua: stiamo ipotizzando idratazione ok. Aggiungi acqua dal diario per un quadro reale." style={{ fontSize: '0.65rem', color: '#00e5ff', opacity: 0.9, maxWidth: '140px', lineHeight: 1.2, textAlign: 'right' }}>Stima idratazione attiva</span>
+                <span title="Nessun record acqua: il motore assume idratazione ottimale (100%). Aggiungi acqua dal diario per il tracking reale." style={{ fontSize: '0.65rem', color: '#00e5ff', opacity: 0.9, maxWidth: '140px', lineHeight: 1.2, textAlign: 'right' }}>🤖 Pilota idratazione attivo</span>
               )}
               <button type="button" onClick={() => { setExpandedChart(chartUnit); setActiveHighlight(null); }} title="Dettagli / Telemetria" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label="Dettagli grafico">🎯</button>
               <button type="button" onClick={enterFullscreen} title="Fullscreen" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label="Apri a tutto schermo">⛶</button>
@@ -9564,7 +9490,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                     }}
                   />
                 ) : null}
-                <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#b388ff' }}>Coach</span>
+                <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#b388ff' }}>Kentu</span>
               </button>
             </div>
           </div>
@@ -9590,7 +9516,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div className="burn-value tuning">{calorieTuning > 0 ? `+${calorieTuning}` : calorieTuning}</div>
               <input type="range" min="-500" max="500" step="50" value={calorieTuning} onChange={(e) => setCalorieTuning(Number(e.target.value))} className="custom-range blue" style={{ marginTop: '20px' }} />
             </div>
-            <button onClick={() => closeDrawer()} style={{ width: '100%', padding: '18px', backgroundColor: '#00e5ff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 0 20px rgba(0, 229, 255, 0.4)' }}>Salva strategia</button>
+            <button onClick={() => closeDrawer()} style={{ width: '100%', padding: '18px', backgroundColor: '#00e5ff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 0 20px rgba(0, 229, 255, 0.4)' }}>SYNC STRATEGIA</button>
           </div>
         )}
 
@@ -9628,23 +9554,23 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   totali,
                   userTargets,
                 });
-                void handleChatSubmit(null, { secretPrompt: secret, displayText: 'La tua giornata' });
+                void handleChatSubmit(null, { secretPrompt: secret, displayText: '📊 Briefing' });
               } else if (kind === 'yesterday') {
                 const secret = buildYesterdayGapSecretPrompt(fullHistory, anchor, userTargets);
-                void handleChatSubmit(null, { secretPrompt: secret, displayText: 'Trend' });
+                void handleChatSubmit(null, { secretPrompt: secret, displayText: '🔍 Analisi Ieri' });
               } else if (kind === 'mealIdea') {
                 void handleChatSubmit(null, {
                   secretPrompt: buildMealIdeaFromDispensaSecretPrompt(),
-                  displayText: 'Cosa mangiare ora',
+                  displayText: '💡 Idea Pasto',
                 });
               } else if (kind === 'checkOggi') {
-                void handleChatSubmit('⚖️ Bilancio di oggi', { fromQuickReply: true });
+                void handleChatSubmit('⚖️ Check Oggi', { fromQuickReply: true });
               } else if (kind === 'trainingCheck') {
-                void handleChatSubmit('🏃 Allenamento consigliato', { fromQuickReply: true });
+                void handleChatSubmit('🏃‍♂️ Posso allenarmi?', { fromQuickReply: true });
               } else if (kind === 'reportMese') {
-                void handleChatSubmit('📅 Trend mensile', { fromQuickReply: true });
+                void handleChatSubmit('📅 Report Mese', { fromQuickReply: true });
               } else if (kind === 'scannerMetabolico') {
-                void handleChatSubmit('📊 Stato attuale', { fromQuickReply: true });
+                void handleChatSubmit('🧬 Scanner Metabolico', { fromQuickReply: true });
               }
             }}
             onLogDinnerOption={handleAutoLogDinner}
@@ -10227,7 +10153,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   </div>
                   <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
                     <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-                      <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px' }}>I TUOI INDICATORI</h4>
+                      <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px' }}>RAPPORTI BIOCHIMICI</h4>
                       {renderRatioBar('Equilibrio Elettrolitico (Idratazione)', 'Sodio (Na)', totali?.na, 'Potassio (K)', totali?.k, 'Ideale: Na < K', (Number(totali?.na) || 0) < (Number(totali?.k) || 0))}
                       {renderRatioBar('Indice Infiammatorio (Grassi)', 'Omega 6', totali?.omega6, 'Omega 3', totali?.omega3, 'Ideale: W6:W3 < 4:1', (Number(totali?.omega6) || 0) <= (Number(totali?.omega3) || 1) * 4)}
                     </div>
@@ -11869,7 +11795,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {sncStressLevel >= 85 ? 'Allarme Overtraining' : 'Affaticamento SNC'}
             </h3>
             <p style={{ color: '#b0b0b0', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '20px' }}>
-              Carico sul SNC: <strong>{formatStressWithPercent(sncStressLevel)}</strong>.<br /><br />
+              Sistema Nervoso Centrale saturo al <strong>{Math.round(sncStressLevel)}%</strong>.<br /><br />
               {sncStressLevel >= 85
                 ? "Si consigliano 3-5 giorni di scarico attivo (niente allenamenti pesanti) per resettare l'energia massima ed evitare lo stallo metabolico."
                 : 'Il carico allostatico sta aumentando. Presta attenzione al recupero nei prossimi giorni.'}
@@ -12216,7 +12142,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         </div>
       )}
 
-      {/* Barra Metabolic AI Coach + FAB */}
+      {/* Barra Kentu AI + FAB: visibile su Oggi, Analisi e Statistiche (sopra la bottom navigation) */}
       <div style={{ position: 'fixed', bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))', left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '15px', paddingRight: '15px', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid rgba(255, 255, 255, 0.08)', zIndex: 9998, boxSizing: 'border-box' }}>
         <div
           onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
@@ -12239,7 +12165,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             />
           ) : null}
           <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-fab" width={22} height={22} decoding="async" />
-          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi al coach metabolico…</span>
+          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Kentu...</span>
         </div>
         <button type="button" onClick={() => { setShowChoiceModal(false); setIsDrawerOpen(true); setActiveAction(null); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
       </div>
