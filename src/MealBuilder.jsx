@@ -1671,35 +1671,12 @@ export default function MealBuilder({
               </div>
             )}
           </div>
-          {magicFillEligibleFoods.length >= 2 && (
-            <button
-              type="button"
-              onClick={handleMagicFill}
-              style={{
-                width: '100%',
-                marginBottom: '14px',
-                padding: '14px 18px',
-                borderRadius: '14px',
-                border: '1px solid rgba(0, 229, 255, 0.45)',
-                background: 'linear-gradient(145deg, rgba(0, 229, 255, 0.18), rgba(255, 255, 255, 0.06))',
-                color: '#e0f7ff',
-                fontSize: '0.88rem',
-                fontWeight: 700,
-                letterSpacing: '0.06em',
-                cursor: 'pointer',
-                boxShadow: '0 0 24px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.12)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-              }}
-            >
-              🪄 Bilancia Automaticamente
-            </button>
-          )}
           <div style={{ minHeight: '100px', marginBottom: '20px' }}>
             {addedFoods.length === 0 ? (
               <p style={{ textAlign: 'center', color: '#444', fontSize: '0.8rem', fontStyle: 'italic', marginTop: '30px' }}>Nessun alimento in coda</p>
             ) : (
-              addedFoods.map((food) => {
+              <>
+              {addedFoods.map((food) => {
                 const isRecipeItem = food.type === 'recipe' || food.isRecipe === true;
                 const omega3G = (food.omega3 != null && food.omega3 > 0) ? (food.omega3 >= 1 ? food.omega3 : food.omega3 / 1000) : 0;
                 const omega3Rich = omega3G > 0.5;
@@ -1710,6 +1687,8 @@ export default function MealBuilder({
                 const rowKey = String(food.id);
                 const recipeExpanded = !!expandedAddedFoods[rowKey];
                 const recipeIngs = Array.isArray(food.ingredients) ? food.ingredients : [];
+                const swapReady =
+                  typeof estraiDatiFoodDb === 'function' && Object.keys(foodDb || {}).length > 0;
                 const accBtnStyle = {
                   flexShrink: 0,
                   width: '28px',
@@ -1745,33 +1724,38 @@ export default function MealBuilder({
                             </button>
                           ) : null}
                           <span className="food-pill-name">{food.desc || food.name}</span>
-                          {!isRecipeItem &&
-                            typeof estraiDatiFoodDb === 'function' &&
-                            Object.keys(foodDb || {}).length > 0 && (
+                          {!isRecipeItem && (
                               <button
                                 type="button"
+                                disabled={!swapReady}
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  if (!swapReady) return;
                                   setSwapPanelFoodId((cur) => (String(cur) === String(food.id) ? null : food.id));
                                 }}
-                                title="Swap intelligente"
+                                title={
+                                  swapReady
+                                    ? 'Swap intelligente'
+                                    : 'Aggiungi alimenti al database o collega estraiDatiFoodDb per usare lo swap'
+                                }
                                 aria-label="Sostituisci alimento"
                                 style={{
                                   flexShrink: 0,
-                                  background: 'rgba(0, 229, 255, 0.12)',
-                                  border: '1px solid rgba(0, 229, 255, 0.35)',
+                                  background: swapReady ? 'rgba(0, 229, 255, 0.12)' : 'rgba(255,255,255,0.04)',
+                                  border: `1px solid ${swapReady ? 'rgba(0, 229, 255, 0.35)' : '#333'}`,
                                   borderRadius: '8px',
-                                  color: '#7dd3fc',
-                                  cursor: 'pointer',
+                                  color: swapReady ? '#7dd3fc' : '#64748b',
+                                  cursor: swapReady ? 'pointer' : 'not-allowed',
                                   fontSize: '0.72rem',
                                   padding: '2px 8px',
                                   lineHeight: 1.2,
                                   fontWeight: 700,
+                                  opacity: swapReady ? 1 : 0.65,
                                 }}
                               >
                                 🔄
                               </button>
-                            )}
+                          )}
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1935,7 +1919,33 @@ export default function MealBuilder({
                     )}
                   </div>
                 );
-              })
+              })}
+              {magicFillEligibleFoods.length >= 2 && (
+                <button
+                  type="button"
+                  className="btn-primary-glow btn-glass"
+                  onClick={handleMagicFill}
+                  style={{
+                    width: '100%',
+                    marginTop: '14px',
+                    padding: '14px 18px',
+                    borderRadius: '14px',
+                    border: '1px solid rgba(0, 229, 255, 0.45)',
+                    background: 'linear-gradient(145deg, rgba(0, 229, 255, 0.18), rgba(255, 255, 255, 0.06))',
+                    color: '#e0f7ff',
+                    fontSize: '0.88rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    cursor: 'pointer',
+                    boxShadow: '0 0 24px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.12)',
+                    backdropFilter: 'blur(10px)',
+                    WebkitBackdropFilter: 'blur(10px)',
+                  }}
+                >
+                  🪄 Bilancia Automaticamente
+                </button>
+              )}
+              </>
             )}
           </div>
           {addedFoods.length > 0 && (
