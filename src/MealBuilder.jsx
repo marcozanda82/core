@@ -2,9 +2,9 @@
  * MealBuilder.jsx — Costruttore pasti (drawer): ricerca alimenti, coda, telemetria, SALVA NEL DIARIO.
  * Estratto da SalaComandi.jsx. La logica saveMealToDiary resta nel genitore; qui solo rendering e onClick.
  */
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { TARGETS } from './useBiochimico';
-import { MEAL_TYPES } from './coreEngine';
+import { MEAL_TYPES, calculateMagicFill } from './coreEngine';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -265,6 +265,7 @@ export default function MealBuilder({
   const [deepCompileLoadingIndex, setDeepCompileLoadingIndex] = useState(null);
   const [expandedAddedFoods, setExpandedAddedFoods] = useState({});
   const [editingRecipeKey, setEditingRecipeKey] = useState(null);
+  const [magicFillToast, setMagicFillToast] = useState(false);
 
   const mealBuilderScrollAnchorRef = useRef(null);
 
@@ -762,11 +763,75 @@ export default function MealBuilder({
     };
   }, [targetMacrosPasto, dailyGoals, userTargets?.fibre, ratio]);
 
+  const magicFillEligibleFoods = useMemo(
+    () => (addedFoods || []).filter((f) => f.type !== 'recipe' && f.isRecipe !== true),
+    [addedFoods]
+  );
+
+  const handleMagicFill = useCallback(() => {
+    if (magicFillEligibleFoods.length < 2) return;
+    const tm = targetMacrosPasto && targetMacrosPasto.kcal != null ? targetMacrosPasto : targetMacros;
+    const target = {
+      prot: Number(tm?.prot) || 0,
+      carb: Number(tm?.carb) || 0,
+      fat: Number(tm?.fat ?? tm?.fatTotal) || 0,
+    };
+    const results = calculateMagicFill(magicFillEligibleFoods, target);
+    const scaleKeys = new Set([
+      'kcal', 'cal', 'prot', 'carb', 'fat', 'fatTotal',
+      ...Object.values(TARGETS).flatMap((g) => Object.keys(g || {})),
+    ]);
+    setAddedFoods((prev) =>
+      prev.map((f) => {
+        if (f.type === 'recipe' || f.isRecipe === true) return f;
+        const hit = results.find((r) => String(r.id) === String(f.id));
+        if (!hit) return f;
+        const newQ = Math.max(5, Math.min(5000, hit.grams > 0 ? hit.grams : 5));
+        const curQ = Math.max(1, Number(f.qta ?? f.weight ?? 100) || 100);
+        const ratioQ = newQ / curQ;
+        const next = { ...f, qta: newQ, weight: newQ };
+        scaleKeys.forEach((k) => {
+          if (f[k] != null && typeof f[k] === 'number' && !Number.isNaN(f[k])) {
+            const v = f[k] * ratioQ;
+            next[k] = k === 'kcal' || k === 'cal' ? Math.max(0, Math.round(v)) : Math.max(0, Math.round(v * 10) / 10);
+          }
+        });
+        return next;
+      })
+    );
+    setMagicFillToast(true);
+    window.setTimeout(() => setMagicFillToast(false), 2200);
+  }, [magicFillEligibleFoods, targetMacrosPasto, targetMacros, TARGETS]);
+
   const baseMealTypeKey = String(mealType || '').split('_')[0].toLowerCase();
   const isCena = baseMealTypeKey === 'cena';
 
   return (
-    <div className="view-animate">
+    <div className="view-animate" style={{ position: 'relative' }}>
+      {magicFillToast && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 'calc(110px + env(safe-area-inset-bottom, 0px))',
+            transform: 'translateX(-50%)',
+            zIndex: 10050,
+            padding: '12px 20px',
+            borderRadius: '14px',
+            background: 'linear-gradient(145deg, rgba(0, 230, 118, 0.95), rgba(0, 180, 90, 0.92))',
+            color: '#0a0a0a',
+            fontSize: '0.85rem',
+            fontWeight: 700,
+            boxShadow: '0 8px 32px rgba(0, 230, 118, 0.35)',
+            pointerEvents: 'none',
+            maxWidth: 'min(92vw, 360px)',
+            textAlign: 'center',
+          }}
+        >
+          Pasto bilanciato con successo!
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
         <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
         <h2 style={{ fontSize: '0.8rem', color: '#fff', letterSpacing: '2px', margin: 0 }}>NUOVO PASTO</h2>
@@ -1530,6 +1595,30 @@ export default function MealBuilder({
               </div>
             )}
           </div>
+          {magicFillEligibleFoods.length >= 2 && (
+            <button
+              type="button"
+              onClick={handleMagicFill}
+              style={{
+                width: '100%',
+                marginBottom: '14px',
+                padding: '14px 18px',
+                borderRadius: '14px',
+                border: '1px solid rgba(0, 229, 255, 0.45)',
+                background: 'linear-gradient(145deg, rgba(0, 229, 255, 0.18), rgba(255, 255, 255, 0.06))',
+                color: '#e0f7ff',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                letterSpacing: '0.06em',
+                cursor: 'pointer',
+                boxShadow: '0 0 24px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.12)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+              }}
+            >
+              🪄 Bilancia Automaticamente
+            </button>
+          )}
           <div style={{ minHeight: '100px', marginBottom: '20px' }}>
             {addedFoods.length === 0 ? (
               <p style={{ textAlign: 'center', color: '#444', fontSize: '0.8rem', fontStyle: 'italic', marginTop: '30px' }}>Nessun alimento in coda</p>

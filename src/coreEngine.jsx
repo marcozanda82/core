@@ -1939,6 +1939,125 @@ export function buildSmartMealPhysioContextSnippet(mealType, dailyLog, userTarge
   return parts.join('. ');
 }
 
+const MAGIC_FILL_CONDIMENT_DESC =
+  /olio|aceto|sale\b|pepe|spezi|burro|margarina|mayo|maion|ketchup|salsa|limon|aglio|prezzemol|basilic|origan|erba|paprika|cumino|zafferan|drizzle|coco aminos|soia\s*cond|dado\b|dadi\b/i;
+const MAGIC_FILL_VEG_DESC =
+  /verdur|insalat|broccol|spinac|zucchin|rucola|lattug|pomid|pomodor|cetriol|carot|finocch|peperon|fungh|radicch|bietol|sedan|porr|cavol|fagiolin|pisell|asparag|melanz|zucca|indivia|iceberg|songino|valerian/i;
+
+function magicFillMinGramsForFood(name) {
+  const n = String(name || '').toLowerCase();
+  if (MAGIC_FILL_CONDIMENT_DESC.test(n)) return 10;
+  if (MAGIC_FILL_VEG_DESC.test(n)) return 150;
+  return 80;
+}
+
+/**
+ * Magic Fill: bilancia le quantità verso target P/C/F usando tre «dominanti» (max g/100g per macro).
+ * I cibi non dominanti ricevono prima una porzione minima (verdure ~150g, condimenti ~10g, altri ~80g), poi i macro residui
+ * sono coperti in sequenza: proteico dominante → carbo dominante → grasso dominante.
+ *
+ * @param {Array<object>} selectedFoods — voci con `id` e macro alla quantità corrente (`prot`,`carb`,`fat`/`fatTotal` + `weight`/`qta`) oppure `prot100`,`carb100`,`fat100`.
+ * @param {{ prot: number, carb: number, fat?: number, fatTotal?: number }} targetMacros
+ * @returns {Array<{ id: string, grams: number }>}
+ */
+export function calculateMagicFill(selectedFoods, targetMacros) {
+  const list = Array.isArray(selectedFoods) ? selectedFoods : [];
+  if (list.length === 0) return [];
+
+  const Tp = Math.max(0, Number(targetMacros?.prot) || 0);
+  const Tc = Math.max(0, Number(targetMacros?.carb) || 0);
+  const Tf = Math.max(0, Number(targetMacros?.fat ?? targetMacros?.fatTotal) || 0);
+
+  const items = list.map((row, i) => {
+    const id = row.id != null ? String(row.id) : `__mf_${i}`;
+    const w = Math.max(1, Number(row.weight ?? row.qta) || 100);
+    let pp = Number(row.prot100);
+    let cp = Number(row.carb100);
+    let fp = Number(row.fat100 ?? row.fatTotal100);
+    if (!Number.isFinite(pp) || pp < 0) {
+      const prot = Number(row.prot ?? row.proteine) || 0;
+      pp = (prot / w) * 100;
+    }
+    if (!Number.isFinite(cp) || cp < 0) {
+      const carb = Number(row.carb ?? row.carboidrati) || 0;
+      cp = (carb / w) * 100;
+    }
+    if (!Number.isFinite(fp) || fp < 0) {
+      const fat = Number(row.fat ?? row.fatTotal ?? row.grassi) || 0;
+      fp = (fat / w) * 100;
+    }
+    const name = row.desc || row.name || '';
+    return { id, pp: Math.max(0, pp), cp: Math.max(0, cp), fp: Math.max(0, fp), name };
+  });
+
+  const argmaxIdx = (key) => {
+    let bi = 0;
+    let bv = -Infinity;
+    for (let j = 0; j < items.length; j++) {
+      const v = items[j][key];
+      if (v > bv + 1e-12) {
+        bv = v;
+        bi = j;
+      }
+    }
+    return bi;
+  };
+
+  const iP = argmaxIdx('pp');
+  const iC = argmaxIdx('cp');
+  const iF = argmaxIdx('fp');
+  const domIds = new Set([items[iP].id, items[iC].id, items[iF].id]);
+
+  const gramsById = Object.create(null);
+  items.forEach((it) => {
+    gramsById[it.id] = 0;
+  });
+
+  const macrosAtGrams = (it, g) => {
+    const f = g / 100;
+    return { prot: it.pp * f, carb: it.cp * f, fat: it.fp * f };
+  };
+
+  let Rp = Tp;
+  let Rc = Tc;
+  let Rf = Tf;
+
+  for (const it of items) {
+    if (domIds.has(it.id)) continue;
+    const minG = magicFillMinGramsForFood(it.name);
+    const m = macrosAtGrams(it, minG);
+    Rp = Math.max(0, Rp - m.prot);
+    Rc = Math.max(0, Rc - m.carb);
+    Rf = Math.max(0, Rf - m.fat);
+    gramsById[it.id] += minG;
+  }
+
+  const pIt = items[iP];
+  const gP = pIt.pp > 1e-8 ? (Rp * 100) / pIt.pp : 0;
+  const mP = macrosAtGrams(pIt, gP);
+  Rp = Math.max(0, Rp - mP.prot);
+  Rc = Math.max(0, Rc - mP.carb);
+  Rf = Math.max(0, Rf - mP.fat);
+  gramsById[pIt.id] += gP;
+
+  const cIt = items[iC];
+  const gC = cIt.cp > 1e-8 ? (Rc * 100) / cIt.cp : 0;
+  const mC = macrosAtGrams(cIt, gC);
+  Rp = Math.max(0, Rp - mC.prot);
+  Rc = Math.max(0, Rc - mC.carb);
+  Rf = Math.max(0, Rf - mC.fat);
+  gramsById[cIt.id] += gC;
+
+  const fIt = items[iF];
+  const gF = fIt.fp > 1e-8 ? (Rf * 100) / fIt.fp : 0;
+  gramsById[fIt.id] += gF;
+
+  return items.map((it) => ({
+    id: it.id,
+    grams: Math.max(0, Math.round(gramsById[it.id] || 0)),
+  }));
+}
+
 /** Importanza dinamica dei nodi per vista grafico: quali tipi evidenziare. */
 const NODE_IMPORTANCE = {
   percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'sunlight', 'alcohol'],
