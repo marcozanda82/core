@@ -732,7 +732,8 @@ export default function MealBuilder({
       kcal: items.reduce((acc, item) => acc + toNum(item.kcal ?? item.cal), 0),
       prot: items.reduce((acc, item) => acc + toNum(item.prot ?? item.proteine), 0),
       carb: items.reduce((acc, item) => acc + toNum(item.carb ?? item.carboidrati), 0),
-      fat: items.reduce((acc, item) => acc + toNum(item.fat ?? item.fatTotal ?? item.grassi), 0)
+      fat: items.reduce((acc, item) => acc + toNum(item.fat ?? item.fatTotal ?? item.grassi), 0),
+      zuccheri: items.reduce((acc, item) => acc + toNum(item.zuccheri ?? item.sugars), 0),
     };
   }, [addedFoods]);
 
@@ -1706,6 +1707,14 @@ export default function MealBuilder({
                             {renderProgressBar('CARBOIDRATI', safeBarCurrent(mealTotaliFull.carb), safeBarTarget(targetMacrosPasto?.carb ?? targetMacros?.carb, 50), 'g', 'carb')}
                             {renderProgressBar('GRASSI', safeBarCurrent(mealTotaliFull.fatTotal ?? mealTotaliFull.fat), safeBarTarget(targetMacrosPasto?.fat ?? targetMacros?.fat, 15), 'g', 'fatTotal')}
                             {renderProgressBar('FIBRE', safeBarCurrent(mealTotaliFull.fibre), safeBarTarget(targetMacrosPasto?.fibre ?? targetMacros?.fibre, 8), 'g', 'fibre')}
+                            {targetMacrosPasto?.maxSimpleSugarG != null &&
+                              renderProgressBar(
+                                'ZUCCH. SEMPL.',
+                                safeBarCurrent(currentMealMacros.zuccheri),
+                                safeBarTarget(targetMacrosPasto.maxSimpleSugarG, 8),
+                                'g',
+                                'zuccheri'
+                              )}
                           </div>
                         </div>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>

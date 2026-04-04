@@ -108,6 +108,8 @@ import {
   getTrainingWaveCurves,
   buildTrainingWaveContextSnippet,
   getDynamicMealTargets,
+  scoreFoodForSmartMealBuilder,
+  buildSmartMealPhysioContextSnippet,
   generateLocalNutritionalAudit,
   generateLocalTrainingAdvice,
   generateLocalMonthlyAudit,
@@ -255,6 +257,8 @@ function getInvisibleContext({
   fullHistory,
   anchorDateStr,
   trainingWaveSnippet,
+  mealTypeForSmart,
+  dailyLogForSmart,
 }) {
   const bb = Math.round(Number(bodyBatteryPercent) || 0);
   const dynK = Number(dynamicDailyKcal) || 0;
@@ -273,7 +277,12 @@ function getInvisibleContext({
   const nota =
     'L\'utente soffre di problemi di cortisolo alto quando chiede consigli sulla cena.';
   const wave = trainingWaveSnippet ? ` ${trainingWaveSnippet}` : '';
-  return `[CONTEXT_LIVE: BB: ${bb}%, Residuo: ${resKcal}kcal, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}.${wave}]`;
+  const smartPhysio =
+    mealTypeForSmart && dailyLogForSmart && userTargets
+      ? buildSmartMealPhysioContextSnippet(mealTypeForSmart, dailyLogForSmart, userTargets)
+      : '';
+  const smartPart = smartPhysio ? ` Smart: ${smartPhysio}.` : '';
+  return `[CONTEXT_LIVE: BB: ${bb}%, Residuo: ${resKcal}kcal, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}.${smartPart}${wave}]`;
 }
 
 /** Totali kcal/P/C/F solo da voci food/recipe nel log giornaliero. */
@@ -361,6 +370,9 @@ function buildYesterdayGapSecretPrompt(fullHistory, anchorDateStr, userTargets) 
 function buildMealIdeaFromDispensaSecretPrompt() {
   return (
     `QUICK_ACTION=IDEA_PASTO. Usa ESCLUSIVAMENTE [CONTEXT_LIVE] per macro residui e Dispensa probabile. ` +
+    `Rispetta i vincoli Smart in [CONTEXT_LIVE] (pranzo: tetto zuccheri semplici e fibre minime; cena: tetto grassi fisso). ` +
+    `Priorità ingredienti: pranzo = verdure fibrose e proteine magre; cena = carboidrati complessi e proteine magre, grassi bassi. ` +
+    `Se nessun alimento in Dispensa è ideale, stima quantità con macro credibili (fallback) e non bloccare la proposta. ` +
     `Proponi UN pasto con ingredienti prioritariamente dalla Dispensa. ` +
     `Rispondi SOLO con il blocco [MEAL_PROPOSAL:{...}] su una riga (CARTA MENU), zero testo prima o dopo.`
   );
@@ -2983,16 +2995,22 @@ export default function SalaComandi() {
       return;
     }
     const keys = Object.keys(foodDb || {});
-    const matches = keys
-      .filter(k => {
-        const d = foodDb[k];
-        const desc = (d?.desc || d?.name || '').toLowerCase();
-        return desc.includes(q);
-      })
-      .slice(0, 10)
-      .map(k => ({ key: k, desc: foodDb[k]?.desc || foodDb[k]?.name || k }));
-    setFoodDropdownSuggestions(matches);
-  }, [foodNameInput, foodDb]);
+    const baseMt = String(mealType || 'pranzo').split('_')[0].toLowerCase();
+    const smartSort = baseMt === 'pranzo' || baseMt === 'cena';
+    const matches = keys.filter(k => {
+      const d = foodDb[k];
+      const desc = (d?.desc || d?.name || '').toLowerCase();
+      return desc.includes(q);
+    });
+    const ordered = smartSort
+      ? [...matches].sort(
+          (a, b) => scoreFoodForSmartMealBuilder(foodDb[b]) - scoreFoodForSmartMealBuilder(foodDb[a])
+        )
+      : matches;
+    setFoodDropdownSuggestions(
+      ordered.slice(0, 10).map(k => ({ key: k, desc: foodDb[k]?.desc || foodDb[k]?.name || k }))
+    );
+  }, [foodNameInput, foodDb, mealType]);
 
   useEffect(() => {
     if (!draggingNode) return;
@@ -5558,6 +5576,8 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
         fullHistory,
         anchorDateStr: currentTrackerDate || getTodayString(),
         trainingWaveSnippet: buildTrainingWaveContextSnippet(trainingWaveResult),
+        mealTypeForSmart: activeAction === 'pasto' ? mealType : undefined,
+        dailyLogForSmart: activeAction === 'pasto' ? (activeLog || dailyLog) : undefined,
       });
       const rawLastUserForApi =
         apiUserContent || (chatImages.length > 0 ? `[Allegati ${chatImages.length} screenshot da analizzare]` : '');

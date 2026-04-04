@@ -1583,6 +1583,14 @@ const PROTEIN_MEALS_PER_DAY = 4;
 
 const BREAKFAST_KCAL_RATIO = 0.22;
 
+/** Pranzo: fibre minime e tetto zuccheri semplici (anti brain-fog). */
+export const MEAL_PHYSIO_LUNCH_MIN_FIBRE_G = 12;
+export const MEAL_PHYSIO_LUNCH_MAX_SIMPLE_SUGAR_G = 8;
+/** Cena: tetto grassi (sonno); più stretto se già in surplus calorico giornaliero. */
+export const MEAL_PHYSIO_DINNER_FAT_CAP_G = 23;
+export const MEAL_PHYSIO_DINNER_FAT_CAP_SURPLUS_G = 20;
+const MEAL_PHYSIO_SURPLUS_KCAL_THRESHOLD = 50;
+
 /** Somma macro su tutti food/ricette del log (il chiamante può già aver escluso lo slot in editing). */
 function sumMacroAllFood(log, macro) {
   const L = log || [];
@@ -1616,8 +1624,12 @@ function countLoggedProteinMealSlots(log) {
 /**
  * Target macro: colazione con proteine fisse 15 g (fuori dal pool degli slot proteici).
  * Altri pasti: 4 «gettoni» proteici al giorno; slot rimanenti = max(1, 4 − pasti già loggati non-colazione).
- * Proteine = (Tprot − assunto totale inclusa colazione) / slotRimanenti. Kcal/carb/grassi/fibre sui residui con blend:
- * più carb a cena (isCena), più grassi a pranzo (isPranzo), snack intermedio.
+ * Proteine = (Tprot − assunto totale inclusa colazione) / slotRimanenti. Kcal/carb/grassi/fibre sui residui con blend.
+ *
+ * Default intelligenti (mealType):
+ * — Pranzo: fibre ≥12g, tetto zuccheri semplici consigliato, blend meno grasso (verdure/proteine magre).
+ * — Cena: tetto grassi assoluto (23g, 20g se surplus kcal); eccedenze spostate su carboidrati complessi e proteine magre.
+ * — Surplus calorico: parte del budget grassi «non assegnabile a cena» aumenta leggermente il target grassi a pranzo/snack.
  */
 export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, options = {}) {
   void options;
@@ -1632,6 +1644,12 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
   const baseMt = String(currentMealType || 'pranzo').split('_')[0];
   const canon = toCanonicalMealType(baseMt);
 
+  const emptyPhysio = {
+    maxSimpleSugarG: null,
+    minFibreG: null,
+    dinnerFatHardCapG: null,
+  };
+
   if (canon === 'colazione') {
     const rkcal = Tkcal * BREAKFAST_KCAL_RATIO;
     return {
@@ -1640,6 +1658,7 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
       carb: Math.round(Tcarb * BREAKFAST_KCAL_RATIO * 10) / 10,
       fat: Math.round(Tfat * BREAKFAST_KCAL_RATIO * 10) / 10,
       fibre: Math.max(2, Math.round(Tfibre * BREAKFAST_KCAL_RATIO * 10) / 10),
+      ...emptyPhysio,
     };
   }
 
@@ -1657,6 +1676,9 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
   const remCarb = Tcarb - consumedCarb;
   const remFat = Tfat - consumedFat;
   const remFibre = Tfibre - consumedFibre;
+
+  const kcalSurplus = consumedKcal - Tkcal;
+  const dailyInCalorieSurplus = kcalSurplus > MEAL_PHYSIO_SURPLUS_KCAL_THRESHOLD;
 
   let targetKcal = Math.round(remKcal / remainingSlots);
   targetKcal = Math.max(150, targetKcal);
@@ -1680,11 +1702,11 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
   let carbEnergyRatio = 0.42;
   let fatEnergyRatio = 0.36;
   if (isPranzo) {
-    carbEnergyRatio = 0.36;
-    fatEnergyRatio = 0.44;
+    carbEnergyRatio = 0.4;
+    fatEnergyRatio = 0.34;
   } else if (isCena) {
-    carbEnergyRatio = 0.5;
-    fatEnergyRatio = 0.24;
+    carbEnergyRatio = dailyInCalorieSurplus ? 0.54 : 0.5;
+    fatEnergyRatio = dailyInCalorieSurplus ? 0.2 : 0.24;
   } else {
     carbEnergyRatio = 0.41;
     fatEnergyRatio = 0.38;
@@ -1694,16 +1716,48 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
   const fatFromKcal = (remKcalAfterProt * fatEnergyRatio) / 9;
 
   const blend = 0.55;
-  const finalCarb = Math.max(
+  let finalCarb = Math.max(
     5,
     Math.round((carbFromKcal * blend + baseCarbResidual * (1 - blend)) * 10) / 10
   );
-  const finalFat = Math.max(
+  let finalFat = Math.max(
     3,
     Math.round((fatFromKcal * blend + baseFatResidual * (1 - blend)) * 10) / 10
   );
 
-  const fibreSlot = Math.max(2, Math.round((remFibre / remainingSlots) * 10) / 10);
+  let fibreSlot = Math.max(2, Math.round((remFibre / remainingSlots) * 10) / 10);
+
+  if (isPranzo) {
+    fibreSlot = Math.max(MEAL_PHYSIO_LUNCH_MIN_FIBRE_G, fibreSlot);
+  }
+
+  if (dailyInCalorieSurplus && (isPranzo || canon === 'snack')) {
+    const fatBump = Math.min(8, Math.max(0, remFat) * 0.18);
+    if (fatBump > 0) {
+      finalFat = Math.round((finalFat + fatBump) * 10) / 10;
+    }
+  }
+
+  let maxSimpleSugarG = null;
+  let minFibreG = null;
+  let dinnerFatHardCapG = null;
+
+  if (isPranzo) {
+    maxSimpleSugarG = MEAL_PHYSIO_LUNCH_MAX_SIMPLE_SUGAR_G;
+    minFibreG = MEAL_PHYSIO_LUNCH_MIN_FIBRE_G;
+  }
+
+  if (isCena) {
+    dinnerFatHardCapG = dailyInCalorieSurplus ? MEAL_PHYSIO_DINNER_FAT_CAP_SURPLUS_G : MEAL_PHYSIO_DINNER_FAT_CAP_G;
+    const preFat = finalFat;
+    finalFat = Math.min(finalFat, dinnerFatHardCapG);
+    const fatGramsClamped = Math.max(0, preFat - finalFat);
+    const kcalShift = fatGramsClamped * 9;
+    finalCarb += Math.round(((kcalShift * 0.72) / 4) * 10) / 10;
+    targetProt += Math.round(((kcalShift * 0.28) / 4) * 10) / 10;
+    targetProt = Math.round(Math.min(55, Math.max(10, targetProt)) * 10) / 10;
+    finalCarb = Math.round(Math.max(5, finalCarb) * 10) / 10;
+  }
 
   return {
     kcal: targetKcal,
@@ -1711,7 +1765,93 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
     carb: finalCarb,
     fat: finalFat,
     fibre: fibreSlot,
+    maxSimpleSugarG,
+    minFibreG,
+    dinnerFatHardCapG,
   };
+}
+
+const SMART_HIGH_FIBRE_DESC =
+  /verdur|insalat|broccol|spinac|cavol|zucchin|finocch|porr|carciof|sedan|rapa|bietol|fungh|legum|lenticch|ceci|fagiol|pisell|edamame|farro integr|orzo integr|avena|segale|crudité|rucola|radicch|indivia|cime di rapa/i;
+const SMART_LEAN_PROTEIN_DESC =
+  /pollo|tacchino|petto|pesce|tonno|merluzz|spigol|branzin|salmone|sgombro|tofu|tempeh|seitan|albume|magr|bresaola|carne macinata magr|0%|skyr|fiocchi di latte|greco 0|whey|proteina in polvere/i;
+const SMART_SIMPLE_SUGAR_HEAVY_DESC =
+  /miele|sciropp|cola|bevanda zuccher|succo di frutta|brioche|cornetto|gelato|cioccolat|nutella|marmellat|zucchero|dolce da forno|biscott|croissant|crema spalm|caramell|agav/i;
+
+/**
+ * Punteggio euristica per prioritizzare alimenti dal DB nel Costruttore Smart (non blocca se dati mancano).
+ */
+export function scoreFoodForSmartMealBuilder(foodEntry) {
+  if (!foodEntry || typeof foodEntry !== 'object') return 0;
+  const desc = String(foodEntry.desc || foodEntry.name || '').toLowerCase();
+  const fibre = Number(foodEntry.fibre) || 0;
+  const sug = Number(foodEntry.zuccheri ?? foodEntry.sugars ?? foodEntry.sugar) || 0;
+  const fat = Number(foodEntry.fatTotal ?? foodEntry.fat ?? foodEntry.grassi) || 0;
+  const prot = Number(foodEntry.prot ?? foodEntry.proteine) || 0;
+  let score = fibre * 1.8 - sug * 2.2 - fat * 0.35 + prot * 0.25;
+  if (SMART_HIGH_FIBRE_DESC.test(desc)) score += 22;
+  if (SMART_LEAN_PROTEIN_DESC.test(desc)) score += 18;
+  if (SMART_SIMPLE_SUGAR_HEAVY_DESC.test(desc)) score -= 35;
+  return score;
+}
+
+/**
+ * Ordina le chiavi del foodDb per pasto (pranzo: fibre/proteine magre; cena: meno grassi, più complessi).
+ */
+export function sortFoodDbKeysForSmartMealBuilder(foodDb, mealType, limit = 40) {
+  const cap = Math.max(1, Math.min(200, limit || 40));
+  const keys = Object.keys(foodDb || {});
+  if (keys.length === 0) return [];
+  const canon = toCanonicalMealType(String(mealType || 'pranzo').split('_')[0]);
+  const scored = keys.map((k) => {
+    const row = foodDb[k];
+    let s = scoreFoodForSmartMealBuilder(row);
+    if (canon === 'cena') {
+      const f = Number(row?.fatTotal ?? row?.fat) || 0;
+      const fib = Number(row?.fibre) || 0;
+      s += -f * 1.2 + fib * 0.6;
+      const d = String(row?.desc || row?.name || '').toLowerCase();
+      if (/farro|orzo integr|quinoa|riso integr|patate? al forno|legum|lenticch|ceci|verdur|zucca|grano saraceno/i.test(d)) {
+        s += 14;
+      }
+    }
+    return { k, s };
+  });
+  scored.sort((a, b) => b.s - a.s);
+  return scored.slice(0, cap).map((x) => x.k);
+}
+
+/** Fallback macro per 100 g se manca il match perfetto nel DB (stima neutra). */
+export function getSmartMealFallbackMacrosPer100() {
+  return {
+    kcal: 130,
+    prot: 8,
+    carb: 14,
+    fatTotal: 4.5,
+    fat: 4.5,
+    fibre: 2.2,
+    zuccheri: 4,
+    desc: 'Alimento medio stimato',
+  };
+}
+
+/**
+ * Frase compatta per prompt AI (CONTEXT_LIVE / Idea pasto) con i vincoli fisiologici del mealType corrente.
+ */
+export function buildSmartMealPhysioContextSnippet(mealType, dailyLog, userTargets) {
+  const t = getDynamicMealTargets(mealType, dailyLog, userTargets);
+  const canon = toCanonicalMealType(String(mealType || '').split('_')[0]);
+  const parts = [];
+  if (canon === 'pranzo') {
+    parts.push(
+      `PRANZO anti-nebbia: zuccheri semplici ≤~${t.maxSimpleSugarG}g; fibre target ≥${t.minFibreG}g (minimo fisiologico); privilegia verdure fibrose e proteine magre (pollo, pesce, tofu)`
+    );
+  } else if (canon === 'cena') {
+    parts.push(
+      `CENA sonno: grassi pasto ≤${t.dinnerFatHardCapG}g (tetto fisso); calorie aggiuntive su carboidrati complessi e proteine magre, grassi ridotti per carico digestivo`
+    );
+  }
+  return parts.join('. ');
 }
 
 /** Importanza dinamica dei nodi per vista grafico: quali tipi evidenziare. */
