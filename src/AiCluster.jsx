@@ -1,9 +1,15 @@
 /**
- * AiCluster.jsx — Interfaccia Assistente AI (chat, prompt rapidi, input, impostazioni API).
- * Estratto da SalaComandi.jsx per smembramento UI. Lo stato globale (chatHistory, invio) resta nel genitore.
+ * AiCluster.jsx — KentuOS: superficie AI premium (insight cards, hub strumenti, input).
  */
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import MenuProposalCard from './MenuProposalCard';
+import {
+  KentuIcon,
+  KentuButton,
+  KentuInsightHero,
+  KentuInsightCard,
+  KentuGridItem,
+} from './components/kentuos/KentuOSUI';
 
 /** Allinea a stripInvisibleContextFromVisibleUserText in SalaComandi (contesto API non visibile). */
 function stripInvisibleContextFromBubble(text) {
@@ -11,7 +17,7 @@ function stripInvisibleContextFromBubble(text) {
   return text.replace(/\[CONTEXT_LIVE:[^\]]*\]\s*/gi, '').trim();
 }
 
-/** Sezioni separate da doppio a capo → divider luminosi tra blocchi (AI Card). */
+/** Sezioni separate da doppio a capo → HERO + insight cards. */
 function splitAiMessageSections(text) {
   if (text == null) return [];
   const s = String(text);
@@ -23,18 +29,18 @@ const COMMAND_HUB_SECTIONS = [
   {
     title: 'Coach & dispensa',
     items: [
-      { key: 'briefing', icon: '📊', title: 'Briefing', desc: 'Sintesi giornata' },
-      { key: 'yesterday', icon: '🔍', title: 'Analisi ieri', desc: 'Gap e trend' },
-      { key: 'mealIdea', icon: '💡', title: 'Idea pasto', desc: 'Dalla dispensa' },
+      { key: 'briefing', icon: 'chart', title: 'Briefing', desc: 'Sintesi giornata', highlight: true },
+      { key: 'yesterday', icon: 'search', title: 'Analisi ieri', desc: 'Gap e trend' },
+      { key: 'mealIdea', icon: 'bulb', title: 'Idea pasto', desc: 'Dalla dispensa' },
     ],
   },
   {
     title: 'Controlli fisiologici',
     items: [
-      { key: 'checkOggi', icon: '⚖️', title: 'Check oggi', desc: 'Audit nutrizionale' },
-      { key: 'trainingCheck', icon: '🏃‍♂️', title: 'Workout', desc: 'Onda energetica' },
-      { key: 'reportMese', icon: '📅', title: 'Report mese', desc: 'Trend 30 gg' },
-      { key: 'scannerMetabolico', icon: '🧬', title: 'Scanner', desc: 'Analisi 14 gg' },
+      { key: 'checkOggi', icon: 'scales', title: 'Check oggi', desc: 'Audit nutrizionale' },
+      { key: 'trainingCheck', icon: 'run', title: 'Workout', desc: 'Onda energetica' },
+      { key: 'reportMese', icon: 'calendar', title: 'Report mese', desc: 'Trend 30 gg' },
+      { key: 'scannerMetabolico', icon: 'dna', title: 'Scanner', desc: 'Analisi 14 gg' },
     ],
   },
 ];
@@ -76,37 +82,65 @@ export default function AiCluster({
 
   return (
     <div
-      className="view-animate ai-cluster-root"
+      className="view-animate ai-cluster-root kentu-os"
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', color: '#888', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; MENU</button>
-        <h2 style={{ fontSize: '0.8rem', color: '#b388ff', letterSpacing: '2px', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 600 }}>
-          <img src="/nuovo%20logo%20trasparente2.png" alt="Kentuos Logo" decoding="async" style={{ maxHeight: 22, width: 'auto', maxWidth: 'min(120px, 32vw)', objectFit: 'contain', display: 'block' }} />
-          <span style={{ whiteSpace: 'nowrap' }}>Kentu</span>
-        </h2>
-        <button type="button" onClick={() => setShowAiSettings(!showAiSettings)} style={{ background: 'none', border: 'none', color: '#b388ff', fontSize: '1.2rem', cursor: 'pointer', filter: 'drop-shadow(0 0 5px rgba(179, 136, 255, 0.5))' }}>⚙️</button>
-      </div>
+      <header className="kentu-os-header">
+        <KentuButton variant="ghost" className="kentu-btn--icon" onClick={onBack} aria-label="Menu">
+          <KentuIcon name="arrow-left" size={22} />
+        </KentuButton>
+        <div className="kentu-os-brand">
+          <img src="/nuovo%20logo%20trasparente2.png" alt="Kentu" decoding="async" />
+          <div className="kentu-os-status">
+            <span className="kentu-os-status__pulse" aria-hidden />
+            KentuOS · ONLINE
+          </div>
+        </div>
+        <KentuButton
+          variant="ghost"
+          className="kentu-btn--icon"
+          onClick={() => setShowAiSettings(!showAiSettings)}
+          aria-label="Impostazioni API"
+        >
+          <KentuIcon name="gear" size={22} />
+        </KentuButton>
+      </header>
 
       {showAiSettings && (
-        <div className="ai-card" style={{ marginBottom: '15px', padding: '18px 16px' }}>
-          <h4 style={{ fontSize: '0.7rem', color: '#b388ff', margin: '0 0 10px 0', letterSpacing: '1px' }}>CLUSTER NODI API (FALLBACK)</h4>
+        <div className="kentu-card kentu-card--settings" style={{ marginBottom: 14 }}>
+          <p className="kentu-insight-sub" style={{ marginBottom: 12 }}>
+            Cluster nodi API (fallback)
+          </p>
           {apiKeys.map((key, idx) => (
-            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ color: '#555', fontSize: '0.7rem' }}>N.{idx + 1}</span>
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ color: 'var(--kentu-text-muted)', fontSize: '0.65rem', fontWeight: 700 }}>N.{idx + 1}</span>
               <input
                 type="password"
                 value={key}
                 onChange={(e) => onKeyChange(idx, e.target.value)}
-                style={{ flex: 1, background: '#222', border: '1px solid #444', color: '#fff', padding: '8px', borderRadius: '6px', fontSize: '0.8rem' }}
-                placeholder="Incolla chiave Gemini..."
+                style={{
+                  flex: 1,
+                  background: 'rgba(0,0,0,0.25)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  fontSize: '0.8rem',
+                }}
+                placeholder="Chiave Gemini…"
               />
-              <button type="button" onClick={() => onRemoveKey(idx)} style={{ background: 'none', border: 'none', color: '#ff4d4d', cursor: 'pointer', padding: '5px' }}>✕</button>
+              <KentuButton variant="ghost" className="kentu-btn--icon" onClick={() => onRemoveKey(idx)} aria-label="Rimuovi">
+                <KentuIcon name="x" size={18} />
+              </KentuButton>
             </div>
           ))}
-          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-            <button type="button" onClick={onAddKey} style={{ flex: 1, padding: '10px', background: 'transparent', border: '1px dashed #333', color: '#aaa', borderRadius: '8px', cursor: 'pointer' }}>+ Aggiungi Nodo</button>
-            <button type="button" onClick={onSaveApiCluster} style={{ flex: 1, padding: '10px', background: '#b388ff', border: 'none', color: '#000', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Salva Rete</button>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+            <KentuButton variant="secondary" style={{ flex: 1 }} onClick={onAddKey}>
+              + Nodo
+            </KentuButton>
+            <KentuButton variant="primary" style={{ flex: 1 }} onClick={onSaveApiCluster}>
+              Salva rete
+            </KentuButton>
           </div>
         </div>
       )}
@@ -125,45 +159,49 @@ export default function AiCluster({
           {chatHistory.map((msg, idx) => (
             <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'ai' ? 'flex-start' : 'flex-end', width: '100%' }}>
               {msg.sender === 'ai' && msg.mealProposal && !msg.isTyping ? (
-                <MenuProposalCard
-                  proposal={msg.mealProposal}
-                  onConfirm={onMealProposalConfirm}
-                  onCancel={onMealProposalCancel}
-                  onSwap={onMealProposalSwap}
-                />
-              ) : msg.sender === 'ai' ? (
-                <div className={`ai-card${msg.isTyping ? ' ai-card--typing' : ''}`}>
-                  {msg.isTyping ? (
-                    <div className="typing-indicator">
-                      <div className="dot"></div>
-                      <div className="dot"></div>
-                      <div className="dot"></div>
-                    </div>
-                  ) : (
-                    splitAiMessageSections(msg.text).map((block, si) => (
-                      <div
-                        key={si}
-                        className={si > 0 ? 'ai-card-section--divider' : undefined}
-                        style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                      >
-                        {block}
-                      </div>
-                    ))
-                  )}
+                <div style={{ width: '100%' }}>
+                  <MenuProposalCard
+                    proposal={msg.mealProposal}
+                    onConfirm={onMealProposalConfirm}
+                    onCancel={onMealProposalCancel}
+                    onSwap={onMealProposalSwap}
+                  />
                 </div>
+              ) : msg.sender === 'ai' ? (
+                msg.isTyping ? (
+                  <div className="kentu-card kentu-card--typing">
+                    <div className="typing-indicator">
+                      <div className="dot" />
+                      <div className="dot" />
+                      <div className="dot" />
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {splitAiMessageSections(msg.text).map((block, si) =>
+                      si === 0 ? (
+                        <KentuInsightHero key={si} block={block} />
+                      ) : (
+                        <KentuInsightCard key={si} block={block} />
+                      )
+                    )}
+                  </div>
+                )
               ) : (
-                <div className="chat-bubble bubble-user" style={{ fontSize: '1.0625rem', lineHeight: 1.65, maxWidth: '88%' }}>
+                <div className="kentu-user-capsule">
+                  <div className="kentu-user-capsule__label">Input</div>
                   {stripInvisibleContextFromBubble(msg.text)}
                 </div>
               )}
               {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && !suppressQuickReplies && (
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                <div className="kentu-quick-row" style={{ justifyContent: msg.sender === 'ai' ? 'flex-start' : 'flex-end' }}>
                   {msg.quickReplies.map((reply, rIdx) => {
                     const morningActivityIds = ['weights', 'cardio', 'rest'];
                     return (
-                      <button
+                      <KentuButton
                         key={rIdx}
-                        type="button"
+                        variant="secondary"
+                        className="kentu-btn--sm"
                         onClick={() => {
                           if (msg.workoutTimeConfirm) {
                             onSendMessage(reply, {
@@ -192,62 +230,41 @@ export default function AiCluster({
                           }
                           setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                         }}
-                        className="btn-quick-reply-glass"
-                        style={{ border: 'none' }}
                       >
                         {reply}
-                      </button>
+                      </KentuButton>
                     );
                   })}
                 </div>
               )}
               {msg.dinnerOptions && msg.dinnerOptions.length > 0 && !msg.isTyping && typeof onLogDinnerOption === 'function' && (
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px', marginBottom: '4px', alignItems: 'center' }}>
+                <div className="kentu-quick-row" style={{ justifyContent: 'flex-end' }}>
                   {msg.dinnerOptions.map((opt, oIdx) => (
-                    <button
+                    <KentuButton
                       key={oIdx}
-                      type="button"
+                      variant="secondary"
+                      className="kentu-btn--sm"
                       onClick={() => {
                         onLogDinnerOption(opt);
                         setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                       }}
-                      style={{
-                        padding: '8px 12px',
-                        background: 'rgba(251, 191, 36, 0.15)',
-                        color: '#fde68a',
-                        borderRadius: '12px',
-                        border: '1px solid rgba(251, 191, 36, 0.35)',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
                     >
-                      Logga pasto {oIdx + 1}
-                    </button>
+                      Log pasto {oIdx + 1}
+                    </KentuButton>
                   ))}
                 </div>
               )}
               {msg.agendaOptions && msg.agendaOptions.length > 0 && !msg.isTyping && typeof onLoadAgenda === 'function' && (
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px', marginBottom: '4px', alignItems: 'center' }}>
-                  <button
-                    type="button"
+                <div className="kentu-quick-row" style={{ justifyContent: 'flex-start' }}>
+                  <KentuButton
+                    variant="secondary"
                     onClick={() => {
                       onLoadAgenda(msg.agendaOptions);
                       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                     }}
-                    style={{
-                      padding: '10px 16px',
-                      background: 'rgba(0, 229, 255, 0.12)',
-                      color: '#7dd3fc',
-                      borderRadius: '12px',
-                      border: '1px solid rgba(0, 229, 255, 0.35)',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
                   >
-                    Carica attività nel diario
-                  </button>
+                    Carica nel diario
+                  </KentuButton>
                 </div>
               )}
             </div>
@@ -255,90 +272,65 @@ export default function AiCluster({
           <div ref={chatEndRef} />
         </div>
         {chatImages.length > 0 && (
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', marginLeft: '10px', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 10, marginLeft: 4, overflowX: 'auto' }}>
             {chatImages.map((imgSrc, index) => (
               <div key={index} style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }}>
-                <img src={imgSrc} alt={`Upload ${index}`} style={{ height: '60px', borderRadius: '8px', border: '1px solid #444' }} />
-                <button
-                  type="button"
-                  onClick={() => setChatImages(prev => prev.filter((_, i) => i !== index))}
-                  style={{ position: 'absolute', top: '-5px', right: '-5px', background: '#ff4d4d', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontSize: '0.7rem' }}
-                >✕</button>
+                <img src={imgSrc} alt="" style={{ height: 60, borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)' }} />
+                <KentuButton
+                  variant="secondary"
+                  className="kentu-btn--icon"
+                  style={{
+                    position: 'absolute',
+                    top: -6,
+                    right: -6,
+                    width: 26,
+                    height: 26,
+                    minWidth: 26,
+                    padding: 0,
+                    borderRadius: '50%',
+                    borderColor: 'rgba(248,113,113,0.35)',
+                    color: '#fca5a5',
+                  }}
+                  onClick={() => setChatImages((prev) => prev.filter((_, i) => i !== index))}
+                  aria-label="Rimuovi immagine"
+                >
+                  <KentuIcon name="x" size={14} />
+                </KentuButton>
               </div>
             ))}
           </div>
         )}
         {typeof onChatQuickAction === 'function' && !chatInput.trim() && chatImages.length === 0 && (
-          <div style={{ flexShrink: 0, marginTop: '6px', marginBottom: '4px' }}>
-            <button
-              type="button"
-              className="btn-glass"
-              onClick={() => setIsPanelOpen((o) => !o)}
-              aria-expanded={isPanelOpen}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '10px',
-                padding: '12px 14px',
-                boxSizing: 'border-box',
-                fontSize: '0.85rem',
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span className="command-hub-tile-icon" style={{ fontSize: '1.35rem' }} aria-hidden>🎛️</span>
-                <span style={{ color: '#e9d5ff' }}>{isPanelOpen ? 'Chiudi hub comandi' : 'Apri hub comandi'}</span>
+          <div style={{ flexShrink: 0, marginTop: 6, marginBottom: 4 }}>
+            <button type="button" className="kentu-hub-toggle" onClick={() => setIsPanelOpen((o) => !o)} aria-expanded={isPanelOpen}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <KentuIcon name="sliders" size={22} />
+                <span>{isPanelOpen ? 'Chiudi strumenti' : 'Strumenti sistema'}</span>
               </span>
-              <span style={{ opacity: 0.75, fontSize: '0.75rem' }}>{isPanelOpen ? '▲' : '▼'}</span>
+              <span style={{ display: 'flex', color: 'var(--kentu-text-muted)', transform: isPanelOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}>
+                <KentuIcon name="caret" size={20} />
+              </span>
             </button>
             {isPanelOpen && (
-              <div className="ai-card" style={{ marginTop: '10px', padding: '14px 12px 16px' }}>
-                <div
-                  style={{
-                    fontSize: '0.58rem',
-                    letterSpacing: '0.22em',
-                    textTransform: 'uppercase',
-                    color: 'rgba(148,163,184,0.9)',
-                    marginBottom: '12px',
-                    fontWeight: 800,
-                  }}
-                >
-                  Dashboard comandi
-                </div>
+              <div className="kentu-card kentu-hub-panel">
+                <div className="kentu-hub-section-title">Dashboard comandi</div>
                 {COMMAND_HUB_SECTIONS.map((section, secIdx) => (
-                  <div key={section.title} style={{ marginBottom: secIdx < COMMAND_HUB_SECTIONS.length - 1 ? '16px' : 0 }}>
-                    <div
-                      style={{
-                        fontSize: '0.62rem',
-                        color: '#93c5fd',
-                        letterSpacing: '0.14em',
-                        textTransform: 'uppercase',
-                        marginBottom: '10px',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {section.title}
-                    </div>
-                    <div className="command-hub-grid">
-                      {section.items.map(({ key, icon, title: tileTitle, desc }) => (
-                        <button
+                  <div key={section.title} style={{ marginBottom: secIdx < COMMAND_HUB_SECTIONS.length - 1 ? 18 : 0 }}>
+                    <div className="kentu-hub-group-label">{section.title}</div>
+                    <div className="kentu-hub-grid">
+                      {section.items.map(({ key, icon, title: tileTitle, desc, highlight }) => (
+                        <KentuGridItem
                           key={key}
-                          type="button"
-                          className="btn-glass command-hub-tile"
+                          icon={icon}
+                          title={tileTitle}
+                          subtitle={desc}
+                          highlighted={!!highlight}
                           onClick={() => {
                             onChatQuickAction(key);
+                            setIsPanelOpen(false);
                             setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                           }}
-                        >
-                          <span className="command-hub-tile-icon" aria-hidden>
-                            {icon}
-                          </span>
-                          <span className="command-hub-tile-title">{tileTitle}</span>
-                          <span className="command-hub-tile-desc">{desc}</span>
-                        </button>
+                        />
                       ))}
                     </div>
                   </div>
@@ -347,10 +339,7 @@ export default function AiCluster({
             )}
           </div>
         )}
-        <div
-          className="chat-input-wrapper chat-input-glass"
-          style={{ marginTop: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', borderRadius: '30px', padding: '6px 6px 6px 10px' }}
-        >
+        <div className="kentu-input-strip">
           <input
             type="file"
             accept="image/*"
@@ -360,22 +349,29 @@ export default function AiCluster({
             onChange={(e) => {
               const files = Array.from(e.target.files || []);
               if (files.length > 0) {
-                Promise.all(files.map(file => new Promise((resolve) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => resolve(reader.result);
-                  reader.readAsDataURL(file);
-                }))).then(newBase64Images => {
-                  setChatImages(prev => [...prev, ...newBase64Images]);
+                Promise.all(
+                  files.map(
+                    (file) =>
+                      new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.readAsDataURL(file);
+                      })
+                  )
+                ).then((newBase64Images) => {
+                  setChatImages((prev) => [...prev, ...newBase64Images]);
                 });
                 e.target.value = '';
               }
             }}
           />
-          <button type="button" onClick={() => chatFileInputRef.current?.click()} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '1.2rem', cursor: 'pointer', padding: '5px' }}>📷</button>
+          <KentuButton variant="ghost" className="kentu-btn--icon" type="button" onClick={() => chatFileInputRef.current?.click()} aria-label="Allega immagine">
+            <KentuIcon name="camera" size={22} />
+          </KentuButton>
           <input
             type="text"
             className="chat-input"
-            placeholder={chatImages.length > 0 ? 'Aggiungi un commento alle immagini...' : 'Scrivi a Kentu...'}
+            placeholder={chatImages.length > 0 ? 'Commento immagini…' : 'Query sistema…'}
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => {
@@ -384,19 +380,19 @@ export default function AiCluster({
                 setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
               }
             }}
-            style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: '1.05rem', lineHeight: 1.5, outline: 'none', minWidth: 0 }}
+            style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', outline: 'none', minWidth: 0 }}
           />
-          <button
-            type="button"
-            className={`btn-primary-glow chat-send-btn-glow ${!(chatInput.trim() || chatImages.length > 0) ? 'chat-send-btn-glow--idle' : ''}`}
-            aria-label="Invia messaggio"
+          <KentuButton
+            variant="primary"
+            className={`kentu-send-btn ${!(chatInput.trim() || chatImages.length > 0) ? 'kentu-send-btn--idle' : ''}`}
+            aria-label="Invia"
             onClick={() => {
               onSendMessage(undefined, { fromInput: true });
               setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
           >
-            ↑
-          </button>
+            <KentuIcon name="send" size={18} />
+          </KentuButton>
         </div>
       </div>
     </div>
