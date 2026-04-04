@@ -2,7 +2,7 @@
  * AiCluster.jsx — Interfaccia Assistente AI (chat, prompt rapidi, input, impostazioni API).
  * Estratto da SalaComandi.jsx per smembramento UI. Lo stato globale (chatHistory, invio) resta nel genitore.
  */
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import MenuProposalCard from './MenuProposalCard';
 
 /** Allinea a stripInvisibleContextFromVisibleUserText in SalaComandi (contesto API non visibile). */
@@ -33,6 +33,7 @@ export default function AiCluster({
   onSaveApiCluster,
   onBack,
 }) {
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
 
@@ -46,7 +47,10 @@ export default function AiCluster({
   );
 
   return (
-    <div className="view-animate" style={{ display: 'flex', flexDirection: 'column' }}>
+    <div
+      className="view-animate ai-cluster-root"
+      style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', color: '#888', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; MENU</button>
         <h2 style={{ fontSize: '0.8rem', color: '#b388ff', letterSpacing: '2px', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 600 }}>
@@ -79,8 +83,17 @@ export default function AiCluster({
         </div>
       )}
 
-      <div className="chat-container" style={{ height: '65vh', display: 'flex', flexDirection: 'column' }}>
-        <div className="chat-messages" style={{ flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
+      <div
+        className="chat-container"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          height: 'auto',
+        }}
+      >
+        <div className="chat-messages" style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', paddingRight: '5px' }}>
           {chatHistory.map((msg, idx) => (
             <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'ai' ? 'flex-start' : 'flex-end', width: '100%' }}>
               {msg.sender === 'ai' && msg.mealProposal && !msg.isTyping ? (
@@ -91,7 +104,10 @@ export default function AiCluster({
                   onSwap={onMealProposalSwap}
                 />
               ) : (
-                <div className={`chat-bubble ${msg.sender === 'ai' ? 'bubble-ai' : 'bubble-user'}`}>
+                <div
+                  className={`chat-bubble ${msg.sender === 'ai' ? 'bubble-ai' : 'bubble-user'}`}
+                  style={{ fontSize: '1.0625rem', lineHeight: 1.65 }}
+                >
                   {msg.isTyping ? (
                     <div className="typing-indicator">
                       <div className="dot"></div>
@@ -217,88 +233,118 @@ export default function AiCluster({
           </div>
         )}
         {typeof onChatQuickAction === 'function' && !chatInput.trim() && chatImages.length === 0 && (
-          <div
-            style={{
-              marginTop: '8px',
-              marginBottom: '6px',
-              flexShrink: 0,
-              padding: '10px 10px 12px',
-              borderRadius: '14px',
-              border: '1px solid rgba(255,255,255,0.08)',
-              background: 'linear-gradient(165deg, rgba(22,24,30,0.95) 0%, rgba(12,14,18,0.98) 100%)',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
-            }}
-          >
-            <div
+          <div style={{ flexShrink: 0, marginTop: '6px', marginBottom: '4px' }}>
+            <button
+              type="button"
+              onClick={() => setIsPanelOpen((o) => !o)}
+              aria-expanded={isPanelOpen}
               style={{
-                fontSize: '0.58rem',
-                letterSpacing: '0.22em',
-                textTransform: 'uppercase',
-                color: 'rgba(148,163,184,0.85)',
-                marginBottom: '8px',
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '10px',
+                padding: '8px 12px',
+                borderRadius: '12px',
+                border: '1px solid rgba(179, 136, 255, 0.35)',
+                background: isPanelOpen ? 'rgba(179, 136, 255, 0.14)' : 'rgba(179, 136, 255, 0.07)',
+                color: '#e9d5ff',
+                fontSize: '0.82rem',
                 fontWeight: 700,
+                cursor: 'pointer',
+                letterSpacing: '0.03em',
+                boxSizing: 'border-box',
               }}
             >
-              Pannello comandi
-            </div>
-            {[
-              {
-                title: 'Coach & dispensa',
-                keys: [
-                  { key: 'briefing', label: '📊 Briefing' },
-                  { key: 'yesterday', label: '🔍 Analisi Ieri' },
-                  { key: 'mealIdea', label: '💡 Idea Pasto' },
-                ],
-              },
-              {
-                title: 'Controlli fisiologici',
-                keys: [
-                  { key: 'checkOggi', label: '⚖️ Check Oggi' },
-                  { key: 'trainingCheck', label: '🏃‍♂️ Posso allenarmi?' },
-                  { key: 'reportMese', label: '📅 Report Mese' },
-                  { key: 'scannerMetabolico', label: '🧬 Scanner Metabolico' },
-                ],
-              },
-            ].map((section) => (
-              <div key={section.title} style={{ marginBottom: section.title === 'Coach & dispensa' ? '12px' : 0 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span aria-hidden>🎛️</span>
+                {isPanelOpen ? 'Chiudi controlli avanzati' : 'Controlli avanzati'}
+              </span>
+              <span style={{ opacity: 0.75, fontSize: '0.7rem' }}>{isPanelOpen ? '▲' : '▼'}</span>
+            </button>
+            {isPanelOpen && (
+              <div
+                style={{
+                  marginTop: '8px',
+                  padding: '10px 10px 12px',
+                  borderRadius: '14px',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: 'linear-gradient(165deg, rgba(22,24,30,0.95) 0%, rgba(12,14,18,0.98) 100%)',
+                  boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
+                }}
+              >
                 <div
                   style={{
-                    fontSize: '0.62rem',
-                    color: '#7dd3fc',
-                    letterSpacing: '0.06em',
-                    marginBottom: '6px',
-                    fontWeight: 600,
+                    fontSize: '0.58rem',
+                    letterSpacing: '0.22em',
+                    textTransform: 'uppercase',
+                    color: 'rgba(148,163,184,0.85)',
+                    marginBottom: '8px',
+                    fontWeight: 700,
                   }}
                 >
-                  {section.title}
+                  Pannello comandi
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {section.keys.map(({ key, label }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => {
-                        onChatQuickAction(key);
-                        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                      }}
+                {[
+                  {
+                    title: 'Coach & dispensa',
+                    keys: [
+                      { key: 'briefing', label: '📊 Briefing' },
+                      { key: 'yesterday', label: '🔍 Analisi Ieri' },
+                      { key: 'mealIdea', label: '💡 Idea Pasto' },
+                    ],
+                  },
+                  {
+                    title: 'Controlli fisiologici',
+                    keys: [
+                      { key: 'checkOggi', label: '⚖️ Check Oggi' },
+                      { key: 'trainingCheck', label: '🏃‍♂️ Posso allenarmi?' },
+                      { key: 'reportMese', label: '📅 Report Mese' },
+                      { key: 'scannerMetabolico', label: '🧬 Scanner Metabolico' },
+                    ],
+                  },
+                ].map((section) => (
+                  <div key={section.title} style={{ marginBottom: section.title === 'Coach & dispensa' ? '12px' : 0 }}>
+                    <div
                       style={{
-                        padding: '6px 12px',
-                        borderRadius: '999px',
-                        border: '1px solid rgba(0, 229, 255, 0.28)',
-                        background: 'rgba(0, 229, 255, 0.08)',
-                        color: '#e0f2fe',
-                        fontSize: '0.72rem',
+                        fontSize: '0.62rem',
+                        color: '#7dd3fc',
+                        letterSpacing: '0.06em',
+                        marginBottom: '6px',
                         fontWeight: 600,
-                        cursor: 'pointer',
-                        letterSpacing: '0.02em',
                       }}
                     >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                      {section.title}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {section.keys.map(({ key, label }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => {
+                            onChatQuickAction(key);
+                            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                          }}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: '999px',
+                            border: '1px solid rgba(0, 229, 255, 0.28)',
+                            background: 'rgba(0, 229, 255, 0.08)',
+                            color: '#e0f2fe',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            letterSpacing: '0.02em',
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
         <div className="chat-input-wrapper" style={{ marginTop: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 10px', border: '1px solid #333' }}>
@@ -335,7 +381,7 @@ export default function AiCluster({
                 setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
               }
             }}
-            style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: '0.95rem', outline: 'none', minWidth: 0 }}
+            style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: '1.05rem', lineHeight: 1.5, outline: 'none', minWidth: 0 }}
           />
           <button
             type="button"

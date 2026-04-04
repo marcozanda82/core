@@ -3213,11 +3213,12 @@ function habitScanDayFiberTotal(foods) {
  * Contatori: cene pesanti, procrastinazione proteica, alcol, picchi glicemici (carb nudi), fibre basse, shock fibre, orari cena.
  */
 export function generateLocalHabitScanner(fullHistory) {
-  const green =
-    '🟢 Ecosistema in Equilibrio: Nessuna anomalia fisiologica cronica rilevata negli ultimi 14 giorni. Ottimo lavoro.';
+  const greenLine =
+    '• 🟢 Ecosistema in Equilibrio: Nessuna anomalia fisiologica cronica rilevata negli ultimi 14 giorni. Ottimo lavoro.';
+  const refertoHeader = '🧬 REFERTO SCANNER METABOLICO (14 GG):';
 
   if (!fullHistory || typeof fullHistory !== 'object') {
-    return `${green}`;
+    return [refertoHeader, '', greenLine].join('\n');
   }
 
   const anchor = getTodayString();
@@ -3329,10 +3330,10 @@ export function generateLocalHabitScanner(fullHistory) {
   }
 
   if (alerts.length === 0) {
-    return green;
+    return [refertoHeader, '', greenLine].join('\n');
   }
 
-  return ['🧬 REFERTO SCANNER METABOLICO (14 GG):', '', ...alerts.map((a) => `• ${a}`)].join('\n');
+  return [refertoHeader, '', ...alerts.map((a) => `• ${a}`)].join('\n');
 }
 
 function clampLongevityComponent(n) {
@@ -4477,8 +4478,8 @@ export function generateLocalNutritionalAudit(dailyLog, userTargets) {
   const lines = [
     '📋 Check alimentare (locale)',
     '',
-    `— Oggi: proteine ${Math.round(prot * 10) / 10}g · carboidrati ${Math.round(carb * 10) / 10}g · grassi ${Math.round(totalFat * 10) / 10}g · zuccheri semplici ~${Math.round(sugarTotal * 10) / 10}g`,
-    `— Cena: carboidrati ${Math.round(cenaCarb * 10) / 10}g · grassi ${Math.round(cenaFat * 10) / 10}g`,
+    `• Oggi: proteine ${Math.round(prot * 10) / 10}g · carboidrati ${Math.round(carb * 10) / 10}g · grassi ${Math.round(totalFat * 10) / 10}g · zuccheri semplici ~${Math.round(sugarTotal * 10) / 10}g`,
+    `• Cena: carboidrati ${Math.round(cenaCarb * 10) / 10}g · grassi ${Math.round(cenaFat * 10) / 10}g`,
     '',
   ];
   if (errors.length) {
@@ -4487,7 +4488,7 @@ export function generateLocalNutritionalAudit(dailyLog, userTargets) {
   if (successes.length) {
     lines.push('Punti positivi:', ...successes.map((s) => `• ${s}`), '');
   }
-  lines.push(tip);
+  lines.push(`• ${tip}`);
   return lines.join('\n');
 }
 

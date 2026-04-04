@@ -5452,6 +5452,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const baseSystemPrompt = `Sei l'assistente di KentuOS. Il tuo scopo è dialogare con l'utente in italiano.
 
 REGOLE DI STILE (PRIORITÀ): Sintesi brutale. Al massimo 3 elenchi puntati per messaggio (quando usi elenchi). Vietate introduzioni tipo "Ecco il tuo briefing" / "Ecco un riepilogo" e conclusioni tipo "Spero di esserti stato utile" / "Fammi sapere": vai dritto al sodo.
+FORMATTAZIONE OBBLIGATORIA: Devi essere chiarissimo e massimizzare la leggibilità. Quando dai consigli, spieghi concetti, elenchi alimenti o fai riepiloghi, usa SEMPRE gli elenchi puntati. Evita muri di testo. Usa frasi brevi, dirette e separate visivamente.
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=BRIEFING o QUICK_ACTION=ANALISI_IERI: rispondi ESCLUSIVAMENTE in formato Lavagna (emoji + dato per riga, elenchi puntati essenziali), rispettando il tetto di 3 elenchi e le REGOLE DI STILE sopra.
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=IDEA_PASTO: rispondi ESCLUSIVAMENTE con il blocco [MEAL_PROPOSAL:{...}] su una riga come da CARTA MENU; nessun altro testo (la Dispensa è in [CONTEXT_LIVE]).
 
@@ -7931,9 +7932,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           @keyframes waterShine { 0%, 100% { opacity: 0.5; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-5px); } }
           @keyframes waveDrift { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
           
-          .chat-container { display: flex; flex-direction: column; height: 380px; }
-          .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; padding-right: 5px; padding-bottom: 20px; }
-          .chat-bubble { max-width: 82%; padding: 14px 18px; border-radius: 20px; font-size: 0.9rem; line-height: 1.4; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+          .chat-container { display: flex; flex-direction: column; flex: 1; min-height: 0; height: auto; max-height: none; }
+          .chat-messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; padding-right: 5px; padding-bottom: 20px; -webkit-overflow-scrolling: touch; }
+          .chat-bubble { max-width: 88%; padding: 16px 18px; border-radius: 20px; font-size: 1.0625rem; line-height: 1.65; white-space: pre-wrap; word-break: break-word; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
           .bubble-ai { background: #1f1f1f; border: 1px solid #333; color: #eee; border-bottom-left-radius: 4px; align-self: flex-start; }
           .bubble-user { background: linear-gradient(135deg, #00e5ff, #007aff); color: #000; font-weight: 500; border-bottom-right-radius: 4px; align-self: flex-end; }
           .typing-indicator { display: flex; gap: 4px; padding: 5px; }
@@ -7941,7 +7942,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           .dot:nth-child(1) { animation-delay: -0.32s; } .dot:nth-child(2) { animation-delay: -0.16s; }
           @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); background: #fff; } }
           .chat-input-wrapper { display: flex; align-items: center; gap: 10px; background: #1a1a1a; border-radius: 30px; padding: 6px 6px 6px 20px; border: 1px solid #333; margin-top: 10px; }
-          .chat-input { flex: 1; background: transparent; border: none; color: #fff; font-size: 0.95rem; outline: none; }
+          .chat-input { flex: 1; background: transparent; border: none; color: #fff; font-size: 1.05rem; line-height: 1.5; outline: none; }
           .chat-send-btn { background: #fff; color: #000; border: none; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: 0.2s; font-size: 1.1rem; }
           .chat-send-btn.has-text { background: #b388ff; color: #fff; }
 
@@ -9509,6 +9510,18 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
         {/* VISTA CHAT AI */}
         {activeAction === 'ai_chat' && (
+          <div
+            className="view-animate"
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              height: '100%',
+              maxHeight: '100%',
+            }}
+          >
           <AiCluster
             chatHistory={chatHistory}
             chatInput={chatInput}
@@ -9562,6 +9575,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             onSaveApiCluster={saveApiCluster}
             onBack={() => setActiveAction(null)}
           />
+          </div>
         )}
 
         {/* VISTA ACQUA */}
