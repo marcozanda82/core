@@ -110,6 +110,10 @@ import {
   getDynamicMealTargets,
   scoreFoodForSmartMealBuilder,
   buildSmartMealPhysioContextSnippet,
+  parseKentuInvisibleCmd,
+  normalizeCalorieStrategyTarget,
+  applyCalorieStrategyToProfileKcal,
+  calorieStrategyShortLabelIt,
   generateLocalNutritionalAudit,
   generateLocalTrainingAdvice,
   generateLocalMonthlyAudit,
@@ -259,6 +263,7 @@ function getInvisibleContext({
   trainingWaveSnippet,
   mealTypeForSmart,
   dailyLogForSmart,
+  kentuCalorieStrategy,
 }) {
   const bb = Math.round(Number(bodyBatteryPercent) || 0);
   const dynK = Number(dynamicDailyKcal) || 0;
@@ -282,7 +287,11 @@ function getInvisibleContext({
       ? buildSmartMealPhysioContextSnippet(mealTypeForSmart, dailyLogForSmart, userTargets)
       : '';
   const smartPart = smartPhysio ? ` Smart: ${smartPhysio}.` : '';
-  return `[CONTEXT_LIVE: BB: ${bb}%, Residuo: ${resKcal}kcal, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}.${smartPart}${wave}]`;
+  const stratPart =
+    kentuCalorieStrategy != null && String(kentuCalorieStrategy).trim() !== ''
+      ? ` Strategia kcal oggi: ${calorieStrategyShortLabelIt(kentuCalorieStrategy)}.`
+      : '';
+  return `[CONTEXT_LIVE: BB: ${bb}%, Residuo: ${resKcal}kcal, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}.${smartPart}${stratPart}${wave}]`;
 }
 
 /** Totali kcal/P/C/F solo da voci food/recipe nel log giornaliero. */
@@ -1920,6 +1929,8 @@ export default function SalaComandi() {
   const [chatHistory, setChatHistory] = useState([
     { sender: 'ai', text: 'KentuOS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
   ]);
+  /** Strategia calorica giornaliera da comandi invisibili chat (deficit / pari / surplus). */
+  const [kentuDailyCalorieStrategy, setKentuDailyCalorieStrategy] = useState('pari');
   const CHAT_HISTORY_WINDOW = 10;
   const lastDinnerOptionsRef = useRef(null);
   const lastAgendaOptionsRef = useRef(null);
@@ -1962,6 +1973,20 @@ export default function SalaComandi() {
 
   useEffect(() => {
     scheduledWorkoutContextRef.current = null;
+  }, [currentTrackerDate]);
+
+  useEffect(() => {
+    const d = currentTrackerDate || getTodayString();
+    try {
+      const v = localStorage.getItem(`kentu_cal_strategy_${d}`);
+      if (v === 'deficit' || v === 'pari' || v === 'surplus') {
+        setKentuDailyCalorieStrategy(v);
+      } else {
+        setKentuDailyCalorieStrategy('pari');
+      }
+    } catch {
+      setKentuDailyCalorieStrategy('pari');
+    }
   }, [currentTrackerDate]);
 
   const selectedNodeReportPrevRef = useRef(null);
@@ -4905,6 +4930,36 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     ]
   );
 
+  const applyKentuChatCmd = useCallback((cmd) => {
+    if (!cmd || typeof cmd !== 'object') return;
+    if (cmd.target != null) {
+      const t = normalizeCalorieStrategyTarget(cmd.target);
+      setKentuDailyCalorieStrategy(t);
+      try {
+        const d = currentTrackerDateRef.current || getTodayString();
+        localStorage.setItem(`kentu_cal_strategy_${d}`, t);
+      } catch (_) {
+        /* noop */
+      }
+    }
+    const anchorW = currentTrackerDateRef.current || getTodayString();
+    if (Object.prototype.hasOwnProperty.call(cmd, 'workoutTime')) {
+      const wt = cmd.workoutTime;
+      if (wt != null && String(wt).trim() && String(wt).toLowerCase() !== 'null') {
+        const dec = parseFlexibleTimeToDecimal(String(wt).trim());
+        if (dec != null && anchorW === getTodayString()) {
+          scheduledWorkoutContextRef.current = {
+            workoutDecimalHour: dec,
+            label: 'Allenamento (Kentu)',
+            dateStr: anchorW,
+          };
+        }
+      } else {
+        scheduledWorkoutContextRef.current = null;
+      }
+    }
+  }, []);
+
   const handleChatSubmit = async (optionalReply, sendMeta) => {
     const meta = sendMeta && typeof sendMeta === 'object' ? sendMeta : null;
     const trimQuick = optionalReply != null ? String(optionalReply).trim() : '';
@@ -5516,6 +5571,8 @@ REGOLA MOLTIPLICATORE: Se l'utente indica quantità a pezzi (es. "3 gallette di 
 
 Puoi anche proporre alternative dal database e chiedere conferma; alla conferma restituisci l'array JSON. In alternativa, per un singolo inserimento legacy, puoi usare {"action":"insert","food":{"desc":"nome","qta":grammi,"mealType":"pranzo"}} (mealType sempre uno dei cinque slot ufficiali sopra).
 
+COMANDI DI SISTEMA (INVISIBILI): Se l'utente dichiara nel testo l'intenzione di cambiare strategia calorica (es. andare in deficit, mantenimento/pari, o surplus) OPPURE dichiara un orario in cui si allenerà, DEVI inserire alla FINE ASSOLUTA della tua risposta testuale un blocco dati formattato esattamente così: ===CMD:{"target":"deficit|pari|surplus", "workoutTime":"HH:MM"|null}===. Se l'utente non menziona modifiche strategiche né un orario di allenamento, non inserire il comando. Per solo orario di allenamento senza cambio strategia usa "pari" come target. workoutTime in 24h (es. "18:30") o null se non applichi un orario; null cancella l'orario programmato nel sistema quando l'utente lo revoca esplicitamente.
+
 SONNO (ZERO FORM — solo messaggio testuale, niente screenshot Mi Fitness): Se l'utente riferisce di aver dormito (sonno notturno o sonnellino/pisolino), estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). Restituisci RIGOROSAMENTE un JSON con questo formato: {"action":"add_sleep","hours":<numero_ore>}. Non aggiungere alcun testo fuori dal JSON.
 
 ALLENAMENTO (ZERO FORM — solo messaggio testuale): Se l'utente riferisce di essersi allenato o di aver fatto un'attività fisica, estrai titolo, orario di INIZIO esatto e durata in minuti. SLOT FILLING SEVERO: se mancano dati cruciali (orario esatto di inizio o durata in minuti), NON inventarli: imposta "timeString" a null o "" e "duration" a null. Non usare add_workout finché l'utente non ha fornito entrambi in modo chiaro nel messaggio. Se le calorie non sono note, puoi stimarle solo quando durata e orario sono entrambi presenti; altrimenti "calories" può essere null. Formato JSON obbligatorio: {"action":"add_workout","title":"nome_attività","timeString":"HH:mm","duration":<minuti_intero>,"calories":<kcal_o_null>}. timeString in 24h (es. "18:30"). Restituisci RIGOROSAMENTE solo questo JSON senza altro testo. Non usare add_workout nella stessa risposta di add_sleep o log_sleep.
@@ -5567,7 +5624,9 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
       const burnedKcalContext = (activeLog || [])
         .filter((item) => item.type === 'workout')
         .reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
-      const dynamicDailyKcalContext = (userTargets?.kcal ?? 2000) + burnedKcalContext;
+      const dynamicDailyKcalContext =
+        applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) +
+        burnedKcalContext;
       const contextString = getInvisibleContext({
         bodyBatteryPercent: bodyBattery?.currentEnergy ?? 0,
         dynamicDailyKcal: dynamicDailyKcalContext,
@@ -5578,6 +5637,7 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
         trainingWaveSnippet: buildTrainingWaveContextSnippet(trainingWaveResult),
         mealTypeForSmart: activeAction === 'pasto' ? mealType : undefined,
         dailyLogForSmart: activeAction === 'pasto' ? (activeLog || dailyLog) : undefined,
+        kentuCalorieStrategy: kentuDailyCalorieStrategy,
       });
       const rawLastUserForApi =
         apiUserContent || (chatImages.length > 0 ? `[Allegati ${chatImages.length} screenshot da analizzare]` : '');
@@ -5588,8 +5648,13 @@ ${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZION
       const conversationText = conversationLines.join('\n');
       const fullPrompt = dynamicSystemPrompt + '\n\n---\nConversazione (rispondi come Assistente all\'ultimo messaggio):\n' + conversationText;
 
-      const responseText = await callGeminiAPIWithRotation(fullPrompt, { images: chatImages.length > 0 ? chatImages : undefined });
+      let responseText = await callGeminiAPIWithRotation(fullPrompt, { images: chatImages.length > 0 ? chatImages : undefined });
       setChatImages([]);
+      {
+        const cmdCut = parseKentuInvisibleCmd(responseText);
+        responseText = cmdCut.stripped;
+        if (cmdCut.cmd) applyKentuChatCmd(cmdCut.cmd);
+      }
 
       let insertPayload = null;
       let itemsArray = null;
@@ -6997,7 +7062,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   // Calcolo Budget Dinamico (Base + Bruciate oggi) — prima di renderDataWithSegments per usare scale nel map
   const burnedKcal = activeLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
-  const dynamicDailyKcal = (userTargets?.kcal ?? 2000) + burnedKcal;
+  const dynamicDailyKcal =
+    applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) + burnedKcal;
   const targetKcalChart = dynamicDailyKcal;
   // --- NUOVI ALLARMI PREDITTIVI PERCENTUALI ---
   const targetKcalForAlerts = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
@@ -7375,16 +7441,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         : typeof displayTime === 'number' && !Number.isNaN(displayTime)
           ? displayTime
           : 12;
-    const Tkcal = dynamicDailyKcal ?? userTargets?.kcal ?? 2000;
     return getDynamicMealTargets(mealType, dailyLogForDynamicTargets, {
-      kcal: Tkcal,
+      kcal: userTargets?.kcal ?? 2000,
       prot: userTargets?.prot ?? 150,
       carb: userTargets?.carb ?? 200,
       fatTotal: userTargets?.fatTotal ?? userTargets?.fat ?? 60,
       fat: userTargets?.fat ?? userTargets?.fatTotal ?? 60,
       fibre: userTargets?.fibre ?? 30,
-    }, { currentDecimalHour: h });
-  }, [mealType, dailyLogForDynamicTargets, userTargets, dynamicDailyKcal, drawerMealTime, displayTime]);
+    }, {
+      currentDecimalHour: h,
+      calorieStrategy: kentuDailyCalorieStrategy,
+      burnedKcalBonus: burnedKcal,
+    });
+  }, [mealType, dailyLogForDynamicTargets, userTargets, kentuDailyCalorieStrategy, burnedKcal, drawerMealTime, displayTime]);
 
   const strategyKeyForMeal = getStrategyKey(toCanonicalMealType(String(mealType || 'pranzo').split('_')[0]));
   const targetKcalPasto = idealStrategy[strategyKeyForMeal] ?? targetMacrosPasto.kcal;
@@ -8222,6 +8291,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       {activeBottomTab === 'oggi' && (
       <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(8px, 1vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
+          <span style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.35)', padding: '8px 12px', borderRadius: '20px', color: '#7dd3fc', whiteSpace: 'nowrap', fontSize: '0.62rem' }} title="Strategia calorica da Kentu (chat)">
+            🎯 Target oggi: {calorieStrategyShortLabelIt(kentuDailyCalorieStrategy)}
+          </span>
           <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676'}`, padding: '8px 12px', borderRadius: '20px', color: ((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676', boxShadow: `0 0 10px ${((Number(totali?.omega3) ?? 0) < 1) ? 'rgba(255,85,85,0.2)' : 'rgba(0,230,118,0.1)'}`, whiteSpace: 'nowrap' }}>
             {((Number(totali?.omega3) ?? 0) < 1) ? '🔴 Carenza Micro' : '🟢 Micro OK'}
           </span>
@@ -9566,7 +9638,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               const burnedKcalContext = (activeLog || [])
                 .filter((item) => item.type === 'workout')
                 .reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
-              const dynamicDailyKcalCtx = (userTargets?.kcal ?? 2000) + burnedKcalContext;
+              const dynamicDailyKcalCtx =
+                applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) +
+                burnedKcalContext;
               if (kind === 'briefing') {
                 const secret = buildQuickBriefingSecretPrompt({
                   bodyBatteryPercent: bodyBattery?.currentEnergy ?? 0,

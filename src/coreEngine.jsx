@@ -1591,6 +1591,78 @@ export const MEAL_PHYSIO_DINNER_FAT_CAP_G = 23;
 export const MEAL_PHYSIO_DINNER_FAT_CAP_SURPLUS_G = 20;
 const MEAL_PHYSIO_SURPLUS_KCAL_THRESHOLD = 50;
 
+/** Delta kcal sulla baseline profilo (strategia giornaliera da chat Kentu). */
+export const CALORIE_STRATEGY_KCAL_DELTA = { deficit: -500, pari: 0, surplus: 400 };
+
+/**
+ * Normalizza la strategia calorica (testo libero o comando LLM).
+ * @returns {'deficit'|'pari'|'surplus'}
+ */
+export function normalizeCalorieStrategyTarget(v) {
+  const s = String(v ?? '').toLowerCase().trim();
+  if (s === 'mantenimento' || s === 'maintenance' || s === 'pari' || s === 'neutro') return 'pari';
+  if (s === 'deficit' || s === 'cut' || s === 'dimagrimento') return 'deficit';
+  if (s === 'surplus' || s === 'bulk' || s === 'massa') return 'surplus';
+  return 'pari';
+}
+
+/**
+ * Applica la strategia al TDEE/kcal salvato in profilo (prima dei kcal bruciati da workout).
+ */
+export function applyCalorieStrategyToProfileKcal(profileKcal, strategy) {
+  const base = Number(profileKcal) || 2000;
+  const norm = normalizeCalorieStrategyTarget(strategy);
+  const delta = CALORIE_STRATEGY_KCAL_DELTA[norm] ?? 0;
+  return Math.max(1200, Math.round(base + delta));
+}
+
+export function calorieStrategyShortLabelIt(strategy) {
+  const n = normalizeCalorieStrategyTarget(strategy);
+  if (n === 'deficit') return 'Deficit';
+  if (n === 'surplus') return 'Surplus';
+  return 'Mantenimento';
+}
+
+/**
+ * Estrae e rimuove dalla risposta AI il blocco ===CMD:{...}=== (comandi invisibili Kentu).
+ * @returns {{ stripped: string, cmd: object|null }}
+ */
+export function parseKentuInvisibleCmd(text) {
+  const s = text == null ? '' : String(text);
+  const tag = '===CMD:';
+  const idx = s.indexOf(tag);
+  if (idx === -1) return { stripped: s, cmd: null };
+  let j = idx + tag.length;
+  while (j < s.length && /\s/.test(s[j])) j++;
+  if (s[j] !== '{') return { stripped: s, cmd: null };
+  let depth = 0;
+  let k = j;
+  for (; k < s.length; k++) {
+    const c = s[k];
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) {
+        k++;
+        break;
+      }
+    }
+  }
+  if (depth !== 0) return { stripped: s, cmd: null };
+  let end = k;
+  while (end < s.length && /\s/.test(s[end])) end++;
+  if (s.slice(end, end + 3) !== '===') return { stripped: s, cmd: null };
+  end += 3;
+  let cmd = null;
+  try {
+    cmd = JSON.parse(s.slice(j, k));
+  } catch (_) {
+    cmd = null;
+  }
+  const stripped = `${s.slice(0, idx)}${s.slice(end)}`.replace(/\s+$/, '').trim();
+  return { stripped, cmd };
+}
+
 /** Somma macro su tutti food/ricette del log (il chiamante può già aver escluso lo slot in editing). */
 function sumMacroAllFood(log, macro) {
   const L = log || [];
@@ -1630,12 +1702,25 @@ function countLoggedProteinMealSlots(log) {
  * — Pranzo: fibre ≥12g, tetto zuccheri semplici consigliato, blend meno grasso (verdure/proteine magre).
  * — Cena: tetto grassi assoluto (23g, 20g se surplus kcal); eccedenze spostate su carboidrati complessi e proteine magre.
  * — Surplus calorico: parte del budget grassi «non assegnabile a cena» aumenta leggermente il target grassi a pranzo/snack.
+ *
+ * @param {object} [options]
+ * @param {'deficit'|'pari'|'surplus'} [options.calorieStrategy] — applicata a `userTargets.kcal` (baseline profilo).
+ * @param {number} [options.burnedKcalBonus] — kcal da attività (sommate dopo la strategia).
  */
 export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, options = {}) {
-  void options;
+  void options.currentDecimalHour;
   const log = Array.isArray(dailyLog) ? dailyLog : [];
 
-  const Tkcal = Number(userTargets?.kcal ?? 2000) || 2000;
+  let Tkcal = Number(userTargets?.kcal ?? 2000) || 2000;
+  const strat = options.calorieStrategy;
+  if (strat != null && String(strat).trim() !== '') {
+    Tkcal = applyCalorieStrategyToProfileKcal(Tkcal, strat);
+  }
+  const burn = Number(options.burnedKcalBonus);
+  if (Number.isFinite(burn) && burn > 0) {
+    Tkcal += burn;
+  }
+
   const Tprot = Number(userTargets?.prot ?? 150) || 150;
   const Tcarb = Number(userTargets?.carb ?? 200) || 200;
   const Tfat = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 60) || 60;
