@@ -11,6 +11,34 @@ function stripInvisibleContextFromBubble(text) {
   return text.replace(/\[CONTEXT_LIVE:[^\]]*\]\s*/gi, '').trim();
 }
 
+/** Sezioni separate da doppio a capo → divider luminosi tra blocchi (AI Card). */
+function splitAiMessageSections(text) {
+  if (text == null) return [];
+  const s = String(text);
+  if (!s.trim()) return [];
+  return s.split(/\n{2,}/).map((block) => block.replace(/\r\n/g, '\n'));
+}
+
+const COMMAND_HUB_SECTIONS = [
+  {
+    title: 'Coach & dispensa',
+    items: [
+      { key: 'briefing', icon: '📊', title: 'Briefing', desc: 'Sintesi giornata' },
+      { key: 'yesterday', icon: '🔍', title: 'Analisi ieri', desc: 'Gap e trend' },
+      { key: 'mealIdea', icon: '💡', title: 'Idea pasto', desc: 'Dalla dispensa' },
+    ],
+  },
+  {
+    title: 'Controlli fisiologici',
+    items: [
+      { key: 'checkOggi', icon: '⚖️', title: 'Check oggi', desc: 'Audit nutrizionale' },
+      { key: 'trainingCheck', icon: '🏃‍♂️', title: 'Workout', desc: 'Onda energetica' },
+      { key: 'reportMese', icon: '📅', title: 'Report mese', desc: 'Trend 30 gg' },
+      { key: 'scannerMetabolico', icon: '🧬', title: 'Scanner', desc: 'Analisi 14 gg' },
+    ],
+  },
+];
+
 export default function AiCluster({
   chatHistory,
   chatInput,
@@ -61,7 +89,7 @@ export default function AiCluster({
       </div>
 
       {showAiSettings && (
-        <div style={{ background: '#111', padding: '20px', borderRadius: '15px', marginBottom: '15px', border: '1px solid #333' }}>
+        <div className="ai-card" style={{ marginBottom: '15px', padding: '18px 16px' }}>
           <h4 style={{ fontSize: '0.7rem', color: '#b388ff', margin: '0 0 10px 0', letterSpacing: '1px' }}>CLUSTER NODI API (FALLBACK)</h4>
           {apiKeys.map((key, idx) => (
             <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
@@ -103,22 +131,29 @@ export default function AiCluster({
                   onCancel={onMealProposalCancel}
                   onSwap={onMealProposalSwap}
                 />
-              ) : (
-                <div
-                  className={`chat-bubble ${msg.sender === 'ai' ? 'bubble-ai' : 'bubble-user'}`}
-                  style={{ fontSize: '1.0625rem', lineHeight: 1.65 }}
-                >
+              ) : msg.sender === 'ai' ? (
+                <div className={`ai-card${msg.isTyping ? ' ai-card--typing' : ''}`}>
                   {msg.isTyping ? (
                     <div className="typing-indicator">
                       <div className="dot"></div>
                       <div className="dot"></div>
                       <div className="dot"></div>
                     </div>
-                  ) : msg.sender === 'user' ? (
-                    stripInvisibleContextFromBubble(msg.text)
                   ) : (
-                    msg.text
+                    splitAiMessageSections(msg.text).map((block, si) => (
+                      <div
+                        key={si}
+                        className={si > 0 ? 'ai-card-section--divider' : undefined}
+                        style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                      >
+                        {block}
+                      </div>
+                    ))
                   )}
+                </div>
+              ) : (
+                <div className="chat-bubble bubble-user" style={{ fontSize: '1.0625rem', lineHeight: 1.65, maxWidth: '88%' }}>
+                  {stripInvisibleContextFromBubble(msg.text)}
                 </div>
               )}
               {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && !suppressQuickReplies && (
@@ -157,7 +192,8 @@ export default function AiCluster({
                           }
                           setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                         }}
-                        style={{ padding: '8px 15px', background: '#00e5ff', color: '#000', borderRadius: '20px', border: 'none', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                        className="btn-quick-reply-glass"
+                        style={{ border: 'none' }}
                       >
                         {reply}
                       </button>
@@ -236,6 +272,7 @@ export default function AiCluster({
           <div style={{ flexShrink: 0, marginTop: '6px', marginBottom: '4px' }}>
             <button
               type="button"
+              className="btn-glass"
               onClick={() => setIsPanelOpen((o) => !o)}
               aria-expanded={isPanelOpen}
               style={{
@@ -244,100 +281,63 @@ export default function AiCluster({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: '10px',
-                padding: '8px 12px',
-                borderRadius: '12px',
-                border: '1px solid rgba(179, 136, 255, 0.35)',
-                background: isPanelOpen ? 'rgba(179, 136, 255, 0.14)' : 'rgba(179, 136, 255, 0.07)',
-                color: '#e9d5ff',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                letterSpacing: '0.03em',
+                padding: '12px 14px',
                 boxSizing: 'border-box',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                letterSpacing: '0.04em',
               }}
             >
-              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span aria-hidden>🎛️</span>
-                {isPanelOpen ? 'Chiudi controlli avanzati' : 'Controlli avanzati'}
+              <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span className="command-hub-tile-icon" style={{ fontSize: '1.35rem' }} aria-hidden>🎛️</span>
+                <span style={{ color: '#e9d5ff' }}>{isPanelOpen ? 'Chiudi hub comandi' : 'Apri hub comandi'}</span>
               </span>
-              <span style={{ opacity: 0.75, fontSize: '0.7rem' }}>{isPanelOpen ? '▲' : '▼'}</span>
+              <span style={{ opacity: 0.75, fontSize: '0.75rem' }}>{isPanelOpen ? '▲' : '▼'}</span>
             </button>
             {isPanelOpen && (
-              <div
-                style={{
-                  marginTop: '8px',
-                  padding: '10px 10px 12px',
-                  borderRadius: '14px',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  background: 'linear-gradient(165deg, rgba(22,24,30,0.95) 0%, rgba(12,14,18,0.98) 100%)',
-                  boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
-                }}
-              >
+              <div className="ai-card" style={{ marginTop: '10px', padding: '14px 12px 16px' }}>
                 <div
                   style={{
                     fontSize: '0.58rem',
                     letterSpacing: '0.22em',
                     textTransform: 'uppercase',
-                    color: 'rgba(148,163,184,0.85)',
-                    marginBottom: '8px',
-                    fontWeight: 700,
+                    color: 'rgba(148,163,184,0.9)',
+                    marginBottom: '12px',
+                    fontWeight: 800,
                   }}
                 >
-                  Pannello comandi
+                  Dashboard comandi
                 </div>
-                {[
-                  {
-                    title: 'Coach & dispensa',
-                    keys: [
-                      { key: 'briefing', label: '📊 Briefing' },
-                      { key: 'yesterday', label: '🔍 Analisi Ieri' },
-                      { key: 'mealIdea', label: '💡 Idea Pasto' },
-                    ],
-                  },
-                  {
-                    title: 'Controlli fisiologici',
-                    keys: [
-                      { key: 'checkOggi', label: '⚖️ Check Oggi' },
-                      { key: 'trainingCheck', label: '🏃‍♂️ Posso allenarmi?' },
-                      { key: 'reportMese', label: '📅 Report Mese' },
-                      { key: 'scannerMetabolico', label: '🧬 Scanner Metabolico' },
-                    ],
-                  },
-                ].map((section) => (
-                  <div key={section.title} style={{ marginBottom: section.title === 'Coach & dispensa' ? '12px' : 0 }}>
+                {COMMAND_HUB_SECTIONS.map((section, secIdx) => (
+                  <div key={section.title} style={{ marginBottom: secIdx < COMMAND_HUB_SECTIONS.length - 1 ? '16px' : 0 }}>
                     <div
                       style={{
                         fontSize: '0.62rem',
-                        color: '#7dd3fc',
-                        letterSpacing: '0.06em',
-                        marginBottom: '6px',
-                        fontWeight: 600,
+                        color: '#93c5fd',
+                        letterSpacing: '0.14em',
+                        textTransform: 'uppercase',
+                        marginBottom: '10px',
+                        fontWeight: 700,
                       }}
                     >
                       {section.title}
                     </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {section.keys.map(({ key, label }) => (
+                    <div className="command-hub-grid">
+                      {section.items.map(({ key, icon, title: tileTitle, desc }) => (
                         <button
                           key={key}
                           type="button"
+                          className="btn-glass command-hub-tile"
                           onClick={() => {
                             onChatQuickAction(key);
                             setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                           }}
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: '999px',
-                            border: '1px solid rgba(0, 229, 255, 0.28)',
-                            background: 'rgba(0, 229, 255, 0.08)',
-                            color: '#e0f2fe',
-                            fontSize: '0.78rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            letterSpacing: '0.02em',
-                          }}
                         >
-                          {label}
+                          <span className="command-hub-tile-icon" aria-hidden>
+                            {icon}
+                          </span>
+                          <span className="command-hub-tile-title">{tileTitle}</span>
+                          <span className="command-hub-tile-desc">{desc}</span>
                         </button>
                       ))}
                     </div>
@@ -347,7 +347,10 @@ export default function AiCluster({
             )}
           </div>
         )}
-        <div className="chat-input-wrapper" style={{ marginTop: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '6px 6px 6px 10px', border: '1px solid #333' }}>
+        <div
+          className="chat-input-wrapper chat-input-glass"
+          style={{ marginTop: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', borderRadius: '30px', padding: '6px 6px 6px 10px' }}
+        >
           <input
             type="file"
             accept="image/*"
@@ -385,12 +388,12 @@ export default function AiCluster({
           />
           <button
             type="button"
-            className={`chat-send-btn ${(chatInput.trim() || chatImages.length > 0) ? 'has-text' : ''}`}
+            className={`btn-primary-glow chat-send-btn-glow ${!(chatInput.trim() || chatImages.length > 0) ? 'chat-send-btn-glow--idle' : ''}`}
+            aria-label="Invia messaggio"
             onClick={() => {
               onSendMessage(undefined, { fromInput: true });
               setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
-            style={{ background: (chatInput.trim() || chatImages.length > 0) ? '#b388ff' : '#fff', color: (chatInput.trim() || chatImages.length > 0) ? '#fff' : '#000', border: 'none', width: 40, height: 40, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', fontSize: '1.1rem', flexShrink: 0 }}
           >
             ↑
           </button>
