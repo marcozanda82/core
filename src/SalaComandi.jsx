@@ -42,6 +42,7 @@ import {
   markEveningBriefingShown,
 } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
+import { getStressLabel, clampStressValue, getStressAccentColor, formatStressWithPercent } from './stressLabels';
 import {
   RADIAN,
   getTodayString,
@@ -5543,14 +5544,14 @@ QUICK REPLIES (OBBLIGATORIO QUANDO SERVE UNA SCELTA): Se chiedi conferma, propon
 
 CONTESTO LIVE (per te, non ripetere jargon all'utente):
 - Ora locale: ${new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
-- Stress stimato (0-100, modello cortisolo): ${Math.round(currentCortisolScore)}
+- Stress (lettura utente): ${getStressLabel(currentCortisolScore)} (${Math.round(clampStressValue(currentCortisolScore))}%)
 
 REGOLA STRESS SERALE (PASTI):
 Se l'utente chiede consigli per un pasto (in particolare la cena), considera lo stress stimato. Se è medio-alto la sera, privilegia pasti calmanti (carboidrati complessi, magnesio, omega 3, triptofano), evita cene solo proteiche se lo stress è alto. Spiega in modo semplice, senza termini tecnici interni.
 
 LETTURA DEI GRAFICI ODIERNI:
 - Picco massimo Sintesi Proteica oggi: ${Math.round(piccoAnabolico)}%
-- Picco massimo Cortisolo oggi: ${Math.round(piccoCortisolo)}
+- Picco massimo stress oggi: ${getStressLabel(piccoCortisolo)} (${clampStressValue(piccoCortisolo)}%)
 
 REGOLA PER SPIEGAZIONE GRAFICI:
 Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi livelli (es. "spiegami il grafico viola", "perché l'anabolismo è basso?"), usa i dati forniti per fargli un'analisi personalizzata. Spiega che il grafico viola (Cortisolo) indica lo stress nervoso (che sale con lavoro e allenamento), mentre la curva azzurra/verde (Sintesi proteica) indica il nutrimento muscolare. Sii chiaro e diretto ma SEMPRE in formato lavagna: titolo+emoji, elenco puntato sintetico, grassetti sui numeri, domanda finale — niente paragrafi lunghi.
@@ -7664,7 +7665,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                   <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [value, 'Cortisolo']} labelFormatter={(label) => `Ore ${label}:00`} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [formatStressWithPercent(value), 'Stress']} labelFormatter={(label) => `Ore ${label}:00`} />
                   <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={dotCortisolo} isFront r={10} fill="#9c27b0" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="cortisoloPast" stroke="#9c27b0" fill="url(#colorCortisoloFullscreen)" strokeWidth={2} connectNulls={false} isAnimationActive={false} />
@@ -8274,15 +8275,16 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div>
               <div
                 style={{
-                  fontSize: 36,
+                  fontSize: 32,
                   fontWeight: 800,
-                  lineHeight: 1,
-                  color: dotCortisolo >= 55 ? '#f87171' : dotCortisolo >= 35 ? '#fbbf24' : '#86efac',
+                  lineHeight: 1.1,
+                  color: getStressAccentColor(dotCortisolo),
                 }}
               >
-                {Math.round(dotCortisolo)}
+                {getStressLabel(dotCortisolo)}
               </div>
-              <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#64748b', marginTop: 4 }}>Stress stimato</div>
+              <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#64748b', marginTop: 4 }}>Stress</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2, opacity: 0.9 }}>({clampStressValue(dotCortisolo)}%)</div>
             </div>
           </div>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: '#cbd5e1' }}>
@@ -11867,7 +11869,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               {sncStressLevel >= 85 ? 'Allarme Overtraining' : 'Affaticamento SNC'}
             </h3>
             <p style={{ color: '#b0b0b0', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '20px' }}>
-              Sistema Nervoso Centrale saturo al <strong>{Math.round(sncStressLevel)}%</strong>.<br /><br />
+              Carico sul SNC: <strong>{formatStressWithPercent(sncStressLevel)}</strong>.<br /><br />
               {sncStressLevel >= 85
                 ? "Si consigliano 3-5 giorni di scarico attivo (niente allenamenti pesanti) per resettare l'energia massima ed evitare lo stallo metabolico."
                 : 'Il carico allostatico sta aumentando. Presta attenzione al recupero nei prossimi giorni.'}

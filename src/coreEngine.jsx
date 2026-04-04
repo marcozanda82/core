@@ -3,6 +3,7 @@
 import React from 'react';
 import { computeTotali, DEFAULT_TARGETS } from './useBiochimico';
 import { addDays } from './calendarDateUtils';
+import { formatStressWithPercent } from './stressLabels';
 
 const RADIAN = Math.PI / 180;
 
@@ -2737,11 +2738,11 @@ function CustomChartTooltip({ active, payload, label }) {
 
         if (entry.dataKey === 'cortisolScore') {
           const val = Number(entry.value) || 0;
-          if (val > 70) {
+          if (val >= 67) {
             explanation = 'Stress Elevato / Allerta';
             cause = 'Lavoro intenso, allenamento pesante o risveglio mattutino.';
             statusColor = '#f44336';
-          } else if (val > 40) {
+          } else if (val >= 34) {
             explanation = 'Attivazione Media';
             cause = 'Normale attività quotidiana.';
             statusColor = '#ffeb3b';
@@ -2754,7 +2755,36 @@ function CustomChartTooltip({ active, payload, label }) {
             <div key={index} style={{ marginBottom: '10px' }}>
               <div style={{ color: '#9c27b0', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#9c27b0' }} />
-                CORTISOLO: {Math.round(val)}
+                STRESS: {formatStressWithPercent(val)}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#ccc', marginTop: '2px' }}>{explanation}</div>
+              <div style={{ fontSize: '0.7rem', color: '#888', fontStyle: 'italic' }}>Causa: {cause}</div>
+            </div>
+          );
+        }
+
+        if (entry.dataKey === 'cortisoloPast' || entry.dataKey === 'cortisoloFuture') {
+          const raw = entry.value;
+          if (raw == null || Number.isNaN(Number(raw))) {
+            return null;
+          }
+          const val = Number(raw) || 0;
+          if (val >= 67) {
+            explanation = 'Stress Elevato / Allerta';
+            cause = 'Lavoro intenso, allenamento pesante o risveglio mattutino.';
+          } else if (val >= 34) {
+            explanation = 'Attivazione Media';
+            cause = 'Normale attività quotidiana.';
+          } else {
+            explanation = 'Rilassamento / Recupero';
+            cause = 'Disattivazione del sistema nervoso (Ideale la sera).';
+          }
+          const segment = entry.dataKey === 'cortisoloPast' ? 'tracciato' : 'previsto';
+          return (
+            <div key={index} style={{ marginBottom: '10px' }}>
+              <div style={{ color: '#9c27b0', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#9c27b0' }} />
+                STRESS ({segment}): {formatStressWithPercent(val)}
               </div>
               <div style={{ fontSize: '0.75rem', color: '#ccc', marginTop: '2px' }}>{explanation}</div>
               <div style={{ fontSize: '0.7rem', color: '#888', fontStyle: 'italic' }}>Causa: {cause}</div>
