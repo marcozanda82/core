@@ -4,7 +4,13 @@
  */
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { TARGETS } from './useBiochimico';
-import { MEAL_TYPES, calculateMagicFill } from './coreEngine';
+import {
+  MEAL_TYPES,
+  calculateMagicFill,
+  getSmartSubstitutes,
+  calculateSwapQuantity,
+  categorizeFood,
+} from './coreEngine';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -242,7 +248,8 @@ export default function MealBuilder({
   saveCustomRecipeToFoodDb,
   foodDb = {},
   saveFoodEntryPer100ToFoodDb,
-  deleteRecipeFromFoodDb
+  deleteRecipeFromFoodDb,
+  estraiDatiFoodDb = null,
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -266,6 +273,8 @@ export default function MealBuilder({
   const [expandedAddedFoods, setExpandedAddedFoods] = useState({});
   const [editingRecipeKey, setEditingRecipeKey] = useState(null);
   const [magicFillToast, setMagicFillToast] = useState(false);
+  const [swapPanelFoodId, setSwapPanelFoodId] = useState(null);
+  const [swapToast, setSwapToast] = useState(false);
 
   const mealBuilderScrollAnchorRef = useRef(null);
 
@@ -803,11 +812,78 @@ export default function MealBuilder({
     window.setTimeout(() => setMagicFillToast(false), 2200);
   }, [magicFillEligibleFoods, targetMacrosPasto, targetMacros, TARGETS]);
 
+  const swapSourceFood = useMemo(() => {
+    if (swapPanelFoodId == null) return null;
+    return (addedFoods || []).find((f) => String(f.id) === String(swapPanelFoodId)) || null;
+  }, [swapPanelFoodId, addedFoods]);
+
+  const swapSuggestions = useMemo(() => {
+    if (!swapSourceFood || !foodDb || typeof foodDb !== 'object') return [];
+    return getSmartSubstitutes(swapSourceFood.id, foodDb, swapSourceFood, {
+      recentDbKeys: recentFoods,
+    });
+  }, [swapSourceFood, foodDb, recentFoods]);
+
+  const handlePickSubstitute = useCallback(
+    (queueFood, sub) => {
+      if (!estraiDatiFoodDb || !sub?.dbKey || !queueFood) return;
+      const wOld = Number(queueFood.qta ?? queueFood.weight ?? 100) || 100;
+      const newW = calculateSwapQuantity(queueFood, wOld, sub.row);
+      const nome = String(sub.desc || '').trim();
+      if (!nome) return;
+      const newItem = estraiDatiFoodDb(nome, newW, mealType, sub.dbKey);
+      const keepId = queueFood.id;
+      setAddedFoods((prev) =>
+        prev.map((f) => (String(f.id) === String(keepId) ? { ...newItem, id: keepId, mealType: newItem.mealType || mealType } : f))
+      );
+      setSwapPanelFoodId(null);
+      setSwapToast(true);
+      window.setTimeout(() => setSwapToast(false), 2000);
+    },
+    [estraiDatiFoodDb, mealType]
+  );
+
   const baseMealTypeKey = String(mealType || '').split('_')[0].toLowerCase();
   const isCena = baseMealTypeKey === 'cena';
 
+  const swapCategoryLabel = (cat) =>
+    cat === 'carbo' ? 'Carboidrati' : cat === 'grasso' ? 'Grassi' : 'Proteine';
+
+  useEffect(() => {
+    if (swapPanelFoodId == null) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setSwapPanelFoodId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [swapPanelFoodId]);
+
   return (
     <div className="view-animate" style={{ position: 'relative' }}>
+      {swapToast && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 'calc(150px + env(safe-area-inset-bottom, 0px))',
+            transform: 'translateX(-50%)',
+            zIndex: 10051,
+            padding: '10px 18px',
+            borderRadius: '12px',
+            background: 'linear-gradient(145deg, rgba(0, 229, 255, 0.92), rgba(0, 140, 200, 0.9))',
+            color: '#0a0a0a',
+            fontSize: '0.82rem',
+            fontWeight: 700,
+            boxShadow: '0 8px 28px rgba(0, 229, 255, 0.35)',
+            pointerEvents: 'none',
+            maxWidth: 'min(90vw, 320px)',
+            textAlign: 'center',
+          }}
+        >
+          Sostituito e bilanciato!
+        </div>
+      )}
       {magicFillToast && (
         <div
           role="status"
@@ -1669,6 +1745,33 @@ export default function MealBuilder({
                             </button>
                           ) : null}
                           <span className="food-pill-name">{food.desc || food.name}</span>
+                          {!isRecipeItem &&
+                            typeof estraiDatiFoodDb === 'function' &&
+                            Object.keys(foodDb || {}).length > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSwapPanelFoodId((cur) => (String(cur) === String(food.id) ? null : food.id));
+                                }}
+                                title="Swap intelligente"
+                                aria-label="Sostituisci alimento"
+                                style={{
+                                  flexShrink: 0,
+                                  background: 'rgba(0, 229, 255, 0.12)',
+                                  border: '1px solid rgba(0, 229, 255, 0.35)',
+                                  borderRadius: '8px',
+                                  color: '#7dd3fc',
+                                  cursor: 'pointer',
+                                  fontSize: '0.72rem',
+                                  padding: '2px 8px',
+                                  lineHeight: 1.2,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                🔄
+                              </button>
+                            )}
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1759,6 +1862,77 @@ export default function MealBuilder({
                         )}
                       </div>
                     ) : null}
+                    {String(swapPanelFoodId) === String(food.id) && (
+                      <div
+                        className="ai-card"
+                        style={{
+                          marginTop: '12px',
+                          padding: '12px 14px',
+                          fontSize: '0.78rem',
+                          lineHeight: 1.4,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        role="dialog"
+                        aria-label="Sostituti suggeriti"
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '8px',
+                            marginBottom: '10px',
+                          }}
+                        >
+                          <span style={{ color: '#a5f3fc', fontWeight: 700, letterSpacing: '0.04em' }}>
+                            Swap · {swapCategoryLabel(categorizeFood(food))}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSwapPanelFoodId(null)}
+                            style={{
+                              background: 'rgba(255,255,255,0.08)',
+                              border: '1px solid #333',
+                              borderRadius: '8px',
+                              color: '#94a3b8',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem',
+                              padding: '4px 10px',
+                            }}
+                          >
+                            Chiudi
+                          </button>
+                        </div>
+                        {swapSuggestions.length === 0 ? (
+                          <p style={{ margin: 0, color: '#64748b', fontStyle: 'italic' }}>
+                            Nessun sostituto in database per questa categoria. Aggiungi alimenti al DB o prova un altro
+                            item.
+                          </p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {swapSuggestions.map((s) => (
+                              <button
+                                key={s.dbKey}
+                                type="button"
+                                onClick={() => handlePickSubstitute(food, s)}
+                                style={{
+                                  textAlign: 'left',
+                                  padding: '10px 12px',
+                                  borderRadius: '10px',
+                                  border: '1px solid rgba(255,255,255,0.12)',
+                                  background: 'rgba(255,255,255,0.05)',
+                                  color: '#e2e8f0',
+                                  cursor: 'pointer',
+                                  fontSize: '0.8rem',
+                                }}
+                              >
+                                {s.desc}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })

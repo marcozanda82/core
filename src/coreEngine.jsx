@@ -2058,6 +2058,132 @@ export function calculateMagicFill(selectedFoods, targetMacros) {
   }));
 }
 
+/** Categorie macro dominanti per swap / substitute. */
+export const FOOD_CATEGORY_PROTEINA = 'proteina';
+export const FOOD_CATEGORY_CARBO = 'carbo';
+export const FOOD_CATEGORY_GRASSO = 'grasso';
+
+const SWAP_CATEGORY_DEFAULT_MACRO_PER100 = {
+  [FOOD_CATEGORY_PROTEINA]: 22,
+  [FOOD_CATEGORY_CARBO]: 60,
+  [FOOD_CATEGORY_GRASSO]: 40,
+};
+
+/**
+ * Estrae prot / carb / grassi per 100g da una riga coda, foodDb o oggetto con *_100 espliciti.
+ */
+export function getFoodMacrosPer100(food) {
+  if (!food || typeof food !== 'object') return { prot100: 0, carb100: 0, fat100: 0 };
+  let pp = Number(food.prot100);
+  let cp = Number(food.carb100);
+  let fp = Number(food.fat100 ?? food.fatTotal100);
+  const wRaw = food.weight ?? food.qta;
+  const hasPortion =
+    wRaw != null &&
+    wRaw !== '' &&
+    Number.isFinite(Number(wRaw)) &&
+    Number(wRaw) > 0;
+  const w = hasPortion ? Math.max(1, Number(wRaw)) : null;
+
+  if (!Number.isFinite(pp) || pp < 0) {
+    const prot = Number(food.prot ?? food.proteine) || 0;
+    pp = w != null ? (prot / w) * 100 : prot;
+  }
+  if (!Number.isFinite(cp) || cp < 0) {
+    const carb = Number(food.carb ?? food.carboidrati) || 0;
+    cp = w != null ? (carb / w) * 100 : carb;
+  }
+  if (!Number.isFinite(fp) || fp < 0) {
+    const fat = Number(food.fat ?? food.fatTotal ?? food.grassi) || 0;
+    fp = w != null ? (fat / w) * 100 : fat;
+  }
+  return {
+    prot100: Math.max(0, pp),
+    carb100: Math.max(0, cp),
+    fat100: Math.max(0, fp),
+  };
+}
+
+/**
+ * Categoria dominante in base ai g/100g (pareggio: priorità proteina > carbo > grasso).
+ */
+export function categorizeFood(food) {
+  const { prot100: pp, carb100: cp, fat100: fp } = getFoodMacrosPer100(food);
+  if (pp >= cp && pp >= fp) return FOOD_CATEGORY_PROTEINA;
+  if (cp >= pp && cp >= fp) return FOOD_CATEGORY_CARBO;
+  return FOOD_CATEGORY_GRASSO;
+}
+
+/**
+ * Sostituti intelligenti: stessa categoria macro, da DB + priorità chiavi recenti.
+ * @param {string} _foodId — id voce in coda (per API stabile; la sorgente è `sourceFood`).
+ * @param {Record<string, object>} allFoodsDb
+ * @param {object} sourceFood — riga alimento in coda (desc, key, matchedKey, …).
+ * @param {{ recentDbKeys?: string[] }} [options]
+ * @returns {Array<{ dbKey: string, desc: string, row: object }>}
+ */
+export function getSmartSubstitutes(_foodId, allFoodsDb, sourceFood, options = {}) {
+  const db = allFoodsDb && typeof allFoodsDb === 'object' ? allFoodsDb : {};
+  if (!sourceFood || typeof sourceFood !== 'object') return [];
+  const cat = categorizeFood(sourceFood);
+  const skipKeys = new Set();
+  if (sourceFood.key != null) skipKeys.add(String(sourceFood.key));
+  if (sourceFood.matchedKey != null) skipKeys.add(String(sourceFood.matchedKey));
+  const srcDesc = String(sourceFood.desc || sourceFood.name || '').trim().toLowerCase();
+  const recent = Array.isArray(options.recentDbKeys) ? options.recentDbKeys : [];
+  const out = [];
+  const seen = new Set();
+
+  const tryAdd = (k, row) => {
+    if (!k || seen.has(k) || !row || typeof row !== 'object') return;
+    if (row.isRecipe === true || row.type === 'recipe') return;
+    if (skipKeys.has(String(k))) return;
+    const d = String(row.desc || row.name || k).trim().toLowerCase();
+    if (srcDesc && d === srcDesc) return;
+    const rowCat = categorizeFood(row);
+    if (rowCat !== cat) return;
+    seen.add(k);
+    out.push({
+      dbKey: k,
+      desc: String(row.desc || row.name || k).trim() || k,
+      row: { ...row },
+    });
+  };
+
+  for (let i = 0; i < recent.length && out.length < 6; i++) {
+    const k = recent[i];
+    if (db[k]) tryAdd(k, db[k]);
+  }
+  const keys = Object.keys(db);
+  for (let i = 0; i < keys.length && out.length < 6; i++) {
+    tryAdd(keys[i], db[keys[i]]);
+  }
+  return out.slice(0, 5);
+}
+
+/**
+ * Peso del nuovo alimento per eguagliare il macro primario del vecchio alla stessa porzione “equivalente”.
+ */
+export function calculateSwapQuantity(oldFood, oldWeight, newFood) {
+  const w0 = Math.max(1, Number(oldWeight) || Number(oldFood?.qta ?? oldFood?.weight) || 100);
+  const oldPer = getFoodMacrosPer100(oldFood);
+  const cat = categorizeFood(oldFood);
+  const primary =
+    cat === FOOD_CATEGORY_CARBO ? 'carb' : cat === FOOD_CATEGORY_GRASSO ? 'fat' : 'prot';
+  const oldPrimary =
+    primary === 'prot' ? oldPer.prot100 : primary === 'carb' ? oldPer.carb100 : oldPer.fat100;
+  const targetMacroValue = (oldPrimary * w0) / 100;
+
+  const newPer = getFoodMacrosPer100(newFood);
+  let newPrimary =
+    primary === 'prot' ? newPer.prot100 : primary === 'carb' ? newPer.carb100 : newPer.fat100;
+  if (!Number.isFinite(newPrimary) || newPrimary < 1e-6) {
+    newPrimary = SWAP_CATEGORY_DEFAULT_MACRO_PER100[cat] ?? 15;
+  }
+  const raw = (targetMacroValue * 100) / Math.max(newPrimary, 1e-6);
+  return Math.max(5, Math.min(5000, Math.round(raw)));
+}
+
 /** Importanza dinamica dei nodi per vista grafico: quali tipi evidenziare. */
 const NODE_IMPORTANCE = {
   percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'sunlight', 'alcohol'],
