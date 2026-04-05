@@ -4392,7 +4392,19 @@ Ottimo! Diario aggiornato. 🥗`;
 
       const foodsToRemove = getFoodItemsForMealSlot(safeDailyLog, String(slotToReplace));
       const removeSet = new Set(foodsToRemove);
-      const rest = safeDailyLog.filter((item) => !removeSet.has(item));
+      const editingGhostMealId = editingMealId != null ? String(editingMealId) : '';
+      const rest = safeDailyLog.filter((item) => {
+        if (removeSet.has(item)) return false;
+        if (
+          editingGhostMealId &&
+          item?.type === 'ghost_meal' &&
+          item.id != null &&
+          String(item.id) === editingGhostMealId
+        ) {
+          return false;
+        }
+        return true;
+      });
 
       const nuovoLog = [...mealItems, ...rest];
       if (isSimulationMode) {
@@ -4400,7 +4412,19 @@ Ottimo! Diario aggiornato. 🥗`;
           const p = prev || [];
           const toRm = getFoodItemsForMealSlot(p, String(slotToReplace));
           const rm = new Set(toRm);
-          return [...p.filter((item) => !rm.has(item)), ...mealItems];
+          const kept = p.filter((item) => {
+            if (rm.has(item)) return false;
+            if (
+              editingGhostMealId &&
+              item?.type === 'ghost_meal' &&
+              item.id != null &&
+              String(item.id) === editingGhostMealId
+            ) {
+              return false;
+            }
+            return true;
+          });
+          return [...kept, ...mealItems];
         });
         setAddedFoods([]);
         setEditingMealId(null);
@@ -4444,7 +4468,19 @@ Ottimo! Diario aggiornato. 🥗`;
       }));
       const foodsToRemove = getFoodItemsForMealSlot(logToUse, String(slotToReplace));
       const removeSet = new Set(foodsToRemove);
-      const dailyLogRest = logToUse.filter((item) => !removeSet.has(item));
+      const editingGhostMealId = editingMealId != null ? String(editingMealId) : '';
+      const dailyLogRest = logToUse.filter((item) => {
+        if (removeSet.has(item)) return false;
+        if (
+          editingGhostMealId &&
+          item?.type === 'ghost_meal' &&
+          item.id != null &&
+          String(item.id) === editingGhostMealId
+        ) {
+          return false;
+        }
+        return true;
+      });
       const nextLog = [...mealItems, ...dailyLogRest];
       if (isSimulationMode) {
         setSimulatedLog(nextLog);
@@ -4556,31 +4592,48 @@ Ottimo! Diario aggiornato. 🥗`;
 
   const handleNodeTap = useCallback((node) => () => {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
-    if (isSimulationMode) return;
 
     if (node.type === 'ghost_meal') {
       const mt = toCanonicalMealType(String(node.mealType || 'pranzo').split('_')[0]) || 'pranzo';
       const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12;
-      setMealType(mt);
-      setDrawerMealTime(t);
-      setDrawerMealTimeStr(decimalToTimeStr(t));
-      setMealPlannerGhostNote(String(node.microDesc || node.title || '').trim());
-      setActiveAction('pasto');
+      const title = String(node.title || 'Pasto pianificato').trim();
+      setSelectedNodeReport({
+        type: 'ghost_meal',
+        id: node.id,
+        mealId: node.id,
+        mealType: mt,
+        time: t,
+        title,
+        name: title,
+        microDesc: String(node.microDesc || '').trim(),
+        items: [],
+        isGhost: true,
+      });
       return;
     }
 
     if (node.type === 'ghost_workout') {
       const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 18;
-      setEditingWorkoutId(null);
-      setWorkoutType('pesi');
-      setWorkoutStartTime(t);
-      setWorkoutEndTime(Math.min(24, t + 1));
-      setWorkoutKcal(300);
-      setWorkoutMuscles([]);
-      setActiveAction('allenamento');
-      setIsDrawerOpen(true);
+      const title = String(node.title || 'Allenamento Pianificato').trim();
+      setSelectedNodeReport({
+        type: 'ghost_workout',
+        id: node.id,
+        time: t,
+        title,
+        name: title,
+        desc: title,
+        microDesc: String(node.microDesc || '').trim(),
+        subType: 'pesi',
+        kcal: 0,
+        cal: 0,
+        duration: 1,
+        muscles: [],
+        isGhost: true,
+      });
       return;
     }
+
+    if (isSimulationMode) return;
 
     if (node.type === 'meal') {
       const slotId = String(node.mealId || node.id);
@@ -4674,21 +4727,15 @@ Ottimo! Diario aggiornato. 🥗`;
     isSimulationMode,
     MEAL_LABELS_SAVE,
     getFoodItemsForMealSlot,
-    setMealType,
-    setDrawerMealTime,
-    setDrawerMealTimeStr,
     decimalToTimeStr,
-    setMealPlannerGhostNote,
     setActiveAction,
     toCanonicalMealType,
-    setEditingWorkoutId,
-    setWorkoutType,
-    setWorkoutStartTime,
-    setWorkoutEndTime,
-    setWorkoutKcal,
-    setWorkoutMuscles,
-    setIsDrawerOpen,
+    setSelectedNodeReport,
   ]);
+
+  const onTimelineNodeClick = useCallback((node) => {
+    handleNodeTap(node)();
+  }, [handleNodeTap]);
 
   const handleSaveAlcohol = () => {
     if (isSimulationMode) return;
@@ -8155,6 +8202,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 timelineContainerRef={timelineContainerRef}
                 startNodeDrag={startNodeDrag}
                 releaseNodePointer={releaseNodePointer}
+                onNodeClick={onTimelineNodeClick}
                 handleNodeTap={handleNodeTap}
                 decimalToTimeStr={decimalToTimeStr}
                 syncDatiFirebase={syncDatiFirebase}
@@ -9066,6 +9114,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                   timelineContainerRef={timelineContainerRef}
                   startNodeDrag={startNodeDrag}
                   releaseNodePointer={releaseNodePointer}
+                  onNodeClick={onTimelineNodeClick}
                   handleNodeTap={handleNodeTap}
                   decimalToTimeStr={decimalToTimeStr}
                   syncDatiFirebase={syncDatiFirebase}
@@ -11758,19 +11807,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div className="modal-overlay" onClick={() => setSelectedNodeReport(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', zIndex: 100020, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: '#1e1e1e', color: '#fff', padding: '25px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
             <h2 style={{ margin: '0 0 20px 0', borderBottom: '1px solid #333', paddingBottom: '10px', color: '#00e5ff' }}>
-              {selectedNodeReport.type === 'meal' ? '🍽️ Dettaglio Pasto' : '💪 Dettaglio Attività'}
+              {selectedNodeReport.type === 'meal' || selectedNodeReport.type === 'ghost_meal' ? '🍽️ Dettaglio Pasto' : '💪 Dettaglio Attività'}
             </h2>
             {(() => {
               const mealSlotKey = String(selectedNodeReport.mealId || selectedNodeReport.id);
-              const nodeTime = selectedNodeReport.type === 'meal'
-                ? (typeof selectedNodeReport.time === 'number' && !Number.isNaN(selectedNodeReport.time)
-                    ? selectedNodeReport.time
-                    : (() => {
-                        const list = getFoodItemsForMealSlot(activeLog || [], mealSlotKey);
-                        const t = list[0] != null ? getMealTimeFromLogItem(list[0]) : null;
-                        return t != null ? t : 12;
-                      })())
-                : (selectedNodeReport.time ?? 12);
+              const nodeTime =
+                selectedNodeReport.type === 'meal' || selectedNodeReport.type === 'ghost_meal'
+                  ? (typeof selectedNodeReport.time === 'number' && !Number.isNaN(selectedNodeReport.time)
+                      ? selectedNodeReport.time
+                      : (() => {
+                          const list = getFoodItemsForMealSlot(activeLog || [], mealSlotKey);
+                          const t = list[0] != null ? getMealTimeFromLogItem(list[0]) : null;
+                          return t != null ? t : 12;
+                        })())
+                  : (selectedNodeReport.time ?? 12);
               const currentHour = displayTime ?? currentTime;
               const isFuture = nodeTime > currentHour;
               return (
@@ -11783,7 +11833,43 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </div>
               );
             })()}
-            {selectedNodeReport.type === 'meal' ? (
+            {selectedNodeReport.isGhost === true || selectedNodeReport.type === 'ghost_meal' || selectedNodeReport.type === 'ghost_workout' ? (
+              <div style={{ marginBottom: '24px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(0, 229, 255, 0.35)',
+                    background: 'rgba(0, 229, 255, 0.08)',
+                    marginBottom: 16,
+                  }}
+                >
+                  <span style={{ fontSize: '1.35rem' }} aria-hidden>🎯</span>
+                  <span style={{ color: '#00e5ff', fontWeight: 800, fontSize: '0.95rem', letterSpacing: '0.02em' }}>Pianificato da Kentu</span>
+                </div>
+                {(selectedNodeReport.name || selectedNodeReport.title) ? (
+                  <p style={{ margin: '0 0 12px 0', fontSize: '1.05rem', fontWeight: 700, color: '#e8faff' }}>
+                    {selectedNodeReport.name || selectedNodeReport.title}
+                  </p>
+                ) : null}
+                <div
+                  style={{
+                    fontSize: '0.95rem',
+                    lineHeight: 1.65,
+                    color: 'rgba(230, 245, 255, 0.92)',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {String(selectedNodeReport.microDesc || '').trim() || (
+                    <span style={{ color: '#888', fontStyle: 'italic' }}>Nessuna nota biochimica per questo slot.</span>
+                  )}
+                </div>
+              </div>
+            ) : selectedNodeReport.type === 'meal' ? (
               <div>
                 {(() => {
                   const slotKey = String(selectedNodeReport.mealId || selectedNodeReport.id);
@@ -11931,18 +12017,44 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <button type="button" onClick={() => {
                 const node = selectedNodeReport;
                 setSelectedNodeReport(null);
+                if (node.type === 'ghost_meal') {
+                  const mt = toCanonicalMealType(String(node.mealType || 'pranzo').split('_')[0]) || 'pranzo';
+                  const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12;
+                  setEditingMealId(node.id);
+                  setAddedFoods([]);
+                  setMealType(mealIdFromCanonical(mt));
+                  setDrawerMealTime(t);
+                  setDrawerMealTimeStr(decimalToTimeStr(t));
+                  setMealPlannerGhostNote(String(node.microDesc || node.title || '').trim());
+                  setActiveAction('pasto');
+                  setIsDrawerOpen(true);
+                  setIsMealBuilderOpen(true);
+                  return;
+                }
                 if (node.type === 'meal') {
                   loadMealToConstructor(String(node.mealId || node.id));
-                } else {
+                  return;
+                }
+                if (node.type === 'ghost_workout') {
+                  const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 18;
                   setEditingWorkoutId(node.id);
-                  setWorkoutType(node.subType || (node.type === 'work' ? 'lavoro' : 'pesi'));
-                  setWorkoutStartTime(node.time ?? 12);
-                  setWorkoutEndTime((node.time ?? 12) + (node.duration ?? 1));
+                  setWorkoutType(node.subType || 'pesi');
+                  setWorkoutStartTime(t);
+                  setWorkoutEndTime(Math.min(24, t + (node.duration ?? 1)));
                   setWorkoutKcal(node.kcal || node.cal || 300);
                   setWorkoutMuscles(Array.isArray(node.muscles) ? [...node.muscles] : (Array.isArray(node.workoutMuscles) ? [...node.workoutMuscles] : []));
                   setActiveAction('allenamento');
                   setIsDrawerOpen(true);
+                  return;
                 }
+                setEditingWorkoutId(node.id);
+                setWorkoutType(node.subType || (node.type === 'work' ? 'lavoro' : 'pesi'));
+                setWorkoutStartTime(node.time ?? 12);
+                setWorkoutEndTime((node.time ?? 12) + (node.duration ?? 1));
+                setWorkoutKcal(node.kcal || node.cal || 300);
+                setWorkoutMuscles(Array.isArray(node.muscles) ? [...node.muscles] : (Array.isArray(node.workoutMuscles) ? [...node.workoutMuscles] : []));
+                setActiveAction('allenamento');
+                setIsDrawerOpen(true);
               }} style={{ flex: 1, padding: '12px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>
                 ✏️ Modifica
               </button>

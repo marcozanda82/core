@@ -20,6 +20,8 @@ export default function TimelineNodi({
   timelineContainerRef,
   startNodeDrag,
   releaseNodePointer,
+  /** (node) => void — stesso gestore per tutti i nodi (inclusi ghost). Se assente si usa handleNodeTap(node). */
+  onNodeClick,
   handleNodeTap,
   decimalToTimeStr,
   syncDatiFirebase,
@@ -27,6 +29,10 @@ export default function TimelineNodi({
   setDailyLog
 }) {
   const nodes = activeNodesWithStack ?? [];
+  const fireNodeClick = (node) => {
+    if (typeof onNodeClick === 'function') onNodeClick(node);
+    else if (typeof handleNodeTap === 'function') handleNodeTap(node)();
+  };
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minHeight: '55px', paddingLeft: '50px', paddingRight: '15px', boxSizing: 'border-box' }}>
@@ -90,8 +96,8 @@ export default function TimelineNodi({
             if (isWork) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
               return (
-                <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
-                  <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
+                  <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'start' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
@@ -99,7 +105,7 @@ export default function TimelineNodi({
                     )}
                     💼
                   </div>
-                  <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'end' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
@@ -113,8 +119,8 @@ export default function TimelineNodi({
             if (isCognitive) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
               return (
-                <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(0, 229, 255, 0.3)' : cognitiveBg, borderLeft: `2px solid ${cognitiveBorder}`, borderRight: `2px solid ${cognitiveBorder}`, borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
-                  <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(0, 229, 255, 0.3)' : cognitiveBg, borderLeft: `2px solid ${cognitiveBorder}`, borderRight: `2px solid ${cognitiveBorder}`, borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
+                  <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'start' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
@@ -122,7 +128,7 @@ export default function TimelineNodi({
                     )}
                     {cognitiveIcon}
                   </div>
-                  <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'end' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
@@ -191,7 +197,7 @@ export default function TimelineNodi({
                 onPointerDown={ghostNoDrag ? undefined : startNodeDrag(node, 'all')}
                 onPointerUp={ghostNoDrag ? undefined : releaseNodePointer}
                 onPointerCancel={ghostNoDrag ? undefined : releaseNodePointer}
-                onClick={handleNodeTap(node)}
+                onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }}
                 style={{
                   position: 'absolute',
                   left: `${displayPercent}%`,
@@ -211,7 +217,7 @@ export default function TimelineNodi({
                   cursor: ghostNoDrag ? 'pointer' : isDragging ? 'grabbing' : 'pointer',
                   transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s',
                   touchAction: ghostNoDrag ? 'auto' : 'none',
-                  pointerEvents: isNodeFocused ? 'auto' : 'none',
+                  pointerEvents: isNodeFocused || isGhostMeal || isGhostWorkout ? 'auto' : 'none',
                   zIndex: isTouchingOrDragging ? 100 : undefined,
                   ...importanceForPoint,
                 }}
