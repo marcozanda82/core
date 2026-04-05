@@ -201,13 +201,6 @@ function microHintFromTargets(t, userTargets) {
   return parts.join(' · ');
 }
 
-function decimalToMinutes(dec) {
-  if (typeof dec !== 'number' || Number.isNaN(dec)) return null;
-  const h = Math.floor(dec) % 24;
-  const m = Math.round((dec % 1) * 60) % 60;
-  return h * 60 + m;
-}
-
 function mealTypeLabelIt(raw) {
   const c = toCanonicalMealType(String(raw || '').split('_')[0]);
   const labels = { colazione: 'Colazione', pranzo: 'Pranzo', cena: 'Cena', snack: 'Spuntino' };
@@ -217,25 +210,50 @@ function mealTypeLabelIt(raw) {
 function DraftFoodPillsMini({ foods }) {
   if (!Array.isArray(foods) || foods.length === 0) return null;
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-      {foods.map((f, i) => (
+    <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 6 }}>
+      {foods.map((foodStr, i) => (
         <span
-          key={`${f}_${i}`}
+          key={`${foodStr}_${i}`}
           style={{
             display: 'inline-block',
-            padding: '2px 8px',
-            borderRadius: 999,
-            background: 'rgba(0, 229, 255, 0.1)',
+            background: 'rgba(0, 229, 255, 0.15)',
             color: '#00e5ff',
+            padding: '4px 8px',
+            borderRadius: '12px',
             fontSize: '0.75rem',
-            lineHeight: 1.25,
+            margin: '4px 4px 0 0',
           }}
         >
-          {String(f)}
+          {String(foodStr)}
         </span>
       ))}
     </div>
   );
+}
+
+const REGISTERED_MEAL_GROUP_ORDER = ['colazione', 'snack', 'pranzo', 'cena'];
+
+function groupRegisteredMealsByMealType(log) {
+  const list = (log || []).filter(
+    (e) => e && !e.isGhost && (e.type === 'food' || e.type === 'recipe')
+  );
+  const map = new Map();
+  list.forEach((e) => {
+    const mt = toCanonicalMealType(String(e.mealType || '').split('_')[0]) || 'snack';
+    if (!map.has(mt)) map.set(mt, []);
+    map.get(mt).push(e);
+  });
+  const out = [];
+  REGISTERED_MEAL_GROUP_ORDER.forEach((mt) => {
+    const items = map.get(mt);
+    if (!items?.length) return;
+    out.push({ mealType: mt, items });
+    map.delete(mt);
+  });
+  for (const [mt, items] of map) {
+    if (items.length) out.push({ mealType: mt, items });
+  }
+  return out;
 }
 
 function timelineSortKey(entry) {
@@ -287,11 +305,7 @@ export default function PlanningWizard({
     [calorieStrategy, burnedKcalBonus]
   );
 
-  const realFoodEntries = useMemo(
-    () =>
-      (dailyLog || []).filter((e) => e && !e.isGhost && (e.type === 'food' || e.type === 'recipe')),
-    [dailyLog]
-  );
+  const registeredMealGroups = useMemo(() => groupRegisteredMealsByMealType(dailyLog), [dailyLog]);
 
   const ghostLogMeals = useMemo(
     () => (dailyLog || []).filter((e) => e && e.type === 'ghost_meal'),
@@ -350,17 +364,12 @@ export default function PlanningWizard({
 
   const timelineEntries = useMemo(() => {
     const rows = [];
+    const realMealItems = [];
     (dailyLog || []).forEach((e) => {
       if (!e) return;
       if (e.isGhost && e.type !== 'ghost_meal' && e.type !== 'ghost_workout') return;
-      if (e.type === 'food' || e.type === 'recipe') {
-        const t = Number(e.mealTime);
-        const label = String(e.desc || e.title || 'Pasto');
-        rows.push({
-          kind: 'real_meal',
-          timeDec: t,
-          label: `[Pasto] ${label}`,
-        });
+      if ((e.type === 'food' || e.type === 'recipe') && !e.isGhost) {
+        realMealItems.push(e);
       } else if (e.type === 'workout') {
         rows.push({
           kind: 'real_workout',
@@ -381,6 +390,26 @@ export default function PlanningWizard({
         });
       }
     });
+    const byMt = new Map();
+    realMealItems.forEach((e) => {
+      const mt = toCanonicalMealType(String(e.mealType || '').split('_')[0]) || 'snack';
+      if (!byMt.has(mt)) byMt.set(mt, []);
+      byMt.get(mt).push(e);
+    });
+    REGISTERED_MEAL_GROUP_ORDER.forEach((mt) => {
+      const items = byMt.get(mt);
+      if (!items?.length) return;
+      const decs = items.map((x) => Number(x.mealTime)).filter((t) => !Number.isNaN(t));
+      const timeDec = decs.length ? Math.min(...decs) : 0;
+      rows.push({ kind: 'real_meal_group', timeDec, mealType: mt, items });
+      byMt.delete(mt);
+    });
+    for (const [mt, items] of byMt) {
+      if (!items.length) continue;
+      const decs = items.map((x) => Number(x.mealTime)).filter((t) => !Number.isNaN(t));
+      const timeDec = decs.length ? Math.min(...decs) : 0;
+      rows.push({ kind: 'real_meal_group', timeDec, mealType: mt, items });
+    }
     stagingGhosts.forEach((g) => {
       rows.push({
         kind: g.source === 'proposed' ? 'ghost_proposed' : 'ghost_staging',
@@ -400,7 +429,6 @@ export default function PlanningWizard({
   }, [dailyLog, stagingGhosts, hasTraining, hasRealWorkout, workoutDecForApply]);
 
   const macroList = MACRO_OPTIONS.filter((m) => macros.has(m.id));
-  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
 
   return (
     <div style={{ ...glassPanel, padding: '16px 14px 14px', marginBottom: 10 }}>
@@ -580,57 +608,51 @@ export default function PlanningWizard({
 
           <div>
             <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#4ade80', marginBottom: 8, letterSpacing: '0.06em' }}>FATTI (registrati)</div>
-            {realFoodEntries.length === 0 ? (
+            {registeredMealGroups.length === 0 ? (
               <div style={{ fontSize: '0.78rem', color: '#888' }}>Nessun pasto reale registrato oggi.</div>
             ) : (
-              <ul style={{ margin: 0, paddingLeft: 18, color: '#e5e7eb', fontSize: '0.78rem', lineHeight: 1.45 }}>
-                {realFoodEntries.map((e, i) => {
-                  const hh = decimalHourToHHMM(Number(e.mealTime)) || '—';
-                  const kcal = Math.round(Number(e.kcal || e.cal) || 0);
-                  const p = Number(e.prot) || 0;
-                  const c = Number(e.carb) || 0;
-                  const f = Number(e.fatTotal ?? e.fat) || 0;
-                  const fib = Number(e.fibre) || 0;
-                  const mg = Number(e.mg) || 0;
-                  const itemMin = decimalToMinutes(Number(e.mealTime));
-                  const isPast = itemMin != null && itemMin <= nowMinutes;
-                  const macroLine = `${kcal} kcal, P${p.toFixed(0)}g C${c.toFixed(0)}g F${f.toFixed(0)}g${fib > 0 ? ` · fibre ${fib.toFixed(0)}g` : ''}${mg > 0 ? ` · Mg ${Math.round(mg)}mg` : ''}`;
-                  if (isPast) {
-                    return (
-                      <li key={e.id || i} style={{ marginBottom: 8, listStyle: 'none', marginLeft: -18 }}>
-                        <details
-                          style={{
-                            padding: '8px 10px',
-                            borderRadius: 10,
-                            border: '1px solid rgba(74, 222, 128, 0.25)',
-                            background: 'rgba(34, 197, 94, 0.06)',
-                          }}
-                        >
-                          <summary
-                            style={{
-                              cursor: 'pointer',
-                              listStyle: 'none',
-                              fontWeight: 800,
-                              fontSize: '0.78rem',
-                              color: '#bbf7d0',
-                            }}
-                          >
-                            🔒 [{hh}] {mealTypeLabelIt(e.mealType)} - Registrato
-                          </summary>
-                          <div style={{ fontSize: '0.72rem', color: '#d1fae5', marginTop: 8, lineHeight: 1.45 }}>
-                            {String(e.desc || e.title || 'Pasto')}
-                            <div style={{ marginTop: 4, opacity: 0.92 }}>{macroLine}</div>
-                          </div>
-                        </details>
-                      </li>
-                    );
-                  }
-                  return (
-                    <li key={e.id || i} style={{ marginBottom: 6 }}>
-                      <strong>{hh}</strong> · {String(e.desc || e.title || 'Pasto')} — {macroLine}
-                    </li>
-                  );
-                })}
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', color: '#e5e7eb', fontSize: '0.78rem', lineHeight: 1.45 }}>
+                {registeredMealGroups.map((g, gi) => (
+                  <li key={`${g.mealType}_${gi}`} style={{ marginBottom: 8 }}>
+                    <details
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(74, 222, 128, 0.25)',
+                        background: 'rgba(34, 197, 94, 0.06)',
+                      }}
+                    >
+                      <summary
+                        style={{
+                          cursor: 'pointer',
+                          listStyle: 'none',
+                          fontWeight: 800,
+                          fontSize: '0.78rem',
+                          color: '#bbf7d0',
+                        }}
+                      >
+                        ▶ {mealTypeLabelIt(g.mealType)} - Fatto
+                      </summary>
+                      <div style={{ fontSize: '0.72rem', color: '#d1fae5', marginTop: 8, lineHeight: 1.45 }}>
+                        {g.items.map((e, j) => {
+                          const hh = decimalHourToHHMM(Number(e.mealTime)) || '—';
+                          const kcal = Math.round(Number(e.kcal || e.cal) || 0);
+                          const p = Number(e.prot) || 0;
+                          const c = Number(e.carb) || 0;
+                          const f = Number(e.fatTotal ?? e.fat) || 0;
+                          const fib = Number(e.fibre) || 0;
+                          const mg = Number(e.mg) || 0;
+                          const macroLine = `${kcal} kcal, P${p.toFixed(0)}g C${c.toFixed(0)}g F${f.toFixed(0)}g${fib > 0 ? ` · fibre ${fib.toFixed(0)}g` : ''}${mg > 0 ? ` · Mg ${Math.round(mg)}mg` : ''}`;
+                          return (
+                            <div key={e.id || j} style={{ marginTop: j > 0 ? 6 : 0 }}>
+                              <strong>{hh}</strong> · {String(e.desc || e.title || 'Pasto')} — {macroLine}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
@@ -644,48 +666,7 @@ export default function PlanningWizard({
                 {ghostLogMeals.map((e, i) => {
                   const hh = decimalHourToHHMM(Number(e.mealTime)) || '—';
                   const t = getDynamicMealTargets(String(e.mealType || 'pranzo').split('_')[0], dailyLog, userTargets, dynOpts);
-                  const itemMin = decimalToMinutes(Number(e.mealTime));
-                  const isPast = itemMin != null && itemMin <= nowMinutes;
                   const foods = Array.isArray(e.draftFoods) ? e.draftFoods : [];
-                  if (isPast) {
-                    return (
-                      <li key={e.id || i} style={{ marginBottom: 8, listStyle: 'none', marginLeft: -18 }}>
-                        <details
-                          style={{
-                            padding: '8px 10px',
-                            borderRadius: 10,
-                            border: '2px dashed rgba(167, 139, 250, 0.45)',
-                            background: 'rgba(167, 139, 250, 0.06)',
-                          }}
-                        >
-                          <summary
-                            style={{
-                              cursor: 'pointer',
-                              listStyle: 'none',
-                              fontWeight: 800,
-                              fontSize: '0.78rem',
-                              color: '#e9d5ff',
-                            }}
-                          >
-                            🔒 [{hh}] {mealTypeLabelIt(e.mealType)} - Registrato
-                          </summary>
-                          <div style={{ fontSize: '0.72rem', color: '#c4b5fd', marginTop: 8, lineHeight: 1.45 }}>
-                            <div style={{ fontWeight: 700 }}>{String(e.title || 'Pasto pianificato')}</div>
-                            <div style={{ marginTop: 4 }}>
-                              Target residui per questo slot: ~{t.kcal} kcal, P{t.prot}g, C{t.carb}g, F{t.fat}g · {microHintFromTargets(t, userTargets)}
-                            </div>
-                            {foods.length > 0 ? (
-                              <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
-                                {foods.map((f, fi) => (
-                                  <li key={fi}>{String(f)}</li>
-                                ))}
-                              </ul>
-                            ) : null}
-                          </div>
-                        </details>
-                      </li>
-                    );
-                  }
                   return (
                     <li
                       key={e.id || i}
@@ -807,11 +788,46 @@ export default function PlanningWizard({
             }}
           >
             <ul style={{ margin: 0, paddingLeft: 18, color: '#e0f2fe', fontSize: '0.78rem', lineHeight: 1.5 }}>
-              {timelineEntries.map((row, i) => (
-                <li key={i} style={{ marginBottom: 6 }}>
-                  <strong>{decimalHourToHHMM(row.timeDec) || '—'}</strong> {row.label}
-                </li>
-              ))}
+              {timelineEntries.map((row, i) => {
+                if (row.kind === 'real_meal_group') {
+                  return (
+                    <li key={`rg_${row.mealType}_${i}`} style={{ marginBottom: 8, listStyle: 'none', marginLeft: -18 }}>
+                      <details
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(125, 211, 252, 0.28)',
+                          background: 'rgba(14, 165, 233, 0.07)',
+                        }}
+                      >
+                        <summary
+                          style={{
+                            cursor: 'pointer',
+                            listStyle: 'none',
+                            fontWeight: 800,
+                            fontSize: '0.78rem',
+                            color: '#bae6fd',
+                          }}
+                        >
+                          ▶ {mealTypeLabelIt(row.mealType)} - Fatto
+                        </summary>
+                        <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: '0.74rem', color: '#e0f2fe' }}>
+                          {row.items.map((e, j) => (
+                            <li key={e.id || j} style={{ marginBottom: 4 }}>
+                              <strong>{decimalHourToHHMM(Number(e.mealTime)) || '—'}</strong> {String(e.desc || e.title || '—')}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    </li>
+                  );
+                }
+                return (
+                  <li key={i} style={{ marginBottom: 6 }}>
+                    <strong>{decimalHourToHHMM(row.timeDec) || '—'}</strong> {row.label}
+                  </li>
+                );
+              })}
             </ul>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

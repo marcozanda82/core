@@ -104,25 +104,33 @@ const summaryStyle = {
 function DraftFoodPills({ foods }) {
   if (!Array.isArray(foods) || foods.length === 0) return null;
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-      {foods.map((f, i) => (
+    <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 4 }}>
+      {foods.map((foodStr, i) => (
         <span
-          key={`${f}_${i}`}
+          key={`${foodStr}_${i}`}
           style={{
             display: 'inline-block',
-            padding: '3px 8px',
-            borderRadius: 999,
-            background: 'rgba(0, 229, 255, 0.1)',
+            background: 'rgba(0, 229, 255, 0.15)',
             color: '#00e5ff',
+            padding: '4px 8px',
+            borderRadius: '12px',
             fontSize: '0.75rem',
-            lineHeight: 1.25,
+            margin: '4px 4px 0 0',
           }}
         >
-          {String(f)}
+          {String(foodStr)}
         </span>
       ))}
     </div>
   );
+}
+
+/** Blocco solo per nodi reali nel passato; i ghost non si bloccano mai. */
+function activityRowIsLocked(row, currentMinutes) {
+  if (row?.isGhost === true) return false;
+  const tMin = timeStrToMinutes(row?.time);
+  if (tMin == null) return false;
+  return tMin <= currentMinutes;
 }
 
 export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
@@ -240,10 +248,8 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
 
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {sortedWithIdx.map(({ row, idx: origIdx }) => {
-              const tMin = timeStrToMinutes(row.time);
-              const isPast = tMin != null && tMin <= currentMinutes;
               const timeLabel = row.time || '—';
-              if (isPast) {
+              if (activityRowIsLocked(row, currentMinutes)) {
                 return (
                   <li key={`${origIdx}_${row.time}`} style={{ listStyle: 'none' }}>
                     <details style={detailsBaseStyle}>
@@ -307,40 +313,7 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
               </div>
               <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {editedPlan.ghostMeals.map((gm, gi) => {
-                  const timeStr = gm.time != null ? String(gm.time).slice(0, 5) : '';
-                  const tMin = timeStrToMinutes(timeStr);
-                  const isPast = tMin != null && tMin <= currentMinutes;
-                  const mealLabel =
-                    MEAL_SELECT_OPTIONS.find((o) => o.value === mealTypeForSelect(gm.mealType))?.label || mealTypeForSelect(gm.mealType);
                   const foods = gm.draftFoods;
-                  if (isPast) {
-                    return (
-                      <li key={gi} style={{ listStyle: 'none', marginBottom: gi < editedPlan.ghostMeals.length - 1 ? 8 : 0 }}>
-                        <details
-                          style={{
-                            ...detailsBaseStyle,
-                            background: 'rgba(179, 136, 255, 0.06)',
-                            border: '1px solid rgba(179, 136, 255, 0.14)',
-                          }}
-                        >
-                          <summary style={{ ...summaryStyle, color: 'rgba(224, 210, 255, 0.95)' }}>
-                            🔒 [{timeStr || '—'}] {mealLabel} - Registrato
-                          </summary>
-                          <div style={{ fontSize: '0.72rem', color: 'rgba(200, 200, 220, 0.92)', marginTop: 8, lineHeight: 1.4 }}>
-                            <div style={{ fontWeight: 700, marginBottom: 4 }}>{String(gm.title || 'Pasto')}</div>
-                            {gm.microDesc ? <div>{String(gm.microDesc)}</div> : null}
-                            {Array.isArray(foods) && foods.length > 0 ? (
-                              <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
-                                {foods.map((f, fi) => (
-                                  <li key={fi}>{String(f)}</li>
-                                ))}
-                              </ul>
-                            ) : null}
-                          </div>
-                        </details>
-                      </li>
-                    );
-                  }
                   return (
                     <li
                       key={gi}
@@ -445,10 +418,8 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {(editedPlan?.activities || []).map((row, idx) => {
-              const tMin = timeStrToMinutes(row.time);
-              const isPast = tMin != null && tMin <= currentMinutes;
               const timeLabel = row.time || '—';
-              if (isPast) {
+              if (activityRowIsLocked(row, currentMinutes)) {
                 return (
                   <details key={idx} style={detailsBaseStyle}>
                     <summary style={summaryStyle}>
@@ -520,38 +491,7 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {editedPlan.ghostMeals.map((gm, gIdx) => {
                   const timeStr = gm.time != null ? String(gm.time).slice(0, 5) : '';
-                  const tMin = timeStrToMinutes(timeStr);
-                  const isPast = tMin != null && tMin <= currentMinutes;
-                  const mealLabel =
-                    MEAL_SELECT_OPTIONS.find((o) => o.value === mealTypeForSelect(gm.mealType))?.label || mealTypeForSelect(gm.mealType);
                   const foods = gm.draftFoods;
-                  if (isPast) {
-                    return (
-                      <details
-                        key={gIdx}
-                        style={{
-                          ...detailsBaseStyle,
-                          background: 'rgba(179, 136, 255, 0.06)',
-                          border: '1px solid rgba(179, 136, 255, 0.14)',
-                        }}
-                      >
-                        <summary style={{ ...summaryStyle, color: 'rgba(224, 210, 255, 0.95)' }}>
-                          🔒 [{timeStr || '—'}] {mealLabel} - Registrato
-                        </summary>
-                        <div style={{ fontSize: '0.72rem', color: 'rgba(220, 215, 235, 0.9)', marginTop: 8, lineHeight: 1.4 }}>
-                          <div style={{ fontWeight: 700, marginBottom: 4 }}>{gm.title || '—'}</div>
-                          {gm.microDesc ? <div>{String(gm.microDesc)}</div> : null}
-                          {Array.isArray(foods) && foods.length > 0 ? (
-                            <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
-                              {foods.map((f, fi) => (
-                                <li key={fi}>{String(f)}</li>
-                              ))}
-                            </ul>
-                          ) : null}
-                        </div>
-                      </details>
-                    );
-                  }
                   return (
                     <div
                       key={gIdx}
@@ -601,7 +541,26 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                           ✕
                         </button>
                       </div>
-                      <DraftFoodPills foods={foods} />
+                      {Array.isArray(foods) && foods.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+                          {foods.map((foodStr, i) => (
+                            <span
+                              key={`${foodStr}_${i}`}
+                              style={{
+                                display: 'inline-block',
+                                background: 'rgba(0, 229, 255, 0.15)',
+                                color: '#00e5ff',
+                                padding: '4px 8px',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                margin: '4px 4px 0 0',
+                              }}
+                            >
+                              {String(foodStr)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}

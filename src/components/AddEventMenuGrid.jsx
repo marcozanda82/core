@@ -1,17 +1,16 @@
 /**
- * Griglia «Aggiungi evento»: contesto o long-press (500ms) → modalità iOS-like (jiggle);
- * riordino HTML5 Drag&Drop; salvataggio su localStorage tramite onOrderCommit a ogni drop.
+ * Griglia «Aggiungi evento»: long-press / contesto → modalità riordino (jiggle);
+ * scambio a due tocchi; salvataggio su localStorage tramite onOrderCommit.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ADD_EVENT_MENU_ITEMS } from '../coreEngine';
 
 const HOLD_MS = 500;
 const MOVE_CANCEL_PX = 14;
-const DND_MIME = 'application/x-ghostapp-add-event-idx';
 
 export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActivate, title = 'AGGIUNGI EVENTO', headingStyle = {} }) {
   const [isEditMode, setIsEditMode] = useState(false);
-  const [dragFromIdx, setDragFromIdx] = useState(null);
+  const [selectedSwapIndex, setSelectedSwapIndex] = useState(null);
   const holdTimerRef = useRef(null);
   const pressStartRef = useRef({ x: 0, y: 0 });
 
@@ -23,6 +22,10 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
   }, []);
 
   useEffect(() => () => clearHold(), [clearHold]);
+
+  useEffect(() => {
+    if (!isEditMode) setSelectedSwapIndex(null);
+  }, [isEditMode]);
 
   const enterEditMode = useCallback(
     (e) => {
@@ -68,63 +71,26 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
     clearHold();
   }, [clearHold]);
 
-  const onDragStart = useCallback(
-    (e, idx) => {
-      if (!isEditMode) {
-        e.preventDefault();
+  const handleCellActivate = useCallback(
+    (itemId, idx) => {
+      if (isEditMode) {
+        if (selectedSwapIndex == null) {
+          setSelectedSwapIndex(idx);
+          return;
+        }
+        if (selectedSwapIndex === idx) {
+          setSelectedSwapIndex(null);
+          return;
+        }
+        const next = [...menuOrder];
+        [next[selectedSwapIndex], next[idx]] = [next[idx], next[selectedSwapIndex]];
+        onOrderCommit(next);
+        setSelectedSwapIndex(null);
         return;
       }
-      try {
-        e.dataTransfer.setData(DND_MIME, String(idx));
-        e.dataTransfer.effectAllowed = 'move';
-      } catch {
-        /* ignore */
-      }
-      setDragFromIdx(idx);
-    },
-    [isEditMode]
-  );
-
-  const onDragOver = useCallback((e) => {
-    e.preventDefault();
-    try {
-      e.dataTransfer.dropEffect = 'move';
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const onDrop = useCallback(
-    (e, dropIdx) => {
-      e.preventDefault();
-      let from = dragFromIdx;
-      try {
-        const raw = e.dataTransfer.getData(DND_MIME);
-        const parsed = parseInt(raw, 10);
-        if (Number.isFinite(parsed)) from = parsed;
-      } catch {
-        /* use dragFromIdx */
-      }
-      setDragFromIdx(null);
-      if (from == null || !Number.isFinite(from) || from === dropIdx) return;
-      const next = [...menuOrder];
-      if (from < 0 || from >= next.length || dropIdx < 0 || dropIdx >= next.length) return;
-      [next[from], next[dropIdx]] = [next[dropIdx], next[from]];
-      onOrderCommit(next);
-    },
-    [dragFromIdx, menuOrder, onOrderCommit]
-  );
-
-  const onDragEnd = useCallback(() => {
-    setDragFromIdx(null);
-  }, []);
-
-  const handleCellClick = useCallback(
-    (itemId) => {
-      if (isEditMode) return;
       onItemActivate(itemId);
     },
-    [isEditMode, onItemActivate]
+    [isEditMode, selectedSwapIndex, menuOrder, onOrderCommit, onItemActivate]
   );
 
   const fineBtnStyle = {
@@ -149,7 +115,7 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 10,
-          marginBottom: 16,
+          marginBottom: 10,
           ...headingStyle,
         }}
       >
@@ -167,11 +133,31 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
           {title}
         </h2>
         {isEditMode ? (
-          <button type="button" onClick={() => setIsEditMode(false)} style={fineBtnStyle}>
+          <button
+            type="button"
+            onClick={() => {
+              setIsEditMode(false);
+              setSelectedSwapIndex(null);
+            }}
+            style={fineBtnStyle}
+          >
             Fine
           </button>
         ) : null}
       </div>
+      {isEditMode ? (
+        <p
+          style={{
+            margin: '0 0 14px 0',
+            fontSize: '0.72rem',
+            color: 'rgba(0, 229, 255, 0.85)',
+            fontWeight: 700,
+            letterSpacing: '0.02em',
+          }}
+        >
+          Tocca due icone per scambiarle
+        </p>
+      ) : null}
 
       <div
         style={{
@@ -188,7 +174,7 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
           const border = def.borderColor || undefined;
           const labelColor = def.labelColor || '#fff';
           const iconStyle = def.iconFilter ? { fontSize: '1.8rem', filter: def.iconFilter } : { fontSize: '1.8rem' };
-          const isDropHint = isEditMode && dragFromIdx != null && dragFromIdx !== idx;
+          const isSelected = isEditMode && selectedSwapIndex === idx;
 
           const labelEl =
             def.labelLines && String(def.label).includes(' ') ? (
@@ -219,8 +205,6 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
           return (
             <div
               key={itemId}
-              onDragOver={isEditMode ? onDragOver : undefined}
-              onDrop={isEditMode ? (e) => onDrop(e, idx) : undefined}
               style={{
                 position: 'relative',
                 display: 'flex',
@@ -228,14 +212,11 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
                 alignItems: 'stretch',
                 minWidth: 0,
                 overflow: 'visible',
-                outline: isDropHint ? '2px dashed rgba(0, 229, 255, 0.75)' : 'none',
-                outlineOffset: 2,
                 borderRadius: 12,
               }}
             >
               <button
                 type="button"
-                draggable={isEditMode}
                 className={`action-btn${isEditMode ? ' jiggle' : ''}`}
                 style={{
                   aspectRatio: '1',
@@ -245,17 +226,17 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
                   gap: '6px',
                   borderColor: border,
                   width: '100%',
-                  cursor: isEditMode ? 'grab' : 'pointer',
+                  cursor: 'pointer',
                   zIndex: 1,
+                  boxShadow: isSelected ? '0 0 0 2px rgba(0, 229, 255, 0.95), 0 0 18px rgba(0, 229, 255, 0.35)' : undefined,
+                  background: isSelected ? 'rgba(0, 229, 255, 0.12)' : undefined,
                 }}
                 onContextMenu={onIconContextMenu}
                 onPointerDown={onCellPointerDown}
                 onPointerMove={onCellPointerMove}
                 onPointerUp={onCellPointerUp}
                 onPointerCancel={onCellPointerUp}
-                onDragStart={(e) => onDragStart(e, idx)}
-                onDragEnd={onDragEnd}
-                onClick={() => handleCellClick(itemId)}
+                onClick={() => handleCellActivate(itemId, idx)}
               >
                 <span className="action-icon" style={iconStyle}>
                   {def.icon}

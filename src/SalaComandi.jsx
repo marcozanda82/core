@@ -1468,13 +1468,18 @@ function normalizeAddMenuOrderState(saved, defaultOrder) {
   const out = [];
   const seen = new Set();
   for (const id of saved) {
+    if (id === 'luce') continue;
     if (allowed.has(id) && !seen.has(id)) {
       out.push(id);
       seen.add(id);
     }
   }
   for (const id of defaultOrder) {
-    if (!seen.has(id)) out.push(id);
+    if (!seen.has(id)) {
+      if (id === 'plan') out.unshift(id);
+      else out.push(id);
+      seen.add(id);
+    }
   }
   return out;
 }
@@ -1772,6 +1777,26 @@ export default function SalaComandi() {
     }
     return [...ADD_EVENT_MENU_DEFAULT_ORDER];
   });
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ADD_MENU_ORDER_LS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const normalized = normalizeAddMenuOrderState(parsed, ADD_EVENT_MENU_DEFAULT_ORDER);
+      if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
+        try {
+          localStorage.setItem(ADD_MENU_ORDER_LS_KEY, JSON.stringify(normalized));
+        } catch {
+          /* ignore */
+        }
+        setAddEventMenuOrder(normalized);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
 
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
@@ -6001,7 +6026,7 @@ FORMATTAZIONE OBBLIGATORIA: Devi essere chiarissimo e massimizzare la leggibilit
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=BRIEFING o QUICK_ACTION=ANALISI_IERI: rispondi ESCLUSIVAMENTE in formato Lavagna (emoji + dato per riga, elenchi puntati essenziali), rispettando il tetto di 3 elenchi e le REGOLE DI STILE sopra.
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=IDEA_PASTO: rispondi ESCLUSIVAMENTE con il blocco [MEAL_PROPOSAL:{...}] su una riga come da CARTA MENU; nessun altro testo (la Dispensa è in [CONTEXT_LIVE]).
 
-MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata (testo libero o tramite wizard), entra in modalità pianificazione. Se il messaggio utente inizia con "PIANIFICAZIONE GUIDATA:", ha già scelto attività e fasce (Mattina / Pomeriggio / Sera): NON chiedere altro, NON fare elenchi lunghi. Rispondi generando ESATTAMENTE il token [DAILY_PLAN:{...}] su una riga, con orari concreti HH:MM coerenti con le fasce (es. Mattina → 08:00–11:30, Pomeriggio → 12:00–17:30, Sera → 18:00–22:00; se l'allenamento è in Sera usa tipicamente 18:30 o 19:00 come workoutTime e nella lista activities). Il JSON DEVE includere anche "ghostMeals": array di pasti pianificati (Nodi Fantasma) che l'utente vedrà in timeline finché non li converte in pasti veri: ogni elemento include {"mealType":"colazione|snack|pranzo|cena", "time":"HH:MM", "title":"Titolo breve", "microDesc":"Suggerimento micronutrienti (es. fibre, omega-3) per lucidità e sonno", "draftFoods":["200g Pollo","150g Riso"]} — draftFoods è un array di stringhe (abbozzo alimenti con pesi stimati). Per i pasti futuri nel token, calcola i target e COMPILA draftFoods con un abbozzo realistico di alimenti. Dai MASSIMA PRIORITÀ copiando pasti simili che l'utente ha consumato in passato (presenti nello storico) o cibi dal suo database/dispensa in [CONTEXT_LIVE]. Inserisci pesi stimati per centrare il target. Esempio forma completa: [DAILY_PLAN:{"target":"pari", "workoutTime":"19:00", "activities":[...], "ghostMeals":[{"mealType":"cena", "time":"20:00", "title":"Cena Recupero", "microDesc":"Focus proteine", "draftFoods":["200g Pollo","150g Riso"]}]}]. Scegli "target" (deficit, pari o surplus) in base a [CONTEXT_LIVE]. Altrimenti, in conversazione aperta, chiedi le attività; quando l'utente risponde, genera lo stesso token con ghostMeals coerenti col piano. Il token deve essere da solo su una riga.
+MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata (testo libero o tramite wizard), entra in modalità pianificazione. Se il messaggio utente inizia con "PIANIFICAZIONE GUIDATA:", ha già scelto attività e fasce (Mattina / Pomeriggio / Sera): NON chiedere altro, NON fare elenchi lunghi. Rispondi generando ESATTAMENTE il token [DAILY_PLAN:{...}] su una riga, con orari concreti HH:MM coerenti con le fasce (es. Mattina → 08:00–11:30, Pomeriggio → 12:00–17:30, Sera → 18:00–22:00; se l'allenamento è in Sera usa tipicamente 18:30 o 19:00 come workoutTime e nella lista activities). Il JSON DEVE includere anche "ghostMeals": array di pasti pianificati (Nodi Fantasma) che l'utente vedrà in timeline finché non li converte in pasti veri: ogni elemento include {"mealType":"colazione|snack|pranzo|cena", "time":"HH:MM", "title":"Titolo breve", "microDesc":"Suggerimento micronutrienti (es. fibre, omega-3) per lucidità e sonno", "draftFoods":["200g Pollo","150g Riso"]} — draftFoods è un array di stringhe (abbozzo alimenti con pesi stimati). Per i pasti futuri nel token, calcola i target e COMPILA draftFoods con un abbozzo realistico di alimenti. Dai MASSIMA PRIORITÀ copiando pasti simili che l'utente ha consumato in passato (presenti nello storico) o cibi dal suo database/dispensa in [CONTEXT_LIVE]. Inserisci pesi stimati per centrare il target. Esempio forma completa: [DAILY_PLAN:{"target":"pari", "workoutTime":"19:00", "activities":[...], "ghostMeals":[{"mealType":"cena", "time":"20:00", "title":"Cena Recupero", "microDesc":"Focus proteine", "draftFoods":["200g Pollo","150g Riso"]}]}]. Scegli "target" (deficit, pari o surplus) in base a [CONTEXT_LIVE]. Altrimenti, in conversazione aperta, chiedi le attività; quando l'utente risponde, genera lo stesso token con ghostMeals coerenti col piano. Il token deve essere da solo su una riga. ATTENZIONE: DEVI OBBLIGATORIAMENTE riempire l'array draftFoods per OGNI nodo fantasma ('ghostMeals'). Se non sai cosa inserire, inventa un pasto coerente coi target (es. ['200g Pollo', '10g Olio']). L'array NON DEVE MAI essere vuoto.
 
 ATTENZIONE TEMPORALE: Se nel prompt utente ricevi l'ora attuale e gli eventi già registrati, DEVI rispettarli. Proponi solo Nodi Fantasma futuri. Se la colazione o il pranzo sono già stati fatti, concentrati solo sugli spuntini e la cena, bilanciando i macro rimanenti.
 
