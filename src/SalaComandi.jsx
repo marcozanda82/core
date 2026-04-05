@@ -6753,11 +6753,26 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         .filter(Boolean);
       const realMealsSet = new Set(realMeals);
       const hasRealWorkout = (srcLog || []).some((n) => n && !n.isGhost && n.type === 'workout');
+      const normalizeDailyPlanConflictTitle = (s) =>
+        String(s || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, ' ');
+      const realTitles = new Set();
+      (srcLog || []).forEach((n) => {
+        if (!n || n.isGhost === true || n.type === 'ghost_meal' || n.type === 'ghost_workout') return;
+        [n.desc, n.title, n.name].forEach((piece) => {
+          const norm = normalizeDailyPlanConflictTitle(piece);
+          if (norm.length >= 2) realTitles.add(norm);
+        });
+      });
       const baseLog = srcLog.filter((e) => e && e.type !== 'ghost_meal');
       const newGhostEntries = ghostList
         .filter((gm) => {
           const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
           if (realMealsSet.has(mt)) return false;
+          const gTitle = normalizeDailyPlanConflictTitle(gm.title);
+          if (gTitle && realTitles.has(gTitle)) return false;
           return true;
         })
         .map((gm, i) => {

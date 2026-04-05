@@ -67,6 +67,17 @@ function mealTypeForSelect(mealType) {
   return 'spuntino';
 }
 
+/** "HH:MM" o "H:MM" → minuti da mezzanotte; null se non valido. */
+function timeStrToMinutes(str) {
+  const s = String(str || '').trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (Number.isNaN(h) || Number.isNaN(min) || h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
 export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedPlan, setEditedPlan] = useState(() => normalizePlanFromProps(planData));
@@ -87,6 +98,8 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
       });
   }, [editedPlan?.activities]);
   const targetLabel = calorieStrategyShortLabelIt(editedPlan?.target);
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
   const updateActivity = (idx, patch) => {
     setEditedPlan((prev) => {
@@ -325,44 +338,73 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
             Attività
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {(editedPlan?.activities || []).map((row, idx) => (
-              <div
-                key={idx}
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 10,
-                  alignItems: 'center',
-                  padding: 10,
-                  borderRadius: 10,
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,248,220,0.06)',
-                }}
-              >
-                <input
-                  type="time"
-                  value={row.time || ''}
-                  onChange={(e) => updateActivity(idx, { time: e.target.value })}
-                  style={{ ...inputBaseStyle, width: 120, colorScheme: 'dark' }}
-                />
-                <input
-                  type="text"
-                  value={row.desc || ''}
-                  onChange={(e) => updateActivity(idx, { desc: e.target.value })}
-                  placeholder="Descrizione attività"
-                  style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => handleRemoveActivity(idx)}
-                  style={removeRowBtnStyle}
-                  aria-label="Rimuovi attività"
-                  title="Rimuovi"
+            {(editedPlan?.activities || []).map((row, idx) => {
+              const tMin = timeStrToMinutes(row.time);
+              const isPast = tMin != null && tMin < currentMinutes;
+              const readOnlyRow = isPast;
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 10,
+                    alignItems: 'center',
+                    padding: 10,
+                    borderRadius: 10,
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,248,220,0.06)',
+                    opacity: readOnlyRow ? 0.6 : 1,
+                  }}
                 >
-                  ✕
-                </button>
-              </div>
-            ))}
+                  {readOnlyRow ? (
+                    <span
+                      style={{
+                        fontVariantNumeric: 'tabular-nums',
+                        fontWeight: 800,
+                        color: 'rgba(0, 229, 255, 0.75)',
+                        minWidth: 52,
+                        fontSize: '0.85rem',
+                      }}
+                      title="Passato — non modificabile"
+                    >
+                      🔒 {row.time || '—'}
+                    </span>
+                  ) : (
+                    <input
+                      type="time"
+                      value={row.time || ''}
+                      onChange={(e) => updateActivity(idx, { time: e.target.value })}
+                      style={{ ...inputBaseStyle, width: 120, colorScheme: 'dark' }}
+                    />
+                  )}
+                  {readOnlyRow ? (
+                    <span style={{ flex: 1, minWidth: 140, color: 'rgba(255,248,220,0.85)', fontSize: '0.85rem', lineHeight: 1.35 }}>
+                      {row.desc || '—'}
+                    </span>
+                  ) : (
+                    <input
+                      type="text"
+                      value={row.desc || ''}
+                      onChange={(e) => updateActivity(idx, { desc: e.target.value })}
+                      placeholder="Descrizione attività"
+                      style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
+                    />
+                  )}
+                  {!readOnlyRow ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveActivity(idx)}
+                      style={removeRowBtnStyle}
+                      aria-label="Rimuovi attività"
+                      title="Rimuovi"
+                    >
+                      ✕
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
 
           {Array.isArray(editedPlan?.ghostMeals) && editedPlan.ghostMeals.length > 0 ? (
@@ -381,56 +423,92 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                 Pasti
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {editedPlan.ghostMeals.map((gm, gIdx) => (
-                  <div
-                    key={gIdx}
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: 10,
-                      alignItems: 'center',
-                      padding: 10,
-                      borderRadius: 10,
-                      background: 'rgba(179, 136, 255, 0.06)',
-                      border: '1px solid rgba(179, 136, 255, 0.14)',
-                    }}
-                  >
-                    <input
-                      type="time"
-                      value={gm.time != null ? String(gm.time).slice(0, 5) : ''}
-                      onChange={(e) => handleGhostMealChange(gIdx, 'time', e.target.value)}
-                      style={{ ...inputBaseStyle, width: 120, colorScheme: 'dark' }}
-                    />
-                    <select
-                      value={mealTypeForSelect(gm.mealType)}
-                      onChange={(e) => handleGhostMealChange(gIdx, 'mealType', e.target.value)}
-                      style={selectBaseStyle}
-                      aria-label="Tipo pasto"
+                {editedPlan.ghostMeals.map((gm, gIdx) => {
+                  const timeStr = gm.time != null ? String(gm.time).slice(0, 5) : '';
+                  const tMin = timeStrToMinutes(timeStr);
+                  const isPast = tMin != null && tMin < currentMinutes;
+                  const readOnlyRow = isPast;
+                  const mealLabel =
+                    MEAL_SELECT_OPTIONS.find((o) => o.value === mealTypeForSelect(gm.mealType))?.label || mealTypeForSelect(gm.mealType);
+                  return (
+                    <div
+                      key={gIdx}
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 10,
+                        alignItems: 'center',
+                        padding: 10,
+                        borderRadius: 10,
+                        background: 'rgba(179, 136, 255, 0.06)',
+                        border: '1px solid rgba(179, 136, 255, 0.14)',
+                        opacity: readOnlyRow ? 0.6 : 1,
+                      }}
                     >
-                      {MEAL_SELECT_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value} style={{ background: '#1a1a22', color: '#fff8e8' }}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      value={gm.title || ''}
-                      onChange={(e) => handleGhostMealChange(gIdx, 'title', e.target.value)}
-                      placeholder="Titolo (es. Pranzo Focus)"
-                      style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveGhostMeal(gIdx)}
-                      style={removeRowBtnStyle}
-                      aria-label="Rimuovi pasto pianificato"
-                      title="Rimuovi"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                      {readOnlyRow ? (
+                        <span
+                          style={{
+                            fontVariantNumeric: 'tabular-nums',
+                            fontWeight: 800,
+                            color: 'rgba(196, 181, 253, 0.9)',
+                            minWidth: 56,
+                            fontSize: '0.82rem',
+                          }}
+                          title="Passato — non modificabile"
+                        >
+                          🔒 {timeStr || '—'}
+                        </span>
+                      ) : (
+                        <input
+                          type="time"
+                          value={timeStr}
+                          onChange={(e) => handleGhostMealChange(gIdx, 'time', e.target.value)}
+                          style={{ ...inputBaseStyle, width: 120, colorScheme: 'dark' }}
+                        />
+                      )}
+                      {readOnlyRow ? (
+                        <span style={{ color: 'rgba(224, 210, 255, 0.95)', fontSize: '0.82rem', fontWeight: 700 }}>{mealLabel}</span>
+                      ) : (
+                        <select
+                          value={mealTypeForSelect(gm.mealType)}
+                          onChange={(e) => handleGhostMealChange(gIdx, 'mealType', e.target.value)}
+                          style={selectBaseStyle}
+                          aria-label="Tipo pasto"
+                        >
+                          {MEAL_SELECT_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value} style={{ background: '#1a1a22', color: '#fff8e8' }}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {readOnlyRow ? (
+                        <span style={{ flex: 1, minWidth: 140, color: 'rgba(232, 224, 255, 0.92)', fontSize: '0.82rem' }}>
+                          {gm.title || '—'}
+                        </span>
+                      ) : (
+                        <input
+                          type="text"
+                          value={gm.title || ''}
+                          onChange={(e) => handleGhostMealChange(gIdx, 'title', e.target.value)}
+                          placeholder="Titolo (es. Pranzo Focus)"
+                          style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
+                        />
+                      )}
+                      {!readOnlyRow ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveGhostMeal(gIdx)}
+                          style={removeRowBtnStyle}
+                          aria-label="Rimuovi pasto pianificato"
+                          title="Rimuovi"
+                        >
+                          ✕
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </>
           ) : null}

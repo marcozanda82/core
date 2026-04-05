@@ -1,7 +1,8 @@
 /**
  * Wizard guidato per avviare la pianificazione giornaliera (invio testo strutturato alla chat).
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { toCanonicalMealType } from './coreEngine';
 
 const MACRO_OPTIONS = [
   { id: 'mental', label: 'Lavoro Mentale / PC' },
@@ -79,14 +80,92 @@ function formatLogEntryForPlanningContext(n) {
   const typ = String(n.type || '');
   let label = typ;
   if (typ === 'food' || typ === 'recipe') {
-    label = n.mealType ? `pasto ${n.mealType}` : 'pasto';
+    const slot = n.mealType ? toCanonicalMealType(String(n.mealType).split('_')[0]) : '';
+    const foodName = String(n.desc || n.title || n.name || '').trim();
+    label = foodName
+      ? `pasto ${slot || n.mealType || ''} (${foodName})`.replace(/\s+/g, ' ').trim()
+      : n.mealType
+        ? `pasto ${n.mealType}`
+        : 'pasto';
   } else if (typ === 'workout') {
-    label = String(n.desc || n.name || 'allenamento');
+    label = String(n.desc || n.name || n.title || 'allenamento');
   } else if (typ === 'sleep') {
     label = 'sonno';
   }
 
   return `[${timeStr}] ${label}`;
+}
+
+/** Pianificazioni già presenti (ghost) — contesto separato dal log reale. */
+function formatGhostEntryForPlanningContext(n) {
+  if (!n || typeof n !== 'object') return null;
+  const isGhost = n.isGhost === true || n.type === 'ghost_meal' || n.type === 'ghost_workout';
+  if (!isGhost) return null;
+
+  const rawT = n.mealTime ?? n.time;
+  let timeStr = '—';
+  if (typeof rawT === 'number' && !Number.isNaN(rawT)) {
+    const hhmm = decimalHourToHHMM(rawT);
+    if (hhmm) timeStr = hhmm;
+  } else if (typeof rawT === 'string' && rawT.includes(':')) {
+    timeStr = rawT.trim().slice(0, 5);
+  }
+
+  if (n.type === 'ghost_meal') {
+    const t = String(n.title || 'pasto pianificato').trim();
+    const mt = n.mealType ? String(n.mealType) : '';
+    return `[${timeStr}] ghost pasto ${mt ? `${mt}: ` : ''}${t}`;
+  }
+  if (n.type === 'ghost_workout') {
+    return `[${timeStr}] ghost ${String(n.title || 'allenamento pianificato')}`;
+  }
+  return `[${timeStr}] ghost`;
+}
+
+function extractRealWorkout(log) {
+  return (log || []).find((e) => e && !e.isGhost && e.type === 'workout');
+}
+
+function hasRealMealsInLog(log) {
+  return (log || []).some((e) => e && !e.isGhost && (e.type === 'food' || e.type === 'recipe'));
+}
+
+/** Estrae gruppi muscolari da titolo/descrizione allenamento (italiano). */
+function inferMusclesFromWorkoutText(workout) {
+  const text = `${workout?.desc || ''} ${workout?.name || ''} ${workout?.title || ''}`.toLowerCase();
+  if (!text.trim()) return [];
+  const found = [];
+  const push = (label) => {
+    if (MUSCLE_OPTIONS.includes(label) && !found.includes(label)) found.push(label);
+  };
+  if (/petto|torace|pectoral|bench|panca/.test(text)) push('Petto');
+  if (/dorso|schiena|lat\b|pull|remator|rowing|remata/.test(text)) push('Dorso');
+  if (/gambe|quadricip|femorali|leg day|squat|stacco/.test(text)) push('Gambe');
+  if (/bracci|bicipit|tricipit|curl|dip\b/.test(text)) push('Braccia');
+  if (/spalle|deltoid|shoulder|lateral/.test(text)) push('Spalle');
+  if (/cardio|corr|run|corsa|tapis|cyclette|bike|hiit|ellittic|nuot|swim|rowing machine/.test(text)) push('Cardio');
+  return found;
+}
+
+/** Ora locale come ore decimali 0–24. */
+function getLocalDecimalHourNow() {
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
+
+/** Fascia già passata per il giorno corrente (pianificazione solo avanti nel tempo). */
+function isTimingSlotInPast(slotId) {
+  const h = getLocalDecimalHourNow();
+  if (slotId === 'mattina') return h >= 12;
+  if (slotId === 'pomeriggio') return h >= 18;
+  return false;
+}
+
+function buildLogSummaryFromDailyLog(dailyLog) {
+  const log = dailyLog || [];
+  const fatto = log.map((e) => formatLogEntryForPlanningContext(e)).filter(Boolean);
+  const pianificato = log.map((e) => formatGhostEntryForPlanningContext(e)).filter(Boolean);
+  return { fatto, pianificato };
 }
 
 function buildGuidedPrompt({ macroIds, muscles, timingByMacro }) {
@@ -108,10 +187,35 @@ function buildGuidedPrompt({ macroIds, muscles, timingByMacro }) {
   );
 }
 
+function computeOpenSnapshot(dailyLog) {
+  const log = dailyLog || [];
+  const w = extractRealWorkout(log);
+  const macros = new Set();
+  const muscles = new Set();
+  const lockedMuscles = new Set();
+  let trainingLockedFromLog = false;
+  const mealsPresentInLog = hasRealMealsInLog(log);
+  if (w) {
+    macros.add('training');
+    trainingLockedFromLog = true;
+    inferMusclesFromWorkoutText(w).forEach((m) => {
+      muscles.add(m);
+      lockedMuscles.add(m);
+    });
+  }
+  return { macros, muscles, lockedMuscles, trainingLockedFromLog, mealsPresentInLog };
+}
+
 export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
+  const snapshotRef = useRef(null);
+  if (snapshotRef.current === null) {
+    snapshotRef.current = computeOpenSnapshot(dailyLog);
+  }
+  const { lockedMuscles, trainingLockedFromLog, mealsPresentInLog } = snapshotRef.current;
+
   const [step, setStep] = useState(1);
-  const [macros, setMacros] = useState(() => new Set());
-  const [muscles, setMuscles] = useState(() => new Set());
+  const [macros, setMacros] = useState(() => new Set(snapshotRef.current.macros));
+  const [muscles, setMuscles] = useState(() => new Set(snapshotRef.current.muscles));
   const [timingByMacro, setTimingByMacro] = useState({});
 
   const hasTraining = macros.has('training');
@@ -149,7 +253,20 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
   }, [step, hasTraining]);
 
   const setTiming = (macroId, slot) => {
+    if (isTimingSlotInPast(slot)) return;
     setTimingByMacro((prev) => ({ ...prev, [macroId]: slot }));
+  };
+
+  const toggleMacro = (id) => {
+    setMacros((prev) => {
+      if (id === 'training' && trainingLockedFromLog && prev.has('training')) return prev;
+      return toggleInSet(prev, id);
+    });
+  };
+
+  const toggleMuscle = (name) => {
+    if (lockedMuscles.has(name) && muscles.has(name)) return;
+    setMuscles((prev) => toggleInSet(prev, name));
   };
 
   const handleFinalize = () => {
@@ -160,14 +277,29 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
       timingByMacro,
     });
     const currentTime = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const loggedEvents = (dailyLog || [])
-      .map((entry) => formatLogEntryForPlanningContext(entry))
-      .filter(Boolean)
-      .join(', ');
-    const invisible = `[CONTESTO DI SISTEMA INVISIBILE: L'ora attuale è ${currentTime}. Eventi GIA' REGISTRATI in timeline oggi: ${loggedEvents || 'Nessuno'}. REGOLA TASSATIVA: NON pianificare Nodi Fantasma per orari già passati. NON inserire pasti (es. colazione) se risultano già registrati. Adatta i macronutrienti dei futuri Nodi Fantasma calcolando ciò che rimane per raggiungere l'obiettivo giornaliero. REGOLA ANTI-DUPLICAZIONE: attività e pasti già caricati oggi hanno priorità assoluta sul piano; non proporre nel token [DAILY_PLAN] ghostMeals per slot pasto già coperti da log reali né workout ridondante se esiste già un allenamento registrato — il sistema filtra comunque, ma il JSON deve essere coerente e snello.]`;
+    const { fatto, pianificato } = buildLogSummaryFromDailyLog(dailyLog);
+    const fattoStr = fatto.length ? fatto.join(' | ') : 'Nessuno';
+    const ghostStr = pianificato.length ? pianificato.join(' | ') : 'Nessuno';
+    const invisible =
+      `[CONTESTO DI SISTEMA INVISIBILE: L'ora attuale è ${currentTime}. ` +
+      `STATO FATTO (reale, già nel diario oggi — NON modificare, NON sostituire, NON duplicare): ${fattoStr}. ` +
+      `STATO PIANIFICATO (ghost già presenti — puoi affinarli solo se coerente col resto della giornata): ${ghostStr}. ` +
+      `Usa gli eventi FATTO come fondamenta del piano: non alterarli. Se l'utente ha già completato un allenamento (es. spalle), ` +
+      `considera quel volume di lavoro per recupero serale, idratazione e timing dei pasti successivi. ` +
+      `REGOLA TASSATIVA: NON pianificare Nodi Fantasma per orari già passati. ` +
+      `NON inserire pasti ghost per slot mealType già coperti da voci FATTO. ` +
+      `Adatta i macronutrienti dei futuri ghost calcolando ciò che rimane per l'obiettivo giornaliero. ` +
+      `REGOLA ANTI-DUPLICAZIONE: il sistema in conferma scarta ghost che collidono con il reale; il JSON [DAILY_PLAN] deve restare coerente e snello.]`;
     const text = `${base}\n\n${invisible}`;
     onSubmit?.(text);
   };
+
+  const diaryLines = useMemo(() => {
+    const log = dailyLog || [];
+    return log
+      .map((e) => formatLogEntryForPlanningContext(e) || formatGhostEntryForPlanningContext(e))
+      .filter(Boolean);
+  }, [dailyLog]);
 
   const macroList = MACRO_OPTIONS.filter((m) => macros.has(m.id));
 
@@ -205,17 +337,36 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
           </p>
           {MACRO_OPTIONS.map(({ id, label }) => {
             const on = macros.has(id);
+            const lockedTrain = id === 'training' && trainingLockedFromLog && on;
             return (
               <button
                 key={id}
                 type="button"
-                onClick={() => setMacros((prev) => toggleInSet(prev, id))}
-                style={{ ...bigTileBase, ...(on ? bigTileSelected : {}) }}
+                onClick={() => toggleMacro(id)}
+                style={{ ...bigTileBase, ...(on ? bigTileSelected : {}), ...(lockedTrain ? { opacity: 0.92 } : {}) }}
               >
                 {label}
+                {lockedTrain ? ' 🔒' : ''}
               </button>
             );
           })}
+          {mealsPresentInLog ? (
+            <div
+              role="status"
+              style={{
+                padding: '8px 10px',
+                borderRadius: 10,
+                border: '1px solid rgba(251, 191, 36, 0.35)',
+                background: 'rgba(251, 191, 36, 0.08)',
+                color: '#fde68a',
+                fontSize: '0.76rem',
+                fontWeight: 600,
+                lineHeight: 1.4,
+              }}
+            >
+              Nel diario risultano già pasti reali registrati: il piano non deve duplicarli (slot e titoli sono protetti in conferma).
+            </div>
+          ) : null}
           <div
             role="note"
             style={{
@@ -235,7 +386,7 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
               userSelect: 'none',
             }}
           >
-            ✅ Sincronizzato: Le attività e i pasti già caricati oggi avranno la precedenza e non verranno duplicati.
+            ✅ Sincronizzazione reale: allenamento e muscoli sono pre-impostati dal log quando presenti; fasce orarie già passate non sono selezionabili allo step 3.
           </div>
           <button
             type="button"
@@ -266,11 +417,12 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {MUSCLE_OPTIONS.map((name) => {
               const on = muscles.has(name);
+              const locked = lockedMuscles.has(name) && on;
               return (
                 <button
                   key={name}
                   type="button"
-                  onClick={() => setMuscles((prev) => toggleInSet(prev, name))}
+                  onClick={() => toggleMuscle(name)}
                   style={{
                     padding: '12px 14px',
                     borderRadius: 10,
@@ -279,10 +431,12 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
                     color: '#fff8e8',
                     fontWeight: 700,
                     fontSize: '0.82rem',
-                    cursor: 'pointer',
+                    cursor: locked ? 'default' : 'pointer',
+                    opacity: locked ? 0.88 : 1,
                   }}
                 >
                   {name}
+                  {locked ? ' 🔒' : ''}
                 </button>
               );
             })}
@@ -328,8 +482,30 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
       {step === 3 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <p style={{ margin: '0 0 6px 0', fontSize: '0.82rem', color: 'rgba(200,210,220,0.9)' }}>
-            Per ogni attività scegli una fascia oraria (una sola per riga).
+            Per ogni attività scegli una fascia oraria (una sola per riga). Le fasce già trascorse nella giornata non sono disponibili.
           </p>
+          {diaryLines.length > 0 ? (
+            <div
+              style={{
+                padding: '10px 12px',
+                borderRadius: 12,
+                border: '1px solid rgba(125, 211, 252, 0.25)',
+                background: 'rgba(14, 165, 233, 0.08)',
+                marginBottom: 4,
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#7dd3fc', marginBottom: 8, letterSpacing: '0.06em' }}>
+                Già nel diario oggi
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(224, 242, 254, 0.95)', fontSize: '0.78rem', lineHeight: 1.45 }}>
+                {diaryLines.map((line, i) => (
+                  <li key={i} style={{ marginBottom: 4 }}>
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {macroList.map(({ id, label }) => (
             <div
               key={id}
@@ -348,10 +524,12 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {TIMING_KEYS.map(({ id: slotId, label: slotLabel }) => {
                   const on = timingByMacro[id] === slotId;
+                  const slotPast = isTimingSlotInPast(slotId);
                   return (
                     <button
                       key={slotId}
                       type="button"
+                      disabled={slotPast}
                       onClick={() => setTiming(id, slotId)}
                       style={{
                         flex: 1,
@@ -360,13 +538,15 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
                         borderRadius: 10,
                         border: on ? '1px solid rgba(0, 229, 255, 0.6)' : '1px solid rgba(255,255,255,0.12)',
                         background: on ? 'rgba(0, 229, 255, 0.18)' : 'rgba(0,0,0,0.2)',
-                        color: '#fff8e8',
+                        color: slotPast ? 'rgba(255,248,220,0.35)' : '#fff8e8',
                         fontWeight: 700,
                         fontSize: '0.78rem',
-                        cursor: 'pointer',
+                        cursor: slotPast ? 'not-allowed' : 'pointer',
+                        opacity: slotPast ? 0.45 : 1,
                       }}
+                      title={slotPast ? 'Fascia già passata' : undefined}
                     >
-                      {slotLabel}
+                      {slotPast ? `${slotLabel} 🔒` : slotLabel}
                     </button>
                   );
                 })}
