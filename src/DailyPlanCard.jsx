@@ -14,12 +14,53 @@ const inputBaseStyle = {
   outline: 'none',
 };
 
+const selectBaseStyle = {
+  ...inputBaseStyle,
+  cursor: 'pointer',
+  minWidth: 118,
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  backgroundImage:
+    'linear-gradient(45deg, transparent 50%, rgba(0,229,255,0.5) 50%), linear-gradient(135deg, rgba(0,229,255,0.5) 50%, transparent 50%)',
+  backgroundPosition: 'calc(100% - 14px) 55%, calc(100% - 9px) 55%',
+  backgroundSize: '5px 5px, 5px 5px',
+  backgroundRepeat: 'no-repeat',
+  paddingRight: 28,
+};
+
+const MEAL_SELECT_OPTIONS = [
+  { value: 'colazione', label: 'Colazione' },
+  { value: 'pranzo', label: 'Pranzo' },
+  { value: 'cena', label: 'Cena' },
+  { value: 'spuntino', label: 'Spuntino' },
+];
+
+function normalizePlanFromProps(p) {
+  if (!p || typeof p !== 'object') {
+    return { activities: [], ghostMeals: [] };
+  }
+  return {
+    ...p,
+    activities: Array.isArray(p.activities) ? p.activities.map((a) => ({ ...a })) : [],
+    ghostMeals: Array.isArray(p.ghostMeals) ? p.ghostMeals.map((g) => ({ ...g })) : [],
+  };
+}
+
+/** Valore coerente con le 4 opzioni del select. */
+function mealTypeForSelect(mealType) {
+  const base = String(mealType || '')
+    .split('_')[0]
+    .toLowerCase();
+  if (MEAL_SELECT_OPTIONS.some((o) => o.value === base)) return base;
+  return 'spuntino';
+}
+
 export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [editedPlan, setEditedPlan] = useState(() => planData);
+  const [editedPlan, setEditedPlan] = useState(() => normalizePlanFromProps(planData));
 
   useEffect(() => {
-    setEditedPlan(planData);
+    setEditedPlan(normalizePlanFromProps(planData));
     setIsEditing(false);
   }, [planData]);
 
@@ -41,6 +82,15 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
       const nextActs = [...prev.activities];
       nextActs[idx] = { ...nextActs[idx], ...patch };
       return { ...prev, activities: nextActs };
+    });
+  };
+
+  const handleGhostMealChange = (index, field, value) => {
+    setEditedPlan((prev) => {
+      const list = [...(prev.ghostMeals || [])];
+      if (!list[index]) return prev;
+      list[index] = { ...list[index], [field]: value };
+      return { ...prev, ghostMeals: list };
     });
   };
 
@@ -233,8 +283,21 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
       ) : (
         <>
           <p style={{ margin: '0 0 12px 0', fontSize: '0.78rem', color: 'rgba(200,210,220,0.85)' }}>
-            Modifica orari e descrizioni; poi salva per tornare alla vista di conferma.
+            Modifica attività e pasti pianificati; poi salva per tornare alla vista di conferma.
           </p>
+
+          <div
+            style={{
+              fontSize: '0.68rem',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'rgba(0, 229, 255, 0.65)',
+              marginBottom: 8,
+              fontWeight: 800,
+            }}
+          >
+            Attività
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {(editedPlan?.activities || []).map((row, idx) => (
               <div
@@ -254,7 +317,7 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                   type="time"
                   value={row.time || ''}
                   onChange={(e) => updateActivity(idx, { time: e.target.value })}
-                  style={{ ...inputBaseStyle, width: 120 }}
+                  style={{ ...inputBaseStyle, width: 120, colorScheme: 'dark' }}
                 />
                 <input
                   type="text"
@@ -266,6 +329,68 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
               </div>
             ))}
           </div>
+
+          {Array.isArray(editedPlan?.ghostMeals) && editedPlan.ghostMeals.length > 0 ? (
+            <>
+              <div
+                style={{
+                  fontSize: '0.68rem',
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(196, 181, 253, 0.85)',
+                  marginTop: 18,
+                  marginBottom: 8,
+                  fontWeight: 800,
+                }}
+              >
+                Pasti
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {editedPlan.ghostMeals.map((gm, gIdx) => (
+                  <div
+                    key={gIdx}
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 10,
+                      alignItems: 'center',
+                      padding: 10,
+                      borderRadius: 10,
+                      background: 'rgba(179, 136, 255, 0.06)',
+                      border: '1px solid rgba(179, 136, 255, 0.14)',
+                    }}
+                  >
+                    <input
+                      type="time"
+                      value={gm.time != null ? String(gm.time).slice(0, 5) : ''}
+                      onChange={(e) => handleGhostMealChange(gIdx, 'time', e.target.value)}
+                      style={{ ...inputBaseStyle, width: 120, colorScheme: 'dark' }}
+                    />
+                    <select
+                      value={mealTypeForSelect(gm.mealType)}
+                      onChange={(e) => handleGhostMealChange(gIdx, 'mealType', e.target.value)}
+                      style={selectBaseStyle}
+                      aria-label="Tipo pasto"
+                    >
+                      {MEAL_SELECT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value} style={{ background: '#1a1a22', color: '#fff8e8' }}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={gm.title || ''}
+                      onChange={(e) => handleGhostMealChange(gIdx, 'title', e.target.value)}
+                      placeholder="Titolo (es. Pranzo Focus)"
+                      style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
+
           <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
             <button
               type="button"
@@ -288,7 +413,7 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
             <button
               type="button"
               onClick={() => {
-                setEditedPlan(planData);
+                setEditedPlan(normalizePlanFromProps(planData));
                 setIsEditing(false);
               }}
               style={{
