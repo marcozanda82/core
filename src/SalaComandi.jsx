@@ -1315,6 +1315,45 @@ function buildBodyMetricsColumnMap(headerLine) {
   return { columnMap, headerCells };
 }
 
+const DEFAULT_KENTU_CHAT_HISTORY = [
+  { sender: 'ai', text: 'KentuOS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' },
+];
+
+function kentuChatStorageKey(dateStr) {
+  return `kentu_chat_${dateStr}`;
+}
+
+function readKentuChatHistoryFromLocalStorage(dateStr) {
+  try {
+    const raw = localStorage.getItem(kentuChatStorageKey(dateStr));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    const cleaned = parsed.filter(
+      (m) => m && (m.sender === 'user' || m.sender === 'ai') && !m.isTyping
+    );
+    return cleaned.length > 0 ? cleaned : null;
+  } catch {
+    return null;
+  }
+}
+
+function isKentuChatPersistableMessage(m) {
+  if (!m || m.isTyping) return false;
+  const t = (m.text || '').trim();
+  if (
+    m.sender === 'ai' &&
+    (t.startsWith('❌') || t.includes('Errore Server') || t.includes('Nessuna API Key'))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function kentuChatHistoryForPersistence(messages) {
+  return (messages || []).filter(isKentuChatPersistableMessage);
+}
+
 export default function SalaComandi() {
   const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
   const isAuthenticated = !!user;
@@ -1926,9 +1965,17 @@ export default function SalaComandi() {
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
-  const [chatHistory, setChatHistory] = useState([
-    { sender: 'ai', text: 'KentuOS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' }
-  ]);
+  const [chatHistory, setChatHistory] = useState(() => {
+    try {
+      const stored = readKentuChatHistoryFromLocalStorage(getTodayString());
+      if (stored) return stored;
+    } catch {
+      /* noop */
+    }
+    return DEFAULT_KENTU_CHAT_HISTORY;
+  });
+  const skipKentuChatPersistRef = useRef(false);
+  const kentuChatBoundDateRef = useRef(null);
   /** Strategia calorica giornaliera da comandi invisibili chat (deficit / pari / surplus). */
   const [kentuDailyCalorieStrategy, setKentuDailyCalorieStrategy] = useState('pari');
   const CHAT_HISTORY_WINDOW = 10;
@@ -1970,6 +2017,29 @@ export default function SalaComandi() {
     const offset = currentDateObj.getTimezoneOffset() * 60000;
     return new Date(currentDateObj.getTime() - offset).toISOString().slice(0, 10);
   }, [currentDateObj]);
+
+  useEffect(() => {
+    const d = currentTrackerDate || getTodayString();
+    skipKentuChatPersistRef.current = true;
+    kentuChatBoundDateRef.current = d;
+    const stored = readKentuChatHistoryFromLocalStorage(d);
+    setChatHistory(stored ?? DEFAULT_KENTU_CHAT_HISTORY);
+  }, [currentTrackerDate]);
+
+  useEffect(() => {
+    if (skipKentuChatPersistRef.current) {
+      skipKentuChatPersistRef.current = false;
+      return;
+    }
+    const d = currentTrackerDate || getTodayString();
+    if (kentuChatBoundDateRef.current !== d) return;
+    try {
+      const payload = kentuChatHistoryForPersistence(chatHistory);
+      localStorage.setItem(kentuChatStorageKey(d), JSON.stringify(payload));
+    } catch {
+      /* quota / private mode */
+    }
+  }, [chatHistory, currentTrackerDate]);
 
   useEffect(() => {
     scheduledWorkoutContextRef.current = null;
