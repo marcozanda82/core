@@ -54,6 +54,41 @@ function toggleInSet(set, id) {
   return next;
 }
 
+function decimalHourToHHMM(dec) {
+  if (typeof dec !== 'number' || Number.isNaN(dec)) return null;
+  const h = Math.floor(dec) % 24;
+  const m = Math.round((dec % 1) * 60) % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Riga leggibile per contesto AI: solo eventi reali (no ghost). */
+function formatLogEntryForPlanningContext(n) {
+  if (!n || typeof n !== 'object') return null;
+  if (n.isGhost === true) return null;
+  if (n.type === 'ghost_meal' || n.type === 'ghost_workout') return null;
+
+  const rawT = n.mealTime ?? n.time ?? n.wakeTime;
+  let timeStr = '—';
+  if (typeof rawT === 'number' && !Number.isNaN(rawT)) {
+    const hhmm = decimalHourToHHMM(rawT);
+    if (hhmm) timeStr = hhmm;
+  } else if (typeof rawT === 'string' && rawT.includes(':')) {
+    timeStr = rawT.trim().slice(0, 5);
+  }
+
+  const typ = String(n.type || '');
+  let label = typ;
+  if (typ === 'food' || typ === 'recipe') {
+    label = n.mealType ? `pasto ${n.mealType}` : 'pasto';
+  } else if (typ === 'workout') {
+    label = String(n.desc || n.name || 'allenamento');
+  } else if (typ === 'sleep') {
+    label = 'sonno';
+  }
+
+  return `[${timeStr}] ${label}`;
+}
+
 function buildGuidedPrompt({ macroIds, muscles, timingByMacro }) {
   const order = MACRO_OPTIONS.map((m) => m.id).filter((id) => macroIds.has(id));
   const fascLabel = (k) => (k === 'mattina' ? 'Mattina' : k === 'pomeriggio' ? 'Pomeriggio' : 'Sera');
@@ -73,7 +108,7 @@ function buildGuidedPrompt({ macroIds, muscles, timingByMacro }) {
   );
 }
 
-export default function PlanningWizard({ onClose, onSubmit }) {
+export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
   const [step, setStep] = useState(1);
   const [macros, setMacros] = useState(() => new Set());
   const [muscles, setMuscles] = useState(() => new Set());
@@ -119,11 +154,18 @@ export default function PlanningWizard({ onClose, onSubmit }) {
 
   const handleFinalize = () => {
     if (!timingComplete) return;
-    const text = buildGuidedPrompt({
+    const base = buildGuidedPrompt({
       macroIds: macros,
       muscles: MUSCLE_OPTIONS.filter((m) => muscles.has(m)),
       timingByMacro,
     });
+    const currentTime = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const loggedEvents = (dailyLog || [])
+      .map((entry) => formatLogEntryForPlanningContext(entry))
+      .filter(Boolean)
+      .join(', ');
+    const invisible = `[CONTESTO DI SISTEMA INVISIBILE: L'ora attuale è ${currentTime}. Eventi GIA' REGISTRATI in timeline oggi: ${loggedEvents || 'Nessuno'}. REGOLA TASSATIVA: NON pianificare Nodi Fantasma per orari già passati. NON inserire pasti (es. colazione) se risultano già registrati. Adatta i macronutrienti dei futuri Nodi Fantasma calcolando ciò che rimane per raggiungere l'obiettivo giornaliero.]`;
+    const text = `${base}\n\n${invisible}`;
     onSubmit?.(text);
   };
 

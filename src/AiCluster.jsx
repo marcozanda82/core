@@ -16,7 +16,10 @@ import {
 /** Allinea a stripInvisibleContextFromVisibleUserText in SalaComandi (contesto API non visibile). */
 function stripInvisibleContextFromBubble(text) {
   if (text == null || typeof text !== 'string') return text;
-  return text.replace(/\[CONTEXT_LIVE:[^\]]*\]\s*/gi, '').trim();
+  return text
+    .replace(/\[CONTEXT_LIVE:[^\]]*\]\s*/gi, '')
+    .replace(/\[CONTESTO DI SISTEMA INVISIBILE:[^\]]*\]\s*/gi, '')
+    .trim();
 }
 
 /** Sezioni separate da doppio a capo → HERO + insight cards. */
@@ -62,6 +65,8 @@ export default function AiCluster({
   onMealProposalSwap,
   onDailyPlanConfirm,
   onDailyPlanCancel,
+  /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
+  dailyLog = [],
   showAiSettings,
   setShowAiSettings,
   apiKeys,
@@ -420,6 +425,7 @@ export default function AiCluster({
         {planningWizardOpen ? (
           <div style={{ flexShrink: 0, marginTop: 6, marginBottom: 8 }}>
             <PlanningWizard
+              dailyLog={dailyLog}
               onClose={() => setPlanningWizardOpen(false)}
               onSubmit={(text) => {
                 setPlanningWizardOpen(false);
