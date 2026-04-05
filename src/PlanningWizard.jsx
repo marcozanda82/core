@@ -175,18 +175,6 @@ function computeOpenSnapshot(dailyLog) {
   return { macros, muscles, lockedMuscles, trainingLockedFromLog, mealsPresentInLog };
 }
 
-/** Pasto reale già “consumato” temporalmente (≤ nowDec): blocca lo slot proposto dal motore. */
-function logHasRealPastMealCanon(log, canon, nowDec) {
-  const t = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
-  return (log || []).some((e) => {
-    if (!e || e.isGhost || (e.type !== 'food' && e.type !== 'recipe')) return false;
-    const td = itemTimeDec(e);
-    if (Number.isNaN(td) || td > t) return false;
-    const c = toCanonicalMealType(String(e.mealType || '').split('_')[0]);
-    return c === canon;
-  });
-}
-
 function logHasGhostMealCanon(log, canon) {
   return (log || []).some((e) => {
     if (!e || e.type !== 'ghost_meal') return false;
@@ -196,22 +184,42 @@ function logHasGhostMealCanon(log, canon) {
 }
 
 function buildProposedRows(log, nowDec) {
-  const out = [];
-  PROPOSED_SLOTS.forEach((s, i) => {
-    if (logHasRealPastMealCanon(log, s.canon, nowDec)) return;
-    if (logHasGhostMealCanon(log, s.canon)) return;
-    if (s.defaultHour <= nowDec + 0.08) return;
-    out.push({
-      id: `proposed_${s.canon}_${i}`,
-      source: 'proposed',
-      mealType: s.mealType,
-      mealTime: s.defaultHour,
-      title: `${s.label} (suggerito motore)`,
-      microDesc: '',
-      draftFoods: [],
+  const logHas = (c) =>
+    (log || []).some((e) => {
+      if (!e || e.isGhost === true || (e.type !== 'food' && e.type !== 'recipe')) return false;
+      const mt = toCanonicalMealType(String(e.mealType || '').split('_')[0]);
+      return mt === c;
     });
-  });
-  return out;
+
+  const missingSlots = [];
+
+  if (nowDec < 11 && !logHas('colazione') && !logHasGhostMealCanon(log, 'colazione')) {
+    const s = PROPOSED_SLOTS.find((x) => x.canon === 'colazione');
+    if (s) missingSlots.push(s);
+  }
+  if (nowDec < 15 && !logHas('pranzo') && !logHasGhostMealCanon(log, 'pranzo')) {
+    const s = PROPOSED_SLOTS.find((x) => x.canon === 'pranzo');
+    if (s) missingSlots.push(s);
+  }
+  if (nowDec < 19 && !logHas('snack') && !logHasGhostMealCanon(log, 'snack')) {
+    const s = PROPOSED_SLOTS.find((x) => x.canon === 'snack');
+    if (s) missingSlots.push(s);
+  }
+  if (!logHas('cena') && !logHasGhostMealCanon(log, 'cena')) {
+    const s = PROPOSED_SLOTS.find((x) => x.canon === 'cena');
+    if (s) missingSlots.push(s);
+  }
+
+  return missingSlots.map((s, i) => ({
+    id: `proposed_${s.canon}_${i}`,
+    source: 'proposed',
+    mealType: s.mealType,
+    mealTime: Math.min(23.9, Math.max(nowDec + 0.5, s.defaultHour)),
+    title: `${s.label} (suggerito motore)`,
+    microDesc: '',
+    draftFoods: [],
+    isGhost: true,
+  }));
 }
 
 function ghostRowsFromLog(log) {
@@ -268,26 +276,40 @@ function mealTypeLabelIt(raw) {
   return labels[c] || c || 'Pasto';
 }
 
+function draftFoodPillText(f) {
+  if (typeof f === 'string') return f;
+  if (f && typeof f === 'object') {
+    const d = f.desc != null ? String(f.desc) : f.name != null ? String(f.name) : '';
+    const w = f.weight != null ? f.weight : f.qty != null ? f.qty : null;
+    return `${d} ${w != null && w !== '' ? `${w}g` : ''}`.trim();
+  }
+  return '';
+}
+
 function DraftFoodPillsMini({ foods }) {
   if (!Array.isArray(foods) || foods.length === 0) return null;
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 6 }}>
-      {foods.map((foodStr, i) => (
-        <span
-          key={`${foodStr}_${i}`}
-          style={{
-            display: 'inline-block',
-            background: 'rgba(0, 229, 255, 0.15)',
-            color: '#00e5ff',
-            padding: '4px 8px',
-            borderRadius: '12px',
-            fontSize: '0.75rem',
-            margin: '4px 4px 0 0',
-          }}
-        >
-          {String(foodStr)}
-        </span>
-      ))}
+      {foods.map((f, fIdx) => {
+        const text = draftFoodPillText(f);
+        return (
+          <span
+            key={`${fIdx}_${String(text).slice(0, 40)}`}
+            style={{
+              display: 'inline-block',
+              background: 'rgba(0, 229, 255, 0.15)',
+              color: '#00e5ff',
+              padding: '4px 8px',
+              borderRadius: '12px',
+              fontSize: '0.75rem',
+              marginRight: '4px',
+              marginBottom: '4px',
+            }}
+          >
+            {text.trim() || 'Alimento'}
+          </span>
+        );
+      })}
     </div>
   );
 }

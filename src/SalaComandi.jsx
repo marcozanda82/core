@@ -1877,12 +1877,26 @@ export default function SalaComandi() {
   const [stimulantTime, setStimulantTime] = useState(8);
   const [addEventMenuOrder, setAddEventMenuOrder] = useState(() => {
     try {
-      const raw = localStorage.getItem(ADD_MENU_ORDER_LS_KEY);
-      if (raw) return normalizeAddMenuOrderState(JSON.parse(raw), ADD_EVENT_MENU_DEFAULT_ORDER);
+      const saved = localStorage.getItem(ADD_MENU_ORDER_LS_KEY);
+      let order = saved ? JSON.parse(saved) : [...ADD_EVENT_MENU_DEFAULT_ORDER];
+      if (!Array.isArray(order)) order = [...ADD_EVENT_MENU_DEFAULT_ORDER];
+      order = order.filter((id) => id !== 'luce');
+      const allIds = [...ADD_EVENT_MENU_DEFAULT_ORDER];
+      let changed = false;
+      allIds.forEach((id) => {
+        if (!order.includes(id)) {
+          if (id === 'plan') order.unshift('plan');
+          else order.push(id);
+          changed = true;
+        }
+      });
+      if (changed || !saved) {
+        localStorage.setItem(ADD_MENU_ORDER_LS_KEY, JSON.stringify(order));
+      }
+      return order;
     } catch (e) {
-      /* ignore */
+      return [...ADD_EVENT_MENU_DEFAULT_ORDER];
     }
-    return [...ADD_EVENT_MENU_DEFAULT_ORDER];
   });
 
   useEffect(() => {
@@ -12501,22 +12515,29 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                           Cibi proposti (bozza)
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                          {df.map((foodStr, i) => (
-                            <span
-                              key={`ghost_df_${i}_${String(foodStr).slice(0, 24)}`}
-                              style={{
-                                display: 'inline-block',
-                                background: 'rgba(0, 229, 255, 0.15)',
-                                color: '#00e5ff',
-                                padding: '6px 10px',
-                                borderRadius: 12,
-                                fontSize: '0.78rem',
-                                fontWeight: 600,
-                              }}
-                            >
-                              {String(foodStr)}
-                            </span>
-                          ))}
+                          {df.map((f, i) => {
+                            const text =
+                              typeof f === 'string'
+                                ? f
+                                : `${f?.desc || f?.name || ''} ${f?.weight != null ? `${f.weight}g` : f?.qty != null ? `${f.qty}g` : ''}`;
+                            return (
+                              <span
+                                key={`ghost_df_${i}_${String(text).slice(0, 32)}`}
+                                style={{
+                                  display: 'inline-block',
+                                  background: 'rgba(0, 229, 255, 0.15)',
+                                  color: '#00e5ff',
+                                  padding: '4px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '0.75rem',
+                                  marginRight: '6px',
+                                  marginBottom: '6px',
+                                }}
+                              >
+                                {String(text).trim() || 'Alimento'}
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
                     );
