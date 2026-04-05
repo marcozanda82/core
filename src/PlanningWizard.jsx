@@ -1,8 +1,14 @@
 /**
  * Wizard pianificazione: Step 1 attività+fasce+muscoli, Step 2 pasti/bio-target, Step 3 timeline e conferma Firebase.
  */
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getDynamicMealTargets, toCanonicalMealType } from './coreEngine';
+
+/** Ora locale come ore decimali (es. 14.5 = 14:30); definito per primo per uso in merge/snapshot. */
+function getLocalDecimalHourNow() {
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
 
 const MACRO_OPTIONS = [
   { id: 'mental', label: 'Lavoro Mentale / PC' },
@@ -69,11 +75,6 @@ function decimalHourToHHMM(dec) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-function getLocalDecimalHourNow() {
-  const d = new Date();
-  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
-}
-
 function isTimingSlotInPast(slotId) {
   const h = getLocalDecimalHourNow();
   if (slotId === 'mattina') return h >= 12;
@@ -81,12 +82,24 @@ function isTimingSlotInPast(slotId) {
   return false;
 }
 
-function extractRealWorkout(log) {
-  return (log || []).find((e) => e && !e.isGhost && e.type === 'workout');
+function extractRealWorkout(log, nowDec) {
+  const t = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
+  return (log || []).find((e) => {
+    if (!e || e.isGhost || e.type !== 'workout') return false;
+    const et = Number(e.time ?? e.mealTime);
+    if (Number.isNaN(et)) return false;
+    return et <= t;
+  });
 }
 
-function hasRealMealsInLog(log) {
-  return (log || []).some((e) => e && !e.isGhost && (e.type === 'food' || e.type === 'recipe'));
+function hasRealMealsInLog(log, nowDec) {
+  const t = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
+  return (log || []).some((e) => {
+    if (!e || e.isGhost || (e.type !== 'food' && e.type !== 'recipe')) return false;
+    const mt = Number(e.mealTime);
+    if (Number.isNaN(mt)) return false;
+    return mt <= t;
+  });
 }
 
 function inferMusclesFromWorkoutText(workout) {
@@ -107,12 +120,13 @@ function inferMusclesFromWorkoutText(workout) {
 
 function computeOpenSnapshot(dailyLog) {
   const log = dailyLog || [];
-  const w = extractRealWorkout(log);
+  const nowDec = getLocalDecimalHourNow();
+  const w = extractRealWorkout(log, nowDec);
   const macros = new Set();
   const muscles = new Set();
   const lockedMuscles = new Set();
   let trainingLockedFromLog = false;
-  const mealsPresentInLog = hasRealMealsInLog(log);
+  const mealsPresentInLog = hasRealMealsInLog(log, nowDec);
   if (w) {
     macros.add('training');
     trainingLockedFromLog = true;
@@ -124,9 +138,13 @@ function computeOpenSnapshot(dailyLog) {
   return { macros, muscles, lockedMuscles, trainingLockedFromLog, mealsPresentInLog };
 }
 
-function logHasRealMealCanon(log, canon) {
+/** Pasto reale già “consumato” temporalmente (≤ nowDec): blocca lo slot proposto dal motore. */
+function logHasRealPastMealCanon(log, canon, nowDec) {
+  const t = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
   return (log || []).some((e) => {
     if (!e || e.isGhost || (e.type !== 'food' && e.type !== 'recipe')) return false;
+    const mt = Number(e.mealTime);
+    if (Number.isNaN(mt) || mt > t) return false;
     const c = toCanonicalMealType(String(e.mealType || '').split('_')[0]);
     return c === canon;
   });
@@ -143,7 +161,7 @@ function logHasGhostMealCanon(log, canon) {
 function buildProposedRows(log, nowDec) {
   const out = [];
   PROPOSED_SLOTS.forEach((s, i) => {
-    if (logHasRealMealCanon(log, s.canon)) return;
+    if (logHasRealPastMealCanon(log, s.canon, nowDec)) return;
     if (logHasGhostMealCanon(log, s.canon)) return;
     if (s.defaultHour <= nowDec + 0.08) return;
     out.push({
@@ -282,25 +300,43 @@ export default function PlanningWizard({
   burnedKcalBonus = 0,
   onClose,
   onConfirmApply,
+  onGeneratePlanGhostMealDraft,
 }) {
-  const snapshotRef = useRef(null);
-  if (snapshotRef.current === null) {
-    snapshotRef.current = computeOpenSnapshot(dailyLog);
-  }
-  const { lockedMuscles, trainingLockedFromLog, mealsPresentInLog } = snapshotRef.current;
+  const lockSnap = useMemo(() => computeOpenSnapshot(dailyLog), [dailyLog]);
+  const { lockedMuscles, trainingLockedFromLog } = lockSnap;
 
+  const macroMuscleSeededRef = useRef(false);
   const [step, setStep] = useState(1);
-  const [macros, setMacros] = useState(() => new Set(snapshotRef.current.macros));
-  const [muscles, setMuscles] = useState(() => new Set(snapshotRef.current.muscles));
+  const [macros, setMacros] = useState(() => new Set());
+  const [muscles, setMuscles] = useState(() => new Set());
   const [timingByMacro, setTimingByMacro] = useState({});
+  const [stagingDraftById, setStagingDraftById] = useState({});
+  const [wizardGenLoadingId, setWizardGenLoadingId] = useState(null);
+
+  useEffect(() => {
+    if (macroMuscleSeededRef.current) return;
+    if (!dailyLog || dailyLog.length === 0) return;
+    const s = computeOpenSnapshot(dailyLog);
+    setMacros(new Set(s.macros));
+    setMuscles(new Set(s.muscles));
+    macroMuscleSeededRef.current = true;
+  }, [dailyLog]);
 
   const stagingGhosts = useMemo(() => {
     const nd = getLocalDecimalHourNow();
-    return [...ghostRowsFromLog(dailyLog), ...buildProposedRows(dailyLog, nd)];
-  }, [dailyLog]);
+    const base = [...ghostRowsFromLog(dailyLog), ...buildProposedRows(dailyLog, nd)];
+    return base.map((r) => {
+      const ov = stagingDraftById[r.id];
+      if (Array.isArray(ov)) return { ...r, draftFoods: ov };
+      return r;
+    });
+  }, [dailyLog, stagingDraftById]);
 
   const hasTraining = macros.has('training');
-  const hasRealWorkout = useMemo(() => !!extractRealWorkout(dailyLog), [dailyLog]);
+  const hasRealWorkout = useMemo(() => {
+    const nd = getLocalDecimalHourNow();
+    return !!extractRealWorkout(dailyLog, nd);
+  }, [dailyLog]);
 
   const timingComplete = useMemo(() => {
     for (const id of macros) {
@@ -321,12 +357,13 @@ export default function PlanningWizard({
 
   const registeredMealGroups = useMemo(() => groupRegisteredMealsByMealType(dailyLog), [dailyLog]);
 
-  const ghostLogMeals = useMemo(
-    () => (dailyLog || []).filter((e) => e && e.type === 'ghost_meal'),
-    [dailyLog]
+  const ghostLogStagingRows = useMemo(
+    () => stagingGhosts.filter((r) => r.source === 'ghost_log'),
+    [stagingGhosts]
   );
 
   const mgConsumed = useMemo(() => sumMgFromLog(dailyLog), [dailyLog]);
+  const nowPlanDec = getLocalDecimalHourNow();
 
   const toggleMacro = (id) => {
     setMacros((prev) => {
@@ -353,6 +390,30 @@ export default function PlanningWizard({
   const goBack = useCallback(() => {
     if (step > 1) setStep((s) => s - 1);
   }, [step]);
+
+  const handleWizardGenerateDraft = useCallback(
+    async (slotRow) => {
+      if (!onGeneratePlanGhostMealDraft || !slotRow?.id) return;
+      setWizardGenLoadingId(slotRow.id);
+      try {
+        const draftFoods = await onGeneratePlanGhostMealDraft({
+          mealType: slotRow.mealType,
+          time: decimalHourToHHMM(Number(slotRow.mealTime)) || '',
+          title: slotRow.title,
+          microDesc: slotRow.microDesc || '',
+          planTarget: calorieStrategy,
+        });
+        if (Array.isArray(draftFoods) && draftFoods.length > 0) {
+          setStagingDraftById((prev) => ({ ...prev, [slotRow.id]: draftFoods }));
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setWizardGenLoadingId(null);
+      }
+    },
+    [onGeneratePlanGhostMealDraft, calorieStrategy]
+  );
 
   const workoutDecForApply = useMemo(() => {
     if (!hasTraining || hasRealWorkout) return null;
@@ -390,12 +451,6 @@ export default function PlanningWizard({
           timeDec: Number(e.time ?? e.mealTime) || 0,
           label: `[Workout] ${String(e.desc || e.name || 'Allenamento')}`,
         });
-      } else if (e.type === 'ghost_meal') {
-        rows.push({
-          kind: 'ghost_meal_old',
-          timeDec: Number(e.mealTime) || 0,
-          label: `[Ghost] ${String(e.title || 'Pasto')}`,
-        });
       } else if (e.type === 'ghost_workout') {
         rows.push({
           kind: 'ghost_wo_old',
@@ -429,6 +484,7 @@ export default function PlanningWizard({
         kind: g.source === 'proposed' ? 'ghost_proposed' : 'ghost_staging',
         timeDec: g.mealTime,
         label: `${g.source === 'proposed' ? '🎯 ' : '📋 '}${g.title}`,
+        staging: g,
       });
     });
     if (hasTraining && !hasRealWorkout && workoutDecForApply != null) {
@@ -575,23 +631,21 @@ export default function PlanningWizard({
             </div>
           ) : null}
 
-          {mealsPresentInLog ? (
-            <div
-              role="status"
-              style={{
-                padding: '8px 10px',
-                borderRadius: 10,
-                border: '1px solid rgba(251, 191, 36, 0.35)',
-                background: 'rgba(251, 191, 36, 0.08)',
-                color: '#fde68a',
-                fontSize: '0.76rem',
-                fontWeight: 600,
-                lineHeight: 1.4,
-              }}
-            >
-              Pasti reali già nel diario: non verranno sovrascritti in conferma.
-            </div>
-          ) : null}
+          <div
+            role="status"
+            style={{
+              padding: '8px 10px',
+              borderRadius: 10,
+              border: '1px solid rgba(34, 211, 238, 0.35)',
+              background: 'rgba(34, 211, 238, 0.08)',
+              color: '#a5f3fc',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              lineHeight: 1.4,
+            }}
+          >
+            ✅ Sincronizzato: Gli eventi passati sono bloccati. Le attività e i pasti futuri verranno adattati al nuovo piano.
+          </div>
 
           <button
             type="button"
@@ -673,17 +727,19 @@ export default function PlanningWizard({
 
           <div>
             <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#a78bfa', marginBottom: 8, letterSpacing: '0.06em' }}>PIANIFICATI (ghost in diario)</div>
-            {ghostLogMeals.length === 0 ? (
+            {ghostLogStagingRows.length === 0 ? (
               <div style={{ fontSize: '0.78rem', color: '#888' }}>Nessun pasto fantasma salvato.</div>
             ) : (
               <ul style={{ margin: 0, paddingLeft: 18, color: '#ddd6fe', fontSize: '0.78rem', lineHeight: 1.45 }}>
-                {ghostLogMeals.map((e, i) => {
-                  const hh = decimalHourToHHMM(Number(e.mealTime)) || '—';
-                  const t = getDynamicMealTargets(String(e.mealType || 'pranzo').split('_')[0], dailyLog, userTargets, dynOpts);
-                  const foods = Array.isArray(e.draftFoods) ? e.draftFoods : [];
+                {ghostLogStagingRows.map((r, i) => {
+                  const hh = decimalHourToHHMM(Number(r.mealTime)) || '—';
+                  const t = getDynamicMealTargets(String(r.mealType || 'pranzo').split('_')[0], dailyLog, userTargets, dynOpts);
+                  const foods = Array.isArray(r.draftFoods) ? r.draftFoods : [];
+                  const isFuture =
+                    typeof r.mealTime === 'number' && !Number.isNaN(r.mealTime) && r.mealTime > nowPlanDec;
                   return (
                     <li
-                      key={e.id || i}
+                      key={r.id || i}
                       style={{
                         marginBottom: 8,
                         padding: '8px 10px',
@@ -694,8 +750,30 @@ export default function PlanningWizard({
                         marginLeft: -18,
                       }}
                     >
-                      <div>
-                        <strong>{hh}</strong> · {String(e.title || 'Pasto pianificato')} ({String(e.mealType || '')})
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+                        <div>
+                          <strong>{hh}</strong> · {String(r.title || 'Pasto pianificato')} ({String(r.mealType || '')})
+                        </div>
+                        {onGeneratePlanGhostMealDraft && isFuture ? (
+                          <button
+                            type="button"
+                            disabled={wizardGenLoadingId === r.id}
+                            onClick={() => handleWizardGenerateDraft(r)}
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: 8,
+                              border: '1px solid rgba(0, 229, 255, 0.45)',
+                              background: 'rgba(0, 229, 255, 0.12)',
+                              color: '#7dd3fc',
+                              fontWeight: 700,
+                              fontSize: '0.72rem',
+                              cursor: wizardGenLoadingId === r.id ? 'wait' : 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {wizardGenLoadingId === r.id ? '⏳ …' : '✨ Genera Pasto'}
+                          </button>
+                        ) : null}
                       </div>
                       <DraftFoodPillsMini foods={foods} />
                       <div style={{ fontSize: '0.7rem', color: '#c4b5fd', marginTop: 4 }}>
@@ -719,6 +797,8 @@ export default function PlanningWizard({
                   .map((r) => {
                     const t = getDynamicMealTargets(r.mealType, dailyLog, userTargets, dynOpts);
                     const hh = decimalHourToHHMM(r.mealTime) || '—';
+                    const isFuture =
+                      typeof r.mealTime === 'number' && !Number.isNaN(r.mealTime) && r.mealTime > nowPlanDec;
                     return (
                       <li
                         key={r.id}
@@ -730,8 +810,40 @@ export default function PlanningWizard({
                           background: 'rgba(34, 211, 238, 0.08)',
                         }}
                       >
-                        <div style={{ fontWeight: 800, color: '#a5f3fc' }}>
-                          {hh} · {r.title}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
+                            gap: 8,
+                            justifyContent: 'space-between',
+                            fontWeight: 800,
+                            color: '#a5f3fc',
+                          }}
+                        >
+                          <span>
+                            {hh} · {r.title}
+                          </span>
+                          {onGeneratePlanGhostMealDraft && isFuture ? (
+                            <button
+                              type="button"
+                              disabled={wizardGenLoadingId === r.id}
+                              onClick={() => handleWizardGenerateDraft(r)}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: 8,
+                                border: '1px solid rgba(0, 229, 255, 0.45)',
+                                background: 'rgba(0, 229, 255, 0.12)',
+                                color: '#7dd3fc',
+                                fontWeight: 700,
+                                fontSize: '0.72rem',
+                                cursor: wizardGenLoadingId === r.id ? 'wait' : 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {wizardGenLoadingId === r.id ? '⏳ …' : '✨ Genera Pasto'}
+                            </button>
+                          ) : null}
                         </div>
                         <DraftFoodPillsMini foods={r.draftFoods} />
                         <div style={{ fontSize: '0.72rem', color: '#cffafe', marginTop: 6, lineHeight: 1.4 }}>
@@ -838,6 +950,63 @@ export default function PlanningWizard({
                           })}
                         </ul>
                       </details>
+                    </li>
+                  );
+                }
+                if (row.kind === 'ghost_proposed' || row.kind === 'ghost_staging') {
+                  const g = row.staging;
+                  const isFuture =
+                    g &&
+                    typeof g.mealTime === 'number' &&
+                    !Number.isNaN(g.mealTime) &&
+                    g.mealTime > nowPlanDec;
+                  return (
+                    <li
+                      key={g?.id || `${row.kind}_${i}`}
+                      style={{
+                        marginBottom: 10,
+                        listStyle: 'none',
+                        marginLeft: -18,
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(34, 211, 238, 0.28)',
+                        background: 'rgba(14, 165, 233, 0.06)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                          gap: 8,
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <div>
+                          <strong>{decimalHourToHHMM(row.timeDec) || '—'}</strong> {row.label}
+                        </div>
+                        {onGeneratePlanGhostMealDraft && isFuture && g ? (
+                          <button
+                            type="button"
+                            disabled={wizardGenLoadingId === g.id}
+                            onClick={() => handleWizardGenerateDraft(g)}
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: 8,
+                              border: '1px solid rgba(0, 229, 255, 0.45)',
+                              background: 'rgba(0, 229, 255, 0.12)',
+                              color: '#7dd3fc',
+                              fontWeight: 700,
+                              fontSize: '0.72rem',
+                              cursor: wizardGenLoadingId === g.id ? 'wait' : 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {wizardGenLoadingId === g.id ? '⏳ …' : '✨ Genera Pasto'}
+                          </button>
+                        ) : null}
+                      </div>
+                      {g ? <DraftFoodPillsMini foods={g.draftFoods} /> : null}
                     </li>
                   );
                 }

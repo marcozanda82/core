@@ -126,8 +126,7 @@ function DraftFoodPills({ foods }) {
 }
 
 /**
- * Sovrascrittura piano: bloccato solo se nodo reale e orario ≤ ora corrente.
- * Modificabile se ghost o se reale con orario nel futuro.
+ * Ghost: mai bloccato. Reale: bloccato solo se orario ≤ ora corrente (null time → non bloccato).
  */
 function planActivityRowIsLocked(row, currentMinutes) {
   if (row?.isGhost === true) return false;
