@@ -64,6 +64,7 @@ export default function AiCluster({
   onMealProposalSwap,
   onDailyPlanConfirm,
   onDailyPlanCancel,
+  onGeneratePlanGhostMealDraft,
   /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
   dailyLog = [],
   showAiSettings,
@@ -199,6 +200,7 @@ export default function AiCluster({
                     planData={msg.dailyPlan}
                     onConfirm={onDailyPlanConfirm}
                     onCancel={onDailyPlanCancel}
+                    onGeneratePlanGhostMealDraft={onGeneratePlanGhostMealDraft}
                   />
                 </div>
               ) : msg.sender === 'ai' ? (

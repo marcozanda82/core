@@ -125,21 +125,37 @@ function DraftFoodPills({ foods }) {
   );
 }
 
-/** Blocco solo per nodi reali nel passato; i ghost non si bloccano mai. */
-function activityRowIsLocked(row, currentMinutes) {
+/**
+ * Sovrascrittura piano: bloccato solo se nodo reale e orario ≤ ora corrente.
+ * Modificabile se ghost o se reale con orario nel futuro.
+ */
+function planActivityRowIsLocked(row, currentMinutes) {
   if (row?.isGhost === true) return false;
   const tMin = timeStrToMinutes(row?.time);
   if (tMin == null) return false;
   return tMin <= currentMinutes;
 }
 
-export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
+function ghostMealSlotIsFuture(gm, currentMinutes) {
+  const timeStr = gm?.time != null ? String(gm.time).slice(0, 5) : '';
+  const tMin = timeStrToMinutes(timeStr);
+  if (tMin == null) return true;
+  return tMin > currentMinutes;
+}
+
+export default function DailyPlanCard({ planData, onConfirm, onCancel, onGeneratePlanGhostMealDraft }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedPlan, setEditedPlan] = useState(() => normalizePlanFromProps(planData));
+  const [pendingGhostProposals, setPendingGhostProposals] = useState({});
+  const [generatingGhostIdx, setGeneratingGhostIdx] = useState(null);
+  const [generateError, setGenerateError] = useState(null);
 
   useEffect(() => {
     setEditedPlan(normalizePlanFromProps(planData));
     setIsEditing(false);
+    setPendingGhostProposals({});
+    setGeneratingGhostIdx(null);
+    setGenerateError(null);
   }, [planData]);
 
   const sortedWithIdx = useMemo(() => {
@@ -182,10 +198,81 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
   };
 
   const handleRemoveGhostMeal = (index) => {
+    setPendingGhostProposals((p) => {
+      const next = {};
+      Object.keys(p).forEach((k) => {
+        const ki = parseInt(k, 10);
+        if (Number.isNaN(ki)) return;
+        if (ki === index) return;
+        if (ki > index) next[ki - 1] = p[ki];
+        else next[ki] = p[ki];
+      });
+      return next;
+    });
     setEditedPlan((prev) => ({
       ...prev,
       ghostMeals: (prev.ghostMeals || []).filter((_, i) => i !== index),
     }));
+  };
+
+  const removeGhostDraftFood = (gIdx, foodIndex) => {
+    setEditedPlan((prev) => {
+      const list = [...(prev.ghostMeals || [])];
+      if (!list[gIdx]) return prev;
+      const foods = [...(list[gIdx].draftFoods || [])].filter((_, j) => j !== foodIndex);
+      list[gIdx] = { ...list[gIdx], draftFoods: foods };
+      return { ...prev, ghostMeals: list };
+    });
+  };
+
+  const removePendingDraftFood = (gIdx, foodIndex) => {
+    setPendingGhostProposals((prev) => {
+      const cur = prev[gIdx];
+      if (!Array.isArray(cur)) return prev;
+      const nextFoods = cur.filter((_, j) => j !== foodIndex);
+      return { ...prev, [gIdx]: nextFoods.length ? nextFoods : undefined };
+    });
+  };
+
+  const acceptPendingProposal = (gIdx) => {
+    const foods = pendingGhostProposals[gIdx];
+    if (!Array.isArray(foods) || foods.length === 0) return;
+    handleGhostMealChange(gIdx, 'draftFoods', foods);
+    setPendingGhostProposals((p) => {
+      const next = { ...p };
+      delete next[gIdx];
+      return next;
+    });
+  };
+
+  const discardPendingProposal = (gIdx) => {
+    setPendingGhostProposals((p) => {
+      const next = { ...p };
+      delete next[gIdx];
+      return next;
+    });
+  };
+
+  const runGenerateGhostMeal = async (gIdx) => {
+    if (typeof onGeneratePlanGhostMealDraft !== 'function') return;
+    const gm = editedPlan.ghostMeals?.[gIdx];
+    if (!gm) return;
+    setGenerateError(null);
+    setGeneratingGhostIdx(gIdx);
+    try {
+      const draftFoods = await onGeneratePlanGhostMealDraft({
+        mealType: gm.mealType,
+        time: gm.time,
+        title: gm.title,
+        microDesc: gm.microDesc,
+        planTarget: editedPlan?.target,
+      });
+      setPendingGhostProposals((p) => ({ ...p, [gIdx]: draftFoods }));
+    } catch (err) {
+      setGenerateError(err?.message || String(err));
+    } finally {
+      setGeneratingGhostIdx(null);
+    }
   };
 
   const handleSaveEdits = () => {
@@ -249,7 +336,7 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {sortedWithIdx.map(({ row, idx: origIdx }) => {
               const timeLabel = row.time || '—';
-              if (activityRowIsLocked(row, currentMinutes)) {
+              if (planActivityRowIsLocked(row, currentMinutes)) {
                 return (
                   <li key={`${origIdx}_${row.time}`} style={{ listStyle: 'none' }}>
                     <details style={detailsBaseStyle}>
@@ -419,7 +506,7 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {(editedPlan?.activities || []).map((row, idx) => {
               const timeLabel = row.time || '—';
-              if (activityRowIsLocked(row, currentMinutes)) {
+              if (planActivityRowIsLocked(row, currentMinutes)) {
                 return (
                   <details key={idx} style={detailsBaseStyle}>
                     <summary style={summaryStyle}>
@@ -488,10 +575,34 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
               >
                 Pasti
               </div>
+              {generateError ? (
+                <div style={{ fontSize: '0.72rem', color: '#fca5a5', marginTop: 8, marginBottom: 4 }}>{generateError}</div>
+              ) : null}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {editedPlan.ghostMeals.map((gm, gIdx) => {
                   const timeStr = gm.time != null ? String(gm.time).slice(0, 5) : '';
                   const foods = gm.draftFoods;
+                  const isFutureSlot = ghostMealSlotIsFuture(gm, currentMinutes);
+                  const pending = pendingGhostProposals[gIdx];
+                  const canGenerate = typeof onGeneratePlanGhostMealDraft === 'function' && isFutureSlot;
+                  const pillShell = {
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: 'rgba(0, 229, 255, 0.15)',
+                    borderRadius: '12px',
+                    padding: '4px 6px 4px 8px',
+                    margin: '4px 4px 0 0',
+                  };
+                  const miniX = {
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#fca5a5',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    lineHeight: 1,
+                    padding: '0 2px',
+                  };
                   return (
                     <div
                       key={gIdx}
@@ -531,6 +642,26 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                           placeholder="Titolo (es. Pranzo Focus)"
                           style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
                         />
+                        {canGenerate ? (
+                          <button
+                            type="button"
+                            disabled={generatingGhostIdx === gIdx}
+                            onClick={() => runGenerateGhostMeal(gIdx)}
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: 8,
+                              border: '1px solid rgba(0, 229, 255, 0.45)',
+                              background: 'rgba(0, 229, 255, 0.12)',
+                              color: '#7dd3fc',
+                              fontWeight: 700,
+                              fontSize: '0.72rem',
+                              cursor: generatingGhostIdx === gIdx ? 'wait' : 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {generatingGhostIdx === gIdx ? '⏳ …' : '✨ Genera Pasto'}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => handleRemoveGhostMeal(gIdx)}
@@ -541,23 +672,74 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                           ✕
                         </button>
                       </div>
-                      {Array.isArray(foods) && foods.length > 0 ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-                          {foods.map((foodStr, i) => (
-                            <span
-                              key={`${foodStr}_${i}`}
+                      {Array.isArray(pending) && pending.length > 0 ? (
+                        <div
+                          style={{
+                            padding: 8,
+                            borderRadius: 8,
+                            border: '1px dashed rgba(0, 229, 255, 0.45)',
+                            background: 'rgba(0, 229, 255, 0.06)',
+                          }}
+                        >
+                          <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#7dd3fc', marginBottom: 6 }}>Proposta AI</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+                            {pending.map((foodStr, i) => (
+                              <div key={`pend_${gIdx}_${i}`} style={pillShell}>
+                                <span style={{ color: '#00e5ff', fontSize: '0.75rem' }}>{String(foodStr)}</span>
+                                <button type="button" onClick={() => removePendingDraftFood(gIdx, i)} style={miniX} aria-label="Rimuovi dalla proposta">
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                            <button
+                              type="button"
+                              onClick={() => acceptPendingProposal(gIdx)}
                               style={{
-                                display: 'inline-block',
-                                background: 'rgba(0, 229, 255, 0.15)',
-                                color: '#00e5ff',
-                                padding: '4px 8px',
-                                borderRadius: '12px',
-                                fontSize: '0.75rem',
-                                margin: '4px 4px 0 0',
+                                padding: '6px 12px',
+                                borderRadius: 8,
+                                border: 'none',
+                                background: 'linear-gradient(135deg, #00e5ff 0%, #7c3aed 100%)',
+                                color: '#0a0a0a',
+                                fontWeight: 800,
+                                fontSize: '0.72rem',
+                                cursor: 'pointer',
                               }}
                             >
-                              {String(foodStr)}
-                            </span>
+                              Accetta proposta
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => discardPendingProposal(gIdx)}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: 8,
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                background: 'transparent',
+                                color: 'rgba(255,248,220,0.75)',
+                                fontWeight: 700,
+                                fontSize: '0.72rem',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Scarta
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {Array.isArray(foods) && foods.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.65rem', color: 'rgba(200,200,220,0.85)', marginRight: 6, width: '100%', marginBottom: 2 }}>
+                            Abbozzo (tocca ✕ per rimuovere)
+                          </span>
+                          {foods.map((foodStr, i) => (
+                            <div key={`${foodStr}_${i}`} style={pillShell}>
+                              <span style={{ color: '#00e5ff', fontSize: '0.75rem' }}>{String(foodStr)}</span>
+                              <button type="button" onClick={() => removeGhostDraftFood(gIdx, i)} style={miniX} aria-label="Rimuovi alimento">
+                                ✕
+                              </button>
+                            </div>
                           ))}
                         </div>
                       ) : null}

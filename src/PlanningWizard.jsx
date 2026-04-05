@@ -261,6 +261,20 @@ function timelineSortKey(entry) {
   return typeof t === 'number' && !Number.isNaN(t) ? t : 99;
 }
 
+/** Sovrascrittura piano: bloccato solo se pasto reale e orario ≤ ora; ghost sempre “aperti”. */
+function planDiaryMealSlotIsLocked(entry, nowMinutes) {
+  if (!entry) return false;
+  if (entry.isGhost === true) return false;
+  if (entry.type === 'ghost_meal' || entry.type === 'ghost_workout') return false;
+  if (entry.type !== 'food' && entry.type !== 'recipe') return false;
+  const dec = Number(entry.mealTime);
+  if (Number.isNaN(dec)) return false;
+  const h = Math.floor(dec) % 24;
+  const m = Math.round((dec % 1) * 60) % 60;
+  const tMin = h * 60 + m;
+  return tMin <= nowMinutes;
+}
+
 export default function PlanningWizard({
   dailyLog = [],
   userTargets = {},
@@ -812,11 +826,16 @@ export default function PlanningWizard({
                           ▶ {mealTypeLabelIt(row.mealType)} - Fatto
                         </summary>
                         <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: '0.74rem', color: '#e0f2fe' }}>
-                          {row.items.map((e, j) => (
-                            <li key={e.id || j} style={{ marginBottom: 4 }}>
-                              <strong>{decimalHourToHHMM(Number(e.mealTime)) || '—'}</strong> {String(e.desc || e.title || '—')}
-                            </li>
-                          ))}
+                          {row.items.map((e, j) => {
+                            const nm = new Date().getHours() * 60 + new Date().getMinutes();
+                            const locked = planDiaryMealSlotIsLocked(e, nm);
+                            return (
+                              <li key={e.id || j} style={{ marginBottom: 4 }}>
+                                {locked ? <span title="Passato o attuale — non sovrascrivibile dal piano">🔒 </span> : null}
+                                <strong>{decimalHourToHHMM(Number(e.mealTime)) || '—'}</strong> {String(e.desc || e.title || '—')}
+                              </li>
+                            );
+                          })}
                         </ul>
                       </details>
                     </li>

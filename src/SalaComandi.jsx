@@ -947,6 +947,25 @@ function buildRecentMealsContextForDinner(fullHistory, anchorDateStr) {
   return rows.map((r) => `- ${r.label} (~${r.kcal} kcal, P${r.prot} / C${r.carb} / F${r.fat} g)`).join('\n');
 }
 
+/** Righe compatte pasti ultimi 7 giorni (prompt generazione draftFoods). */
+function buildLast7DaysMealLinesForDraftPrompt(fullHistory, anchorDateStr) {
+  if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr) return '(nessuno storico)';
+  const lines = [];
+  for (let i = 0; i < 7; i++) {
+    const dStr = addDays(anchorDateStr, -i);
+    const log = getLogFromStoricoTree(fullHistory, dStr) || [];
+    log.forEach((item) => {
+      if (!item || (item.type !== 'food' && item.type !== 'recipe' && item.type !== 'meal')) return;
+      const d = String(item.desc || item.name || '').trim();
+      if (!d) return;
+      const mt = item.mealType || '';
+      const kcal = Math.round(Number(item.kcal || item.cal) || 0);
+      lines.push(`- ${d} (${mt}, ~${kcal} kcal)`);
+    });
+  }
+  return lines.slice(0, 45).join('\n') || '(nessun pasto negli ultimi 7 giorni)';
+}
+
 /**
  * Ultime ~30 giorni: attività / allenamenti dal diario storico, medie durata e kcal per tipo.
  */
@@ -1482,6 +1501,56 @@ function normalizeAddMenuOrderState(saved, defaultOrder) {
     }
   }
   return out;
+}
+
+function getNowDecimalHourForPlanMerge() {
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
+
+/** Tipi pasto già consumati (reali, non ghost) con orario ≤ ora: bloccano un nuovo ghost sullo stesso slot. */
+function buildPastOnlyRealMealTypeSet(srcLog, nowDec) {
+  const set = new Set();
+  (srcLog || []).forEach((n) => {
+    if (!n || n.isGhost || (n.type !== 'food' && n.type !== 'recipe') || !n.mealType) return;
+    const dec = Number(n.mealTime);
+    if (Number.isNaN(dec) || dec > nowDec) return;
+    const mt = toCanonicalMealType(String(n.mealType).split('_')[0]);
+    if (mt) set.add(mt);
+  });
+  return set;
+}
+
+/** Rimuove ghost_meal e i pasti reali futuri che verranno sostituiti da ghost nel piano (stesso mealType). */
+function buildBaseLogForGhostPlanMerge(srcLog, ghostList, nowDec) {
+  const ghostMt = new Set(
+    (ghostList || [])
+      .map((gm) => toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]))
+      .filter(Boolean)
+  );
+  return (srcLog || []).filter((e) => {
+    if (!e) return false;
+    if (e.type === 'ghost_meal') return false;
+    if ((e.type === 'food' || e.type === 'recipe') && !e.isGhost) {
+      const dec = Number(e.mealTime);
+      if (!Number.isNaN(dec) && dec > nowDec) {
+        const mt = toCanonicalMealType(String(e.mealType || '').split('_')[0]);
+        if (mt && ghostMt.has(mt)) return false;
+      }
+    }
+    return true;
+  });
+}
+
+function parseDraftFoodsJsonFromAiResponse(raw) {
+  const s = String(raw || '').trim();
+  let jsonStr = s;
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) jsonStr = fence[1].trim();
+  const obj = JSON.parse(jsonStr);
+  const arr = obj?.draftFoods;
+  if (!Array.isArray(arr) || arr.length === 0) throw new Error('draftFoods vuoto o non valido');
+  return arr.map((x) => String(x).trim()).filter(Boolean).slice(0, 14);
 }
 
 export default function SalaComandi() {
@@ -6026,7 +6095,7 @@ FORMATTAZIONE OBBLIGATORIA: Devi essere chiarissimo e massimizzare la leggibilit
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=BRIEFING o QUICK_ACTION=ANALISI_IERI: rispondi ESCLUSIVAMENTE in formato Lavagna (emoji + dato per riga, elenchi puntati essenziali), rispettando il tetto di 3 elenchi e le REGOLE DI STILE sopra.
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=IDEA_PASTO: rispondi ESCLUSIVAMENTE con il blocco [MEAL_PROPOSAL:{...}] su una riga come da CARTA MENU; nessun altro testo (la Dispensa è in [CONTEXT_LIVE]).
 
-MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata (testo libero o tramite wizard), entra in modalità pianificazione. Se il messaggio utente inizia con "PIANIFICAZIONE GUIDATA:", ha già scelto attività e fasce (Mattina / Pomeriggio / Sera): NON chiedere altro, NON fare elenchi lunghi. Rispondi generando ESATTAMENTE il token [DAILY_PLAN:{...}] su una riga, con orari concreti HH:MM coerenti con le fasce (es. Mattina → 08:00–11:30, Pomeriggio → 12:00–17:30, Sera → 18:00–22:00; se l'allenamento è in Sera usa tipicamente 18:30 o 19:00 come workoutTime e nella lista activities). Il JSON DEVE includere anche "ghostMeals": array di pasti pianificati (Nodi Fantasma) che l'utente vedrà in timeline finché non li converte in pasti veri: ogni elemento include {"mealType":"colazione|snack|pranzo|cena", "time":"HH:MM", "title":"Titolo breve", "microDesc":"Suggerimento micronutrienti (es. fibre, omega-3) per lucidità e sonno", "draftFoods":["200g Pollo","150g Riso"]} — draftFoods è un array di stringhe (abbozzo alimenti con pesi stimati). Per i pasti futuri nel token, calcola i target e COMPILA draftFoods con un abbozzo realistico di alimenti. Dai MASSIMA PRIORITÀ copiando pasti simili che l'utente ha consumato in passato (presenti nello storico) o cibi dal suo database/dispensa in [CONTEXT_LIVE]. Inserisci pesi stimati per centrare il target. Esempio forma completa: [DAILY_PLAN:{"target":"pari", "workoutTime":"19:00", "activities":[...], "ghostMeals":[{"mealType":"cena", "time":"20:00", "title":"Cena Recupero", "microDesc":"Focus proteine", "draftFoods":["200g Pollo","150g Riso"]}]}]. Scegli "target" (deficit, pari o surplus) in base a [CONTEXT_LIVE]. Altrimenti, in conversazione aperta, chiedi le attività; quando l'utente risponde, genera lo stesso token con ghostMeals coerenti col piano. Il token deve essere da solo su una riga. ATTENZIONE: DEVI OBBLIGATORIAMENTE riempire l'array draftFoods per OGNI nodo fantasma ('ghostMeals'). Se non sai cosa inserire, inventa un pasto coerente coi target (es. ['200g Pollo', '10g Olio']). L'array NON DEVE MAI essere vuoto.
+MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata (testo libero o tramite wizard), entra in modalità pianificazione. Se il messaggio utente inizia con "PIANIFICAZIONE GUIDATA:", ha già scelto attività e fasce (Mattina / Pomeriggio / Sera): NON chiedere altro, NON fare elenchi lunghi. Rispondi generando ESATTAMENTE il token [DAILY_PLAN:{...}] su una riga, con orari concreti HH:MM coerenti con le fasce (es. Mattina → 08:00–11:30, Pomeriggio → 12:00–17:30, Sera → 18:00–22:00; se l'allenamento è in Sera usa tipicamente 18:30 o 19:00 come workoutTime e nella lista activities). Il JSON DEVE includere anche "ghostMeals": array di pasti pianificati (Nodi Fantasma) che l'utente vedrà in timeline finché non li converte in pasti veri: ogni elemento include {"mealType":"colazione|snack|pranzo|cena", "time":"HH:MM", "title":"Titolo breve", "microDesc":"Suggerimento micronutrienti (es. fibre, omega-3) per lucidità e sonno", "draftFoods":["200g Pollo","150g Riso"]} — draftFoods è un array di stringhe (abbozzo alimenti con pesi stimati). Per i pasti futuri nel token, calcola i target e COMPILA draftFoods con un abbozzo realistico di alimenti. Dai MASSIMA PRIORITÀ copiando pasti simili che l'utente ha consumato in passato (presenti nello storico) o cibi dal suo database/dispensa in [CONTEXT_LIVE]. Inserisci pesi stimati per centrare il target. Esempio forma completa: [DAILY_PLAN:{"target":"pari", "workoutTime":"19:00", "activities":[...], "ghostMeals":[{"mealType":"cena", "time":"20:00", "title":"Cena Recupero", "microDesc":"Focus proteine", "draftFoods":["200g Pollo","150g Riso"]}]}]. Scegli "target" (deficit, pari o surplus) in base a [CONTEXT_LIVE]. Altrimenti, in conversazione aperta, chiedi le attività; quando l'utente risponde, genera lo stesso token con ghostMeals coerenti col piano. Il token deve essere da solo su una riga. ATTENZIONE: DEVI OBBLIGATORIAMENTE riempire l'array draftFoods per OGNI nodo fantasma ('ghostMeals'). Se non sai cosa inserire, inventa un pasto coerente coi target (es. ['200g Pollo', '10g Olio']). L'array NON DEVE MAI essere vuoto. GERARCHIA COMPOSIZIONE draftFoods (ordine tassativo): (1) RECENTI — pasti identici o molto simili consumati negli ultimi 3–7 giorni; (2) STORICO — abitudini e pattern a più lungo termine se i recenti non bastano; (3) DISPENSA / DATABASE — attingi da foodDb e da alimenti noti in contesto, rispettando i target (es. pasto proteico → fonti proteiche coerenti); (4) NEW ENTRY — solo come ultima spiaggia, combinazione nuova e bilanciata. Ogni voce deve avere grammatura precisa per centrare i target ricalcolati.
 
 ATTENZIONE TEMPORALE: Se nel prompt utente ricevi l'ora attuale e gli eventi già registrati, DEVI rispettarli. Proponi solo Nodi Fantasma futuri. Se la colazione o il pranzo sono già stati fatti, concentrati solo sugli spuntini e la cena, bilanciando i macro rimanenti.
 
@@ -6919,11 +6988,8 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
       });
       const ghostList = Array.isArray(plan.ghostMeals) ? plan.ghostMeals : [];
       const srcLog = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
-      const realMeals = (srcLog || [])
-        .filter((n) => n && !n.isGhost && (n.type === 'food' || n.type === 'recipe') && n.mealType)
-        .map((n) => toCanonicalMealType(String(n.mealType).split('_')[0]))
-        .filter(Boolean);
-      const realMealsSet = new Set(realMeals);
+      const nowDec = getNowDecimalHourForPlanMerge();
+      const realMealsSet = buildPastOnlyRealMealTypeSet(srcLog, nowDec);
       const hasRealWorkout = (srcLog || []).some((n) => n && !n.isGhost && n.type === 'workout');
       const normalizeDailyPlanConflictTitle = (s) =>
         String(s || '')
@@ -6938,7 +7004,7 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
           if (norm.length >= 2) realTitles.add(norm);
         });
       });
-      const baseLog = srcLog.filter((e) => e && e.type !== 'ghost_meal');
+      const baseLog = buildBaseLogForGhostPlanMerge(srcLog, ghostList, nowDec);
       const newGhostEntries = ghostList
         .filter((gm) => {
           const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
@@ -7010,17 +7076,79 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
     setChatHistory((prev) => prev.filter((m) => !m.dailyPlan));
   }, []);
 
+  const handleGeneratePlanGhostMealDraft = useCallback(
+    async ({ mealType, time, title, microDesc, planTarget }) => {
+      const anchor = currentTrackerDate || getTodayString();
+      const burnedKcalContext = (activeLog || [])
+        .filter((item) => item && item.type === 'workout')
+        .reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
+      const dynamicKcal =
+        applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) + burnedKcalContext;
+      const recent7 = buildLast7DaysMealLinesForDraftPrompt(fullHistory, anchor);
+      const storicoBreve = buildRecentMealsContextForDinner(fullHistory, anchor);
+      const dispensa = collectDispensaProbableFoods(fullHistory, anchor, 18, 7);
+      const dbKeys = Object.keys(foodDb || {})
+        .slice(0, 45)
+        .join(', ');
+      const oggiBreve = (activeLog || [])
+        .filter((e) => e && (e.type === 'food' || e.type === 'recipe') && !e.isGhost)
+        .map((e) => `${e.desc || e.title || '?'} (~${Math.round(Number(e.kcal || e.cal) || 0)} kcal)`)
+        .slice(0, 20)
+        .join('; ');
+      const prompt = `Sei Kentu (nutrizionista operativo). Rispondi SOLO con un JSON valido su una riga o un blocco, senza testo prima o dopo, senza markdown.
+Formato: {"draftFoods":["200g Riso basmati","120g Petto di pollo","10g Olio EVO"]}
+
+Pasto pianificato (slot):
+- mealType: ${String(mealType || '')}
+- orario: ${String(time || '')}
+- titolo: ${String(title || '')}
+- microDesc / focus: ${String(microDesc || '')}
+- target strategia giornata: ${String(planTarget || 'pari')}
+- kcal giornaliere di riferimento (adattate): ~${Math.round(dynamicKcal)}
+
+Gerarchia obbligatoria: (1) ultimi 3-7 giorni pasti simili; (2) storico più lungo; (3) dispensa + database; (4) combinazione nuova solo se necessario.
+Ogni voce deve essere "grammi + nome" (es. 150g Tofu). Minimo 2 voci, massimo 10.
+
+ULTIMI 7 GIORNI:
+${recent7}
+
+STORICO PASTI (sintesi 30gg):
+${String(storicoBreve).slice(0, 2200)}
+
+DISPENSA PROBABILE:
+${dispensa}
+
+OGGI GIÀ REGISTRATO:
+${oggiBreve || 'niente'}
+
+CHIAVI DB (subset):
+${dbKeys || 'n/d'}`;
+
+      const raw = await callGeminiAPIWithRotation(prompt);
+      try {
+        return parseDraftFoodsJsonFromAiResponse(raw);
+      } catch (e) {
+        throw new Error(e?.message ? `JSON non valido: ${e.message}` : 'Risposta AI non valida (draftFoods)');
+      }
+    },
+    [
+      activeLog,
+      callGeminiAPIWithRotation,
+      currentTrackerDate,
+      foodDb,
+      fullHistory,
+      kentuDailyCalorieStrategy,
+      userTargets,
+    ]
+  );
+
   const handlePlanningWizardConfirm = useCallback(
     (payload) => {
       if (!payload || typeof payload !== 'object') return;
       const ghostList = Array.isArray(payload.ghostMeals) ? payload.ghostMeals : [];
       const srcLog = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
-      const realMealsSet = new Set(
-        (srcLog || [])
-          .filter((n) => n && !n.isGhost && (n.type === 'food' || n.type === 'recipe') && n.mealType)
-          .map((n) => toCanonicalMealType(String(n.mealType).split('_')[0]))
-          .filter(Boolean)
-      );
+      const nowDec = getNowDecimalHourForPlanMerge();
+      const realMealsSet = buildPastOnlyRealMealTypeSet(srcLog, nowDec);
       const hasRealWorkout = (srcLog || []).some((n) => n && !n.isGhost && n.type === 'workout');
       const normalizeDailyPlanConflictTitle = (s) =>
         String(s || '')
@@ -7035,7 +7163,7 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
           if (norm.length >= 2) realTitles.add(norm);
         });
       });
-      const baseLog = srcLog.filter((e) => e && e.type !== 'ghost_meal');
+      const baseLog = buildBaseLogForGhostPlanMerge(srcLog, ghostList, nowDec);
       const newGhostEntries = ghostList
         .filter((gm) => {
           const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
@@ -10469,6 +10597,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             onMealProposalSwap={handleMealProposalSwap}
             onDailyPlanConfirm={handleDailyPlanConfirm}
             onDailyPlanCancel={handleDailyPlanCancel}
+            onGeneratePlanGhostMealDraft={handleGeneratePlanGhostMealDraft}
             dailyLog={activeLog || []}
             showAiSettings={showAiSettings}
             setShowAiSettings={setShowAiSettings}
