@@ -1569,7 +1569,9 @@ function parseSmartCompletionJsonFromAiResponse(raw) {
   const aiText = String(raw || '').trim();
   let obj = null;
   const match = aiText.match(/\[COMPLETION_JSON:\s*(\{[\s\S]*?\})\s*\]/i);
-  if (match) {
+  if (!match) {
+    console.log('AI Response:', aiText);
+  } else {
     try {
       obj = JSON.parse(match[1]);
     } catch (_) {
@@ -8334,7 +8336,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     async (currentFoods) => {
       const foods = Array.isArray(currentFoods) ? currentFoods : [];
       const present = foods.map((f) => f.desc || f.name).filter(Boolean);
-      const prompt = `SMART MEAL COMPLETION: Devo completare il pasto '${String(mealType)}'. Target ricalcolato: ${JSON.stringify(targetMacrosPasto)}. Cibi già presenti (da NON rimuovere): ${present.join(', ') || 'Nessuno'}. Genera cibi suggeriti per raggiungere il target (pescando da storico o DB utente). Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...", "weight": 100}]}]. NON SCRIVERE ALTRO. NON USARE MARKDOWN o backticks.`;
+      const anchor = currentTrackerDate || getTodayString();
+      const recent7 = buildLast7DaysMealLinesForDraftPrompt(fullHistory, anchor);
+      const prompt = `SMART MEAL COMPLETION: Devo completare il pasto '${String(mealType)}'. Target ricalcolato: ${JSON.stringify(targetMacrosPasto)}. Cibi già presenti (da NON rimuovere): ${present.join(', ') || 'Nessuno'}. Genera cibi suggeriti per raggiungere il target (pescando da storico o DB utente), coerenti con le abitudini reali degli ultimi giorni.
+
+ULTIMI 7 GIORNI (pasti registrati):
+${recent7}
+
+Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...", "weight": 100}]}]. NON SCRIVERE ALTRO. NON USARE MARKDOWN o backticks.`;
       try {
         const raw = await callGeminiAPIWithRotation(prompt);
         const items = parseSmartCompletionJsonFromAiResponse(raw);
@@ -8345,7 +8354,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         window.alert(msg);
       }
     },
-    [mealType, targetMacrosPasto, callGeminiAPIWithRotation, estraiDatiFoodDb]
+    [mealType, targetMacrosPasto, callGeminiAPIWithRotation, estraiDatiFoodDb, fullHistory, currentTrackerDate]
   );
 
   const strategyKeyForMeal = getStrategyKey(toCanonicalMealType(String(mealType || 'pranzo').split('_')[0]));

@@ -107,6 +107,18 @@ function wizardTemporalLock(item, nowDec) {
   return td <= nd;
 }
 
+/**
+ * disabled={true} per controlli UI: solo se !ghost e timeDec ≤ nowDec (timeDec da item o da itemTimeDec).
+ */
+function wizardRowDisabledByTime(item, nowDec) {
+  if (!item || item.isGhost === true) return false;
+  const nd = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
+  const td =
+    typeof item.timeDec === 'number' && !Number.isNaN(item.timeDec) ? item.timeDec : itemTimeDec(item);
+  if (Number.isNaN(td)) return false;
+  return td <= nd;
+}
+
 /** Fine fascia giornaliera (decimale): slot non selezionabile se la fascia è interamente passata. */
 const FASCIA_END_DEC = { mattina: 12, pomeriggio: 18, sera: 22 };
 function isFasciaSlotLocked(slotId, nowDec) {
@@ -317,10 +329,8 @@ function timelineSortKey(entry) {
 /** Pasto reale nel riepilogo: lock = !ghost && timeDec ≤ nowDec. */
 function planDiaryMealSlotIsLocked(entry, nowDec) {
   if (!entry) return false;
-  if (entry.isGhost === true) return false;
-  if (entry.type === 'ghost_meal' || entry.type === 'ghost_workout') return false;
   if (entry.type !== 'food' && entry.type !== 'recipe') return false;
-  return wizardTemporalLock(entry, nowDec);
+  return wizardRowDisabledByTime(entry, nowDec);
 }
 
 export default function PlanningWizard({
@@ -343,6 +353,8 @@ export default function PlanningWizard({
   const [stagingDraftById, setStagingDraftById] = useState({});
   const [wizardGenLoadingId, setWizardGenLoadingId] = useState(null);
 
+  const nowDec = getLocalDecimalHourNow();
+
   useEffect(() => {
     if (macroMuscleSeededRef.current) return;
     if (!dailyLog || dailyLog.length === 0) return;
@@ -353,14 +365,13 @@ export default function PlanningWizard({
   }, [dailyLog]);
 
   const stagingGhosts = useMemo(() => {
-    const nd = getLocalDecimalHourNow();
-    const base = [...ghostRowsFromLog(dailyLog), ...buildProposedRows(dailyLog, nd)];
+    const base = [...ghostRowsFromLog(dailyLog), ...buildProposedRows(dailyLog, nowDec)];
     return base.map((r) => {
       const ov = stagingDraftById[r.id];
       if (Array.isArray(ov)) return { ...r, draftFoods: ov };
       return r;
     });
-  }, [dailyLog, stagingDraftById]);
+  }, [dailyLog, stagingDraftById, nowDec]);
 
   const hasTraining = macros.has('training');
   const hasRealWorkout = useMemo(() => !!extractRealWorkout(dailyLog), [dailyLog]);
@@ -390,7 +401,6 @@ export default function PlanningWizard({
   );
 
   const mgConsumed = useMemo(() => sumMgFromLog(dailyLog), [dailyLog]);
-  const nowDec = getLocalDecimalHourNow();
 
   const toggleMacro = (id) => {
     setMacros((prev) => {
@@ -570,13 +580,23 @@ export default function PlanningWizard({
           </p>
           {MACRO_OPTIONS.map(({ id, label }) => {
             const on = macros.has(id);
+            const w0 = extractRealWorkout(dailyLog);
+            const trainTimeLocked =
+              id === 'training' && w0 ? wizardRowDisabledByTime({ isGhost: false, timeDec: itemTimeDec(w0) }, nowDec) : false;
             const lockedTrain = id === 'training' && trainingLockedFromLog && on;
+            const macroDisabled = id === 'training' && trainTimeLocked;
             return (
               <button
                 key={id}
                 type="button"
+                disabled={macroDisabled}
                 onClick={() => toggleMacro(id)}
-                style={{ ...bigTileBase, ...(on ? bigTileSelected : {}), ...(lockedTrain ? { opacity: 0.92 } : {}) }}
+                style={{
+                  ...bigTileBase,
+                  ...(on ? bigTileSelected : {}),
+                  ...(lockedTrain ? { opacity: 0.92 } : {}),
+                  ...(macroDisabled ? { cursor: 'not-allowed', opacity: 0.72 } : {}),
+                }}
               >
                 {label}
                 {lockedTrain ? ' 🔒' : ''}
@@ -625,6 +645,7 @@ export default function PlanningWizard({
                     <button
                       key={name}
                       type="button"
+                      disabled={locked}
                       onClick={() => toggleMuscle(name)}
                       style={{
                         padding: '12px 14px',
@@ -666,7 +687,10 @@ export default function PlanningWizard({
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {TIMING_KEYS.map(({ id: slotId, label: slotLabel }) => {
                       const on = timingByMacro[id] === slotId;
-                      const slotPast = isFasciaSlotLocked(slotId, nowDec);
+                      const slotPast = wizardRowDisabledByTime(
+                        { isGhost: false, timeDec: FASCIA_END_DEC[slotId] },
+                        nowDec
+                      );
                       return (
                         <button
                           key={slotId}
@@ -710,7 +734,7 @@ export default function PlanningWizard({
               lineHeight: 1.4,
             }}
           >
-            ✅ Sincronizzato: Gli eventi passati sono bloccati. Le attività e i pasti futuri verranno adattati al nuovo piano.
+            ✅ Sincronizzato: Gli eventi passati sono protetti. Le attività e i pasti futuri verranno aggiornati con i nuovi target.
           </div>
 
           <button
@@ -746,7 +770,13 @@ export default function PlanningWizard({
               <div style={{ fontSize: '0.78rem', color: '#888' }}>Nessun pasto reale registrato oggi.</div>
             ) : (
               <ul style={{ margin: 0, padding: 0, listStyle: 'none', color: '#e5e7eb', fontSize: '0.78rem', lineHeight: 1.45 }}>
-                {registeredMealGroups.map((g, gi) => (
+                {registeredMealGroups.map((g, gi) => {
+                  const groupAllLocked =
+                    g.items.length > 0 &&
+                    g.items.every((it) =>
+                      wizardRowDisabledByTime({ ...it, isGhost: false, timeDec: itemTimeDec(it) }, nowDec)
+                    );
+                  return (
                   <li key={`${g.mealType}_${gi}`} style={{ marginBottom: 8 }}>
                     <details
                       style={{
@@ -754,16 +784,19 @@ export default function PlanningWizard({
                         borderRadius: 10,
                         border: '1px solid rgba(74, 222, 128, 0.25)',
                         background: 'rgba(34, 197, 94, 0.06)',
+                        pointerEvents: groupAllLocked ? 'none' : 'auto',
+                        opacity: groupAllLocked ? 0.78 : 1,
                       }}
                     >
                       <summary
                         style={{
-                          cursor: 'pointer',
+                          cursor: groupAllLocked ? 'default' : 'pointer',
                           listStyle: 'none',
                           fontWeight: 800,
                           fontSize: '0.78rem',
                           color: '#bbf7d0',
                         }}
+                        aria-disabled={groupAllLocked}
                       >
                         ▶ {mealTypeLabelIt(g.mealType)} - Fatto
                       </summary>
@@ -771,7 +804,7 @@ export default function PlanningWizard({
                         {g.items.map((e, j) => {
                           const td = itemTimeDec(e);
                           const hh = !Number.isNaN(td) ? decimalHourToHHMM(td) : '—';
-                          const rowLocked = wizardTemporalLock(e, nowDec);
+                          const rowLocked = wizardRowDisabledByTime(e, nowDec);
                           const kcal = Math.round(Number(e.kcal || e.cal) || 0);
                           const p = Number(e.prot) || 0;
                           const c = Number(e.carb) || 0;
@@ -789,7 +822,8 @@ export default function PlanningWizard({
                       </div>
                     </details>
                   </li>
-                ))}
+                );
+                })}
               </ul>
             )}
           </div>
@@ -804,8 +838,6 @@ export default function PlanningWizard({
                   const hh = decimalHourToHHMM(Number(r.mealTime)) || '—';
                   const t = getDynamicMealTargets(String(r.mealType || 'pranzo').split('_')[0], dailyLog, userTargets, dynOpts);
                   const foods = Array.isArray(r.draftFoods) ? r.draftFoods : [];
-                  const isFuture =
-                    typeof r.mealTime === 'number' && !Number.isNaN(r.mealTime) && r.mealTime > nowDec;
                   return (
                     <li
                       key={r.id || i}
@@ -823,7 +855,7 @@ export default function PlanningWizard({
                         <div>
                           <strong>{hh}</strong> · {String(r.title || 'Pasto pianificato')} ({String(r.mealType || '')})
                         </div>
-                        {onGeneratePlanGhostMealDraft && isFuture ? (
+                        {onGeneratePlanGhostMealDraft ? (
                           <button
                             type="button"
                             disabled={wizardGenLoadingId === r.id}
@@ -866,8 +898,10 @@ export default function PlanningWizard({
                   .map((r) => {
                     const t = getDynamicMealTargets(r.mealType, dailyLog, userTargets, dynOpts);
                     const hh = decimalHourToHHMM(r.mealTime) || '—';
-                    const isFuture =
-                      typeof r.mealTime === 'number' && !Number.isNaN(r.mealTime) && r.mealTime > nowDec;
+                    const proposedUnlocked =
+                      typeof r.mealTime === 'number' &&
+                      !Number.isNaN(r.mealTime) &&
+                      !wizardRowDisabledByTime({ isGhost: false, timeDec: r.mealTime }, nowDec);
                     return (
                       <li
                         key={r.id}
@@ -893,7 +927,7 @@ export default function PlanningWizard({
                           <span>
                             {hh} · {r.title}
                           </span>
-                          {onGeneratePlanGhostMealDraft && isFuture ? (
+                          {onGeneratePlanGhostMealDraft && proposedUnlocked ? (
                             <button
                               type="button"
                               disabled={wizardGenLoadingId === r.id}
@@ -1023,11 +1057,13 @@ export default function PlanningWizard({
                 }
                 if (row.kind === 'ghost_proposed' || row.kind === 'ghost_staging') {
                   const g = row.staging;
-                  const isFuture =
-                    g &&
-                    typeof g.mealTime === 'number' &&
-                    !Number.isNaN(g.mealTime) &&
-                    g.mealTime > nowDec;
+                  const ghostGenUnlocked =
+                    row.kind === 'ghost_staging'
+                      ? !!g
+                      : !!g &&
+                        typeof g.mealTime === 'number' &&
+                        !Number.isNaN(g.mealTime) &&
+                        !wizardRowDisabledByTime({ isGhost: false, timeDec: g.mealTime }, nowDec);
                   return (
                     <li
                       key={g?.id || `${row.kind}_${i}`}
@@ -1053,7 +1089,7 @@ export default function PlanningWizard({
                         <div>
                           <strong>{decimalHourToHHMM(row.timeDec) || '—'}</strong> {row.label}
                         </div>
-                        {onGeneratePlanGhostMealDraft && isFuture && g ? (
+                        {onGeneratePlanGhostMealDraft && ghostGenUnlocked ? (
                           <button
                             type="button"
                             disabled={wizardGenLoadingId === g.id}
