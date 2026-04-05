@@ -4462,7 +4462,7 @@ Ottimo! Diario aggiornato. 🥗`;
   };
 
   const startNodeDrag = useCallback((node, edge) => (e) => {
-    if (node?.type === 'ghost_meal') return;
+    if (node?.type === 'ghost_meal' || node?.type === 'ghost_workout') return;
     e.stopPropagation();
     setTouchingNodeId(node.id);
     const target = e.currentTarget;
@@ -4569,6 +4569,19 @@ Ottimo! Diario aggiornato. 🥗`;
       return;
     }
 
+    if (node.type === 'ghost_workout') {
+      const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 18;
+      setEditingWorkoutId(null);
+      setWorkoutType('pesi');
+      setWorkoutStartTime(t);
+      setWorkoutEndTime(Math.min(24, t + 1));
+      setWorkoutKcal(300);
+      setWorkoutMuscles([]);
+      setActiveAction('allenamento');
+      setIsDrawerOpen(true);
+      return;
+    }
+
     if (node.type === 'meal') {
       const slotId = String(node.mealId || node.id);
       const foodsForSlot =
@@ -4668,6 +4681,13 @@ Ottimo! Diario aggiornato. 🥗`;
     setMealPlannerGhostNote,
     setActiveAction,
     toCanonicalMealType,
+    setEditingWorkoutId,
+    setWorkoutType,
+    setWorkoutStartTime,
+    setWorkoutEndTime,
+    setWorkoutKcal,
+    setWorkoutMuscles,
+    setIsDrawerOpen,
   ]);
 
   const handleSaveAlcohol = () => {
@@ -4774,7 +4794,8 @@ Ottimo! Diario aggiornato. 🥗`;
     }
     const baseLog = dailyLog;
     const newLog = baseLog.some(n => n.id === finalId) ? baseLog.map(n => n.id === finalId ? logData : n) : [logData, ...baseLog];
-    const newNodes = manualNodes.some(n => n.id === finalId) ? manualNodes.map(n => n.id === finalId ? nodeData : n) : [...manualNodes, nodeData];
+    const newNodesRaw = manualNodes.some(n => n.id === finalId) ? manualNodes.map(n => n.id === finalId ? nodeData : n) : [...manualNodes, nodeData];
+    const newNodes = newNodesRaw.filter((n) => n && n.type !== 'ghost_workout');
     setDailyLog(newLog);
     setManualNodes(newNodes);
     syncDatiFirebase(newLog, newNodes);
@@ -6673,18 +6694,36 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         return Number(e.time ?? e.mealTime) || 0;
       };
       const mergedLog = [...baseLog, ...newGhostEntries].sort((a, b) => logTimeKey(a) - logTimeKey(b));
+      const baseManual = (manualNodes || []).filter((n) => n && n.type !== 'ghost_workout');
+      let mergedManual = [...baseManual].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+      if (!isSimulationMode && workoutTime) {
+        const wDec = parseFlexibleTimeToDecimal(workoutTime);
+        if (wDec != null && !Number.isNaN(wDec)) {
+          mergedManual = [
+            ...baseManual,
+            {
+              id: `ghost_workout_${Date.now()}`,
+              type: 'ghost_workout',
+              time: wDec,
+              title: 'Allenamento Pianificato',
+              isGhost: true,
+            },
+          ].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+        }
+      }
       if (isSimulationMode) {
         setSimulatedLog(mergedLog);
       } else {
         setDailyLog(mergedLog);
-        syncDatiFirebase(mergedLog, manualNodes);
+        setManualNodes(mergedManual);
+        syncDatiFirebase(mergedLog, mergedManual);
       }
       setChatHistory((prev) => {
         const withoutCard = prev.filter((m) => !m.dailyPlan);
         return [...withoutCard, { sender: 'ai', text: 'Piano confermato e caricato nel sistema.' }];
       });
     },
-    [applyKentuChatCmd, dailyLog, manualNodes, syncDatiFirebase, isSimulationMode, simulatedLog]
+    [applyKentuChatCmd, dailyLog, manualNodes, syncDatiFirebase, isSimulationMode, simulatedLog, parseFlexibleTimeToDecimal]
   );
 
   const handleDailyPlanCancel = useCallback(() => {

@@ -73,6 +73,8 @@ export default function AiCluster({
 }) {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [planningWizardOpen, setPlanningWizardOpen] = useState(false);
+  /** Con testo/immagini nell’input la hub si nascondeva: questo stato consente di forzarne la visibilità. */
+  const [hubCommandForced, setHubCommandForced] = useState(false);
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
 
@@ -84,6 +86,12 @@ export default function AiCluster({
     () => (chatHistory || []).some((m) => m.mealProposal || m.dailyPlan),
     [chatHistory]
   );
+
+  const hubInputBlocked = Boolean(chatInput.trim() || chatImages.length > 0);
+  const showCommandHubDock =
+    typeof onChatQuickAction === 'function' &&
+    !planningWizardOpen &&
+    (!hubInputBlocked || hubCommandForced);
 
   return (
     <div
@@ -324,13 +332,36 @@ export default function AiCluster({
             ))}
           </div>
         )}
-        {typeof onChatQuickAction === 'function' && !planningWizardOpen && !chatInput.trim() && chatImages.length === 0 && (
+        {showCommandHubDock && (
           <div style={{ flexShrink: 0, marginTop: 6, marginBottom: 4 }}>
+            {hubCommandForced && hubInputBlocked && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHubCommandForced(false);
+                    setIsPanelOpen(false);
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    background: 'rgba(255,255,255,0.06)',
+                    color: 'var(--kentu-text-muted, #94a3b8)',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Riduci hub
+                </button>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => {
                 setPlanningWizardOpen(true);
                 setIsPanelOpen(false);
+                setHubCommandForced(false);
               }}
               style={{
                 width: '100%',
@@ -374,6 +405,7 @@ export default function AiCluster({
                           onClick={() => {
                             onChatQuickAction(key);
                             setIsPanelOpen(false);
+                            setHubCommandForced(false);
                             setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                           }}
                         />
@@ -398,6 +430,26 @@ export default function AiCluster({
           </div>
         ) : (
         <div className="kentu-input-strip">
+          {typeof onChatQuickAction === 'function' && !planningWizardOpen && (
+            <KentuButton
+              variant="ghost"
+              className="kentu-btn--icon"
+              type="button"
+              onClick={() => {
+                if (hubCommandForced && isPanelOpen) {
+                  setHubCommandForced(false);
+                  setIsPanelOpen(false);
+                  return;
+                }
+                if (hubInputBlocked) setHubCommandForced(true);
+                setIsPanelOpen(true);
+              }}
+              aria-label="Apri hub comandi"
+              title="Hub comandi · Planning e strumenti"
+            >
+              ⚡
+            </KentuButton>
+          )}
           <input
             type="file"
             accept="image/*"

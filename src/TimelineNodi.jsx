@@ -33,17 +33,34 @@ export default function TimelineNodi({
       <div ref={timelineContainerRef} style={{ flex: 1, height: '55px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #222', overflow: 'visible', position: 'relative' }}>
           {nodes.map((node) => {
             const currentChartUnit = chartUnit;
-            const effectiveNodeType = node.type === 'meal' ? 'meal' : node.type;
+            const isGhostMeal = node.type === 'ghost_meal';
+            const isGhostWorkout = node.type === 'ghost_workout';
+            const effectiveNodeType =
+              node.type === 'meal' || isGhostMeal ? 'meal' : isGhostWorkout ? 'workout' : node.type;
             const isImportant = NODE_IMPORTANCE?.[currentChartUnit]?.includes(effectiveNodeType);
             const importanceStyle = isImportant ? { filter: 'none', opacity: 1, zIndex: 10 } : { filter: 'grayscale(100%)', opacity: 0.35, zIndex: 1 };
-            const isNodeFocused = analysisTabActive || (!activeAction || activeAction === 'home') || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && (node.type === 'meal' || node.type === 'ghost_meal')) || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive')) || (activeAction === 'acqua' && node.type === 'water');
+            const isNodeFocused =
+              analysisTabActive ||
+              (!activeAction || activeAction === 'home') ||
+              activeAction === 'diario_giornaliero' ||
+              (activeAction === 'pasto' && (node.type === 'meal' || isGhostMeal)) ||
+              (activeAction === 'allenamento' &&
+                (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive' || isGhostWorkout)) ||
+              (activeAction === 'acqua' && node.type === 'water');
             const isWork = node.type === 'work';
             const isCognitive = node.type === 'cognitive';
             const percent = (node.time / 24) * 100;
             const startPercent = percent;
             const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
-            const idealVal = node.type === 'meal' ? (idealStrategy?.[node.strategyKey] ?? 400) : (node.type === 'workout' || node.type === 'cognitive' ? (idealStrategy?.allenamento ?? 300) : (node.type === 'water' ? 100 : (node.kcal ?? 400)));
-            const realVal = (node.type === 'meal' || node.type === 'workout') ? (realTotals?.[node.strategyKey] ?? 0) : 0;
+            const idealVal =
+              node.type === 'meal' || isGhostMeal
+                ? (idealStrategy?.[node.strategyKey] ?? 400)
+                : node.type === 'workout' || isGhostWorkout || node.type === 'cognitive'
+                  ? (idealStrategy?.allenamento ?? 300)
+                  : node.type === 'water'
+                    ? 100
+                    : (node.kcal ?? 400);
+            const realVal = (node.type === 'meal' || node.type === 'workout') && !isGhostMeal && !isGhostWorkout ? (realTotals?.[node.strategyKey] ?? 0) : 0;
             const ratio = idealVal > 0 ? realVal / idealVal : 1;
             let borderColor = '#00e5ff';
             if (node.type === 'nap') borderColor = '#818cf8';
@@ -69,61 +86,6 @@ export default function TimelineNodi({
             const cognitiveIcon = node.subType === 'studio' ? '📚' : '💻';
             const cognitiveBg = 'rgba(0, 229, 255, 0.15)';
             const cognitiveBorder = '#00e5ff';
-
-            if (node.type === 'ghost_meal') {
-              const displayPercent = (node.time / 24) * 100;
-              const titleG = String(node.title || 'Pasto pianificato').trim();
-              const microG = String(node.microDesc || '').trim();
-              const isDragging = draggingNode?.id === node.id;
-              const isTouchingOrDragging = isDragging || (touchingNodeId === node.id);
-              const dragY = isDragging ? dragOffsetY : 0;
-              const pointTransform = isDragging ? `translate(-50%, ${dragY - 45}px) scale(1.05)` : `translateX(-50%) scale(${isTouchingOrDragging ? 1.08 : 1})`;
-              const ghostVis = { filter: 'none', opacity: 1, zIndex: 8 };
-              return (
-                <div
-                  key={node.id}
-                  role="button"
-                  tabIndex={0}
-                  className="timeline-node ghost-meal-node"
-                  onClick={handleNodeTap(node)}
-                  style={{
-                    position: 'absolute',
-                    left: `${displayPercent}%`,
-                    transform: pointTransform,
-                    top: '50%',
-                    marginTop: -22 - (node.stackIndex || 0) * 38,
-                    minWidth: '112px',
-                    maxWidth: 'min(160px, 28vw)',
-                    padding: '6px 8px',
-                    borderRadius: '10px',
-                    border: '1px dashed #00e5ff',
-                    background: 'rgba(0, 229, 255, 0.05)',
-                    animation: 'ghostPulse 2s infinite',
-                    cursor: 'pointer',
-                    pointerEvents: isNodeFocused ? 'auto' : 'none',
-                    zIndex: isTouchingOrDragging ? 100 : 8,
-                    ...(isDragging ? {} : ghostVis),
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'flex-start',
-                    gap: 2,
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  <span style={{ fontSize: '0.62rem', lineHeight: 1.2, color: '#00e5ff', fontWeight: 800 }} aria-hidden>
-                    🎯
-                  </span>
-                  <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#e0fbff', lineHeight: 1.25, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {titleG}
-                  </span>
-                  {microG ? (
-                    <span style={{ fontSize: '0.58rem', color: 'rgba(200, 230, 240, 0.85)', lineHeight: 1.3, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                      {microG}
-                    </span>
-                  ) : null}
-                </div>
-              );
-            }
 
             if (isWork) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
@@ -177,30 +139,83 @@ export default function TimelineNodi({
             const isAlcohol = node.type === 'alcohol';
             const isStimulant = node.type === 'stimulant';
             const isCognitivePoint = node.type === 'cognitive';
-            const iconContent = NODE_TYPE_ICON?.[node.type] ?? (isStimulant ? '☕' : (isWater ? '💧' : (isPesi ? node.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (node.icon || '•'))));
+            const isMealPoint = node.type === 'meal' || isGhostMeal;
+            const isWorkoutPoint = node.type === 'workout' || isGhostWorkout;
+            const iconContent = isGhostMeal
+              ? '🎯'
+              : isGhostWorkout
+                ? '🏋️'
+                : NODE_TYPE_ICON?.[node.type] ??
+                  (isStimulant ? '☕' : (isWater ? '💧' : (isPesi ? node.muscles.map((m) => m.substring(0, 2).toUpperCase()).join('+') : node.icon || '•')));
             const bioTypeBg = { nap: 'rgba(129,140,248,0.2)', meditation: 'rgba(34,197,94,0.2)', supplements: 'rgba(168,85,247,0.2)', sunlight: 'rgba(251,191,36,0.2)', cognitive: 'rgba(182,102,210,0.2)' }[node.type];
             const bioTypeBorder = { nap: '#818cf8', meditation: '#22c55e', supplements: '#a855f7', sunlight: '#fbbf24', cognitive: '#b666d2' }[node.type];
-            const isWorkoutPoint = node.type === 'workout';
-            const isMealPoint = node.type === 'meal';
             let bgColor = node.color;
             if (!bgColor) {
-              if (isTouchingOrDragging) {
+              if (isGhostMeal) {
+                bgColor = isTouchingOrDragging ? 'rgba(0,229,255,0.22)' : 'rgba(0,229,255,0.08)';
+              } else if (isGhostWorkout) {
+                bgColor = isTouchingOrDragging ? 'rgba(255,68,68,0.28)' : 'rgba(255,68,68,0.1)';
+              } else if (isTouchingOrDragging) {
                 bgColor = isWorkoutPoint ? 'rgba(255,68,68,0.4)' : isMealPoint ? 'rgba(0,229,255,0.4)' : isCognitivePoint ? 'rgba(182,102,210,0.4)' : isStimulant ? 'rgba(245,158,11,0.35)' : isWater ? 'rgba(0,229,255,0.35)' : isAlcohol ? 'rgba(244,67,54,0.35)' : '#888';
               } else {
                 bgColor = isCognitivePoint ? 'rgba(182,102,210,0.2)' : isWorkoutPoint ? 'rgba(255,68,68,0.2)' : isMealPoint ? 'rgba(0,229,255,0.15)' : isStimulant ? 'rgba(245,158,11,0.2)' : isWater ? 'rgba(0, 229, 255, 0.15)' : isAlcohol ? 'rgba(244,67,54,0.2)' : (bioTypeBg || 'rgba(0,0,0,0.6)');
               }
             }
-            const nodeBorderColor = node.color || (isCognitivePoint ? '#b666d2' : isWorkoutPoint ? '#ff4444' : isMealPoint ? '#00e5ff' : (isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (bioTypeBorder || pointBorderColor)))));
+            const nodeBorderColor =
+              node.color ||
+              (isCognitivePoint ? '#b666d2' : isWorkoutPoint ? '#ff4444' : isMealPoint ? '#00e5ff' : isStimulant ? '#f59e0b' : isWater ? '#00e5ff' : isAlcohol ? '#f44336' : bioTypeBorder || pointBorderColor);
+            const borderStyle = isGhostMeal || isGhostWorkout ? '2px dashed #00e5ff' : `2px solid ${nodeBorderColor}`;
             const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
             const pointTransform = isDragging ? `translate(-50%, ${dragY - 45}px) scale(2)` : `translateX(-50%) scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`;
             let pointBoxShadow = 'none';
-            if (isTouchingOrDragging) {
+            if (isGhostMeal || isGhostWorkout) {
+              pointBoxShadow = 'none';
+            } else if (isTouchingOrDragging) {
               pointBoxShadow = isWorkoutPoint ? '0 0 15px #ff4444' : isMealPoint ? '0 0 15px #00e5ff' : isCognitivePoint ? '0 0 15px #b666d2' : isStimulant ? '0 0 15px #f59e0b' : isWater ? '0 0 15px #00e5ff' : isAlcohol ? '0 0 15px #f44336' : (bioTypeBorder ? `0 0 15px ${bioTypeBorder}` : 'none');
             } else if (isCognitivePoint) {
               pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
             }
+            const ghostTooltip = (() => {
+              const t = String(node.title || '').trim();
+              const m = String(node.microDesc || '').trim();
+              if (t && m) return `${t} — ${m}`;
+              return t || m || undefined;
+            })();
+            const ghostNoDrag = isGhostMeal || isGhostWorkout;
+            const importanceForPoint = ghostNoDrag ? { filter: 'none', opacity: 1, zIndex: 9 } : isDragging ? {} : importanceStyle;
             return (
-              <div key={node.id} className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={handleNodeTap(node)} style={{ position: 'absolute', left: `${displayPercent}%`, transform: pointTransform, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, width: '36px', height: '36px', borderRadius: '50%', background: bgColor, border: `2px solid ${nodeBorderColor}`, boxShadow: pointBoxShadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : undefined, ...(isDragging ? {} : importanceStyle) }}>
+              <div
+                key={node.id}
+                title={ghostTooltip || undefined}
+                className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''} ${ghostNoDrag ? 'ghost-node' : ''}`}
+                onPointerDown={ghostNoDrag ? undefined : startNodeDrag(node, 'all')}
+                onPointerUp={ghostNoDrag ? undefined : releaseNodePointer}
+                onPointerCancel={ghostNoDrag ? undefined : releaseNodePointer}
+                onClick={handleNodeTap(node)}
+                style={{
+                  position: 'absolute',
+                  left: `${displayPercent}%`,
+                  transform: pointTransform,
+                  top: '50%',
+                  marginTop: -18 - (node.stackIndex || 0) * 38,
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: bgColor,
+                  border: borderStyle,
+                  boxShadow: pointBoxShadow,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: ghostNoDrag ? 'pointer' : isDragging ? 'grabbing' : 'pointer',
+                  transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s',
+                  touchAction: ghostNoDrag ? 'auto' : 'none',
+                  pointerEvents: isNodeFocused ? 'auto' : 'none',
+                  zIndex: isTouchingOrDragging ? 100 : undefined,
+                  ...importanceForPoint,
+                }}
+              >
                 <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor)))), marginBottom: '2px', transition: 'color 0.2s' }}>
                   {timeLabelStr}
                 </span>
