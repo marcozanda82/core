@@ -1020,6 +1020,34 @@ export default function MealBuilder({
               <p style={{ margin: 0, fontSize: '0.7rem', color: '#86efac', lineHeight: 1.4 }}>✅ Equilibrio Serale Ottimale. La strategia attuale supporta bassi livelli di stress.</p>
             )}
           </div>
+          {typeof onSmartComplete === 'function' && (
+            <div style={{ marginTop: 15, marginBottom: 15, width: '100%' }}>
+              <button
+                type="button"
+                className="btn-primary-glow btn-glass"
+                onClick={handleSmartCompleteClick}
+                disabled={smartCompleteLoading}
+                style={{
+                  width: '100%',
+                  padding: '14px 18px',
+                  borderRadius: '14px',
+                  border: '1px solid rgba(0, 229, 255, 0.45)',
+                  background: 'linear-gradient(145deg, rgba(0, 229, 255, 0.18), rgba(255, 255, 255, 0.06))',
+                  color: '#e0f7ff',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  cursor: smartCompleteLoading ? 'wait' : 'pointer',
+                  opacity: smartCompleteLoading ? 0.75 : 1,
+                  boxShadow: '0 0 24px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.12)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                }}
+              >
+                {smartCompleteLoading ? '⏳ …' : addedFoods.length === 0 ? '✨ Genera Pasto' : '✨ Completa Pasto'}
+              </button>
+            </div>
+          )}
           <div style={{ position: 'relative', marginBottom: '20px' }}>
             {isBarcodeScannerOpen && (
               <div style={{ marginBottom: '12px', borderRadius: '12px', overflow: 'hidden', background: '#000', border: '1px solid #333' }}>
@@ -1987,43 +2015,6 @@ export default function MealBuilder({
               </>
             )}
           </div>
-          {typeof onSmartComplete === 'function' && (
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 10,
-                marginBottom: 18,
-                width: '100%',
-              }}
-            >
-              <button
-                type="button"
-                className="btn-primary-glow btn-glass"
-                onClick={handleSmartCompleteClick}
-                disabled={smartCompleteLoading}
-                style={{
-                  flex: '1 1 140px',
-                  minWidth: 140,
-                  padding: '14px 18px',
-                  borderRadius: '14px',
-                  border: '1px solid rgba(0, 229, 255, 0.45)',
-                  background: 'linear-gradient(145deg, rgba(0, 229, 255, 0.18), rgba(255, 255, 255, 0.06))',
-                  color: '#e0f7ff',
-                  fontSize: '0.88rem',
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  cursor: smartCompleteLoading ? 'wait' : 'pointer',
-                  opacity: smartCompleteLoading ? 0.75 : 1,
-                  boxShadow: '0 0 24px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.12)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                }}
-              >
-                {smartCompleteLoading ? '⏳ …' : addedFoods.length === 0 ? '✨ Genera Pasto' : '✨ Completa Pasto'}
-              </button>
-            </div>
-          )}
           {addedFoods.length > 0 && (
             <>
               {userProfile?.level === 'pro' && (

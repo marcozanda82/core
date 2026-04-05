@@ -56,8 +56,9 @@ function normalizePlanFromProps(p) {
     activities: Array.isArray(p.activities) ? p.activities.map((a) => ({ ...a })) : [],
     ghostMeals: Array.isArray(p.ghostMeals)
       ? p.ghostMeals.map((g) => {
-          const draftFoods = Array.isArray(g?.draftFoods)
-            ? g.draftFoods.map((x) => String(x).trim()).filter(Boolean)
+          const raw = g?.draftFoods || [];
+          const draftFoods = Array.isArray(raw)
+            ? raw.map((x) => String(x).trim()).filter(Boolean)
             : [];
           return { ...g, draftFoods };
         })

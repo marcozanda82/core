@@ -75,11 +75,45 @@ function decimalHourToHHMM(dec) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-function isTimingSlotInPast(slotId) {
-  const h = getLocalDecimalHourNow();
-  if (slotId === 'mattina') return h >= 12;
-  if (slotId === 'pomeriggio') return h >= 18;
-  return false;
+/** "HH:MM" o simile → ore decimali; numero già decimale resta invariato. */
+function timeStrToDecimal(timeStr) {
+  if (timeStr == null || timeStr === '') return NaN;
+  if (typeof timeStr === 'number' && !Number.isNaN(timeStr)) return timeStr;
+  const s = String(timeStr).trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return NaN;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (Number.isNaN(h) || Number.isNaN(min)) return NaN;
+  return Math.min(23, Math.max(0, h)) + min / 60;
+}
+
+/** Ora decimale unificata per confronto con nowDec (pasti / workout reali nel diario). */
+function itemTimeDec(item) {
+  if (!item || item.isGhost === true) return NaN;
+  if (typeof item.mealTime === 'number' && !Number.isNaN(item.mealTime)) return item.mealTime;
+  if (typeof item.time === 'number' && !Number.isNaN(item.time)) return item.time;
+  const fromMealStr = timeStrToDecimal(item.mealTime);
+  if (!Number.isNaN(fromMealStr)) return fromMealStr;
+  return timeStrToDecimal(item.time);
+}
+
+/** Lock temporale: solo nodi reali già avvenuti o in corso (timeDec ≤ nowDec). */
+function wizardTemporalLock(item, nowDec) {
+  const nd = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
+  if (!item || item.isGhost === true) return false;
+  const td = itemTimeDec(item);
+  if (Number.isNaN(td)) return false;
+  return td <= nd;
+}
+
+/** Fine fascia giornaliera (decimale): slot non selezionabile se la fascia è interamente passata. */
+const FASCIA_END_DEC = { mattina: 12, pomeriggio: 18, sera: 22 };
+function isFasciaSlotLocked(slotId, nowDec) {
+  const nd = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
+  const end = FASCIA_END_DEC[slotId];
+  if (end == null) return false;
+  return end <= nd;
 }
 
 /** Primo allenamento reale nel log (passato o futuro), per pre-selezione wizard. */
@@ -91,9 +125,9 @@ function hasRealMealsInLog(log, nowDec) {
   const t = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
   return (log || []).some((e) => {
     if (!e || e.isGhost || (e.type !== 'food' && e.type !== 'recipe')) return false;
-    const mt = Number(e.mealTime);
-    if (Number.isNaN(mt)) return false;
-    return mt <= t;
+    const td = itemTimeDec(e);
+    if (Number.isNaN(td)) return false;
+    return td <= t;
   });
 }
 
@@ -125,9 +159,7 @@ function computeOpenSnapshot(dailyLog) {
   if (w) {
     macros.add('training');
     inferMusclesFromWorkoutText(w).forEach((m) => muscles.add(m));
-    const et = Number(w.time ?? w.mealTime);
-    const workoutSealed = !Number.isNaN(et) && et <= nowDec;
-    if (workoutSealed) {
+    if (wizardTemporalLock(w, nowDec)) {
       trainingLockedFromLog = true;
       inferMusclesFromWorkoutText(w).forEach((m) => lockedMuscles.add(m));
     }
@@ -140,8 +172,8 @@ function logHasRealPastMealCanon(log, canon, nowDec) {
   const t = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
   return (log || []).some((e) => {
     if (!e || e.isGhost || (e.type !== 'food' && e.type !== 'recipe')) return false;
-    const mt = Number(e.mealTime);
-    if (Number.isNaN(mt) || mt > t) return false;
+    const td = itemTimeDec(e);
+    if (Number.isNaN(td) || td > t) return false;
     const c = toCanonicalMealType(String(e.mealType || '').split('_')[0]);
     return c === canon;
   });
@@ -177,15 +209,21 @@ function buildProposedRows(log, nowDec) {
 function ghostRowsFromLog(log) {
   return (log || [])
     .filter((e) => e && e.type === 'ghost_meal')
-    .map((e, i) => ({
-      id: e.id || `ghost_log_${i}`,
-      source: 'ghost_log',
-      mealType: toCanonicalMealType(String(e.mealType || 'pranzo').split('_')[0]) || 'pranzo',
-      mealTime: typeof e.mealTime === 'number' && !Number.isNaN(e.mealTime) ? e.mealTime : 12,
-      title: String(e.title || 'Pasto pianificato'),
-      microDesc: String(e.microDesc || ''),
-      draftFoods: Array.isArray(e.draftFoods) ? e.draftFoods.map((x) => String(x).trim()).filter(Boolean) : [],
-    }));
+    .map((e, i) => {
+      let mtDec = typeof e.mealTime === 'number' && !Number.isNaN(e.mealTime) ? e.mealTime : NaN;
+      if (Number.isNaN(mtDec)) mtDec = timeStrToDecimal(e.mealTime);
+      if (Number.isNaN(mtDec)) mtDec = timeStrToDecimal(e.time);
+      if (Number.isNaN(mtDec)) mtDec = 12;
+      return {
+        id: e.id || `ghost_log_${i}`,
+        source: 'ghost_log',
+        mealType: toCanonicalMealType(String(e.mealType || 'pranzo').split('_')[0]) || 'pranzo',
+        mealTime: mtDec,
+        title: String(e.title || 'Pasto pianificato'),
+        microDesc: String(e.microDesc || ''),
+        draftFoods: Array.isArray(e.draftFoods) ? e.draftFoods.map((x) => String(x).trim()).filter(Boolean) : [],
+      };
+    });
 }
 
 function sumMgFromLog(log) {
@@ -276,18 +314,13 @@ function timelineSortKey(entry) {
   return typeof t === 'number' && !Number.isNaN(t) ? t : 99;
 }
 
-/** Sovrascrittura piano: bloccato solo se pasto reale e orario ≤ ora; ghost sempre “aperti”. */
-function planDiaryMealSlotIsLocked(entry, nowMinutes) {
+/** Pasto reale nel riepilogo: lock = !ghost && timeDec ≤ nowDec. */
+function planDiaryMealSlotIsLocked(entry, nowDec) {
   if (!entry) return false;
   if (entry.isGhost === true) return false;
   if (entry.type === 'ghost_meal' || entry.type === 'ghost_workout') return false;
   if (entry.type !== 'food' && entry.type !== 'recipe') return false;
-  const dec = Number(entry.mealTime);
-  if (Number.isNaN(dec)) return false;
-  const h = Math.floor(dec) % 24;
-  const m = Math.round((dec % 1) * 60) % 60;
-  const tMin = h * 60 + m;
-  return tMin <= nowMinutes;
+  return wizardTemporalLock(entry, nowDec);
 }
 
 export default function PlanningWizard({
@@ -357,7 +390,7 @@ export default function PlanningWizard({
   );
 
   const mgConsumed = useMemo(() => sumMgFromLog(dailyLog), [dailyLog]);
-  const nowPlanDec = getLocalDecimalHourNow();
+  const nowDec = getLocalDecimalHourNow();
 
   const toggleMacro = (id) => {
     setMacros((prev) => {
@@ -372,7 +405,7 @@ export default function PlanningWizard({
   };
 
   const setTiming = (macroId, slot) => {
-    if (isTimingSlotInPast(slot)) return;
+    if (isFasciaSlotLocked(slot, nowDec)) return;
     setTimingByMacro((prev) => ({ ...prev, [macroId]: slot }));
   };
 
@@ -417,13 +450,19 @@ export default function PlanningWizard({
   }, [hasTraining, hasRealWorkout, timingByMacro]);
 
   const handleConfirm = () => {
-    const ghostMeals = stagingGhosts.map((r) => ({
-      mealType: r.mealType,
-      mealTime: r.mealTime,
-      title: r.title,
-      microDesc: r.microDesc,
-      draftFoods: Array.isArray(r.draftFoods) ? r.draftFoods.map((x) => String(x).trim()).filter(Boolean) : [],
-    }));
+    const ghostMeals = stagingGhosts.map((r) => {
+      const rawDraft = r.draftFoods || [];
+      const draftFoods = Array.isArray(rawDraft)
+        ? rawDraft.map((x) => String(x).trim()).filter(Boolean)
+        : [];
+      return {
+        mealType: r.mealType,
+        mealTime: r.mealTime,
+        title: r.title,
+        microDesc: r.microDesc,
+        draftFoods,
+      };
+    });
     onConfirmApply?.({
       ghostMeals,
       workoutTimeDec: workoutDecForApply,
@@ -440,15 +479,18 @@ export default function PlanningWizard({
       if ((e.type === 'food' || e.type === 'recipe') && !e.isGhost) {
         realMealItems.push(e);
       } else if (e.type === 'workout') {
+        const td = itemTimeDec(e);
         rows.push({
           kind: 'real_workout',
-          timeDec: Number(e.time ?? e.mealTime) || 0,
+          timeDec: Number.isNaN(td) ? 0 : td,
           label: `[Workout] ${String(e.desc || e.name || 'Allenamento')}`,
         });
       } else if (e.type === 'ghost_workout') {
+        let gtd = typeof e.time === 'number' && !Number.isNaN(e.time) ? e.time : timeStrToDecimal(e.time);
+        if (Number.isNaN(gtd)) gtd = 0;
         rows.push({
           kind: 'ghost_wo_old',
-          timeDec: Number(e.time) || 0,
+          timeDec: gtd,
           label: `[Ghost] ${String(e.title || 'Allenamento')}`,
         });
       }
@@ -462,14 +504,14 @@ export default function PlanningWizard({
     REGISTERED_MEAL_GROUP_ORDER.forEach((mt) => {
       const items = byMt.get(mt);
       if (!items?.length) return;
-      const decs = items.map((x) => Number(x.mealTime)).filter((t) => !Number.isNaN(t));
+      const decs = items.map((x) => itemTimeDec(x)).filter((t) => !Number.isNaN(t));
       const timeDec = decs.length ? Math.min(...decs) : 0;
       rows.push({ kind: 'real_meal_group', timeDec, mealType: mt, items });
       byMt.delete(mt);
     });
     for (const [mt, items] of byMt) {
       if (!items.length) continue;
-      const decs = items.map((x) => Number(x.mealTime)).filter((t) => !Number.isNaN(t));
+      const decs = items.map((x) => itemTimeDec(x)).filter((t) => !Number.isNaN(t));
       const timeDec = decs.length ? Math.min(...decs) : 0;
       rows.push({ kind: 'real_meal_group', timeDec, mealType: mt, items });
     }
@@ -545,9 +587,9 @@ export default function PlanningWizard({
           {(() => {
             const w = extractRealWorkout(dailyLog);
             if (!w) return null;
-            const et = Number(w.time ?? w.mealTime);
+            const et = itemTimeDec(w);
             const hh = !Number.isNaN(et) ? decimalHourToHHMM(et) : '—';
-            const wLocked = !Number.isNaN(et) && et <= getLocalDecimalHourNow();
+            const wLocked = wizardTemporalLock(w, nowDec);
             const line = String(w.desc || w.name || w.title || 'Allenamento').trim() || 'Allenamento';
             return (
               <div
@@ -624,7 +666,7 @@ export default function PlanningWizard({
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {TIMING_KEYS.map(({ id: slotId, label: slotLabel }) => {
                       const on = timingByMacro[id] === slotId;
-                      const slotPast = isTimingSlotInPast(slotId);
+                      const slotPast = isFasciaSlotLocked(slotId, nowDec);
                       return (
                         <button
                           key={slotId}
@@ -727,7 +769,9 @@ export default function PlanningWizard({
                       </summary>
                       <div style={{ fontSize: '0.72rem', color: '#d1fae5', marginTop: 8, lineHeight: 1.45 }}>
                         {g.items.map((e, j) => {
-                          const hh = decimalHourToHHMM(Number(e.mealTime)) || '—';
+                          const td = itemTimeDec(e);
+                          const hh = !Number.isNaN(td) ? decimalHourToHHMM(td) : '—';
+                          const rowLocked = wizardTemporalLock(e, nowDec);
                           const kcal = Math.round(Number(e.kcal || e.cal) || 0);
                           const p = Number(e.prot) || 0;
                           const c = Number(e.carb) || 0;
@@ -737,6 +781,7 @@ export default function PlanningWizard({
                           const macroLine = `${kcal} kcal, P${p.toFixed(0)}g C${c.toFixed(0)}g F${f.toFixed(0)}g${fib > 0 ? ` · fibre ${fib.toFixed(0)}g` : ''}${mg > 0 ? ` · Mg ${Math.round(mg)}mg` : ''}`;
                           return (
                             <div key={e.id || j} style={{ marginTop: j > 0 ? 6 : 0 }}>
+                              {rowLocked ? <span title="Passato o in corso — non sovrascrivibile dal piano">🔒 </span> : null}
                               <strong>{hh}</strong> · {String(e.desc || e.title || 'Pasto')} — {macroLine}
                             </div>
                           );
@@ -760,7 +805,7 @@ export default function PlanningWizard({
                   const t = getDynamicMealTargets(String(r.mealType || 'pranzo').split('_')[0], dailyLog, userTargets, dynOpts);
                   const foods = Array.isArray(r.draftFoods) ? r.draftFoods : [];
                   const isFuture =
-                    typeof r.mealTime === 'number' && !Number.isNaN(r.mealTime) && r.mealTime > nowPlanDec;
+                    typeof r.mealTime === 'number' && !Number.isNaN(r.mealTime) && r.mealTime > nowDec;
                   return (
                     <li
                       key={r.id || i}
@@ -822,7 +867,7 @@ export default function PlanningWizard({
                     const t = getDynamicMealTargets(r.mealType, dailyLog, userTargets, dynOpts);
                     const hh = decimalHourToHHMM(r.mealTime) || '—';
                     const isFuture =
-                      typeof r.mealTime === 'number' && !Number.isNaN(r.mealTime) && r.mealTime > nowPlanDec;
+                      typeof r.mealTime === 'number' && !Number.isNaN(r.mealTime) && r.mealTime > nowDec;
                     return (
                       <li
                         key={r.id}
@@ -963,8 +1008,7 @@ export default function PlanningWizard({
                         </summary>
                         <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: '0.74rem', color: '#e0f2fe' }}>
                           {row.items.map((e, j) => {
-                            const nm = new Date().getHours() * 60 + new Date().getMinutes();
-                            const locked = planDiaryMealSlotIsLocked(e, nm);
+                            const locked = planDiaryMealSlotIsLocked(e, nowDec);
                             return (
                               <li key={e.id || j} style={{ marginBottom: 4 }}>
                                 {locked ? <span title="Passato o attuale — non sovrascrivibile dal piano">🔒 </span> : null}
@@ -983,7 +1027,7 @@ export default function PlanningWizard({
                     g &&
                     typeof g.mealTime === 'number' &&
                     !Number.isNaN(g.mealTime) &&
-                    g.mealTime > nowPlanDec;
+                    g.mealTime > nowDec;
                   return (
                     <li
                       key={g?.id || `${row.kind}_${i}`}

@@ -1553,28 +1553,7 @@ function parseDraftFoodsJsonFromAiResponse(raw) {
   return arr.map((x) => String(x).trim()).filter(Boolean).slice(0, 14);
 }
 
-function parseSmartCompletionJsonFromAiResponse(raw) {
-  const s = String(raw || '').trim();
-  const key = '[COMPLETION_JSON:';
-  const idx = s.indexOf(key);
-  if (idx < 0) throw new Error('Token COMPLETION_JSON non trovato');
-  const start = s.indexOf('{', idx);
-  if (start < 0) throw new Error('JSON non trovato');
-  let depth = 0;
-  let end = -1;
-  for (let i = start; i < s.length; i += 1) {
-    const c = s[i];
-    if (c === '{') depth += 1;
-    else if (c === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        end = i;
-        break;
-      }
-    }
-  }
-  if (end < 0) throw new Error('JSON malformato');
-  const obj = JSON.parse(s.slice(start, end + 1));
+function parseSmartCompletionFoodsPayload(obj) {
   const foods = obj?.foods;
   if (!Array.isArray(foods) || foods.length === 0) throw new Error('foods vuoto o non valido');
   return foods
@@ -1584,6 +1563,30 @@ function parseSmartCompletionJsonFromAiResponse(raw) {
     }))
     .filter((f) => f.desc.length > 0)
     .slice(0, 20);
+}
+
+function parseSmartCompletionJsonFromAiResponse(raw) {
+  const aiText = String(raw || '').trim();
+  let obj = null;
+  const match = aiText.match(/\[COMPLETION_JSON:\s*(\{[\s\S]*?\})\s*\]/i);
+  if (match) {
+    try {
+      obj = JSON.parse(match[1]);
+    } catch (_) {
+      obj = null;
+    }
+  }
+  if (!obj) {
+    const i0 = aiText.indexOf('{');
+    const i1 = aiText.lastIndexOf('}');
+    if (i0 < 0 || i1 <= i0) throw new Error('Token COMPLETION_JSON non trovato o JSON non estraibile');
+    try {
+      obj = JSON.parse(aiText.slice(i0, i1 + 1));
+    } catch (e) {
+      throw new Error(e?.message ? String(e.message) : 'JSON non valido (fallback brace)');
+    }
+  }
+  return parseSmartCompletionFoodsPayload(obj);
 }
 
 export default function SalaComandi() {
@@ -7056,8 +7059,9 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
           const timeStr = gm.time != null ? String(gm.time) : '12:00';
           const dec = parseFlexibleTimeToDecimal(timeStr);
           const mealTime = dec != null && !Number.isNaN(dec) ? dec : 12;
-          const draftFoods = Array.isArray(gm.draftFoods)
-            ? gm.draftFoods.map((x) => String(x).trim()).filter(Boolean)
+          const rawDraft = gm.draftFoods || [];
+          const draftFoods = Array.isArray(rawDraft)
+            ? rawDraft.map((x) => String(x).trim()).filter(Boolean)
             : [];
           return {
             id: `ghost_meal_${Date.now()}_${i}`,
@@ -8330,7 +8334,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     async (currentFoods) => {
       const foods = Array.isArray(currentFoods) ? currentFoods : [];
       const present = foods.map((f) => f.desc || f.name).filter(Boolean);
-      const prompt = `SMART MEAL COMPLETION: Devo completare il pasto '${String(mealType)}'. Target ricalcolato: ${JSON.stringify(targetMacrosPasto)}. Cibi già presenti (da NON rimuovere): ${present.join(', ') || 'Nessuno'}. Genera un array JSON con cibi suggeriti per raggiungere il target (pescando da storico o DB utente). FORMATO: \`[COMPLETION_JSON: {"foods": [{"desc": "Nome Cibo", "weight": 150}]}]\`.`;
+      const prompt = `SMART MEAL COMPLETION: Devo completare il pasto '${String(mealType)}'. Target ricalcolato: ${JSON.stringify(targetMacrosPasto)}. Cibi già presenti (da NON rimuovere): ${present.join(', ') || 'Nessuno'}. Genera cibi suggeriti per raggiungere il target (pescando da storico o DB utente). Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...", "weight": 100}]}]. NON SCRIVERE ALTRO. NON USARE MARKDOWN o backticks.`;
       try {
         const raw = await callGeminiAPIWithRotation(prompt);
         const items = parseSmartCompletionJsonFromAiResponse(raw);
