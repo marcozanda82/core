@@ -6140,6 +6140,8 @@ QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=IDEA_PASTO
 
 MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata (testo libero o tramite wizard), entra in modalità pianificazione. Se il messaggio utente inizia con "PIANIFICAZIONE GUIDATA:", ha già scelto attività e fasce (Mattina / Pomeriggio / Sera): NON chiedere altro, NON fare elenchi lunghi. Rispondi generando ESATTAMENTE il token [DAILY_PLAN:{...}] su una riga, con orari concreti HH:MM coerenti con le fasce (es. Mattina → 08:00–11:30, Pomeriggio → 12:00–17:30, Sera → 18:00–22:00; se l'allenamento è in Sera usa tipicamente 18:30 o 19:00 come workoutTime e nella lista activities). Il JSON DEVE includere anche "ghostMeals": array di pasti pianificati (Nodi Fantasma) che l'utente vedrà in timeline finché non li converte in pasti veri: ogni elemento include {"mealType":"colazione|snack|pranzo|cena", "time":"HH:MM", "title":"Titolo breve", "microDesc":"Suggerimento micronutrienti (es. fibre, omega-3) per lucidità e sonno", "draftFoods":["200g Pollo","150g Riso"]} — draftFoods è un array di stringhe (abbozzo alimenti con pesi stimati). Per i pasti futuri nel token, calcola i target e COMPILA draftFoods con un abbozzo realistico di alimenti. Dai MASSIMA PRIORITÀ copiando pasti simili che l'utente ha consumato in passato (presenti nello storico) o cibi dal suo database/dispensa in [CONTEXT_LIVE]. Inserisci pesi stimati per centrare il target. Esempio forma completa: [DAILY_PLAN:{"target":"pari", "workoutTime":"19:00", "activities":[...], "ghostMeals":[{"mealType":"cena", "time":"20:00", "title":"Cena Recupero", "microDesc":"Focus proteine", "draftFoods":["200g Pollo","150g Riso"]}]}]. Scegli "target" (deficit, pari o surplus) in base a [CONTEXT_LIVE]. Altrimenti, in conversazione aperta, chiedi le attività; quando l'utente risponde, genera lo stesso token con ghostMeals coerenti col piano. Il token deve essere da solo su una riga. ATTENZIONE: DEVI OBBLIGATORIAMENTE riempire l'array draftFoods per OGNI nodo fantasma ('ghostMeals'). Se non sai cosa inserire, inventa un pasto coerente coi target (es. ['200g Pollo', '10g Olio']). L'array NON DEVE MAI essere vuoto. GERARCHIA COMPOSIZIONE draftFoods (ordine tassativo): (1) RECENTI — pasti identici o molto simili consumati negli ultimi 3–7 giorni; (2) STORICO — abitudini e pattern a più lungo termine se i recenti non bastano; (3) DISPENSA / DATABASE — attingi da foodDb e da alimenti noti in contesto, rispettando i target (es. pasto proteico → fonti proteiche coerenti); (4) NEW ENTRY — solo come ultima spiaggia, combinazione nuova e bilanciata. Ogni voce deve avere grammatura precisa per centrare i target ricalcolati. È SEVERAMENTE VIETATO GENERARE UN NODO FANTASMA SENZA CIBI. DEVI SEMPRE COMPILARE L'ARRAY 'draftFoods' (ES. ["200G POLLO", "10G OLIO"]) PER OGNI PASTO FUTURO, SIMULANDO LA COMPOSIZIONE IDEALE BASATA SUI TARGET.
 
+REGOLA DI BILANCIAMENTO METABOLICO: Il tuo scopo primario è coprire il fabbisogno giornaliero. Se dopo aver inserito i pasti/attività esistenti noti che c'è un deficit calorico rimanente significativo (es. mancano più di 200 kcal ai target), DEVI ASSOLUTAMENTE inserire uno o più 'ghostMeals' (es. Cena o Spuntino) nell'array JSON per colmare il gap. NON TERMINARE MAI la pianificazione lasciando l'utente in grave deficit calorico.
+
 ATTENZIONE TEMPORALE: Se nel prompt utente ricevi l'ora attuale e gli eventi già registrati, DEVI rispettarli. Proponi solo Nodi Fantasma futuri. Se la colazione o il pranzo sono già stati fatti, concentrati solo sugli spuntini e la cena, bilanciando i macro rimanenti.
 
 LOGICA DI RACCOMANDAZIONE INTELLIGENTE: Quando l'utente chiede consigli su cosa mangiare (es. "Cosa mangio per cena?"):
@@ -7061,9 +7063,9 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
           const timeStr = gm.time != null ? String(gm.time) : '12:00';
           const dec = parseFlexibleTimeToDecimal(timeStr);
           const mealTime = dec != null && !Number.isNaN(dec) ? dec : 12;
-          const rawDraft = gm.draftFoods || [];
-          const draftFoods = Array.isArray(rawDraft)
-            ? rawDraft.map((x) => String(x).trim()).filter(Boolean)
+          const persistedDraftFoods = gm.draftFoods || [];
+          const draftFoods = Array.isArray(persistedDraftFoods)
+            ? persistedDraftFoods.map((x) => String(x).trim()).filter(Boolean)
             : [];
           return {
             id: `ghost_meal_${Date.now()}_${i}`,
@@ -7222,9 +7224,9 @@ ${dbKeys || 'n/d'}`;
             typeof gm.mealTime === 'number' && !Number.isNaN(gm.mealTime)
               ? gm.mealTime
               : parseFlexibleTimeToDecimal(String(gm.time || '12:00')) ?? 12;
-          const rawDraft = gm.draftFoods || [];
-          const draftFoods = Array.isArray(rawDraft)
-            ? rawDraft.map((x) => String(x).trim()).filter(Boolean)
+          const persistedDraftFoods = gm.draftFoods || [];
+          const draftFoods = Array.isArray(persistedDraftFoods)
+            ? persistedDraftFoods.map((x) => String(x).trim()).filter(Boolean)
             : [];
           return {
             id: `ghost_meal_${Date.now()}_${i}`,
@@ -12489,6 +12491,37 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     <span style={{ color: '#888', fontStyle: 'italic' }}>Nessuna nota biochimica per questo slot.</span>
                   )}
                 </div>
+                {selectedNodeReport.isGhost === true || selectedNodeReport.type === 'ghost_meal' ? (
+                  (() => {
+                    const df = Array.isArray(selectedNodeReport.draftFoods) ? selectedNodeReport.draftFoods : [];
+                    if (df.length === 0 || selectedNodeReport.type === 'ghost_workout') return null;
+                    return (
+                      <div style={{ marginTop: 16, marginBottom: 4 }}>
+                        <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#7dd3fc', marginBottom: 8, letterSpacing: '0.06em' }}>
+                          Cibi proposti (bozza)
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {df.map((foodStr, i) => (
+                            <span
+                              key={`ghost_df_${i}_${String(foodStr).slice(0, 24)}`}
+                              style={{
+                                display: 'inline-block',
+                                background: 'rgba(0, 229, 255, 0.15)',
+                                color: '#00e5ff',
+                                padding: '6px 10px',
+                                borderRadius: 12,
+                                fontSize: '0.78rem',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {String(foodStr)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : null}
               </div>
             ) : selectedNodeReport.type === 'meal' ? (
               <div>
@@ -12630,38 +12663,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 )}
               </div>
             )}
-
-            {(() => {
-              const node = selectedNodeReport;
-              const isGhostMealNode = node.isGhost === true || node.type === 'ghost_meal';
-              const df = Array.isArray(node.draftFoods) ? node.draftFoods : [];
-              if (!isGhostMealNode || df.length === 0) return null;
-              return (
-                <div style={{ marginBottom: 18 }}>
-                  <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#7dd3fc', marginBottom: 8, letterSpacing: '0.06em' }}>
-                    Abbozzo alimenti (AI)
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {df.map((foodStr, i) => (
-                      <span
-                        key={`${foodStr}_${i}`}
-                        style={{
-                          display: 'inline-block',
-                          background: 'rgba(0, 229, 255, 0.15)',
-                          color: '#00e5ff',
-                          padding: '6px 10px',
-                          borderRadius: 12,
-                          fontSize: '0.78rem',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {String(foodStr)}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
 
             <div style={{ display: 'flex', gap: '15px' }}>
               <button type="button" onClick={() => setSelectedNodeReport(null)} style={{ flex: 1, padding: '12px', background: '#444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>

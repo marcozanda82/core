@@ -98,35 +98,31 @@ function itemTimeDec(item) {
   return timeStrToDecimal(item.time);
 }
 
-/** Lock temporale: solo nodi reali già avvenuti o in corso (timeDec ≤ nowDec). */
+/** Ora decimale per lock: preferisce item.timeDec, altrimenti itemTimeDec (legacy log). */
+function rowDecimalHourForTemporalLock(item) {
+  if (!item) return NaN;
+  if (typeof item.timeDec === 'number' && !Number.isNaN(item.timeDec)) return item.timeDec;
+  return itemTimeDec(item);
+}
+
+/** Lock temporale: solo nodi reali già avvenuti o in corso (stessa regola di wizardRowDisabledByTime). */
 function wizardTemporalLock(item, nowDec) {
-  const nd = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
-  if (!item || item.isGhost === true) return false;
-  const td = itemTimeDec(item);
-  if (Number.isNaN(td)) return false;
-  return td <= nd;
+  return wizardRowDisabledByTime(item, nowDec);
 }
 
 /**
- * disabled={true} per controlli UI: solo se !ghost e timeDec ≤ nowDec (timeDec da item o da itemTimeDec).
+ * SOLA regola: isLocked = !item.isGhost && (timeDec effettivo <= nowDec). Futuro reale → sempre false.
  */
 function wizardRowDisabledByTime(item, nowDec) {
   if (!item || item.isGhost === true) return false;
   const nd = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
-  const td =
-    typeof item.timeDec === 'number' && !Number.isNaN(item.timeDec) ? item.timeDec : itemTimeDec(item);
-  if (Number.isNaN(td)) return false;
+  const td = rowDecimalHourForTemporalLock(item);
+  if (typeof td !== 'number' || Number.isNaN(td)) return false;
   return td <= nd;
 }
 
-/** Fine fascia giornaliera (decimale): slot non selezionabile se la fascia è interamente passata. */
+/** Fine fascia giornaliera (decimale): confronto lock tramite wizardRowDisabledByTime. */
 const FASCIA_END_DEC = { mattina: 12, pomeriggio: 18, sera: 22 };
-function isFasciaSlotLocked(slotId, nowDec) {
-  const nd = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
-  const end = FASCIA_END_DEC[slotId];
-  if (end == null) return false;
-  return end <= nd;
-}
 
 /** Primo allenamento reale nel log (passato o futuro), per pre-selezione wizard. */
 function extractRealWorkout(log) {
@@ -415,7 +411,13 @@ export default function PlanningWizard({
   };
 
   const setTiming = (macroId, slot) => {
-    if (isFasciaSlotLocked(slot, nowDec)) return;
+    const end = FASCIA_END_DEC[slot];
+    if (
+      end != null &&
+      wizardRowDisabledByTime({ isGhost: false, timeDec: end }, nowDec)
+    ) {
+      return;
+    }
     setTimingByMacro((prev) => ({ ...prev, [macroId]: slot }));
   };
 
@@ -460,24 +462,13 @@ export default function PlanningWizard({
   }, [hasTraining, hasRealWorkout, timingByMacro]);
 
   const handleConfirm = () => {
-    const ghostMeals = stagingGhosts.map((r) => {
-      const rawDraft = r.draftFoods || [];
-      const draftFoods = Array.isArray(rawDraft)
-        ? rawDraft.map((x) => String(x).trim()).filter(Boolean)
-        : [];
-      return {
-        mealType: r.mealType,
-        mealTime: r.mealTime,
-        title: r.title,
-        microDesc: r.microDesc,
-        draftFoods,
-      };
-    });
-    onConfirmApply?.({
-      ghostMeals,
+    const finalPlan = {
       workoutTimeDec: workoutDecForApply,
       addGhostWorkout: Boolean(hasTraining && !hasRealWorkout && workoutDecForApply != null),
-    });
+    };
+    // Merge esplicito: ghostMeals = stato staging (include draftFoods da «Genera Pasto»)
+    finalPlan.ghostMeals = stagingGhosts;
+    onConfirmApply?.(finalPlan);
   };
 
   const timelineEntries = useMemo(() => {
@@ -772,10 +763,7 @@ export default function PlanningWizard({
               <ul style={{ margin: 0, padding: 0, listStyle: 'none', color: '#e5e7eb', fontSize: '0.78rem', lineHeight: 1.45 }}>
                 {registeredMealGroups.map((g, gi) => {
                   const groupAllLocked =
-                    g.items.length > 0 &&
-                    g.items.every((it) =>
-                      wizardRowDisabledByTime({ ...it, isGhost: false, timeDec: itemTimeDec(it) }, nowDec)
-                    );
+                    g.items.length > 0 && g.items.every((it) => wizardRowDisabledByTime(it, nowDec));
                   return (
                   <li key={`${g.mealType}_${gi}`} style={{ marginBottom: 8 }}>
                     <details

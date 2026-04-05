@@ -126,21 +126,20 @@ function DraftFoodPills({ foods }) {
   );
 }
 
-/**
- * Ghost: mai bloccato. Reale: bloccato solo se orario ≤ ora corrente (null time → non bloccato).
- */
-function planActivityRowIsLocked(row, currentMinutes) {
-  if (row?.isGhost === true) return false;
-  const tMin = timeStrToMinutes(row?.time);
-  if (tMin == null) return false;
-  return tMin <= currentMinutes;
+function planRowDecimalHour(row) {
+  if (!row) return NaN;
+  if (typeof row.timeDec === 'number' && !Number.isNaN(row.timeDec)) return row.timeDec;
+  const m = timeStrToMinutes(row.time);
+  if (m == null) return NaN;
+  return m / 60;
 }
 
-function ghostMealSlotIsFuture(gm, currentMinutes) {
-  const timeStr = gm?.time != null ? String(gm.time).slice(0, 5) : '';
-  const tMin = timeStrToMinutes(timeStr);
-  if (tMin == null) return true;
-  return tMin > currentMinutes;
+/** SOLA regola: isLocked = !row.isGhost && (timeDec ≤ nowDec). Ora in ore decimali. */
+function planActivityRowIsLocked(row, nowDec) {
+  if (!row || row.isGhost === true) return false;
+  const td = planRowDecimalHour(row);
+  if (typeof td !== 'number' || Number.isNaN(td)) return false;
+  return td <= nowDec;
 }
 
 export default function DailyPlanCard({ planData, onConfirm, onCancel, onGeneratePlanGhostMealDraft }) {
@@ -171,6 +170,7 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel, onGenerat
   const targetLabel = calorieStrategyShortLabelIt(editedPlan?.target);
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const nowDec = currentMinutes / 60;
 
   const updateActivity = (idx, patch) => {
     setEditedPlan((prev) => {
@@ -336,7 +336,7 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel, onGenerat
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {sortedWithIdx.map(({ row, idx: origIdx }) => {
               const timeLabel = row.time || '—';
-              if (planActivityRowIsLocked(row, currentMinutes)) {
+              if (planActivityRowIsLocked(row, nowDec)) {
                 return (
                   <li key={`${origIdx}_${row.time}`} style={{ listStyle: 'none' }}>
                     <details style={detailsBaseStyle}>
@@ -506,7 +506,7 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel, onGenerat
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {(editedPlan?.activities || []).map((row, idx) => {
               const timeLabel = row.time || '—';
-              if (planActivityRowIsLocked(row, currentMinutes)) {
+              if (planActivityRowIsLocked(row, nowDec)) {
                 return (
                   <details key={idx} style={detailsBaseStyle}>
                     <summary style={summaryStyle}>
@@ -582,9 +582,8 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel, onGenerat
                 {editedPlan.ghostMeals.map((gm, gIdx) => {
                   const timeStr = gm.time != null ? String(gm.time).slice(0, 5) : '';
                   const foods = gm.draftFoods;
-                  const isFutureSlot = ghostMealSlotIsFuture(gm, currentMinutes);
                   const pending = pendingGhostProposals[gIdx];
-                  const canGenerate = typeof onGeneratePlanGhostMealDraft === 'function' && isFutureSlot;
+                  const canGenerate = typeof onGeneratePlanGhostMealDraft === 'function';
                   const pillShell = {
                     display: 'inline-flex',
                     alignItems: 'center',
