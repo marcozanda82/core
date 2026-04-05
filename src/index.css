@@ -547,7 +547,7 @@ html, body, #root {
   }
 }
 
-.add-event-menu-wiggle .action-btn {
+.add-event-menu-wiggle .action-btn:not(.add-event-menu-cell-dragging) {
   animation: addEventMenuWiggle 0.38s ease-in-out infinite;
   transform-origin: center center;
 }

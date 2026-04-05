@@ -1769,15 +1769,7 @@ export default function SalaComandi() {
     }
     return [...ADD_EVENT_MENU_DEFAULT_ORDER];
   });
-  const [addEventMenuUnlocked, setAddEventMenuUnlocked] = useState(false);
-  const addEventMenuLockTimerRef = useRef(null);
   const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
-
-  useEffect(() => () => {
-    if (addEventMenuLockTimerRef.current != null) {
-      clearTimeout(addEventMenuLockTimerRef.current);
-    }
-  }, []);
 
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [isFullScreenGraph, setIsFullScreenGraph] = useState(false);
@@ -3700,38 +3692,13 @@ export default function SalaComandi() {
     setTimeout(() => setActiveAction(null), 400);
   }
 
-  const cancelAddMenuUnlockHold = useCallback(() => {
-    if (addEventMenuLockTimerRef.current != null) {
-      clearTimeout(addEventMenuLockTimerRef.current);
-      addEventMenuLockTimerRef.current = null;
-    }
-  }, []);
-
-  const startAddMenuUnlockHold = useCallback(() => {
-    cancelAddMenuUnlockHold();
-    addEventMenuLockTimerRef.current = window.setTimeout(() => {
-      addEventMenuLockTimerRef.current = null;
-      setAddEventMenuUnlocked(true);
-    }, 800);
-  }, [cancelAddMenuUnlockHold]);
-
-  const saveAddMenuOrderAndLock = useCallback(() => {
+  const commitAddEventMenuOrder = useCallback((nextOrder) => {
+    setAddEventMenuOrder(nextOrder);
     try {
-      localStorage.setItem(ADD_MENU_ORDER_LS_KEY, JSON.stringify(addEventMenuOrder));
+      localStorage.setItem(ADD_MENU_ORDER_LS_KEY, JSON.stringify(nextOrder));
     } catch (e) {
       /* ignore */
     }
-    setAddEventMenuUnlocked(false);
-  }, [addEventMenuOrder]);
-
-  const reorderAddEventMenu = useCallback((index, delta) => {
-    setAddEventMenuOrder((prev) => {
-      const j = index + delta;
-      if (j < 0 || j >= prev.length) return prev;
-      const next = [...prev];
-      [next[index], next[j]] = [next[j], next[index]];
-      return next;
-    });
   }, []);
 
   // ============================================================================
@@ -4014,8 +3981,6 @@ export default function SalaComandi() {
         setIsDrawerOpen(true);
         break;
       case 'plan':
-        cancelAddMenuUnlockHold();
-        setAddEventMenuUnlocked(false);
         setShowChoiceModal(false);
         closeDrawer({ force: true });
         setPlanningWizardOverlayOpen(true);
@@ -7012,6 +6977,105 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
   const handleDailyPlanCancel = useCallback(() => {
     setChatHistory((prev) => prev.filter((m) => !m.dailyPlan));
   }, []);
+
+  const handlePlanningWizardConfirm = useCallback(
+    (payload) => {
+      if (!payload || typeof payload !== 'object') return;
+      const ghostList = Array.isArray(payload.ghostMeals) ? payload.ghostMeals : [];
+      const srcLog = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
+      const realMealsSet = new Set(
+        (srcLog || [])
+          .filter((n) => n && !n.isGhost && (n.type === 'food' || n.type === 'recipe') && n.mealType)
+          .map((n) => toCanonicalMealType(String(n.mealType).split('_')[0]))
+          .filter(Boolean)
+      );
+      const hasRealWorkout = (srcLog || []).some((n) => n && !n.isGhost && n.type === 'workout');
+      const normalizeDailyPlanConflictTitle = (s) =>
+        String(s || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, ' ');
+      const realTitles = new Set();
+      (srcLog || []).forEach((n) => {
+        if (!n || n.isGhost === true || n.type === 'ghost_meal' || n.type === 'ghost_workout') return;
+        [n.desc, n.title, n.name].forEach((piece) => {
+          const norm = normalizeDailyPlanConflictTitle(piece);
+          if (norm.length >= 2) realTitles.add(norm);
+        });
+      });
+      const baseLog = srcLog.filter((e) => e && e.type !== 'ghost_meal');
+      const newGhostEntries = ghostList
+        .filter((gm) => {
+          const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
+          if (realMealsSet.has(mt)) return false;
+          const gTitle = normalizeDailyPlanConflictTitle(gm.title);
+          if (gTitle && realTitles.has(gTitle)) return false;
+          return true;
+        })
+        .map((gm, i) => {
+          const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
+          const mealTime =
+            typeof gm.mealTime === 'number' && !Number.isNaN(gm.mealTime)
+              ? gm.mealTime
+              : parseFlexibleTimeToDecimal(String(gm.time || '12:00')) ?? 12;
+          return {
+            id: `ghost_meal_${Date.now()}_${i}`,
+            type: 'ghost_meal',
+            mealType: mt,
+            mealTime,
+            title: String(gm.title || 'Pasto pianificato').trim(),
+            microDesc: String(gm.microDesc || '').trim(),
+            isGhost: true,
+          };
+        });
+      const logTimeKey = (e) => {
+        if (!e) return 0;
+        if (e.type === 'ghost_meal' || e.type === 'food' || e.type === 'recipe') {
+          return Number(e.mealTime) || 0;
+        }
+        return Number(e.time ?? e.mealTime) || 0;
+      };
+      const mergedLog = [...baseLog, ...newGhostEntries].sort((a, b) => logTimeKey(a) - logTimeKey(b));
+
+      const baseManual = (manualNodes || []).filter((n) => n && n.type !== 'ghost_workout');
+      let mergedManual = [...baseManual].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+      const wDec = payload.workoutTimeDec;
+      if (
+        !isSimulationMode &&
+        payload.addGhostWorkout &&
+        typeof wDec === 'number' &&
+        !Number.isNaN(wDec) &&
+        !hasRealWorkout
+      ) {
+        mergedManual = [
+          ...baseManual,
+          {
+            id: `ghost_workout_${Date.now()}`,
+            type: 'ghost_workout',
+            time: wDec,
+            title: 'Allenamento Pianificato',
+            isGhost: true,
+          },
+        ].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+      }
+
+      if (isSimulationMode) {
+        setSimulatedLog(mergedLog);
+      } else {
+        setDailyLog(mergedLog);
+        setManualNodes(mergedManual);
+        syncDatiFirebase(mergedLog, mergedManual);
+      }
+      setPlanningWizardOverlayOpen(false);
+    },
+    [dailyLog, manualNodes, syncDatiFirebase, isSimulationMode, simulatedLog, parseFlexibleTimeToDecimal, toCanonicalMealType]
+  );
+
+  const planningWizardBurnedKcal = useMemo(
+    () =>
+      (activeLog || []).filter((i) => i && i.type === 'workout').reduce((a, w) => a + (Number(w.kcal || w.cal) || 0), 0),
+    [activeLog]
+  );
 
   const generateFoodWithAI = async (foodName) => {
     const name = (foodName || foodNameInput || '').trim();
@@ -10210,11 +10274,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           <div className="view-animate">
             <AddEventMenuGrid
               menuOrder={addEventMenuOrder}
-              onReorder={reorderAddEventMenu}
-              isUnlocked={addEventMenuUnlocked}
-              onUnlockHoldStart={startAddMenuUnlockHold}
-              onUnlockHoldEnd={cancelAddMenuUnlockHold}
-              onLockClickWhenUnlocked={saveAddMenuOrderAndLock}
+              onOrderCommit={commitAddEventMenuOrder}
               onItemActivate={(id) => handleAddEventMenuItem(id, 'drawer')}
             />
             <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '0' }}>
@@ -11703,7 +11763,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       )}
       {/* Pop-up Scelta Azione (Ottimizzato per schermi piccoli) */}
       {showChoiceModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100020, padding: '15px' }} onClick={() => { setShowChoiceModal(false); setAddChoiceView('main'); cancelAddMenuUnlockHold(); setAddEventMenuUnlocked(false); }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100020, padding: '15px' }} onClick={() => { setShowChoiceModal(false); setAddChoiceView('main'); }}>
           <div style={{ background: '#111', border: '1px solid #333', borderRadius: '25px', padding: '20px', width: '100%', maxWidth: '350px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 10px 50px rgba(0,0,0,0.9)' }} onClick={e => e.stopPropagation()}>
             {addChoiceView === 'stimulant' ? (
               <>
@@ -11738,11 +11798,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             ) : (
               <AddEventMenuGrid
                 menuOrder={addEventMenuOrder}
-                onReorder={reorderAddEventMenu}
-                isUnlocked={addEventMenuUnlocked}
-                onUnlockHoldStart={startAddMenuUnlockHold}
-                onUnlockHoldEnd={cancelAddMenuUnlockHold}
-                onLockClickWhenUnlocked={saveAddMenuOrderAndLock}
+                onOrderCommit={commitAddEventMenuOrder}
                 onItemActivate={(id) => handleAddEventMenuItem(id, 'modal')}
                 title="AGGIUNGI EVENTO"
                 headingStyle={{ marginBottom: 0 }}
@@ -11788,13 +11844,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 400, maxHeight: '90vh', overflow: 'auto' }}>
               <PlanningWizard
                 dailyLog={activeLog || []}
+                userTargets={userTargets}
+                calorieStrategy={kentuDailyCalorieStrategy}
+                burnedKcalBonus={planningWizardBurnedKcal}
                 onClose={() => setPlanningWizardOverlayOpen(false)}
-                onSubmit={(text) => {
-                  setPlanningWizardOverlayOpen(false);
-                  setActiveAction('ai_chat');
-                  setIsDrawerOpen(false);
-                  void handleChatSubmit(text, { fromInput: true });
-                }}
+                onConfirmApply={handlePlanningWizardConfirm}
               />
             </div>
           </div>,
