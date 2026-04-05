@@ -536,18 +536,20 @@ html, body, #root {
   animation: ghostPulse 2s infinite;
 }
 
-/* Menu Aggiungi evento: feedback visivo in modalità riordino (sbloccato) */
-@keyframes addEventMenuWiggle {
-  0%,
-  100% {
-    transform: rotate(-1.2deg);
+/* Menu Aggiungi evento: jiggle mode (iOS-like) */
+@keyframes jiggle {
+  0% {
+    transform: rotate(-2deg);
   }
   50% {
-    transform: rotate(1.2deg);
+    transform: rotate(2deg);
+  }
+  100% {
+    transform: rotate(-2deg);
   }
 }
 
-.add-event-menu-wiggle .action-btn:not(.add-event-menu-cell-dragging) {
-  animation: addEventMenuWiggle 0.38s ease-in-out infinite;
+.action-btn.jiggle {
+  animation: jiggle 0.3s ease-in-out infinite;
   transform-origin: center center;
 }

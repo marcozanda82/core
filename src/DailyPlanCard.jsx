@@ -54,7 +54,14 @@ function normalizePlanFromProps(p) {
   return {
     ...p,
     activities: Array.isArray(p.activities) ? p.activities.map((a) => ({ ...a })) : [],
-    ghostMeals: Array.isArray(p.ghostMeals) ? p.ghostMeals.map((g) => ({ ...g })) : [],
+    ghostMeals: Array.isArray(p.ghostMeals)
+      ? p.ghostMeals.map((g) => {
+          const draftFoods = Array.isArray(g?.draftFoods)
+            ? g.draftFoods.map((x) => String(x).trim()).filter(Boolean)
+            : [];
+          return { ...g, draftFoods };
+        })
+      : [],
   };
 }
 
@@ -76,6 +83,46 @@ function timeStrToMinutes(str) {
   const min = parseInt(m[2], 10);
   if (Number.isNaN(h) || Number.isNaN(min) || h > 23 || min > 59) return null;
   return h * 60 + min;
+}
+
+const detailsBaseStyle = {
+  marginBottom: 8,
+  borderRadius: 10,
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(255,248,220,0.08)',
+  padding: '6px 10px',
+};
+
+const summaryStyle = {
+  cursor: 'pointer',
+  listStyle: 'none',
+  fontWeight: 800,
+  fontSize: '0.82rem',
+  color: 'rgba(255,248,220,0.92)',
+};
+
+function DraftFoodPills({ foods }) {
+  if (!Array.isArray(foods) || foods.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+      {foods.map((f, i) => (
+        <span
+          key={`${f}_${i}`}
+          style={{
+            display: 'inline-block',
+            padding: '3px 8px',
+            borderRadius: 999,
+            background: 'rgba(0, 229, 255, 0.1)',
+            color: '#00e5ff',
+            fontSize: '0.75rem',
+            lineHeight: 1.25,
+          }}
+        >
+          {String(f)}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
@@ -192,7 +239,26 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
           </div>
 
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {sortedWithIdx.map(({ row, idx: origIdx }) => (
+            {sortedWithIdx.map(({ row, idx: origIdx }) => {
+              const tMin = timeStrToMinutes(row.time);
+              const isPast = tMin != null && tMin <= currentMinutes;
+              const timeLabel = row.time || '—';
+              if (isPast) {
+                return (
+                  <li key={`${origIdx}_${row.time}`} style={{ listStyle: 'none' }}>
+                    <details style={detailsBaseStyle}>
+                      <summary style={summaryStyle}>
+                        🔒 [{timeLabel}] {String(row.desc || 'Attività').slice(0, 48)}
+                        {String(row.desc || '').length > 48 ? '…' : ''} - Registrato
+                      </summary>
+                      <div style={{ fontSize: '0.72rem', color: 'rgba(200,205,215,0.9)', marginTop: 8, lineHeight: 1.4 }}>
+                        {row.desc || '—'}
+                      </div>
+                    </details>
+                  </li>
+                );
+              }
+              return (
                 <li
                   key={`${origIdx}_${row.time}`}
                   style={{
@@ -215,13 +281,14 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                       fontSize: '0.85rem',
                     }}
                   >
-                    {row.time || '—'}
+                    {timeLabel}
                   </span>
                   <span style={{ flex: 1, color: '#fff8e8', fontSize: '0.88rem', lineHeight: 1.35 }}>
                     {row.desc}
                   </span>
                 </li>
-            ))}
+              );
+            })}
           </ul>
 
           {Array.isArray(editedPlan?.ghostMeals) && editedPlan.ghostMeals.length > 0 ? (
@@ -239,27 +306,66 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                 Pasti pianificati (nodi fantasma)
               </div>
               <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                {editedPlan.ghostMeals.map((gm, gi) => (
-                  <li
-                    key={gi}
-                    style={{
-                      fontSize: '0.78rem',
-                      color: '#e8e0ff',
-                      marginBottom: gi < editedPlan.ghostMeals.length - 1 ? 8 : 0,
-                      lineHeight: 1.35,
-                    }}
-                  >
-                    <strong style={{ color: '#c4b5fd' }}>{String(gm.time || '—')}</strong>
-                    {' · '}
-                    {String(gm.title || 'Pasto')}
-                    {gm.mealType ? (
-                      <span style={{ opacity: 0.75 }}> ({String(gm.mealType)})</span>
-                    ) : null}
-                    {gm.microDesc ? (
-                      <div style={{ fontSize: '0.68rem', color: 'rgba(200, 200, 220, 0.9)', marginTop: 4 }}>{String(gm.microDesc)}</div>
-                    ) : null}
-                  </li>
-                ))}
+                {editedPlan.ghostMeals.map((gm, gi) => {
+                  const timeStr = gm.time != null ? String(gm.time).slice(0, 5) : '';
+                  const tMin = timeStrToMinutes(timeStr);
+                  const isPast = tMin != null && tMin <= currentMinutes;
+                  const mealLabel =
+                    MEAL_SELECT_OPTIONS.find((o) => o.value === mealTypeForSelect(gm.mealType))?.label || mealTypeForSelect(gm.mealType);
+                  const foods = gm.draftFoods;
+                  if (isPast) {
+                    return (
+                      <li key={gi} style={{ listStyle: 'none', marginBottom: gi < editedPlan.ghostMeals.length - 1 ? 8 : 0 }}>
+                        <details
+                          style={{
+                            ...detailsBaseStyle,
+                            background: 'rgba(179, 136, 255, 0.06)',
+                            border: '1px solid rgba(179, 136, 255, 0.14)',
+                          }}
+                        >
+                          <summary style={{ ...summaryStyle, color: 'rgba(224, 210, 255, 0.95)' }}>
+                            🔒 [{timeStr || '—'}] {mealLabel} - Registrato
+                          </summary>
+                          <div style={{ fontSize: '0.72rem', color: 'rgba(200, 200, 220, 0.92)', marginTop: 8, lineHeight: 1.4 }}>
+                            <div style={{ fontWeight: 700, marginBottom: 4 }}>{String(gm.title || 'Pasto')}</div>
+                            {gm.microDesc ? <div>{String(gm.microDesc)}</div> : null}
+                            {Array.isArray(foods) && foods.length > 0 ? (
+                              <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
+                                {foods.map((f, fi) => (
+                                  <li key={fi}>{String(f)}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </div>
+                        </details>
+                      </li>
+                    );
+                  }
+                  return (
+                    <li
+                      key={gi}
+                      style={{
+                        fontSize: '0.78rem',
+                        color: '#e8e0ff',
+                        marginBottom: gi < editedPlan.ghostMeals.length - 1 ? 8 : 0,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      <div>
+                        <strong style={{ color: '#c4b5fd' }}>{String(gm.time || '—')}</strong>
+                        {' · '}
+                        {String(gm.title || 'Pasto')}
+                        {gm.mealType ? (
+                          <span style={{ opacity: 0.75 }}> ({String(gm.mealType)})</span>
+                        ) : null}
+                      </div>
+                      <DraftFoodPills foods={foods} />
+                      {gm.microDesc ? (
+                        <div style={{ fontSize: '0.68rem', color: 'rgba(200, 200, 220, 0.9)', marginTop: 4 }}>{String(gm.microDesc)}</div>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ) : null}
@@ -340,8 +446,21 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {(editedPlan?.activities || []).map((row, idx) => {
               const tMin = timeStrToMinutes(row.time);
-              const isPast = tMin != null && tMin < currentMinutes;
-              const readOnlyRow = isPast;
+              const isPast = tMin != null && tMin <= currentMinutes;
+              const timeLabel = row.time || '—';
+              if (isPast) {
+                return (
+                  <details key={idx} style={detailsBaseStyle}>
+                    <summary style={summaryStyle}>
+                      🔒 [{timeLabel}] {String(row.desc || 'Attività').slice(0, 40)}
+                      {String(row.desc || '').length > 40 ? '…' : ''} - Registrato
+                    </summary>
+                    <div style={{ fontSize: '0.72rem', color: 'rgba(200,205,215,0.88)', marginTop: 8, lineHeight: 1.4 }}>
+                      {row.desc || '—'}
+                    </div>
+                  </details>
+                );
+              }
               return (
                 <div
                   key={idx}
@@ -354,54 +473,30 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                     borderRadius: 10,
                     background: 'rgba(255,255,255,0.03)',
                     border: '1px solid rgba(255,248,220,0.06)',
-                    opacity: readOnlyRow ? 0.6 : 1,
                   }}
                 >
-                  {readOnlyRow ? (
-                    <span
-                      style={{
-                        fontVariantNumeric: 'tabular-nums',
-                        fontWeight: 800,
-                        color: 'rgba(0, 229, 255, 0.75)',
-                        minWidth: 52,
-                        fontSize: '0.85rem',
-                      }}
-                      title="Passato — non modificabile"
-                    >
-                      🔒 {row.time || '—'}
-                    </span>
-                  ) : (
-                    <input
-                      type="time"
-                      value={row.time || ''}
-                      onChange={(e) => updateActivity(idx, { time: e.target.value })}
-                      style={{ ...inputBaseStyle, width: 120, colorScheme: 'dark' }}
-                    />
-                  )}
-                  {readOnlyRow ? (
-                    <span style={{ flex: 1, minWidth: 140, color: 'rgba(255,248,220,0.85)', fontSize: '0.85rem', lineHeight: 1.35 }}>
-                      {row.desc || '—'}
-                    </span>
-                  ) : (
-                    <input
-                      type="text"
-                      value={row.desc || ''}
-                      onChange={(e) => updateActivity(idx, { desc: e.target.value })}
-                      placeholder="Descrizione attività"
-                      style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
-                    />
-                  )}
-                  {!readOnlyRow ? (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveActivity(idx)}
-                      style={removeRowBtnStyle}
-                      aria-label="Rimuovi attività"
-                      title="Rimuovi"
-                    >
-                      ✕
-                    </button>
-                  ) : null}
+                  <input
+                    type="time"
+                    value={row.time || ''}
+                    onChange={(e) => updateActivity(idx, { time: e.target.value })}
+                    style={{ ...inputBaseStyle, width: 120, colorScheme: 'dark' }}
+                  />
+                  <input
+                    type="text"
+                    value={row.desc || ''}
+                    onChange={(e) => updateActivity(idx, { desc: e.target.value })}
+                    placeholder="Descrizione attività"
+                    style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveActivity(idx)}
+                    style={removeRowBtnStyle}
+                    aria-label="Rimuovi attività"
+                    title="Rimuovi"
+                  >
+                    ✕
+                  </button>
                 </div>
               );
             })}
@@ -426,49 +521,57 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                 {editedPlan.ghostMeals.map((gm, gIdx) => {
                   const timeStr = gm.time != null ? String(gm.time).slice(0, 5) : '';
                   const tMin = timeStrToMinutes(timeStr);
-                  const isPast = tMin != null && tMin < currentMinutes;
-                  const readOnlyRow = isPast;
+                  const isPast = tMin != null && tMin <= currentMinutes;
                   const mealLabel =
                     MEAL_SELECT_OPTIONS.find((o) => o.value === mealTypeForSelect(gm.mealType))?.label || mealTypeForSelect(gm.mealType);
+                  const foods = gm.draftFoods;
+                  if (isPast) {
+                    return (
+                      <details
+                        key={gIdx}
+                        style={{
+                          ...detailsBaseStyle,
+                          background: 'rgba(179, 136, 255, 0.06)',
+                          border: '1px solid rgba(179, 136, 255, 0.14)',
+                        }}
+                      >
+                        <summary style={{ ...summaryStyle, color: 'rgba(224, 210, 255, 0.95)' }}>
+                          🔒 [{timeStr || '—'}] {mealLabel} - Registrato
+                        </summary>
+                        <div style={{ fontSize: '0.72rem', color: 'rgba(220, 215, 235, 0.9)', marginTop: 8, lineHeight: 1.4 }}>
+                          <div style={{ fontWeight: 700, marginBottom: 4 }}>{gm.title || '—'}</div>
+                          {gm.microDesc ? <div>{String(gm.microDesc)}</div> : null}
+                          {Array.isArray(foods) && foods.length > 0 ? (
+                            <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
+                              {foods.map((f, fi) => (
+                                <li key={fi}>{String(f)}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      </details>
+                    );
+                  }
                   return (
                     <div
                       key={gIdx}
                       style={{
                         display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: 10,
-                        alignItems: 'center',
+                        flexDirection: 'column',
+                        gap: 8,
                         padding: 10,
                         borderRadius: 10,
                         background: 'rgba(179, 136, 255, 0.06)',
                         border: '1px solid rgba(179, 136, 255, 0.14)',
-                        opacity: readOnlyRow ? 0.6 : 1,
                       }}
                     >
-                      {readOnlyRow ? (
-                        <span
-                          style={{
-                            fontVariantNumeric: 'tabular-nums',
-                            fontWeight: 800,
-                            color: 'rgba(196, 181, 253, 0.9)',
-                            minWidth: 56,
-                            fontSize: '0.82rem',
-                          }}
-                          title="Passato — non modificabile"
-                        >
-                          🔒 {timeStr || '—'}
-                        </span>
-                      ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
                         <input
                           type="time"
                           value={timeStr}
                           onChange={(e) => handleGhostMealChange(gIdx, 'time', e.target.value)}
                           style={{ ...inputBaseStyle, width: 120, colorScheme: 'dark' }}
                         />
-                      )}
-                      {readOnlyRow ? (
-                        <span style={{ color: 'rgba(224, 210, 255, 0.95)', fontSize: '0.82rem', fontWeight: 700 }}>{mealLabel}</span>
-                      ) : (
                         <select
                           value={mealTypeForSelect(gm.mealType)}
                           onChange={(e) => handleGhostMealChange(gIdx, 'mealType', e.target.value)}
@@ -481,12 +584,6 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                             </option>
                           ))}
                         </select>
-                      )}
-                      {readOnlyRow ? (
-                        <span style={{ flex: 1, minWidth: 140, color: 'rgba(232, 224, 255, 0.92)', fontSize: '0.82rem' }}>
-                          {gm.title || '—'}
-                        </span>
-                      ) : (
                         <input
                           type="text"
                           value={gm.title || ''}
@@ -494,8 +591,6 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                           placeholder="Titolo (es. Pranzo Focus)"
                           style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
                         />
-                      )}
-                      {!readOnlyRow ? (
                         <button
                           type="button"
                           onClick={() => handleRemoveGhostMeal(gIdx)}
@@ -505,7 +600,8 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                         >
                           ✕
                         </button>
-                      ) : null}
+                      </div>
+                      <DraftFoodPills foods={foods} />
                     </div>
                   );
                 })}

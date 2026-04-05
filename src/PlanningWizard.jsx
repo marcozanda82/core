@@ -153,6 +153,7 @@ function buildProposedRows(log, nowDec) {
       mealTime: s.defaultHour,
       title: `${s.label} (suggerito motore)`,
       microDesc: '',
+      draftFoods: [],
     });
   });
   return out;
@@ -168,6 +169,7 @@ function ghostRowsFromLog(log) {
       mealTime: typeof e.mealTime === 'number' && !Number.isNaN(e.mealTime) ? e.mealTime : 12,
       title: String(e.title || 'Pasto pianificato'),
       microDesc: String(e.microDesc || ''),
+      draftFoods: Array.isArray(e.draftFoods) ? e.draftFoods.map((x) => String(x).trim()).filter(Boolean) : [],
     }));
 }
 
@@ -197,6 +199,43 @@ function microHintFromTargets(t, userTargets) {
   if (t.dinnerFatHardCapG != null) parts.push(`grassi cena ≤${t.dinnerFatHardCapG}g`);
   parts.push(`Mg giornaliero ref. ~${Math.round(mgTarget)}mg (RDA)`);
   return parts.join(' · ');
+}
+
+function decimalToMinutes(dec) {
+  if (typeof dec !== 'number' || Number.isNaN(dec)) return null;
+  const h = Math.floor(dec) % 24;
+  const m = Math.round((dec % 1) * 60) % 60;
+  return h * 60 + m;
+}
+
+function mealTypeLabelIt(raw) {
+  const c = toCanonicalMealType(String(raw || '').split('_')[0]);
+  const labels = { colazione: 'Colazione', pranzo: 'Pranzo', cena: 'Cena', snack: 'Spuntino' };
+  return labels[c] || c || 'Pasto';
+}
+
+function DraftFoodPillsMini({ foods }) {
+  if (!Array.isArray(foods) || foods.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+      {foods.map((f, i) => (
+        <span
+          key={`${f}_${i}`}
+          style={{
+            display: 'inline-block',
+            padding: '2px 8px',
+            borderRadius: 999,
+            background: 'rgba(0, 229, 255, 0.1)',
+            color: '#00e5ff',
+            fontSize: '0.75rem',
+            lineHeight: 1.25,
+          }}
+        >
+          {String(f)}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function timelineSortKey(entry) {
@@ -300,6 +339,7 @@ export default function PlanningWizard({
       mealTime: r.mealTime,
       title: r.title,
       microDesc: r.microDesc,
+      draftFoods: Array.isArray(r.draftFoods) ? r.draftFoods.map((x) => String(x).trim()).filter(Boolean) : [],
     }));
     onConfirmApply?.({
       ghostMeals,
@@ -360,6 +400,7 @@ export default function PlanningWizard({
   }, [dailyLog, stagingGhosts, hasTraining, hasRealWorkout, workoutDecForApply]);
 
   const macroList = MACRO_OPTIONS.filter((m) => macros.has(m.id));
+  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
 
   return (
     <div style={{ ...glassPanel, padding: '16px 14px 14px', marginBottom: 10 }}>
@@ -551,11 +592,42 @@ export default function PlanningWizard({
                   const f = Number(e.fatTotal ?? e.fat) || 0;
                   const fib = Number(e.fibre) || 0;
                   const mg = Number(e.mg) || 0;
+                  const itemMin = decimalToMinutes(Number(e.mealTime));
+                  const isPast = itemMin != null && itemMin <= nowMinutes;
+                  const macroLine = `${kcal} kcal, P${p.toFixed(0)}g C${c.toFixed(0)}g F${f.toFixed(0)}g${fib > 0 ? ` · fibre ${fib.toFixed(0)}g` : ''}${mg > 0 ? ` · Mg ${Math.round(mg)}mg` : ''}`;
+                  if (isPast) {
+                    return (
+                      <li key={e.id || i} style={{ marginBottom: 8, listStyle: 'none', marginLeft: -18 }}>
+                        <details
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(74, 222, 128, 0.25)',
+                            background: 'rgba(34, 197, 94, 0.06)',
+                          }}
+                        >
+                          <summary
+                            style={{
+                              cursor: 'pointer',
+                              listStyle: 'none',
+                              fontWeight: 800,
+                              fontSize: '0.78rem',
+                              color: '#bbf7d0',
+                            }}
+                          >
+                            🔒 [{hh}] {mealTypeLabelIt(e.mealType)} - Registrato
+                          </summary>
+                          <div style={{ fontSize: '0.72rem', color: '#d1fae5', marginTop: 8, lineHeight: 1.45 }}>
+                            {String(e.desc || e.title || 'Pasto')}
+                            <div style={{ marginTop: 4, opacity: 0.92 }}>{macroLine}</div>
+                          </div>
+                        </details>
+                      </li>
+                    );
+                  }
                   return (
                     <li key={e.id || i} style={{ marginBottom: 6 }}>
-                      <strong>{hh}</strong> · {String(e.desc || e.title || 'Pasto')} — {kcal} kcal, P{p.toFixed(0)}g C{c.toFixed(0)}g F{f.toFixed(0)}g
-                      {fib > 0 ? ` · fibre ${fib.toFixed(0)}g` : ''}
-                      {mg > 0 ? ` · Mg ${Math.round(mg)}mg` : ''}
+                      <strong>{hh}</strong> · {String(e.desc || e.title || 'Pasto')} — {macroLine}
                     </li>
                   );
                 })}
@@ -572,6 +644,48 @@ export default function PlanningWizard({
                 {ghostLogMeals.map((e, i) => {
                   const hh = decimalHourToHHMM(Number(e.mealTime)) || '—';
                   const t = getDynamicMealTargets(String(e.mealType || 'pranzo').split('_')[0], dailyLog, userTargets, dynOpts);
+                  const itemMin = decimalToMinutes(Number(e.mealTime));
+                  const isPast = itemMin != null && itemMin <= nowMinutes;
+                  const foods = Array.isArray(e.draftFoods) ? e.draftFoods : [];
+                  if (isPast) {
+                    return (
+                      <li key={e.id || i} style={{ marginBottom: 8, listStyle: 'none', marginLeft: -18 }}>
+                        <details
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: 10,
+                            border: '2px dashed rgba(167, 139, 250, 0.45)',
+                            background: 'rgba(167, 139, 250, 0.06)',
+                          }}
+                        >
+                          <summary
+                            style={{
+                              cursor: 'pointer',
+                              listStyle: 'none',
+                              fontWeight: 800,
+                              fontSize: '0.78rem',
+                              color: '#e9d5ff',
+                            }}
+                          >
+                            🔒 [{hh}] {mealTypeLabelIt(e.mealType)} - Registrato
+                          </summary>
+                          <div style={{ fontSize: '0.72rem', color: '#c4b5fd', marginTop: 8, lineHeight: 1.45 }}>
+                            <div style={{ fontWeight: 700 }}>{String(e.title || 'Pasto pianificato')}</div>
+                            <div style={{ marginTop: 4 }}>
+                              Target residui per questo slot: ~{t.kcal} kcal, P{t.prot}g, C{t.carb}g, F{t.fat}g · {microHintFromTargets(t, userTargets)}
+                            </div>
+                            {foods.length > 0 ? (
+                              <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
+                                {foods.map((f, fi) => (
+                                  <li key={fi}>{String(f)}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </div>
+                        </details>
+                      </li>
+                    );
+                  }
                   return (
                     <li
                       key={e.id || i}
@@ -588,6 +702,7 @@ export default function PlanningWizard({
                       <div>
                         <strong>{hh}</strong> · {String(e.title || 'Pasto pianificato')} ({String(e.mealType || '')})
                       </div>
+                      <DraftFoodPillsMini foods={foods} />
                       <div style={{ fontSize: '0.7rem', color: '#c4b5fd', marginTop: 4 }}>
                         Target residui per questo slot: ~{t.kcal} kcal, P{t.prot}g, C{t.carb}g, F{t.fat}g · {microHintFromTargets(t, userTargets)}
                       </div>
@@ -623,6 +738,7 @@ export default function PlanningWizard({
                         <div style={{ fontWeight: 800, color: '#a5f3fc' }}>
                           {hh} · {r.title}
                         </div>
+                        <DraftFoodPillsMini foods={r.draftFoods} />
                         <div style={{ fontSize: '0.72rem', color: '#cffafe', marginTop: 6, lineHeight: 1.4 }}>
                           Target suggeriti: ~{t.kcal} kcal · Prot {t.prot}g · Carb {t.carb}g · Grassi {t.fat}g
                           <br />

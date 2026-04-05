@@ -1,132 +1,145 @@
 /**
- * Griglia «Aggiungi evento»: long-press (800ms) su un’icona → modalità riordino;
- * trascina e rilascia su un’altra cella per scambiare; salvataggio immediato su localStorage (via onOrderCommit).
+ * Griglia «Aggiungi evento»: contesto o long-press (500ms) → modalità iOS-like (jiggle);
+ * riordino HTML5 Drag&Drop; salvataggio su localStorage tramite onOrderCommit a ogni drop.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ADD_EVENT_MENU_ITEMS } from '../coreEngine';
 
-const HOLD_MS = 800;
+const HOLD_MS = 500;
 const MOVE_CANCEL_PX = 14;
+const DND_MIME = 'application/x-ghostapp-add-event-idx';
 
 export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActivate, title = 'AGGIUNGI EVENTO', headingStyle = {} }) {
-  const cellRefs = useRef([]);
-  const holdTimerRef = useRef(null);
-  const dragActiveRef = useRef(false);
-  const pressStartRef = useRef({ x: 0, y: 0, idx: null });
-  const suppressClickRef = useRef(false);
-  const menuOrderRef = useRef(menuOrder);
-  menuOrderRef.current = menuOrder;
-  const dragSourceIdxRef = useRef(null);
-
+  const [isEditMode, setIsEditMode] = useState(false);
   const [dragFromIdx, setDragFromIdx] = useState(null);
-  const [dragOverIdx, setDragOverIdx] = useState(null);
-  const [dragDelta, setDragDelta] = useState({ dx: 0, dy: 0 });
+  const holdTimerRef = useRef(null);
+  const pressStartRef = useRef({ x: 0, y: 0 });
 
-  const clearHoldTimer = useCallback(() => {
+  const clearHold = useCallback(() => {
     if (holdTimerRef.current != null) {
       clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
     }
   }, []);
 
-  const endDragMode = useCallback(() => {
-    clearHoldTimer();
-    dragActiveRef.current = false;
-    dragSourceIdxRef.current = null;
-    setDragFromIdx(null);
-    setDragOverIdx(null);
-    setDragDelta({ dx: 0, dy: 0 });
-    pressStartRef.current = { x: 0, y: 0, idx: null };
-  }, [clearHoldTimer]);
+  useEffect(() => () => clearHold(), [clearHold]);
 
-  const pickIndexUnderPoint = useCallback((clientX, clientY) => {
-    let found = null;
-    cellRefs.current.forEach((el, i) => {
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
-        found = i;
-      }
-    });
-    return found;
-  }, []);
-
-  const onDocPointerMove = useCallback(
+  const enterEditMode = useCallback(
     (e) => {
-      if (!dragActiveRef.current || dragSourceIdxRef.current == null) return;
-      const { x, y } = pressStartRef.current;
-      setDragDelta({ dx: e.clientX - x, dy: e.clientY - y });
-      const over = pickIndexUnderPoint(e.clientX, e.clientY);
-      setDragOverIdx(over);
+      e?.preventDefault?.();
+      clearHold();
+      setIsEditMode(true);
     },
-    [pickIndexUnderPoint]
+    [clearHold]
   );
 
-  const onDocPointerUp = useCallback(
+  const onIconContextMenu = useCallback(
     (e) => {
-      if (!dragActiveRef.current) {
-        clearHoldTimer();
+      e.preventDefault();
+      enterEditMode(e);
+    },
+    [enterEditMode]
+  );
+
+  const onCellPointerDown = useCallback(
+    (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      pressStartRef.current = { x: e.clientX, y: e.clientY };
+      clearHold();
+      holdTimerRef.current = window.setTimeout(() => {
+        holdTimerRef.current = null;
+        setIsEditMode(true);
+      }, HOLD_MS);
+    },
+    [clearHold]
+  );
+
+  const onCellPointerMove = useCallback(
+    (e) => {
+      if (holdTimerRef.current == null) return;
+      const dx = e.clientX - pressStartRef.current.x;
+      const dy = e.clientY - pressStartRef.current.y;
+      if (dx * dx + dy * dy > MOVE_CANCEL_PX * MOVE_CANCEL_PX) clearHold();
+    },
+    [clearHold]
+  );
+
+  const onCellPointerUp = useCallback(() => {
+    clearHold();
+  }, [clearHold]);
+
+  const onDragStart = useCallback(
+    (e, idx) => {
+      if (!isEditMode) {
+        e.preventDefault();
         return;
       }
-      const from = dragSourceIdxRef.current;
-      const over = pickIndexUnderPoint(e.clientX, e.clientY);
-      if (from != null && over != null && from !== over) {
-        const next = [...menuOrderRef.current];
-        [next[from], next[over]] = [next[over], next[from]];
-        onOrderCommit(next);
-        suppressClickRef.current = true;
+      try {
+        e.dataTransfer.setData(DND_MIME, String(idx));
+        e.dataTransfer.effectAllowed = 'move';
+      } catch {
+        /* ignore */
       }
-      endDragMode();
-      window.removeEventListener('pointermove', onDocPointerMove);
-      window.removeEventListener('pointerup', onDocPointerUp);
-      window.removeEventListener('pointercancel', onDocPointerUp);
+      setDragFromIdx(idx);
     },
-    [onOrderCommit, pickIndexUnderPoint, onDocPointerMove, endDragMode, clearHoldTimer]
+    [isEditMode]
   );
 
-  useEffect(() => () => clearHoldTimer(), [clearHoldTimer]);
-
-  const handleCellPointerDown = (e, idx) => {
-    if (e.button !== undefined && e.button !== 0) return;
-    pressStartRef.current = { x: e.clientX, y: e.clientY, idx };
-    clearHoldTimer();
-    holdTimerRef.current = window.setTimeout(() => {
-      holdTimerRef.current = null;
-      dragActiveRef.current = true;
-      dragSourceIdxRef.current = idx;
-      setDragFromIdx(idx);
-      setDragOverIdx(idx);
-      setDragDelta({ dx: 0, dy: 0 });
-      window.addEventListener('pointermove', onDocPointerMove);
-      window.addEventListener('pointerup', onDocPointerUp);
-      window.addEventListener('pointercancel', onDocPointerUp);
-    }, HOLD_MS);
-  };
-
-  const handleCellPointerMove = (e) => {
-    if (holdTimerRef.current == null) return;
-    const dx = e.clientX - pressStartRef.current.x;
-    const dy = e.clientY - pressStartRef.current.y;
-    if (dx * dx + dy * dy > MOVE_CANCEL_PX * MOVE_CANCEL_PX) {
-      clearHoldTimer();
+  const onDragOver = useCallback((e) => {
+    e.preventDefault();
+    try {
+      e.dataTransfer.dropEffect = 'move';
+    } catch {
+      /* ignore */
     }
-  };
+  }, []);
 
-  const handleCellPointerUp = () => {
-    if (dragActiveRef.current) return;
-    clearHoldTimer();
-  };
+  const onDrop = useCallback(
+    (e, dropIdx) => {
+      e.preventDefault();
+      let from = dragFromIdx;
+      try {
+        const raw = e.dataTransfer.getData(DND_MIME);
+        const parsed = parseInt(raw, 10);
+        if (Number.isFinite(parsed)) from = parsed;
+      } catch {
+        /* use dragFromIdx */
+      }
+      setDragFromIdx(null);
+      if (from == null || !Number.isFinite(from) || from === dropIdx) return;
+      const next = [...menuOrder];
+      if (from < 0 || from >= next.length || dropIdx < 0 || dropIdx >= next.length) return;
+      [next[from], next[dropIdx]] = [next[dropIdx], next[from]];
+      onOrderCommit(next);
+    },
+    [dragFromIdx, menuOrder, onOrderCommit]
+  );
 
-  const handleCellClick = (itemId) => {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
-    if (dragActiveRef.current) return;
-    onItemActivate(itemId);
-  };
+  const onDragEnd = useCallback(() => {
+    setDragFromIdx(null);
+  }, []);
 
-  const reorderActive = dragFromIdx != null;
+  const handleCellClick = useCallback(
+    (itemId) => {
+      if (isEditMode) return;
+      onItemActivate(itemId);
+    },
+    [isEditMode, onItemActivate]
+  );
+
+  const fineBtnStyle = {
+    flexShrink: 0,
+    padding: '8px 16px',
+    borderRadius: 10,
+    border: 'none',
+    background: 'linear-gradient(135deg, #00e5ff 0%, #7c3aed 100%)',
+    color: '#0a0a0a',
+    fontWeight: 800,
+    fontSize: '0.72rem',
+    letterSpacing: '0.04em',
+    cursor: 'pointer',
+    boxShadow: '0 0 18px rgba(0, 229, 255, 0.35), 0 4px 12px rgba(124, 58, 237, 0.2)',
+  };
 
   return (
     <>
@@ -153,16 +166,20 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
         >
           {title}
         </h2>
+        {isEditMode ? (
+          <button type="button" onClick={() => setIsEditMode(false)} style={fineBtnStyle}>
+            Fine
+          </button>
+        ) : null}
       </div>
 
       <div
-        className={reorderActive ? 'add-event-menu-wiggle' : ''}
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
           gap: 12,
           marginBottom: 8,
-          touchAction: reorderActive ? 'none' : 'manipulation',
+          touchAction: 'manipulation',
         }}
       >
         {menuOrder.map((itemId, idx) => {
@@ -171,8 +188,7 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
           const border = def.borderColor || undefined;
           const labelColor = def.labelColor || '#fff';
           const iconStyle = def.iconFilter ? { fontSize: '1.8rem', filter: def.iconFilter } : { fontSize: '1.8rem' };
-          const isDragging = reorderActive && dragFromIdx === idx;
-          const isDrop = reorderActive && dragOverIdx === idx && dragFromIdx !== idx;
+          const isDropHint = isEditMode && dragFromIdx != null && dragFromIdx !== idx;
 
           const labelEl =
             def.labelLines && String(def.label).includes(' ') ? (
@@ -203,9 +219,8 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
           return (
             <div
               key={itemId}
-              ref={(el) => {
-                cellRefs.current[idx] = el;
-              }}
+              onDragOver={isEditMode ? onDragOver : undefined}
+              onDrop={isEditMode ? (e) => onDrop(e, idx) : undefined}
               style={{
                 position: 'relative',
                 display: 'flex',
@@ -213,14 +228,15 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
                 alignItems: 'stretch',
                 minWidth: 0,
                 overflow: 'visible',
-                outline: isDrop ? '2px dashed rgba(0, 229, 255, 0.75)' : 'none',
+                outline: isDropHint ? '2px dashed rgba(0, 229, 255, 0.75)' : 'none',
                 outlineOffset: 2,
                 borderRadius: 12,
               }}
             >
               <button
                 type="button"
-                className={`action-btn${isDragging ? ' add-event-menu-cell-dragging' : ''}`}
+                draggable={isEditMode}
+                className={`action-btn${isEditMode ? ' jiggle' : ''}`}
                 style={{
                   aspectRatio: '1',
                   borderRadius: '50%',
@@ -229,16 +245,16 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
                   gap: '6px',
                   borderColor: border,
                   width: '100%',
-                  cursor: reorderActive ? 'grabbing' : 'pointer',
-                  transform: isDragging ? `translate(${dragDelta.dx}px, ${dragDelta.dy}px) scale(1.1)` : undefined,
-                  opacity: isDragging ? 0.82 : 1,
-                  zIndex: isDragging ? 20 : 1,
-                  transition: isDragging ? 'none' : 'transform 0.15s ease, opacity 0.15s ease',
+                  cursor: isEditMode ? 'grab' : 'pointer',
+                  zIndex: 1,
                 }}
-                onPointerDown={(e) => handleCellPointerDown(e, idx)}
-                onPointerMove={handleCellPointerMove}
-                onPointerUp={handleCellPointerUp}
-                onPointerCancel={handleCellPointerUp}
+                onContextMenu={onIconContextMenu}
+                onPointerDown={onCellPointerDown}
+                onPointerMove={onCellPointerMove}
+                onPointerUp={onCellPointerUp}
+                onPointerCancel={onCellPointerUp}
+                onDragStart={(e) => onDragStart(e, idx)}
+                onDragEnd={onDragEnd}
                 onClick={() => handleCellClick(itemId)}
               >
                 <span className="action-icon" style={iconStyle}>

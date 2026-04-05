@@ -498,8 +498,11 @@ function normalizeDailyPlanFromToken(parsed) {
         const timeNorm = normalizeDailyPlanTimeForInput(g?.time != null ? String(g.time) : '') || '12:00';
         const title = String(g?.title || 'Pasto pianificato').trim();
         const microDesc = String(g?.microDesc || '').trim();
+        const draftFoods = Array.isArray(g?.draftFoods)
+          ? g.draftFoods.map((x) => String(x).trim()).filter(Boolean)
+          : [];
         if (!title) return null;
-        return { mealType, time: timeNorm, title, microDesc };
+        return { mealType, time: timeNorm, title, microDesc, draftFoods };
       })
       .filter(Boolean);
   }
@@ -5998,7 +6001,7 @@ FORMATTAZIONE OBBLIGATORIA: Devi essere chiarissimo e massimizzare la leggibilit
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=BRIEFING o QUICK_ACTION=ANALISI_IERI: rispondi ESCLUSIVAMENTE in formato Lavagna (emoji + dato per riga, elenchi puntati essenziali), rispettando il tetto di 3 elenchi e le REGOLE DI STILE sopra.
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=IDEA_PASTO: rispondi ESCLUSIVAMENTE con il blocco [MEAL_PROPOSAL:{...}] su una riga come da CARTA MENU; nessun altro testo (la Dispensa è in [CONTEXT_LIVE]).
 
-MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata (testo libero o tramite wizard), entra in modalità pianificazione. Se il messaggio utente inizia con "PIANIFICAZIONE GUIDATA:", ha già scelto attività e fasce (Mattina / Pomeriggio / Sera): NON chiedere altro, NON fare elenchi lunghi. Rispondi generando ESATTAMENTE il token [DAILY_PLAN:{...}] su una riga, con orari concreti HH:MM coerenti con le fasce (es. Mattina → 08:00–11:30, Pomeriggio → 12:00–17:30, Sera → 18:00–22:00; se l'allenamento è in Sera usa tipicamente 18:30 o 19:00 come workoutTime e nella lista activities). Il JSON DEVE includere anche "ghostMeals": array di pasti pianificati (Nodi Fantasma) che l'utente vedrà in timeline finché non li converte in pasti veri: ogni elemento {"mealType":"colazione|snack|pranzo|cena", "time":"HH:MM", "title":"Titolo breve", "microDesc":"Suggerimento micronutrienti (es. fibre, omega-3) per lucidità e sonno"}. Esempio forma completa: [DAILY_PLAN:{"target":"pari", "workoutTime":"19:00", "activities":[...], "ghostMeals":[{"mealType":"pranzo", "time":"13:00", "title":"Pranzo Focus", "microDesc":"Fibre > 15g, focus su Omega-3."}]}]. Scegli "target" (deficit, pari o surplus) in base a [CONTEXT_LIVE]. Altrimenti, in conversazione aperta, chiedi le attività; quando l'utente risponde, genera lo stesso token con ghostMeals coerenti col piano. Il token deve essere da solo su una riga.
+MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata (testo libero o tramite wizard), entra in modalità pianificazione. Se il messaggio utente inizia con "PIANIFICAZIONE GUIDATA:", ha già scelto attività e fasce (Mattina / Pomeriggio / Sera): NON chiedere altro, NON fare elenchi lunghi. Rispondi generando ESATTAMENTE il token [DAILY_PLAN:{...}] su una riga, con orari concreti HH:MM coerenti con le fasce (es. Mattina → 08:00–11:30, Pomeriggio → 12:00–17:30, Sera → 18:00–22:00; se l'allenamento è in Sera usa tipicamente 18:30 o 19:00 come workoutTime e nella lista activities). Il JSON DEVE includere anche "ghostMeals": array di pasti pianificati (Nodi Fantasma) che l'utente vedrà in timeline finché non li converte in pasti veri: ogni elemento include {"mealType":"colazione|snack|pranzo|cena", "time":"HH:MM", "title":"Titolo breve", "microDesc":"Suggerimento micronutrienti (es. fibre, omega-3) per lucidità e sonno", "draftFoods":["200g Pollo","150g Riso"]} — draftFoods è un array di stringhe (abbozzo alimenti con pesi stimati). Per i pasti futuri nel token, calcola i target e COMPILA draftFoods con un abbozzo realistico di alimenti. Dai MASSIMA PRIORITÀ copiando pasti simili che l'utente ha consumato in passato (presenti nello storico) o cibi dal suo database/dispensa in [CONTEXT_LIVE]. Inserisci pesi stimati per centrare il target. Esempio forma completa: [DAILY_PLAN:{"target":"pari", "workoutTime":"19:00", "activities":[...], "ghostMeals":[{"mealType":"cena", "time":"20:00", "title":"Cena Recupero", "microDesc":"Focus proteine", "draftFoods":["200g Pollo","150g Riso"]}]}]. Scegli "target" (deficit, pari o surplus) in base a [CONTEXT_LIVE]. Altrimenti, in conversazione aperta, chiedi le attività; quando l'utente risponde, genera lo stesso token con ghostMeals coerenti col piano. Il token deve essere da solo su una riga.
 
 ATTENZIONE TEMPORALE: Se nel prompt utente ricevi l'ora attuale e gli eventi già registrati, DEVI rispettarli. Proponi solo Nodi Fantasma futuri. Se la colazione o il pranzo sono già stati fatti, concentrati solo sugli spuntini e la cena, bilanciando i macro rimanenti.
 
@@ -6924,6 +6927,9 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
           const timeStr = gm.time != null ? String(gm.time) : '12:00';
           const dec = parseFlexibleTimeToDecimal(timeStr);
           const mealTime = dec != null && !Number.isNaN(dec) ? dec : 12;
+          const draftFoods = Array.isArray(gm.draftFoods)
+            ? gm.draftFoods.map((x) => String(x).trim()).filter(Boolean)
+            : [];
           return {
             id: `ghost_meal_${Date.now()}_${i}`,
             type: 'ghost_meal',
@@ -6931,6 +6937,7 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
             mealTime,
             title: String(gm.title || 'Pasto pianificato').trim(),
             microDesc: String(gm.microDesc || '').trim(),
+            draftFoods,
             isGhost: true,
           };
         });
@@ -7018,6 +7025,9 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
             typeof gm.mealTime === 'number' && !Number.isNaN(gm.mealTime)
               ? gm.mealTime
               : parseFlexibleTimeToDecimal(String(gm.time || '12:00')) ?? 12;
+          const draftFoods = Array.isArray(gm.draftFoods)
+            ? gm.draftFoods.map((x) => String(x).trim()).filter(Boolean)
+            : [];
           return {
             id: `ghost_meal_${Date.now()}_${i}`,
             type: 'ghost_meal',
@@ -7025,6 +7035,7 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
             mealTime,
             title: String(gm.title || 'Pasto pianificato').trim(),
             microDesc: String(gm.microDesc || '').trim(),
+            draftFoods,
             isGhost: true,
           };
         });
