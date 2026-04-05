@@ -2211,22 +2211,129 @@ export function calculateSwapQuantity(oldFood, oldWeight, newFood) {
 
 /** Importanza dinamica dei nodi per vista grafico: quali tipi evidenziare. */
 const NODE_IMPORTANCE = {
-  percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'sunlight', 'alcohol'],
+  percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'alcohol'],
   kcal: ['meal', 'workout', 'cognitive', 'alcohol'],
   cortisolo: ['work', 'workout', 'cognitive', 'stimulant', 'meditation', 'alcohol'],
   glicemia: ['meal', 'workout', 'cognitive', 'stimulant'],
   idratazione: ['water', 'workout', 'cognitive', 'stimulant', 'alcohol'],
   digestione: ['meal', 'alcohol'],
-  neuro: ['sleep', 'work', 'workout', 'cognitive', 'stimulant', 'nap', 'meditation', 'sunlight', 'alcohol']
+  neuro: ['sleep', 'work', 'workout', 'cognitive', 'stimulant', 'nap', 'meditation', 'alcohol']
 };
 
 /** Gerarchia nodi nel modale Spiegazione: primari (focus) vs secondari (sfondo) per grafico. */
 const MODAL_NODE_PRIMARY = {
   glicemia: ['meal', 'workout', 'cognitive'],
   cortisolo: ['work', 'workout', 'cognitive', 'stimulant', 'meditation', 'alcohol'],
-  neuro: ['work', 'workout', 'cognitive', 'stimulant', 'nap', 'meditation', 'sunlight', 'alcohol'],
+  neuro: ['work', 'workout', 'cognitive', 'stimulant', 'nap', 'meditation', 'alcohol'],
   calorieTimeline: ['meal'],
-  percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'sunlight', 'alcohol']
+  percent: ['meal', 'workout', 'cognitive', 'stimulant', 'nap', 'alcohol']
+};
+
+/** Ordine predefinito voci menu «Aggiungi evento» (drawer + modale + localStorage). */
+export const ADD_EVENT_MENU_DEFAULT_ORDER = [
+  'meal',
+  'water',
+  'weight',
+  'alcohol',
+  'workout',
+  'stimulant',
+  'nap',
+  'meditation',
+  'supplements',
+  'plan',
+  'diary',
+  'menu',
+];
+
+/**
+ * Voci menu Aggiungi evento: id usati in ADD_EVENT_MENU_DEFAULT_ORDER e in kentu_add_menu_order.
+ * `plan` = Pianifica Giornata (wizard Kentu).
+ */
+export const ADD_EVENT_MENU_ITEMS = {
+  meal: { id: 'meal', label: 'PASTO', icon: '🥗', borderColor: undefined },
+  water: {
+    id: 'water',
+    label: 'ACQUA',
+    icon: '💧',
+    borderColor: 'rgba(0,229,255,0.4)',
+    labelColor: '#00e5ff',
+    iconFilter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))',
+  },
+  weight: {
+    id: 'weight',
+    label: 'REGISTRA PESO',
+    icon: '⚖️',
+    borderColor: 'rgba(156, 200, 255, 0.45)',
+    labelColor: '#9cc8ff',
+  },
+  alcohol: {
+    id: 'alcohol',
+    label: 'ALCOL',
+    icon: '🍷',
+    borderColor: 'rgba(244, 67, 54, 0.45)',
+    labelColor: '#ef9a9a',
+    iconFilter: 'drop-shadow(0 0 8px rgba(244, 67, 54, 0.35))',
+  },
+  workout: {
+    id: 'workout',
+    label: 'ALLENAMENTO',
+    icon: '⚡',
+    borderColor: 'rgba(255, 109, 0, 0.4)',
+    labelColor: '#ff6d00',
+    iconFilter: 'drop-shadow(0 0 8px rgba(255, 109, 0, 0.4))',
+  },
+  stimulant: {
+    id: 'stimulant',
+    label: 'CAFFÈ',
+    icon: '☕',
+    borderColor: 'rgba(180,120,60,0.5)',
+    labelColor: '#d4a574',
+  },
+  nap: {
+    id: 'nap',
+    label: 'PISOLINO',
+    icon: '😴',
+    borderColor: 'rgba(129,140,248,0.4)',
+    labelColor: '#a5b4fc',
+  },
+  meditation: {
+    id: 'meditation',
+    label: 'MEDITAZIONE',
+    icon: '🧘',
+    borderColor: 'rgba(34,197,94,0.4)',
+    labelColor: '#4ade80',
+  },
+  supplements: {
+    id: 'supplements',
+    label: 'INTEGRAZIONE',
+    icon: '💊',
+    borderColor: 'rgba(168,85,247,0.4)',
+    labelColor: '#c084fc',
+  },
+  plan: {
+    id: 'plan',
+    label: 'Pianifica Giornata',
+    icon: '🎯',
+    borderColor: 'rgba(0, 229, 255, 0.55)',
+    labelColor: '#7dd3fc',
+    iconFilter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.45))',
+    labelLines: true,
+  },
+  diary: {
+    id: 'diary',
+    label: 'DIARIO',
+    icon: '📖',
+    borderColor: 'rgba(0,230,118,0.4)',
+    labelColor: '#00e676',
+    iconFilter: 'drop-shadow(0 0 8px rgba(0, 230, 118, 0.4))',
+  },
+  menu: {
+    id: 'menu',
+    label: 'MENU',
+    icon: '☰',
+    borderColor: 'rgba(176,190,197,0.3)',
+    labelColor: '#b0bec5',
+  },
 };
 
 /** Icona per tipo nodo (timeline e modale). */

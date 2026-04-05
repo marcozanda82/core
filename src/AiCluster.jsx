@@ -4,7 +4,6 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import MenuProposalCard from './MenuProposalCard';
 import DailyPlanCard from './DailyPlanCard';
-import PlanningWizard from './PlanningWizard';
 import {
   KentuIcon,
   KentuButton,
@@ -77,7 +76,6 @@ export default function AiCluster({
   onBack,
 }) {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
-  const [planningWizardOpen, setPlanningWizardOpen] = useState(false);
   /** Con testo/immagini nell’input la hub si nascondeva: questo stato consente di forzarne la visibilità. */
   const [hubCommandForced, setHubCommandForced] = useState(false);
   const chatEndRef = useRef(null);
@@ -95,7 +93,6 @@ export default function AiCluster({
   const hubInputBlocked = Boolean(chatInput.trim() || chatImages.length > 0);
   const showCommandHubDock =
     typeof onChatQuickAction === 'function' &&
-    !planningWizardOpen &&
     (!hubInputBlocked || hubCommandForced);
 
   return (
@@ -361,29 +358,6 @@ export default function AiCluster({
                 </button>
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                setPlanningWizardOpen(true);
-                setIsPanelOpen(false);
-                setHubCommandForced(false);
-              }}
-              style={{
-                width: '100%',
-                padding: '16px 18px',
-                marginBottom: 10,
-                borderRadius: 14,
-                border: '1px solid rgba(0, 229, 255, 0.4)',
-                background: 'linear-gradient(135deg, rgba(0, 229, 255, 0.28) 0%, rgba(124, 58, 237, 0.22) 100%)',
-                color: '#f0fdff',
-                fontWeight: 900,
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-                boxShadow: '0 0 22px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.08)',
-              }}
-            >
-              🎯 Pianifica Giornata
-            </button>
             <button type="button" className="kentu-hub-toggle" onClick={() => setIsPanelOpen((o) => !o)} aria-expanded={isPanelOpen}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <KentuIcon name="sliders" size={22} />
@@ -422,21 +396,8 @@ export default function AiCluster({
             )}
           </div>
         )}
-        {planningWizardOpen ? (
-          <div style={{ flexShrink: 0, marginTop: 6, marginBottom: 8 }}>
-            <PlanningWizard
-              dailyLog={dailyLog}
-              onClose={() => setPlanningWizardOpen(false)}
-              onSubmit={(text) => {
-                setPlanningWizardOpen(false);
-                onSendMessage(text, { fromInput: true });
-                setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-              }}
-            />
-          </div>
-        ) : (
         <div className="kentu-input-strip">
-          {typeof onChatQuickAction === 'function' && !planningWizardOpen && (
+          {typeof onChatQuickAction === 'function' && (
             <KentuButton
               variant="ghost"
               className="kentu-btn--icon"
@@ -451,7 +412,7 @@ export default function AiCluster({
                 setIsPanelOpen(true);
               }}
               aria-label="Apri hub comandi"
-              title="Hub comandi · Planning e strumenti"
+              title="Hub comandi · strumenti rapidi"
             >
               ⚡
             </KentuButton>
@@ -510,7 +471,6 @@ export default function AiCluster({
             <KentuIcon name="send" size={18} />
           </KentuButton>
         </div>
-        )}
       </div>
     </div>
   );

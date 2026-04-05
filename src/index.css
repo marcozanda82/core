@@ -535,3 +535,19 @@ html, body, #root {
 .timeline-node.ghost-node {
   animation: ghostPulse 2s infinite;
 }
+
+/* Menu Aggiungi evento: feedback visivo in modalità riordino (sbloccato) */
+@keyframes addEventMenuWiggle {
+  0%,
+  100% {
+    transform: rotate(-1.2deg);
+  }
+  50% {
+    transform: rotate(1.2deg);
+  }
+}
+
+.add-event-menu-wiggle .action-btn {
+  animation: addEventMenuWiggle 0.38s ease-in-out infinite;
+  transform-origin: center center;
+}

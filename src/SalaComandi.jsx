@@ -31,6 +31,8 @@ import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
+import PlanningWizard from './PlanningWizard';
+import AddEventMenuGrid from './components/AddEventMenuGrid';
 import {
   useSmartKentuTriggers,
   checkMorningBriefing,
@@ -83,6 +85,7 @@ import {
   MEAL_LABELS_SAVE,
   NODE_IMPORTANCE,
   NODE_TYPE_ICON,
+  ADD_EVENT_MENU_DEFAULT_ORDER,
   denormalizeLogForFirebase,
   applyMealTimes,
   getLogFromStoricoTree,
@@ -1454,6 +1457,25 @@ function kentuChatHistoryForPersistence(messages) {
   return (messages || []).filter(isKentuChatPersistableMessage);
 }
 
+const ADD_MENU_ORDER_LS_KEY = 'kentu_add_menu_order';
+
+function normalizeAddMenuOrderState(saved, defaultOrder) {
+  const allowed = new Set(defaultOrder);
+  if (!Array.isArray(saved)) return [...defaultOrder];
+  const out = [];
+  const seen = new Set();
+  for (const id of saved) {
+    if (allowed.has(id) && !seen.has(id)) {
+      out.push(id);
+      seen.add(id);
+    }
+  }
+  for (const id of defaultOrder) {
+    if (!seen.has(id)) out.push(id);
+  }
+  return out;
+}
+
 export default function SalaComandi() {
   const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
   const isAuthenticated = !!user;
@@ -1738,6 +1760,25 @@ export default function SalaComandi() {
   const [addChoiceView, setAddChoiceView] = useState('main'); // 'main' | 'stimulant'
   const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
   const [stimulantTime, setStimulantTime] = useState(8);
+  const [addEventMenuOrder, setAddEventMenuOrder] = useState(() => {
+    try {
+      const raw = localStorage.getItem(ADD_MENU_ORDER_LS_KEY);
+      if (raw) return normalizeAddMenuOrderState(JSON.parse(raw), ADD_EVENT_MENU_DEFAULT_ORDER);
+    } catch (e) {
+      /* ignore */
+    }
+    return [...ADD_EVENT_MENU_DEFAULT_ORDER];
+  });
+  const [addEventMenuUnlocked, setAddEventMenuUnlocked] = useState(false);
+  const addEventMenuLockTimerRef = useRef(null);
+  const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
+
+  useEffect(() => () => {
+    if (addEventMenuLockTimerRef.current != null) {
+      clearTimeout(addEventMenuLockTimerRef.current);
+    }
+  }, []);
+
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [isFullScreenGraph, setIsFullScreenGraph] = useState(false);
   const availableFullscreenCharts = ['percent', 'cortisolo', 'calorieTimeline', 'glicemia', 'idratazione', 'neuro', 'digestione', 'kcal'];
@@ -3659,6 +3700,40 @@ export default function SalaComandi() {
     setTimeout(() => setActiveAction(null), 400);
   }
 
+  const cancelAddMenuUnlockHold = useCallback(() => {
+    if (addEventMenuLockTimerRef.current != null) {
+      clearTimeout(addEventMenuLockTimerRef.current);
+      addEventMenuLockTimerRef.current = null;
+    }
+  }, []);
+
+  const startAddMenuUnlockHold = useCallback(() => {
+    cancelAddMenuUnlockHold();
+    addEventMenuLockTimerRef.current = window.setTimeout(() => {
+      addEventMenuLockTimerRef.current = null;
+      setAddEventMenuUnlocked(true);
+    }, 800);
+  }, [cancelAddMenuUnlockHold]);
+
+  const saveAddMenuOrderAndLock = useCallback(() => {
+    try {
+      localStorage.setItem(ADD_MENU_ORDER_LS_KEY, JSON.stringify(addEventMenuOrder));
+    } catch (e) {
+      /* ignore */
+    }
+    setAddEventMenuUnlocked(false);
+  }, [addEventMenuOrder]);
+
+  const reorderAddEventMenu = useCallback((index, delta) => {
+    setAddEventMenuOrder((prev) => {
+      const j = index + delta;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[j]] = [next[j], next[index]];
+      return next;
+    });
+  }, []);
+
   // ============================================================================
   // FUNZIONI CRITICHE CON RETROCOMPATIBILITÀ
   // ============================================================================
@@ -3855,6 +3930,110 @@ export default function SalaComandi() {
     const decimal = h + m / 60;
     return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
   };
+
+  function handleAddEventMenuItem(itemId, source) {
+    const fromModal = source === 'modal';
+    switch (itemId) {
+      case 'meal': {
+        const predicted = predictMealType(getCurrentTimeRoundedTo15Min());
+        setMealType(predicted);
+        setAddedFoods([]);
+        setEditingMealId(null);
+        const t = getCurrentTimeRoundedTo15Min();
+        setDrawerMealTime(t);
+        setDrawerMealTimeStr(decimalToTimeStr(t));
+        if (fromModal) setShowChoiceModal(false);
+        setActiveAction('pasto');
+        setIsDrawerOpen(true);
+        break;
+      }
+      case 'water':
+        setDrawerWaterTime(getCurrentTimeRoundedTo15Min());
+        if (fromModal) setShowChoiceModal(false);
+        setActiveAction('acqua');
+        setIsDrawerOpen(true);
+        break;
+      case 'weight':
+        if (fromModal) setShowChoiceModal(false);
+        else closeDrawer();
+        setShowWeightModal(true);
+        break;
+      case 'alcohol': {
+        if (isSimulationMode) return;
+        const now = new Date();
+        setAlcoholForm({
+          subtype: 'vino',
+          ml: 150,
+          abv: 12,
+          timeStr: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+        });
+        if (fromModal) setShowChoiceModal(false);
+        else closeDrawer();
+        setShowAlcoholPopup(true);
+        break;
+      }
+      case 'workout': {
+        const nowT = getCurrentTimeRoundedTo15Min();
+        setWorkoutEndTime(nowT);
+        setWorkoutStartTime(Math.max(0, nowT - 0.5));
+        if (fromModal) setShowChoiceModal(false);
+        setActiveAction('allenamento');
+        setIsDrawerOpen(true);
+        break;
+      }
+      case 'stimulant':
+        if (!fromModal) closeDrawer();
+        setStimulantTime(getCurrentTimeRoundedTo15Min());
+        setStimulantSubtype('caffè');
+        setAddChoiceView('stimulant');
+        setShowChoiceModal(true);
+        break;
+      case 'nap': {
+        const tN = getCurrentTimeRoundedTo15Min();
+        setDrawerFastChargeStart(tN);
+        setDrawerFastChargeEnd(Math.min(24, tN + 0.5));
+        if (fromModal) setShowChoiceModal(false);
+        setActiveAction('fast_charge_nap');
+        setIsDrawerOpen(true);
+        break;
+      }
+      case 'meditation': {
+        const tM = getCurrentTimeRoundedTo15Min();
+        setDrawerFastChargeStart(tM);
+        setDrawerFastChargeEnd(Math.min(24, tM + 0.5));
+        if (fromModal) setShowChoiceModal(false);
+        setActiveAction('fast_charge_meditation');
+        setIsDrawerOpen(true);
+        break;
+      }
+      case 'supplements':
+        setDrawerFastChargeTime(getCurrentTimeRoundedTo15Min());
+        setFastChargeSupplementName('');
+        if (fromModal) setShowChoiceModal(false);
+        setActiveAction('fast_charge_supplements');
+        setIsDrawerOpen(true);
+        break;
+      case 'plan':
+        cancelAddMenuUnlockHold();
+        setAddEventMenuUnlocked(false);
+        setShowChoiceModal(false);
+        closeDrawer({ force: true });
+        setPlanningWizardOverlayOpen(true);
+        break;
+      case 'diary':
+        if (fromModal) setShowChoiceModal(false);
+        setActiveAction('diario_giornaliero');
+        if (fromModal) setIsDrawerOpen(true);
+        break;
+      case 'menu':
+        if (fromModal) setShowChoiceModal(false);
+        setActiveAction('menu_secondary');
+        if (fromModal) setIsDrawerOpen(true);
+        break;
+      default:
+        break;
+    }
+  }
 
   const getDefaultMealTime = (mealTypeKey) => {
     const DEFAULT_SLOT_TIME = {
@@ -10029,62 +10208,15 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         {/* VISTA MENU PRINCIPALE */}
         {(!activeAction || activeAction === 'home') && (
           <div className="view-animate">
-            <h2 style={{ fontSize: '0.7rem', textAlign: 'center', color: '#777', letterSpacing: '3px', marginBottom: '20px', fontWeight: 'normal' }}>AGGIUNGI EVENTO</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px' }} onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setActiveAction('pasto'); setIsDrawerOpen(true); }}>
-                <span className="action-icon" style={{ fontSize: '1.8rem' }}>🥗</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px' }}>PASTO</span>
-              </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(0,229,255,0.4)' }} onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setActiveAction('acqua'); }}>
-                <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>💧</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#00e5ff' }}>ACQUA</span>
-              </button>
-              <button type="button" className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(156, 200, 255, 0.45)' }} onClick={() => { closeDrawer(); setShowWeightModal(true); }}>
-                <span className="action-icon" style={{ fontSize: '1.8rem' }}>⚖️</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#9cc8ff' }}>REGISTRA PESO</span>
-              </button>
-              <button
-                type="button"
-                className="action-btn"
-                style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(244, 67, 54, 0.45)' }}
-                onClick={() => {
-                  if (isSimulationMode) return;
-                  const now = new Date();
-                  setAlcoholForm({
-                    subtype: 'vino',
-                    ml: 150,
-                    abv: 12,
-                    timeStr: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-                  });
-                  setShowAlcoholPopup(true);
-                  closeDrawer();
-                }}
-              >
-                <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(244, 67, 54, 0.35))' }}>🍷</span>
-                <span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#ef9a9a' }}>ALCOL</span>
-              </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(255, 109, 0, 0.4)' }} onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutEndTime(now); setWorkoutStartTime(Math.max(0, now - 0.5)); setActiveAction('allenamento'); setIsDrawerOpen(true); }}>
-                <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(255, 109, 0, 0.4))' }}>⚡</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#ff6d00' }}>ALLENAMENTO</span>
-              </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(180,120,60,0.5)' }} onClick={() => { closeDrawer(); setStimulantTime(getCurrentTimeRoundedTo15Min()); setStimulantSubtype('caffè'); setAddChoiceView('stimulant'); setShowChoiceModal(true); }}>
-                <span className="action-icon" style={{ fontSize: '1.8rem' }}>☕</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#d4a574' }}>CAFFÈ</span>
-              </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(129,140,248,0.4)' }} onClick={() => { const t = getCurrentTimeRoundedTo15Min(); setDrawerFastChargeStart(t); setDrawerFastChargeEnd(Math.min(24, t + 0.5)); setActiveAction('fast_charge_nap'); }}>
-                <span className="action-icon" style={{ fontSize: '1.8rem' }}>😴</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#a5b4fc' }}>PISOLINO</span>
-              </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(34,197,94,0.4)' }} onClick={() => { const t = getCurrentTimeRoundedTo15Min(); setDrawerFastChargeStart(t); setDrawerFastChargeEnd(Math.min(24, t + 0.5)); setActiveAction('fast_charge_meditation'); }}>
-                <span className="action-icon" style={{ fontSize: '1.8rem' }}>🧘</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#4ade80' }}>MEDITAZIONE</span>
-              </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(251,191,36,0.4)' }} onClick={() => { setDrawerFastChargeTime(getCurrentTimeRoundedTo15Min()); setActiveAction('fast_charge_sunlight'); }}>
-                <span className="action-icon" style={{ fontSize: '1.8rem' }}>☀️</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#fcd34d' }}>LUCE SOLARE</span>
-              </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(168,85,247,0.4)' }} onClick={() => { setDrawerFastChargeTime(getCurrentTimeRoundedTo15Min()); setFastChargeSupplementName(''); setActiveAction('fast_charge_supplements'); }}>
-                <span className="action-icon" style={{ fontSize: '1.8rem' }}>💊</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#c084fc' }}>INTEGRAZIONE</span>
-              </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(0,230,118,0.4)' }} onClick={() => setActiveAction('diario_giornaliero')}>
-                <span className="action-icon" style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 0 8px rgba(0, 230, 118, 0.4))' }}>📖</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#00e676' }}>DIARIO</span>
-              </button>
-              <button className="action-btn" style={{ aspectRatio: '1', borderRadius: '50%', padding: '12px', flexDirection: 'column', gap: '6px', borderColor: 'rgba(176,190,197,0.3)' }} onClick={() => setActiveAction('menu_secondary')}>
-                <span className="action-icon" style={{ fontSize: '1.8rem' }}>☰</span><span className="action-label" style={{ fontSize: '0.6rem', letterSpacing: '1px', color: '#b0bec5' }}>MENU</span>
-              </button>
-            </div>
+            <AddEventMenuGrid
+              menuOrder={addEventMenuOrder}
+              onReorder={reorderAddEventMenu}
+              isUnlocked={addEventMenuUnlocked}
+              onUnlockHoldStart={startAddMenuUnlockHold}
+              onUnlockHoldEnd={cancelAddMenuUnlockHold}
+              onLockClickWhenUnlocked={saveAddMenuOrderAndLock}
+              onItemActivate={(id) => handleAddEventMenuItem(id, 'drawer')}
+            />
             <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '0' }}>
               <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.8rem' }}>⚡ Inserimento Rapido / Output AI</h4>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -10357,22 +10489,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
               <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '10px' }}>Durata: {(() => { let d = drawerFastChargeEnd - drawerFastChargeStart; if (d < 0) d += 24; return `${Math.floor(Math.max(0, d) * 60)} min`; })()}</div>
             </div>
             <button onClick={() => handleSaveFastCharge('meditation')} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #16a34a, #22c55e)', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(34,197,94,0.4)' }}>SALVA</button>
-          </div>
-        )}
-
-        {/* VISTA FAST CHARGE - LUCE SOLARE */}
-        {activeAction === 'fast_charge_sunlight' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#fbbf24', letterSpacing: '2px', margin: 0 }}>☀️ LUCE SOLARE</h2>
-              <div style={{ width: '70px' }}></div>
-            </div>
-            <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '16px', backdropFilter: 'blur(12px)' }}>
-              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '12px', textTransform: 'uppercase' }}>ORARIO ESPOSIZIONE</div>
-              <input type="time" value={decimalToTimeStr(drawerFastChargeTime)} onChange={(e) => setDrawerFastChargeTime(parseTimeStrToDecimal(e.target.value))} style={{ width: '100%', padding: '12px', background: '#1a1a1a', border: '1px solid #fbbf24', borderRadius: '10px', color: '#fcd34d', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
-            </div>
-            <button onClick={() => handleSaveFastCharge('sunlight')} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #d97706, #fbbf24)', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(251,191,36,0.4)' }}>SALVA</button>
           </div>
         )}
 
@@ -11587,7 +11703,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       )}
       {/* Pop-up Scelta Azione (Ottimizzato per schermi piccoli) */}
       {showChoiceModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100020, padding: '15px' }} onClick={() => { setShowChoiceModal(false); setAddChoiceView('main'); }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100020, padding: '15px' }} onClick={() => { setShowChoiceModal(false); setAddChoiceView('main'); cancelAddMenuUnlockHold(); setAddEventMenuUnlocked(false); }}>
           <div style={{ background: '#111', border: '1px solid #333', borderRadius: '25px', padding: '20px', width: '100%', maxWidth: '350px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 10px 50px rgba(0,0,0,0.9)' }} onClick={e => e.stopPropagation()}>
             {addChoiceView === 'stimulant' ? (
               <>
@@ -11620,33 +11736,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 </button>
               </>
             ) : (
-              <>
-                <h3 style={{ margin: '0 0 10px 0', textAlign: 'center', color: '#fff', fontSize: '1.1rem', letterSpacing: '2px' }}>AGGIUNGI EVENTO</h3>
-
-                <button onClick={() => { const predicted = predictMealType(getCurrentTimeRoundedTo15Min()); setMealType(predicted); setAddedFoods([]); setEditingMealId(null); const t = getCurrentTimeRoundedTo15Min(); setDrawerMealTime(t); setDrawerMealTimeStr(decimalToTimeStr(t)); setShowChoiceModal(false); setActiveAction('pasto'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-                  <span style={{ fontSize: '1.5rem' }}>🍎</span> PASTO
-                </button>
-
-                <button onClick={() => { const now = getCurrentTimeRoundedTo15Min(); setWorkoutEndTime(now); setWorkoutStartTime(Math.max(0, now - 0.5)); setShowChoiceModal(false); setActiveAction('allenamento'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-                  <span style={{ fontSize: '1.5rem' }}>💪</span> ALLENAMENTO
-                </button>
-
-                <button onClick={() => { setDrawerWaterTime(getCurrentTimeRoundedTo15Min()); setShowChoiceModal(false); setActiveAction('acqua'); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-                  <span style={{ fontSize: '1.5rem' }}>💧</span> ACQUA
-                </button>
-
-                <button type="button" onClick={() => { setShowChoiceModal(false); setAddChoiceView('main'); setShowWeightModal(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #6b8cae', color: '#9cc8ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-                  <span style={{ fontSize: '1.5rem' }}>⚖️</span> REGISTRA PESO
-                </button>
-
-                <button onClick={() => { setStimulantTime(getCurrentTimeRoundedTo15Min()); setStimulantSubtype('caffè'); setAddChoiceView('stimulant'); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #f59e0b', color: '#f59e0b', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-                  <span style={{ fontSize: '1.5rem' }}>☕</span> ENERGIZZANTE
-                </button>
-
-                <button onClick={() => { setShowChoiceModal(false); setActiveAction(null); setIsDrawerOpen(true); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #00e5ff', color: '#00e5ff', padding: '15px', borderRadius: '15px', fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', flexShrink: 0 }}>
-                  <span style={{ fontSize: '1.5rem' }}>⚙️</span> MENÙ PRINCIPALE
-                </button>
-              </>
+              <AddEventMenuGrid
+                menuOrder={addEventMenuOrder}
+                onReorder={reorderAddEventMenu}
+                isUnlocked={addEventMenuUnlocked}
+                onUnlockHoldStart={startAddMenuUnlockHold}
+                onUnlockHoldEnd={cancelAddMenuUnlockHold}
+                onLockClickWhenUnlocked={saveAddMenuOrderAndLock}
+                onItemActivate={(id) => handleAddEventMenuItem(id, 'modal')}
+                title="AGGIUNGI EVENTO"
+                headingStyle={{ marginBottom: 0 }}
+              />
             )}
           </div>
         </div>
@@ -11668,6 +11768,38 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
           </div>
         </div>
       )}
+
+      {planningWizardOverlayOpen &&
+        createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 100025,
+              background: 'rgba(0,0,0,0.88)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16,
+            }}
+            onClick={() => setPlanningWizardOverlayOpen(false)}
+            role="presentation"
+          >
+            <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 400, maxHeight: '90vh', overflow: 'auto' }}>
+              <PlanningWizard
+                dailyLog={activeLog || []}
+                onClose={() => setPlanningWizardOverlayOpen(false)}
+                onSubmit={(text) => {
+                  setPlanningWizardOverlayOpen(false);
+                  setActiveAction('ai_chat');
+                  setIsDrawerOpen(false);
+                  void handleChatSubmit(text, { fromInput: true });
+                }}
+              />
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* Pop-up Info Spie (Ottimizzato per schermi piccoli) */}
       {showSpieInfo && (
