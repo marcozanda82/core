@@ -164,7 +164,7 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
       .map((entry) => formatLogEntryForPlanningContext(entry))
       .filter(Boolean)
       .join(', ');
-    const invisible = `[CONTESTO DI SISTEMA INVISIBILE: L'ora attuale è ${currentTime}. Eventi GIA' REGISTRATI in timeline oggi: ${loggedEvents || 'Nessuno'}. REGOLA TASSATIVA: NON pianificare Nodi Fantasma per orari già passati. NON inserire pasti (es. colazione) se risultano già registrati. Adatta i macronutrienti dei futuri Nodi Fantasma calcolando ciò che rimane per raggiungere l'obiettivo giornaliero.]`;
+    const invisible = `[CONTESTO DI SISTEMA INVISIBILE: L'ora attuale è ${currentTime}. Eventi GIA' REGISTRATI in timeline oggi: ${loggedEvents || 'Nessuno'}. REGOLA TASSATIVA: NON pianificare Nodi Fantasma per orari già passati. NON inserire pasti (es. colazione) se risultano già registrati. Adatta i macronutrienti dei futuri Nodi Fantasma calcolando ciò che rimane per raggiungere l'obiettivo giornaliero. REGOLA ANTI-DUPLICAZIONE: attività e pasti già caricati oggi hanno priorità assoluta sul piano; non proporre nel token [DAILY_PLAN] ghostMeals per slot pasto già coperti da log reali né workout ridondante se esiste già un allenamento registrato — il sistema filtra comunque, ma il JSON deve essere coerente e snello.]`;
     const text = `${base}\n\n${invisible}`;
     onSubmit?.(text);
   };
@@ -216,6 +216,27 @@ export default function PlanningWizard({ onClose, onSubmit, dailyLog = [] }) {
               </button>
             );
           })}
+          <div
+            role="note"
+            style={{
+              marginTop: 4,
+              padding: '10px 12px',
+              borderRadius: 12,
+              border: '1px solid rgba(45, 212, 191, 0.4)',
+              background: 'linear-gradient(165deg, rgba(13, 148, 136, 0.14) 0%, rgba(6, 78, 59, 0.12) 100%)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+              color: '#99f6e4',
+              fontSize: '0.78rem',
+              lineHeight: 1.45,
+              fontWeight: 600,
+              pointerEvents: 'none',
+              userSelect: 'none',
+            }}
+          >
+            ✅ Sincronizzato: Le attività e i pasti già caricati oggi avranno la precedenza e non verranno duplicati.
+          </div>
           <button
             type="button"
             disabled={!canAdvanceFrom1}

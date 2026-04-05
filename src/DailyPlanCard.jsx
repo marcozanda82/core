@@ -35,6 +35,18 @@ const MEAL_SELECT_OPTIONS = [
   { value: 'spuntino', label: 'Spuntino' },
 ];
 
+const removeRowBtnStyle = {
+  background: 'transparent',
+  color: '#ef4444',
+  border: 'none',
+  cursor: 'pointer',
+  fontSize: '1.2rem',
+  lineHeight: 1,
+  padding: '4px 8px',
+  flexShrink: 0,
+  alignSelf: 'center',
+};
+
 function normalizePlanFromProps(p) {
   if (!p || typeof p !== 'object') {
     return { activities: [], ghostMeals: [] };
@@ -92,6 +104,20 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
       list[index] = { ...list[index], [field]: value };
       return { ...prev, ghostMeals: list };
     });
+  };
+
+  const handleRemoveActivity = (index) => {
+    setEditedPlan((prev) => ({
+      ...prev,
+      activities: (prev.activities || []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleRemoveGhostMeal = (index) => {
+    setEditedPlan((prev) => ({
+      ...prev,
+      ghostMeals: (prev.ghostMeals || []).filter((_, i) => i !== index),
+    }));
   };
 
   const handleSaveEdits = () => {
@@ -326,6 +352,15 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                   placeholder="Descrizione attività"
                   style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
                 />
+                <button
+                  type="button"
+                  onClick={() => handleRemoveActivity(idx)}
+                  style={removeRowBtnStyle}
+                  aria-label="Rimuovi attività"
+                  title="Rimuovi"
+                >
+                  ✕
+                </button>
               </div>
             ))}
           </div>
@@ -385,6 +420,15 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
                       placeholder="Titolo (es. Pranzo Focus)"
                       style={{ ...inputBaseStyle, flex: 1, minWidth: 140 }}
                     />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveGhostMeal(gIdx)}
+                      style={removeRowBtnStyle}
+                      aria-label="Rimuovi pasto pianificato"
+                      title="Rimuovi"
+                    >
+                      ✕
+                    </button>
                   </div>
                 ))}
               </div>

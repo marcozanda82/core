@@ -6747,22 +6747,34 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
       });
       const ghostList = Array.isArray(plan.ghostMeals) ? plan.ghostMeals : [];
       const srcLog = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
+      const realMeals = (srcLog || [])
+        .filter((n) => n && !n.isGhost && (n.type === 'food' || n.type === 'recipe') && n.mealType)
+        .map((n) => toCanonicalMealType(String(n.mealType).split('_')[0]))
+        .filter(Boolean);
+      const realMealsSet = new Set(realMeals);
+      const hasRealWorkout = (srcLog || []).some((n) => n && !n.isGhost && n.type === 'workout');
       const baseLog = srcLog.filter((e) => e && e.type !== 'ghost_meal');
-      const newGhostEntries = ghostList.map((gm, i) => {
-        const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
-        const timeStr = gm.time != null ? String(gm.time) : '12:00';
-        const dec = parseFlexibleTimeToDecimal(timeStr);
-        const mealTime = dec != null && !Number.isNaN(dec) ? dec : 12;
-        return {
-          id: `ghost_meal_${Date.now()}_${i}`,
-          type: 'ghost_meal',
-          mealType: mt,
-          mealTime,
-          title: String(gm.title || 'Pasto pianificato').trim(),
-          microDesc: String(gm.microDesc || '').trim(),
-          isGhost: true,
-        };
-      });
+      const newGhostEntries = ghostList
+        .filter((gm) => {
+          const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
+          if (realMealsSet.has(mt)) return false;
+          return true;
+        })
+        .map((gm, i) => {
+          const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
+          const timeStr = gm.time != null ? String(gm.time) : '12:00';
+          const dec = parseFlexibleTimeToDecimal(timeStr);
+          const mealTime = dec != null && !Number.isNaN(dec) ? dec : 12;
+          return {
+            id: `ghost_meal_${Date.now()}_${i}`,
+            type: 'ghost_meal',
+            mealType: mt,
+            mealTime,
+            title: String(gm.title || 'Pasto pianificato').trim(),
+            microDesc: String(gm.microDesc || '').trim(),
+            isGhost: true,
+          };
+        });
       const logTimeKey = (e) => {
         if (!e) return 0;
         if (e.type === 'ghost_meal' || e.type === 'food' || e.type === 'recipe') {
@@ -6773,7 +6785,7 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
       const mergedLog = [...baseLog, ...newGhostEntries].sort((a, b) => logTimeKey(a) - logTimeKey(b));
       const baseManual = (manualNodes || []).filter((n) => n && n.type !== 'ghost_workout');
       let mergedManual = [...baseManual].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
-      if (!isSimulationMode && workoutTime) {
+      if (!isSimulationMode && workoutTime && !hasRealWorkout) {
         const wDec = parseFlexibleTimeToDecimal(workoutTime);
         if (wDec != null && !Number.isNaN(wDec)) {
           mergedManual = [
@@ -6800,7 +6812,7 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         return [...withoutCard, { sender: 'ai', text: 'Piano confermato e caricato nel sistema.' }];
       });
     },
-    [applyKentuChatCmd, dailyLog, manualNodes, syncDatiFirebase, isSimulationMode, simulatedLog, parseFlexibleTimeToDecimal]
+    [applyKentuChatCmd, dailyLog, manualNodes, syncDatiFirebase, isSimulationMode, simulatedLog, parseFlexibleTimeToDecimal, toCanonicalMealType]
   );
 
   const handleDailyPlanCancel = useCallback(() => {
