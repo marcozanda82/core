@@ -251,6 +251,7 @@ export default function MealBuilder({
   deleteRecipeFromFoodDb,
   estraiDatiFoodDb = null,
   plannerNoteFromAi = '',
+  onSmartComplete,
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -276,6 +277,7 @@ export default function MealBuilder({
   const [magicFillToast, setMagicFillToast] = useState(false);
   const [swapPanelFoodId, setSwapPanelFoodId] = useState(null);
   const [swapToast, setSwapToast] = useState(false);
+  const [smartCompleteLoading, setSmartCompleteLoading] = useState(false);
 
   const mealBuilderScrollAnchorRef = useRef(null);
 
@@ -812,6 +814,16 @@ export default function MealBuilder({
     setMagicFillToast(true);
     window.setTimeout(() => setMagicFillToast(false), 2200);
   }, [magicFillEligibleFoods, targetMacrosPasto, targetMacros, TARGETS]);
+
+  const handleSmartCompleteClick = useCallback(async () => {
+    if (typeof onSmartComplete !== 'function' || smartCompleteLoading) return;
+    setSmartCompleteLoading(true);
+    try {
+      await onSmartComplete(addedFoods);
+    } finally {
+      setSmartCompleteLoading(false);
+    }
+  }, [onSmartComplete, smartCompleteLoading, addedFoods]);
 
   const swapSourceFood = useMemo(() => {
     if (swapPanelFoodId == null) return null;
@@ -1938,33 +1950,80 @@ export default function MealBuilder({
                 );
               })}
               {magicFillEligibleFoods.length >= 2 && (
-                <button
-                  type="button"
-                  className="btn-primary-glow btn-glass"
-                  onClick={handleMagicFill}
+                <div
                   style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 10,
+                    marginTop: 14,
                     width: '100%',
-                    marginTop: '14px',
-                    padding: '14px 18px',
-                    borderRadius: '14px',
-                    border: '1px solid rgba(0, 229, 255, 0.45)',
-                    background: 'linear-gradient(145deg, rgba(0, 229, 255, 0.18), rgba(255, 255, 255, 0.06))',
-                    color: '#e0f7ff',
-                    fontSize: '0.88rem',
-                    fontWeight: 700,
-                    letterSpacing: '0.06em',
-                    cursor: 'pointer',
-                    boxShadow: '0 0 24px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.12)',
-                    backdropFilter: 'blur(10px)',
-                    WebkitBackdropFilter: 'blur(10px)',
                   }}
                 >
-                  🪄 Bilancia Automaticamente
-                </button>
+                  <button
+                    type="button"
+                    className="btn-primary-glow btn-glass"
+                    onClick={handleMagicFill}
+                    style={{
+                      flex: '1 1 140px',
+                      minWidth: 140,
+                      padding: '14px 18px',
+                      borderRadius: '14px',
+                      border: '1px solid rgba(0, 229, 255, 0.45)',
+                      background: 'linear-gradient(145deg, rgba(0, 229, 255, 0.18), rgba(255, 255, 255, 0.06))',
+                      color: '#e0f7ff',
+                      fontSize: '0.88rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.06em',
+                      cursor: 'pointer',
+                      boxShadow: '0 0 24px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.12)',
+                      backdropFilter: 'blur(10px)',
+                      WebkitBackdropFilter: 'blur(10px)',
+                    }}
+                  >
+                    🪄 Bilancia Automaticamente
+                  </button>
+                </div>
               )}
               </>
             )}
           </div>
+          {typeof onSmartComplete === 'function' && (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 10,
+                marginBottom: 18,
+                width: '100%',
+              }}
+            >
+              <button
+                type="button"
+                className="btn-primary-glow btn-glass"
+                onClick={handleSmartCompleteClick}
+                disabled={smartCompleteLoading}
+                style={{
+                  flex: '1 1 140px',
+                  minWidth: 140,
+                  padding: '14px 18px',
+                  borderRadius: '14px',
+                  border: '1px solid rgba(0, 229, 255, 0.45)',
+                  background: 'linear-gradient(145deg, rgba(0, 229, 255, 0.18), rgba(255, 255, 255, 0.06))',
+                  color: '#e0f7ff',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  cursor: smartCompleteLoading ? 'wait' : 'pointer',
+                  opacity: smartCompleteLoading ? 0.75 : 1,
+                  boxShadow: '0 0 24px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.12)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                }}
+              >
+                {smartCompleteLoading ? '⏳ …' : addedFoods.length === 0 ? '✨ Genera Pasto' : '✨ Completa Pasto'}
+              </button>
+            </div>
+          )}
           {addedFoods.length > 0 && (
             <>
               {userProfile?.level === 'pro' && (

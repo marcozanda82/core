@@ -1553,6 +1553,39 @@ function parseDraftFoodsJsonFromAiResponse(raw) {
   return arr.map((x) => String(x).trim()).filter(Boolean).slice(0, 14);
 }
 
+function parseSmartCompletionJsonFromAiResponse(raw) {
+  const s = String(raw || '').trim();
+  const key = '[COMPLETION_JSON:';
+  const idx = s.indexOf(key);
+  if (idx < 0) throw new Error('Token COMPLETION_JSON non trovato');
+  const start = s.indexOf('{', idx);
+  if (start < 0) throw new Error('JSON non trovato');
+  let depth = 0;
+  let end = -1;
+  for (let i = start; i < s.length; i += 1) {
+    const c = s[i];
+    if (c === '{') depth += 1;
+    else if (c === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end < 0) throw new Error('JSON malformato');
+  const obj = JSON.parse(s.slice(start, end + 1));
+  const foods = obj?.foods;
+  if (!Array.isArray(foods) || foods.length === 0) throw new Error('foods vuoto o non valido');
+  return foods
+    .map((f) => ({
+      desc: String(f?.desc ?? f?.name ?? '').trim(),
+      weight: Math.max(5, Math.round(Number(f?.weight ?? f?.qty) || 100)),
+    }))
+    .filter((f) => f.desc.length > 0)
+    .slice(0, 20);
+}
+
 export default function SalaComandi() {
   const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
   const isAuthenticated = !!user;
@@ -2602,6 +2635,7 @@ export default function SalaComandi() {
           mealType: e.mealType,
           title: e.title,
           microDesc: e.microDesc,
+          draftFoods: Array.isArray(e.draftFoods) ? e.draftFoods : [],
           isGhost: true,
         };
       });
@@ -4866,6 +4900,9 @@ Ottimo! Diario aggiornato. 🥗`;
       const mt = toCanonicalMealType(String(node.mealType || 'pranzo').split('_')[0]) || 'pranzo';
       const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12;
       const title = String(node.title || 'Pasto pianificato').trim();
+      const draftFoodsGhost = Array.isArray(node.draftFoods)
+        ? node.draftFoods.map((x) => String(x).trim()).filter(Boolean)
+        : [];
       setSelectedNodeReport({
         type: 'ghost_meal',
         id: node.id,
@@ -4875,6 +4912,7 @@ Ottimo! Diario aggiornato. 🥗`;
         title,
         name: title,
         microDesc: String(node.microDesc || '').trim(),
+        draftFoods: draftFoodsGhost,
         items: [],
         isGhost: true,
       });
@@ -7149,12 +7187,7 @@ ${dbKeys || 'n/d'}`;
       const srcLog = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
       const nowDec = getNowDecimalHourForPlanMerge();
       const realMealsSet = buildPastOnlyRealMealTypeSet(srcLog, nowDec);
-      const hasRealWorkout = (srcLog || []).some((n) => {
-        if (!n || n.isGhost || n.type !== 'workout') return false;
-        const et = Number(n.time ?? n.mealTime);
-        if (Number.isNaN(et)) return false;
-        return et <= nowDec;
-      });
+      const hasRealWorkout = (srcLog || []).some((n) => n && !n.isGhost && n.type === 'workout');
       const normalizeDailyPlanConflictTitle = (s) =>
         String(s || '')
           .trim()
@@ -7183,8 +7216,9 @@ ${dbKeys || 'n/d'}`;
             typeof gm.mealTime === 'number' && !Number.isNaN(gm.mealTime)
               ? gm.mealTime
               : parseFlexibleTimeToDecimal(String(gm.time || '12:00')) ?? 12;
-          const draftFoods = Array.isArray(gm.draftFoods)
-            ? gm.draftFoods.map((x) => String(x).trim()).filter(Boolean)
+          const rawDraft = gm.draftFoods || [];
+          const draftFoods = Array.isArray(rawDraft)
+            ? rawDraft.map((x) => String(x).trim()).filter(Boolean)
             : [];
           return {
             id: `ghost_meal_${Date.now()}_${i}`,
@@ -8291,6 +8325,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       burnedKcalBonus: burnedKcal,
     });
   }, [mealType, dailyLogForDynamicTargets, userTargets, kentuDailyCalorieStrategy, burnedKcal, drawerMealTime, displayTime]);
+
+  const handleSmartMealCompletion = useCallback(
+    async (currentFoods) => {
+      const foods = Array.isArray(currentFoods) ? currentFoods : [];
+      const present = foods.map((f) => f.desc || f.name).filter(Boolean);
+      const prompt = `SMART MEAL COMPLETION: Devo completare il pasto '${String(mealType)}'. Target ricalcolato: ${JSON.stringify(targetMacrosPasto)}. Cibi già presenti (da NON rimuovere): ${present.join(', ') || 'Nessuno'}. Genera un array JSON con cibi suggeriti per raggiungere il target (pescando da storico o DB utente). FORMATO: \`[COMPLETION_JSON: {"foods": [{"desc": "Nome Cibo", "weight": 150}]}]\`.`;
+      try {
+        const raw = await callGeminiAPIWithRotation(prompt);
+        const items = parseSmartCompletionJsonFromAiResponse(raw);
+        const newEntries = items.map((it) => estraiDatiFoodDb(it.desc, it.weight, mealType));
+        setAddedFoods((prev) => [...prev, ...newEntries]);
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : 'Completamento non riuscito';
+        window.alert(msg);
+      }
+    },
+    [mealType, targetMacrosPasto, callGeminiAPIWithRotation, estraiDatiFoodDb]
+  );
 
   const strategyKeyForMeal = getStrategyKey(toCanonicalMealType(String(mealType || 'pranzo').split('_')[0]));
   const targetKcalPasto = idealStrategy[strategyKeyForMeal] ?? targetMacrosPasto.kcal;
@@ -10904,6 +10956,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             deleteRecipeFromFoodDb={deleteRecipeFromFoodDb}
             estraiDatiFoodDb={estraiDatiFoodDb}
             plannerNoteFromAi={mealPlannerGhostNote}
+            onSmartComplete={handleSmartMealCompletion}
           />
         )}
 
@@ -12564,6 +12617,38 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
                 )}
               </div>
             )}
+
+            {(() => {
+              const node = selectedNodeReport;
+              const isGhostMealNode = node.isGhost === true || node.type === 'ghost_meal';
+              const df = Array.isArray(node.draftFoods) ? node.draftFoods : [];
+              if (!isGhostMealNode || df.length === 0) return null;
+              return (
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#7dd3fc', marginBottom: 8, letterSpacing: '0.06em' }}>
+                    Abbozzo alimenti (AI)
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {df.map((foodStr, i) => (
+                      <span
+                        key={`${foodStr}_${i}`}
+                        style={{
+                          display: 'inline-block',
+                          background: 'rgba(0, 229, 255, 0.15)',
+                          color: '#00e5ff',
+                          padding: '6px 10px',
+                          borderRadius: 12,
+                          fontSize: '0.78rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {String(foodStr)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div style={{ display: 'flex', gap: '15px' }}>
               <button type="button" onClick={() => setSelectedNodeReport(null)} style={{ flex: 1, padding: '12px', background: '#444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>

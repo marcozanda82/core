@@ -82,14 +82,9 @@ function isTimingSlotInPast(slotId) {
   return false;
 }
 
-function extractRealWorkout(log, nowDec) {
-  const t = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
-  return (log || []).find((e) => {
-    if (!e || e.isGhost || e.type !== 'workout') return false;
-    const et = Number(e.time ?? e.mealTime);
-    if (Number.isNaN(et)) return false;
-    return et <= t;
-  });
+/** Primo allenamento reale nel log (passato o futuro), per pre-selezione wizard. */
+function extractRealWorkout(log) {
+  return (log || []).find((e) => e && !e.isGhost && e.type === 'workout');
 }
 
 function hasRealMealsInLog(log, nowDec) {
@@ -121,7 +116,7 @@ function inferMusclesFromWorkoutText(workout) {
 function computeOpenSnapshot(dailyLog) {
   const log = dailyLog || [];
   const nowDec = getLocalDecimalHourNow();
-  const w = extractRealWorkout(log, nowDec);
+  const w = extractRealWorkout(log);
   const macros = new Set();
   const muscles = new Set();
   const lockedMuscles = new Set();
@@ -129,11 +124,13 @@ function computeOpenSnapshot(dailyLog) {
   const mealsPresentInLog = hasRealMealsInLog(log, nowDec);
   if (w) {
     macros.add('training');
-    trainingLockedFromLog = true;
-    inferMusclesFromWorkoutText(w).forEach((m) => {
-      muscles.add(m);
-      lockedMuscles.add(m);
-    });
+    inferMusclesFromWorkoutText(w).forEach((m) => muscles.add(m));
+    const et = Number(w.time ?? w.mealTime);
+    const workoutSealed = !Number.isNaN(et) && et <= nowDec;
+    if (workoutSealed) {
+      trainingLockedFromLog = true;
+      inferMusclesFromWorkoutText(w).forEach((m) => lockedMuscles.add(m));
+    }
   }
   return { macros, muscles, lockedMuscles, trainingLockedFromLog, mealsPresentInLog };
 }
@@ -333,10 +330,7 @@ export default function PlanningWizard({
   }, [dailyLog, stagingDraftById]);
 
   const hasTraining = macros.has('training');
-  const hasRealWorkout = useMemo(() => {
-    const nd = getLocalDecimalHourNow();
-    return !!extractRealWorkout(dailyLog, nd);
-  }, [dailyLog]);
+  const hasRealWorkout = useMemo(() => !!extractRealWorkout(dailyLog), [dailyLog]);
 
   const timingComplete = useMemo(() => {
     for (const id of macros) {
@@ -547,6 +541,36 @@ export default function PlanningWizard({
               </button>
             );
           })}
+
+          {(() => {
+            const w = extractRealWorkout(dailyLog);
+            if (!w) return null;
+            const et = Number(w.time ?? w.mealTime);
+            const hh = !Number.isNaN(et) ? decimalHourToHHMM(et) : '—';
+            const wLocked = !Number.isNaN(et) && et <= getLocalDecimalHourNow();
+            const line = String(w.desc || w.name || w.title || 'Allenamento').trim() || 'Allenamento';
+            return (
+              <div
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255, 109, 0, 0.35)',
+                  background: 'rgba(255, 109, 0, 0.08)',
+                  fontSize: '0.8rem',
+                  color: '#ffccbc',
+                  lineHeight: 1.4,
+                }}
+              >
+                <div style={{ fontWeight: 800, color: '#ffab91', marginBottom: 4 }}>💪 Allenamento nel diario</div>
+                <div>
+                  <strong>{hh}</strong>
+                  {' · '}
+                  {line}
+                  {wLocked ? <span title="Orario già passato — tile Allenamento bloccata"> 🔒</span> : null}
+                </div>
+              </div>
+            );
+          })()}
 
           {hasTraining ? (
             <div style={{ marginTop: 6 }}>
