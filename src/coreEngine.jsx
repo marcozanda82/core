@@ -1529,6 +1529,31 @@ function computeAccumuloSNC(trackerData, daysBack = 60) {
 function normalizeLogData(rawLog) {
   const out = [];
   (rawLog || []).forEach(entry => {
+    if (entry.type === 'ghost_meal') {
+      const mt = String(entry.mealType || 'pranzo').split('_')[0];
+      let mTime = entry.mealTime;
+      if (typeof mTime === 'string' && mTime.includes(':')) {
+        const parts = mTime.trim().match(/^(\d{1,2})[:.](\d{2})$/);
+        mTime = parts ? Math.min(23.99, parseInt(parts[1], 10) + parseInt(parts[2], 10) / 60) : 12;
+      }
+      if (typeof mTime !== 'number' || Number.isNaN(mTime)) {
+        const ts = String(entry.time || entry.mealTime || '12:00').trim();
+        const parts = ts.match(/^(\d{1,2})[:.](\d{2})$/);
+        mTime = parts ? Math.min(23.99, parseInt(parts[1], 10) + parseInt(parts[2], 10) / 60) : 12;
+      }
+      out.push({
+        ...entry,
+        type: 'ghost_meal',
+        id: entry.id || `ghost_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        mealType: mt,
+        mealTime: mTime,
+        title: entry.title != null ? String(entry.title) : 'Pasto pianificato',
+        microDesc: entry.microDesc != null ? String(entry.microDesc) : '',
+        isGhost: true,
+        kcal: 0,
+      });
+      return;
+    }
     if (entry.type === 'meal') {
       const mealType = inferMealType(entry);
       (entry.items || []).forEach(subItem => {
@@ -2224,8 +2249,21 @@ function denormalizeLogForFirebase(flatLog) {
   const meals = {};
   const workouts = [];
   const sleeps = [];
+  const ghostMeals = [];
 
   (flatLog || []).forEach(entry => {
+    if (entry.type === 'ghost_meal') {
+      ghostMeals.push({
+        type: 'ghost_meal',
+        id: entry.id,
+        mealType: entry.mealType,
+        mealTime: entry.mealTime,
+        title: entry.title,
+        microDesc: entry.microDesc,
+        isGhost: true,
+      });
+      return;
+    }
     if (entry.type === 'sleep') {
       sleeps.push({
         type: 'sleep',
@@ -2297,6 +2335,7 @@ function denormalizeLogForFirebase(flatLog) {
   });
   result.push(...workouts);
   result.push(...sleeps);
+  result.push(...ghostMeals);
   return result;
 }
 

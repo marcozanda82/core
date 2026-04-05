@@ -36,7 +36,7 @@ export default function TimelineNodi({
             const effectiveNodeType = node.type === 'meal' ? 'meal' : node.type;
             const isImportant = NODE_IMPORTANCE?.[currentChartUnit]?.includes(effectiveNodeType);
             const importanceStyle = isImportant ? { filter: 'none', opacity: 1, zIndex: 10 } : { filter: 'grayscale(100%)', opacity: 0.35, zIndex: 1 };
-            const isNodeFocused = analysisTabActive || (!activeAction || activeAction === 'home') || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && node.type === 'meal') || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive')) || (activeAction === 'acqua' && node.type === 'water');
+            const isNodeFocused = analysisTabActive || (!activeAction || activeAction === 'home') || activeAction === 'diario_giornaliero' || (activeAction === 'pasto' && (node.type === 'meal' || node.type === 'ghost_meal')) || (activeAction === 'allenamento' && (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive')) || (activeAction === 'acqua' && node.type === 'water');
             const isWork = node.type === 'work';
             const isCognitive = node.type === 'cognitive';
             const percent = (node.time / 24) * 100;
@@ -69,6 +69,61 @@ export default function TimelineNodi({
             const cognitiveIcon = node.subType === 'studio' ? '📚' : '💻';
             const cognitiveBg = 'rgba(0, 229, 255, 0.15)';
             const cognitiveBorder = '#00e5ff';
+
+            if (node.type === 'ghost_meal') {
+              const displayPercent = (node.time / 24) * 100;
+              const titleG = String(node.title || 'Pasto pianificato').trim();
+              const microG = String(node.microDesc || '').trim();
+              const isDragging = draggingNode?.id === node.id;
+              const isTouchingOrDragging = isDragging || (touchingNodeId === node.id);
+              const dragY = isDragging ? dragOffsetY : 0;
+              const pointTransform = isDragging ? `translate(-50%, ${dragY - 45}px) scale(1.05)` : `translateX(-50%) scale(${isTouchingOrDragging ? 1.08 : 1})`;
+              const ghostVis = { filter: 'none', opacity: 1, zIndex: 8 };
+              return (
+                <div
+                  key={node.id}
+                  role="button"
+                  tabIndex={0}
+                  className="timeline-node ghost-meal-node"
+                  onClick={handleNodeTap(node)}
+                  style={{
+                    position: 'absolute',
+                    left: `${displayPercent}%`,
+                    transform: pointTransform,
+                    top: '50%',
+                    marginTop: -22 - (node.stackIndex || 0) * 38,
+                    minWidth: '112px',
+                    maxWidth: 'min(160px, 28vw)',
+                    padding: '6px 8px',
+                    borderRadius: '10px',
+                    border: '1px dashed #00e5ff',
+                    background: 'rgba(0, 229, 255, 0.05)',
+                    animation: 'ghostPulse 2s infinite',
+                    cursor: 'pointer',
+                    pointerEvents: isNodeFocused ? 'auto' : 'none',
+                    zIndex: isTouchingOrDragging ? 100 : 8,
+                    ...(isDragging ? {} : ghostVis),
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: 2,
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <span style={{ fontSize: '0.62rem', lineHeight: 1.2, color: '#00e5ff', fontWeight: 800 }} aria-hidden>
+                    🎯
+                  </span>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#e0fbff', lineHeight: 1.25, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {titleG}
+                  </span>
+                  {microG ? (
+                    <span style={{ fontSize: '0.58rem', color: 'rgba(200, 230, 240, 0.85)', lineHeight: 1.3, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                      {microG}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            }
 
             if (isWork) {
               const dragEdge = isDragging ? draggingNode?.edge : null;

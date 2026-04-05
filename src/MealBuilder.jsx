@@ -250,6 +250,7 @@ export default function MealBuilder({
   saveFoodEntryPer100ToFoodDb,
   deleteRecipeFromFoodDb,
   estraiDatiFoodDb = null,
+  plannerNoteFromAi = '',
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -913,6 +914,22 @@ export default function MealBuilder({
         <h2 style={{ fontSize: '0.8rem', color: '#fff', letterSpacing: '2px', margin: 0 }}>NUOVO PASTO</h2>
         <div style={{ width: '70px' }}></div>
       </div>
+      {plannerNoteFromAi != null && String(plannerNoteFromAi).trim() !== '' && (
+        <div
+          style={{
+            marginBottom: '16px',
+            padding: '12px 14px',
+            borderRadius: '12px',
+            border: '1px dashed rgba(0, 229, 255, 0.45)',
+            background: 'rgba(0, 229, 255, 0.06)',
+          }}
+        >
+          <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.12em', color: '#67e8f9', marginBottom: 6 }}>
+            NOTA DELL&apos;AI (PIANO)
+          </div>
+          <p style={{ margin: 0, fontSize: '0.82rem', color: '#e0f7ff', lineHeight: 1.45 }}>{String(plannerNoteFromAi).trim()}</p>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px' }}>
         {MEAL_TYPES.map(({ label, id }) => (
           <button

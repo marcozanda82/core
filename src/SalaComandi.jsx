@@ -484,7 +484,20 @@ function normalizeDailyPlanFromToken(parsed) {
       if (wn) workoutTime = wn;
     }
   }
-  return { target, workoutTime, activities };
+  let ghostMeals = [];
+  if (Array.isArray(parsed.ghostMeals)) {
+    ghostMeals = parsed.ghostMeals
+      .map((g) => {
+        const mealType = String(g?.mealType || 'pranzo').toLowerCase().split('_')[0];
+        const timeNorm = normalizeDailyPlanTimeForInput(g?.time != null ? String(g.time) : '') || '12:00';
+        const title = String(g?.title || 'Pasto pianificato').trim();
+        const microDesc = String(g?.microDesc || '').trim();
+        if (!title) return null;
+        return { mealType, time: timeNorm, title, microDesc };
+      })
+      .filter(Boolean);
+  }
+  return { target, workoutTime, activities, ghostMeals };
 }
 
 /**
@@ -1687,6 +1700,7 @@ export default function SalaComandi() {
 
   // STATI MODULI (Pasti, Acqua, Allenamento, Zen)
   const [mealType, setMealType] = useState('cena');
+  const [mealPlannerGhostNote, setMealPlannerGhostNote] = useState('');
   const [drawerMealTime, setDrawerMealTime] = useState(12);
   const [drawerMealTimeStr, setDrawerMealTimeStr] = useState('12:00');
   const [foodNameInput, setFoodNameInput] = useState('');
@@ -2420,9 +2434,30 @@ export default function SalaComandi() {
     }));
   }, [activeLog]);
 
+  const ghostMealTimelineNodes = useMemo(() => {
+    return (activeLog || [])
+      .filter((e) => e && e.type === 'ghost_meal')
+      .map((e) => {
+        let t = e.mealTime;
+        if (typeof t !== 'number' || Number.isNaN(t)) {
+          const parsed = parseFlexibleTimeToDecimal(String(e.time || e.mealTime || '12:00'));
+          t = parsed != null ? parsed : 12;
+        }
+        return {
+          id: e.id || `ghost_tl_${e.mealType}_${t}`,
+          type: 'ghost_meal',
+          time: t,
+          mealType: e.mealType,
+          title: e.title,
+          microDesc: e.microDesc,
+          isGhost: true,
+        };
+      });
+  }, [activeLog]);
+
   const allNodes = useMemo(() => {
-    return [...computedMealNodes, ...manualNodes].sort((a, b) => a.time - b.time);
-  }, [computedMealNodes, manualNodes]);
+    return [...computedMealNodes, ...ghostMealTimelineNodes, ...manualNodes].sort((a, b) => a.time - b.time);
+  }, [computedMealNodes, ghostMealTimelineNodes, manualNodes]);
 
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
@@ -3565,6 +3600,7 @@ export default function SalaComandi() {
     setFoodNameInput('');
     setFoodWeightInput('');
     setIsBarcodeScannerOpen(false);
+    setMealPlannerGhostNote('');
     setActiveAction('home');
     setIsDrawerOpen(false);
   }
@@ -4426,6 +4462,7 @@ Ottimo! Diario aggiornato. 🥗`;
   };
 
   const startNodeDrag = useCallback((node, edge) => (e) => {
+    if (node?.type === 'ghost_meal') return;
     e.stopPropagation();
     setTouchingNodeId(node.id);
     const target = e.currentTarget;
@@ -4521,6 +4558,17 @@ Ottimo! Diario aggiornato. 🥗`;
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
     if (isSimulationMode) return;
 
+    if (node.type === 'ghost_meal') {
+      const mt = toCanonicalMealType(String(node.mealType || 'pranzo').split('_')[0]) || 'pranzo';
+      const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12;
+      setMealType(mt);
+      setDrawerMealTime(t);
+      setDrawerMealTimeStr(decimalToTimeStr(t));
+      setMealPlannerGhostNote(String(node.microDesc || node.title || '').trim());
+      setActiveAction('pasto');
+      return;
+    }
+
     if (node.type === 'meal') {
       const slotId = String(node.mealId || node.id);
       const foodsForSlot =
@@ -4604,7 +4652,23 @@ Ottimo! Diario aggiornato. 🥗`;
     }
 
     setSelectedNodeReport(node);
-  }, [manualNodes, dailyLog, activeLog, syncDatiFirebase, setManualNodes, isSimulationMode, MEAL_LABELS_SAVE, getFoodItemsForMealSlot]);
+  }, [
+    manualNodes,
+    dailyLog,
+    activeLog,
+    syncDatiFirebase,
+    setManualNodes,
+    isSimulationMode,
+    MEAL_LABELS_SAVE,
+    getFoodItemsForMealSlot,
+    setMealType,
+    setDrawerMealTime,
+    setDrawerMealTimeStr,
+    decimalToTimeStr,
+    setMealPlannerGhostNote,
+    setActiveAction,
+    toCanonicalMealType,
+  ]);
 
   const handleSaveAlcohol = () => {
     if (isSimulationMode) return;
@@ -5694,7 +5758,7 @@ FORMATTAZIONE OBBLIGATORIA: Devi essere chiarissimo e massimizzare la leggibilit
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=BRIEFING o QUICK_ACTION=ANALISI_IERI: rispondi ESCLUSIVAMENTE in formato Lavagna (emoji + dato per riga, elenchi puntati essenziali), rispettando il tetto di 3 elenchi e le REGOLE DI STILE sopra.
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=IDEA_PASTO: rispondi ESCLUSIVAMENTE con il blocco [MEAL_PROPOSAL:{...}] su una riga come da CARTA MENU; nessun altro testo (la Dispensa è in [CONTEXT_LIVE]).
 
-MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata (testo libero o tramite wizard), entra in modalità pianificazione. Se il messaggio utente inizia con "PIANIFICAZIONE GUIDATA:", ha già scelto attività e fasce (Mattina / Pomeriggio / Sera): NON chiedere altro, NON fare elenchi lunghi. Rispondi generando ESATTAMENTE il token [DAILY_PLAN:{...}] su una riga, con orari concreti HH:MM coerenti con le fasce (es. Mattina → 08:00–11:30, Pomeriggio → 12:00–17:30, Sera → 18:00–22:00; se l'allenamento è in Sera usa tipicamente 18:30 o 19:00 come workoutTime e nella lista activities). Scegli "target" (deficit, pari o surplus) in base al contesto [CONTEXT_LIVE] e agli obiettivi. Altrimenti, in conversazione aperta, chiedi quali attività ha in programma; quando l'utente ti fornisce le attività, NON fare elenchi testuali lunghi, ma genera ESATTAMENTE questa stringa (sostituendo i dati reali) per invocare l'interfaccia: [DAILY_PLAN:{"target":"deficit|pari|surplus", "workoutTime":"HH:MM"|null, "activities":[{"time":"HH:MM", "desc":"Lavoro PC"}, {"time":"HH:MM", "desc":"Allenamento"}]}]. Il token deve essere da solo su una riga (usa valori concreti per target: solo una tra deficit, pari, surplus; workoutTime stringa "HH:MM" oppure null se assente).
+MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata (testo libero o tramite wizard), entra in modalità pianificazione. Se il messaggio utente inizia con "PIANIFICAZIONE GUIDATA:", ha già scelto attività e fasce (Mattina / Pomeriggio / Sera): NON chiedere altro, NON fare elenchi lunghi. Rispondi generando ESATTAMENTE il token [DAILY_PLAN:{...}] su una riga, con orari concreti HH:MM coerenti con le fasce (es. Mattina → 08:00–11:30, Pomeriggio → 12:00–17:30, Sera → 18:00–22:00; se l'allenamento è in Sera usa tipicamente 18:30 o 19:00 come workoutTime e nella lista activities). Il JSON DEVE includere anche "ghostMeals": array di pasti pianificati (Nodi Fantasma) che l'utente vedrà in timeline finché non li converte in pasti veri: ogni elemento {"mealType":"colazione|snack|pranzo|cena", "time":"HH:MM", "title":"Titolo breve", "microDesc":"Suggerimento micronutrienti (es. fibre, omega-3) per lucidità e sonno"}. Esempio forma completa: [DAILY_PLAN:{"target":"pari", "workoutTime":"19:00", "activities":[...], "ghostMeals":[{"mealType":"pranzo", "time":"13:00", "title":"Pranzo Focus", "microDesc":"Fibre > 15g, focus su Omega-3."}]}]. Scegli "target" (deficit, pari o surplus) in base a [CONTEXT_LIVE]. Altrimenti, in conversazione aperta, chiedi le attività; quando l'utente risponde, genera lo stesso token con ghostMeals coerenti col piano. Il token deve essere da solo su una riga.
 
 LOGICA DI RACCOMANDAZIONE INTELLIGENTE: Quando l'utente chiede consigli su cosa mangiare (es. "Cosa mangio per cena?"):
 1. Analizza i macro residui dal blocco [CONTEXT_LIVE] nell'ultimo messaggio utente per avvicinarti al fabbisogno giornaliero (senza ignorare equilibrio e contesto).
@@ -6583,12 +6647,44 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         target: plan.target,
         workoutTime: workoutTime || null,
       });
+      const ghostList = Array.isArray(plan.ghostMeals) ? plan.ghostMeals : [];
+      const srcLog = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
+      const baseLog = srcLog.filter((e) => e && e.type !== 'ghost_meal');
+      const newGhostEntries = ghostList.map((gm, i) => {
+        const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
+        const timeStr = gm.time != null ? String(gm.time) : '12:00';
+        const dec = parseFlexibleTimeToDecimal(timeStr);
+        const mealTime = dec != null && !Number.isNaN(dec) ? dec : 12;
+        return {
+          id: `ghost_meal_${Date.now()}_${i}`,
+          type: 'ghost_meal',
+          mealType: mt,
+          mealTime,
+          title: String(gm.title || 'Pasto pianificato').trim(),
+          microDesc: String(gm.microDesc || '').trim(),
+          isGhost: true,
+        };
+      });
+      const logTimeKey = (e) => {
+        if (!e) return 0;
+        if (e.type === 'ghost_meal' || e.type === 'food' || e.type === 'recipe') {
+          return Number(e.mealTime) || 0;
+        }
+        return Number(e.time ?? e.mealTime) || 0;
+      };
+      const mergedLog = [...baseLog, ...newGhostEntries].sort((a, b) => logTimeKey(a) - logTimeKey(b));
+      if (isSimulationMode) {
+        setSimulatedLog(mergedLog);
+      } else {
+        setDailyLog(mergedLog);
+        syncDatiFirebase(mergedLog, manualNodes);
+      }
       setChatHistory((prev) => {
         const withoutCard = prev.filter((m) => !m.dailyPlan);
         return [...withoutCard, { sender: 'ai', text: 'Piano confermato e caricato nel sistema.' }];
       });
     },
-    [applyKentuChatCmd]
+    [applyKentuChatCmd, dailyLog, manualNodes, syncDatiFirebase, isSimulationMode, simulatedLog]
   );
 
   const handleDailyPlanCancel = useCallback(() => {
@@ -10175,6 +10271,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             saveFoodEntryPer100ToFoodDb={saveFoodEntryPer100ToFoodDb}
             deleteRecipeFromFoodDb={deleteRecipeFromFoodDb}
             estraiDatiFoodDb={estraiDatiFoodDb}
+            plannerNoteFromAi={mealPlannerGhostNote}
           />
         )}
 

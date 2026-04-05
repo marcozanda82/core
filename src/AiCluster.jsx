@@ -31,7 +31,7 @@ const COMMAND_HUB_SECTIONS = [
   {
     title: 'Coach & dispensa',
     items: [
-      { key: 'briefing', icon: 'chart', title: 'Briefing', desc: 'Sintesi giornata', highlight: true },
+      { key: 'briefing', icon: 'chart', title: 'Briefing', desc: 'Sintesi giornata', highlight: false },
       { key: 'yesterday', icon: 'search', title: 'Analisi ieri', desc: 'Gap e trend' },
       { key: 'mealIdea', icon: 'bulb', title: 'Idea pasto', desc: 'Dalla dispensa' },
     ],
@@ -324,80 +324,79 @@ export default function AiCluster({
             ))}
           </div>
         )}
-        {typeof onChatQuickAction === 'function' && !chatInput.trim() && chatImages.length === 0 && (
+        {typeof onChatQuickAction === 'function' && !planningWizardOpen && !chatInput.trim() && chatImages.length === 0 && (
           <div style={{ flexShrink: 0, marginTop: 6, marginBottom: 4 }}>
-            {planningWizardOpen ? (
-              <PlanningWizard
-                onClose={() => setPlanningWizardOpen(false)}
-                onSubmit={(text) => {
-                  setPlanningWizardOpen(false);
-                  onSendMessage(text, { fromInput: true });
-                  setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                }}
-              />
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPlanningWizardOpen(true);
-                    setIsPanelOpen(false);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '16px 18px',
-                    marginBottom: 10,
-                    borderRadius: 14,
-                    border: '1px solid rgba(0, 229, 255, 0.4)',
-                    background: 'linear-gradient(135deg, rgba(0, 229, 255, 0.28) 0%, rgba(124, 58, 237, 0.22) 100%)',
-                    color: '#f0fdff',
-                    fontWeight: 900,
-                    fontSize: '0.95rem',
-                    cursor: 'pointer',
-                    boxShadow: '0 0 22px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.08)',
-                  }}
-                >
-                  🎯 Pianifica Giornata
-                </button>
-                <button type="button" className="kentu-hub-toggle" onClick={() => setIsPanelOpen((o) => !o)} aria-expanded={isPanelOpen}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <KentuIcon name="sliders" size={22} />
-                    <span>{isPanelOpen ? 'Chiudi strumenti' : 'Strumenti sistema'}</span>
-                  </span>
-                  <span style={{ display: 'flex', color: 'var(--kentu-text-muted)', transform: isPanelOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}>
-                    <KentuIcon name="caret" size={20} />
-                  </span>
-                </button>
-                {isPanelOpen && (
-                  <div className="kentu-card kentu-hub-panel">
-                    <div className="kentu-hub-section-title">Dashboard comandi</div>
-                    {COMMAND_HUB_SECTIONS.map((section, secIdx) => (
-                      <div key={section.title} style={{ marginBottom: secIdx < COMMAND_HUB_SECTIONS.length - 1 ? 18 : 0 }}>
-                        <div className="kentu-hub-group-label">{section.title}</div>
-                        <div className="kentu-hub-grid">
-                          {section.items.map(({ key, icon, title: tileTitle, desc, highlight }) => (
-                            <KentuGridItem
-                              key={key}
-                              icon={icon}
-                              title={tileTitle}
-                              subtitle={desc}
-                              highlighted={!!highlight}
-                              onClick={() => {
-                                onChatQuickAction(key);
-                                setIsPanelOpen(false);
-                                setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                              }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+            <button
+              type="button"
+              onClick={() => {
+                setPlanningWizardOpen(true);
+                setIsPanelOpen(false);
+              }}
+              style={{
+                width: '100%',
+                padding: '16px 18px',
+                marginBottom: 10,
+                borderRadius: 14,
+                border: '1px solid rgba(0, 229, 255, 0.4)',
+                background: 'linear-gradient(135deg, rgba(0, 229, 255, 0.28) 0%, rgba(124, 58, 237, 0.22) 100%)',
+                color: '#f0fdff',
+                fontWeight: 900,
+                fontSize: '0.95rem',
+                cursor: 'pointer',
+                boxShadow: '0 0 22px rgba(0, 229, 255, 0.22), inset 0 1px 0 rgba(255,255,255,0.08)',
+              }}
+            >
+              🎯 Pianifica Giornata
+            </button>
+            <button type="button" className="kentu-hub-toggle" onClick={() => setIsPanelOpen((o) => !o)} aria-expanded={isPanelOpen}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <KentuIcon name="sliders" size={22} />
+                <span>{isPanelOpen ? 'Chiudi strumenti' : 'Strumenti sistema'}</span>
+              </span>
+              <span style={{ display: 'flex', color: 'var(--kentu-text-muted)', transform: isPanelOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}>
+                <KentuIcon name="caret" size={20} />
+              </span>
+            </button>
+            {isPanelOpen && (
+              <div className="kentu-card kentu-hub-panel">
+                <div className="kentu-hub-section-title">Dashboard comandi</div>
+                {COMMAND_HUB_SECTIONS.map((section, secIdx) => (
+                  <div key={section.title} style={{ marginBottom: secIdx < COMMAND_HUB_SECTIONS.length - 1 ? 18 : 0 }}>
+                    <div className="kentu-hub-group-label">{section.title}</div>
+                    <div className="kentu-hub-grid">
+                      {section.items.map(({ key, icon, title: tileTitle, desc, highlight }) => (
+                        <KentuGridItem
+                          key={key}
+                          icon={icon}
+                          title={tileTitle}
+                          subtitle={desc}
+                          highlighted={!!highlight}
+                          onClick={() => {
+                            onChatQuickAction(key);
+                            setIsPanelOpen(false);
+                            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                          }}
+                        />
+                      ))}
+                    </div>
                   </div>
-                )}
-              </>
+                ))}
+              </div>
             )}
           </div>
         )}
+        {planningWizardOpen ? (
+          <div style={{ flexShrink: 0, marginTop: 6, marginBottom: 8 }}>
+            <PlanningWizard
+              onClose={() => setPlanningWizardOpen(false)}
+              onSubmit={(text) => {
+                setPlanningWizardOpen(false);
+                onSendMessage(text, { fromInput: true });
+                setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
+            />
+          </div>
+        ) : (
         <div className="kentu-input-strip">
           <input
             type="file"
@@ -453,6 +452,7 @@ export default function AiCluster({
             <KentuIcon name="send" size={18} />
           </KentuButton>
         </div>
+        )}
       </div>
     </div>
   );

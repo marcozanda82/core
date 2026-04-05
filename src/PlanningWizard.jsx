@@ -10,7 +10,7 @@ const MACRO_OPTIONS = [
   { id: 'relax', label: 'Relax/Recupero' },
 ];
 
-const MUSCLE_OPTIONS = ['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Core', 'Cardio'];
+const MUSCLE_OPTIONS = ['Petto', 'Dorso', 'Gambe', 'Braccia', 'Spalle', 'Cardio'];
 
 const TIMING_KEYS = [
   { id: 'mattina', label: 'Mattina' },
@@ -68,8 +68,8 @@ function buildGuidedPrompt({ macroIds, muscles, timingByMacro }) {
     return `${label} (${fasc})`;
   });
   return (
-    `PIANIFICAZIONE GUIDATA: Ho selezionato le seguenti attività. ${parts.join('. ')}. ` +
-    `Genera il piano giornaliero ottimizzando gli orari esatti e la strategia calorica per massimizzare il recupero e la lucidità.`
+    `PIANIFICAZIONE GUIDATA: ${parts.join('. ')}. ` +
+    `Ottimizza orari, target calorico e genera i Nodi Fantasma per i pasti con focus sui micronutrienti per mantenere la lucidità e proteggere il sonno.`
   );
 }
 

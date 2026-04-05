@@ -135,6 +135,46 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel }) {
             ))}
           </ul>
 
+          {Array.isArray(editedPlan?.ghostMeals) && editedPlan.ghostMeals.length > 0 ? (
+            <div
+              style={{
+                marginTop: 12,
+                marginBottom: 4,
+                padding: '10px 12px',
+                borderRadius: 10,
+                background: 'rgba(179, 136, 255, 0.08)',
+                border: '1px solid rgba(179, 136, 255, 0.22)',
+              }}
+            >
+              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'rgba(224, 210, 255, 0.95)', marginBottom: 8, letterSpacing: '0.06em' }}>
+                Pasti pianificati (nodi fantasma)
+              </div>
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                {editedPlan.ghostMeals.map((gm, gi) => (
+                  <li
+                    key={gi}
+                    style={{
+                      fontSize: '0.78rem',
+                      color: '#e8e0ff',
+                      marginBottom: gi < editedPlan.ghostMeals.length - 1 ? 8 : 0,
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    <strong style={{ color: '#c4b5fd' }}>{String(gm.time || '—')}</strong>
+                    {' · '}
+                    {String(gm.title || 'Pasto')}
+                    {gm.mealType ? (
+                      <span style={{ opacity: 0.75 }}> ({String(gm.mealType)})</span>
+                    ) : null}
+                    {gm.microDesc ? (
+                      <div style={{ fontSize: '0.68rem', color: 'rgba(200, 200, 220, 0.9)', marginTop: 4 }}>{String(gm.microDesc)}</div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
             <button
               type="button"
