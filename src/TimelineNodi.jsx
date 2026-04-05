@@ -187,16 +187,16 @@ export default function TimelineNodi({
               if (t && m) return `${t} — ${m}`;
               return t || m || undefined;
             })();
-            const ghostNoDrag = isGhostMeal || isGhostWorkout;
-            const importanceForPoint = ghostNoDrag ? { filter: 'none', opacity: 1, zIndex: 9 } : isDragging ? {} : importanceStyle;
+            const ghostVisual = isGhostMeal || isGhostWorkout;
+            const importanceForPoint = ghostVisual ? { filter: 'none', opacity: 1, zIndex: 9 } : isDragging ? {} : importanceStyle;
             return (
               <div
                 key={node.id}
                 title={ghostTooltip || undefined}
-                className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''} ${ghostNoDrag ? 'ghost-node' : ''}`}
-                onPointerDown={ghostNoDrag ? undefined : startNodeDrag(node, 'all')}
-                onPointerUp={ghostNoDrag ? undefined : releaseNodePointer}
-                onPointerCancel={ghostNoDrag ? undefined : releaseNodePointer}
+                className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}`}
+                onPointerDown={startNodeDrag(node, 'all')}
+                onPointerUp={releaseNodePointer}
+                onPointerCancel={releaseNodePointer}
                 onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }}
                 style={{
                   position: 'absolute',
@@ -214,9 +214,9 @@ export default function TimelineNodi({
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: ghostNoDrag ? 'pointer' : isDragging ? 'grabbing' : 'pointer',
+                  cursor: isDragging ? 'grabbing' : 'pointer',
                   transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s',
-                  touchAction: ghostNoDrag ? 'auto' : 'none',
+                  touchAction: 'none',
                   pointerEvents: isNodeFocused || isGhostMeal || isGhostWorkout ? 'auto' : 'none',
                   zIndex: isTouchingOrDragging ? 100 : undefined,
                   ...importanceForPoint,

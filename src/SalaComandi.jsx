@@ -1696,6 +1696,8 @@ export default function SalaComandi() {
   const [calorieTuning, setCalorieTuning] = useState(0);
   const [foodDb, setFoodDb] = useState({});
   const [dailyLog, setDailyLog] = useState([]);
+  const dailyLogRef = useRef(dailyLog);
+  dailyLogRef.current = dailyLog;
   const activeLog = isSimulationMode && simulatedLog != null ? simulatedLog : dailyLog;
 
   // STATI MODULI (Pasti, Acqua, Allenamento, Zen)
@@ -2200,12 +2202,17 @@ export default function SalaComandi() {
     const parsed = saved ? JSON.parse(saved) : [];
     return Array.isArray(parsed) ? parsed : [];
   });
+  const manualNodesRef = useRef(manualNodes);
+  manualNodesRef.current = manualNodes;
   const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
   const [draggingNode, setDraggingNode] = useState(null);
   const [touchingNodeId, setTouchingNodeId] = useState(null);
   const [historyStack, setHistoryStack] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showUndoToast, setShowUndoToast] = useState(false);
+  /** Modale trascina-in-zona-cancella per ghost_meal / ghost_workout */
+  const [ghostProgramDeleteModal, setGhostProgramDeleteModal] = useState(null);
+  const [programmingRemovedToast, setProgrammingRemovedToast] = useState(false);
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const [dragLiveTime, setDragLiveTime] = useState(null);
   const dragEngine = useRef({
@@ -2240,6 +2247,18 @@ export default function SalaComandi() {
   const currentTrackerDateRef = useRef(currentTrackerDate);
   useEffect(() => { currentTrackerDateRef.current = currentTrackerDate; }, [currentTrackerDate]);
   useEffect(() => { historyStackRef.current = historyStack; historyIndexRef.current = historyIndex; }, [historyStack, historyIndex]);
+
+  const pushTimelineUndoSnapshot = useCallback((newDailyLog, newManualNodes) => {
+    const newStack = historyStackRef.current.slice(0, historyIndexRef.current + 1);
+    newStack.push({
+      dailyLog: JSON.parse(JSON.stringify(newDailyLog)),
+      manualNodes: JSON.parse(JSON.stringify(newManualNodes)),
+    });
+    setHistoryStack(newStack);
+    setHistoryIndex(newStack.length - 1);
+    setShowUndoToast(true);
+    setTimeout(() => setShowUndoToast(false), 4000);
+  }, []);
 
   // Weekly adaptive calibration of physiological coefficients
   // The simulation gradually learns the user's metabolic responses.
@@ -3279,15 +3298,6 @@ export default function SalaComandi() {
       setDragLiveTime(Math.round(newTime * 60) / 60);
     };
 
-    const pushHistoryAndShowToast = (newDailyLog, newManualNodes) => {
-      const newStack = historyStackRef.current.slice(0, historyIndexRef.current + 1);
-      newStack.push({ dailyLog: JSON.parse(JSON.stringify(newDailyLog)), manualNodes: JSON.parse(JSON.stringify(newManualNodes)) });
-      setHistoryStack(newStack);
-      setHistoryIndex(newStack.length - 1);
-      setShowUndoToast(true);
-      setTimeout(() => setShowUndoToast(false), 4000);
-    };
-
     const onUp = () => {
       if (isSimulationMode) {
         dragEngine.current.isActive = false;
@@ -3301,55 +3311,71 @@ export default function SalaComandi() {
       const isOutside = Math.abs(dragOffsetYRef.current) > 50;
       const finalTimeRaw = dragEngine.current.currentLiveTime;
       const finalTimeRounded = Math.round(finalTimeRaw * 12) / 12;
+      const isGhostDrag = dragType === 'ghost_meal' || dragType === 'ghost_workout';
+      const dlSnap = dailyLogRef.current;
+      const mnSnap = manualNodesRef.current;
 
       if (isOutside) {
-        const confirmDelete = window.confirm('Vuoi eliminare questo elemento?');
-        if (confirmDelete) {
-          if (dragType === 'meal') {
-            const { itemIds } = draggingNode;
-            const idSet = new Set((itemIds || []).map((x) => String(x)));
-            const newLog = dailyLog.filter((item) => !idSet.has(String(item.id)));
-            const newNodes = manualNodes;
-            setDailyLog(newLog);
-            syncDatiFirebase(newLog, newNodes);
-            pushHistoryAndShowToast(newLog, newNodes);
-          } else {
-            const newLog = dailyLog.filter(item => item.id !== dragId);
-            const newNodes = manualNodes.filter(n => n.id !== dragId);
-            setDailyLog(newLog);
-            setManualNodes(newNodes);
-            syncDatiFirebase(newLog, newNodes);
-            pushHistoryAndShowToast(newLog, newNodes);
-          }
+        if (isGhostDrag) {
+          setGhostProgramDeleteModal({ nodeId: dragId, dragType });
         } else {
-          if (dragType === 'meal') {
-            const { itemIds, originalTime: origTime } = draggingNode;
-            const idSet = new Set((itemIds || []).map((x) => String(x)));
-            const next = dailyLog.map((item) =>
-              idSet.has(String(item.id)) ? { ...item, mealTime: origTime } : item
-            );
-            setDailyLog(next);
-            syncDatiFirebase(next, manualNodes);
+          const confirmDelete = window.confirm('Vuoi eliminare questo elemento?');
+          if (confirmDelete) {
+            if (dragType === 'meal') {
+              const { itemIds } = draggingNode;
+              const idSet = new Set((itemIds || []).map((x) => String(x)));
+              const newLog = dlSnap.filter((item) => !idSet.has(String(item.id)));
+              const newNodes = mnSnap;
+              setDailyLog(newLog);
+              syncDatiFirebase(newLog, newNodes);
+              pushTimelineUndoSnapshot(newLog, newNodes);
+            } else {
+              const newLog = dlSnap.filter(item => item.id !== dragId);
+              const newNodes = mnSnap.filter(n => n.id !== dragId);
+              setDailyLog(newLog);
+              setManualNodes(newNodes);
+              syncDatiFirebase(newLog, newNodes);
+              pushTimelineUndoSnapshot(newLog, newNodes);
+            }
           } else {
-            const next = manualNodes.map(n =>
-              n.id === dragId ? { ...n, time: originalTime, duration: originalDuration ?? n.duration } : n
-            );
-            setManualNodes(next);
-            syncDatiFirebase(dailyLog, next);
+            if (dragType === 'meal') {
+              const { itemIds, originalTime: origTime } = draggingNode;
+              const idSet = new Set((itemIds || []).map((x) => String(x)));
+              const next = dlSnap.map((item) =>
+                idSet.has(String(item.id)) ? { ...item, mealTime: origTime } : item
+              );
+              setDailyLog(next);
+              syncDatiFirebase(next, mnSnap);
+            } else {
+              const next = mnSnap.map(n =>
+                n.id === dragId ? { ...n, time: originalTime, duration: originalDuration ?? n.duration } : n
+              );
+              setManualNodes(next);
+              syncDatiFirebase(dlSnap, next);
+            }
           }
         }
       } else {
         if (dragType === 'meal') {
           const { itemIds } = draggingNode;
           const idSet = new Set((itemIds || []).map((x) => String(x)));
-          const nextLog = dailyLog.map((item) =>
+          const nextLog = dlSnap.map((item) =>
             idSet.has(String(item.id)) ? { ...item, mealTime: finalTimeRounded } : item
           );
           setDailyLog(nextLog);
-          syncDatiFirebase(nextLog, manualNodes);
-          pushHistoryAndShowToast(nextLog, manualNodes);
+          syncDatiFirebase(nextLog, mnSnap);
+          pushTimelineUndoSnapshot(nextLog, mnSnap);
+        } else if (dragType === 'ghost_meal') {
+          const nextLog = dlSnap.map((item) =>
+            item.id === dragId && item.type === 'ghost_meal'
+              ? { ...item, mealTime: finalTimeRounded, time: finalTimeRounded }
+              : item
+          );
+          setDailyLog(nextLog);
+          syncDatiFirebase(nextLog, mnSnap);
+          pushTimelineUndoSnapshot(nextLog, mnSnap);
         } else {
-          const next = manualNodes.map(n => {
+          const next = mnSnap.map(n => {
             if (n.id !== dragId) return n;
             if (n.type === 'work' || n.type === 'cognitive') {
               if (dragEdge === 'start') {
@@ -3366,8 +3392,8 @@ export default function SalaComandi() {
             return { ...n, time: finalTimeRounded };
           });
           setManualNodes(next);
-          syncDatiFirebase(dailyLog, next);
-          pushHistoryAndShowToast(dailyLog, next);
+          syncDatiFirebase(dlSnap, next);
+          pushTimelineUndoSnapshot(dlSnap, next);
         }
       }
       dragEngine.current.isActive = false;
@@ -3384,7 +3410,7 @@ export default function SalaComandi() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [draggingNode, isSimulationMode]);
+  }, [draggingNode, isSimulationMode, pushTimelineUndoSnapshot, syncDatiFirebase]);
 
   useEffect(() => { if (!isDrawerOpen) setIsZenActive(false); }, [isDrawerOpen]);
 
@@ -4498,7 +4524,6 @@ Ottimo! Diario aggiornato. 🥗`;
   };
 
   const startNodeDrag = useCallback((node, edge) => (e) => {
-    if (node?.type === 'ghost_meal' || node?.type === 'ghost_workout') return;
     e.stopPropagation();
     setTouchingNodeId(node.id);
     const target = e.currentTarget;
@@ -8509,6 +8534,146 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         <div className="delete-icon">🗑️</div>
         <div className="delete-text">RILASCIA PER ELIMINARE</div>
       </div>
+
+      {ghostProgramDeleteModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ghost-delete-title"
+          onClick={() => setGhostProgramDeleteModal(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100025,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+            background: 'rgba(0, 0, 0, 0.55)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 360,
+              padding: '22px 20px',
+              borderRadius: 18,
+              border: '1px solid rgba(0, 229, 255, 0.22)',
+              background: 'linear-gradient(155deg, rgba(28, 32, 40, 0.92) 0%, rgba(14, 16, 22, 0.88) 100%)',
+              boxShadow: '0 24px 48px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255,255,255,0.06)',
+            }}
+          >
+            <h3 id="ghost-delete-title" style={{ margin: '0 0 8px 0', color: '#e8fdff', fontSize: '1.05rem', fontWeight: 800 }}>
+              Programmazione Kentu
+            </h3>
+            <p style={{ margin: '0 0 18px 0', color: 'rgba(200, 220, 230, 0.88)', fontSize: '0.88rem', lineHeight: 1.5 }}>
+              Questo slot è pianificato dall&apos;AI. Vuoi rimuovere solo questo elemento o tutta la programmazione fantasma di oggi?
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const { nodeId, dragType } = ghostProgramDeleteModal;
+                  setGhostProgramDeleteModal(null);
+                  const dl = dailyLogRef.current || [];
+                  const mn = manualNodesRef.current || [];
+                  if (dragType === 'ghost_meal') {
+                    const nextLog = dl.filter((e) => e.id !== nodeId);
+                    setDailyLog(nextLog);
+                    syncDatiFirebase(nextLog, mn);
+                    pushTimelineUndoSnapshot(nextLog, mn);
+                  } else {
+                    const nextNodes = mn.filter((n) => n.id !== nodeId);
+                    setManualNodes(nextNodes);
+                    syncDatiFirebase(dl, nextNodes);
+                    pushTimelineUndoSnapshot(dl, nextNodes);
+                  }
+                }}
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(0, 229, 255, 0.45)',
+                  background: 'rgba(0, 229, 255, 0.12)',
+                  color: '#00e5ff',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancella solo questo
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setGhostProgramDeleteModal(null);
+                  const dl = dailyLogRef.current || [];
+                  const mn = manualNodesRef.current || [];
+                  const nextLog = dl.filter((e) => !(e.isGhost === true || e.type === 'ghost_meal'));
+                  const nextNodes = mn.filter((n) => !(n.isGhost === true || n.type === 'ghost_workout'));
+                  setDailyLog(nextLog);
+                  setManualNodes(nextNodes);
+                  syncDatiFirebase(nextLog, nextNodes);
+                  pushTimelineUndoSnapshot(nextLog, nextNodes);
+                  setProgrammingRemovedToast(true);
+                  setTimeout(() => setProgrammingRemovedToast(false), 4000);
+                }}
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(248, 113, 113, 0.35)',
+                  background: 'rgba(248, 113, 113, 0.1)',
+                  color: '#fca5a5',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancella tutta la programmazione
+              </button>
+              <button
+                type="button"
+                onClick={() => setGhostProgramDeleteModal(null)}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: 'transparent',
+                  color: 'rgba(180, 190, 200, 0.95)',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Annulla
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {programmingRemovedToast && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 'calc(80px + 75px + env(safe-area-inset-bottom, 0px))',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 100026,
+            padding: '12px 22px',
+            background: 'rgba(20, 24, 32, 0.92)',
+            border: '1px solid rgba(0, 229, 255, 0.35)',
+            borderRadius: 16,
+            backdropFilter: 'blur(8px)',
+            boxShadow: '0 8px 28px rgba(0, 0, 0, 0.4)',
+          }}
+        >
+          <span style={{ color: '#00e5ff', fontSize: '0.9rem', fontWeight: 600 }}>Programmazione giornaliera rimossa.</span>
+        </div>
+      )}
 
       {/* Header compatto: logo | data | energia (spazio per futura bottom bar) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '6px 4px 8px', marginBottom: '8px', gap: '6px', boxSizing: 'border-box' }}>
