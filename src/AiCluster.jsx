@@ -3,6 +3,7 @@
  */
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import MenuProposalCard from './MenuProposalCard';
+import DailyPlanCard from './DailyPlanCard';
 import {
   KentuIcon,
   KentuButton,
@@ -58,6 +59,8 @@ export default function AiCluster({
   onMealProposalConfirm,
   onMealProposalCancel,
   onMealProposalSwap,
+  onDailyPlanConfirm,
+  onDailyPlanCancel,
   showAiSettings,
   setShowAiSettings,
   apiKeys,
@@ -76,7 +79,7 @@ export default function AiCluster({
   }, [chatHistory]);
 
   const suppressQuickReplies = useMemo(
-    () => (chatHistory || []).some((m) => m.mealProposal),
+    () => (chatHistory || []).some((m) => m.mealProposal || m.dailyPlan),
     [chatHistory]
   );
 
@@ -165,6 +168,25 @@ export default function AiCluster({
                     onConfirm={onMealProposalConfirm}
                     onCancel={onMealProposalCancel}
                     onSwap={onMealProposalSwap}
+                  />
+                </div>
+              ) : msg.sender === 'ai' && msg.dailyPlan && !msg.isTyping ? (
+                <div style={{ width: '100%' }}>
+                  {msg.text?.trim() ? (
+                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10 }}>
+                      {splitAiMessageSections(msg.text).map((block, si) =>
+                        si === 0 ? (
+                          <KentuInsightHero key={si} block={block} />
+                        ) : (
+                          <KentuInsightCard key={si} block={block} />
+                        )
+                      )}
+                    </div>
+                  ) : null}
+                  <DailyPlanCard
+                    planData={msg.dailyPlan}
+                    onConfirm={onDailyPlanConfirm}
+                    onCancel={onDailyPlanCancel}
                   />
                 </div>
               ) : msg.sender === 'ai' ? (

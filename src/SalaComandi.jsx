@@ -442,6 +442,90 @@ function extractAndStripMealProposal(rawText) {
   return { stripped, proposal };
 }
 
+/** Normalizza orario per input type="time" (HH:mm). */
+function normalizeDailyPlanTimeForInput(raw) {
+  if (raw == null) return '';
+  const s = String(raw).trim();
+  if (!s || s.toLowerCase() === 'null') return '';
+  const colon = s.match(/^(\d{1,2})\s*[:.h]\s*(\d{2})$/i);
+  if (colon) {
+    const h = Math.min(23, Math.max(0, parseInt(colon[1], 10)));
+    const min = Math.min(59, Math.max(0, parseInt(colon[2], 10)));
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+  const n = parseFloat(s.replace(',', '.'));
+  if (Number.isFinite(n)) {
+    const h = Math.floor(n) % 24;
+    const frac = n % 1;
+    const min = Math.min(59, Math.round(frac * 60) % 60);
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+  return '';
+}
+
+function normalizeDailyPlanFromToken(parsed) {
+  if (!parsed || typeof parsed !== 'object') return null;
+  const rawActivities = Array.isArray(parsed.activities) ? parsed.activities : [];
+  const activities = rawActivities
+    .map((a, idx) => {
+      const timeNorm = normalizeDailyPlanTimeForInput(a?.time != null ? String(a.time) : '') || '12:00';
+      const desc = String(a?.desc ?? a?.title ?? '').trim() || `Attività ${idx + 1}`;
+      return { time: timeNorm, desc };
+    })
+    .filter((a) => a.desc);
+  if (activities.length === 0) return null;
+  const targetNorm = normalizeCalorieStrategyTarget(parsed.target);
+  const target = targetNorm || 'pari';
+  let workoutTime = null;
+  if (parsed.workoutTime != null) {
+    const ws = String(parsed.workoutTime).trim();
+    if (ws && ws.toLowerCase() !== 'null') {
+      const wn = normalizeDailyPlanTimeForInput(ws);
+      if (wn) workoutTime = wn;
+    }
+  }
+  return { target, workoutTime, activities };
+}
+
+/**
+ * Estrae [DAILY_PLAN:{...}] dalla risposta AI e restituisce JSON validato + testo senza il blocco.
+ */
+function extractAndStripDailyPlan(rawText) {
+  const text = rawText == null ? '' : String(rawText);
+  const tag = '[DAILY_PLAN:';
+  const i = text.indexOf(tag);
+  if (i === -1) return { stripped: text, plan: null };
+  const jsonStart = i + tag.length;
+  if (text[jsonStart] !== '{') return { stripped: text, plan: null };
+  let depth = 0;
+  let j = jsonStart;
+  for (; j < text.length; j++) {
+    const c = text[j];
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) {
+        j++;
+        break;
+      }
+    }
+  }
+  if (depth !== 0) return { stripped: text, plan: null };
+  let k = j;
+  while (k < text.length && /\s/.test(text[k])) k++;
+  const endBlock = k < text.length && text[k] === ']' ? k + 1 : j;
+  const jsonStr = text.slice(jsonStart, j);
+  let plan = null;
+  try {
+    const parsed = JSON.parse(jsonStr);
+    plan = normalizeDailyPlanFromToken(parsed);
+  } catch (_) {
+    plan = null;
+  }
+  const stripped = (text.slice(0, i) + text.slice(endBlock)).replace(/\s+/g, ' ').trim();
+  return { stripped, plan };
+}
+
 function formatBodyBatteryValue(v) {
   const n = Math.round(Number(v) * 10) / 10;
   if (n === 0) return '0%';
@@ -5610,6 +5694,8 @@ FORMATTAZIONE OBBLIGATORIA: Devi essere chiarissimo e massimizzare la leggibilit
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=BRIEFING o QUICK_ACTION=ANALISI_IERI: rispondi ESCLUSIVAMENTE in formato Lavagna (emoji + dato per riga, elenchi puntati essenziali), rispettando il tetto di 3 elenchi e le REGOLE DI STILE sopra.
 QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=IDEA_PASTO: rispondi ESCLUSIVAMENTE con il blocco [MEAL_PROPOSAL:{...}] su una riga come da CARTA MENU; nessun altro testo (la Dispensa è in [CONTEXT_LIVE]).
 
+MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata, entra in modalità pianificazione. Chiedi quali attività ha in programma. Quando l'utente ti fornisce le attività, NON fare elenchi testuali lunghi, ma genera ESATTAMENTE questa stringa (sostituendo i dati reali) per invocare l'interfaccia: [DAILY_PLAN:{"target":"deficit|pari|surplus", "workoutTime":"HH:MM"|null, "activities":[{"time":"HH:MM", "desc":"Lavoro PC"}, {"time":"HH:MM", "desc":"Allenamento"}]}]. Il token deve essere da solo su una riga (usa valori concreti per target: solo una tra deficit, pari, surplus; workoutTime stringa "HH:MM" oppure null se assente).
+
 LOGICA DI RACCOMANDAZIONE INTELLIGENTE: Quando l'utente chiede consigli su cosa mangiare (es. "Cosa mangio per cena?"):
 1. Analizza i macro residui dal blocco [CONTEXT_LIVE] nell'ultimo messaggio utente per avvicinarti al fabbisogno giornaliero (senza ignorare equilibrio e contesto).
 2. Dai priorità assoluta agli ingredienti elencati in "Dispensa" in [CONTEXT_LIVE]: è molto probabile che l'utente li abbia già in casa.
@@ -6230,6 +6316,9 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
       const mealProposalExtract = extractAndStripMealProposal(responseText);
       let cleanText = mealProposalExtract.stripped;
       const mealProposalForUi = mealProposalExtract.proposal;
+      const dailyPlanExtract = extractAndStripDailyPlan(cleanText);
+      cleanText = dailyPlanExtract.stripped;
+      const dailyPlanForUi = mealProposalForUi ? null : dailyPlanExtract.plan;
       const stripInsertStart = cleanText.indexOf('{"action":"insert"');
       if (stripInsertStart !== -1) {
         let depth = 0;
@@ -6404,8 +6493,9 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         }
       }
 
-      if (!cleanText && !mealProposalForUi) cleanText = '✨ Operazione completata.';
+      if (!cleanText && !mealProposalForUi && !dailyPlanForUi) cleanText = '✨ Operazione completata.';
       if (mealProposalForUi) cleanText = '';
+      if (dailyPlanForUi) cleanText = '';
 
       if (dinnerOptions && dinnerOptions.length) {
         lastDinnerOptionsRef.current = dinnerOptions;
@@ -6421,10 +6511,11 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
           sender: 'ai',
           text: cleanText,
           mealProposal: mealProposalForUi || undefined,
+          dailyPlan: dailyPlanForUi || undefined,
           quickReplies:
-            mealProposalForUi || quickReplies.length === 0 ? undefined : quickReplies,
+            mealProposalForUi || dailyPlanForUi || quickReplies.length === 0 ? undefined : quickReplies,
           dinnerOptions:
-            mealProposalForUi || !dinnerOptions || dinnerOptions.length === 0
+            mealProposalForUi || dailyPlanForUi || !dinnerOptions || dinnerOptions.length === 0
               ? undefined
               : dinnerOptions,
           agendaOptions: agendaOptions && agendaOptions.length > 0 ? agendaOptions : undefined,
@@ -6478,6 +6569,31 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
     },
     [handleChatSubmit]
   );
+
+  const handleDailyPlanConfirm = useCallback(
+    (plan) => {
+      if (!plan || typeof plan !== 'object') return;
+      let workoutTime = plan.workoutTime != null && String(plan.workoutTime).trim() ? String(plan.workoutTime).trim() : null;
+      if (!workoutTime && Array.isArray(plan.activities)) {
+        const wRe = /allenament|workout|palestra|corr|run|pesi|cardio|yoga|hiit|spinning|nuot/i;
+        const hit = plan.activities.find((a) => wRe.test(String(a?.desc || '')));
+        if (hit?.time) workoutTime = String(hit.time).trim();
+      }
+      applyKentuChatCmd({
+        target: plan.target,
+        workoutTime: workoutTime || null,
+      });
+      setChatHistory((prev) => {
+        const withoutCard = prev.filter((m) => !m.dailyPlan);
+        return [...withoutCard, { sender: 'ai', text: 'Piano confermato e caricato nel sistema.' }];
+      });
+    },
+    [applyKentuChatCmd]
+  );
+
+  const handleDailyPlanCancel = useCallback(() => {
+    setChatHistory((prev) => prev.filter((m) => !m.dailyPlan));
+  }, []);
 
   const generateFoodWithAI = async (foodName) => {
     const name = (foodName || foodNameInput || '').trim();
@@ -9742,6 +9858,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
             onMealProposalConfirm={handleMealProposalConfirm}
             onMealProposalCancel={handleMealProposalCancel}
             onMealProposalSwap={handleMealProposalSwap}
+            onDailyPlanConfirm={handleDailyPlanConfirm}
+            onDailyPlanCancel={handleDailyPlanCancel}
             showAiSettings={showAiSettings}
             setShowAiSettings={setShowAiSettings}
             apiKeys={apiKeys}
