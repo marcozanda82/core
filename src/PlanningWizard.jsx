@@ -372,14 +372,17 @@ export default function PlanningWizard({
   const hasTraining = macros.has('training');
   const hasRealWorkout = useMemo(() => !!extractRealWorkout(dailyLog), [dailyLog]);
 
-  const timingComplete = useMemo(() => {
-    for (const id of macros) {
-      if (!timingByMacro[id]) return false;
-    }
-    return macros.size > 0;
-  }, [macros, timingByMacro]);
-
-  const canAdvanceFrom1 = macros.size > 0 && timingComplete && (!hasTraining || muscles.size > 0);
+  /** Step 1 — Continua: nessuna macro; oppure ogni macro ha fascia (training passato bloccato escluso); muscoli ok se serve. */
+  const canAdvanceFrom1 = useMemo(() => {
+    if (macros.size === 0) return true;
+    const timingSatisfied = [...macros].every((macroId) => {
+      if (macroId === 'training' && trainingLockedFromLog) return true;
+      return Boolean(timingByMacro[macroId]);
+    });
+    const musclesSatisfied =
+      !macros.has('training') || muscles.size > 0 || trainingLockedFromLog;
+    return timingSatisfied && musclesSatisfied;
+  }, [macros, timingByMacro, muscles, trainingLockedFromLog]);
 
   const dynOpts = useMemo(
     () => ({
@@ -423,8 +426,12 @@ export default function PlanningWizard({
 
   const goNext = useCallback(() => {
     if (step === 1 && !canAdvanceFrom1) return;
+    if (step === 1 && macros.size === 0) {
+      setTimingByMacro({});
+      setMuscles(new Set());
+    }
     if (step < 3) setStep((s) => s + 1);
-  }, [step, canAdvanceFrom1]);
+  }, [step, canAdvanceFrom1, macros.size]);
 
   const goBack = useCallback(() => {
     if (step > 1) setStep((s) => s - 1);
@@ -536,6 +543,7 @@ export default function PlanningWizard({
   }, [dailyLog, stagingGhosts, hasTraining, hasRealWorkout, workoutDecForApply]);
 
   const macroList = MACRO_OPTIONS.filter((m) => macros.has(m.id));
+  const step1PastWorkoutFrozen = trainingLockedFromLog;
 
   return (
     <div style={{ ...glassPanel, padding: '16px 14px 14px', marginBottom: 10 }}>
@@ -567,150 +575,161 @@ export default function PlanningWizard({
       {step === 1 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <p style={{ margin: '0 0 6px 0', fontSize: '0.82rem', color: 'rgba(200,210,220,0.9)' }}>
-            Seleziona le macro-attività di oggi e la fascia oraria per ciascuna. Se alleni, scegli anche i gruppi muscolari.
+            Le attività sono opzionali: puoi lasciare tutto deselezionato e pianificare solo i pasti. Se ne scegli una, imposta la fascia (e i muscoli per l’allenamento). Puoi deselezionare un macro cliccandolo di nuovo, se non è bloccato dal tempo.
           </p>
-          {MACRO_OPTIONS.map(({ id, label }) => {
-            const on = macros.has(id);
-            const w0 = extractRealWorkout(dailyLog);
-            const trainTimeLocked =
-              id === 'training' && w0 ? wizardRowDisabledByTime({ isGhost: false, timeDec: itemTimeDec(w0) }, nowDec) : false;
-            const lockedTrain = id === 'training' && trainingLockedFromLog && on;
-            const macroDisabled = id === 'training' && trainTimeLocked;
-            return (
-              <button
-                key={id}
-                type="button"
-                disabled={macroDisabled}
-                onClick={() => toggleMacro(id)}
-                style={{
-                  ...bigTileBase,
-                  ...(on ? bigTileSelected : {}),
-                  ...(lockedTrain ? { opacity: 0.92 } : {}),
-                  ...(macroDisabled ? { cursor: 'not-allowed', opacity: 0.72 } : {}),
-                }}
-              >
-                {label}
-                {lockedTrain ? ' 🔒' : ''}
-              </button>
-            );
-          })}
-
-          {(() => {
-            const w = extractRealWorkout(dailyLog);
-            if (!w) return null;
-            const et = itemTimeDec(w);
-            const hh = !Number.isNaN(et) ? decimalHourToHHMM(et) : '—';
-            const wLocked = wizardTemporalLock(w, nowDec);
-            const line = String(w.desc || w.name || w.title || 'Allenamento').trim() || 'Allenamento';
-            return (
-              <div
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 12,
-                  border: '1px solid rgba(255, 109, 0, 0.35)',
-                  background: 'rgba(255, 109, 0, 0.08)',
-                  fontSize: '0.8rem',
-                  color: '#ffccbc',
-                  lineHeight: 1.4,
-                }}
-              >
-                <div style={{ fontWeight: 800, color: '#ffab91', marginBottom: 4 }}>💪 Allenamento nel diario</div>
-                <div>
-                  <strong>{hh}</strong>
-                  {' · '}
-                  {line}
-                  {wLocked ? <span title="Orario già passato — tile Allenamento bloccata"> 🔒</span> : null}
-                </div>
-              </div>
-            );
-          })()}
-
-          {hasTraining ? (
-            <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#c4b5fd', marginBottom: 8 }}>Gruppi muscolari / sessione</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {MUSCLE_OPTIONS.map((name) => {
-                  const on = muscles.has(name);
-                  const locked = lockedMuscles.has(name) && on;
-                  return (
-                    <button
-                      key={name}
-                      type="button"
-                      disabled={locked}
-                      onClick={() => toggleMuscle(name)}
-                      style={{
-                        padding: '12px 14px',
-                        borderRadius: 10,
-                        border: on ? '1px solid rgba(179, 136, 255, 0.55)' : '1px solid rgba(255,248,220,0.12)',
-                        background: on ? 'rgba(179, 136, 255, 0.15)' : 'rgba(255,255,255,0.04)',
-                        color: '#fff8e8',
-                        fontWeight: 700,
-                        fontSize: '0.82rem',
-                        cursor: locked ? 'default' : 'pointer',
-                        opacity: locked ? 0.88 : 1,
-                      }}
-                    >
-                      {name}
-                      {locked ? ' 🔒' : ''}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          {macroList.length > 0 ? (
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#7dd3fc' }}>Fascia oraria per attività</div>
-              {macroList.map(({ id, label }) => (
-                <div
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              ...(step1PastWorkoutFrozen
+                ? { pointerEvents: 'none', opacity: 0.5, transition: 'opacity 0.2s ease' }
+                : {}),
+            }}
+          >
+            {MACRO_OPTIONS.map(({ id, label }) => {
+              const on = macros.has(id);
+              const w0 = extractRealWorkout(dailyLog);
+              const trainTimeLocked =
+                id === 'training' && w0 ? wizardRowDisabledByTime({ isGhost: false, timeDec: itemTimeDec(w0) }, nowDec) : false;
+              const lockedTrain = id === 'training' && trainingLockedFromLog && on;
+              const macroDisabled = id === 'training' && trainTimeLocked;
+              return (
+                <button
                   key={id}
+                  type="button"
+                  disabled={macroDisabled}
+                  onClick={() => toggleMacro(id)}
                   style={{
-                    padding: '12px 12px',
-                    borderRadius: 12,
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,248,220,0.08)',
+                    ...bigTileBase,
+                    ...(on ? bigTileSelected : {}),
+                    ...(lockedTrain ? { opacity: 0.92 } : {}),
+                    ...(macroDisabled ? { cursor: 'not-allowed', opacity: 0.72 } : {}),
                   }}
                 >
-                  <div style={{ fontWeight: 800, color: '#7dd3fc', fontSize: '0.85rem', marginBottom: 10 }}>
-                    {id === 'training' && muscles.size > 0 ? `${label}: ${MUSCLE_OPTIONS.filter((m) => muscles.has(m)).join(' e ')}` : label}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {TIMING_KEYS.map(({ id: slotId, label: slotLabel }) => {
-                      const on = timingByMacro[id] === slotId;
-                      const slotPast = wizardRowDisabledByTime(
-                        { isGhost: false, timeDec: FASCIA_END_DEC[slotId] },
-                        nowDec
-                      );
-                      return (
-                        <button
-                          key={slotId}
-                          type="button"
-                          disabled={slotPast}
-                          onClick={() => setTiming(id, slotId)}
-                          style={{
-                            flex: 1,
-                            minWidth: 88,
-                            padding: '10px 8px',
-                            borderRadius: 10,
-                            border: on ? '1px solid rgba(0, 229, 255, 0.6)' : '1px solid rgba(255,255,255,0.12)',
-                            background: on ? 'rgba(0, 229, 255, 0.18)' : 'rgba(0,0,0,0.2)',
-                            color: slotPast ? 'rgba(255,248,220,0.35)' : '#fff8e8',
-                            fontWeight: 700,
-                            fontSize: '0.78rem',
-                            cursor: slotPast ? 'not-allowed' : 'pointer',
-                            opacity: slotPast ? 0.45 : 1,
-                          }}
-                        >
-                          {slotPast ? `${slotLabel} 🔒` : slotLabel}
-                        </button>
-                      );
-                    })}
+                  {label}
+                  {lockedTrain ? ' 🔒' : ''}
+                </button>
+              );
+            })}
+
+            {(() => {
+              const w = extractRealWorkout(dailyLog);
+              if (!w) return null;
+              const et = itemTimeDec(w);
+              const hh = !Number.isNaN(et) ? decimalHourToHHMM(et) : '—';
+              const wLocked = wizardTemporalLock(w, nowDec);
+              const line = String(w.desc || w.name || w.title || 'Allenamento').trim() || 'Allenamento';
+              return (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255, 109, 0, 0.35)',
+                    background: 'rgba(255, 109, 0, 0.08)',
+                    fontSize: '0.8rem',
+                    color: '#ffccbc',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: '#ffab91', marginBottom: 4 }}>💪 Allenamento nel diario</div>
+                  <div>
+                    <strong>{hh}</strong>
+                    {' · '}
+                    {line}
+                    {wLocked ? <span title="Orario già passato — tile Allenamento bloccata"> 🔒</span> : null}
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : null}
+              );
+            })()}
+
+            {hasTraining ? (
+              <div style={{ marginTop: 6 }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#c4b5fd', marginBottom: 8 }}>Gruppi muscolari / sessione</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {MUSCLE_OPTIONS.map((name) => {
+                    const on = muscles.has(name);
+                    const locked = lockedMuscles.has(name) && on;
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        disabled={locked}
+                        onClick={() => toggleMuscle(name)}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 10,
+                          border: on ? '1px solid rgba(179, 136, 255, 0.55)' : '1px solid rgba(255,248,220,0.12)',
+                          background: on ? 'rgba(179, 136, 255, 0.15)' : 'rgba(255,255,255,0.04)',
+                          color: '#fff8e8',
+                          fontWeight: 700,
+                          fontSize: '0.82rem',
+                          cursor: locked ? 'default' : 'pointer',
+                          opacity: locked ? 0.88 : 1,
+                        }}
+                      >
+                        {name}
+                        {locked ? ' 🔒' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {macroList.length > 0 ? (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#7dd3fc' }}>Fascia oraria per attività</div>
+                {macroList.map(({ id, label }) => (
+                  <div
+                    key={id}
+                    style={{
+                      padding: '12px 12px',
+                      borderRadius: 12,
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,248,220,0.08)',
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, color: '#7dd3fc', fontSize: '0.85rem', marginBottom: 10 }}>
+                      {id === 'training' && muscles.size > 0 ? `${label}: ${MUSCLE_OPTIONS.filter((m) => muscles.has(m)).join(' e ')}` : label}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {TIMING_KEYS.map(({ id: slotId, label: slotLabel }) => {
+                        const on = timingByMacro[id] === slotId;
+                        const slotPast = wizardRowDisabledByTime(
+                          { isGhost: false, timeDec: FASCIA_END_DEC[slotId] },
+                          nowDec
+                        );
+                        return (
+                          <button
+                            key={slotId}
+                            type="button"
+                            disabled={slotPast}
+                            onClick={() => setTiming(id, slotId)}
+                            style={{
+                              flex: 1,
+                              minWidth: 88,
+                              padding: '10px 8px',
+                              borderRadius: 10,
+                              border: on ? '1px solid rgba(0, 229, 255, 0.6)' : '1px solid rgba(255,255,255,0.12)',
+                              background: on ? 'rgba(0, 229, 255, 0.18)' : 'rgba(0,0,0,0.2)',
+                              color: slotPast ? 'rgba(255,248,220,0.35)' : '#fff8e8',
+                              fontWeight: 700,
+                              fontSize: '0.78rem',
+                              cursor: slotPast ? 'not-allowed' : 'pointer',
+                              opacity: slotPast ? 0.45 : 1,
+                            }}
+                          >
+                            {slotPast ? `${slotLabel} 🔒` : slotLabel}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
 
           <div
             role="status"
