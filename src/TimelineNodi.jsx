@@ -33,7 +33,7 @@ export default function TimelineNodi({
   timelineContainerRef,
   startNodeDrag,
   releaseNodePointer,
-  /** (node) => void — stesso gestore per tutti i nodi (inclusi ghost). Se assente si usa handleNodeTap(node). */
+  /** (node, event?) — click/tap su nodo; `event` per ancorare il popover pasto. */
   onNodeClick,
   handleNodeTap,
   decimalToTimeStr,
@@ -61,9 +61,9 @@ export default function TimelineNodi({
     };
   }, []);
 
-  const fireNodeClick = (node) => {
-    if (typeof onNodeClick === 'function') onNodeClick(node);
-    else if (typeof handleNodeTap === 'function') handleNodeTap(node)();
+  const fireNodeClick = (node, event) => {
+    if (typeof onNodeClick === 'function') onNodeClick(node, event);
+    else if (typeof handleNodeTap === 'function') handleNodeTap(node)(event);
   };
 
   const showEnergyBar = energyPercent != null && Number.isFinite(Number(energyPercent));
@@ -219,7 +219,7 @@ export default function TimelineNodi({
                   onPointerDown={startNodeDrag(node, 'all')}
                   onPointerUp={releaseNodePointer}
                   onPointerCancel={releaseNodePointer}
-                  onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }}
+                  onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }}
                   initial={reduceMotion ? false : { opacity: 0, scale: 0.92 }}
                   animate={{ opacity: barOpacity, scale: barScale, y: isDragging ? dragY - 45 : 0 }}
                   transition={
@@ -254,7 +254,7 @@ export default function TimelineNodi({
                     zIndex: isTouchingOrDragging ? 100 : 2,
                   }}
                 >
-                  <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'start' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
@@ -262,7 +262,7 @@ export default function TimelineNodi({
                     )}
                     💼
                   </div>
-                  <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'end' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
@@ -285,7 +285,7 @@ export default function TimelineNodi({
                   onPointerDown={startNodeDrag(node, 'all')}
                   onPointerUp={releaseNodePointer}
                   onPointerCancel={releaseNodePointer}
-                  onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }}
+                  onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }}
                   initial={reduceMotion ? false : { opacity: 0, scale: 0.92 }}
                   animate={{ opacity: barOpacity, scale: barScale, y: isDragging ? dragY - 45 : 0 }}
                   transition={
@@ -320,7 +320,7 @@ export default function TimelineNodi({
                     zIndex: isTouchingOrDragging ? 100 : 2,
                   }}
                 >
-                  <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'start' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
@@ -328,7 +328,7 @@ export default function TimelineNodi({
                     )}
                     {cognitiveIcon}
                   </div>
-                  <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={startNodeDrag(node, 'end')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'end' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
@@ -405,7 +405,7 @@ export default function TimelineNodi({
                 onPointerDown={startNodeDrag(node, 'all')}
                 onPointerUp={releaseNodePointer}
                 onPointerCancel={releaseNodePointer}
-                onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }}
+                onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }}
                 initial={reduceMotion ? false : { opacity: 0, scale: 0.8, x: '-50%' }}
                 animate={{
                   opacity: targetOpacity,

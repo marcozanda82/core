@@ -1717,6 +1717,27 @@ function ghostMealModalFoodRows(report) {
   return rows;
 }
 
+/** Centro orizzontale sotto il nodo (o fallback da pointer) per popover pasto. */
+function timelineMealPopoverAnchor(event) {
+  const el = event?.currentTarget;
+  const r = el && typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+  if (r != null && Number.isFinite(r.left)) {
+    return { left: r.left + r.width / 2, top: r.bottom + 8 };
+  }
+  const ne = event?.nativeEvent;
+  const touch = ne?.changedTouches?.[0] || ne?.touches?.[0];
+  if (touch && Number.isFinite(touch.clientX)) {
+    return { left: touch.clientX, top: touch.clientY + 12 };
+  }
+  if (event && Number.isFinite(event.clientX)) {
+    return { left: event.clientX, top: event.clientY + 12 };
+  }
+  if (typeof window !== 'undefined') {
+    return { left: window.innerWidth / 2, top: 120 };
+  }
+  return { left: 200, top: 120 };
+}
+
 /**
  * Risposta AI piano pasto: preferisce `items` strutturati; fallback `draftFoods` (stringhe).
  * @returns {{ foods: object[], draftFoods: string[] }}
@@ -2243,6 +2264,8 @@ export default function SalaComandi() {
   }, [sleepModal, isSimulationMode, dailyLog, simulatedLog]);
 
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
+  /** Popover leggero pasto / ghost pasto (non modale). */
+  const [timelineMealPopover, setTimelineMealPopover] = useState(null);
   const [editingQuickNode, setEditingQuickNode] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [userProfile, setUserProfile] = useState({
@@ -5257,7 +5280,7 @@ Ottimo! Diario aggiornato. 🥗`;
     setShowUndoToast(false);
   }, [historyIndex, historyStack, syncDatiFirebase]);
 
-  const handleNodeTap = useCallback((node) => () => {
+  const handleNodeTap = useCallback((node) => (event) => {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
 
     if (node.type === 'ghost_meal') {
@@ -5275,24 +5298,23 @@ Ottimo! Diario aggiornato. 🥗`;
       const draftFoodsGhost = Array.isArray(node.draftFoods)
         ? node.draftFoods
         : foodsGhost.map((f) => `${Math.round(Number(f.qty) || 0) || '?'}g ${String(f.name || '').trim()}`.trim());
-      setSelectedNodeReport({
-        type: 'ghost_meal',
-        id: node.id,
-        mealId: node.id,
-        mealType: mt,
-        time: t,
-        title,
-        name: title,
-        microDesc: String(node.microDesc || '').trim(),
-        draftFoods: draftFoodsGhost,
+      const rows = ghostMealModalFoodRows({
         foods: foodsGhost,
-        items: [],
+        draftFoods: draftFoodsGhost,
+      });
+      setSelectedNodeReport(null);
+      setTimelineMealPopover({
+        ...timelineMealPopoverAnchor(event),
+        title,
+        time: t,
+        rows,
         isGhost: true,
       });
       return;
     }
 
     if (node.type === 'ghost_workout') {
+      setTimelineMealPopover(null);
       const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 18;
       const title = String(node.title || 'Allenamento Pianificato').trim();
       setSelectedNodeReport({
@@ -5354,25 +5376,28 @@ Ottimo! Diario aggiornato. 🥗`;
         });
 
         const itemCopies = foodsForSlot.map((x) => ({ ...x }));
-        setSelectedNodeReport({
-          type: 'meal',
-          id: slotId,
-          mealId: slotId,
-          name: `${baseName}${timeLabel}`,
-          time: typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : foodsForSlot[0]?.mealTime,
-          items: itemCopies,
-          foods: itemCopies,
+        const rows = normalizeMealFoodsArray(itemCopies);
+        const tMeal =
+          typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : foodsForSlot[0]?.mealTime;
+        setSelectedNodeReport(null);
+        setTimelineMealPopover({
+          ...timelineMealPopoverAnchor(event),
+          title: baseName,
+          time: typeof tMeal === 'number' && !Number.isNaN(tMeal) ? tMeal : 12,
+          rows,
+          isGhost: false,
         });
         return;
       }
-      setSelectedNodeReport({
-        type: 'meal',
-        id: slotId,
-        mealId: slotId,
-        name: 'Pasto',
+      const emptyFoods = mealFoodsRead(node).map((x) => ({ ...x }));
+      const slotBase = String(slotId).split('_')[0] || 'snack';
+      setSelectedNodeReport(null);
+      setTimelineMealPopover({
+        ...timelineMealPopoverAnchor(event),
+        title: MEAL_LABELS_SAVE?.[slotBase] || slotBase || 'Pasto',
         time: typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12,
-        items: [],
-        foods: mealFoodsRead(node).map((x) => ({ ...x })),
+        rows: normalizeMealFoodsArray(emptyFoods),
+        isGhost: false,
       });
       return;
     }
@@ -5381,12 +5406,14 @@ Ottimo! Diario aggiornato. 🥗`;
       node.type === 'nap' || node.name?.toLowerCase().includes('pisolino') ||
       node.type === 'meditation' || node.name?.toLowerCase().includes('meditazion')
     ) {
+      setTimelineMealPopover(null);
       setEditingQuickNode(node);
       return;
     }
 
     // Modifica rapida orario per energizzanti/caffè senza aprire il modale
     if (node.type === 'stimulant' || node.type === 'energizer' || node.isEnergizer) {
+      setTimelineMealPopover(null);
       const currentHH = Math.floor(node.time).toString().padStart(2, '0');
       const currentMM = Math.round((node.time % 1) * 60).toString().padStart(2, '0');
       const newTimeStr = window.prompt("Modifica rapida orario (HH:MM):", `${currentHH}:${currentMM}`);
@@ -5402,6 +5429,7 @@ Ottimo! Diario aggiornato. 🥗`;
       return;
     }
 
+    setTimelineMealPopover(null);
     setSelectedNodeReport(node);
   }, [
     manualNodes,
@@ -5416,11 +5444,21 @@ Ottimo! Diario aggiornato. 🥗`;
     setActiveAction,
     toCanonicalMealType,
     setSelectedNodeReport,
+    normalizeMealFoodsArray,
   ]);
 
-  const onTimelineNodeClick = useCallback((node) => {
-    handleNodeTap(node)();
+  const onTimelineNodeClick = useCallback((node, event) => {
+    handleNodeTap(node)(event);
   }, [handleNodeTap]);
+
+  useEffect(() => {
+    if (timelineMealPopover == null) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setTimelineMealPopover(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [timelineMealPopover]);
 
   const handleSaveAlcohol = () => {
     if (isSimulationMode) return;
@@ -13093,8 +13131,147 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         </div>
       )}
 
+      {timelineMealPopover != null ? (
+        <>
+          <div
+            role="presentation"
+            style={{ position: 'fixed', inset: 0, zIndex: 100015, background: 'transparent' }}
+            onClick={() => setTimelineMealPopover(null)}
+            aria-hidden
+          />
+          {(() => {
+            const { left, top, title, time, rows, isGhost } = timelineMealPopover;
+            const W = 288;
+            const toN = (v) => {
+              const n = Number(v);
+              return Number.isFinite(n) ? n : 0;
+            };
+            const totals = rows.reduce(
+              (acc, f) => ({
+                kcal: acc.kcal + toN(f.kcal),
+                prot: acc.prot + toN(f.prot),
+                carb: acc.carb + toN(f.carb),
+                fat: acc.fat + toN(f.fat),
+              }),
+              { kcal: 0, prot: 0, carb: 0, fat: 0 }
+            );
+            const vw = typeof window !== 'undefined' ? window.innerWidth : 400;
+            const vh = typeof window !== 'undefined' ? window.innerHeight : 640;
+            const lx = Math.max(10, Math.min(left - W / 2, vw - W - 10));
+            const ly = Math.max(10, Math.min(top, vh - 300));
+            return (
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Dettaglio pasto"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'fixed',
+                  left: lx,
+                  top: ly,
+                  width: W,
+                  maxHeight: 320,
+                  overflowY: 'auto',
+                  zIndex: 100016,
+                  background: 'rgba(15,18,28,0.97)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  border: '1px solid rgba(0,229,255,0.35)',
+                  borderRadius: 12,
+                  boxShadow: '0 8px 28px rgba(0,0,0,0.5), 0 0 18px rgba(0,229,255,0.1)',
+                  padding: '12px 14px',
+                  color: '#e8f4ff',
+                  fontSize: '0.82rem',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    {isGhost ? (
+                      <div style={{ fontSize: '0.62rem', color: '#7dd3fc', fontWeight: 800, letterSpacing: '0.08em', marginBottom: 4 }}>
+                        PIANIFICATO
+                      </div>
+                    ) : null}
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', lineHeight: 1.25 }}>{title}</div>
+                    <div style={{ color: '#94a3b8', marginTop: 6, fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem' }}>
+                      🕐 {decimalToTimeStr(typeof time === 'number' && !Number.isNaN(time) ? time : 12)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Chiudi"
+                    onClick={() => setTimelineMealPopover(null)}
+                    style={{
+                      flexShrink: 0,
+                      width: 28,
+                      height: 28,
+                      border: 'none',
+                      borderRadius: 8,
+                      background: 'rgba(255,255,255,0.08)',
+                      color: '#cbd5e1',
+                      fontSize: '1.1rem',
+                      lineHeight: 1,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '8px 12px',
+                    padding: '8px 10px',
+                    marginBottom: 10,
+                    background: 'rgba(0,229,255,0.08)',
+                    borderRadius: 8,
+                    border: '1px solid rgba(0,229,255,0.15)',
+                    fontSize: '0.75rem',
+                    color: '#bae6fd',
+                  }}
+                >
+                  <span>
+                    <strong style={{ color: '#e0f2fe' }}>Tot.</strong> {Math.round(totals.kcal)} kcal
+                  </span>
+                  <span>P {Math.round(totals.prot * 10) / 10} g</span>
+                  <span>C {Math.round(totals.carb * 10) / 10} g</span>
+                  <span>F {Math.round(totals.fat * 10) / 10} g</span>
+                </div>
+                {rows.length === 0 ? (
+                  <div style={{ color: 'rgba(255,255,255,0.38)', fontStyle: 'italic', fontSize: '0.8rem' }}>Nessun alimento</div>
+                ) : (
+                  <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                    {rows.map((f, i) => {
+                      const name = String(f.name || '').trim() || 'Alimento';
+                      const qty = Math.round(toN(f.qty));
+                      return (
+                        <li
+                          key={`${name}_${i}`}
+                          style={{
+                            padding: '8px 0',
+                            borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, fontSize: '0.84rem' }}>{name}</div>
+                          <div style={{ color: '#94a3b8', fontSize: '0.74rem', marginTop: 4, lineHeight: 1.4 }}>
+                            {qty > 0 ? `${qty} g` : '—'} · {Math.round(toN(f.kcal)) || '—'} kcal · P{' '}
+                            {toN(f.prot) ? Math.round(toN(f.prot) * 10) / 10 : '—'} · C{' '}
+                            {toN(f.carb) ? Math.round(toN(f.carb) * 10) / 10 : '—'} · F{' '}
+                            {toN(f.fat) ? Math.round(toN(f.fat) * 10) / 10 : '—'}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            );
+          })()}
+        </>
+      ) : null}
+
       {selectedNodeReport && (
-        <div className="modal-overlay" onClick={() => setSelectedNodeReport(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', zIndex: 100020, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div className="modal-overlay" onClick={() => { setTimelineMealPopover(null); setSelectedNodeReport(null); }} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', zIndex: 100020, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: '#1e1e1e', color: '#fff', padding: '25px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
             <h2 style={{ margin: '0 0 20px 0', borderBottom: '1px solid #333', paddingBottom: '10px', color: '#00e5ff' }}>
               {selectedNodeReport.type === 'meal' || selectedNodeReport.type === 'ghost_meal' ? '🍽️ Dettaglio Pasto' : '💪 Dettaglio Attività'}
@@ -13408,11 +13585,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             )}
 
             <div style={{ display: 'flex', gap: '15px' }}>
-              <button type="button" onClick={() => setSelectedNodeReport(null)} style={{ flex: 1, padding: '12px', background: '#444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>
+              <button type="button" onClick={() => { setTimelineMealPopover(null); setSelectedNodeReport(null); }} style={{ flex: 1, padding: '12px', background: '#444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>
                 Chiudi
               </button>
               <button type="button" onClick={() => {
                 const node = selectedNodeReport;
+                setTimelineMealPopover(null);
                 setSelectedNodeReport(null);
                 if (node.type === 'ghost_meal') {
                   const mt = toCanonicalMealType(String(node.mealType || 'pranzo').split('_')[0]) || 'pranzo';
