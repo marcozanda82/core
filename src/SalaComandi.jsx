@@ -13072,37 +13072,41 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                           )
                         : [];
                     const df = fromDraft.length > 0 ? fromDraft : fromFoods;
-                    if (df.length === 0 || selectedNodeReport.type === 'ghost_workout') return null;
+                    if (selectedNodeReport.type === 'ghost_workout') return null;
                     return (
                       <div style={{ marginTop: 16, marginBottom: 4 }}>
                         <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#7dd3fc', marginBottom: 8, letterSpacing: '0.06em' }}>
                           Cibi proposti (bozza)
                         </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                          {df.map((f, i) => {
-                            const text =
-                              typeof f === 'string'
-                                ? f
-                                : `${f?.desc || f?.name || ''} ${f?.weight != null ? `${f.weight}g` : f?.qty != null ? `${f.qty}g` : ''}`;
-                            return (
-                              <span
-                                key={`ghost_df_${i}_${String(text).slice(0, 32)}`}
-                                style={{
-                                  display: 'inline-block',
-                                  background: 'rgba(0, 229, 255, 0.15)',
-                                  color: '#00e5ff',
-                                  padding: '4px 8px',
-                                  borderRadius: '12px',
-                                  fontSize: '0.75rem',
-                                  marginRight: '6px',
-                                  marginBottom: '6px',
-                                }}
-                              >
-                                {String(text).trim() || 'Alimento'}
-                              </span>
-                            );
-                          })}
-                        </div>
+                        {df.length === 0 ? (
+                          <span style={{ color: 'rgba(255,255,255,0.38)', fontStyle: 'italic', fontSize: '0.9rem' }}>Empty meal</span>
+                        ) : (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            {df.map((f, i) => {
+                              const text =
+                                typeof f === 'string'
+                                  ? f
+                                  : `${f?.desc || f?.name || ''} ${f?.weight != null ? `${f.weight}g` : f?.qty != null ? `${f.qty}g` : ''}`;
+                              return (
+                                <span
+                                  key={`ghost_df_${i}_${String(text).slice(0, 32)}`}
+                                  style={{
+                                    display: 'inline-block',
+                                    background: 'rgba(0, 229, 255, 0.15)',
+                                    color: '#00e5ff',
+                                    padding: '4px 8px',
+                                    borderRadius: '12px',
+                                    fontSize: '0.75rem',
+                                    marginRight: '6px',
+                                    marginBottom: '6px',
+                                  }}
+                                >
+                                  {String(text).trim() || 'Alimento'}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })()
