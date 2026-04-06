@@ -54,6 +54,95 @@ export function createInitialWeeklyPlan() {
 }
 
 /**
+ * Lunedì della settimana locale che contiene `anchor` (ISO date `YYYY-MM-DD` o `Date`).
+ * Usato come chiave RTDB `weeklyPlanning/{uid}/{weekStartDate}`.
+ * @param {string | Date} [anchor]
+ * @returns {string} `YYYY-MM-DD`
+ */
+export function getWeekStartMondayKeyLocal(anchor) {
+  let y;
+  let m;
+  let d;
+  if (anchor instanceof Date && !Number.isNaN(anchor.getTime())) {
+    y = anchor.getFullYear();
+    m = anchor.getMonth();
+    d = anchor.getDate();
+  } else {
+    const s = String(anchor || '').trim();
+    const parts = s.split('-').map((x) => parseInt(x, 10));
+    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) {
+      const now = new Date();
+      y = now.getFullYear();
+      m = now.getMonth();
+      d = now.getDate();
+    } else {
+      y = parts[0];
+      m = parts[1] - 1;
+      d = parts[2];
+    }
+  }
+  const date = new Date(y, m, d);
+  const dow = date.getDay();
+  const delta = dow === 0 ? -6 : 1 - dow;
+  date.setDate(date.getDate() + delta);
+  const yy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {WeeklyPlanState}
+ */
+export function sanitizeWeeklyPlanFromFirebase(raw) {
+  const base = createInitialWeeklyPlan();
+  if (!raw || typeof raw !== 'object') return base;
+  const goal = typeof raw.goal === 'string' && raw.goal.trim() !== '' ? raw.goal.trim() : base.goal;
+  const wkt = Number(raw.weeklyKcalTarget);
+  const weeklyKcalTarget = Number.isFinite(wkt) ? wkt : 0;
+  const days = {};
+  if (raw.days && typeof raw.days === 'object' && !Array.isArray(raw.days)) {
+    for (const [k, v] of Object.entries(raw.days)) {
+      if (!v || typeof v !== 'object') continue;
+      const key = String(k).trim();
+      if (!key) continue;
+      const t = v.type;
+      const type = WEEKLY_PLAN_DAY_TYPES.includes(t) ? t : 'maintenance';
+      days[key] = createWeeklyPlanDay(type, v.kcalTarget);
+    }
+  }
+  return { goal, weeklyKcalTarget, days };
+}
+
+/** Firma stabile per confronto locale/remoto (senza `updatedAt`). */
+export function weeklyPlanStableJson(plan) {
+  const s = sanitizeWeeklyPlanFromFirebase(plan);
+  const sortedDays = {};
+  Object.keys(s.days)
+    .sort()
+    .forEach((k) => {
+      sortedDays[k] = { type: s.days[k].type, kcalTarget: s.days[k].kcalTarget };
+    });
+  return JSON.stringify({ goal: s.goal, weeklyKcalTarget: s.weeklyKcalTarget, days: sortedDays });
+}
+
+/** Payload RTDB (percorso `weeklyPlanning/`, separato da `planning/` giornaliero). */
+export function weeklyPlanToFirebasePayload(plan) {
+  const s = sanitizeWeeklyPlanFromFirebase(plan);
+  const daysOut = {};
+  Object.keys(s.days).forEach((k) => {
+    daysOut[k] = { type: s.days[k].type, kcalTarget: s.days[k].kcalTarget };
+  });
+  return {
+    goal: s.goal,
+    weeklyKcalTarget: s.weeklyKcalTarget,
+    days: daysOut,
+    updatedAt: Date.now(),
+  };
+}
+
+/**
  * Kcal giornaliera per PlanningWizard: da piano settimanale se valido, altrimenti profilo.
  * @param {object | null | undefined} userTargets
  * @param {WeeklyPlanState | null | undefined} weeklyPlan

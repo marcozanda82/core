@@ -32,7 +32,13 @@ import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
 import PlanningWizard from './PlanningWizard';
-import { createInitialWeeklyPlan } from './weeklyPlanning';
+import {
+  createInitialWeeklyPlan,
+  getWeekStartMondayKeyLocal,
+  sanitizeWeeklyPlanFromFirebase,
+  weeklyPlanStableJson,
+  weeklyPlanToFirebasePayload,
+} from './weeklyPlanning';
 import AddEventMenuGrid from './components/AddEventMenuGrid';
 import WeeklyPlanning from './components/WeeklyPlanning';
 import {
@@ -2159,6 +2165,10 @@ export default function SalaComandi() {
 
   /** Piano settimanale: goal, kcal settimanale, giorni `{ [dateKey]: { type, kcalTarget } }`. Pasti non collegati. */
   const [weeklyPlan, setWeeklyPlan] = useState(createInitialWeeklyPlan);
+  const weeklyPlanningRemoteSigRef = useRef('');
+  const weeklyPlanningListenerReadyRef = useRef(false);
+  const weeklyPlanRef = useRef(weeklyPlan);
+  weeklyPlanRef.current = weeklyPlan;
 
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [isFullScreenGraph, setIsFullScreenGraph] = useState(false);
@@ -3094,6 +3104,57 @@ export default function SalaComandi() {
     return () => unsub();
   }, [db, user?.uid, currentTrackerDate, isSimulationMode]);
 
+  /** RTDB `weeklyPlanning/{uid}/{weekStartMonday}` — separato da `planning/{uid}/{date}`. */
+  useEffect(() => {
+    weeklyPlanningListenerReadyRef.current = false;
+    weeklyPlanningRemoteSigRef.current = '';
+    if (!db || !user?.uid || isSimulationMode) {
+      setWeeklyPlan(createInitialWeeklyPlan());
+      return;
+    }
+    const weekKey = getWeekStartMondayKeyLocal(currentTrackerDate || getTodayString());
+    const r = ref(db, `weeklyPlanning/${user.uid}/${weekKey}`);
+    const unsub = onValue(r, (snap) => {
+      weeklyPlanningListenerReadyRef.current = true;
+      if (!snap.exists()) {
+        const empty = createInitialWeeklyPlan();
+        weeklyPlanningRemoteSigRef.current = weeklyPlanStableJson(empty);
+        setWeeklyPlan(empty);
+        return;
+      }
+      const next = sanitizeWeeklyPlanFromFirebase(snap.val());
+      weeklyPlanningRemoteSigRef.current = weeklyPlanStableJson(next);
+      setWeeklyPlan(next);
+    });
+    return () => {
+      unsub();
+      weeklyPlanningListenerReadyRef.current = false;
+    };
+  }, [db, user?.uid, currentTrackerDate, isSimulationMode]);
+
+  useEffect(() => {
+    if (!db || !user?.uid || isSimulationMode) return;
+    if (!weeklyPlanningListenerReadyRef.current) return;
+    const plan = weeklyPlanRef.current;
+    const sig = weeklyPlanStableJson(plan);
+    if (sig === weeklyPlanningRemoteSigRef.current) return;
+    const t = window.setTimeout(() => {
+      if (!weeklyPlanningListenerReadyRef.current) return;
+      const dateStr = currentTrackerDateRef.current || getTodayString();
+      const weekKey = getWeekStartMondayKeyLocal(dateStr);
+      const uid = user.uid;
+      const latest = weeklyPlanRef.current;
+      const latestSig = weeklyPlanStableJson(latest);
+      if (latestSig === weeklyPlanningRemoteSigRef.current) return;
+      void set(ref(db, `weeklyPlanning/${uid}/${weekKey}`), weeklyPlanToFirebasePayload(latest))
+        .then(() => {
+          weeklyPlanningRemoteSigRef.current = latestSig;
+        })
+        .catch((err) => console.warn('weeklyPlanning save:', err));
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [weeklyPlan, db, user?.uid, isSimulationMode]);
+
   // Caricamento dati al login (user da useFirebase); onValue/set restano qui
   useEffect(() => {
     if (!user) {
@@ -3101,6 +3162,9 @@ export default function SalaComandi() {
       setBodyMetricsHistory([]);
       setPredictiveCalibration({ errors: [] });
       setTdeeHistory([]);
+      setWeeklyPlan(createInitialWeeklyPlan());
+      weeklyPlanningListenerReadyRef.current = false;
+      weeklyPlanningRemoteSigRef.current = '';
       return;
     }
     let unsubToday = null;
