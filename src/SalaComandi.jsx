@@ -4461,7 +4461,7 @@ export default function SalaComandi() {
       const { timeString: oraStringFood, mealDec: mealDecFood, items: addFoodItems } = payload || {};
       if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
       const predictedMealType = predictMealType(mealDecFood);
-      const batchGhostTypeFood = getGhostMealType(predictedMealType, dailyLog || []);
+      const batchGhostTypeFood = getGhostMealType(predictedMealType, dailyLogRef.current || []);
       const batchIdFood = `batch_${Date.now()}`;
 
       const alimentiProcessatiFood = addFoodItems
@@ -4547,16 +4547,17 @@ Ottimo! Diario aggiornato. 🥗`;
       if (isSimulationMode) {
         setSimulatedLog((prev) => [...alimentiProcessatiFood, ...(prev || [])]);
       } else {
-        const nuovoLogFood = [...alimentiProcessatiFood, ...(dailyLog || [])];
-        setDailyLog(nuovoLogFood);
-        syncDatiFirebase(nuovoLogFood, manualNodes);
+        setDailyLog((prev) => {
+          const nuovoLogFood = [...alimentiProcessatiFood, ...(prev || [])];
+          syncDatiFirebase(nuovoLogFood, manualNodesRef.current);
+          return nuovoLogFood;
+        });
       }
       return testoRispostaFood;
     },
     [
       predictMealType,
       getGhostMealType,
-      dailyLog,
       foodDb,
       estraiDatiFoodDb,
       getAverageEstimate,
@@ -4564,7 +4565,6 @@ Ottimo! Diario aggiornato. 🥗`;
       setSimulatedLog,
       setDailyLog,
       syncDatiFirebase,
-      manualNodes,
     ]
   );
 
@@ -6995,6 +6995,7 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
     }
   };
 
+  /** Conferma [MEAL_PROPOSAL]: scrive alimenti reali in dailyLog (non solo ghost timeline). */
   const handleMealProposalConfirm = useCallback(
     (proposal, selectedItems) => {
       if (!selectedItems?.length) return;
@@ -7003,22 +7004,120 @@ Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
         decimalToTimeStr(getCurrentTimeRoundedTo15Min());
       let mealDec = parseFlexibleTimeToDecimal(timeStr);
       if (mealDec == null) mealDec = getCurrentTimeRoundedTo15Min();
-      const items = selectedItems.map((it) => ({
-        name: String(it.name || '').trim(),
-        qty: Math.max(1, Number(it.qty) || 100),
-        matchedKey: it.dbKey != null && foodDb[it.dbKey] != null ? it.dbKey : undefined,
-        estKcal: it.estKcal,
-        estPro: it.estPro,
-        estCar: it.estCar,
-        estFat: it.estFat,
-      }));
-      const testo = commitAddFoodChatPayload({ timeString: timeStr, mealDec, items });
+
+      const logSnap = dailyLogRef.current || [];
+      const predicted = predictMealType(mealDec);
+      const mealSlot = getGhostMealType(predicted, logSnap);
+      const mealTypeCanonical = toCanonicalMealType(String(mealSlot).split('_')[0]);
+      const batchId = `meal_proposal_${Date.now()}`;
+
+      const entries = selectedItems.map((it, index) => {
+        const name = String(it.name || '').trim() || 'Alimento';
+        const qty = Math.max(1, Math.round(Number(it.qty) || 100));
+        const matchedKey =
+          it.dbKey != null && foodDb[it.dbKey] != null ? it.dbKey : findBestFoodMatch(name, foodDb);
+
+        if (matchedKey != null) {
+          const dati = estraiDatiFoodDb(name, qty, mealSlot, matchedKey);
+          const isRecipe = dati.type === 'recipe';
+          return {
+            ...dati,
+            id: dati.id || `${batchId}_${index}`,
+            type: isRecipe ? 'recipe' : 'food',
+            name: dati.name ?? dati.desc ?? name,
+            desc: dati.desc ?? name,
+            qta: dati.qta ?? dati.weight ?? qty,
+            weight: dati.weight ?? dati.qta ?? qty,
+            mealType: mealTypeCanonical,
+            mealTime: mealDec,
+            batchId,
+            isEstimated: false,
+          };
+        }
+
+        const qSafe = Math.max(5, qty);
+        let kcal = Math.round(Number(it.estKcal));
+        let prot = Number(it.estPro);
+        let carb = Number(it.estCar);
+        let fat = Number(it.estFat);
+        if (!Number.isFinite(kcal) || kcal <= 0) {
+          kcal = Math.max(10, Math.round((getAverageEstimate('kcal', name) / 100) * qSafe));
+        }
+        if (!Number.isFinite(prot) || prot < 0) {
+          prot = (getAverageEstimate('prot', name) / 100) * qSafe;
+        }
+        if (!Number.isFinite(carb) || carb < 0) {
+          carb = (getAverageEstimate('carb', name) / 100) * qSafe;
+        }
+        if (!Number.isFinite(fat) || fat < 0) {
+          fat = (getAverageEstimate('fatTotal', name) / 100) * qSafe;
+        }
+        prot = Math.round(prot * 10) / 10;
+        carb = Math.round(carb * 10) / 10;
+        fat = Math.round(fat * 10) / 10;
+
+        return {
+          id: `${batchId}_food_${index}`,
+          type: 'food',
+          name,
+          desc: name,
+          qta: qSafe,
+          weight: qSafe,
+          kcal,
+          cal: kcal,
+          prot,
+          carb,
+          fat,
+          fatTotal: fat,
+          mealType: mealTypeCanonical,
+          mealTime: mealDec,
+          batchId,
+          isEstimated: true,
+        };
+      });
+
+      const totKcal = Math.round(entries.reduce((s, f) => s + (Number(f.kcal) || Number(f.cal) || 0), 0));
+      const totPro = Math.round(entries.reduce((s, f) => s + (Number(f.prot) || 0), 0) * 10) / 10;
+      const totCar = Math.round(entries.reduce((s, f) => s + (Number(f.carb) || 0), 0) * 10) / 10;
+      const totFat =
+        Math.round(entries.reduce((s, f) => s + (Number(f.fatTotal ?? f.fat) || 0), 0) * 10) / 10;
+
+      const testo = `🎯 **Pasto Registrato**
+- **Orario:** ${timeStr}
+- **Kcal Totali:** ${totKcal}
+- **Proteine:** ${totPro}g
+- **Carboidrati:** ${totCar}g
+- **Grassi:** ${totFat}g
+
+Ottimo! Diario aggiornato. 🥗`;
+
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => [...entries, ...(prev || [])]);
+      } else {
+        setDailyLog((prev) => {
+          const next = [...entries, ...(prev || [])];
+          syncDatiFirebase(next, manualNodesRef.current);
+          return next;
+        });
+      }
+
       setChatHistory((prev) => {
         const withoutCard = prev.filter((m) => !m.mealProposal);
-        return [...withoutCard, { sender: 'ai', text: testo || 'Pasto registrato. 🥗' }];
+        return [...withoutCard, { sender: 'ai', text: testo }];
       });
     },
-    [commitAddFoodChatPayload, foodDb, getCurrentTimeRoundedTo15Min]
+    [
+      estraiDatiFoodDb,
+      foodDb,
+      getAverageEstimate,
+      getCurrentTimeRoundedTo15Min,
+      getGhostMealType,
+      isSimulationMode,
+      predictMealType,
+      setDailyLog,
+      setSimulatedLog,
+      syncDatiFirebase,
+    ]
   );
 
   const handleMealProposalCancel = useCallback(() => {
