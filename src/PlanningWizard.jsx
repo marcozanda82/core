@@ -810,11 +810,32 @@ export default function PlanningWizard({
       addGhostWorkout: Boolean(hasTraining && !hasRealWorkout && workoutDecForApply != null),
     };
     // Merge esplicito: ghostMeals = stato staging (include draftFoods da «Genera Pasto»)
-    finalPlan.ghostMeals = stagingGhosts.map((g) => ({
-      ...g,
-      foods: normalizeMealFoodsArray(mealFoodsRead(g)),
-      draftFoods: Array.isArray(g.draftFoods) ? g.draftFoods : [],
-    }));
+    finalPlan.ghostMeals = stagingGhosts.map((g) => {
+      const draftArr = Array.isArray(g.draftFoods) ? g.draftFoods : [];
+      let foods = normalizeMealFoodsArray(mealFoodsRead(g));
+      if (foods.length === 0 && draftArr.length > 0) {
+        const objs = draftArr.filter((x) => x && typeof x === 'object' && (x.name || x.desc));
+        if (objs.length > 0) {
+          foods = normalizeMealFoodsArray(objs);
+        } else {
+          const strOnly = draftArr
+            .map((x) => (typeof x === 'string' ? String(x).trim() : ''))
+            .filter(Boolean);
+          if (strOnly.length > 0) {
+            foods = draftStringsToFoodsWizard(strOnly);
+          }
+        }
+      }
+      const meal = {
+        ...g,
+        foods,
+        draftFoods: draftArr,
+      };
+      if (!meal.foods || meal.foods.length === 0) {
+        console.warn('Meal without foods detected', meal);
+      }
+      return meal;
+    });
     finalPlan.wizardMeta = {
       macros: [...macros],
       muscles: [...muscles],
