@@ -218,6 +218,51 @@ function findRecentFoodHabit(query, foodDb, flatLog) {
   };
 }
 
+/** Chiave stabile pasto pianificato (mealType canonico + mealTime) per `planning/{uid}/{date}`. */
+function planningMealSlotKeyForFirebase(row) {
+  const mt = toCanonicalMealType(String(row?.mealType || '').split('_')[0]) || 'snack';
+  const t = typeof row?.mealTime === 'number' && !Number.isNaN(row.mealTime) ? row.mealTime : 0;
+  return `${mt}_${t.toFixed(3)}`;
+}
+
+/**
+ * Documento RTDB `planning/{userId}/{date}` — separato da tracker_data.
+ * @param {object} payload — output PlanningWizard (ghostMeals + wizardMeta + workout flags)
+ */
+function buildPlanningFirebaseDoc(payload) {
+  const ghostList = Array.isArray(payload?.ghostMeals) ? payload.ghostMeals : [];
+  const meta = payload?.wizardMeta || {};
+  const stagingDraftBySlot = {};
+  const draftMap = meta.stagingDraftById && typeof meta.stagingDraftById === 'object' ? meta.stagingDraftById : {};
+  for (const g of ghostList) {
+    const foods = draftMap[g.id];
+    if (Array.isArray(foods) && foods.length > 0) {
+      stagingDraftBySlot[planningMealSlotKeyForFirebase(g)] = foods;
+    }
+  }
+  const meals = ghostList.map((g) => ({
+    mealType: toCanonicalMealType(String(g.mealType || '').split('_')[0]) || 'snack',
+    mealTime: typeof g.mealTime === 'number' && !Number.isNaN(g.mealTime) ? g.mealTime : null,
+    title: String(g.title || '').trim(),
+    microDesc: String(g.microDesc || '').trim(),
+    draftFoods: Array.isArray(g.draftFoods) ? g.draftFoods : [],
+    source: g.source || undefined,
+  }));
+  const activities = {
+    macros: Array.isArray(meta.macros) ? [...meta.macros] : [],
+    muscles: Array.isArray(meta.muscles) ? [...meta.muscles] : [],
+    timingByMacro:
+      meta.timingByMacro && typeof meta.timingByMacro === 'object' ? { ...meta.timingByMacro } : {},
+    addGhostWorkout: Boolean(payload.addGhostWorkout),
+    workoutTimeDec:
+      typeof payload.workoutTimeDec === 'number' && !Number.isNaN(payload.workoutTimeDec)
+        ? payload.workoutTimeDec
+        : null,
+    stagingDraftBySlot,
+  };
+  return { meals, activities, createdAt: Date.now() };
+}
+
 /** Rimuove il prefisso iniettato per l'API dalla cronologia conversazione inviata all'API. */
 function stripInvisibleContextFromVisibleUserText(text) {
   if (text == null || typeof text !== 'string') return text;
@@ -1920,6 +1965,9 @@ export default function SalaComandi() {
   }, []);
 
   const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
+  /** Incrementato ad ogni apertura wizard: consente idratazione da Firebase senza sovrascrivere durante l’editing. */
+  const [planningWizardHydrateNonce, setPlanningWizardHydrateNonce] = useState(0);
+  const [remotePlanning, setRemotePlanning] = useState(null);
 
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [isFullScreenGraph, setIsFullScreenGraph] = useState(false);
@@ -2839,6 +2887,19 @@ export default function SalaComandi() {
   useEffect(() => {
     localStorage.setItem('vyta_idealStrategy', JSON.stringify(idealStrategy));
   }, [idealStrategy]);
+
+  /** Carica pianificazione giornaliera da RTDB `planning/{uid}/{date}` (separata da tracker_data). */
+  useEffect(() => {
+    if (!db || !user?.uid || !currentTrackerDate || isSimulationMode) {
+      setRemotePlanning(null);
+      return;
+    }
+    const r = ref(db, `planning/${user.uid}/${currentTrackerDate}`);
+    const unsub = onValue(r, (snap) => {
+      setRemotePlanning(snap.exists() ? snap.val() : null);
+    });
+    return () => unsub();
+  }, [db, user?.uid, currentTrackerDate, isSimulationMode]);
 
   // Caricamento dati al login (user da useFirebase); onValue/set restano qui
   useEffect(() => {
@@ -4134,6 +4195,7 @@ export default function SalaComandi() {
       case 'plan':
         setShowChoiceModal(false);
         closeDrawer({ force: true });
+        setPlanningWizardHydrateNonce((n) => n + 1);
         setPlanningWizardOverlayOpen(true);
         break;
       case 'diary':
@@ -7302,6 +7364,19 @@ ${dbKeys || 'n/d'}`;
     ]
   );
 
+  const savePlanning = useCallback(
+    async (dateStr, doc) => {
+      const uid = auth.currentUser?.uid;
+      if (!uid || !db || !dateStr || isSimulationMode || !doc) return;
+      try {
+        await set(ref(db, `planning/${uid}/${dateStr}`), doc);
+      } catch (e) {
+        console.warn('savePlanning:', e);
+      }
+    },
+    [auth, db, isSimulationMode]
+  );
+
   const handlePlanningWizardConfirm = useCallback(
     (payload) => {
       if (!payload || typeof payload !== 'object') return;
@@ -7390,10 +7465,25 @@ ${dbKeys || 'n/d'}`;
         setDailyLog(mergedLog);
         setManualNodes(mergedManual);
         syncDatiFirebase(mergedLog, mergedManual);
+        if (auth.currentUser?.uid) {
+          const planningDoc = buildPlanningFirebaseDoc(payload);
+          void savePlanning(currentTrackerDate, planningDoc);
+        }
       }
       setPlanningWizardOverlayOpen(false);
     },
-    [dailyLog, manualNodes, syncDatiFirebase, isSimulationMode, simulatedLog, parseFlexibleTimeToDecimal, toCanonicalMealType]
+    [
+      auth,
+      currentTrackerDate,
+      dailyLog,
+      manualNodes,
+      savePlanning,
+      syncDatiFirebase,
+      isSimulationMode,
+      simulatedLog,
+      parseFlexibleTimeToDecimal,
+      toCanonicalMealType,
+    ]
   );
 
   const planningWizardBurnedKcal = useMemo(
@@ -12200,6 +12290,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 userTargets={userTargets}
                 calorieStrategy={kentuDailyCalorieStrategy}
                 burnedKcalBonus={planningWizardBurnedKcal}
+                firebasePlanning={remotePlanning}
+                hydrateNonce={planningWizardHydrateNonce}
                 onClose={() => setPlanningWizardOverlayOpen(false)}
                 onConfirmApply={handlePlanningWizardConfirm}
                 onGeneratePlanGhostMealDraft={handleGeneratePlanGhostMealDraft}

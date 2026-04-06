@@ -4,6 +4,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getDynamicMealTargets, toCanonicalMealType } from './coreEngine';
 
+/** Allineato a SalaComandi `planningMealSlotKeyForFirebase` per idratazione bozze pasto da RTDB. */
+function planningMealSlotKeyFromRow(row) {
+  const mt = toCanonicalMealType(String(row?.mealType || '').split('_')[0]) || 'snack';
+  const t = typeof row?.mealTime === 'number' && !Number.isNaN(row.mealTime) ? row.mealTime : 0;
+  return `${mt}_${t.toFixed(3)}`;
+}
+
 /** Ora locale come ore decimali (es. 14.5 = 14:30); definito per primo per uso in merge/snapshot. */
 function getLocalDecimalHourNow() {
   const d = new Date();
@@ -356,6 +363,10 @@ export default function PlanningWizard({
   userTargets = {},
   calorieStrategy,
   burnedKcalBonus = 0,
+  /** Snapshot `planning/{uid}/{date}` da Firebase (meals, activities, createdAt). */
+  firebasePlanning = null,
+  /** Incrementato dal parent ad ogni apertura wizard per applicare l’idratazione una volta per sessione. */
+  hydrateNonce = 0,
   onClose,
   onConfirmApply,
   onGeneratePlanGhostMealDraft,
@@ -382,6 +393,23 @@ export default function PlanningWizard({
     macroMuscleSeededRef.current = true;
   }, [dailyLog]);
 
+  const planningMetaHydratedForNonce = useRef(-1);
+  const planningDraftHydratedForNonce = useRef(-1);
+
+  useEffect(() => {
+    if (hydrateNonce <= 0 || planningMetaHydratedForNonce.current === hydrateNonce) return;
+    if (!firebasePlanning || typeof firebasePlanning !== 'object') return;
+    const act = firebasePlanning.activities;
+    if (act && typeof act === 'object') {
+      if (Array.isArray(act.macros)) setMacros(new Set(act.macros));
+      if (Array.isArray(act.muscles)) setMuscles(new Set(act.muscles));
+      if (act.timingByMacro && typeof act.timingByMacro === 'object') {
+        setTimingByMacro({ ...act.timingByMacro });
+      }
+    }
+    planningMetaHydratedForNonce.current = hydrateNonce;
+  }, [hydrateNonce, firebasePlanning]);
+
   const stagingGhosts = useMemo(() => {
     const base = [...ghostRowsFromLog(dailyLog), ...buildProposedRows(dailyLog, nowDec)];
     return base.map((r) => {
@@ -390,6 +418,45 @@ export default function PlanningWizard({
       return r;
     });
   }, [dailyLog, stagingDraftById, nowDec]);
+
+  useEffect(() => {
+    if (hydrateNonce <= 0 || planningDraftHydratedForNonce.current === hydrateNonce) return;
+    if (!firebasePlanning || typeof firebasePlanning !== 'object') {
+      planningDraftHydratedForNonce.current = hydrateNonce;
+      return;
+    }
+    const slotMap = firebasePlanning.activities?.stagingDraftBySlot;
+    const meals = firebasePlanning.meals;
+    const hasSlotData =
+      (slotMap && typeof slotMap === 'object' && Object.keys(slotMap).length > 0) ||
+      (Array.isArray(meals) && meals.some((m) => Array.isArray(m.draftFoods) && m.draftFoods.length > 0));
+    if (!hasSlotData) {
+      planningDraftHydratedForNonce.current = hydrateNonce;
+      return;
+    }
+    const nextDraft = {};
+    if (slotMap && typeof slotMap === 'object') {
+      stagingGhosts.forEach((g) => {
+        const k = planningMealSlotKeyFromRow(g);
+        if (Array.isArray(slotMap[k]) && slotMap[k].length > 0) {
+          nextDraft[g.id] = slotMap[k];
+        }
+      });
+    }
+    if (Array.isArray(meals)) {
+      meals.forEach((m) => {
+        const key = planningMealSlotKeyFromRow(m);
+        const match = stagingGhosts.find((g) => planningMealSlotKeyFromRow(g) === key);
+        if (match && Array.isArray(m.draftFoods) && m.draftFoods.length > 0) {
+          nextDraft[match.id] = m.draftFoods;
+        }
+      });
+    }
+    if (Object.keys(nextDraft).length > 0) {
+      setStagingDraftById(nextDraft);
+    }
+    planningDraftHydratedForNonce.current = hydrateNonce;
+  }, [hydrateNonce, firebasePlanning, stagingGhosts]);
 
   const hasTraining = macros.has('training');
   const hasRealWorkout = useMemo(() => !!extractRealWorkout(dailyLog), [dailyLog]);
@@ -497,6 +564,12 @@ export default function PlanningWizard({
     };
     // Merge esplicito: ghostMeals = stato staging (include draftFoods da «Genera Pasto»)
     finalPlan.ghostMeals = stagingGhosts;
+    finalPlan.wizardMeta = {
+      macros: [...macros],
+      muscles: [...muscles],
+      timingByMacro: { ...timingByMacro },
+      stagingDraftById: { ...stagingDraftById },
+    };
     onConfirmApply?.(finalPlan);
   };
 
