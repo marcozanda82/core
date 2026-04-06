@@ -1,8 +1,16 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { getMealIcon } from './coreEngine';
 
 const SUBTLE_SPRING = { type: 'spring', stiffness: 420, damping: 26, mass: 0.85 };
+
+/** Ora decimale locale 0–24 da usare sulla timeline (solo ore + minuti). */
+function getDecimalHourFromDate(d) {
+  return d.getHours() + d.getMinutes() / 60;
+}
+
+const NOW_LINE_GLOW =
+  '0 0 4px rgba(0, 229, 255, 0.95), 0 0 10px rgba(0, 229, 255, 0.55), 0 0 18px rgba(255, 255, 255, 0.12)';
 const ENTER_TRANSITION = { opacity: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, scale: { ...SUBTLE_SPRING } };
 
 /**
@@ -34,7 +42,23 @@ export default function TimelineNodi({
   setDailyLog
 }) {
   const reduceMotion = useReducedMotion();
+  const [nowDecimalHour, setNowDecimalHour] = useState(() => getDecimalHourFromDate(new Date()));
   const nodes = activeNodesWithStack ?? [];
+
+  useEffect(() => {
+    const tick = () => setNowDecimalHour(getDecimalHourFromDate(new Date()));
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
+
   const fireNodeClick = (node) => {
     if (typeof onNodeClick === 'function') onNodeClick(node);
     else if (typeof handleNodeTap === 'function') handleNodeTap(node)();
@@ -72,6 +96,55 @@ export default function TimelineNodi({
             zIndex: 0,
           }}
         />
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            left: `${(nowDecimalHour / 24) * 100}%`,
+            top: 0,
+            bottom: 0,
+            width: '1px',
+            transform: 'translateX(-50%)',
+            background: 'linear-gradient(180deg, rgba(224,252,255,0.35) 0%, rgba(0,229,255,0.95) 45%, rgba(0,229,255,0.95) 55%, rgba(224,252,255,0.25) 100%)',
+            boxShadow: NOW_LINE_GLOW,
+            pointerEvents: 'none',
+            zIndex: 3,
+          }}
+        >
+          {reduceMotion ? (
+            <div
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                width: 6,
+                height: 6,
+                marginLeft: -3,
+                marginTop: -3,
+                borderRadius: '50%',
+                background: 'radial-gradient(circle at 30% 30%, #ffffff, rgba(0,229,255,0.95))',
+                boxShadow: '0 0 6px rgba(0,229,255,0.9), 0 0 12px rgba(255,255,255,0.35)',
+              }}
+            />
+          ) : (
+            <motion.div
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                width: 6,
+                height: 6,
+                marginLeft: -3,
+                marginTop: -3,
+                borderRadius: '50%',
+                background: 'radial-gradient(circle at 30% 30%, #ffffff, rgba(0,229,255,0.95))',
+                boxShadow: '0 0 6px rgba(0,229,255,0.9), 0 0 12px rgba(255,255,255,0.35)',
+              }}
+              animate={{ scale: [1, 1.22, 1], opacity: [0.88, 1, 0.88] }}
+              transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          )}
+        </div>
           {nodes.map((node) => {
             const currentChartUnit = chartUnit;
             const isGhostMeal = node.type === 'ghost_meal';
