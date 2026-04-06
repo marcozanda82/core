@@ -144,7 +144,20 @@ function migrateIdealStrategy(raw) {
 }
 
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
-const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'longevita'];
+const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'planning', 'longevita'];
+
+const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
+
+function readPersistedActiveBottomTab() {
+  if (typeof localStorage === 'undefined') return 'oggi';
+  try {
+    const v = localStorage.getItem(ACTIVE_BOTTOM_TAB_LS_KEY);
+    if (v && MAIN_BOTTOM_TAB_ORDER.includes(v)) return v;
+  } catch {
+    /* ignore */
+  }
+  return 'oggi';
+}
 
 /**
  * Match migliore sul database alimenti: esatto > bidirezionale (includes) con score da differenza di lunghezza.
@@ -1662,8 +1675,17 @@ export default function SalaComandi() {
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
-  const [activeBottomTab, setActiveBottomTab] = useState('oggi');
+  const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
   const [slideDirection, setSlideDirection] = useState('slide-none');
+
+  useEffect(() => {
+    if (!MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)) return;
+    try {
+      localStorage.setItem(ACTIVE_BOTTOM_TAB_LS_KEY, activeBottomTab);
+    } catch {
+      /* ignore */
+    }
+  }, [activeBottomTab]);
   const [mainTabTouchStartX, setMainTabTouchStartX] = useState(null);
   const [mainTabTouchEndX, setMainTabTouchEndX] = useState(null);
   const mainTabTouchStartXRef = useRef(null);
@@ -10600,6 +10622,48 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       )}
       </div>
       )}
+      {activeBottomTab === 'planning' && (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'stretch',
+            padding: '20px 16px',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            width: '100%',
+            boxSizing: 'border-box',
+            gap: 14,
+          }}
+        >
+          <p style={{ margin: 0, fontSize: '0.88rem', color: 'rgba(200,210,220,0.95)', lineHeight: 1.45 }}>
+            Pianifica attività, fasce orarie e pasti (ghost) per oggi. I dati confermati restano su Firebase sotto{' '}
+            <code style={{ fontSize: '0.75rem', color: '#7dd3fc' }}>planning/</code>.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setPlanningWizardHydrateNonce((n) => n + 1);
+              setPlanningWizardOverlayOpen(true);
+            }}
+            style={{
+              padding: '14px 18px',
+              borderRadius: 14,
+              border: '1px solid rgba(0, 229, 255, 0.45)',
+              background: 'rgba(0, 229, 255, 0.15)',
+              color: '#e0faff',
+              fontWeight: 800,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+            }}
+          >
+            Apri pianificazione guidata
+          </button>
+        </div>
+      )}
       {activeBottomTab === 'longevita' && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}>
           <LongevityView
@@ -13600,6 +13664,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         {[
           { id: 'oggi', label: 'Oggi', icon: '🏠' },
           { id: 'analisi', label: 'Analisi', icon: '📊' },
+          { id: 'planning', label: 'Piano', icon: '📅' },
           { id: 'longevita', label: 'Statistiche', icon: '🧬' },
           { id: 'menu', label: 'Menu', icon: '≡' },
         ].map((t) => (
@@ -13615,7 +13680,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               alignItems: 'center',
               gap: '4px',
               cursor: 'pointer',
-              width: '25%',
+              flex: 1,
+              minWidth: 0,
               color: activeBottomTab === t.id ? '#00e5ff' : '#888',
               fontSize: '0.7rem',
               padding: '4px 0',
