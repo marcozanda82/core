@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { getMealIcon } from './coreEngine';
 import {
@@ -73,6 +73,9 @@ export default function TimelineNodi({
 }) {
   const reduceMotion = useReducedMotion();
   const [nowDecimalHour, setNowDecimalHour] = useState(() => getWallClockDecimalHour());
+  const [draggingId, setDraggingId] = useState(null);
+  const [dragX, setDragX] = useState(null);
+  const containerRef = useRef(null);
   const nodes = activeNodesWithStack ?? [];
 
   useEffect(() => {
@@ -112,7 +115,7 @@ export default function TimelineNodi({
   );
 
   return (
-    <div style={{ width: '100%', boxSizing: 'border-box' }}>
+    <div ref={containerRef} style={{ width: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', width: '100%', minHeight: '55px' }}>
       <div
         ref={timelineContainerRef}
