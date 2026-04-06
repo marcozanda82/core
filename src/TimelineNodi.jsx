@@ -204,9 +204,9 @@ export default function TimelineNodi({
             let bgColor = node.color;
             if (!bgColor) {
               if (isGhostMeal) {
-                bgColor = isTouchingOrDragging ? 'rgba(0,229,255,0.22)' : 'rgba(0,229,255,0.08)';
+                bgColor = isTouchingOrDragging ? 'rgba(0,229,255,0.14)' : 'rgba(0,229,255,0.06)';
               } else if (isGhostWorkout) {
-                bgColor = isTouchingOrDragging ? 'rgba(255,68,68,0.28)' : 'rgba(255,68,68,0.1)';
+                bgColor = isTouchingOrDragging ? 'rgba(248,113,113,0.12)' : 'rgba(248,113,113,0.05)';
               } else if (isTouchingOrDragging) {
                 bgColor = isWorkoutPoint ? 'rgba(255,68,68,0.4)' : isMealPoint ? 'rgba(0,229,255,0.4)' : isCognitivePoint ? 'rgba(182,102,210,0.4)' : isStimulant ? 'rgba(245,158,11,0.35)' : isWater ? 'rgba(0,229,255,0.35)' : isAlcohol ? 'rgba(244,67,54,0.35)' : '#888';
               } else {
@@ -216,12 +216,21 @@ export default function TimelineNodi({
             const nodeBorderColor =
               node.color ||
               (isCognitivePoint ? '#b666d2' : isWorkoutPoint ? '#ff4444' : isMealPoint ? '#00e5ff' : isStimulant ? '#f59e0b' : isWater ? '#00e5ff' : isAlcohol ? '#f44336' : bioTypeBorder || pointBorderColor);
-            const borderStyle = isGhostMeal || isGhostWorkout ? '2px dashed #00e5ff' : `2px solid ${nodeBorderColor}`;
+            const borderStyle = isGhostMeal
+              ? '1px dashed rgba(0, 229, 255, 0.4)'
+              : isGhostWorkout
+                ? '1px dashed rgba(248, 113, 113, 0.38)'
+                : `2px solid ${nodeBorderColor}`;
             const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
             const pointTransform = isDragging ? `translate(-50%, ${dragY - 45}px) scale(2)` : `translateX(-50%) scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`;
             let pointBoxShadow = 'none';
             if (isGhostMeal || isGhostWorkout) {
-              pointBoxShadow = 'none';
+              pointBoxShadow =
+                isTouchingOrDragging && isGhostMeal
+                  ? '0 0 6px rgba(0, 229, 255, 0.12)'
+                  : isTouchingOrDragging && isGhostWorkout
+                    ? '0 0 6px rgba(248, 113, 113, 0.1)'
+                    : 'none';
             } else if (isTouchingOrDragging) {
               pointBoxShadow = isWorkoutPoint ? '0 0 15px #ff4444' : isMealPoint ? '0 0 15px #00e5ff' : isCognitivePoint ? '0 0 15px #b666d2' : isStimulant ? '0 0 15px #f59e0b' : isWater ? '0 0 15px #00e5ff' : isAlcohol ? '0 0 15px #f44336' : (bioTypeBorder ? `0 0 15px ${bioTypeBorder}` : 'none');
             } else if (isCognitivePoint) {
@@ -244,7 +253,15 @@ export default function TimelineNodi({
                         : '';
                   return foodLine || undefined;
                 })();
-            const importanceForPoint = ghostVisual ? { filter: 'none', opacity: 1, zIndex: 9 } : isDragging ? {} : importanceStyle;
+            const importanceForPoint = ghostVisual
+              ? {
+                  filter: 'none',
+                  opacity: isTouchingOrDragging ? 0.82 : 0.6,
+                  zIndex: 9,
+                }
+              : isDragging
+                ? {}
+                : importanceStyle;
             const mealPointExpandedLayout = isMealPoint && !isGhostMeal;
             return (
               <div
