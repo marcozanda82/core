@@ -231,6 +231,12 @@ function findRecentFoodHabit(query, foodDb, flatLog) {
   };
 }
 
+/** Pasto / nodo piano: `foods` sempre array, mai undefined. */
+function mealFoodsRead(meal) {
+  const f = meal?.foods;
+  return Array.isArray(f) ? f : [];
+}
+
 /** Chiave stabile pasto pianificato (mealType canonico + mealTime) per `planning/{uid}/{date}`. */
 function planningMealSlotKeyForFirebase(row) {
   const mt = toCanonicalMealType(String(row?.mealType || '').split('_')[0]) || 'snack';
@@ -254,8 +260,8 @@ function buildPlanningFirebaseDoc(payload) {
       stagingDraftBySlot[key] = fromMeta.map((x) =>
         typeof x === 'string' ? x : `${Math.round(Number(x?.qty ?? x?.weight) || 0) || '?'}g ${String(x?.name || x?.desc || '').trim()}`.trim()
       );
-    } else if (Array.isArray(g.foods) && g.foods.length > 0) {
-      stagingDraftBySlot[key] = g.foods.map((f) =>
+    } else if (mealFoodsRead(g).length > 0) {
+      stagingDraftBySlot[key] = mealFoodsRead(g).map((f) =>
         typeof f === 'string'
           ? f
           : `${Math.round(Number(f?.qty) || 0) || '?'}g ${String(f?.name || '').trim()}`.trim()
@@ -269,7 +275,7 @@ function buildPlanningFirebaseDoc(payload) {
     title: String(g.title || '').trim(),
     microDesc: String(g.microDesc || '').trim(),
     draftFoods: Array.isArray(g.draftFoods) ? g.draftFoods : [],
-    foods: Array.isArray(g.foods) ? g.foods : [],
+    foods: mealFoodsRead(g),
     target: g.target != null ? g.target : undefined,
     source: g.source || undefined,
   }));
@@ -573,7 +579,7 @@ function normalizeDailyPlanFromToken(parsed) {
           ? g.draftFoods.map((x) => String(x).trim()).filter(Boolean)
           : [];
         if (!title) return null;
-        const row = { mealType, time: timeNorm, title, microDesc, draftFoods };
+        const row = { mealType, time: timeNorm, title, microDesc, draftFoods, foods: [] };
         if (Array.isArray(g?.foods) && g.foods.length > 0) {
           const foods = g.foods
             .map((f) => {
@@ -590,7 +596,7 @@ function normalizeDailyPlanFromToken(parsed) {
               return o;
             })
             .filter(Boolean);
-          if (foods.length > 0) row.foods = foods;
+          row.foods = foods;
         }
         return row;
       })
@@ -1744,7 +1750,7 @@ function ghostSurfaceDraftToProposalItems(draftFoods) {
 
 /** Nodo timeline ghost: `foods` sempre valorizzato (da log o da draftFoods). */
 function normalizeGhostFoodsForTimelineNode(e) {
-  const fromLog = structuredFoodsToProposalItems(e?.foods);
+  const fromLog = structuredFoodsToProposalItems(mealFoodsRead(e));
   if (fromLog.length > 0) {
     return fromLog.map((p) => {
       const o = { name: p.name, qty: p.qty };
@@ -2860,7 +2866,7 @@ export default function SalaComandi() {
       kcal: m.kcal ?? 0,
       originalTypes: Array.from(m.originalTypes),
       items: m.items,
-      foods: m.items.map((it) => ({ ...it })),
+      foods: (m.items || []).map((it) => ({ ...it })),
       icon: getMealIcon(String(m.mealType).split('_')[0]),
     }));
   }, [activeLog]);
@@ -5169,9 +5175,10 @@ Ottimo! Diario aggiornato. 🥗`;
       const mt = toCanonicalMealType(String(node.mealType || 'pranzo').split('_')[0]) || 'pranzo';
       const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12;
       const title = String(node.title || 'Pasto pianificato').trim();
+      const fromNodeFoods = mealFoodsRead(node);
       const foodsGhost =
-        Array.isArray(node.foods) && node.foods.length > 0
-          ? node.foods.map((x) => ({ ...x }))
+        fromNodeFoods.length > 0
+          ? fromNodeFoods.map((x) => ({ ...x }))
           : normalizeGhostFoodsForTimelineNode({
               draftFoods: node.draftFoods,
               foods: node.foods,
@@ -5224,8 +5231,8 @@ Ottimo! Diario aggiornato. 🥗`;
       const foodsForSlot =
         Array.isArray(node.items) && node.items.length > 0
           ? node.items
-          : Array.isArray(node.foods) && node.foods.length > 0
-            ? node.foods
+          : mealFoodsRead(node).length > 0
+            ? mealFoodsRead(node)
             : getFoodItemsForMealSlot(activeLog, slotId);
       if (foodsForSlot.length > 0) {
         const toN = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (Number(v) || 0);
@@ -5276,7 +5283,7 @@ Ottimo! Diario aggiornato. 🥗`;
         name: 'Pasto',
         time: typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12,
         items: [],
-        foods: Array.isArray(node.foods) ? node.foods.map((x) => ({ ...x })) : [],
+        foods: mealFoodsRead(node).map((x) => ({ ...x })),
       });
       return;
     }
@@ -7443,9 +7450,7 @@ Ottimo! Diario aggiornato. 🥗`;
           const draftFoods = Array.isArray(persistedDraftFoods)
             ? persistedDraftFoods.map((x) => String(x).trim()).filter(Boolean)
             : [];
-          let foodsArr = Array.isArray(gm.foods)
-            ? gm.foods.map((f) => (f && typeof f === 'object' ? { ...f } : f)).filter(Boolean)
-            : [];
+          let foodsArr = mealFoodsRead(gm).map((f) => (f && typeof f === 'object' ? { ...f } : f)).filter(Boolean);
           if (foodsArr.length === 0 && draftFoods.length > 0) {
             foodsArr = draftStringsToFoods(draftFoods);
           }
@@ -7457,9 +7462,9 @@ Ottimo! Diario aggiornato. 🥗`;
             title: String(gm.title || 'Pasto pianificato').trim(),
             microDesc: String(gm.microDesc || '').trim(),
             draftFoods,
+            foods: foodsArr,
             isGhost: true,
           };
-          if (foodsArr.length > 0) entry.foods = foodsArr;
           return entry;
         });
       const logTimeKey = (e) => {
@@ -7626,7 +7631,7 @@ ${dbKeys || 'n/d'}`;
             typeof gm.mealTime === 'number' && !Number.isNaN(gm.mealTime)
               ? gm.mealTime
               : parseFlexibleTimeToDecimal(String(gm.time || '12:00')) ?? 12;
-          let foodsArr = Array.isArray(gm.foods) ? gm.foods : [];
+          let foodsArr = mealFoodsRead(gm).map((f) => (f && typeof f === 'object' ? { ...f } : f)).filter(Boolean);
           if (foodsArr.length === 0 && Array.isArray(gm.draftFoods)) {
             const objs = gm.draftFoods.filter((x) => x && typeof x === 'object' && (x.name || x.desc));
             if (objs.length > 0) {
@@ -7676,9 +7681,9 @@ ${dbKeys || 'n/d'}`;
             title: String(gm.title || 'Pasto pianificato').trim(),
             microDesc: String(gm.microDesc || '').trim(),
             draftFoods,
+            foods: foodsArr,
             isGhost: true,
           };
-          if (foodsArr.length > 0) entry.foods = foodsArr;
           return entry;
         });
       const logTimeKey = (e) => {
@@ -13215,8 +13220,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12;
                   setEditingMealId(node.id);
                   const proposalItems =
-                    Array.isArray(node.foods) && node.foods.length > 0
-                      ? structuredFoodsToProposalItems(node.foods)
+                    mealFoodsRead(node).length > 0
+                      ? structuredFoodsToProposalItems(mealFoodsRead(node))
                       : ghostSurfaceDraftToProposalItems(node.draftFoods);
                   setAddedFoods(mapProposalItemsToDiaryFoods(proposalItems, t));
                   setMealType(mealIdFromCanonical(mt));

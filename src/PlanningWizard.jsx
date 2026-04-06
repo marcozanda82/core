@@ -40,6 +40,12 @@ const PROPOSED_SLOTS = [
   { canon: 'cena', label: 'Cena', mealType: 'cena', defaultHour: 20 },
 ];
 
+/** Legge `meal.foods`: sempre array, mai undefined (evita bug silenziosi). */
+function mealFoodsRead(meal) {
+  const f = meal?.foods;
+  return Array.isArray(f) ? f : [];
+}
+
 function normalizeFoodsArray(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -141,7 +147,7 @@ function normalizeWizardInitialMeals(raw) {
     }
     const id =
       row.id != null && String(row.id).trim() !== '' ? String(row.id).trim() : `slot_${slotKey}`;
-    const foods = normalizeFoodsArray(row.foods);
+    const foods = normalizeFoodsArray(mealFoodsRead(row));
     const timeStr = decimalHourToHHMM(dh) || '12:00';
     const target = row.target != null ? row.target : null;
     out.push({ id, canon, mealType: mt, defaultHour: dh, label, foods, time: timeStr, target });
@@ -333,7 +339,7 @@ function buildProposedRowsFromMeals(log, nowDec, mealTemplates) {
   return missingSlots.map((s) => {
     const defH = Number(s.defaultHour);
     const hourBase = Number.isFinite(defH) ? defH : 12;
-    const foods = normalizeFoodsArray(s.foods);
+    const foods = normalizeFoodsArray(mealFoodsRead(s));
     const draftFoods = foods.length > 0 ? foodsArrayToDraftPillEntries(foods) : [];
     return {
       id: `proposed_${s.id}`,
@@ -360,7 +366,7 @@ function ghostRowsFromLog(log) {
       if (Number.isNaN(mtDec)) mtDec = timeStrToDecimal(e.mealTime);
       if (Number.isNaN(mtDec)) mtDec = timeStrToDecimal(e.time);
       if (Number.isNaN(mtDec)) mtDec = 12;
-      const foods = normalizeFoodsArray(e.foods);
+      const foods = normalizeFoodsArray(mealFoodsRead(e));
       let draftFoods = Array.isArray(e.draftFoods)
         ? e.draftFoods
             .map((x) => {
@@ -543,7 +549,19 @@ export default function PlanningWizard({
   const updateMeal = useCallback((index, patch) => {
     if (typeof index !== 'number' || index < 0 || patch == null || typeof patch !== 'object') return;
     mealsUserTouchedRef.current = true;
-    setMeals((prev) => prev.map((m, i) => (i === index ? { ...m, ...patch } : m)));
+    setMeals((prev) =>
+      prev.map((m, i) => {
+        if (i !== index) return { ...m, foods: mealFoodsRead(m) };
+        const { foods: patchFoods, ...rest } = patch;
+        const next = { ...m, ...rest };
+        if (patchFoods !== undefined) {
+          next.foods = Array.isArray(patchFoods) ? patchFoods : [];
+        } else {
+          next.foods = mealFoodsRead(m);
+        }
+        return next;
+      })
+    );
   }, []);
 
   const removeMeal = useCallback((index) => {
@@ -570,12 +588,12 @@ export default function PlanningWizard({
         label: m.label,
         time: m.time,
         target: m.target,
-        foods: m.foods,
+        foods: mealFoodsRead(m),
       }))
     );
     if (lastInitialMealsSigRef.current === sig) return;
     lastInitialMealsSigRef.current = sig;
-    setMeals(normalized);
+    setMeals(normalized.map((m) => ({ ...m, foods: mealFoodsRead(m) })));
   }, [initialMeals]);
 
   useEffect(() => {
@@ -608,7 +626,7 @@ export default function PlanningWizard({
     const base = [...ghostRowsFromLog(dailyLog), ...buildProposedRowsFromMeals(dailyLog, nowDec, meals)];
     return base.map((r) => {
       const ov = stagingDraftById[r.id];
-      const foodsRow = Array.isArray(r.foods) ? r.foods : [];
+      const foodsRow = mealFoodsRead(r);
       let draftFoods = Array.isArray(r.draftFoods) ? r.draftFoods : [];
       if (Array.isArray(ov) && ov.length > 0) {
         draftFoods = ov;
@@ -633,7 +651,7 @@ export default function PlanningWizard({
         planningMealsSnap.some(
           (m) =>
             (Array.isArray(m.draftFoods) && m.draftFoods.length > 0) ||
-            (Array.isArray(m.foods) && m.foods.length > 0)
+            mealFoodsRead(m).length > 0
         ));
     if (!hasSlotData) {
       planningDraftHydratedForNonce.current = hydrateNonce;
@@ -656,22 +674,20 @@ export default function PlanningWizard({
         if (!match) return;
         if (Array.isArray(m.draftFoods) && m.draftFoods.length > 0) {
           nextDraft[match.id] = m.draftFoods;
-        } else if (Array.isArray(m.foods) && m.foods.length > 0) {
-          const fn = normalizeFoodsArray(m.foods);
+        } else if (mealFoodsRead(m).length > 0) {
+          const fn = normalizeFoodsArray(mealFoodsRead(m));
           nextDraft[match.id] = fn.map((f) => `${f.qty}g ${f.name}`);
           if (match.templateId) foodsPatches.push({ templateId: match.templateId, foods: fn });
         }
       });
       if (foodsPatches.length > 0) {
-        setMeals((prev) => {
-          let next = prev;
-          for (const p of foodsPatches) {
-            next = next.map((tm) =>
-              tm.id === p.templateId ? { ...tm, foods: p.foods.length ? p.foods : tm.foods } : tm
-            );
-          }
-          return next;
-        });
+        setMeals((prev) =>
+          prev.map((tm) => {
+            const hit = foodsPatches.find((p) => p.templateId === tm.id);
+            if (!hit) return { ...tm, foods: mealFoodsRead(tm) };
+            return { ...tm, foods: Array.isArray(hit.foods) ? hit.foods : [] };
+          })
+        );
       }
     }
     if (Object.keys(nextDraft).length > 0) {
@@ -763,7 +779,7 @@ export default function PlanningWizard({
         let foods = [];
         let draftFoods = [];
         if (res && typeof res === 'object' && !Array.isArray(res)) {
-          foods = Array.isArray(res.foods) ? res.foods : [];
+          foods = mealFoodsRead(res);
           draftFoods = Array.isArray(res.draftFoods) ? res.draftFoods : [];
         } else if (Array.isArray(res)) {
           draftFoods = res.map((x) => String(x).trim()).filter(Boolean);
@@ -774,11 +790,12 @@ export default function PlanningWizard({
         const targetVal = calorieStrategy != null ? String(calorieStrategy) : null;
         if (slotRow.templateId) {
           mealsUserTouchedRef.current = true;
+          const foodsSafe = Array.isArray(foods) ? foods : [];
           setMeals((prev) =>
             prev.map((m) =>
               m.id === slotRow.templateId
-                ? { ...m, foods, ...(targetVal != null ? { target: targetVal } : {}) }
-                : m
+                ? { ...m, foods: foodsSafe, ...(targetVal != null ? { target: targetVal } : {}) }
+                : { ...m, foods: mealFoodsRead(m) }
             )
           );
           setStagingDraftById((prev) => {
@@ -816,7 +833,11 @@ export default function PlanningWizard({
       addGhostWorkout: Boolean(hasTraining && !hasRealWorkout && workoutDecForApply != null),
     };
     // Merge esplicito: ghostMeals = stato staging (include draftFoods da «Genera Pasto»)
-    finalPlan.ghostMeals = stagingGhosts;
+    finalPlan.ghostMeals = stagingGhosts.map((g) => ({
+      ...g,
+      foods: mealFoodsRead(g),
+      draftFoods: Array.isArray(g.draftFoods) ? g.draftFoods : [],
+    }));
     finalPlan.wizardMeta = {
       macros: [...macros],
       muscles: [...muscles],

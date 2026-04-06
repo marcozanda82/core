@@ -60,7 +60,8 @@ function normalizePlanFromProps(p) {
           const draftFoods = Array.isArray(raw)
             ? raw.map((x) => String(x).trim()).filter(Boolean)
             : [];
-          return { ...g, draftFoods };
+          const foods = Array.isArray(g?.foods) ? g.foods : [];
+          return { ...g, draftFoods, foods };
         })
       : [],
   };

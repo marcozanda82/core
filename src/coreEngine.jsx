@@ -1557,6 +1557,7 @@ function normalizeLogData(rawLog) {
         const parts = ts.match(/^(\d{1,2})[:.](\d{2})$/);
         mTime = parts ? Math.min(23.99, parseInt(parts[1], 10) + parseInt(parts[2], 10) / 60) : 12;
       }
+      const ghostFoods = Array.isArray(entry.foods) ? entry.foods : [];
       out.push({
         ...entry,
         type: 'ghost_meal',
@@ -1567,6 +1568,7 @@ function normalizeLogData(rawLog) {
         microDesc: entry.microDesc != null ? String(entry.microDesc) : '',
         isGhost: true,
         kcal: 0,
+        foods: ghostFoods,
       });
       return;
     }
@@ -2388,9 +2390,9 @@ function denormalizeLogForFirebase(flatLog) {
       if (Array.isArray(entry.draftFoods) && entry.draftFoods.length > 0) {
         gm.draftFoods = entry.draftFoods;
       }
-      if (Array.isArray(entry.foods) && entry.foods.length > 0) {
-        gm.foods = entry.foods.map((f) => (f && typeof f === 'object' ? { ...f } : f));
-      }
+      gm.foods = Array.isArray(entry.foods)
+        ? entry.foods.map((f) => (f && typeof f === 'object' ? { ...f } : f))
+        : [];
       ghostMeals.push(gm);
       return;
     }
