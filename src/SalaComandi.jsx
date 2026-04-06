@@ -1700,6 +1700,23 @@ function draftStringsToFoods(strings) {
     .slice(0, 14);
 }
 
+/** Righe alimento per modal ghost: prima `foods` normalizzati, poi oggetti in draft, poi stringhe. */
+function ghostMealModalFoodRows(report) {
+  let rows = normalizeMealFoodsArray(report?.foods);
+  if (rows.length > 0) return rows;
+  const draft = Array.isArray(report?.draftFoods) ? report.draftFoods : [];
+  const objs = draft.filter((x) => x && typeof x === 'object' && (x.name || x.desc));
+  if (objs.length > 0) rows = normalizeMealFoodsArray(objs);
+  else {
+    const strs = draft
+      .filter((x) => typeof x === 'string')
+      .map((s) => String(s).trim())
+      .filter(Boolean);
+    if (strs.length > 0) rows = normalizeMealFoodsArray(draftStringsToFoods(strs));
+  }
+  return rows;
+}
+
 /**
  * Risposta AI piano pasto: preferisce `items` strutturati; fallback `draftFoods` (stringhe).
  * @returns {{ foods: object[], draftFoods: string[] }}
@@ -13141,57 +13158,104 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 </div>
                 {selectedNodeReport.isGhost === true || selectedNodeReport.type === 'ghost_meal' ? (
                   (() => {
-                    const fromDraft = Array.isArray(selectedNodeReport.draftFoods)
-                      ? selectedNodeReport.draftFoods
-                      : [];
-                    const fromFoods =
-                      Array.isArray(selectedNodeReport.foods) && selectedNodeReport.foods.length > 0
-                        ? selectedNodeReport.foods.map((f) =>
-                            f && typeof f === 'object'
-                              ? {
-                                  desc: f.name,
-                                  name: f.name,
-                                  weight: f.qty,
-                                  qty: f.qty,
-                                }
-                              : String(f)
-                          )
-                        : [];
-                    const df = fromDraft.length > 0 ? fromDraft : fromFoods;
                     if (selectedNodeReport.type === 'ghost_workout') return null;
+                    const rows = ghostMealModalFoodRows(selectedNodeReport);
+                    const toN = (v) => {
+                      const n = Number(v);
+                      return Number.isFinite(n) ? n : 0;
+                    };
+                    const totals = rows.reduce(
+                      (acc, f) => ({
+                        kcal: acc.kcal + toN(f.kcal),
+                        prot: acc.prot + toN(f.prot),
+                        carb: acc.carb + toN(f.carb),
+                        fat: acc.fat + toN(f.fat),
+                      }),
+                      { kcal: 0, prot: 0, carb: 0, fat: 0 }
+                    );
                     return (
                       <div style={{ marginTop: 16, marginBottom: 4 }}>
-                        <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#7dd3fc', marginBottom: 8, letterSpacing: '0.06em' }}>
-                          Cibi proposti (bozza)
+                        <div
+                          style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 800,
+                            color: '#7dd3fc',
+                            marginBottom: 8,
+                            letterSpacing: '0.06em',
+                          }}
+                        >
+                          Alimenti
                         </div>
-                        {df.length === 0 ? (
-                          <span style={{ color: 'rgba(255,255,255,0.38)', fontStyle: 'italic', fontSize: '0.9rem' }}>Empty meal</span>
+                        {rows.length === 0 ? (
+                          <span
+                            style={{
+                              color: 'rgba(255,255,255,0.38)',
+                              fontStyle: 'italic',
+                              fontSize: '0.9rem',
+                            }}
+                          >
+                            Empty meal
+                          </span>
                         ) : (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                            {df.map((f, i) => {
-                              const text =
-                                typeof f === 'string'
-                                  ? f
-                                  : `${f?.desc || f?.name || ''} ${f?.weight != null ? `${f.weight}g` : f?.qty != null ? `${f.qty}g` : ''}`;
-                              return (
-                                <span
-                                  key={`ghost_df_${i}_${String(text).slice(0, 32)}`}
-                                  style={{
-                                    display: 'inline-block',
-                                    background: 'rgba(0, 229, 255, 0.15)',
-                                    color: '#00e5ff',
-                                    padding: '4px 8px',
-                                    borderRadius: '12px',
-                                    fontSize: '0.75rem',
-                                    marginRight: '6px',
-                                    marginBottom: '6px',
-                                  }}
-                                >
-                                  {String(text).trim() || 'Alimento'}
-                                </span>
-                              );
-                            })}
-                          </div>
+                          <>
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                gap: '10px 16px',
+                                padding: '10px 12px',
+                                marginBottom: 12,
+                                background: 'rgba(0, 229, 255, 0.08)',
+                                borderRadius: 10,
+                                border: '1px solid rgba(0, 229, 255, 0.22)',
+                                fontSize: '0.78rem',
+                                color: '#bae6fd',
+                              }}
+                            >
+                              <span>
+                                <strong style={{ color: '#e0f2fe' }}>Tot.</strong>{' '}
+                                {Math.round(totals.kcal)} kcal
+                              </span>
+                              <span>P {Math.round(totals.prot * 10) / 10} g</span>
+                              <span>C {Math.round(totals.carb * 10) / 10} g</span>
+                              <span>F {Math.round(totals.fat * 10) / 10} g</span>
+                            </div>
+                            <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                              {rows.map((f, i) => {
+                                const name = String(f.name || '').trim() || 'Alimento';
+                                const qty = Math.round(toN(f.qty));
+                                const hasQty = qty > 0;
+                                return (
+                                  <div
+                                    key={`ghost_meal_row_${i}_${name.slice(0, 24)}`}
+                                    style={{
+                                      padding: '10px 0',
+                                      borderBottom: '1px solid rgba(255,255,255,0.08)',
+                                      fontSize: '0.85rem',
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: 600, color: '#e8f4ff' }}>{name}</div>
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        gap: '10px 14px',
+                                        marginTop: 4,
+                                        color: '#94a3b8',
+                                        fontSize: '0.78rem',
+                                      }}
+                                    >
+                                      <span>{hasQty ? `${qty} g` : '—'}</span>
+                                      <span>{Math.round(toN(f.kcal)) || '—'} kcal</span>
+                                      <span>P {toN(f.prot) ? Math.round(toN(f.prot) * 10) / 10 : '—'} g</span>
+                                      <span>C {toN(f.carb) ? Math.round(toN(f.carb) * 10) / 10 : '—'} g</span>
+                                      <span>F {toN(f.fat) ? Math.round(toN(f.fat) * 10) / 10 : '—'} g</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
                         )}
                       </div>
                     );
