@@ -1557,7 +1557,7 @@ function normalizeLogData(rawLog) {
         const parts = ts.match(/^(\d{1,2})[:.](\d{2})$/);
         mTime = parts ? Math.min(23.99, parseInt(parts[1], 10) + parseInt(parts[2], 10) / 60) : 12;
       }
-      const ghostFoods = Array.isArray(entry.foods) ? entry.foods : [];
+      const ghostFoods = normalizeMealFoodsArray(entry.foods);
       out.push({
         ...entry,
         type: 'ghost_meal',
@@ -1734,6 +1734,54 @@ function countLoggedProteinMealSlots(log) {
     seen.add(`${mt}|${t}`);
   }
   return seen.size;
+}
+
+/**
+ * Voce canonica in `meal.foods` / `ghost_meal.foods`: macro sempre numeri (0 se ignoti).
+ * Accetta anche campi legacy (`estKcal`, `desc`, `fatTotal`, …).
+ *
+ * @param {unknown} raw
+ * @returns {{ name: string, qty: number, kcal: number, prot: number, carb: number, fat: number, dbKey?: string } | null}
+ */
+export function normalizeMealFoodItem(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (!t) return null;
+    return { name: t, qty: 100, kcal: 0, prot: 0, carb: 0, fat: 0 };
+  }
+  if (typeof raw !== 'object') return null;
+  const name = String(raw.name ?? raw.desc ?? '').trim();
+  if (!name) return null;
+  const qtyRaw = Number(raw.qty ?? raw.weight);
+  const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 100;
+  const n = (v) => {
+    const x = Number(v);
+    return Number.isFinite(x) ? x : 0;
+  };
+  const kcal = n(raw.kcal ?? raw.cal ?? raw.estKcal);
+  const prot = n(raw.prot ?? raw.estPro);
+  const carb = n(raw.carb ?? raw.estCar);
+  const fat = n(raw.fat ?? raw.estFat ?? raw.fatTotal);
+  const out = { name, qty, kcal, prot, carb, fat };
+  if (raw.dbKey != null && String(raw.dbKey).trim() !== '') {
+    out.dbKey = String(raw.dbKey).trim();
+  }
+  return out;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {Array<{ name: string, qty: number, kcal: number, prot: number, carb: number, fat: number, dbKey?: string }>}
+ */
+export function normalizeMealFoodsArray(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (let i = 0; i < raw.length && out.length < 30; i++) {
+    const item = normalizeMealFoodItem(raw[i]);
+    if (item) out.push(item);
+  }
+  return out;
 }
 
 /**
@@ -2390,9 +2438,7 @@ function denormalizeLogForFirebase(flatLog) {
       if (Array.isArray(entry.draftFoods) && entry.draftFoods.length > 0) {
         gm.draftFoods = entry.draftFoods;
       }
-      gm.foods = Array.isArray(entry.foods)
-        ? entry.foods.map((f) => (f && typeof f === 'object' ? { ...f } : f))
-        : [];
+      gm.foods = normalizeMealFoodsArray(entry.foods);
       ghostMeals.push(gm);
       return;
     }

@@ -2,7 +2,7 @@
  * Wizard pianificazione: Step 1 attività+fasce+muscoli, Step 2 pasti/bio-target, Step 3 timeline e conferma Firebase.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getDynamicMealTargets, toCanonicalMealType } from './coreEngine';
+import { getDynamicMealTargets, normalizeMealFoodsArray, toCanonicalMealType } from './coreEngine';
 
 /** Allineato a SalaComandi `planningMealSlotKeyForFirebase` per idratazione bozze pasto da RTDB. */
 function planningMealSlotKeyFromRow(row) {
@@ -47,31 +47,7 @@ function mealFoodsRead(meal) {
 }
 
 function normalizeFoodsArray(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((item) => {
-      if (item == null) return null;
-      if (typeof item === 'string') {
-        const t = item.trim();
-        return t ? { name: t, qty: 100 } : null;
-      }
-      if (typeof item === 'object') {
-        const name = String(item.name ?? item.desc ?? '').trim();
-        if (!name) return null;
-        const qtyRaw = Number(item.qty ?? item.weight);
-        const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 100;
-        const o = { name, qty };
-        if (item.kcal != null && !Number.isNaN(Number(item.kcal))) o.kcal = Number(item.kcal);
-        if (item.prot != null && !Number.isNaN(Number(item.prot))) o.prot = Number(item.prot);
-        if (item.carb != null && !Number.isNaN(Number(item.carb))) o.carb = Number(item.carb);
-        if (item.fat != null && !Number.isNaN(Number(item.fat))) o.fat = Number(item.fat);
-        if (item.dbKey) o.dbKey = String(item.dbKey);
-        return o;
-      }
-      return null;
-    })
-    .filter(Boolean)
-    .slice(0, 30);
+  return normalizeMealFoodsArray(raw);
 }
 
 /** Voci `foods` su riga wizard / pill UI (stringa o oggetto con name/qty). */
@@ -96,7 +72,7 @@ function foodsArrayToDraftPillEntries(foods) {
 
 function draftStringsToFoodsWizard(strings) {
   if (!Array.isArray(strings)) return [];
-  return strings
+  const partial = strings
     .map((s) => {
       const raw = String(s || '').trim();
       if (!raw) return null;
@@ -110,6 +86,7 @@ function draftStringsToFoodsWizard(strings) {
     })
     .filter(Boolean)
     .slice(0, 14);
+  return normalizeMealFoodsArray(partial);
 }
 
 /**
@@ -685,7 +662,7 @@ export default function PlanningWizard({
           prev.map((tm) => {
             const hit = foodsPatches.find((p) => p.templateId === tm.id);
             if (!hit) return { ...tm, foods: mealFoodsRead(tm) };
-            return { ...tm, foods: Array.isArray(hit.foods) ? hit.foods : [] };
+            return { ...tm, foods: normalizeMealFoodsArray(hit.foods) };
           })
         );
       }
@@ -790,7 +767,7 @@ export default function PlanningWizard({
         const targetVal = calorieStrategy != null ? String(calorieStrategy) : null;
         if (slotRow.templateId) {
           mealsUserTouchedRef.current = true;
-          const foodsSafe = Array.isArray(foods) ? foods : [];
+          const foodsSafe = normalizeMealFoodsArray(foods);
           setMeals((prev) =>
             prev.map((m) =>
               m.id === slotRow.templateId
@@ -835,7 +812,7 @@ export default function PlanningWizard({
     // Merge esplicito: ghostMeals = stato staging (include draftFoods da «Genera Pasto»)
     finalPlan.ghostMeals = stagingGhosts.map((g) => ({
       ...g,
-      foods: mealFoodsRead(g),
+      foods: normalizeMealFoodsArray(mealFoodsRead(g)),
       draftFoods: Array.isArray(g.draftFoods) ? g.draftFoods : [],
     }));
     finalPlan.wizardMeta = {

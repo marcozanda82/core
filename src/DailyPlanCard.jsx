@@ -2,7 +2,7 @@
  * Card interattiva per modalità pianificazione giornaliera ([DAILY_PLAN:...]).
  */
 import React, { useEffect, useState, useMemo } from 'react';
-import { calorieStrategyShortLabelIt } from './coreEngine';
+import { calorieStrategyShortLabelIt, normalizeMealFoodsArray } from './coreEngine';
 
 const inputBaseStyle = {
   background: 'rgba(0,0,0,0.22)',
@@ -60,7 +60,7 @@ function normalizePlanFromProps(p) {
           const draftFoods = Array.isArray(raw)
             ? raw.map((x) => String(x).trim()).filter(Boolean)
             : [];
-          const foods = Array.isArray(g?.foods) ? g.foods : [];
+          const foods = normalizeMealFoodsArray(g?.foods);
           return { ...g, draftFoods, foods };
         })
       : [],

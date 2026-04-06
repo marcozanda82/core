@@ -112,6 +112,8 @@ import {
   getTrainingWaveCurves,
   buildTrainingWaveContextSnippet,
   getDynamicMealTargets,
+  normalizeMealFoodItem,
+  normalizeMealFoodsArray,
   scoreFoodForSmartMealBuilder,
   buildSmartMealPhysioContextSnippet,
   parseKentuInvisibleCmd,
@@ -275,7 +277,7 @@ function buildPlanningFirebaseDoc(payload) {
     title: String(g.title || '').trim(),
     microDesc: String(g.microDesc || '').trim(),
     draftFoods: Array.isArray(g.draftFoods) ? g.draftFoods : [],
-    foods: mealFoodsRead(g),
+    foods: normalizeMealFoodsArray(mealFoodsRead(g)),
     target: g.target != null ? g.target : undefined,
     source: g.source || undefined,
   }));
@@ -579,25 +581,14 @@ function normalizeDailyPlanFromToken(parsed) {
           ? g.draftFoods.map((x) => String(x).trim()).filter(Boolean)
           : [];
         if (!title) return null;
-        const row = { mealType, time: timeNorm, title, microDesc, draftFoods, foods: [] };
-        if (Array.isArray(g?.foods) && g.foods.length > 0) {
-          const foods = g.foods
-            .map((f) => {
-              if (!f || typeof f !== 'object') return null;
-              const name = String(f.name ?? f.desc ?? '').trim();
-              if (!name) return null;
-              const qty = Math.max(1, Math.round(Number(f.qty ?? f.weight) || 100));
-              const o = { name, qty };
-              if (f.kcal != null && Number.isFinite(Number(f.kcal))) o.kcal = Number(f.kcal);
-              if (f.prot != null && Number.isFinite(Number(f.prot))) o.prot = Number(f.prot);
-              if (f.carb != null && Number.isFinite(Number(f.carb))) o.carb = Number(f.carb);
-              if (f.fat != null && Number.isFinite(Number(f.fat))) o.fat = Number(f.fat);
-              if (f.dbKey != null && String(f.dbKey).trim() !== '') o.dbKey = String(f.dbKey).trim();
-              return o;
-            })
-            .filter(Boolean);
-          row.foods = foods;
-        }
+        const row = {
+          mealType,
+          time: timeNorm,
+          title,
+          microDesc,
+          draftFoods,
+          foods: normalizeMealFoodsArray(g?.foods),
+        };
         return row;
       })
       .filter(Boolean);
@@ -1673,52 +1664,36 @@ function parsePlanMealDraftAiResponse(raw) {
     throw new Error(e?.message ? String(e.message) : 'JSON non valido');
   }
   if (Array.isArray(obj?.items) && obj.items.length > 0) {
-    const foods = obj.items
-      .map((item) => {
-        const name = String(item?.name ?? '').trim();
-        if (!name) return null;
-        const qtyRaw = Number(item?.qty);
-        const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 100;
-        const out = { name, qty };
-        if (item?.estKcal != null && !Number.isNaN(Number(item.estKcal))) out.kcal = Number(item.estKcal);
-        if (item?.estPro != null && !Number.isNaN(Number(item.estPro))) out.prot = Number(item.estPro);
-        if (item?.estCar != null && !Number.isNaN(Number(item.estCar))) out.carb = Number(item.estCar);
-        if (item?.estFat != null && !Number.isNaN(Number(item.estFat))) out.fat = Number(item.estFat);
-        if (item?.dbKey != null && String(item.dbKey).trim() !== '') out.dbKey = String(item.dbKey).trim();
-        return out;
-      })
-      .filter(Boolean)
-      .slice(0, 14);
+    const foods = normalizeMealFoodsArray(obj.items).slice(0, 14);
     const draftFoods = foods.map((f) => `${f.qty}g ${f.name}`);
     return { foods, draftFoods };
   }
   const arr = obj?.draftFoods;
   if (!Array.isArray(arr) || arr.length === 0) throw new Error('draftFoods vuoto o non valido');
   const draftFoods = arr.map((x) => String(x).trim()).filter(Boolean).slice(0, 14);
-  const foods = draftStringsToFoods(draftFoods);
+  const foods = normalizeMealFoodsArray(draftStringsToFoods(draftFoods));
   return { foods, draftFoods };
 }
 
-/** `ghost_meal.foods` salvati sul log → shape compatibile con proposal AI / timeline `foods`. */
+/** Da voci canoniche `meal.foods` (o legacy) → items per `mapProposalItemsToDiaryFoods` (est* + matchedKey). */
 function structuredFoodsToProposalItems(foods) {
   if (!Array.isArray(foods)) return [];
   return foods
     .map((f) => {
-      if (!f || typeof f !== 'object') return null;
-      const name = String(f.name ?? f.desc ?? '').trim();
-      if (!name) return null;
-      const qty = Math.max(1, Math.round(Number(f.qty ?? f.weight) || 100));
-      const o = { name, qty };
-      if (f.dbKey != null && String(f.dbKey).trim() !== '') o.dbKey = String(f.dbKey).trim();
-      const k = f.estKcal ?? f.kcal;
-      if (k != null && Number.isFinite(Number(k))) o.estKcal = Number(k);
-      const p = f.estPro ?? f.prot;
-      if (p != null && Number.isFinite(Number(p))) o.estPro = Number(p);
-      const c = f.estCar ?? f.carb;
-      if (c != null && Number.isFinite(Number(c))) o.estCar = Number(c);
-      const fat = f.estFat ?? f.fat;
-      if (fat != null && Number.isFinite(Number(fat))) o.estFat = Number(fat);
-      if (f.matchedKey != null && String(f.matchedKey).trim() !== '') o.matchedKey = String(f.matchedKey).trim();
+      const canon = normalizeMealFoodItem(f);
+      if (!canon) return null;
+      const o = {
+        name: canon.name,
+        qty: canon.qty,
+        estKcal: canon.kcal,
+        estPro: canon.prot,
+        estCar: canon.carb,
+        estFat: canon.fat,
+      };
+      if (canon.dbKey) o.dbKey = canon.dbKey;
+      if (f && typeof f === 'object' && f.matchedKey != null && String(f.matchedKey).trim() !== '') {
+        o.matchedKey = String(f.matchedKey).trim();
+      }
       return o;
     })
     .filter(Boolean);
@@ -1748,29 +1723,11 @@ function ghostSurfaceDraftToProposalItems(draftFoods) {
     .filter(Boolean);
 }
 
-/** Nodo timeline ghost: `foods` sempre valorizzato (da log o da draftFoods). */
+/** Nodo timeline ghost: `foods` in forma canonica (da log o da draftFoods). */
 function normalizeGhostFoodsForTimelineNode(e) {
-  const fromLog = structuredFoodsToProposalItems(mealFoodsRead(e));
-  if (fromLog.length > 0) {
-    return fromLog.map((p) => {
-      const o = { name: p.name, qty: p.qty };
-      if (p.dbKey) o.dbKey = p.dbKey;
-      if (p.estKcal != null) o.kcal = p.estKcal;
-      if (p.estPro != null) o.prot = p.estPro;
-      if (p.estCar != null) o.carb = p.estCar;
-      if (p.estFat != null) o.fat = p.estFat;
-      return o;
-    });
-  }
-  return ghostSurfaceDraftToProposalItems(e?.draftFoods).map((p) => {
-    const o = { name: p.name, qty: p.qty };
-    if (p.dbKey) o.dbKey = p.dbKey;
-    if (p.estKcal != null) o.kcal = p.estKcal;
-    if (p.estPro != null) o.prot = p.estPro;
-    if (p.estCar != null) o.carb = p.estCar;
-    if (p.estFat != null) o.fat = p.estFat;
-    return o;
-  });
+  const fromLog = normalizeMealFoodsArray(mealFoodsRead(e));
+  if (fromLog.length > 0) return fromLog;
+  return normalizeMealFoodsArray(ghostSurfaceDraftToProposalItems(e?.draftFoods));
 }
 
 function parseSmartCompletionFoodsPayload(obj) {
@@ -4734,10 +4691,10 @@ export default function SalaComandi() {
             };
           }
           const qSafe = Math.max(5, qty);
-          let kcal = Number(item.estKcal);
-          let prot = Number(item.estPro);
-          let carb = Number(item.estCar);
-          let fat = Number(item.estFat);
+          let kcal = Number(item.estKcal ?? item.kcal);
+          let prot = Number(item.estPro ?? item.prot);
+          let carb = Number(item.estCar ?? item.carb);
+          let fat = Number(item.estFat ?? item.fat);
           if (!Number.isFinite(kcal) || kcal <= 0) {
             kcal = Math.max(10, Math.round((getAverageEstimate('kcal', name) / 100) * qSafe));
           }
@@ -7450,9 +7407,9 @@ Ottimo! Diario aggiornato. 🥗`;
           const draftFoods = Array.isArray(persistedDraftFoods)
             ? persistedDraftFoods.map((x) => String(x).trim()).filter(Boolean)
             : [];
-          let foodsArr = mealFoodsRead(gm).map((f) => (f && typeof f === 'object' ? { ...f } : f)).filter(Boolean);
+          let foodsArr = normalizeMealFoodsArray(mealFoodsRead(gm));
           if (foodsArr.length === 0 && draftFoods.length > 0) {
-            foodsArr = draftStringsToFoods(draftFoods);
+            foodsArr = normalizeMealFoodsArray(draftStringsToFoods(draftFoods));
           }
           const entry = {
             id: `ghost_meal_${Date.now()}_${i}`,
@@ -7631,21 +7588,18 @@ ${dbKeys || 'n/d'}`;
             typeof gm.mealTime === 'number' && !Number.isNaN(gm.mealTime)
               ? gm.mealTime
               : parseFlexibleTimeToDecimal(String(gm.time || '12:00')) ?? 12;
-          let foodsArr = mealFoodsRead(gm).map((f) => (f && typeof f === 'object' ? { ...f } : f)).filter(Boolean);
+          let foodsArr = normalizeMealFoodsArray(mealFoodsRead(gm));
           if (foodsArr.length === 0 && Array.isArray(gm.draftFoods)) {
             const objs = gm.draftFoods.filter((x) => x && typeof x === 'object' && (x.name || x.desc));
             if (objs.length > 0) {
-              foodsArr = objs.map((x) => {
-                const name = String(x.name || x.desc || '').trim();
-                const qty = Math.round(Number(x.qty ?? x.weight) || 100);
-                const o = { name, qty: qty > 0 ? qty : 100 };
-                if (x.kcal != null && !Number.isNaN(Number(x.kcal))) o.kcal = Number(x.kcal);
-                if (x.prot != null && !Number.isNaN(Number(x.prot))) o.prot = Number(x.prot);
-                if (x.carb != null && !Number.isNaN(Number(x.carb))) o.carb = Number(x.carb);
-                if (x.fat != null && !Number.isNaN(Number(x.fat))) o.fat = Number(x.fat);
-                if (x.dbKey) o.dbKey = String(x.dbKey);
-                return o;
-              });
+              foodsArr = normalizeMealFoodsArray(objs);
+            } else {
+              const strOnly = gm.draftFoods
+                .map((x) => (typeof x === 'string' ? String(x).trim() : ''))
+                .filter(Boolean);
+              if (strOnly.length > 0) {
+                foodsArr = normalizeMealFoodsArray(draftStringsToFoods(strOnly));
+              }
             }
           }
           const persistedDraftFoods = gm.draftFoods || [];
