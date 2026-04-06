@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import TimelineNodi from '../TimelineNodi';
+import { CHART_AXIS_GUTTER_LEFT_PX, CHART_AXIS_GUTTER_RIGHT_PX } from '../timeLayout';
 
 const SECTION_GAP = 22; // vertical rhythm between main blocks (18–24px)
 
@@ -237,7 +238,17 @@ export default function HomeView({
           animate={{ opacity: 0.95 }}
           transition={{ delay: 0.3 }}
         >
-          <TimelineNodi {...timelineProps} />
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
+              paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
+              boxSizing: 'border-box',
+            }}
+          >
+            <TimelineNodi {...timelineProps} />
+          </div>
         </motion.div>
       ) : null}
 

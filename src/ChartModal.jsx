@@ -26,7 +26,11 @@ import {
   generateStateHash,
   KNOWLEDGE_BASE_MAX_AGE_MS
 } from './coreEngine';
-import { getTimePositionPercent } from './timeLayout';
+import {
+  getTimePositionPercent,
+  CHART_AXIS_GUTTER_LEFT_PX,
+  CHART_AXIS_GUTTER_RIGHT_PX,
+} from './timeLayout';
 
 const CHART_VIEWS_CAROUSEL = ['percent', 'kcal', 'calorieTimeline', 'glicemia', 'idratazione', 'neuro', 'cortisolo', 'digestione'];
 const AI_KEYWORD_TO_CHART = { 'Sveglia': null, 'Energia SNC': 'percent', 'Recupero Neurologico': 'neuro', 'Finestra Anabolica': 'kcal', 'Cortisolo': 'cortisolo', 'Glicemia': 'glicemia', 'Digestione': 'digestione' };
@@ -339,7 +343,20 @@ export default function ChartModal({
                     boxSizing: 'border-box',
                   }}
                 >
-                  <div style={{ height: '55px', margin: '0 15px 0 50px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)', position: 'relative', overflow: 'visible' }}>
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: '100%',
+                      height: '55px',
+                      paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
+                      paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
+                      boxSizing: 'border-box',
+                      background: 'rgba(255,255,255,0.03)',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      overflow: 'visible',
+                    }}
+                  >
                     {(activeNodesWithStack || []).map(node => renderTimelineNode(node))}
                   </div>
                 </div>

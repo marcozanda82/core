@@ -27,7 +27,11 @@ import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
-import { getTimePositionPercent } from './timeLayout';
+import {
+  getTimePositionPercent,
+  CHART_AXIS_GUTTER_LEFT_PX,
+  CHART_AXIS_GUTTER_RIGHT_PX,
+} from './timeLayout';
 import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
@@ -2790,7 +2794,8 @@ export default function SalaComandi() {
     const clientWidth = container.clientWidth;
 
     if (currentTrackerDate === getTodayString()) {
-      const chartWidth = scrollWidth - 80;
+      const chartWidth =
+        scrollWidth - CHART_AXIS_GUTTER_LEFT_PX - CHART_AXIS_GUTTER_RIGHT_PX - 15;
       const timePos = (getTimePositionPercent(currentTime) / 100) * chartWidth;
       const targetScroll = timePos - (clientWidth * CURRENT_TIME_VIEW_OFFSET);
       container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
@@ -2807,7 +2812,10 @@ export default function SalaComandi() {
     const scrollWidth = container.scrollWidth;
     const clientWidth = container.clientWidth;
     if (currentTrackerDate === getTodayString()) {
-      const chartWidth = Math.max(scrollWidth - 80, 1);
+      const chartWidth = Math.max(
+        scrollWidth - CHART_AXIS_GUTTER_LEFT_PX - CHART_AXIS_GUTTER_RIGHT_PX - 15,
+        1
+      );
       const timePos = (getTimePositionPercent(currentTime) / 100) * chartWidth;
       const targetScroll = timePos - (clientWidth * CURRENT_TIME_VIEW_OFFSET);
       container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
@@ -9254,8 +9262,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         <div ref={fullscreenChartScrollRef} style={{ flex: 1, minHeight: 0, width: '100%', overflowX: 'auto', overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {/* INNER WIDE CONTAINER (zoom) */}
           <div style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, flex: 1, display: 'flex', flexDirection: 'column', paddingBottom: 'env(safe-area-inset-bottom, 10px)' }}>
-            {/* GRAFICO (cuore espandibile) */}
-            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 1, minHeight: 0 }}>
             {currentChartType === 'percent' && (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
@@ -9405,8 +9413,18 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             )}
             </div>
 
-            {/* SINGOLA BARRA NODI (TimelineNodi) */}
-            <div style={{ minHeight: '72px', flexShrink: 0, marginTop: '10px', marginBottom: '10px' }}>
+            <div
+              style={{
+                flexShrink: 0,
+                position: 'relative',
+                width: '100%',
+                paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
+                paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
+                boxSizing: 'border-box',
+                marginTop: 10,
+                marginBottom: 10,
+              }}
+            >
               <TimelineNodi
                 activeNodesWithStack={activeNodesWithStack}
                 chartUnit={chartUnit}
@@ -9432,6 +9450,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 setDailyLog={setDailyLog}
                 energyPercent={bodyBattery?.currentEnergy ?? 0}
               />
+            </div>
             </div>
           </div>
         </div>
@@ -10217,18 +10236,28 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               onMouseMove={() => { if (!isChartTooltipActive) clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; }}
               onMouseUp={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
               onMouseLeave={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
-              style={{ flexShrink: 0, width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, height: '100%', position: 'relative', transition: 'width 0.3s ease' }}
+              style={{
+                flexShrink: 0,
+                width: `${220 * zoomLevel}%`,
+                minWidth: `${800 * zoomLevel}px`,
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                position: 'relative',
+                transition: 'width 0.3s ease',
+                boxSizing: 'border-box',
+              }}
             >
               <div
                 role="button"
                 tabIndex={0}
                 onClick={() => { if (!draggingNode) { setExpandedChart(chartUnit); setActiveHighlight(null); } }}
                 onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !draggingNode) { e.preventDefault(); setExpandedChart(chartUnit); setActiveHighlight(null); } }}
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 'calc(100% - 65px)', minHeight: 80, cursor: 'pointer' }}
+                style={{ flex: 1, minHeight: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
                 aria-label="Apri grafico a tutto schermo"
               >
                 {chartUnit === 'percent' ? (
-              <div style={{ background: '#111', padding: '15px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <div style={{ background: '#111', paddingTop: 15, paddingBottom: 15, borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
                 <div style={{ position: 'relative', width: '100%', height: '280px', paddingBottom: '60px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
@@ -10457,10 +10486,18 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               </ResponsiveContainer>
                 )}
               </div>
-              {/* Hitbox: blocca tap sul grafico nella fascia timeline (left/right allineati a YAxis) */}
-              <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50px', right: '15px', pointerEvents: 'none' }} aria-hidden="true" />
-              {/* Timeline nodi nel "buco" sotto il grafico (absolute + bottom 0) */}
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, minHeight: '72px', zIndex: 10 }}>
+              <div
+                style={{
+                  flexShrink: 0,
+                  position: 'relative',
+                  width: '100%',
+                  paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
+                  paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
+                  boxSizing: 'border-box',
+                  paddingTop: 6,
+                  zIndex: 10,
+                }}
+              >
                 <TimelineNodi
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}

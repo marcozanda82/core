@@ -92,8 +92,8 @@ export default function TimelineNodi({
   const energyFill = showEnergyBar ? Math.max(0, Math.min(100, Number(energyPercent))) : 0;
 
   return (
-    <div style={{ width: '100%', paddingLeft: '50px', paddingRight: '15px', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minHeight: '55px' }}>
+    <div style={{ width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', alignItems: 'center', width: '100%', minHeight: '55px' }}>
       <div
         ref={timelineContainerRef}
         role={onTimelineTrackClick ? 'button' : undefined}
