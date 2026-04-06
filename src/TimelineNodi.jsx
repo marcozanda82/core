@@ -3,6 +3,11 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { getMealIcon } from './coreEngine';
 
 const SUBTLE_SPRING = { type: 'spring', stiffness: 420, damping: 26, mass: 0.85 };
+const NODE_ENTER_SPRING = { type: 'spring', stiffness: 400, damping: 23, mass: 0.85 };
+/** Impulso luminoso all’apparizione (poi torna all’ombra di riposo). */
+const POINT_ENTER_GLOW = '0 0 0 2px rgba(255,255,255,0.22), 0 0 22px rgba(0,229,255,0.55)';
+const WORK_BAR_ENTER_GLOW = '0 0 18px rgba(255,234,0,0.5), 0 0 6px rgba(255,234,0,0.25)';
+const COG_BAR_ENTER_GLOW = '0 0 18px rgba(0,229,255,0.5), 0 0 6px rgba(0,229,255,0.25)';
 
 /** Ora decimale locale 0–24 da usare sulla timeline (solo ore + minuti). */
 function getDecimalHourFromDate(d) {
@@ -11,7 +16,11 @@ function getDecimalHourFromDate(d) {
 
 const NOW_LINE_GLOW =
   '0 0 4px rgba(0, 229, 255, 0.95), 0 0 10px rgba(0, 229, 255, 0.55), 0 0 18px rgba(255, 255, 255, 0.12)';
-const ENTER_TRANSITION = { opacity: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, scale: { ...SUBTLE_SPRING } };
+const ENTER_TRANSITION = {
+  opacity: { duration: 0.3, ease: [0.22, 1, 0.36, 1] },
+  scale: NODE_ENTER_SPRING,
+  boxShadow: { duration: 0.52, ease: [0.25, 0.46, 0.45, 0.94] },
+};
 
 /**
  * Timeline Nodi Draggabili – striscia sovrapposta al grafico con nodi trascinabili.
@@ -221,14 +230,24 @@ export default function TimelineNodi({
                   onPointerUp={releaseNodePointer}
                   onPointerCancel={releaseNodePointer}
                   onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }}
-                  initial={reduceMotion ? false : { opacity: 0, scale: 0.92 }}
-                  animate={{ opacity: barOpacity, scale: barScale, y: isDragging ? dragY - 45 : 0 }}
+                  initial={reduceMotion ? false : { opacity: 0, scale: 0 }}
+                  animate={{
+                    opacity: barOpacity,
+                    scale: barScale,
+                    y: isDragging ? dragY - 45 : 0,
+                    boxShadow: reduceMotion || isDragging ? 'none' : [WORK_BAR_ENTER_GLOW, 'none'],
+                  }}
                   transition={
                     reduceMotion
                       ? { duration: 0 }
                       : isDragging
                         ? { duration: 0 }
-                        : { opacity: { duration: 0.28, ease: 'easeOut' }, scale: SUBTLE_SPRING, y: { duration: 0.2, ease: 'easeOut' } }
+                        : {
+                            opacity: { duration: 0.28, ease: 'easeOut' },
+                            scale: NODE_ENTER_SPRING,
+                            y: { duration: 0.2, ease: 'easeOut' },
+                            boxShadow: { duration: 0.48, ease: 'easeOut' },
+                          }
                   }
                   whileHover={!isDragging ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
                   whileTap={
@@ -287,14 +306,24 @@ export default function TimelineNodi({
                   onPointerUp={releaseNodePointer}
                   onPointerCancel={releaseNodePointer}
                   onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }}
-                  initial={reduceMotion ? false : { opacity: 0, scale: 0.92 }}
-                  animate={{ opacity: barOpacity, scale: barScale, y: isDragging ? dragY - 45 : 0 }}
+                  initial={reduceMotion ? false : { opacity: 0, scale: 0 }}
+                  animate={{
+                    opacity: barOpacity,
+                    scale: barScale,
+                    y: isDragging ? dragY - 45 : 0,
+                    boxShadow: reduceMotion || isDragging ? 'none' : [COG_BAR_ENTER_GLOW, 'none'],
+                  }}
                   transition={
                     reduceMotion
                       ? { duration: 0 }
                       : isDragging
                         ? { duration: 0 }
-                        : { opacity: { duration: 0.28, ease: 'easeOut' }, scale: SUBTLE_SPRING, y: { duration: 0.2, ease: 'easeOut' } }
+                        : {
+                            opacity: { duration: 0.28, ease: 'easeOut' },
+                            scale: NODE_ENTER_SPRING,
+                            y: { duration: 0.2, ease: 'easeOut' },
+                            boxShadow: { duration: 0.48, ease: 'easeOut' },
+                          }
                   }
                   whileHover={!isDragging ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
                   whileTap={
@@ -406,12 +435,16 @@ export default function TimelineNodi({
                 onPointerUp={releaseNodePointer}
                 onPointerCancel={releaseNodePointer}
                 onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }}
-                initial={reduceMotion ? false : { opacity: 0, scale: 0.8, x: '-50%' }}
+                initial={reduceMotion ? false : { opacity: 0, scale: 0, x: '-50%' }}
                 animate={{
                   opacity: targetOpacity,
                   scale: baseScale,
                   x: '-50%',
                   y: isDragging ? dragY - 45 : 0,
+                  boxShadow:
+                    reduceMotion || isDragging
+                      ? pointBoxShadow
+                      : [POINT_ENTER_GLOW, pointBoxShadow],
                 }}
                 transition={
                   reduceMotion
@@ -436,7 +469,6 @@ export default function TimelineNodi({
                   borderRadius: '50%',
                   background: bgColor,
                   border: borderStyle,
-                  boxShadow: pointBoxShadow,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
