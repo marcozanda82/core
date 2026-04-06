@@ -1,13 +1,6 @@
 import React from 'react';
 import { getMealIcon } from './coreEngine';
 
-/** `left` sulla timeline giornaliera: (ora / 24) × 100%. */
-function hourToTimelineLeftPercent(hour) {
-  const h = Number(hour);
-  if (!Number.isFinite(h)) return 0;
-  return (h / 24) * 100;
-}
-
 /**
  * Timeline Nodi Draggabili – striscia sovrapposta al grafico con nodi trascinabili.
  * Riceve dati, stato drag, ref e funzioni dal genitore (SalaComandi).
@@ -92,8 +85,7 @@ export default function TimelineNodi({
               (activeAction === 'acqua' && node.type === 'water');
             const isWork = node.type === 'work';
             const isCognitive = node.type === 'cognitive';
-            const percent = hourToTimelineLeftPercent(node.time);
-            const durationPercent = (isWork || isCognitive) ? hourToTimelineLeftPercent(node.duration || 1) : 0;
+            const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
             const idealVal =
               node.type === 'meal' || isGhostMeal
                 ? (idealStrategy?.[node.strategyKey] ?? 400)
@@ -117,22 +109,25 @@ export default function TimelineNodi({
             const isTouchingOrDragging = isDragging || (touchingNodeId === node.id);
             const dragY = isDragging ? dragOffsetY : 0;
             const displayTimeVal = (isDragging && dragLiveTime != null) ? dragLiveTime : node.time;
-            const displayPercent = hourToTimelineLeftPercent(displayTimeVal);
             const workEndTime = node.time + (node.duration || 1);
             const displayDurationPercent = (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'start'
               ? ((workEndTime - dragLiveTime) / 24) * 100
               : (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'end'
                 ? ((dragLiveTime - node.time) / 24) * 100
                 : durationPercent;
-            const workBarLeftPercent = (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'end' ? percent : displayPercent;
+            const barStartHour =
+              (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'end'
+                ? node.time
+                : displayTimeVal;
             const cognitiveIcon = node.subType === 'studio' ? '📚' : '💻';
             const cognitiveBg = 'rgba(0, 229, 255, 0.15)';
             const cognitiveBorder = '#00e5ff';
 
             if (isWork) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
+              const left = `${(barStartHour / 24) * 100}%`;
               return (
-                <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : 2, ...(isDragging ? {} : importanceStyle) }}>
+                <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : 2, ...(isDragging ? {} : importanceStyle) }}>
                   <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'start' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
@@ -154,8 +149,9 @@ export default function TimelineNodi({
             }
             if (isCognitive) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
+              const left = `${(barStartHour / 24) * 100}%`;
               return (
-                <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left: `${workBarLeftPercent}%`, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(0, 229, 255, 0.3)' : cognitiveBg, borderLeft: `2px solid ${cognitiveBorder}`, borderRight: `2px solid ${cognitiveBorder}`, borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : 2, ...(isDragging ? {} : importanceStyle) }}>
+                <div key={node.id} className={`timeline-node ${isDragging ? 'is-dragging' : ''}`} onPointerDown={startNodeDrag(node, 'all')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left, width: `${displayDurationPercent}%`, top: '50%', marginTop: -18 - (node.stackIndex || 0) * 38, height: '36px', transform: isDragging ? `translateY(${dragY - 45}px) scale(1.5)` : `scale(${isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8)})`, background: isDragging ? 'rgba(0, 229, 255, 0.3)' : cognitiveBg, borderLeft: `2px solid ${cognitiveBorder}`, borderRight: `2px solid ${cognitiveBorder}`, borderRadius: '4px', cursor: isDragging ? 'grabbing' : 'pointer', transition: isDragging ? 'none' : 'transform 0.2s ease-out, left 0.3s ease-out, background 0.15s', touchAction: 'none', pointerEvents: isNodeFocused ? 'auto' : 'none', zIndex: isTouchingOrDragging ? 100 : 2, ...(isDragging ? {} : importanceStyle) }}>
                   <div onPointerDown={startNodeDrag(node, 'start')} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'start' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
@@ -236,6 +232,7 @@ export default function TimelineNodi({
               : isDragging
                 ? {}
                 : importanceStyle;
+            const left = `${(displayTimeVal / 24) * 100}%`;
             return (
               <div
                 key={node.id}
@@ -246,7 +243,7 @@ export default function TimelineNodi({
                 onClick={(e) => { e.stopPropagation(); fireNodeClick(node); }}
                 style={{
                   position: 'absolute',
-                  left: `${displayPercent}%`,
+                  left,
                   transform: pointTransform,
                   top: '50%',
                   marginTop: -18 - (node.stackIndex || 0) * 38,
