@@ -522,6 +522,7 @@ export default function PlanningWizard({
 
   const mealsUserTouchedRef = useRef(false);
   const lastInitialMealsSigRef = useRef(null);
+  const wizardConfirmInFlightRef = useRef(false);
 
   const updateMeal = useCallback((index, patch) => {
     if (typeof index !== 'number' || index < 0 || patch == null || typeof patch !== 'object') return;
@@ -805,6 +806,9 @@ export default function PlanningWizard({
   }, [hasTraining, hasRealWorkout, timingByMacro]);
 
   const handleConfirm = () => {
+    if (wizardConfirmInFlightRef.current) return;
+    wizardConfirmInFlightRef.current = true;
+    try {
     const finalPlan = {
       workoutTimeDec: workoutDecForApply,
       addGhostWorkout: Boolean(hasTraining && !hasRealWorkout && workoutDecForApply != null),
@@ -843,6 +847,9 @@ export default function PlanningWizard({
       stagingDraftById: { ...stagingDraftById },
     };
     onConfirmApply?.(finalPlan);
+    } finally {
+      wizardConfirmInFlightRef.current = false;
+    }
   };
 
   const timelineEntries = useMemo(() => {

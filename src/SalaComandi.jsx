@@ -1629,6 +1629,50 @@ function buildBaseLogForGhostPlanMerge(srcLog, ghostList, nowDec) {
   });
 }
 
+/** Debounce conferma pasti (wizard / piano giornaliero): evita doppio insert su click rapidi. */
+const MEAL_CONFIRM_DEBOUNCE_MS = 900;
+
+/**
+ * Deduplica voci ghost nel payload (stesso `id` staging o stesso slot mealType+orario).
+ * @param {object[]} ghostList
+ * @param {(gm: object) => string} getSlotKey
+ */
+function dedupeGhostMealsPayloadForConfirm(ghostList, getSlotKey) {
+  const seen = new Set();
+  const out = [];
+  for (const gm of ghostList || []) {
+    if (!gm || typeof gm !== 'object') continue;
+    const key = getSlotKey(gm);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(gm);
+  }
+  return out;
+}
+
+/** Id log stabile da payload wizard/piano (`ghost_meal_<id>`) o batch timestamp se manca id. */
+function ghostMealLogEntryIdFromPayload(gm, index, batchTs) {
+  const rawId = gm.id != null && String(gm.id).trim() !== '' ? String(gm.id).trim() : '';
+  if (rawId) {
+    const safe = rawId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+    return `ghost_meal_${safe}`;
+  }
+  return `ghost_meal_${batchTs}_${index}`;
+}
+
+function tryAcquireMealConfirmGuard(guardRef) {
+  const g = guardRef.current;
+  const now = Date.now();
+  if (g.busy || now - g.lastAt < MEAL_CONFIRM_DEBOUNCE_MS) return false;
+  g.busy = true;
+  g.lastAt = now;
+  return true;
+}
+
+function releaseMealConfirmGuard(guardRef) {
+  guardRef.current.busy = false;
+}
+
 /** Da stringhe tipo "200g Riso" → oggetti { name, qty } per stato `meals.foods`. */
 function draftStringsToFoods(strings) {
   if (!Array.isArray(strings)) return [];
@@ -2107,6 +2151,8 @@ export default function SalaComandi() {
   const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
   /** Incrementato ad ogni apertura wizard: consente idratazione da Firebase senza sovrascrivere durante l’editing. */
   const [planningWizardHydrateNonce, setPlanningWizardHydrateNonce] = useState(0);
+  const planningWizardMealConfirmGuardRef = useRef({ busy: false, lastAt: 0 });
+  const dailyPlanMealConfirmGuardRef = useRef({ busy: false, lastAt: 0 });
   const [remotePlanning, setRemotePlanning] = useState(null);
 
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
@@ -7361,6 +7407,8 @@ Ottimo! Diario aggiornato. 🥗`;
   const handleDailyPlanConfirm = useCallback(
     (plan) => {
       if (!plan || typeof plan !== 'object') return;
+      if (!tryAcquireMealConfirmGuard(dailyPlanMealConfirmGuardRef)) return;
+      try {
       let workoutTime = plan.workoutTime != null && String(plan.workoutTime).trim() ? String(plan.workoutTime).trim() : null;
       if (!workoutTime && Array.isArray(plan.activities)) {
         const wRe = /allenament|workout|palestra|corr|run|pesi|cardio|yoga|hiit|spinning|nuot/i;
@@ -7371,7 +7419,17 @@ Ottimo! Diario aggiornato. 🥗`;
         target: plan.target,
         workoutTime: workoutTime || null,
       });
-      const ghostList = Array.isArray(plan.ghostMeals) ? plan.ghostMeals : [];
+      const rawGhostList = Array.isArray(plan.ghostMeals) ? plan.ghostMeals : [];
+      const ghostList = dedupeGhostMealsPayloadForConfirm(rawGhostList, (gm) => {
+        const rawId = gm.id != null && String(gm.id).trim() !== '' ? String(gm.id).trim() : '';
+        if (rawId) return `id:${rawId}`;
+        const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
+        const timeStr = gm.time != null ? String(gm.time) : '12:00';
+        const dec = parseFlexibleTimeToDecimal(timeStr);
+        const mealTime = dec != null && !Number.isNaN(dec) ? dec : 12;
+        return `slot:${mt}|${Number(mealTime).toFixed(3)}`;
+      });
+      const batchTs = Date.now();
       const srcLog = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
       const nowDec = getNowDecimalHourForPlanMerge();
       const realMealsSet = buildPastOnlyRealMealTypeSet(srcLog, nowDec);
@@ -7412,7 +7470,7 @@ Ottimo! Diario aggiornato. 🥗`;
             foodsArr = normalizeMealFoodsArray(draftStringsToFoods(draftFoods));
           }
           const entry = {
-            id: `ghost_meal_${Date.now()}_${i}`,
+            id: ghostMealLogEntryIdFromPayload(gm, i, batchTs),
             type: 'ghost_meal',
             mealType: mt,
             mealTime,
@@ -7424,6 +7482,12 @@ Ottimo! Diario aggiornato. 🥗`;
           };
           return entry;
         });
+      const seenDailyGhostIds = new Set();
+      const uniqueDailyGhostEntries = newGhostEntries.filter((e) => {
+        if (!e?.id || seenDailyGhostIds.has(e.id)) return false;
+        seenDailyGhostIds.add(e.id);
+        return true;
+      });
       const logTimeKey = (e) => {
         if (!e) return 0;
         if (e.type === 'ghost_meal' || e.type === 'food' || e.type === 'recipe') {
@@ -7431,7 +7495,7 @@ Ottimo! Diario aggiornato. 🥗`;
         }
         return Number(e.time ?? e.mealTime) || 0;
       };
-      const mergedLog = [...baseLog, ...newGhostEntries].sort((a, b) => logTimeKey(a) - logTimeKey(b));
+      const mergedLog = [...baseLog, ...uniqueDailyGhostEntries].sort((a, b) => logTimeKey(a) - logTimeKey(b));
       const baseManual = (manualNodes || []).filter((n) => n && n.type !== 'ghost_workout');
       let mergedManual = [...baseManual].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
       if (!isSimulationMode && workoutTime && !hasRealWorkout) {
@@ -7460,6 +7524,9 @@ Ottimo! Diario aggiornato. 🥗`;
         const withoutCard = prev.filter((m) => !m.dailyPlan);
         return [...withoutCard, { sender: 'ai', text: 'Piano confermato e caricato nel sistema.' }];
       });
+      } finally {
+        releaseMealConfirmGuard(dailyPlanMealConfirmGuardRef);
+      }
     },
     [applyKentuChatCmd, dailyLog, manualNodes, syncDatiFirebase, isSimulationMode, simulatedLog, parseFlexibleTimeToDecimal, toCanonicalMealType]
   );
@@ -7555,7 +7622,20 @@ ${dbKeys || 'n/d'}`;
   const handlePlanningWizardConfirm = useCallback(
     (payload) => {
       if (!payload || typeof payload !== 'object') return;
-      const ghostList = Array.isArray(payload.ghostMeals) ? payload.ghostMeals : [];
+      if (!tryAcquireMealConfirmGuard(planningWizardMealConfirmGuardRef)) return;
+      try {
+      const rawGhostList = Array.isArray(payload.ghostMeals) ? payload.ghostMeals : [];
+      const ghostList = dedupeGhostMealsPayloadForConfirm(rawGhostList, (gm) => {
+        const rawId = gm.id != null && String(gm.id).trim() !== '' ? String(gm.id).trim() : '';
+        if (rawId) return `id:${rawId}`;
+        const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
+        const mealTime =
+          typeof gm.mealTime === 'number' && !Number.isNaN(gm.mealTime)
+            ? gm.mealTime
+            : parseFlexibleTimeToDecimal(String(gm.time || '12:00')) ?? 12;
+        return `slot:${mt}|${Number(mealTime).toFixed(3)}`;
+      });
+      const batchTs = Date.now();
       const srcLog = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
       const nowDec = getNowDecimalHourForPlanMerge();
       const realMealsSet = buildPastOnlyRealMealTypeSet(srcLog, nowDec);
@@ -7628,7 +7708,7 @@ ${dbKeys || 'n/d'}`;
               .filter(Boolean);
           }
           const entry = {
-            id: `ghost_meal_${Date.now()}_${i}`,
+            id: ghostMealLogEntryIdFromPayload(gm, i, batchTs),
             type: 'ghost_meal',
             mealType: mt,
             mealTime,
@@ -7640,6 +7720,12 @@ ${dbKeys || 'n/d'}`;
           };
           return entry;
         });
+      const seenGhostEntryIds = new Set();
+      const uniqueGhostEntries = newGhostEntries.filter((e) => {
+        if (!e?.id || seenGhostEntryIds.has(e.id)) return false;
+        seenGhostEntryIds.add(e.id);
+        return true;
+      });
       const logTimeKey = (e) => {
         if (!e) return 0;
         if (e.type === 'ghost_meal' || e.type === 'food' || e.type === 'recipe') {
@@ -7647,7 +7733,7 @@ ${dbKeys || 'n/d'}`;
         }
         return Number(e.time ?? e.mealTime) || 0;
       };
-      const mergedLog = [...baseLog, ...newGhostEntries].sort((a, b) => logTimeKey(a) - logTimeKey(b));
+      const mergedLog = [...baseLog, ...uniqueGhostEntries].sort((a, b) => logTimeKey(a) - logTimeKey(b));
 
       const baseManual = (manualNodes || []).filter((n) => n && n.type !== 'ghost_workout');
       let mergedManual = [...baseManual].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
@@ -7683,6 +7769,9 @@ ${dbKeys || 'n/d'}`;
         }
       }
       setPlanningWizardOverlayOpen(false);
+      } finally {
+        releaseMealConfirmGuard(planningWizardMealConfirmGuardRef);
+      }
     },
     [
       auth,
