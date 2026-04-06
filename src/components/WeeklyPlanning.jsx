@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   createWeeklyPlanDay,
   WEEKLY_PLAN_GOAL_OPTIONS,
@@ -32,17 +32,47 @@ const DAY_LABELS = {
   training: 'Training',
 };
 
+/** Somma kcal su 7 gg: giorni senza target usano il profilo; delta = somma − 7× profilo. */
+function computeWeeklyKcalDelta(value, weekDayKeys, profileDailyKcal) {
+  const base = Math.max(1200, Math.round(Number(profileDailyKcal) || 2000));
+  const baseWeek = base * 7;
+  let sum = 0;
+  for (let i = 0; i < weekDayKeys.length; i++) {
+    const key = weekDayKeys[i];
+    const raw = Number(value?.days?.[key]?.kcalTarget);
+    sum += Number.isFinite(raw) && raw > 0 ? Math.round(raw) : base;
+  }
+  const delta = sum - baseWeek;
+  const cap = Math.max(Math.round(baseWeek * 0.28), 4000);
+  const ratio = Math.max(-1, Math.min(1, cap > 0 ? delta / cap : 0));
+  let label = 'In linea con il profilo';
+  if (delta < -280) label = 'Più leggera del profilo';
+  else if (delta > 280) label = 'Più ricca del profilo';
+  return { delta, ratio, label };
+}
+
 /**
  * @param {{
  *   value: object,
  *   onChange: (u: object | ((p: object) => object)) => void,
  *   anchorDate?: Date,
+ *   profileDailyKcal?: number,
  * }} props
  */
-export default function WeeklyPlanning({ value, onChange, anchorDate }) {
-  const from =
-    anchorDate instanceof Date && !Number.isNaN(anchorDate.getTime()) ? anchorDate : new Date();
-  const weekDays = getSevenDaysFrom(from);
+export default function WeeklyPlanning({ value, onChange, anchorDate, profileDailyKcal }) {
+  const anchorTick =
+    anchorDate instanceof Date && !Number.isNaN(anchorDate.getTime())
+      ? anchorDate.getTime()
+      : 'floating';
+  const weekDays = useMemo(() => {
+    const d = anchorTick === 'floating' ? new Date() : new Date(anchorTick);
+    return getSevenDaysFrom(d);
+  }, [anchorTick]);
+  const weekDayKeys = useMemo(() => weekDays.map((w) => w.key), [weekDays]);
+  const { delta, ratio, label } = useMemo(
+    () => computeWeeklyKcalDelta(value, weekDayKeys, profileDailyKcal),
+    [value, weekDayKeys, profileDailyKcal]
+  );
 
   const setGoal = (goalId) => {
     onChange((prev) => ({ ...prev, goal: goalId }));
@@ -64,6 +94,67 @@ export default function WeeklyPlanning({ value, onChange, anchorDate }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div
+        style={{
+          padding: '12px 14px',
+          borderRadius: 12,
+          border: '1px solid rgba(255,255,255,0.1)',
+          background: 'rgba(0,0,0,0.25)',
+        }}
+        aria-label={delta === 0 ? 'Bilancio settimanale in linea' : `Delta settimanale indicativo ${delta > 0 ? 'positivo' : 'negativo'}`}
+      >
+        <div style={{ fontSize: '0.72rem', opacity: 0.75, marginBottom: 6, letterSpacing: '0.04em' }}>
+          Bilancio kcal settimanale
+        </div>
+        <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>{label}</div>
+        <div style={{ position: 'relative', height: 10, borderRadius: 6, background: 'rgba(255,255,255,0.08)' }}>
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: 0,
+              bottom: 0,
+              width: 2,
+              marginLeft: -1,
+              background: 'rgba(255,255,255,0.35)',
+              borderRadius: 1,
+              zIndex: 2,
+            }}
+          />
+          {ratio < 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                right: '50%',
+                top: 2,
+                bottom: 2,
+                width: `${Math.abs(ratio) * 50}%`,
+                background: 'linear-gradient(90deg, rgba(14,165,233,0.85), rgba(14,165,233,0.35))',
+                borderRadius: '4px 0 0 4px',
+                zIndex: 1,
+              }}
+            />
+          )}
+          {ratio > 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: 2,
+                bottom: 2,
+                width: `${ratio * 50}%`,
+                background: 'linear-gradient(90deg, rgba(251,146,60,0.35), rgba(251,146,60,0.9))',
+                borderRadius: '0 4px 4px 0',
+                zIndex: 1,
+              }}
+            />
+          )}
+        </div>
+        <div style={{ fontSize: '0.65rem', opacity: 0.5, marginTop: 8, lineHeight: 1.35 }}>
+          Rispetto a 7 giorni al tuo profilo. I giorni senza kcal dedicato contano come il profilo.
+        </div>
+      </div>
+
       <div>
         <div style={{ marginBottom: 8, fontSize: '0.8rem', opacity: 0.85 }}>Obiettivo</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

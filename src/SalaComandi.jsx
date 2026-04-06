@@ -11026,6 +11026,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               value={weeklyPlan}
               onChange={setWeeklyPlan}
               anchorDate={new Date(`${currentTrackerDate || getTodayString()}T12:00:00`)}
+              profileDailyKcal={Number(userTargets?.kcal) || 2000}
             />
           </div>
         </div>
