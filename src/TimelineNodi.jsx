@@ -1,4 +1,5 @@
 import React from 'react';
+import { getMealIcon } from './coreEngine';
 
 /** Voci da mostrare per pasto / ghost pasto (evita crash se `foods` mancante o non array). */
 function getTimelineMealFoodDisplayEntries(node) {
@@ -193,7 +194,7 @@ export default function TimelineNodi({
             const isMealPoint = node.type === 'meal' || isGhostMeal;
             const isWorkoutPoint = node.type === 'workout' || isGhostWorkout;
             const iconContent = isGhostMeal
-              ? '🎯'
+              ? getMealIcon(String(node.mealType || 'pranzo').split('_')[0])
               : isGhostWorkout
                 ? '🏋️'
                 : NODE_TYPE_ICON?.[node.type] ??
@@ -226,28 +227,25 @@ export default function TimelineNodi({
             } else if (isCognitivePoint) {
               pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
             }
-            const ghostTooltip = (() => {
-              const t = String(node.title || '').trim();
-              const m = String(node.microDesc || '').trim();
-              if (t && m) return `${t} — ${m}`;
-              return t || m || undefined;
-            })();
             const ghostVisual = isGhostMeal || isGhostWorkout;
-            const mealDisplayEntries = isMealPoint ? getTimelineMealFoodDisplayEntries(node) : [];
+            const mealDisplayEntries =
+              isMealPoint && !isGhostMeal ? getTimelineMealFoodDisplayEntries(node) : [];
             const mealFoodSummaryLines = mealDisplayEntries.map(formatTimelineMealFoodEntry).filter(Boolean);
             const mealFoodsSummaryInline =
               mealFoodSummaryLines.length > 0 ? mealFoodSummaryLines.join(' · ') : '';
-            const nodeTitleAttr = (() => {
-              const foodLine =
-                isMealPoint && mealFoodSummaryLines.length > 0
-                  ? mealFoodsSummaryInline
-                  : isMealPoint
-                    ? EMPTY_MEAL_LABEL
-                    : '';
-              const parts = [ghostTooltip, foodLine].filter(Boolean);
-              return parts.length ? parts.join('\n') : undefined;
-            })();
+            const nodeTitleAttr = ghostVisual
+              ? undefined
+              : (() => {
+                  const foodLine =
+                    isMealPoint && mealFoodSummaryLines.length > 0
+                      ? mealFoodsSummaryInline
+                      : isMealPoint
+                        ? EMPTY_MEAL_LABEL
+                        : '';
+                  return foodLine || undefined;
+                })();
             const importanceForPoint = ghostVisual ? { filter: 'none', opacity: 1, zIndex: 9 } : isDragging ? {} : importanceStyle;
+            const mealPointExpandedLayout = isMealPoint && !isGhostMeal;
             return (
               <div
                 key={node.id}
@@ -263,13 +261,13 @@ export default function TimelineNodi({
                   transform: pointTransform,
                   top: '50%',
                   marginTop: -18 - (node.stackIndex || 0) * 38,
-                  width: isMealPoint ? 'auto' : '36px',
-                  height: isMealPoint ? 'auto' : '36px',
-                  minWidth: isMealPoint ? '36px' : undefined,
-                  minHeight: isMealPoint ? '36px' : undefined,
-                  maxWidth: isMealPoint ? '112px' : undefined,
-                  padding: isMealPoint ? '4px 6px 6px' : undefined,
-                  borderRadius: isMealPoint ? '12px' : '50%',
+                  width: mealPointExpandedLayout ? 'auto' : '36px',
+                  height: mealPointExpandedLayout ? 'auto' : '36px',
+                  minWidth: mealPointExpandedLayout ? '36px' : undefined,
+                  minHeight: mealPointExpandedLayout ? '36px' : undefined,
+                  maxWidth: mealPointExpandedLayout ? '112px' : undefined,
+                  padding: mealPointExpandedLayout ? '4px 6px 6px' : undefined,
+                  borderRadius: mealPointExpandedLayout ? '12px' : '50%',
                   background: bgColor,
                   border: borderStyle,
                   boxShadow: pointBoxShadow,
@@ -285,11 +283,13 @@ export default function TimelineNodi({
                   ...importanceForPoint,
                 }}
               >
-                <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor)))), marginBottom: '2px', transition: 'color 0.2s' }}>
-                  {timeLabelStr}
-                </span>
+                {!ghostVisual ? (
+                  <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor)))), marginBottom: '2px', transition: 'color 0.2s' }}>
+                    {timeLabelStr}
+                  </span>
+                ) : null}
                 <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || (isPesi ? pointBorderColor : 'inherit'))))) }}>{iconContent}</span>
-                {isMealPoint ? (
+                {mealPointExpandedLayout ? (
                   <span
                     style={{
                       fontSize: '0.52rem',
