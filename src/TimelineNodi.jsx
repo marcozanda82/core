@@ -1,51 +1,6 @@
 import React from 'react';
 import { getMealIcon } from './coreEngine';
 
-/** Voci da mostrare per pasto / ghost pasto (evita crash se `foods` mancante o non array). */
-function getTimelineMealFoodDisplayEntries(node) {
-  if (!node || typeof node !== 'object') return [];
-  if (node.type === 'meal') {
-    if (Array.isArray(node.items) && node.items.length > 0) return node.items;
-    if (Array.isArray(node.foods) && node.foods.length > 0) return node.foods;
-    return [];
-  }
-  if (node.type === 'ghost_meal') {
-    if (Array.isArray(node.foods) && node.foods.length > 0) return node.foods;
-    if (Array.isArray(node.draftFoods) && node.draftFoods.length > 0) {
-      return node.draftFoods
-        .map((x) => {
-          if (typeof x === 'string') {
-            const t = x.trim();
-            return t ? { name: t, qty: null } : null;
-          }
-          if (x && typeof x === 'object' && (x.name || x.desc)) return x;
-          return null;
-        })
-        .filter(Boolean);
-    }
-    return [];
-  }
-  return [];
-}
-
-function formatTimelineMealFoodEntry(f) {
-  try {
-    if (f == null) return '';
-    if (typeof f === 'string') return String(f).trim();
-    if (typeof f !== 'object') return String(f);
-    const name = String(f.name ?? f.desc ?? '').trim();
-    const qtyRaw = f.qty ?? f.weight;
-    const q =
-      qtyRaw != null && Number.isFinite(Number(qtyRaw)) ? Math.round(Number(qtyRaw)) : 0;
-    if (name && q > 0) return `${q}g ${name}`;
-    return name || '';
-  } catch {
-    return '';
-  }
-}
-
-const EMPTY_MEAL_LABEL = 'Empty meal';
-
 /**
  * Timeline Nodi Draggabili – striscia sovrapposta al grafico con nodi trascinabili.
  * Riceve dati, stato drag, ref e funzioni dal genitore (SalaComandi).
@@ -193,7 +148,7 @@ export default function TimelineNodi({
             const isCognitivePoint = node.type === 'cognitive';
             const isMealPoint = node.type === 'meal' || isGhostMeal;
             const isWorkoutPoint = node.type === 'workout' || isGhostWorkout;
-            const iconContent = isGhostMeal
+            const iconContent = isMealPoint
               ? getMealIcon(String(node.mealType || 'pranzo').split('_')[0])
               : isGhostWorkout
                 ? '🏋️'
@@ -237,22 +192,6 @@ export default function TimelineNodi({
               pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
             }
             const ghostVisual = isGhostMeal || isGhostWorkout;
-            const mealDisplayEntries =
-              isMealPoint && !isGhostMeal ? getTimelineMealFoodDisplayEntries(node) : [];
-            const mealFoodSummaryLines = mealDisplayEntries.map(formatTimelineMealFoodEntry).filter(Boolean);
-            const mealFoodsSummaryInline =
-              mealFoodSummaryLines.length > 0 ? mealFoodSummaryLines.join(' · ') : '';
-            const nodeTitleAttr = ghostVisual
-              ? undefined
-              : (() => {
-                  const foodLine =
-                    isMealPoint && mealFoodSummaryLines.length > 0
-                      ? mealFoodsSummaryInline
-                      : isMealPoint
-                        ? EMPTY_MEAL_LABEL
-                        : '';
-                  return foodLine || undefined;
-                })();
             const importanceForPoint = ghostVisual
               ? {
                   filter: 'none',
@@ -262,11 +201,9 @@ export default function TimelineNodi({
               : isDragging
                 ? {}
                 : importanceStyle;
-            const mealPointExpandedLayout = isMealPoint && !isGhostMeal;
             return (
               <div
                 key={node.id}
-                title={nodeTitleAttr}
                 className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}`}
                 onPointerDown={startNodeDrag(node, 'all')}
                 onPointerUp={releaseNodePointer}
@@ -278,13 +215,9 @@ export default function TimelineNodi({
                   transform: pointTransform,
                   top: '50%',
                   marginTop: -18 - (node.stackIndex || 0) * 38,
-                  width: mealPointExpandedLayout ? 'auto' : '36px',
-                  height: mealPointExpandedLayout ? 'auto' : '36px',
-                  minWidth: mealPointExpandedLayout ? '36px' : undefined,
-                  minHeight: mealPointExpandedLayout ? '36px' : undefined,
-                  maxWidth: mealPointExpandedLayout ? '112px' : undefined,
-                  padding: mealPointExpandedLayout ? '4px 6px 6px' : undefined,
-                  borderRadius: mealPointExpandedLayout ? '12px' : '50%',
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
                   background: bgColor,
                   border: borderStyle,
                   boxShadow: pointBoxShadow,
@@ -300,34 +233,12 @@ export default function TimelineNodi({
                   ...importanceForPoint,
                 }}
               >
-                {!ghostVisual ? (
+                {!ghostVisual && !isMealPoint ? (
                   <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor)))), marginBottom: '2px', transition: 'color 0.2s' }}>
                     {timeLabelStr}
                   </span>
                 ) : null}
                 <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || (isPesi ? pointBorderColor : 'inherit'))))) }}>{iconContent}</span>
-                {mealPointExpandedLayout ? (
-                  <span
-                    style={{
-                      fontSize: '0.52rem',
-                      fontWeight: 600,
-                      color: mealFoodSummaryLines.length > 0 ? 'rgba(230,245,255,0.92)' : 'rgba(255,255,255,0.38)',
-                      textAlign: 'center',
-                      maxWidth: '100px',
-                      lineHeight: 1.2,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      wordBreak: 'break-word',
-                      marginTop: 2,
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    {mealFoodSummaryLines.length > 0 ? mealFoodsSummaryInline : EMPTY_MEAL_LABEL}
-                  </span>
-                ) : null}
               </div>
             );
           })}

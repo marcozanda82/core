@@ -114,13 +114,18 @@ function getEquivalentMealTypes(type) {
   return MEAL_TYPE_GROUPS[canonical] || [base];
 }
 
-/** 🍝 per Pranzo/Cena, 🍎 per gli altri. */
+/** Icona timeline per tipo pasto (canonico). */
 function getMealIcon(label) {
-  const l = (label || '').toString().toLowerCase();
-  if (l.includes('pranzo') || l.includes('cena')) return '🍝';
-  // Tutti gli snack/merende usano 🍎
-  if (l.includes('snack') || l.includes('spuntino') || l.includes('merenda') || l.includes('colazione')) return '🍎';
-  return '🍎';
+  const base = String(label ?? '')
+    .split('_')[0]
+    .toLowerCase()
+    .trim();
+  const canon = toCanonicalMealType(base) || base;
+  if (canon === 'colazione') return '🍳';
+  if (canon === 'pranzo') return '🥗';
+  if (canon === 'cena') return '🍝';
+  if (canon === 'snack') return '🍎';
+  return '🥗';
 }
 
 function getGhostMealType(baseType, log) {
