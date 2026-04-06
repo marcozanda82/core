@@ -26,6 +26,7 @@ import {
   generateStateHash,
   KNOWLEDGE_BASE_MAX_AGE_MS
 } from './coreEngine';
+import { getTimePositionPercent } from './timeLayout';
 
 const CHART_VIEWS_CAROUSEL = ['percent', 'kcal', 'calorieTimeline', 'glicemia', 'idratazione', 'neuro', 'cortisolo', 'digestione'];
 const AI_KEYWORD_TO_CHART = { 'Sveglia': null, 'Energia SNC': 'percent', 'Recupero Neurologico': 'neuro', 'Finestra Anabolica': 'kcal', 'Cortisolo': 'cortisolo', 'Glicemia': 'glicemia', 'Digestione': 'digestione' };
@@ -114,8 +115,8 @@ export default function ChartModal({
     const isPrimary = primaryTypes.includes(node.type);
     const isWork = node.type === 'work';
     const isCognitive = node.type === 'cognitive';
-    const percent = (node.time / 24) * 100;
-    const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
+    const percent = getTimePositionPercent(node.time);
+    const durationPercent = (isWork || isCognitive) ? getTimePositionPercent(node.duration || 1) : 0;
     const iconContent = NODE_TYPE_ICON[node.type] ?? (node.type === 'stimulant' ? '☕' : node.type === 'water' ? '💧' : node.type === 'work' ? '💼' : node.type === 'workout' ? '⚡' : node.type === 'cognitive' ? (node.subType === 'studio' ? '📚' : '💻') : '🥗');
     const bgColor = node.type === 'stimulant' ? 'rgba(245,158,11,0.2)' : node.type === 'water' ? 'rgba(0,229,255,0.15)' : node.type === 'work' ? 'rgba(255,234,0,0.15)' : node.type === 'cognitive' ? 'rgba(182,102,210,0.2)' : node.type === 'nap' ? 'rgba(129,140,248,0.2)' : node.type === 'meditation' ? 'rgba(34,197,94,0.2)' : node.type === 'supplements' ? 'rgba(168,85,247,0.2)' : node.type === 'sunlight' ? 'rgba(251,191,36,0.2)' : 'rgba(0,0,0,0.6)';
     const borderColor = node.type === 'stimulant' ? '#f59e0b' : node.type === 'water' ? '#00e5ff' : node.type === 'work' ? '#ffea00' : node.type === 'cognitive' ? '#b666d2' : node.type === 'nap' ? '#818cf8' : node.type === 'meditation' ? '#22c55e' : node.type === 'supplements' ? '#a855f7' : node.type === 'sunlight' ? '#fbbf24' : '#00e5ff';

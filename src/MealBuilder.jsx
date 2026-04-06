@@ -11,6 +11,7 @@ import {
   calculateSwapQuantity,
   categorizeFood,
 } from './coreEngine';
+import { getTimePositionPercent } from './timeLayout';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -1006,8 +1007,8 @@ export default function MealBuilder({
         <div ref={miniTimelinePastoRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
           {allNodes.filter(n => n.id !== `${mealType}_${drawerMealTime}`).map(n => {
             const isWork = n.type === 'work';
-            const startP = (n.time / 24) * 100;
-            const durP = isWork ? ((n.duration || 1) / 24) * 100 : 0;
+            const startP = getTimePositionPercent(n.time);
+            const durP = isWork ? getTimePositionPercent(n.duration || 1) : 0;
             const isPesi = n.type === 'workout' && n.subType === 'pesi' && n.muscles?.length > 0;
             const iconContent = isPesi ? n.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (n.icon || '•');
             if (isWork) {
@@ -1021,7 +1022,7 @@ export default function MealBuilder({
               </div>
             );
           })}
-          <div className="mini-timeline-hitbox" role="slider" aria-label="Ora pasto" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelinePastoRef, 'point', drawerMealTime, null, setDrawerMealTime, null)} style={{ position: 'absolute', left: `${(drawerMealTime / 24) * 100}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, touchAction: 'none' }}>
+          <div className="mini-timeline-hitbox" role="slider" aria-label="Ora pasto" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelinePastoRef, 'point', drawerMealTime, null, setDrawerMealTime, null)} style={{ position: 'absolute', left: `${getTimePositionPercent(drawerMealTime)}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, touchAction: 'none' }}>
             <div className="mini-timeline-point-bubble" style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: '28px', height: '28px', borderRadius: '50%', background: '#00e5ff', border: '2px solid #fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px rgba(0,229,255,0.5)', pointerEvents: 'none' }}>
               <span style={{ fontSize: '0.5rem', fontWeight: 'bold', color: '#000' }}>{decimalToTimeStr(drawerMealTime)}</span>
               <span style={{ lineHeight: 1 }}>🍎</span>

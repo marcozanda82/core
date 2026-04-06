@@ -27,6 +27,7 @@ import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
+import { getTimePositionPercent } from './timeLayout';
 import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
@@ -2790,7 +2791,7 @@ export default function SalaComandi() {
 
     if (currentTrackerDate === getTodayString()) {
       const chartWidth = scrollWidth - 80;
-      const timePos = (currentTime / 24) * chartWidth;
+      const timePos = (getTimePositionPercent(currentTime) / 100) * chartWidth;
       const targetScroll = timePos - (clientWidth * CURRENT_TIME_VIEW_OFFSET);
       container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
     } else {
@@ -2807,7 +2808,7 @@ export default function SalaComandi() {
     const clientWidth = container.clientWidth;
     if (currentTrackerDate === getTodayString()) {
       const chartWidth = Math.max(scrollWidth - 80, 1);
-      const timePos = (currentTime / 24) * chartWidth;
+      const timePos = (getTimePositionPercent(currentTime) / 100) * chartWidth;
       const targetScroll = timePos - (clientWidth * CURRENT_TIME_VIEW_OFFSET);
       container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
     } else {
@@ -11449,8 +11450,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               <div ref={miniTimelineWaterRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
                 {allNodes.map(n => {
                   const isWork = n.type === 'work';
-                  const startP = (n.time / 24) * 100;
-                  const durP = isWork ? ((n.duration || 1) / 24) * 100 : 0;
+                  const startP = getTimePositionPercent(n.time);
+                  const durP = isWork ? getTimePositionPercent(n.duration || 1) : 0;
                   if (isWork) {
                     return (
                       <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, width: `${durP}%`, top: '50%', transform: 'translateY(-50%)', height: '20px', background: 'rgba(255, 234, 0, 0.2)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }} />
@@ -11460,7 +11461,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(0,0,0,0.5)', border: '2px solid #666', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }} />
                   );
                 })}
-                <div className="mini-timeline-hitbox" role="slider" aria-label="Ora acqua" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelineWaterRef, 'point', drawerWaterTime, null, setDrawerWaterTime, null)} style={{ position: 'absolute', left: `${(drawerWaterTime / 24) * 100}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, touchAction: 'none' }}>
+                <div className="mini-timeline-hitbox" role="slider" aria-label="Ora acqua" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelineWaterRef, 'point', drawerWaterTime, null, setDrawerWaterTime, null)} style={{ position: 'absolute', left: `${getTimePositionPercent(drawerWaterTime)}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, touchAction: 'none' }}>
                   <div className="mini-timeline-point-bubble" style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: '28px', height: '28px', borderRadius: '50%', background: '#00e5ff', border: '2px solid #fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px rgba(0,229,255,0.5)', pointerEvents: 'none' }}>
                     <span style={{ fontSize: '0.5rem', fontWeight: 'bold', color: '#000' }}>{decimalToTimeStr(drawerWaterTime)}</span>
                     <span style={{ lineHeight: 1 }}>💧</span>
@@ -11585,8 +11586,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 {allNodes.filter(n => n.id !== editingWorkoutId).map(n => {
                   const isWork = n.type === 'work';
                   const isCognitive = n.type === 'cognitive';
-                  const startP = (n.time / 24) * 100;
-                  const durP = (isWork || isCognitive) ? ((n.duration || 1) / 24) * 100 : 0;
+                  const startP = getTimePositionPercent(n.time);
+                  const durP = (isWork || isCognitive) ? getTimePositionPercent(n.duration || 1) : 0;
                   const isPesi = n.type === 'workout' && n.subType === 'pesi' && n.muscles?.length > 0;
                   const iconContent = isPesi ? n.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (n.icon || '•');
                   if (isWork) {
@@ -11605,7 +11606,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     </div>
                   );
                 })}
-                <div className="mini-timeline-bar-wrap" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-all', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime)} style={{ position: 'absolute', left: `${(workoutStartTime/24)*100}%`, width: `${((workoutEndTime - workoutStartTime)/24)*100}%`, top: '50%', transform: 'translateY(-50%)', height: '24px', background: 'rgba(255, 109, 0, 0.4)', border: '1px solid #ff6d00', borderRadius: '4px', cursor: 'grab', zIndex: 10, touchAction: 'none' }}>
+                <div className="mini-timeline-bar-wrap" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-all', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime)} style={{ position: 'absolute', left: `${getTimePositionPercent(workoutStartTime)}%`, width: `${getTimePositionPercent(workoutEndTime - workoutStartTime)}%`, top: '50%', transform: 'translateY(-50%)', height: '24px', background: 'rgba(255, 109, 0, 0.4)', border: '1px solid #ff6d00', borderRadius: '4px', cursor: 'grab', zIndex: 10, touchAction: 'none' }}>
                   <div className="mini-timeline-hitbox" role="slider" aria-label="Inizio attività" onPointerDown={(e) => { e.stopPropagation(); handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-start', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime); }} style={{ position: 'absolute', left: '-22px', top: '50%', transform: 'translateY(-50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11 }}>
                     <div style={{ width: '12px', height: '24px', background: '#ff6d00', borderRadius: '4px', pointerEvents: 'none' }}></div>
                   </div>
@@ -14035,7 +14036,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 {/* Nodi Esistenti (Sfondo) - Pallini grigi per dare contesto */}
                 {manualNodes.map(n => {
                   if (typeof n.time !== 'number') return null;
-                  const percent = (n.time / 24) * 100;
+                  const percent = getTimePositionPercent(n.time);
                   return (
                     <div key={n.id} style={{ position: 'absolute', left: `calc(20px + ${percent}% - ${percent * 0.4}px)`, width: '8px', height: '8px', borderRadius: '50%', background: 'rgba(255,255,255,0.15)', transform: 'translate(-50%, -50%)', top: '50%', pointerEvents: 'none' }} />
                   );
@@ -14044,7 +14045,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 {(() => {
                   const [h, m] = alcoholForm.timeStr.split(':').map(Number);
                   const currentFloat = (h || 0) + ((m || 0) / 60);
-                  const currentPercent = (currentFloat / 24) * 100;
+                  const currentPercent = getTimePositionPercent(currentFloat);
                   const icon = alcoholForm.subtype === 'birra' ? '🍺' : alcoholForm.subtype === 'vino' ? '🍷' : '🥃';
 
                   return (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { getMealIcon } from './coreEngine';
+import { getTimePositionPercent } from './timeLayout';
 
 const SUBTLE_SPRING = { type: 'spring', stiffness: 420, damping: 26, mass: 0.85 };
 
@@ -146,7 +147,7 @@ export default function TimelineNodi({
           aria-hidden
           style={{
             position: 'absolute',
-            left: `${(nowDecimalHour / 24) * 100}%`,
+            left: `${getTimePositionPercent(nowDecimalHour)}%`,
             top: 0,
             bottom: 0,
             width: '1px',
@@ -210,7 +211,7 @@ export default function TimelineNodi({
               (activeAction === 'acqua' && node.type === 'water');
             const isWork = node.type === 'work';
             const isCognitive = node.type === 'cognitive';
-            const durationPercent = (isWork || isCognitive) ? ((node.duration || 1) / 24) * 100 : 0;
+            const durationPercent = (isWork || isCognitive) ? getTimePositionPercent(node.duration || 1) : 0;
             const idealVal =
               node.type === 'meal' || isGhostMeal
                 ? (idealStrategy?.[node.strategyKey] ?? 400)
@@ -236,9 +237,9 @@ export default function TimelineNodi({
             const displayTimeVal = (isDragging && dragLiveTime != null) ? dragLiveTime : node.time;
             const workEndTime = node.time + (node.duration || 1);
             const displayDurationPercent = (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'start'
-              ? ((workEndTime - dragLiveTime) / 24) * 100
+              ? getTimePositionPercent(workEndTime - dragLiveTime)
               : (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'end'
-                ? ((dragLiveTime - node.time) / 24) * 100
+                ? getTimePositionPercent(dragLiveTime - node.time)
                 : durationPercent;
             const barStartHour =
               (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'end'
@@ -250,7 +251,7 @@ export default function TimelineNodi({
 
             if (isWork) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
-              const left = `${(barStartHour / 24) * 100}%`;
+              const left = `${getTimePositionPercent(barStartHour)}%`;
               const barScale = isDragging ? 1.5 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
               const barOpacity = isDragging ? 1 : (importanceStyle.opacity ?? 1);
               return (
@@ -315,7 +316,7 @@ export default function TimelineNodi({
             }
             if (isCognitive) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
-              const left = `${(barStartHour / 24) * 100}%`;
+              const left = `${getTimePositionPercent(barStartHour)}%`;
               const barScale = isDragging ? 1.5 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
               const barOpacity = isDragging ? 1 : (importanceStyle.opacity ?? 1);
               return (
@@ -435,7 +436,7 @@ export default function TimelineNodi({
               pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
             }
             const pointZ = isTouchingOrDragging ? 100 : ghostVisual ? 9 : (importanceStyle.zIndex ?? 2);
-            const left = `${(displayTimeVal / 24) * 100}%`;
+            const left = `${getTimePositionPercent(displayTimeVal)}%`;
             return (
               <motion.div
                 key={node.id}
