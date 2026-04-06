@@ -46,6 +46,7 @@ import {
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
   RADIAN,
+  DEFAULT_NO_SLEEP_ENERGY,
   getTodayString,
   getYesterdayString,
   getSleepStatus,
@@ -7773,7 +7774,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     if (sleepHours !== undefined) {
       payload.sleepHours = sleepHours;
     } else {
-      payload.sleepScore = sleepStatus === 'OK' ? 80 : sleepStatus === 'NIGHT_PENDING' ? 45 : 55;
+      payload.sleepScore =
+        sleepStatus === 'OK'
+          ? 80
+          : sleepStatus === 'NIGHT_PENDING'
+            ? 45
+            : sleepStatus === 'NO_DATA'
+              ? DEFAULT_NO_SLEEP_ENERGY
+              : 55;
     }
 
     return payload;
@@ -7879,13 +7887,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     if (!activeLog || activeLog.length === 0) {
       return;
     }
-    const hasSleep = activeLog.some(e =>
-      e.type === "sleep" ||
-      e.hours ||
-      e.deepMin ||
-      e.remMin
-    );
-    if (sleepStatus === "SLEEP_MISSING" && !hasSleep && !showSleepPrompt) {
+    if (sleepStatus === 'NO_DATA' && !showSleepPrompt) {
       setShowSleepPrompt(true);
     }
   }, [sleepStatus, showSleepPrompt, activeLog]);

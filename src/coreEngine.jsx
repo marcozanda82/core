@@ -18,22 +18,35 @@ const getYesterdayString = () => {
   return new Date(d.getTime() - offset).toISOString().split('T')[0];
 };
 
+/** Conservative % energy when the daily log has no recognized sleep row (aligned with NO_DATA / missing baseline). */
+export const DEFAULT_NO_SLEEP_ENERGY = 35;
+
+/**
+ * True if `dailyLog` contains at least one `type === 'sleep'` entry with usable sleep fields.
+ * Matches the condition for getSleepStatus === 'OK' (avoids false positives from e.g. workout `duration`).
+ */
+function logHasValidSleepEntry(dailyLog) {
+  return (dailyLog || []).some(
+    (e) =>
+      e &&
+      e.type === 'sleep' &&
+      (e.hours ||
+        e.duration ||
+        e.sleepHours ||
+        e.deep ||
+        e.deepMin ||
+        e.rem ||
+        e.remMin ||
+        e.sleepStart ||
+        e.sleepEnd)
+  );
+}
+
 function getSleepStatus(dailyLog) {
   const hour = new Date().getHours();
-  const sleepEntry = (dailyLog || []).find(e =>
-    e.hours ||
-    e.duration ||
-    e.sleepHours ||
-    e.deep ||
-    e.deepMin ||
-    e.rem ||
-    e.remMin ||
-    e.sleepStart ||
-    e.sleepEnd
-  );
-  if (sleepEntry) return "OK";
-  if (hour < 3) return "NIGHT_PENDING";
-  return "SLEEP_MISSING";
+  if (logHasValidSleepEntry(dailyLog)) return 'OK';
+  if (hour < 3) return 'NIGHT_PENDING';
+  return 'NO_DATA';
 }
 
 /** Returns YYYY-MM-DD of Monday of the week containing dateStr. Week starts Monday. */
@@ -197,7 +210,7 @@ function computeBaselineEnergy(dailyLog, timelineNodes) {
   const sleepEntry =
     log.find(e => e.type === 'sleep') ||
     nodes.find(n => n.type === 'sleep');
-  if (!sleepEntry) return 50;
+  if (!sleepEntry) return DEFAULT_NO_SLEEP_ENERGY;
 
   const sleepHours =
     sleepEntry.hours ??
@@ -369,7 +382,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   load = Math.max(0, Math.min(100, load));
 
   const realBaseline = computeBaselineEnergy(log, graphTimelineNodes);
-  let baselineEnergy = Math.max(55, Math.min(95, realBaseline));
+  const hasValidSleepLogged = logHasValidSleepEntry(log);
+  let baselineEnergy = hasValidSleepLogged
+    ? Math.max(55, Math.min(95, realBaseline))
+    : Math.min(95, Math.max(5, realBaseline));
 
   const sleepNode =
     pickMainNightSleepEntry(log.filter(e => e && e.type === 'sleep')) ||
@@ -2582,6 +2598,9 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
   let startEnergy = maxCapacity;
   if (nightHours != null && nightHours < 7) {
     startEnergy = maxCapacity - (7 - nightHours) * 10;
+  }
+  if (!logHasValidSleepEntry(log)) {
+    startEnergy = Math.min(startEnergy, DEFAULT_NO_SLEEP_ENERGY);
   }
   startEnergy = Math.round(Math.min(maxCapacity, Math.max(5, startEnergy)));
 
