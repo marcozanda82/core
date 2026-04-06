@@ -155,6 +155,7 @@ export default function TimelineNodi({
             const currentChartUnit = chartUnit;
             const isGhostMeal = node.type === 'ghost_meal';
             const isGhostWorkout = node.type === 'ghost_workout';
+            const ghostVisual = isGhostMeal || isGhostWorkout;
             const effectiveNodeType =
               node.type === 'meal' || isGhostMeal ? 'meal' : isGhostWorkout ? 'workout' : node.type;
             const isImportant = NODE_IMPORTANCE?.[currentChartUnit]?.includes(effectiveNodeType);
@@ -395,7 +396,6 @@ export default function TimelineNodi({
             } else if (isCognitivePoint) {
               pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
             }
-            const ghostVisual = isGhostMeal || isGhostWorkout;
             const pointZ = isTouchingOrDragging ? 100 : ghostVisual ? 9 : (importanceStyle.zIndex ?? 2);
             const left = `${(displayTimeVal / 24) * 100}%`;
             return (
