@@ -12666,6 +12666,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 firebasePlanning={remotePlanning}
                 initialMeals={planningWizardInitialMeals}
                 hydrateNonce={planningWizardHydrateNonce}
+                weeklyPlan={weeklyPlan}
+                planningDateKey={currentTrackerDate || getTodayString()}
                 onClose={() => setPlanningWizardOverlayOpen(false)}
                 onConfirmApply={handlePlanningWizardConfirm}
                 onGeneratePlanGhostMealDraft={handleGeneratePlanGhostMealDraft}

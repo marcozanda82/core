@@ -3,6 +3,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getDynamicMealTargets, normalizeMealFoodsArray, toCanonicalMealType } from './coreEngine';
+import { resolvePlanningWizardDailyKcal } from './weeklyPlanning';
 
 /** Allineato a SalaComandi `planningMealSlotKeyForFirebase` per idratazione bozze pasto da RTDB. */
 function planningMealSlotKeyFromRow(row) {
@@ -490,6 +491,10 @@ export default function PlanningWizard({
   initialMeals = null,
   /** Incrementato dal parent ad ogni apertura wizard per applicare l’idratazione una volta per sessione. */
   hydrateNonce = 0,
+  /** Piano settimanale (opzionale): `days[YYYY-MM-DD].kcalTarget` sostituisce il kcal profilo per i target dinamici. */
+  weeklyPlan = null,
+  /** Data tracker del giorno pianificato (`YYYY-MM-DD`). */
+  planningDateKey = null,
   onClose,
   onConfirmApply,
   onGeneratePlanGhostMealDraft,
@@ -504,6 +509,8 @@ export default function PlanningWizard({
   const [timingByMacro, setTimingByMacro] = useState({});
   const [stagingDraftById, setStagingDraftById] = useState({});
   const [wizardGenLoadingId, setWizardGenLoadingId] = useState(null);
+  /** Dopo modifica manuale ai pasti nello step 2+: non applicare più il kcal del piano settimanale in questa sessione. */
+  const [mealEditsLockProfileKcal, setMealEditsLockProfileKcal] = useState(false);
   /** Slot proposti (ex PROPOSED_SLOTS): canon, label, mealType, defaultHour, id stabile. */
   const [meals, setMeals] = useState(() =>
     PROPOSED_SLOTS.map((s, i) => {
@@ -527,6 +534,7 @@ export default function PlanningWizard({
   const updateMeal = useCallback((index, patch) => {
     if (typeof index !== 'number' || index < 0 || patch == null || typeof patch !== 'object') return;
     mealsUserTouchedRef.current = true;
+    setMealEditsLockProfileKcal(true);
     setMeals((prev) =>
       prev.map((m, i) => {
         if (i !== index) return { ...m, foods: mealFoodsRead(m) };
@@ -545,12 +553,15 @@ export default function PlanningWizard({
   const removeMeal = useCallback((index) => {
     if (typeof index !== 'number' || index < 0) return;
     mealsUserTouchedRef.current = true;
+    setMealEditsLockProfileKcal(true);
     setMeals((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   useEffect(() => {
     if (hydrateNonce <= 0) return;
     lastInitialMealsSigRef.current = null;
+    mealsUserTouchedRef.current = false;
+    setMealEditsLockProfileKcal(false);
   }, [hydrateNonce]);
 
   useEffect(() => {
@@ -689,12 +700,26 @@ export default function PlanningWizard({
     return timingSatisfied && musclesSatisfied;
   }, [macros, timingByMacro, muscles, trainingLockedFromLog]);
 
+  const { kcal: wizardResolvedKcal, fromWeeklyPlan: wizardKcalFromWeekly } = useMemo(
+    () => resolvePlanningWizardDailyKcal(userTargets, weeklyPlan, planningDateKey),
+    [userTargets, weeklyPlan, planningDateKey]
+  );
+
+  const wizardUserTargets = useMemo(() => {
+    const profileKcal = Number(userTargets?.kcal ?? 2000) || 2000;
+    const kcal = mealEditsLockProfileKcal ? profileKcal : wizardResolvedKcal;
+    return { ...userTargets, kcal };
+  }, [userTargets, mealEditsLockProfileKcal, wizardResolvedKcal]);
+
+  /** Strategia chat (deficit/pari/surplus) sul profilo: disattiva solo se il kcal giornaliero arriva dal piano settimanale e l’utente non ha ancora modificato i pasti. */
+  const applyCalorieStrategyToWizard = mealEditsLockProfileKcal || !wizardKcalFromWeekly;
+
   const dynOpts = useMemo(
     () => ({
-      calorieStrategy,
+      calorieStrategy: applyCalorieStrategyToWizard ? calorieStrategy : null,
       burnedKcalBonus: Number(burnedKcalBonus) || 0,
     }),
-    [calorieStrategy, burnedKcalBonus]
+    [applyCalorieStrategyToWizard, calorieStrategy, burnedKcalBonus]
   );
 
   const registeredMealGroups = useMemo(() => groupRegisteredMealsByMealType(dailyLog), [dailyLog]);
@@ -1217,7 +1242,7 @@ export default function PlanningWizard({
               <ul style={{ margin: 0, paddingLeft: 18, color: '#ddd6fe', fontSize: '0.78rem', lineHeight: 1.45 }}>
                 {ghostLogStagingRows.map((r, i) => {
                   const hh = decimalHourToHHMM(Number(r.mealTime)) || '—';
-                  const t = getDynamicMealTargets(String(r.mealType || 'pranzo').split('_')[0], dailyLog, userTargets, dynOpts);
+                  const t = getDynamicMealTargets(String(r.mealType || 'pranzo').split('_')[0], dailyLog, wizardUserTargets, dynOpts);
                   const foods = Array.isArray(r.draftFoods) ? r.draftFoods : [];
                   return (
                     <li
@@ -1259,7 +1284,7 @@ export default function PlanningWizard({
                       </div>
                       <DraftFoodPillsMini foods={foods} />
                       <div style={{ fontSize: '0.7rem', color: '#c4b5fd', marginTop: 4 }}>
-                        Target residui per questo slot: ~{t.kcal} kcal, P{t.prot}g, C{t.carb}g, F{t.fat}g · {microHintFromTargets(t, userTargets)}
+                        Target residui per questo slot: ~{t.kcal} kcal, P{t.prot}g, C{t.carb}g, F{t.fat}g · {microHintFromTargets(t, wizardUserTargets)}
                       </div>
                     </li>
                   );
@@ -1277,7 +1302,7 @@ export default function PlanningWizard({
                 {stagingGhosts
                   .filter((r) => r.source === 'proposed')
                   .map((r) => {
-                    const t = getDynamicMealTargets(r.mealType, dailyLog, userTargets, dynOpts);
+                    const t = getDynamicMealTargets(r.mealType, dailyLog, wizardUserTargets, dynOpts);
                     const hh = decimalHourToHHMM(r.mealTime) || '—';
                     const mealIdx =
                       r.templateId != null ? meals.findIndex((m) => m.id === r.templateId) : -1;
@@ -1407,7 +1432,7 @@ export default function PlanningWizard({
                         <div style={{ fontSize: '0.72rem', color: '#cffafe', marginTop: 6, lineHeight: 1.4 }}>
                           Target suggeriti: ~{t.kcal} kcal · Prot {t.prot}g · Carb {t.carb}g · Grassi {t.fat}g
                           <br />
-                          {microHintFromTargets(t, userTargets)}
+                          {microHintFromTargets(t, wizardUserTargets)}
                         </div>
                         <div style={{ fontSize: '0.68rem', color: 'rgba(200,230,240,0.85)', marginTop: 6 }}>
                           Magnesio accumulato oggi (da pasti registrati): ~{Math.round(mgConsumed)} mg
