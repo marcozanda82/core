@@ -30,8 +30,11 @@ import {
   getTimePositionPercent,
   CHART_AXIS_GUTTER_LEFT_PX,
   CHART_AXIS_GUTTER_RIGHT_PX,
+  DEBUG_TIME_GRID_HOURS,
+  getDebugGridLineTimelineStyle,
 } from './timeLayout';
 import NowVerticalLineOverlay from './NowVerticalLineOverlay';
+import TimeAlignmentChartDebugOverlay, { SHOW_TIME_ALIGNMENT_DEBUG } from './TimeAlignmentDebugOverlay';
 
 const MODAL_TIMELINE_NOW_GLOW =
   '0 0 4px rgba(0, 229, 255, 0.95), 0 0 10px rgba(0, 229, 255, 0.55), 0 0 18px rgba(255, 255, 255, 0.12)';
@@ -336,6 +339,7 @@ export default function ChartModal({
                 {wallClockNowLineHour != null && Number.isFinite(wallClockNowLineHour) ? (
                   <NowVerticalLineOverlay hour={wallClockNowLineHour} visible />
                 ) : null}
+                <TimeAlignmentChartDebugOverlay />
               </div>
 
                 {/* Timeline nodi: non comprimibile, safe area in basso */}
@@ -395,6 +399,11 @@ export default function ChartModal({
                         }}
                       />
                     ) : null}
+                    {SHOW_TIME_ALIGNMENT_DEBUG
+                      ? DEBUG_TIME_GRID_HOURS.map((h) => (
+                          <div key={`time-debug-modal-tl-${h}`} aria-hidden style={getDebugGridLineTimelineStyle(h)} />
+                        ))
+                      : null}
                     {(activeNodesWithStack || []).map(node => renderTimelineNode(node))}
                   </div>
                 </div>

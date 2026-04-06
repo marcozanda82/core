@@ -34,6 +34,7 @@ import {
   CHART_AXIS_GUTTER_RIGHT_PX,
 } from './timeLayout';
 import NowVerticalLineOverlay from './NowVerticalLineOverlay';
+import TimeAlignmentChartDebugOverlay from './TimeAlignmentDebugOverlay';
 import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
@@ -9404,6 +9405,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               </ResponsiveContainer>
             )}
             {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
+            <TimeAlignmentChartDebugOverlay />
             </div>
 
             <div
@@ -10304,6 +10306,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     </ComposedChart>
                   </ResponsiveContainer>
                   {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
+                  <TimeAlignmentChartDebugOverlay />
                 </div>
               </div>
                 ) : (
@@ -10479,6 +10482,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 </ComposedChart>
               </ResponsiveContainer>
                 {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
+                <TimeAlignmentChartDebugOverlay />
                 </>
                 )}
               </div>

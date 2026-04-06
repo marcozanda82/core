@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { getMealIcon } from './coreEngine';
-import { getTimePositionPercent, getWallClockDecimalHour } from './timeLayout';
+import { getTimePositionPercent, getWallClockDecimalHour, DEBUG_TIME_GRID_HOURS, getDebugGridLineTimelineStyle } from './timeLayout';
+import { SHOW_TIME_ALIGNMENT_DEBUG } from './TimeAlignmentDebugOverlay';
 
 const SUBTLE_SPRING = { type: 'spring', stiffness: 420, damping: 26, mass: 0.85 };
 
@@ -149,6 +150,11 @@ export default function TimelineNodi({
             zIndex: 0,
           }}
         />
+        {SHOW_TIME_ALIGNMENT_DEBUG
+          ? DEBUG_TIME_GRID_HOURS.map((h) => (
+              <div key={`time-debug-tl-${h}`} aria-hidden style={getDebugGridLineTimelineStyle(h)} />
+            ))
+          : null}
         <div
           aria-hidden
           style={{

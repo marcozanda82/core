@@ -39,3 +39,38 @@ export function getNowVerticalLineBarStyle(hour) {
     zIndex: 5,
   };
 }
+
+/** Temporary: griglia 6h per verifica allineamento grafico ↔ timeline. Rimuovere dopo debug. */
+export const DEBUG_TIME_GRID_HOURS = [0, 6, 12, 18, 24];
+
+export function getDebugGridLineChartStyle(hour) {
+  const f = Math.max(0, Math.min(1, Number(hour) / 24));
+  const L = CHART_AXIS_GUTTER_LEFT_PX;
+  const R = CHART_AXIS_GUTTER_RIGHT_PX;
+  return {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: `calc(${L}px + (100% - ${L + R}px) * ${f})`,
+    width: 0,
+    borderLeft: '1px dashed rgba(255, 140, 0, 0.9)',
+    transform: 'translateX(-50%)',
+    pointerEvents: 'none',
+    zIndex: 6,
+  };
+}
+
+export function getDebugGridLineTimelineStyle(hour) {
+  const t = Math.max(0, Math.min(24, Number(hour)));
+  return {
+    position: 'absolute',
+    left: `${getTimePositionPercent(t)}%`,
+    top: 0,
+    bottom: 0,
+    width: 0,
+    borderLeft: '1px dashed rgba(255, 140, 0, 0.9)',
+    transform: 'translateX(-50%)',
+    pointerEvents: 'none',
+    zIndex: 2,
+  };
+}
