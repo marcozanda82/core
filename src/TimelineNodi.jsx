@@ -70,11 +70,14 @@ export default function TimelineNodi({
   nowLineDecimalHour,
   /** Punti energia giornata per sfondo gradient sotto la striscia: { time, energy } (0–24h, 0–100). */
   timelineEnergySeries,
+  /** Commit nuovo orario (ore decimali 0–24) al mouseup dopo drag locale. */
+  updateMealTime,
 }) {
   const reduceMotion = useReducedMotion();
   const [nowDecimalHour, setNowDecimalHour] = useState(() => getWallClockDecimalHour());
   const [draggingId, setDraggingId] = useState(null);
   const [dragX, setDragX] = useState(null);
+  const dragXRef = useRef(null);
   const containerRef = useRef(null);
   const nodes = activeNodesWithStack ?? [];
 
@@ -111,6 +114,28 @@ export default function TimelineNodi({
     window.addEventListener('mousemove', handleMove);
     return () => window.removeEventListener('mousemove', handleMove);
   }, [draggingId]);
+
+  useEffect(() => {
+    dragXRef.current = dragX;
+  }, [dragX]);
+
+  useEffect(() => {
+    if (!draggingId) return undefined;
+
+    function handleUp() {
+      document.body.style.userSelect = '';
+      const x = dragXRef.current;
+      if (x != null && Number.isFinite(Number(x)) && typeof updateMealTime === 'function') {
+        updateMealTime(draggingId, Number(x) * 24);
+      }
+      setDraggingId(null);
+      setDragX(null);
+      dragXRef.current = null;
+    }
+
+    window.addEventListener('mouseup', handleUp);
+    return () => window.removeEventListener('mouseup', handleUp);
+  }, [draggingId, updateMealTime]);
 
   const fireNodeClick = (node, event) => {
     if (typeof onNodeClick === 'function') onNodeClick(node, event);

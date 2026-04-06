@@ -4396,6 +4396,59 @@ export default function SalaComandi() {
     return items;
   }, []);
 
+  /** Commit orario nodo timeline (pasto aggregato, ghost_meal, manualNodes: work/cognitive/water/…). */
+  const updateMealTime = useCallback(
+    (nodeId, newTimeRaw) => {
+      if (isSimulationMode) return;
+      const t = Number(newTimeRaw);
+      if (!Number.isFinite(t)) return;
+      const finalTimeRounded = Math.max(0, Math.min(24, Math.round(t * 12) / 12));
+      const dragId = nodeId;
+      const dlSnap = dailyLogRef.current;
+      const mnSnap = manualNodesRef.current;
+      const idMatch = (a, b) => a === b || String(a) === String(b);
+
+      if (mnSnap.some((n) => idMatch(n.id, dragId))) {
+        const next = mnSnap.map((node) => {
+          if (!idMatch(node.id, dragId)) return node;
+          if (node.type === 'work' || node.type === 'cognitive') {
+            return { ...node, time: finalTimeRounded };
+          }
+          return { ...node, time: finalTimeRounded, mealTime: finalTimeRounded };
+        });
+        setManualNodes(next);
+        syncDatiFirebase(dlSnap, next);
+        pushTimelineUndoSnapshot(dlSnap, next);
+        return;
+      }
+
+      const ghost = dlSnap.find((item) => idMatch(item.id, dragId) && item.type === 'ghost_meal');
+      if (ghost) {
+        const nextLog = dlSnap.map((item) =>
+          idMatch(item.id, dragId) && item.type === 'ghost_meal'
+            ? { ...item, mealTime: finalTimeRounded, time: finalTimeRounded }
+            : item
+        );
+        setDailyLog(nextLog);
+        syncDatiFirebase(nextLog, mnSnap);
+        pushTimelineUndoSnapshot(nextLog, mnSnap);
+        return;
+      }
+
+      const mealSlotForDrag = String(dragId);
+      const itemIds = getFoodItemsForMealSlot(dlSnap, mealSlotForDrag).map((i) => i.id).filter((id) => id != null);
+      if (itemIds.length === 0) return;
+      const idSet = new Set(itemIds.map((x) => String(x)));
+      const nextLog = dlSnap.map((item) =>
+        idSet.has(String(item.id)) ? { ...item, mealTime: finalTimeRounded } : item
+      );
+      setDailyLog(nextLog);
+      syncDatiFirebase(nextLog, mnSnap);
+      pushTimelineUndoSnapshot(nextLog, mnSnap);
+    },
+    [isSimulationMode, syncDatiFirebase, pushTimelineUndoSnapshot, getFoodItemsForMealSlot]
+  );
+
   /**
    * Carica un pasto nel costruttore. Accetta mealType o id composito "mealType_time" (es. snack_16.5).
    * Con id composito carica solo i food con quel mealType e quel mealTime.
@@ -9466,6 +9519,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 energyPercent={bodyBattery?.currentEnergy ?? 0}
                 nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                 timelineEnergySeries={timelineEnergySeries}
+                updateMealTime={updateMealTime}
               />
             </div>
             </div>
@@ -10547,6 +10601,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   energyPercent={bodyBattery?.currentEnergy ?? 0}
                   nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                   timelineEnergySeries={timelineEnergySeries}
+                  updateMealTime={updateMealTime}
                 />
               </div>
             </div>
