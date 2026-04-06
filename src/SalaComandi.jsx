@@ -32,6 +32,7 @@ import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
 import PlanningWizard from './PlanningWizard';
+import { createInitialWeeklyPlan } from './weeklyPlanning';
 import AddEventMenuGrid from './components/AddEventMenuGrid';
 import {
   useSmartKentuTriggers,
@@ -2154,6 +2155,9 @@ export default function SalaComandi() {
   const planningWizardMealConfirmGuardRef = useRef({ busy: false, lastAt: 0 });
   const dailyPlanMealConfirmGuardRef = useRef({ busy: false, lastAt: 0 });
   const [remotePlanning, setRemotePlanning] = useState(null);
+
+  /** Piano settimanale: goal, kcal settimanale, giorni `{ [dateKey]: { type, kcalTarget } }`. Pasti non collegati. */
+  const [weeklyPlan, setWeeklyPlan] = useState(createInitialWeeklyPlan);
 
   const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [isFullScreenGraph, setIsFullScreenGraph] = useState(false);
