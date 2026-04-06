@@ -2119,6 +2119,7 @@ export default function SalaComandi() {
   // STATI MODULI (Pasti, Acqua, Allenamento, Zen)
   const [mealType, setMealType] = useState('cena');
   const [mealPlannerGhostNote, setMealPlannerGhostNote] = useState('');
+  const [mealBuilderSmartLaunchKey, setMealBuilderSmartLaunchKey] = useState(0);
   const [drawerMealTime, setDrawerMealTime] = useState(12);
   const [drawerMealTimeStr, setDrawerMealTimeStr] = useState('12:00');
   const [foodNameInput, setFoodNameInput] = useState('');
@@ -4316,6 +4317,43 @@ export default function SalaComandi() {
     if (minDiff > 3) return fallbackPredict(targetTime);
     return mealIdFromCanonical(bestMatch);
   };
+
+  const openMealPlannerFromTimeline = useCallback(
+    (e) => {
+      if (isSimulationMode) return;
+      if (draggingNode != null || touchingNodeId != null) return;
+      const el = timelineContainerRef.current;
+      if (!el || typeof el.getBoundingClientRect !== 'function') return;
+      const rect = el.getBoundingClientRect();
+      if (!(rect.width > 0)) return;
+      const clientX =
+        typeof e?.clientX === 'number' && Number.isFinite(e.clientX) ? e.clientX : rect.left + rect.width / 2;
+      const x = clientX - rect.left;
+      const ratio = Math.max(0, Math.min(1, x / rect.width));
+      let hour = ratio * 24;
+      hour = Math.max(0, Math.min(24, Math.round(hour * 4) / 4));
+
+      const predicted = predictMealType(hour);
+      setTimelineMealPopover(null);
+      setSelectedNodeReport(null);
+      setAddedFoods([]);
+      setEditingMealId(null);
+      setMealPlannerGhostNote('');
+      setMealType(predicted);
+      setDrawerMealTime(hour);
+      setDrawerMealTimeStr(decimalToTimeStr(hour));
+      setActiveAction('pasto');
+      setIsDrawerOpen(true);
+      setMealBuilderSmartLaunchKey((k) => k + 1);
+    },
+    [
+      isSimulationMode,
+      draggingNode,
+      touchingNodeId,
+      predictMealType,
+      decimalToTimeStr,
+    ]
+  );
 
   /** Alimenti del diario che appartengono allo slot pasto (mealType o composito mealType_decimalTime come nel Pie). */
   const getFoodItemsForMealSlot = useCallback((log, slotId) => {
@@ -8971,13 +9009,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     });
   }, [mealType, dailyLogForDynamicTargets, userTargets, kentuDailyCalorieStrategy, burnedKcal, drawerMealTime, displayTime]);
 
+  const targetMacrosPastoWithPlanning = useMemo(() => {
+    const base =
+      targetMacrosPasto && typeof targetMacrosPasto === 'object' ? { ...targetMacrosPasto } : {};
+    const sk = getStrategyKey(toCanonicalMealType(String(mealType || 'pranzo').split('_')[0]));
+    const planK = idealStrategy?.[sk];
+    if (planK != null && Number.isFinite(Number(planK)) && Number(planK) > 0) {
+      base.kcal = Math.round(Number(planK));
+    }
+    return base;
+  }, [targetMacrosPasto, mealType, idealStrategy]);
+
   const handleSmartMealCompletion = useCallback(
     async (currentFoods) => {
       const foods = Array.isArray(currentFoods) ? currentFoods : [];
       const present = foods.map((f) => f.desc || f.name).filter(Boolean);
       const anchor = currentTrackerDate || getTodayString();
       const recent7 = buildLast7DaysMealLinesForDraftPrompt(fullHistory, anchor);
-      const prompt = `SMART MEAL COMPLETION: Devo completare il pasto '${String(mealType)}'. Target ricalcolato: ${JSON.stringify(targetMacrosPasto)}. Cibi già presenti (da NON rimuovere): ${present.join(', ') || 'Nessuno'}. Genera cibi suggeriti per raggiungere il target (pescando da storico o DB utente), coerenti con le abitudini reali degli ultimi giorni.
+      const prompt = `SMART MEAL COMPLETION: Devo completare il pasto '${String(mealType)}'. Target ricalcolato: ${JSON.stringify(targetMacrosPastoWithPlanning)}. Cibi già presenti (da NON rimuovere): ${present.join(', ') || 'Nessuno'}. Genera cibi suggeriti per raggiungere il target (pescando da storico o DB utente), coerenti con le abitudini reali degli ultimi giorni.
 
 ULTIMI 7 GIORNI (pasti registrati):
 ${recent7}
@@ -8993,13 +9042,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         window.alert(msg);
       }
     },
-    [mealType, targetMacrosPasto, callGeminiAPIWithRotation, estraiDatiFoodDb, fullHistory, currentTrackerDate]
+    [mealType, targetMacrosPastoWithPlanning, callGeminiAPIWithRotation, estraiDatiFoodDb, fullHistory, currentTrackerDate]
   );
 
-  const strategyKeyForMeal = getStrategyKey(toCanonicalMealType(String(mealType || 'pranzo').split('_')[0]));
-  const targetKcalPasto = idealStrategy[strategyKeyForMeal] ?? targetMacrosPasto.kcal;
   const dailyKcal = userTargets.kcal ?? 2000;
-  const ratio = dailyKcal > 0 ? targetMacrosPasto.kcal / dailyKcal : 0.25;
+  const ratio = dailyKcal > 0 ? targetMacrosPastoWithPlanning.kcal / dailyKcal : 0.25;
 
   const isReadyToDelete = draggingNode && Math.abs(dragOffsetY) > 50;
 
@@ -9376,6 +9423,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 startNodeDrag={startNodeDrag}
                 releaseNodePointer={releaseNodePointer}
                 onNodeClick={onTimelineNodeClick}
+                onTimelineTrackClick={openMealPlannerFromTimeline}
                 handleNodeTap={handleNodeTap}
                 decimalToTimeStr={decimalToTimeStr}
                 syncDatiFirebase={syncDatiFirebase}
@@ -10429,6 +10477,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   startNodeDrag={startNodeDrag}
                   releaseNodePointer={releaseNodePointer}
                   onNodeClick={onTimelineNodeClick}
+                  onTimelineTrackClick={openMealPlannerFromTimeline}
                   handleNodeTap={handleNodeTap}
                   decimalToTimeStr={decimalToTimeStr}
                   syncDatiFirebase={syncDatiFirebase}
@@ -11631,7 +11680,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             renderProgressBar={renderProgressBar}
             renderRatioBar={renderRatioBar}
             mealTotaliFull={mealTotaliFull}
-            targetMacrosPasto={targetMacrosPasto}
+            targetMacrosPasto={targetMacrosPastoWithPlanning}
             ratio={ratio}
             energyAt20Percent={energyAt20Percent}
             isBarcodeScannerOpen={isBarcodeScannerOpen}
@@ -11672,6 +11721,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             estraiDatiFoodDb={estraiDatiFoodDb}
             plannerNoteFromAi={mealPlannerGhostNote}
             onSmartComplete={handleSmartMealCompletion}
+            smartMealLaunchKey={mealBuilderSmartLaunchKey}
           />
         )}
 

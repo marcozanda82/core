@@ -51,6 +51,8 @@ export default function TimelineNodi({
   setDailyLog,
   /** 0–100 body battery / energia; se omesso la barra non viene mostrata. */
   energyPercent,
+  /** Click sulla striscia (non sui nodi): apre pianificazione pasto all’orario cliccato. */
+  onTimelineTrackClick,
 }) {
   const reduceMotion = useReducedMotion();
   const [nowDecimalHour, setNowDecimalHour] = useState(() => getDecimalHourFromDate(new Date()));
@@ -83,6 +85,24 @@ export default function TimelineNodi({
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minHeight: '55px' }}>
       <div
         ref={timelineContainerRef}
+        role={onTimelineTrackClick ? 'button' : undefined}
+        tabIndex={onTimelineTrackClick ? 0 : undefined}
+        aria-label={onTimelineTrackClick ? 'Clicca per pianificare un pasto in questo orario' : undefined}
+        onKeyDown={
+          onTimelineTrackClick
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onTimelineTrackClick(e);
+                }
+              }
+            : undefined
+        }
+        onClick={(e) => {
+          if (typeof onTimelineTrackClick !== 'function') return;
+          if (e.target.closest?.('.timeline-node')) return;
+          onTimelineTrackClick(e);
+        }}
         style={{
           flex: 1,
           minWidth: 0,
@@ -94,6 +114,7 @@ export default function TimelineNodi({
           overflow: 'visible',
           position: 'relative',
           boxSizing: 'border-box',
+          cursor: onTimelineTrackClick ? 'pointer' : undefined,
         }}
       >
         <div

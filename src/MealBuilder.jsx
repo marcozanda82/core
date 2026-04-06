@@ -252,6 +252,8 @@ export default function MealBuilder({
   estraiDatiFoodDb = null,
   plannerNoteFromAi = '',
   onSmartComplete,
+  /** Incrementato da timeline: avvia una volta «Genera pasto» (smart) con lista vuota. */
+  smartMealLaunchKey = 0,
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
@@ -824,6 +826,23 @@ export default function MealBuilder({
       setSmartCompleteLoading(false);
     }
   }, [onSmartComplete, smartCompleteLoading, addedFoods]);
+
+  const onSmartCompleteRef = useRef(onSmartComplete);
+  onSmartCompleteRef.current = onSmartComplete;
+  const addedFoodsForLaunchRef = useRef(addedFoods);
+  addedFoodsForLaunchRef.current = addedFoods;
+
+  useEffect(() => {
+    if (!smartMealLaunchKey) return undefined;
+    const t = window.setTimeout(() => {
+      if ((addedFoodsForLaunchRef.current || []).length > 0) return;
+      const fn = onSmartCompleteRef.current;
+      if (typeof fn !== 'function') return;
+      setSmartCompleteLoading(true);
+      void Promise.resolve(fn([])).finally(() => setSmartCompleteLoading(false));
+    }, 480);
+    return () => window.clearTimeout(t);
+  }, [smartMealLaunchKey]);
 
   const swapSourceFood = useMemo(() => {
     if (swapPanelFoodId == null) return null;
