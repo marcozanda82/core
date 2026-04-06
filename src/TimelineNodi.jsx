@@ -1,14 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { getMealIcon } from './coreEngine';
-import { getTimePositionPercent } from './timeLayout';
+import { getTimePositionPercent, getWallClockDecimalHour } from './timeLayout';
 
 const SUBTLE_SPRING = { type: 'spring', stiffness: 420, damping: 26, mass: 0.85 };
-
-/** Ora decimale locale 0–24 da usare sulla timeline (solo ore + minuti). */
-function getDecimalHourFromDate(d) {
-  return d.getHours() + d.getMinutes() / 60;
-}
 
 const NOW_LINE_GLOW =
   '0 0 4px rgba(0, 229, 255, 0.95), 0 0 10px rgba(0, 229, 255, 0.55), 0 0 18px rgba(255, 255, 255, 0.12)';
@@ -64,13 +59,16 @@ export default function TimelineNodi({
   energyPercent,
   /** Click sulla striscia (non sui nodi): apre pianificazione pasto all’orario cliccato. */
   onTimelineTrackClick,
+  /** Se impostato (es. da SalaComandi), stessa ora del grafico: ore + minuti/60. */
+  nowLineDecimalHour,
 }) {
   const reduceMotion = useReducedMotion();
-  const [nowDecimalHour, setNowDecimalHour] = useState(() => getDecimalHourFromDate(new Date()));
+  const [nowDecimalHour, setNowDecimalHour] = useState(() => getWallClockDecimalHour());
   const nodes = activeNodesWithStack ?? [];
 
   useEffect(() => {
-    const tick = () => setNowDecimalHour(getDecimalHourFromDate(new Date()));
+    if (typeof nowLineDecimalHour === 'number' && !Number.isNaN(nowLineDecimalHour)) return undefined;
+    const tick = () => setNowDecimalHour(getWallClockDecimalHour());
     tick();
     const id = window.setInterval(tick, 60_000);
     const onVis = () => {
@@ -81,7 +79,7 @@ export default function TimelineNodi({
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, []);
+  }, [nowLineDecimalHour]);
 
   const fireNodeClick = (node, event) => {
     if (typeof onNodeClick === 'function') onNodeClick(node, event);
@@ -90,6 +88,12 @@ export default function TimelineNodi({
 
   const showEnergyBar = energyPercent != null && Number.isFinite(Number(energyPercent));
   const energyFill = showEnergyBar ? Math.max(0, Math.min(100, Number(energyPercent))) : 0;
+
+  const lineHour =
+    typeof nowLineDecimalHour === 'number' && !Number.isNaN(nowLineDecimalHour)
+      ? nowLineDecimalHour
+      : nowDecimalHour;
+  const nowLineLeft = `${getTimePositionPercent(lineHour)}%`;
 
   return (
     <div style={{ width: '100%', boxSizing: 'border-box' }}>
@@ -147,7 +151,7 @@ export default function TimelineNodi({
           aria-hidden
           style={{
             position: 'absolute',
-            left: `${getTimePositionPercent(nowDecimalHour)}%`,
+            left: nowLineLeft,
             top: 0,
             bottom: 0,
             width: '1px',

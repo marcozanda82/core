@@ -29,9 +29,11 @@ import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
 import {
   getTimePositionPercent,
+  getWallClockDecimalHour,
   CHART_AXIS_GUTTER_LEFT_PX,
   CHART_AXIS_GUTTER_RIGHT_PX,
 } from './timeLayout';
+import NowVerticalLineOverlay from './NowVerticalLineOverlay';
 import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
@@ -3366,9 +3368,7 @@ export default function SalaComandi() {
   useEffect(() => {
     if(!isAuthenticated) return;
     const updateTime = () => {
-      const now = new Date();
-      let decimalTime = now.getHours() + now.getMinutes() / 60;
-      setCurrentTime(decimalTime);
+      setCurrentTime(getWallClockDecimalHour());
     };
     updateTime(); 
     const interval = setInterval(updateTime, 60000); 
@@ -9263,7 +9263,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           {/* INNER WIDE CONTAINER (zoom) */}
           <div style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, flex: 1, display: 'flex', flexDirection: 'column', paddingBottom: 'env(safe-area-inset-bottom, 10px)' }}>
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: 1, minHeight: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
             {currentChartType === 'percent' && (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
@@ -9299,7 +9299,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
                     <ReferenceLine key={`fs-sleep-${node.id ?? index}`} x={node.wakeTime ?? 7.5} stroke="#00e5ff" strokeDasharray="3 3" strokeWidth={1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
                   ))}
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiservaFullscreen)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergiaFullscreen)" connectNulls={false} isAnimationActive={false} />
@@ -9322,7 +9321,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [value, 'Cortisolo']} labelFormatter={(label) => `Ore ${label}:00`} />
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={dotCortisolo} isFront r={10} fill="#9c27b0" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="cortisoloPast" stroke="#9c27b0" fill="url(#colorCortisoloFullscreen)" strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="cortisoloFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
@@ -9336,7 +9334,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   <XAxis dataKey="time" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
                   <YAxis domain={[0, 'auto']} stroke="#666" fontSize={11} tickFormatter={(v) => Math.round(v)} width={35} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [Math.round(value), 'kcal']} labelFormatter={(label) => `Ore ${label}:00`} />
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={3} dot={false} connectNulls isAnimationActive={false} />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -9348,7 +9345,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
                   <YAxis domain={[40, 220]} stroke="#666" fontSize={11} tickFormatter={(tick) => tick} width={35} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [value != null ? Number(value).toFixed(0) : '—', 'Glicemia']} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={dotGlicemia} isFront r={10} fill="#ef4444" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="glicemiaPast" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="glicemiaFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
@@ -9362,7 +9358,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—'), name === 'idratazionePast' ? 'Idratazione' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={dotIdratazione} isFront r={10} fill="#00e5ff" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="idratazionePast" stroke="#00e5ff" fill="#00e5ff" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="idratazioneFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
@@ -9376,7 +9371,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—'), name === 'neuroPast' ? 'Neuro' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={dotNeuro} isFront r={10} fill="#6366f1" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="neuroPast" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="neuroFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
@@ -9390,7 +9384,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
                   <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—'), name === 'digestionePast' ? 'Digestione' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={dotDigestione} isFront r={10} fill="#9333ea" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="digestionePast" stroke="#9333ea" fill="#9333ea" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="digestioneFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
@@ -9404,13 +9397,13 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
                   <YAxis domain={[0, Math.max(targetKcalChart || 2500, totalCaloriesTimeline || 0)]} stroke="#666" fontSize={11} tickFormatter={(v) => Math.round(v)} width={35} />
                   <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [value != null ? Math.round(Number(value)) : '—', name === 'kcalPast' ? 'Kcal' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.5)" strokeDasharray="5 5" strokeWidth={1.5} label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                   <ReferenceDot x={displayTime} y={scale(dotY)} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="kcalPast" stroke="#00e676" fill="#00e676" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="kcalFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             )}
+            {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
             </div>
 
             <div
@@ -9449,6 +9442,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 setManualNodes={setManualNodes}
                 setDailyLog={setDailyLog}
                 energyPercent={bodyBattery?.currentEnergy ?? 0}
+                nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
               />
             </div>
             </div>
@@ -10253,7 +10247,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 tabIndex={0}
                 onClick={() => { if (!draggingNode) { setExpandedChart(chartUnit); setActiveHighlight(null); } }}
                 onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !draggingNode) { e.preventDefault(); setExpandedChart(chartUnit); setActiveHighlight(null); } }}
-                style={{ flex: 1, minHeight: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+                style={{ flex: 1, minHeight: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', position: 'relative' }}
                 aria-label="Apri grafico a tutto schermo"
               >
                 {chartUnit === 'percent' ? (
@@ -10301,7 +10295,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                           label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11, fontWeight: 'bold' }}
                         />
                       ))}
-                      <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.4)" strokeDasharray="5 5" strokeWidth={1.5} isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 10, offset: 12 }} />
                       <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                       <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiserva)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
                       <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
@@ -10310,9 +10303,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
                     </ComposedChart>
                   </ResponsiveContainer>
+                  {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
                 </div>
               </div>
                 ) : (
+                <>
                 <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
                   <defs>
@@ -10466,7 +10461,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   ) : chartUnit === 'calorieTimeline' || chartUnit === 'kcal' ? null : (
                     <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255, 255, 255, 0.2)" strokeWidth={4} strokeDasharray="8 8" dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
                   )}
-                  <ReferenceLine x={displayTime} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" isFront label={{ position: 'top', value: timeLabel, fill: '#aaa', fontSize: 11, offset: 10 }} />
                   <ReferenceDot x={displayTime} y={finalDotY} isFront shape={(props) => {
                     const cx = props?.cx;
                     const cy = props?.cy;
@@ -10484,6 +10478,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   }} />
                 </ComposedChart>
               </ResponsiveContainer>
+                {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
+                </>
                 )}
               </div>
               <div
@@ -10522,6 +10518,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   setManualNodes={setManualNodes}
                   setDailyLog={setDailyLog}
                   energyPercent={bodyBattery?.currentEnergy ?? 0}
+                  nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                 />
               </div>
             </div>
@@ -10570,6 +10567,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             isSimulationMode={isSimulationMode}
             onTimeChange={handleSimulatedTimeChange}
             activeAlerts={activeAlertsArray}
+            wallClockNowLineHour={!isViewingPastDate ? currentTime : undefined}
           />
         )}
       </>
