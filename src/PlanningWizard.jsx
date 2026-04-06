@@ -32,6 +32,7 @@ const TIMING_KEYS = [
   { id: 'sera', label: 'Sera' },
 ];
 
+/** Template predefiniti per lo stato `meals` (slot proposti · canon + mealType invariati). */
 const PROPOSED_SLOTS = [
   { canon: 'colazione', label: 'Colazione', mealType: 'colazione', defaultHour: 8 },
   { canon: 'pranzo', label: 'Pranzo', mealType: 'pranzo', defaultHour: 13 },
@@ -190,7 +191,12 @@ function logHasGhostMealCanon(log, canon) {
   });
 }
 
-function buildProposedRows(log, nowDec) {
+/**
+ * Righe proposte da template utente (`meals`); stesse regole temporali/diario di prima.
+ * Ogni template ha `id` stabile per edit in Step 2 e `stagingDraftById`.
+ */
+function buildProposedRowsFromMeals(log, nowDec, mealTemplates) {
+  const templates = Array.isArray(mealTemplates) && mealTemplates.length > 0 ? mealTemplates : [];
   const logHas = (c) =>
     (log || []).some((e) => {
       if (!e || e.isGhost === true || (e.type !== 'food' && e.type !== 'recipe')) return false;
@@ -199,34 +205,37 @@ function buildProposedRows(log, nowDec) {
     });
 
   const missingSlots = [];
-
-  if (nowDec < 11 && !logHas('colazione') && !logHasGhostMealCanon(log, 'colazione')) {
-    const s = PROPOSED_SLOTS.find((x) => x.canon === 'colazione');
-    if (s) missingSlots.push(s);
-  }
-  if (nowDec < 15 && !logHas('pranzo') && !logHasGhostMealCanon(log, 'pranzo')) {
-    const s = PROPOSED_SLOTS.find((x) => x.canon === 'pranzo');
-    if (s) missingSlots.push(s);
-  }
-  if (nowDec < 19 && !logHas('snack') && !logHasGhostMealCanon(log, 'snack')) {
-    const s = PROPOSED_SLOTS.find((x) => x.canon === 'snack');
-    if (s) missingSlots.push(s);
-  }
-  if (!logHas('cena') && !logHasGhostMealCanon(log, 'cena')) {
-    const s = PROPOSED_SLOTS.find((x) => x.canon === 'cena');
-    if (s) missingSlots.push(s);
+  for (const s of templates) {
+    if (!s || !s.canon) continue;
+    const canon = s.canon;
+    let include = false;
+    if (canon === 'colazione' && nowDec < 11 && !logHas('colazione') && !logHasGhostMealCanon(log, 'colazione')) {
+      include = true;
+    } else if (canon === 'pranzo' && nowDec < 15 && !logHas('pranzo') && !logHasGhostMealCanon(log, 'pranzo')) {
+      include = true;
+    } else if (canon === 'snack' && nowDec < 19 && !logHas('snack') && !logHasGhostMealCanon(log, 'snack')) {
+      include = true;
+    } else if (canon === 'cena' && !logHas('cena') && !logHasGhostMealCanon(log, 'cena')) {
+      include = true;
+    }
+    if (include) missingSlots.push(s);
   }
 
-  return missingSlots.map((s, i) => ({
-    id: `proposed_${s.canon}_${i}`,
-    source: 'proposed',
-    mealType: s.mealType,
-    mealTime: Math.min(23.9, Math.max(nowDec + 0.5, s.defaultHour)),
-    title: `${s.label} (suggerito motore)`,
-    microDesc: '',
-    draftFoods: [],
-    isGhost: true,
-  }));
+  return missingSlots.map((s) => {
+    const defH = Number(s.defaultHour);
+    const hourBase = Number.isFinite(defH) ? defH : 12;
+    return {
+      id: `proposed_${s.id}`,
+      templateId: s.id,
+      source: 'proposed',
+      mealType: s.mealType,
+      mealTime: Math.min(23.9, Math.max(nowDec + 0.5, hourBase)),
+      title: `${s.label} (suggerito motore)`,
+      microDesc: '',
+      draftFoods: [],
+      isGhost: true,
+    };
+  });
 }
 
 function ghostRowsFromLog(log) {
@@ -381,8 +390,25 @@ export default function PlanningWizard({
   const [timingByMacro, setTimingByMacro] = useState({});
   const [stagingDraftById, setStagingDraftById] = useState({});
   const [wizardGenLoadingId, setWizardGenLoadingId] = useState(null);
+  /** Slot proposti (ex PROPOSED_SLOTS): canon, label, mealType, defaultHour, id stabile. */
+  const [meals, setMeals] = useState(() =>
+    PROPOSED_SLOTS.map((s, i) => ({
+      ...s,
+      id: `slot_${s.canon}_${i}`,
+    }))
+  );
 
   const nowDec = getLocalDecimalHourNow();
+
+  const updateMeal = useCallback((index, patch) => {
+    if (typeof index !== 'number' || index < 0 || patch == null || typeof patch !== 'object') return;
+    setMeals((prev) => prev.map((m, i) => (i === index ? { ...m, ...patch } : m)));
+  }, []);
+
+  const removeMeal = useCallback((index) => {
+    if (typeof index !== 'number' || index < 0) return;
+    setMeals((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   useEffect(() => {
     if (macroMuscleSeededRef.current) return;
@@ -411,13 +437,13 @@ export default function PlanningWizard({
   }, [hydrateNonce, firebasePlanning]);
 
   const stagingGhosts = useMemo(() => {
-    const base = [...ghostRowsFromLog(dailyLog), ...buildProposedRows(dailyLog, nowDec)];
+    const base = [...ghostRowsFromLog(dailyLog), ...buildProposedRowsFromMeals(dailyLog, nowDec, meals)];
     return base.map((r) => {
       const ov = stagingDraftById[r.id];
       if (Array.isArray(ov)) return { ...r, draftFoods: ov };
       return r;
     });
-  }, [dailyLog, stagingDraftById, nowDec]);
+  }, [dailyLog, stagingDraftById, nowDec, meals]);
 
   useEffect(() => {
     if (hydrateNonce <= 0 || planningDraftHydratedForNonce.current === hydrateNonce) return;
@@ -1000,6 +1026,18 @@ export default function PlanningWizard({
                   .map((r) => {
                     const t = getDynamicMealTargets(r.mealType, dailyLog, userTargets, dynOpts);
                     const hh = decimalHourToHHMM(r.mealTime) || '—';
+                    const mealIdx =
+                      r.templateId != null ? meals.findIndex((m) => m.id === r.templateId) : -1;
+                    const template = mealIdx >= 0 ? meals[mealIdx] : null;
+                    const defHour =
+                      template &&
+                      typeof template.defaultHour === 'number' &&
+                      !Number.isNaN(template.defaultHour)
+                        ? template.defaultHour
+                        : typeof r.mealTime === 'number' && !Number.isNaN(r.mealTime)
+                          ? r.mealTime
+                          : 12;
+                    const timeInputVal = decimalHourToHHMM(defHour) || '12:00';
                     const proposedUnlocked =
                       typeof r.mealTime === 'number' &&
                       !Number.isNaN(r.mealTime) &&
@@ -1020,35 +1058,93 @@ export default function PlanningWizard({
                             display: 'flex',
                             flexWrap: 'wrap',
                             alignItems: 'center',
-                            gap: 8,
+                            gap: 10,
                             justifyContent: 'space-between',
                             fontWeight: 800,
                             color: '#a5f3fc',
                           }}
                         >
-                          <span>
-                            {hh} · {r.title}
-                          </span>
-                          {onGeneratePlanGhostMealDraft && proposedUnlocked ? (
-                            <button
-                              type="button"
-                              disabled={wizardGenLoadingId === r.id}
-                              onClick={() => handleWizardGenerateDraft(r)}
-                              style={{
-                                padding: '6px 10px',
-                                borderRadius: 8,
-                                border: '1px solid rgba(0, 229, 255, 0.45)',
-                                background: 'rgba(0, 229, 255, 0.12)',
-                                color: '#7dd3fc',
-                                fontWeight: 700,
-                                fontSize: '0.72rem',
-                                cursor: wizardGenLoadingId === r.id ? 'wait' : 'pointer',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {wizardGenLoadingId === r.id ? '⏳ …' : '✨ Genera Pasto'}
-                            </button>
-                          ) : null}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                            {mealIdx >= 0 ? (
+                              <label
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  fontSize: '0.72rem',
+                                  color: '#cffafe',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Ora
+                                <input
+                                  type="time"
+                                  value={timeInputVal}
+                                  onChange={(e) => {
+                                    const d = timeStrToDecimal(e.target.value);
+                                    if (!Number.isNaN(d)) updateMeal(mealIdx, { defaultHour: d });
+                                  }}
+                                  style={{
+                                    padding: '6px 8px',
+                                    borderRadius: 8,
+                                    border: '1px solid rgba(34, 211, 238, 0.45)',
+                                    background: 'rgba(0,0,0,0.28)',
+                                    color: '#e0f2fe',
+                                    fontSize: '0.8rem',
+                                  }}
+                                />
+                              </label>
+                            ) : null}
+                            <span style={{ fontWeight: 800, color: '#a5f3fc' }}>
+                              {mealIdx < 0 ? `${hh} · ` : ''}
+                              {r.title}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'rgba(165,243,252,0.8)' }}>
+                              → {hh} {mealIdx >= 0 ? '(timeline)' : ''}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                            {mealIdx >= 0 ? (
+                              <button
+                                type="button"
+                                title="Rimuovi questo slot dalla proposta"
+                                onClick={() => removeMeal(mealIdx)}
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: 8,
+                                  border: '1px solid rgba(248, 113, 113, 0.45)',
+                                  background: 'rgba(248, 113, 113, 0.12)',
+                                  color: '#fca5a5',
+                                  fontWeight: 700,
+                                  fontSize: '0.72rem',
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                Elimina
+                              </button>
+                            ) : null}
+                            {onGeneratePlanGhostMealDraft && proposedUnlocked ? (
+                              <button
+                                type="button"
+                                disabled={wizardGenLoadingId === r.id}
+                                onClick={() => handleWizardGenerateDraft(r)}
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: 8,
+                                  border: '1px solid rgba(0, 229, 255, 0.45)',
+                                  background: 'rgba(0, 229, 255, 0.12)',
+                                  color: '#7dd3fc',
+                                  fontWeight: 700,
+                                  fontSize: '0.72rem',
+                                  cursor: wizardGenLoadingId === r.id ? 'wait' : 'pointer',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {wizardGenLoadingId === r.id ? '⏳ …' : '✨ Genera Pasto'}
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
                         <DraftFoodPillsMini foods={r.draftFoods} />
                         <div style={{ fontSize: '0.72rem', color: '#cffafe', marginTop: 6, lineHeight: 1.4 }}>
