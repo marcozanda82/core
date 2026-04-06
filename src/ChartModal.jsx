@@ -2,7 +2,7 @@
  * ChartModal.jsx — Modale fullscreen per grafici. Layout semplice e stabile su mobile.
  * Timeline integrata nel grafico (position: absolute), nessun blocco separato.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ComposedChart,
   Line,
@@ -32,6 +32,7 @@ import {
   CHART_AXIS_GUTTER_RIGHT_PX,
   DEBUG_TIME_GRID_HOURS,
   getDebugGridLineTimelineStyle,
+  buildTimelineEnergyStripGradient,
 } from './timeLayout';
 import NowVerticalLineOverlay from './NowVerticalLineOverlay';
 import TimeAlignmentChartDebugOverlay, { SHOW_TIME_ALIGNMENT_DEBUG } from './TimeAlignmentDebugOverlay';
@@ -81,6 +82,8 @@ export default function ChartModal({
   activeAlerts = [],
   /** Stessa ora del grafico principale (ore + minuti/60); se omessa niente linea “ora” su grafico + striscia. */
   wallClockNowLineHour,
+  /** Punti energia giornata per sfondo timeline modale (stesso formato di TimelineNodi). */
+  timelineEnergySeries,
 }) {
   const [selectedSimNode, setSelectedSimNode] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -88,6 +91,11 @@ export default function ChartModal({
   const bottomTouchStartX = useRef(null);
   const highlightResetTimeoutRef = useRef(null);
   const initialPinchDistanceRef = useRef(null);
+
+  const modalEnergyStripGradient = useMemo(
+    () => buildTimelineEnergyStripGradient(timelineEnergySeries),
+    [timelineEnergySeries]
+  );
 
   useEffect(() => {
     const updateViewport = () => {
@@ -366,6 +374,19 @@ export default function ChartModal({
                       overflow: 'visible',
                     }}
                   >
+                    {modalEnergyStripGradient ? (
+                      <div
+                        aria-hidden
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          borderRadius: 'inherit',
+                          background: modalEnergyStripGradient,
+                          pointerEvents: 'none',
+                          zIndex: 0,
+                        }}
+                      />
+                    ) : null}
                     <div
                       aria-hidden
                       style={{
@@ -378,7 +399,7 @@ export default function ChartModal({
                         background: 'rgba(255,255,255,0.14)',
                         borderRadius: 1,
                         pointerEvents: 'none',
-                        zIndex: 0,
+                        zIndex: 1,
                       }}
                     />
                     {wallClockNowLineHour != null && Number.isFinite(wallClockNowLineHour) ? (

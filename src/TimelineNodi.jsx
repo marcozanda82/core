@@ -1,7 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { getMealIcon } from './coreEngine';
-import { getTimePositionPercent, getWallClockDecimalHour, DEBUG_TIME_GRID_HOURS, getDebugGridLineTimelineStyle } from './timeLayout';
+import {
+  getTimePositionPercent,
+  getWallClockDecimalHour,
+  DEBUG_TIME_GRID_HOURS,
+  getDebugGridLineTimelineStyle,
+  buildTimelineEnergyStripGradient,
+} from './timeLayout';
 import { SHOW_TIME_ALIGNMENT_DEBUG } from './TimeAlignmentDebugOverlay';
 
 const SUBTLE_SPRING = { type: 'spring', stiffness: 420, damping: 26, mass: 0.85 };
@@ -62,6 +68,8 @@ export default function TimelineNodi({
   onTimelineTrackClick,
   /** Se impostato (es. da SalaComandi), stessa ora del grafico: ore + minuti/60. */
   nowLineDecimalHour,
+  /** Punti energia giornata per sfondo gradient sotto la striscia: { time, energy } (0–24h, 0–100). */
+  timelineEnergySeries,
 }) {
   const reduceMotion = useReducedMotion();
   const [nowDecimalHour, setNowDecimalHour] = useState(() => getWallClockDecimalHour());
@@ -71,7 +79,7 @@ export default function TimelineNodi({
     if (typeof nowLineDecimalHour === 'number' && !Number.isNaN(nowLineDecimalHour)) return undefined;
     const tick = () => setNowDecimalHour(getWallClockDecimalHour());
     tick();
-    const id = window.setInterval(tick, 60_000);
+    const id = window.setInterval(tick, 45_000);
     const onVis = () => {
       if (document.visibilityState === 'visible') tick();
     };
@@ -97,6 +105,11 @@ export default function TimelineNodi({
   const nowLineLeft = `${getTimePositionPercent(lineHour)}%`;
   /** Larghezza barra energia allineata alla linea “ora” (stesso mapping 0–24h della timeline). */
   const energyBarWidthPercent = getTimePositionPercent(Math.max(0, Math.min(24, lineHour)));
+
+  const energyStripGradient = useMemo(
+    () => buildTimelineEnergyStripGradient(timelineEnergySeries),
+    [timelineEnergySeries]
+  );
 
   return (
     <div style={{ width: '100%', boxSizing: 'border-box' }}>
@@ -135,6 +148,19 @@ export default function TimelineNodi({
           cursor: onTimelineTrackClick ? 'pointer' : undefined,
         }}
       >
+        {energyStripGradient ? (
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: 'inherit',
+              background: energyStripGradient,
+              pointerEvents: 'none',
+              zIndex: 0,
+            }}
+          />
+        ) : null}
         <div
           aria-hidden
           style={{
@@ -147,7 +173,7 @@ export default function TimelineNodi({
             background: 'rgba(255,255,255,0.14)',
             borderRadius: 1,
             pointerEvents: 'none',
-            zIndex: 0,
+            zIndex: 1,
           }}
         />
         {SHOW_TIME_ALIGNMENT_DEBUG
@@ -170,39 +196,22 @@ export default function TimelineNodi({
             zIndex: 3,
           }}
         >
-          {reduceMotion ? (
-            <div
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                width: 6,
-                height: 6,
-                marginLeft: -3,
-                marginTop: -3,
-                borderRadius: '50%',
-                background: 'radial-gradient(circle at 30% 30%, #ffffff, rgba(0,229,255,0.95))',
-                boxShadow: '0 0 6px rgba(0,229,255,0.9), 0 0 12px rgba(255,255,255,0.35)',
-              }}
-            />
-          ) : (
-            <motion.div
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                width: 6,
-                height: 6,
-                marginLeft: -3,
-                marginTop: -3,
-                borderRadius: '50%',
-                background: 'radial-gradient(circle at 30% 30%, #ffffff, rgba(0,229,255,0.95))',
-                boxShadow: '0 0 6px rgba(0,229,255,0.9), 0 0 12px rgba(255,255,255,0.35)',
-              }}
-              animate={{ scale: [1, 1.22, 1], opacity: [0.88, 1, 0.88] }}
-              transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
-            />
-          )}
+          <div
+            className={reduceMotion ? undefined : 'now-timeline-now-dot'}
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              width: 6,
+              height: 6,
+              transform: reduceMotion ? 'translate(-50%, -50%)' : undefined,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle at 30% 30%, #ffffff, rgba(0,229,255,0.95))',
+              boxShadow: reduceMotion
+                ? '0 0 6px rgba(0,229,255,0.55), 0 0 14px rgba(255,255,255,0.14)'
+                : undefined,
+            }}
+          />
         </div>
           {nodes.map((node) => {
             const currentChartUnit = chartUnit;

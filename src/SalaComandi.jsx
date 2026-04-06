@@ -3367,13 +3367,20 @@ export default function SalaComandi() {
   };
 
   useEffect(() => {
-    if(!isAuthenticated) return;
+    if (!isAuthenticated) return;
     const updateTime = () => {
       setCurrentTime(getWallClockDecimalHour());
     };
-    updateTime(); 
-    const interval = setInterval(updateTime, 60000); 
-    return () => clearInterval(interval);
+    updateTime();
+    const interval = window.setInterval(updateTime, 45_000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') updateTime();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [isAuthenticated]);
 
   /** stripUndefined: rimuove undefined ricorsivamente per payload Firebase. */
@@ -8395,6 +8402,19 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   ]);
   const chartData = energySimulation?.chartData ?? EMPTY_ENERGY_CHART_DATA;
 
+  const timelineEnergySeries = useMemo(
+    () =>
+      (chartData || [])
+        .map((p) => {
+          const t = p?.time ?? p?.hour;
+          const time = typeof t === 'number' && Number.isFinite(t) ? t : null;
+          const energy = typeof p?.energy === 'number' && Number.isFinite(p.energy) ? p.energy : null;
+          return time != null && energy != null ? { time, energy } : null;
+        })
+        .filter(Boolean),
+    [chartData]
+  );
+
   /** Input giornaliero per computeLongevityScore (allineato a chart, totali, rischio matrix, acqua). */
   const longevityPayload = useMemo(() => {
     const nutritionTotals =
@@ -9445,6 +9465,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 setDailyLog={setDailyLog}
                 energyPercent={bodyBattery?.currentEnergy ?? 0}
                 nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
+                timelineEnergySeries={timelineEnergySeries}
               />
             </div>
             </div>
@@ -9517,11 +9538,13 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           .zoom-btn-vertical { width: 40px; height: 40px; border-radius: 50%; background: #2c2c2e; color: white; border: 1px solid #444; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; }
           .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
           @keyframes pulseDot {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.6); opacity: 0.5; }
-            100% { transform: scale(1); opacity: 1; }
+            0%, 100% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 3px rgba(0, 229, 255, 0.35)); }
+            50% { transform: scale(1.1); opacity: 0.94; filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.5)) drop-shadow(0 0 14px rgba(255, 255, 255, 0.12)); }
           }
-          .pulsing-dot { animation: pulseDot 2s infinite ease-in-out; transform-box: fill-box; transform-origin: center; }
+          .pulsing-dot { animation: pulseDot 2.8s infinite ease-in-out; transform-box: fill-box; transform-origin: center; }
+          @media (prefers-reduced-motion: reduce) {
+            .pulsing-dot { animation: none; filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.45)); }
+          }
           .tachimeter-center.tachimeter-center-reset:hover { filter: brightness(1.08); box-shadow: 0 0 45px rgba(255,255,255,0.12); }
 
           /* Macro widgets: ~30% più piccoli, formato assunto/obiettivo */
@@ -10472,9 +10495,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     return (
                       <g className="pulsing-dot">
                         <circle cx={cx} cy={cy} r={10} fill={fillColor} />
-                        <circle cx={cx} cy={cy} r={10} fill="none" stroke={fillColor} strokeWidth={4}>
-                          <animate attributeName="r" values="10;28" dur="1.5s" repeatCount="indefinite" />
-                          <animate attributeName="opacity" values="0.8;0" dur="1.5s" repeatCount="indefinite" />
+                        <circle cx={cx} cy={cy} r={10} fill="none" stroke={fillColor} strokeWidth={3} opacity={0.5}>
+                          <animate attributeName="r" values="10;17;10" dur="2.8s" repeatCount="indefinite" />
+                          <animate attributeName="opacity" values="0.5;0;0.5" dur="2.8s" repeatCount="indefinite" />
                         </circle>
                       </g>
                     );
@@ -10523,6 +10546,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   setDailyLog={setDailyLog}
                   energyPercent={bodyBattery?.currentEnergy ?? 0}
                   nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
+                  timelineEnergySeries={timelineEnergySeries}
                 />
               </div>
             </div>
@@ -10572,6 +10596,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             onTimeChange={handleSimulatedTimeChange}
             activeAlerts={activeAlertsArray}
             wallClockNowLineHour={!isViewingPastDate ? currentTime : undefined}
+            timelineEnergySeries={timelineEnergySeries}
           />
         )}
       </>

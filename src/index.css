@@ -41,16 +41,64 @@ html, body, #root {
   margin-top: 16px;
 }
 
-/* Pulsing dot: animazione per il punto "ora attuale" sui grafici (SalaComandi, ChartModal, Analisi) */
+/* Punto "ora attuale" sui grafici (Recharts): pulse leggero + glow */
 @keyframes pulseDot {
-  0% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.6); opacity: 0.5; }
-  100% { transform: scale(1); opacity: 1; }
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: drop-shadow(0 0 3px rgba(0, 229, 255, 0.35));
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.94;
+    filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.5)) drop-shadow(0 0 14px rgba(255, 255, 255, 0.12));
+  }
 }
 .pulsing-dot {
-  animation: pulseDot 2s infinite ease-in-out;
+  animation: pulseDot 2.8s infinite ease-in-out;
   transform-box: fill-box;
   transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulsing-dot {
+    animation: none;
+    filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.45));
+  }
+}
+
+/* Punto sulla linea "ora" in timeline (TimelineNodi) */
+@keyframes nowTimelineNowDotPulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+    box-shadow: 0 0 5px rgba(0, 229, 255, 0.45), 0 0 12px rgba(255, 255, 255, 0.1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.09);
+    opacity: 0.96;
+    box-shadow: 0 0 11px rgba(0, 229, 255, 0.55), 0 0 20px rgba(255, 255, 255, 0.14);
+  }
+}
+.now-timeline-now-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ffffff, rgba(0, 229, 255, 0.95));
+  pointer-events: none;
+  animation: nowTimelineNowDotPulse 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now-timeline-now-dot {
+    animation: none;
+    box-shadow: 0 0 6px rgba(0, 229, 255, 0.5), 0 0 14px rgba(255, 255, 255, 0.12);
+  }
 }
 
 /* Barra zoom verticale (Analisi + Fullscreen) - pollice-friendly, bordo destro */

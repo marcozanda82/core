@@ -17,6 +17,64 @@ export function getWallClockDecimalHour(d = new Date()) {
   return d.getHours() + d.getMinutes() / 60;
 }
 
+const ENERGY_RED = [239, 68, 68];
+const ENERGY_YELLOW = [234, 179, 8];
+const ENERGY_GREEN = [34, 197, 94];
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function lerpRgb(c1, c2, t) {
+  return [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)];
+}
+
+/** Energia 0–100 → rgba (basso rosso, medio giallo, alto verde). */
+export function energyToStripRgba(energy0to100, alpha = 0.2) {
+  const e = Math.max(0, Math.min(100, Number(energy0to100)));
+  if (!Number.isFinite(e)) return `rgba(60,60,60,${alpha * 0.5})`;
+  const x = e / 100;
+  let rgb;
+  if (x <= 0.45) {
+    rgb = lerpRgb(ENERGY_RED, ENERGY_YELLOW, x / 0.45);
+  } else {
+    rgb = lerpRgb(ENERGY_YELLOW, ENERGY_GREEN, (x - 0.45) / 0.55);
+  }
+  return `rgba(${Math.round(rgb[0])},${Math.round(rgb[1])},${Math.round(rgb[2])},${alpha})`;
+}
+
+/**
+ * Gradiente orizzontale sotto la timeline da punti { time, energy } (time in ore 0–24).
+ * Ritorna stringa `linear-gradient` o null se dati insufficienti.
+ */
+export function buildTimelineEnergyStripGradient(series, alpha = 0.18) {
+  if (!Array.isArray(series) || series.length === 0) return null;
+  const pts = series
+    .map((p) => {
+      const t = p?.time ?? p?.hour;
+      const time = typeof t === 'number' && Number.isFinite(t) ? Math.max(0, Math.min(24, t)) : null;
+      const en = p?.energy;
+      const energy = typeof en === 'number' && Number.isFinite(en) ? Math.max(0, Math.min(100, en)) : null;
+      return time != null && energy != null ? { time, energy } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.time - b.time);
+  if (pts.length === 0) return null;
+  const norm = [...pts];
+  if (norm[0].time > 0.01) {
+    norm.unshift({ time: 0, energy: norm[0].energy });
+  }
+  const last = norm[norm.length - 1];
+  if (last.time < 23.99) {
+    norm.push({ time: 24, energy: last.energy });
+  }
+  const stops = norm.map((p) => {
+    const pos = getTimePositionPercent(p.time);
+    return `${energyToStripRgba(p.energy, alpha)} ${pos}%`;
+  });
+  return `linear-gradient(90deg, ${stops.join(', ')})`;
+}
+
 /**
  * Posizione linea verticale sul grafico a larghezza cella zoom: allineata alla fascia timeline
  * (area utile tra gutter L/R, come `getTimePositionPercent` sul contenitore della timeline).
