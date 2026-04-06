@@ -34,6 +34,7 @@ import HomeView from './components/HomeView';
 import PlanningWizard from './PlanningWizard';
 import { createInitialWeeklyPlan } from './weeklyPlanning';
 import AddEventMenuGrid from './components/AddEventMenuGrid';
+import WeeklyPlanning from './components/WeeklyPlanning';
 import {
   useSmartKentuTriggers,
   checkMorningBriefing,
@@ -10949,6 +10950,20 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           >
             Apri pianificazione guidata
           </button>
+          <div
+            style={{
+              marginTop: 8,
+              paddingTop: 18,
+              borderTop: '1px solid rgba(255,255,255,0.12)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#e8f4ff' }}>Piano settimanale</h3>
+            <WeeklyPlanning
+              value={weeklyPlan}
+              onChange={setWeeklyPlan}
+              anchorDate={new Date(`${currentTrackerDate || getTodayString()}T12:00:00`)}
+            />
+          </div>
         </div>
       )}
       {activeBottomTab === 'longevita' && (
