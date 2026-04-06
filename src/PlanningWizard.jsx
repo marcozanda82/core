@@ -40,8 +40,75 @@ const PROPOSED_SLOTS = [
   { canon: 'cena', label: 'Cena', mealType: 'cena', defaultHour: 20 },
 ];
 
+function normalizeFoodsArray(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (item == null) return null;
+      if (typeof item === 'string') {
+        const t = item.trim();
+        return t ? { name: t, qty: 100 } : null;
+      }
+      if (typeof item === 'object') {
+        const name = String(item.name ?? item.desc ?? '').trim();
+        if (!name) return null;
+        const qtyRaw = Number(item.qty ?? item.weight);
+        const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 100;
+        const o = { name, qty };
+        if (item.kcal != null && !Number.isNaN(Number(item.kcal))) o.kcal = Number(item.kcal);
+        if (item.prot != null && !Number.isNaN(Number(item.prot))) o.prot = Number(item.prot);
+        if (item.carb != null && !Number.isNaN(Number(item.carb))) o.carb = Number(item.carb);
+        if (item.fat != null && !Number.isNaN(Number(item.fat))) o.fat = Number(item.fat);
+        if (item.dbKey) o.dbKey = String(item.dbKey);
+        return o;
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .slice(0, 30);
+}
+
+/** Voci `foods` su riga wizard / pill UI (stringa o oggetto con name/qty). */
+function foodsArrayToDraftPillEntries(foods) {
+  if (!Array.isArray(foods)) return [];
+  return foods
+    .map((f) => {
+      if (typeof f === 'string') {
+        const t = f.trim();
+        return t || null;
+      }
+      if (f && typeof f === 'object') {
+        const name = String(f.name || f.desc || '').trim();
+        if (!name) return null;
+        const qty = f.qty != null ? f.qty : f.weight;
+        return { name, desc: name, qty, weight: qty };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function draftStringsToFoodsWizard(strings) {
+  if (!Array.isArray(strings)) return [];
+  return strings
+    .map((s) => {
+      const raw = String(s || '').trim();
+      if (!raw) return null;
+      const m = raw.match(/^(\d+(?:[.,]\d+)?)\s*g\s+(.+)$/i);
+      if (m) {
+        const qty = Math.round(Number(String(m[1]).replace(',', '.')) || 100);
+        const name = String(m[2]).trim();
+        return name ? { name, qty: qty > 0 ? qty : 100 } : null;
+      }
+      return { name: raw, qty: 100 };
+    })
+    .filter(Boolean)
+    .slice(0, 14);
+}
+
 /**
  * Converte `initialMeals` (es. `planning/{uid}/{date}.meals` da Firebase / AI) nello shape dello stato `meals`.
+ * Ogni pasto: mealType, time, target, foods (sempre array), defaultHour, label, id, canon.
  */
 function normalizeWizardInitialMeals(raw) {
   if (!Array.isArray(raw) || raw.length === 0) return null;
@@ -56,6 +123,10 @@ function normalizeWizardInitialMeals(raw) {
         : typeof row.mealTime === 'number' && !Number.isNaN(row.mealTime)
           ? row.mealTime
           : 12;
+    if (row.time != null && String(row.time).trim() !== '') {
+      const td = timeStrToDecimal(row.time);
+      if (!Number.isNaN(td)) dh = td;
+    }
     const mt = row.mealType != null ? String(row.mealType) : canon;
     const slotKey = planningMealSlotKeyFromRow({ mealType: mt, mealTime: dh });
     let label = row.label != null ? String(row.label).trim() : '';
@@ -70,7 +141,10 @@ function normalizeWizardInitialMeals(raw) {
     }
     const id =
       row.id != null && String(row.id).trim() !== '' ? String(row.id).trim() : `slot_${slotKey}`;
-    out.push({ id, canon, mealType: mt, defaultHour: dh, label });
+    const foods = normalizeFoodsArray(row.foods);
+    const timeStr = decimalHourToHHMM(dh) || '12:00';
+    const target = row.target != null ? row.target : null;
+    out.push({ id, canon, mealType: mt, defaultHour: dh, label, foods, time: timeStr, target });
   }
   return out.length > 0 ? out : null;
 }
@@ -259,6 +333,8 @@ function buildProposedRowsFromMeals(log, nowDec, mealTemplates) {
   return missingSlots.map((s) => {
     const defH = Number(s.defaultHour);
     const hourBase = Number.isFinite(defH) ? defH : 12;
+    const foods = normalizeFoodsArray(s.foods);
+    const draftFoods = foods.length > 0 ? foodsArrayToDraftPillEntries(foods) : [];
     return {
       id: `proposed_${s.id}`,
       templateId: s.id,
@@ -267,7 +343,10 @@ function buildProposedRowsFromMeals(log, nowDec, mealTemplates) {
       mealTime: Math.min(23.9, Math.max(nowDec + 0.5, hourBase)),
       title: `${s.label} (suggerito motore)`,
       microDesc: '',
-      draftFoods: [],
+      draftFoods,
+      foods,
+      time: s.time != null ? String(s.time) : decimalHourToHHMM(hourBase) || '',
+      target: s.target != null ? s.target : null,
       isGhost: true,
     };
   });
@@ -281,6 +360,19 @@ function ghostRowsFromLog(log) {
       if (Number.isNaN(mtDec)) mtDec = timeStrToDecimal(e.mealTime);
       if (Number.isNaN(mtDec)) mtDec = timeStrToDecimal(e.time);
       if (Number.isNaN(mtDec)) mtDec = 12;
+      const foods = normalizeFoodsArray(e.foods);
+      let draftFoods = Array.isArray(e.draftFoods)
+        ? e.draftFoods
+            .map((x) => {
+              if (typeof x === 'string') return x.trim();
+              if (x && typeof x === 'object' && (x.name || x.desc)) return x;
+              return null;
+            })
+            .filter(Boolean)
+        : [];
+      if (foods.length > 0 && draftFoods.length === 0) {
+        draftFoods = foodsArrayToDraftPillEntries(foods);
+      }
       return {
         id: e.id || `ghost_log_${i}`,
         source: 'ghost_log',
@@ -288,7 +380,9 @@ function ghostRowsFromLog(log) {
         mealTime: mtDec,
         title: String(e.title || 'Pasto pianificato'),
         microDesc: String(e.microDesc || ''),
-        draftFoods: Array.isArray(e.draftFoods) ? e.draftFoods.map((x) => String(x).trim()).filter(Boolean) : [],
+        draftFoods,
+        foods,
+        isGhost: true,
       };
     });
 }
@@ -429,10 +523,16 @@ export default function PlanningWizard({
   const [wizardGenLoadingId, setWizardGenLoadingId] = useState(null);
   /** Slot proposti (ex PROPOSED_SLOTS): canon, label, mealType, defaultHour, id stabile. */
   const [meals, setMeals] = useState(() =>
-    PROPOSED_SLOTS.map((s, i) => ({
-      ...s,
-      id: `slot_${s.canon}_${i}`,
-    }))
+    PROPOSED_SLOTS.map((s, i) => {
+      const dh = s.defaultHour;
+      return {
+        ...s,
+        id: `slot_${s.canon}_${i}`,
+        foods: [],
+        time: decimalHourToHHMM(dh) || '12:00',
+        target: null,
+      };
+    })
   );
 
   const nowDec = getLocalDecimalHourNow();
@@ -468,6 +568,9 @@ export default function PlanningWizard({
         mealType: m.mealType,
         defaultHour: Math.round(m.defaultHour * 1000) / 1000,
         label: m.label,
+        time: m.time,
+        target: m.target,
+        foods: m.foods,
       }))
     );
     if (lastInitialMealsSigRef.current === sig) return;
@@ -505,8 +608,14 @@ export default function PlanningWizard({
     const base = [...ghostRowsFromLog(dailyLog), ...buildProposedRowsFromMeals(dailyLog, nowDec, meals)];
     return base.map((r) => {
       const ov = stagingDraftById[r.id];
-      if (Array.isArray(ov)) return { ...r, draftFoods: ov };
-      return r;
+      const foodsRow = Array.isArray(r.foods) ? r.foods : [];
+      let draftFoods = Array.isArray(r.draftFoods) ? r.draftFoods : [];
+      if (Array.isArray(ov) && ov.length > 0) {
+        draftFoods = ov;
+      } else if (foodsRow.length > 0 && draftFoods.length === 0) {
+        draftFoods = foodsArrayToDraftPillEntries(foodsRow);
+      }
+      return { ...r, draftFoods, foods: foodsRow };
     });
   }, [dailyLog, stagingDraftById, nowDec, meals]);
 
@@ -521,7 +630,11 @@ export default function PlanningWizard({
     const hasSlotData =
       (slotMap && typeof slotMap === 'object' && Object.keys(slotMap).length > 0) ||
       (Array.isArray(planningMealsSnap) &&
-        planningMealsSnap.some((m) => Array.isArray(m.draftFoods) && m.draftFoods.length > 0));
+        planningMealsSnap.some(
+          (m) =>
+            (Array.isArray(m.draftFoods) && m.draftFoods.length > 0) ||
+            (Array.isArray(m.foods) && m.foods.length > 0)
+        ));
     if (!hasSlotData) {
       planningDraftHydratedForNonce.current = hydrateNonce;
       return;
@@ -536,13 +649,30 @@ export default function PlanningWizard({
       });
     }
     if (Array.isArray(planningMealsSnap)) {
+      const foodsPatches = [];
       planningMealsSnap.forEach((m) => {
         const key = planningMealSlotKeyFromRow(m);
         const match = stagingGhosts.find((g) => planningMealSlotKeyFromRow(g) === key);
-        if (match && Array.isArray(m.draftFoods) && m.draftFoods.length > 0) {
+        if (!match) return;
+        if (Array.isArray(m.draftFoods) && m.draftFoods.length > 0) {
           nextDraft[match.id] = m.draftFoods;
+        } else if (Array.isArray(m.foods) && m.foods.length > 0) {
+          const fn = normalizeFoodsArray(m.foods);
+          nextDraft[match.id] = fn.map((f) => `${f.qty}g ${f.name}`);
+          if (match.templateId) foodsPatches.push({ templateId: match.templateId, foods: fn });
         }
       });
+      if (foodsPatches.length > 0) {
+        setMeals((prev) => {
+          let next = prev;
+          for (const p of foodsPatches) {
+            next = next.map((tm) =>
+              tm.id === p.templateId ? { ...tm, foods: p.foods.length ? p.foods : tm.foods } : tm
+            );
+          }
+          return next;
+        });
+      }
     }
     if (Object.keys(nextDraft).length > 0) {
       setStagingDraftById(nextDraft);
@@ -623,14 +753,45 @@ export default function PlanningWizard({
       if (!onGeneratePlanGhostMealDraft || !slotRow?.id) return;
       setWizardGenLoadingId(slotRow.id);
       try {
-        const draftFoods = await onGeneratePlanGhostMealDraft({
+        const res = await onGeneratePlanGhostMealDraft({
           mealType: slotRow.mealType,
           time: decimalHourToHHMM(Number(slotRow.mealTime)) || '',
           title: slotRow.title,
           microDesc: slotRow.microDesc || '',
           planTarget: calorieStrategy,
         });
-        if (Array.isArray(draftFoods) && draftFoods.length > 0) {
+        let foods = [];
+        let draftFoods = [];
+        if (res && typeof res === 'object' && !Array.isArray(res)) {
+          foods = Array.isArray(res.foods) ? res.foods : [];
+          draftFoods = Array.isArray(res.draftFoods) ? res.draftFoods : [];
+        } else if (Array.isArray(res)) {
+          draftFoods = res.map((x) => String(x).trim()).filter(Boolean);
+        }
+        if (foods.length === 0 && draftFoods.length > 0) {
+          foods = draftStringsToFoodsWizard(draftFoods);
+        }
+        const targetVal = calorieStrategy != null ? String(calorieStrategy) : null;
+        if (slotRow.templateId) {
+          mealsUserTouchedRef.current = true;
+          setMeals((prev) =>
+            prev.map((m) =>
+              m.id === slotRow.templateId
+                ? { ...m, foods, ...(targetVal != null ? { target: targetVal } : {}) }
+                : m
+            )
+          );
+          setStagingDraftById((prev) => {
+            const n = { ...prev };
+            delete n[slotRow.id];
+            return n;
+          });
+        } else if (foods.length > 0) {
+          setStagingDraftById((prev) => ({
+            ...prev,
+            [slotRow.id]: foodsArrayToDraftPillEntries(foods),
+          }));
+        } else if (draftFoods.length > 0) {
           setStagingDraftById((prev) => ({ ...prev, [slotRow.id]: draftFoods }));
         }
       } catch (err) {
@@ -1148,7 +1309,11 @@ export default function PlanningWizard({
                                   value={timeInputVal}
                                   onChange={(e) => {
                                     const d = timeStrToDecimal(e.target.value);
-                                    if (!Number.isNaN(d)) updateMeal(mealIdx, { defaultHour: d });
+                                    if (!Number.isNaN(d))
+                                      updateMeal(mealIdx, {
+                                        defaultHour: d,
+                                        time: e.target.value || decimalHourToHHMM(d) || '12:00',
+                                      });
                                   }}
                                   style={{
                                     padding: '6px 8px',

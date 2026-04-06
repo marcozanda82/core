@@ -248,17 +248,29 @@ function buildPlanningFirebaseDoc(payload) {
   const stagingDraftBySlot = {};
   const draftMap = meta.stagingDraftById && typeof meta.stagingDraftById === 'object' ? meta.stagingDraftById : {};
   for (const g of ghostList) {
-    const foods = draftMap[g.id];
-    if (Array.isArray(foods) && foods.length > 0) {
-      stagingDraftBySlot[planningMealSlotKeyForFirebase(g)] = foods;
+    const key = planningMealSlotKeyForFirebase(g);
+    const fromMeta = draftMap[g.id];
+    if (Array.isArray(fromMeta) && fromMeta.length > 0) {
+      stagingDraftBySlot[key] = fromMeta.map((x) =>
+        typeof x === 'string' ? x : `${Math.round(Number(x?.qty ?? x?.weight) || 0) || '?'}g ${String(x?.name || x?.desc || '').trim()}`.trim()
+      );
+    } else if (Array.isArray(g.foods) && g.foods.length > 0) {
+      stagingDraftBySlot[key] = g.foods.map((f) =>
+        typeof f === 'string'
+          ? f
+          : `${Math.round(Number(f?.qty) || 0) || '?'}g ${String(f?.name || '').trim()}`.trim()
+      );
     }
   }
   const meals = ghostList.map((g) => ({
     mealType: toCanonicalMealType(String(g.mealType || '').split('_')[0]) || 'snack',
     mealTime: typeof g.mealTime === 'number' && !Number.isNaN(g.mealTime) ? g.mealTime : null,
+    time: g.time != null ? String(g.time) : undefined,
     title: String(g.title || '').trim(),
     microDesc: String(g.microDesc || '').trim(),
     draftFoods: Array.isArray(g.draftFoods) ? g.draftFoods : [],
+    foods: Array.isArray(g.foods) ? g.foods : [],
+    target: g.target != null ? g.target : undefined,
     source: g.source || undefined,
   }));
   const activities = {
@@ -1601,15 +1613,65 @@ function buildBaseLogForGhostPlanMerge(srcLog, ghostList, nowDec) {
   });
 }
 
-function parseDraftFoodsJsonFromAiResponse(raw) {
+/** Da stringhe tipo "200g Riso" → oggetti { name, qty } per stato `meals.foods`. */
+function draftStringsToFoods(strings) {
+  if (!Array.isArray(strings)) return [];
+  return strings
+    .map((s) => {
+      const raw = String(s || '').trim();
+      if (!raw) return null;
+      const m = raw.match(/^(\d+(?:[.,]\d+)?)\s*g\s+(.+)$/i);
+      if (m) {
+        const qty = Math.round(Number(String(m[1]).replace(',', '.')) || 100);
+        const name = String(m[2]).trim();
+        return name ? { name, qty: qty > 0 ? qty : 100 } : null;
+      }
+      return { name: raw, qty: 100 };
+    })
+    .filter(Boolean)
+    .slice(0, 14);
+}
+
+/**
+ * Risposta AI piano pasto: preferisce `items` strutturati; fallback `draftFoods` (stringhe).
+ * @returns {{ foods: object[], draftFoods: string[] }}
+ */
+function parsePlanMealDraftAiResponse(raw) {
   const s = String(raw || '').trim();
   let jsonStr = s;
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fence) jsonStr = fence[1].trim();
-  const obj = JSON.parse(jsonStr);
+  let obj;
+  try {
+    obj = JSON.parse(jsonStr);
+  } catch (e) {
+    throw new Error(e?.message ? String(e.message) : 'JSON non valido');
+  }
+  if (Array.isArray(obj?.items) && obj.items.length > 0) {
+    const foods = obj.items
+      .map((item) => {
+        const name = String(item?.name ?? '').trim();
+        if (!name) return null;
+        const qtyRaw = Number(item?.qty);
+        const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 100;
+        const out = { name, qty };
+        if (item?.estKcal != null && !Number.isNaN(Number(item.estKcal))) out.kcal = Number(item.estKcal);
+        if (item?.estPro != null && !Number.isNaN(Number(item.estPro))) out.prot = Number(item.estPro);
+        if (item?.estCar != null && !Number.isNaN(Number(item.estCar))) out.carb = Number(item.estCar);
+        if (item?.estFat != null && !Number.isNaN(Number(item.estFat))) out.fat = Number(item.estFat);
+        if (item?.dbKey != null && String(item.dbKey).trim() !== '') out.dbKey = String(item.dbKey).trim();
+        return out;
+      })
+      .filter(Boolean)
+      .slice(0, 14);
+    const draftFoods = foods.map((f) => `${f.qty}g ${f.name}`);
+    return { foods, draftFoods };
+  }
   const arr = obj?.draftFoods;
   if (!Array.isArray(arr) || arr.length === 0) throw new Error('draftFoods vuoto o non valido');
-  return arr.map((x) => String(x).trim()).filter(Boolean).slice(0, 14);
+  const draftFoods = arr.map((x) => String(x).trim()).filter(Boolean).slice(0, 14);
+  const foods = draftStringsToFoods(draftFoods);
+  return { foods, draftFoods };
 }
 
 function parseSmartCompletionFoodsPayload(obj) {
@@ -7340,7 +7402,12 @@ Ottimo! Diario aggiornato. 🥗`;
         .slice(0, 20)
         .join('; ');
       const prompt = `Sei Kentu (nutrizionista operativo). Rispondi SOLO con un JSON valido su una riga o un blocco, senza testo prima o dopo, senza markdown.
-Formato: {"draftFoods":["200g Riso basmati","120g Petto di pollo","10g Olio EVO"]}
+Formato preferito (voci strutturate con stime):
+{"items":[{"name":"Riso basmati","qty":200,"estKcal":260,"estPro":5,"estCar":58,"estFat":0.6,"dbKey":""}]}
+(dbKey opzionale: chiave da database se nota; altrimenti stringa vuota)
+
+Formato legacy accettato:
+{"draftFoods":["200g Riso basmati","120g Petto di pollo","10g Olio EVO"]}
 
 Pasto pianificato (slot):
 - mealType: ${String(mealType || '')}
@@ -7370,9 +7437,9 @@ ${dbKeys || 'n/d'}`;
 
       const raw = await callGeminiAPIWithRotation(prompt);
       try {
-        return parseDraftFoodsJsonFromAiResponse(raw);
+        return parsePlanMealDraftAiResponse(raw);
       } catch (e) {
-        throw new Error(e?.message ? `JSON non valido: ${e.message}` : 'Risposta AI non valida (draftFoods)');
+        throw new Error(e?.message ? `JSON non valido: ${e.message}` : 'Risposta AI non valida (piano pasto)');
       }
     },
     [
@@ -7435,11 +7502,49 @@ ${dbKeys || 'n/d'}`;
             typeof gm.mealTime === 'number' && !Number.isNaN(gm.mealTime)
               ? gm.mealTime
               : parseFlexibleTimeToDecimal(String(gm.time || '12:00')) ?? 12;
+          let foodsArr = Array.isArray(gm.foods) ? gm.foods : [];
+          if (foodsArr.length === 0 && Array.isArray(gm.draftFoods)) {
+            const objs = gm.draftFoods.filter((x) => x && typeof x === 'object' && (x.name || x.desc));
+            if (objs.length > 0) {
+              foodsArr = objs.map((x) => {
+                const name = String(x.name || x.desc || '').trim();
+                const qty = Math.round(Number(x.qty ?? x.weight) || 100);
+                const o = { name, qty: qty > 0 ? qty : 100 };
+                if (x.kcal != null && !Number.isNaN(Number(x.kcal))) o.kcal = Number(x.kcal);
+                if (x.prot != null && !Number.isNaN(Number(x.prot))) o.prot = Number(x.prot);
+                if (x.carb != null && !Number.isNaN(Number(x.carb))) o.carb = Number(x.carb);
+                if (x.fat != null && !Number.isNaN(Number(x.fat))) o.fat = Number(x.fat);
+                if (x.dbKey) o.dbKey = String(x.dbKey);
+                return o;
+              });
+            }
+          }
           const persistedDraftFoods = gm.draftFoods || [];
-          const draftFoods = Array.isArray(persistedDraftFoods)
-            ? persistedDraftFoods.map((x) => String(x).trim()).filter(Boolean)
-            : [];
-          return {
+          let draftFoods = [];
+          if (foodsArr.length > 0) {
+            draftFoods = foodsArr.map((f) => {
+              if (typeof f === 'string') return f.trim();
+              if (f && typeof f === 'object') {
+                const name = String(f.name || '').trim();
+                const q = Math.round(Number(f.qty) || 0);
+                return q > 0 ? `${q}g ${name}` : name;
+              }
+              return '';
+            }).filter(Boolean);
+          } else if (Array.isArray(persistedDraftFoods)) {
+            draftFoods = persistedDraftFoods
+              .map((x) => {
+                if (typeof x === 'string') return x.trim();
+                if (x && typeof x === 'object') {
+                  const name = String(x.name || x.desc || '').trim();
+                  const q = x.qty != null ? Math.round(Number(x.qty) || 0) : null;
+                  return q ? `${q}g ${name}` : name;
+                }
+                return '';
+              })
+              .filter(Boolean);
+          }
+          const entry = {
             id: `ghost_meal_${Date.now()}_${i}`,
             type: 'ghost_meal',
             mealType: mt,
@@ -7449,6 +7554,8 @@ ${dbKeys || 'n/d'}`;
             draftFoods,
             isGhost: true,
           };
+          if (foodsArr.length > 0) entry.foods = foodsArr;
+          return entry;
         });
       const logTimeKey = (e) => {
         if (!e) return 0;
