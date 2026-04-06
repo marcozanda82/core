@@ -93,6 +93,25 @@ export default function TimelineNodi({
     };
   }, [nowLineDecimalHour]);
 
+  useEffect(() => {
+    function handleMove(e) {
+      if (!draggingId) return;
+
+      const el = containerRef.current;
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+
+      const percent = Math.max(0, Math.min(1, x / rect.width));
+
+      setDragX(percent);
+    }
+
+    window.addEventListener('mousemove', handleMove);
+    return () => window.removeEventListener('mousemove', handleMove);
+  }, [draggingId]);
+
   const fireNodeClick = (node, event) => {
     if (typeof onNodeClick === 'function') onNodeClick(node, event);
     else if (typeof handleNodeTap === 'function') handleNodeTap(node)(event);
