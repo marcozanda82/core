@@ -298,13 +298,21 @@ export default function TimelineNodi({
               (isWork || isCognitive) && isDragging && dragLiveTime != null && draggingNode?.edge === 'end'
                 ? node.time
                 : displayTimeVal;
+            const nodeLeftPercentStr = (timeHours) => {
+              const percent =
+                draggingId === node.id && dragX != null && Number.isFinite(Number(dragX))
+                  ? Number(dragX)
+                  : getTimePositionPercent(timeHours) / 100;
+              const clamped = Math.max(0, Math.min(1, percent));
+              return `${clamped * 100}%`;
+            };
             const cognitiveIcon = node.subType === 'studio' ? '📚' : '💻';
             const cognitiveBg = 'rgba(0, 229, 255, 0.15)';
             const cognitiveBorder = '#00e5ff';
 
             if (isWork) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
-              const left = `${getTimePositionPercent(barStartHour)}%`;
+              const left = nodeLeftPercentStr(barStartHour);
               const barScale = isDragging ? 1.5 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
               const barOpacity = isDragging ? 1 : (importanceStyle.opacity ?? 1);
               return (
@@ -370,7 +378,7 @@ export default function TimelineNodi({
             }
             if (isCognitive) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
-              const left = `${getTimePositionPercent(barStartHour)}%`;
+              const left = nodeLeftPercentStr(barStartHour);
               const barScale = isDragging ? 1.5 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
               const barOpacity = isDragging ? 1 : (importanceStyle.opacity ?? 1);
               return (
@@ -491,7 +499,7 @@ export default function TimelineNodi({
               pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
             }
             const pointZ = isTouchingOrDragging ? 100 : ghostVisual ? 9 : (importanceStyle.zIndex ?? 2);
-            const left = `${getTimePositionPercent(displayTimeVal)}%`;
+            const left = nodeLeftPercentStr(displayTimeVal);
             return (
               <motion.div
                 key={node.id}
