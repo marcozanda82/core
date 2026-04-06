@@ -7492,6 +7492,13 @@ ${dbKeys || 'n/d'}`;
     [activeLog]
   );
 
+  /** Pasti pianificati salvati su RTDB (`planning/.../meals`) → idratazione slot Step 2 nel PlanningWizard. */
+  const planningWizardInitialMeals = useMemo(() => {
+    const rows = remotePlanning?.meals;
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    return rows;
+  }, [remotePlanning]);
+
   const generateFoodWithAI = async (foodName) => {
     const name = (foodName || foodNameInput || '').trim();
     if (!name) return;
@@ -12291,6 +12298,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 calorieStrategy={kentuDailyCalorieStrategy}
                 burnedKcalBonus={planningWizardBurnedKcal}
                 firebasePlanning={remotePlanning}
+                initialMeals={planningWizardInitialMeals}
                 hydrateNonce={planningWizardHydrateNonce}
                 onClose={() => setPlanningWizardOverlayOpen(false)}
                 onConfirmApply={handlePlanningWizardConfirm}

@@ -40,6 +40,41 @@ const PROPOSED_SLOTS = [
   { canon: 'cena', label: 'Cena', mealType: 'cena', defaultHour: 20 },
 ];
 
+/**
+ * Converte `initialMeals` (es. `planning/{uid}/{date}.meals` da Firebase / AI) nello shape dello stato `meals`.
+ */
+function normalizeWizardInitialMeals(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const row = raw[i];
+    if (!row || typeof row !== 'object') continue;
+    const canon = toCanonicalMealType(String(row.mealType || '').split('_')[0]) || 'snack';
+    let dh =
+      typeof row.defaultHour === 'number' && !Number.isNaN(row.defaultHour)
+        ? row.defaultHour
+        : typeof row.mealTime === 'number' && !Number.isNaN(row.mealTime)
+          ? row.mealTime
+          : 12;
+    const mt = row.mealType != null ? String(row.mealType) : canon;
+    const slotKey = planningMealSlotKeyFromRow({ mealType: mt, mealTime: dh });
+    let label = row.label != null ? String(row.label).trim() : '';
+    if (!label && row.title != null) {
+      label = String(row.title)
+        .replace(/\s*\(suggerito motore\)\s*$/i, '')
+        .trim();
+    }
+    if (!label) {
+      const d = PROPOSED_SLOTS.find((x) => x.canon === canon);
+      label = d ? d.label : canon;
+    }
+    const id =
+      row.id != null && String(row.id).trim() !== '' ? String(row.id).trim() : `slot_${slotKey}`;
+    out.push({ id, canon, mealType: mt, defaultHour: dh, label });
+  }
+  return out.length > 0 ? out : null;
+}
+
 const glassPanel = {
   borderRadius: 14,
   border: '1px solid rgba(0, 229, 255, 0.22)',
@@ -374,6 +409,8 @@ export default function PlanningWizard({
   burnedKcalBonus = 0,
   /** Snapshot `planning/{uid}/{date}` da Firebase (meals, activities, createdAt). */
   firebasePlanning = null,
+  /** Pasti/slot salvati o generati (tipicamente `remotePlanning.meals`); idrata `meals` se l’utente non ha ancora modificato. */
+  initialMeals = null,
   /** Incrementato dal parent ad ogni apertura wizard per applicare l’idratazione una volta per sessione. */
   hydrateNonce = 0,
   onClose,
@@ -400,15 +437,43 @@ export default function PlanningWizard({
 
   const nowDec = getLocalDecimalHourNow();
 
+  const mealsUserTouchedRef = useRef(false);
+  const lastInitialMealsSigRef = useRef(null);
+
   const updateMeal = useCallback((index, patch) => {
     if (typeof index !== 'number' || index < 0 || patch == null || typeof patch !== 'object') return;
+    mealsUserTouchedRef.current = true;
     setMeals((prev) => prev.map((m, i) => (i === index ? { ...m, ...patch } : m)));
   }, []);
 
   const removeMeal = useCallback((index) => {
     if (typeof index !== 'number' || index < 0) return;
+    mealsUserTouchedRef.current = true;
     setMeals((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
+  useEffect(() => {
+    if (hydrateNonce <= 0) return;
+    lastInitialMealsSigRef.current = null;
+  }, [hydrateNonce]);
+
+  useEffect(() => {
+    if (mealsUserTouchedRef.current) return;
+    const normalized = normalizeWizardInitialMeals(initialMeals);
+    if (!normalized?.length) return;
+    const sig = JSON.stringify(
+      normalized.map((m) => ({
+        id: m.id,
+        canon: m.canon,
+        mealType: m.mealType,
+        defaultHour: Math.round(m.defaultHour * 1000) / 1000,
+        label: m.label,
+      }))
+    );
+    if (lastInitialMealsSigRef.current === sig) return;
+    lastInitialMealsSigRef.current = sig;
+    setMeals(normalized);
+  }, [initialMeals]);
 
   useEffect(() => {
     if (macroMuscleSeededRef.current) return;
@@ -452,10 +517,11 @@ export default function PlanningWizard({
       return;
     }
     const slotMap = firebasePlanning.activities?.stagingDraftBySlot;
-    const meals = firebasePlanning.meals;
+    const planningMealsSnap = firebasePlanning.meals;
     const hasSlotData =
       (slotMap && typeof slotMap === 'object' && Object.keys(slotMap).length > 0) ||
-      (Array.isArray(meals) && meals.some((m) => Array.isArray(m.draftFoods) && m.draftFoods.length > 0));
+      (Array.isArray(planningMealsSnap) &&
+        planningMealsSnap.some((m) => Array.isArray(m.draftFoods) && m.draftFoods.length > 0));
     if (!hasSlotData) {
       planningDraftHydratedForNonce.current = hydrateNonce;
       return;
@@ -469,8 +535,8 @@ export default function PlanningWizard({
         }
       });
     }
-    if (Array.isArray(meals)) {
-      meals.forEach((m) => {
+    if (Array.isArray(planningMealsSnap)) {
+      planningMealsSnap.forEach((m) => {
         const key = planningMealSlotKeyFromRow(m);
         const match = stagingGhosts.find((g) => planningMealSlotKeyFromRow(g) === key);
         if (match && Array.isArray(m.draftFoods) && m.draftFoods.length > 0) {
