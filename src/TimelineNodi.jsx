@@ -39,7 +39,9 @@ export default function TimelineNodi({
   decimalToTimeStr,
   syncDatiFirebase,
   setManualNodes,
-  setDailyLog
+  setDailyLog,
+  /** 0–100 body battery / energia; se omesso la barra non viene mostrata. */
+  energyPercent,
 }) {
   const reduceMotion = useReducedMotion();
   const [nowDecimalHour, setNowDecimalHour] = useState(() => getDecimalHourFromDate(new Date()));
@@ -64,8 +66,12 @@ export default function TimelineNodi({
     else if (typeof handleNodeTap === 'function') handleNodeTap(node)();
   };
 
+  const showEnergyBar = energyPercent != null && Number.isFinite(Number(energyPercent));
+  const energyFill = showEnergyBar ? Math.max(0, Math.min(100, Number(energyPercent))) : 0;
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minHeight: '55px', paddingLeft: '50px', paddingRight: '15px', boxSizing: 'border-box' }}>
+    <div style={{ width: '100%', paddingLeft: '50px', paddingRight: '15px', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minHeight: '55px' }}>
       <div
         ref={timelineContainerRef}
         style={{
@@ -453,6 +459,34 @@ export default function TimelineNodi({
             );
           })}
         </div>
+      </div>
+      {showEnergyBar ? (
+        <div
+          role="meter"
+          aria-valuenow={Math.round(energyFill)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Energia ${Math.round(energyFill)} per cento`}
+          style={{
+            marginTop: 8,
+            height: 5,
+            borderRadius: 5,
+            background: 'rgba(0,0,0,0.35)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: `${energyFill}%`,
+              borderRadius: 4,
+              background: 'linear-gradient(90deg, #ef4444 0%, #eab308 50%, #22c55e 100%)',
+              transition: 'width 0.35s ease-out',
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

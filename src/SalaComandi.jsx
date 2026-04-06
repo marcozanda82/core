@@ -9320,7 +9320,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             </div>
 
             {/* SINGOLA BARRA NODI (TimelineNodi) */}
-            <div style={{ height: '60px', flexShrink: 0, marginTop: '10px', marginBottom: '10px' }}>
+            <div style={{ minHeight: '72px', flexShrink: 0, marginTop: '10px', marginBottom: '10px' }}>
               <TimelineNodi
                 activeNodesWithStack={activeNodesWithStack}
                 chartUnit={chartUnit}
@@ -9343,6 +9343,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 syncDatiFirebase={syncDatiFirebase}
                 setManualNodes={setManualNodes}
                 setDailyLog={setDailyLog}
+                energyPercent={bodyBattery?.currentEnergy ?? 0}
               />
             </div>
           </div>
@@ -10372,7 +10373,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               {/* Hitbox: blocca tap sul grafico nella fascia timeline (left/right allineati a YAxis) */}
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50px', right: '15px', pointerEvents: 'none' }} aria-hidden="true" />
               {/* Timeline nodi nel "buco" sotto il grafico (absolute + bottom 0) */}
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px', zIndex: 10 }}>
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, minHeight: '72px', zIndex: 10 }}>
                 <TimelineNodi
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}
@@ -10395,6 +10396,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   syncDatiFirebase={syncDatiFirebase}
                   setManualNodes={setManualNodes}
                   setDailyLog={setDailyLog}
+                  energyPercent={bodyBattery?.currentEnergy ?? 0}
                 />
               </div>
             </div>
