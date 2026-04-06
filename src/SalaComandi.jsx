@@ -573,7 +573,26 @@ function normalizeDailyPlanFromToken(parsed) {
           ? g.draftFoods.map((x) => String(x).trim()).filter(Boolean)
           : [];
         if (!title) return null;
-        return { mealType, time: timeNorm, title, microDesc, draftFoods };
+        const row = { mealType, time: timeNorm, title, microDesc, draftFoods };
+        if (Array.isArray(g?.foods) && g.foods.length > 0) {
+          const foods = g.foods
+            .map((f) => {
+              if (!f || typeof f !== 'object') return null;
+              const name = String(f.name ?? f.desc ?? '').trim();
+              if (!name) return null;
+              const qty = Math.max(1, Math.round(Number(f.qty ?? f.weight) || 100));
+              const o = { name, qty };
+              if (f.kcal != null && Number.isFinite(Number(f.kcal))) o.kcal = Number(f.kcal);
+              if (f.prot != null && Number.isFinite(Number(f.prot))) o.prot = Number(f.prot);
+              if (f.carb != null && Number.isFinite(Number(f.carb))) o.carb = Number(f.carb);
+              if (f.fat != null && Number.isFinite(Number(f.fat))) o.fat = Number(f.fat);
+              if (f.dbKey != null && String(f.dbKey).trim() !== '') o.dbKey = String(f.dbKey).trim();
+              return o;
+            })
+            .filter(Boolean);
+          if (foods.length > 0) row.foods = foods;
+        }
+        return row;
       })
       .filter(Boolean);
   }
@@ -1674,6 +1693,80 @@ function parsePlanMealDraftAiResponse(raw) {
   return { foods, draftFoods };
 }
 
+/** `ghost_meal.foods` salvati sul log → shape compatibile con proposal AI / timeline `foods`. */
+function structuredFoodsToProposalItems(foods) {
+  if (!Array.isArray(foods)) return [];
+  return foods
+    .map((f) => {
+      if (!f || typeof f !== 'object') return null;
+      const name = String(f.name ?? f.desc ?? '').trim();
+      if (!name) return null;
+      const qty = Math.max(1, Math.round(Number(f.qty ?? f.weight) || 100));
+      const o = { name, qty };
+      if (f.dbKey != null && String(f.dbKey).trim() !== '') o.dbKey = String(f.dbKey).trim();
+      const k = f.estKcal ?? f.kcal;
+      if (k != null && Number.isFinite(Number(k))) o.estKcal = Number(k);
+      const p = f.estPro ?? f.prot;
+      if (p != null && Number.isFinite(Number(p))) o.estPro = Number(p);
+      const c = f.estCar ?? f.carb;
+      if (c != null && Number.isFinite(Number(c))) o.estCar = Number(c);
+      const fat = f.estFat ?? f.fat;
+      if (fat != null && Number.isFinite(Number(fat))) o.estFat = Number(fat);
+      if (f.matchedKey != null && String(f.matchedKey).trim() !== '') o.matchedKey = String(f.matchedKey).trim();
+      return o;
+    })
+    .filter(Boolean);
+}
+
+/**
+ * `draftFoods` UI (stringhe "200g X" o oggetti pill) → proposal items per espansione in righe diario.
+ */
+function ghostSurfaceDraftToProposalItems(draftFoods) {
+  if (!Array.isArray(draftFoods)) return [];
+  return draftFoods
+    .map((x) => {
+      if (x == null) return null;
+      if (typeof x === 'object') {
+        return structuredFoodsToProposalItems([x])[0] ?? null;
+      }
+      const s = String(x).trim();
+      if (!s) return null;
+      const m = s.match(/^(\d+(?:[.,]\d+)?)\s*g\s+(.+)$/i);
+      if (m) {
+        const qty = Math.max(1, Math.round(Number(String(m[1]).replace(',', '.')) || 100));
+        const name = String(m[2]).trim();
+        return name ? { name, qty } : null;
+      }
+      return { name: s, qty: 100 };
+    })
+    .filter(Boolean);
+}
+
+/** Nodo timeline ghost: `foods` sempre valorizzato (da log o da draftFoods). */
+function normalizeGhostFoodsForTimelineNode(e) {
+  const fromLog = structuredFoodsToProposalItems(e?.foods);
+  if (fromLog.length > 0) {
+    return fromLog.map((p) => {
+      const o = { name: p.name, qty: p.qty };
+      if (p.dbKey) o.dbKey = p.dbKey;
+      if (p.estKcal != null) o.kcal = p.estKcal;
+      if (p.estPro != null) o.prot = p.estPro;
+      if (p.estCar != null) o.carb = p.estCar;
+      if (p.estFat != null) o.fat = p.estFat;
+      return o;
+    });
+  }
+  return ghostSurfaceDraftToProposalItems(e?.draftFoods).map((p) => {
+    const o = { name: p.name, qty: p.qty };
+    if (p.dbKey) o.dbKey = p.dbKey;
+    if (p.estKcal != null) o.kcal = p.estKcal;
+    if (p.estPro != null) o.prot = p.estPro;
+    if (p.estCar != null) o.carb = p.estCar;
+    if (p.estFat != null) o.fat = p.estFat;
+    return o;
+  });
+}
+
 function parseSmartCompletionFoodsPayload(obj) {
   const foods = obj?.foods;
   if (!Array.isArray(foods) || foods.length === 0) throw new Error('foods vuoto o non valido');
@@ -2767,6 +2860,7 @@ export default function SalaComandi() {
       kcal: m.kcal ?? 0,
       originalTypes: Array.from(m.originalTypes),
       items: m.items,
+      foods: m.items.map((it) => ({ ...it })),
       icon: getMealIcon(String(m.mealType).split('_')[0]),
     }));
   }, [activeLog]);
@@ -2788,6 +2882,7 @@ export default function SalaComandi() {
           title: e.title,
           microDesc: e.microDesc,
           draftFoods: Array.isArray(e.draftFoods) ? e.draftFoods : [],
+          foods: normalizeGhostFoodsForTimelineNode(e),
           isGhost: true,
         };
       });
@@ -4601,16 +4696,17 @@ export default function SalaComandi() {
     return foodItem;
   }, [foodDb, getAverageEstimate, fullHistory]);
 
-  /** Salvataggio pasto da payload add_food / pendingHabit; items possono includere matchedKey (abitudine). */
-  const commitAddFoodChatPayload = useCallback(
-    (payload) => {
-      const { timeString: oraStringFood, mealDec: mealDecFood, items: addFoodItems } = payload || {};
-      if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
+  /**
+   * Proposal items (nome, qty, est*, dbKey, matchedKey) → righe `food`/`recipe` per il diario.
+   * Usato da chat add_food e da espansione ghost timeline → costruttore pasto.
+   */
+  const mapProposalItemsToDiaryFoods = useCallback(
+    (addFoodItems, mealDecFood) => {
+      if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return [];
       const predictedMealType = predictMealType(mealDecFood);
       const batchGhostTypeFood = getGhostMealType(predictedMealType, dailyLogRef.current || []);
       const batchIdFood = `batch_${Date.now()}`;
-
-      const alimentiProcessatiFood = addFoodItems
+      return addFoodItems
         .map((item, index) => {
           const name = item.name;
           const qty = Math.max(1, Number(item.qty));
@@ -4670,6 +4766,17 @@ export default function SalaComandi() {
           };
         })
         .filter(Boolean);
+    },
+    [predictMealType, getGhostMealType, foodDb, estraiDatiFoodDb, getAverageEstimate]
+  );
+
+  /** Salvataggio pasto da payload add_food / pendingHabit; items possono includere matchedKey (abitudine). */
+  const commitAddFoodChatPayload = useCallback(
+    (payload) => {
+      const { timeString: oraStringFood, mealDec: mealDecFood, items: addFoodItems } = payload || {};
+      if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
+      const alimentiProcessatiFood = mapProposalItemsToDiaryFoods(addFoodItems, mealDecFood);
+      if (!alimentiProcessatiFood.length) return null;
 
       const totKcal = Math.round(
         alimentiProcessatiFood.reduce((s, f) => s + (Number(f.kcal) || Number(f.cal) || 0), 0)
@@ -4702,11 +4809,7 @@ Ottimo! Diario aggiornato. 🥗`;
       return testoRispostaFood;
     },
     [
-      predictMealType,
-      getGhostMealType,
-      foodDb,
-      estraiDatiFoodDb,
-      getAverageEstimate,
+      mapProposalItemsToDiaryFoods,
       isSimulationMode,
       setSimulatedLog,
       setDailyLog,
@@ -5066,9 +5169,16 @@ Ottimo! Diario aggiornato. 🥗`;
       const mt = toCanonicalMealType(String(node.mealType || 'pranzo').split('_')[0]) || 'pranzo';
       const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12;
       const title = String(node.title || 'Pasto pianificato').trim();
+      const foodsGhost =
+        Array.isArray(node.foods) && node.foods.length > 0
+          ? node.foods.map((x) => ({ ...x }))
+          : normalizeGhostFoodsForTimelineNode({
+              draftFoods: node.draftFoods,
+              foods: node.foods,
+            });
       const draftFoodsGhost = Array.isArray(node.draftFoods)
-        ? node.draftFoods.map((x) => String(x).trim()).filter(Boolean)
-        : [];
+        ? node.draftFoods
+        : foodsGhost.map((f) => `${Math.round(Number(f.qty) || 0) || '?'}g ${String(f.name || '').trim()}`.trim());
       setSelectedNodeReport({
         type: 'ghost_meal',
         id: node.id,
@@ -5079,6 +5189,7 @@ Ottimo! Diario aggiornato. 🥗`;
         name: title,
         microDesc: String(node.microDesc || '').trim(),
         draftFoods: draftFoodsGhost,
+        foods: foodsGhost,
         items: [],
         isGhost: true,
       });
@@ -5113,7 +5224,9 @@ Ottimo! Diario aggiornato. 🥗`;
       const foodsForSlot =
         Array.isArray(node.items) && node.items.length > 0
           ? node.items
-          : getFoodItemsForMealSlot(activeLog, slotId);
+          : Array.isArray(node.foods) && node.foods.length > 0
+            ? node.foods
+            : getFoodItemsForMealSlot(activeLog, slotId);
       if (foodsForSlot.length > 0) {
         const toN = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (Number(v) || 0);
         const kcal = foodsForSlot.reduce((a, f) => a + toN(f.kcal ?? f.cal), 0);
@@ -5144,13 +5257,15 @@ Ottimo! Diario aggiornato. 🥗`;
           payload: { macros: { pro: prot, carb, fat } }
         });
 
+        const itemCopies = foodsForSlot.map((x) => ({ ...x }));
         setSelectedNodeReport({
           type: 'meal',
           id: slotId,
           mealId: slotId,
           name: `${baseName}${timeLabel}`,
           time: typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : foodsForSlot[0]?.mealTime,
-          items: foodsForSlot.map((x) => ({ ...x })),
+          items: itemCopies,
+          foods: itemCopies,
         });
         return;
       }
@@ -5161,6 +5276,7 @@ Ottimo! Diario aggiornato. 🥗`;
         name: 'Pasto',
         time: typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12,
         items: [],
+        foods: Array.isArray(node.foods) ? node.foods.map((x) => ({ ...x })) : [],
       });
       return;
     }
@@ -7327,7 +7443,13 @@ Ottimo! Diario aggiornato. 🥗`;
           const draftFoods = Array.isArray(persistedDraftFoods)
             ? persistedDraftFoods.map((x) => String(x).trim()).filter(Boolean)
             : [];
-          return {
+          let foodsArr = Array.isArray(gm.foods)
+            ? gm.foods.map((f) => (f && typeof f === 'object' ? { ...f } : f)).filter(Boolean)
+            : [];
+          if (foodsArr.length === 0 && draftFoods.length > 0) {
+            foodsArr = draftStringsToFoods(draftFoods);
+          }
+          const entry = {
             id: `ghost_meal_${Date.now()}_${i}`,
             type: 'ghost_meal',
             mealType: mt,
@@ -7337,6 +7459,8 @@ Ottimo! Diario aggiornato. 🥗`;
             draftFoods,
             isGhost: true,
           };
+          if (foodsArr.length > 0) entry.foods = foodsArr;
+          return entry;
         });
       const logTimeKey = (e) => {
         if (!e) return 0;
@@ -10228,13 +10352,15 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                           const mealName = sel.name || sel.label || sel.id || 'Pasto';
                           const slotId = String(sel.id);
                           const detailItems = getFoodItemsForMealSlot(activeLog || [], slotId);
+                          const copies = detailItems.map((x) => ({ ...x }));
                           setSelectedNodeReport({
                             type: 'meal',
                             id: slotId,
                             mealId: slotId,
                             name: mealName,
                             time: sel.timeValue,
-                            items: detailItems.map((x) => ({ ...x })),
+                            items: copies,
+                            foods: copies,
                           });
                           return;
                         }
@@ -10366,13 +10492,15 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
 
                               if (selectedMealCenter && selectedMealCenter.id === data.id) {
                                 const detailItems = getFoodItemsForMealSlot(activeLog || [], compositeId);
+                                const copies = detailItems.map((x) => ({ ...x }));
                                 setSelectedNodeReport({
                                   type: 'meal',
                                   id: compositeId,
                                   mealId: compositeId,
                                   name: mealName,
                                   time: entry.timeValue,
-                                  items: detailItems.map((x) => ({ ...x })),
+                                  items: copies,
+                                  foods: copies,
                                 });
                                 return;
                               }
@@ -12879,7 +13007,23 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 </div>
                 {selectedNodeReport.isGhost === true || selectedNodeReport.type === 'ghost_meal' ? (
                   (() => {
-                    const df = Array.isArray(selectedNodeReport.draftFoods) ? selectedNodeReport.draftFoods : [];
+                    const fromDraft = Array.isArray(selectedNodeReport.draftFoods)
+                      ? selectedNodeReport.draftFoods
+                      : [];
+                    const fromFoods =
+                      Array.isArray(selectedNodeReport.foods) && selectedNodeReport.foods.length > 0
+                        ? selectedNodeReport.foods.map((f) =>
+                            f && typeof f === 'object'
+                              ? {
+                                  desc: f.name,
+                                  name: f.name,
+                                  weight: f.qty,
+                                  qty: f.qty,
+                                }
+                              : String(f)
+                          )
+                        : [];
+                    const df = fromDraft.length > 0 ? fromDraft : fromFoods;
                     if (df.length === 0 || selectedNodeReport.type === 'ghost_workout') return null;
                     return (
                       <div style={{ marginTop: 16, marginBottom: 4 }}>
@@ -12923,7 +13067,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   const items =
                     Array.isArray(selectedNodeReport.items) && selectedNodeReport.items.length > 0
                       ? selectedNodeReport.items
-                      : getFoodItemsForMealSlot(activeLog || [], slotKey);
+                      : Array.isArray(selectedNodeReport.foods) && selectedNodeReport.foods.length > 0
+                        ? selectedNodeReport.foods
+                        : getFoodItemsForMealSlot(activeLog || [], slotKey);
                   if (items.length === 0) return <p>Nessun alimento trovato.</p>;
 
                   const totals = items.reduce((acc, item) => {
@@ -13068,7 +13214,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   const mt = toCanonicalMealType(String(node.mealType || 'pranzo').split('_')[0]) || 'pranzo';
                   const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 12;
                   setEditingMealId(node.id);
-                  setAddedFoods([]);
+                  const proposalItems =
+                    Array.isArray(node.foods) && node.foods.length > 0
+                      ? structuredFoodsToProposalItems(node.foods)
+                      : ghostSurfaceDraftToProposalItems(node.draftFoods);
+                  setAddedFoods(mapProposalItemsToDiaryFoods(proposalItems, t));
                   setMealType(mealIdFromCanonical(mt));
                   setDrawerMealTime(t);
                   setDrawerMealTimeStr(decimalToTimeStr(t));

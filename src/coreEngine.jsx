@@ -2376,7 +2376,7 @@ function denormalizeLogForFirebase(flatLog) {
 
   (flatLog || []).forEach(entry => {
     if (entry.type === 'ghost_meal') {
-      ghostMeals.push({
+      const gm = {
         type: 'ghost_meal',
         id: entry.id,
         mealType: entry.mealType,
@@ -2384,7 +2384,14 @@ function denormalizeLogForFirebase(flatLog) {
         title: entry.title,
         microDesc: entry.microDesc,
         isGhost: true,
-      });
+      };
+      if (Array.isArray(entry.draftFoods) && entry.draftFoods.length > 0) {
+        gm.draftFoods = entry.draftFoods;
+      }
+      if (Array.isArray(entry.foods) && entry.foods.length > 0) {
+        gm.foods = entry.foods.map((f) => (f && typeof f === 'object' ? { ...f } : f));
+      }
+      ghostMeals.push(gm);
       return;
     }
     if (entry.type === 'sleep') {
