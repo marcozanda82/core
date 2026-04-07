@@ -7827,7 +7827,50 @@ Ottimo! Diario aggiornato. 🥗`;
   }, []);
 
   const handleGeneratePlanGhostMealDraft = useCallback(
-    async ({ mealType, time, title, microDesc, planTarget, aiMealConstraints }) => {
+    async ({
+      mealType,
+      time,
+      title,
+      microDesc,
+      planTarget,
+      aiMealConstraints,
+      manualFoods,
+      mealMacroResidual,
+      mealMacroTargetTotal,
+    }) => {
+      const manualNorm = normalizeMealFoodsArray(manualFoods);
+      const cov =
+        manualNorm.length > 0
+          ? manualNorm.reduce(
+              (a, f) => ({
+                kcal: a.kcal + (Number(f.kcal) || 0),
+                prot: a.prot + (Number(f.prot) || 0),
+                carb: a.carb + (Number(f.carb) || 0),
+                fat: a.fat + (Number(f.fat) || 0),
+              }),
+              { kcal: 0, prot: 0, carb: 0, fat: 0 }
+            )
+          : null;
+      const mt = mealMacroTargetTotal || {};
+      const mr = mealMacroResidual || {};
+      const manualBlock =
+        manualNorm.length > 0
+          ? `
+
+ALIMENTI GIÀ INSERITI DALL'UTENTE (fissi: non modificare grammi, non rimuovere, non ripetere nel JSON):
+${manualNorm.map((f) => `- ${f.qty}g ${f.name}`).join('\n')}
+
+Target pasto complessivo (riferimento motore): ~${Math.round(Number(mt.kcal) || 0)} kcal, P${mt.prot}g, C${mt.carb}g, F${mt.fat}g.
+Macro stimate dai fissi (se note): ~${Math.round(cov.kcal)} kcal, P${cov.prot.toFixed(1)}g, C${cov.carb.toFixed(1)}g, F${cov.fat.toFixed(1)}g.
+RESIDUO da colmare SOLO con nuove voci nell'array "items" (o in draftFoods se usi il formato legacy): ~${Math.round(Number(mr.kcal) || 0)} kcal, P${mr.prot}g, C${mr.carb}g, F${mr.fat}g.
+
+REGOLE CON FISSI:
+- "items" / draftFoods devono contenere SOLO alimenti AGGIUNTIVI (nessun nome uguale o equivalente ai fissi).
+- Se il residuo è trascurabile (es. kcal ≤ 30 e ogni macro residua ≤ 3 g), restituisci aggiunte vuote: {"items":[]} o draftFoods [].
+- Se il residuo non è trascurabile: almeno 1 nuova voce, massimo 10 nuove voci.
+`
+          : '';
+
       const anchor = currentTrackerDate || getTodayString();
       const burnedKcalContext = (activeLog || [])
         .filter((item) => item && item.type === 'workout')
@@ -7846,6 +7889,10 @@ Ottimo! Diario aggiornato. 🥗`;
         .slice(0, 20)
         .join('; ');
       const constraintsBlock = buildAiMealConstraintsPromptBlock(aiMealConstraints);
+      const minVociRule =
+        manualNorm.length > 0
+          ? 'Con alimenti fissi: solo aggiunte nel JSON (vedi blocco sotto). Senza fissi: minimo 2 voci, massimo 10.'
+          : 'Minimo 2 voci, massimo 10.';
       const prompt = `Sei Kentu (nutrizionista operativo). Rispondi SOLO con un JSON valido su una riga o un blocco, senza testo prima o dopo, senza markdown.
 Formato preferito (voci strutturate con stime):
 {"items":[{"name":"Riso basmati","qty":200,"estKcal":260,"estPro":5,"estCar":58,"estFat":0.6,"dbKey":""}]}
@@ -7863,8 +7910,9 @@ Pasto pianificato (slot):
 - kcal giornaliere di riferimento (adattate): ~${Math.round(dynamicKcal)}
 
 Gerarchia obbligatoria: (1) ultimi 3-7 giorni pasti simili; (2) storico più lungo; (3) dispensa + database; (4) combinazione nuova solo se necessario.
-Ogni voce deve essere "grammi + nome" (es. 150g Tofu). Minimo 2 voci, massimo 10.
+Ogni voce deve essere "grammi + nome" (es. 150g Tofu). ${minVociRule}
 ${constraintsBlock}
+${manualBlock}
 
 ULTIMI 7 GIORNI:
 ${recent7}

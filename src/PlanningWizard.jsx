@@ -431,17 +431,41 @@ function draftFoodPillText(f) {
   return '';
 }
 
-function DraftFoodPillsMini({ foods }) {
+function foodNameNormKey(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+/** Manual foods first; AI rows that duplicate a manual name (normalized) are dropped. */
+function mergeManualFoodsWithAiCompletion(manualArr, aiArr) {
+  const manual = normalizeMealFoodsArray(manualArr);
+  const ai = normalizeMealFoodsArray(aiArr);
+  const keys = new Set(manual.map((f) => foodNameNormKey(f.name)).filter(Boolean));
+  const aiExtra = ai.filter((f) => {
+    const k = foodNameNormKey(f.name);
+    if (!k) return false;
+    return !keys.has(k);
+  });
+  return normalizeMealFoodsArray([...manual, ...aiExtra]).slice(0, 14);
+}
+
+function DraftFoodPillsMini({ foods, onRemoveIndex }) {
   if (!Array.isArray(foods) || foods.length === 0) return null;
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 6 }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 6, alignItems: 'center', gap: 4 }}>
       {foods.map((f, fIdx) => {
         const text = draftFoodPillText(f);
         return (
           <span
             key={`${fIdx}_${String(text).slice(0, 40)}`}
             style={{
-              display: 'inline-block',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
               background: 'rgba(0, 229, 255, 0.15)',
               color: '#00e5ff',
               padding: '4px 8px',
@@ -451,7 +475,27 @@ function DraftFoodPillsMini({ foods }) {
               marginBottom: '4px',
             }}
           >
-            {text.trim() || 'Alimento'}
+            <span>{text.trim() || 'Alimento'}</span>
+            {typeof onRemoveIndex === 'function' ? (
+              <button
+                type="button"
+                title="Rimuovi"
+                onClick={() => onRemoveIndex(fIdx)}
+                style={{
+                  margin: 0,
+                  padding: '0 4px',
+                  border: 'none',
+                  background: 'rgba(0,0,0,0.25)',
+                  color: '#fda4af',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            ) : null}
           </span>
         );
       })}
@@ -851,9 +895,65 @@ export default function PlanningWizard({
     if (step > 1) setStep((s) => s - 1);
   }, [step]);
 
+  const [mealManualFormByTpl, setMealManualFormByTpl] = useState({});
+
+  const addManualFoodToTemplate = useCallback((templateId, nameRaw, qtyRaw) => {
+    const name = String(nameRaw || '').trim();
+    if (!name || !templateId) return;
+    let qty = Math.round(Number(String(qtyRaw).replace(',', '.')) || 100);
+    if (!Number.isFinite(qty) || qty < 1) qty = 100;
+    qty = Math.max(5, Math.min(2000, qty));
+    mealsUserTouchedRef.current = true;
+    setMeals((prev) =>
+      prev.map((m) => {
+        if (m.id !== templateId) return { ...m, foods: mealFoodsRead(m) };
+        const cur = normalizeMealFoodsArray(mealFoodsRead(m));
+        return { ...m, foods: [...cur, { name, qty }] };
+      })
+    );
+  }, []);
+
+  const removeTemplateFood = useCallback((templateId, removeIdx) => {
+    if (templateId == null || removeIdx < 0) return;
+    mealsUserTouchedRef.current = true;
+    setMeals((prev) =>
+      prev.map((m) => {
+        if (m.id !== templateId) return { ...m, foods: mealFoodsRead(m) };
+        const cur = normalizeMealFoodsArray(mealFoodsRead(m));
+        return { ...m, foods: cur.filter((_, i) => i !== removeIdx) };
+      })
+    );
+  }, []);
+
   const handleWizardGenerateDraft = useCallback(
     async (slotRow) => {
       if (!onGeneratePlanGhostMealDraft || !slotRow?.id) return;
+      const manualBaseline = normalizeMealFoodsArray(mealFoodsRead(slotRow));
+      const mtFull = getDynamicMealTargets(
+        String(slotRow.mealType || 'pranzo').split('_')[0],
+        dailyLog,
+        wizardUserTargets,
+        dynOpts
+      );
+      const sums = manualBaseline.reduce(
+        (acc, f) => ({
+          kcal: acc.kcal + (Number(f.kcal) || 0),
+          prot: acc.prot + (Number(f.prot) || 0),
+          carb: acc.carb + (Number(f.carb) || 0),
+          fat: acc.fat + (Number(f.fat) || 0),
+        }),
+        { kcal: 0, prot: 0, carb: 0, fat: 0 }
+      );
+      const mealMacroResidual =
+        manualBaseline.length > 0
+          ? {
+              kcal: Math.max(0, Math.round(mtFull.kcal - sums.kcal)),
+              prot: Math.max(0, Math.round((mtFull.prot - sums.prot) * 10) / 10),
+              carb: Math.max(0, Math.round((mtFull.carb - sums.carb) * 10) / 10),
+              fat: Math.max(0, Math.round((mtFull.fat - sums.fat) * 10) / 10),
+            }
+          : undefined;
+
       setWizardGenLoadingId(slotRow.id);
       try {
         const res = await onGeneratePlanGhostMealDraft({
@@ -863,22 +963,30 @@ export default function PlanningWizard({
           microDesc: slotRow.microDesc || '',
           planTarget: calorieStrategy,
           aiMealConstraints: wizardAiMealConstraintsPayload,
+          ...(manualBaseline.length > 0
+            ? {
+                manualFoods: manualBaseline,
+                mealMacroResidual,
+                mealMacroTargetTotal: mtFull,
+              }
+            : {}),
         });
-        let foods = [];
+        let aiFoods = [];
         let draftFoods = [];
         if (res && typeof res === 'object' && !Array.isArray(res)) {
-          foods = mealFoodsRead(res);
+          aiFoods = mealFoodsRead(res);
           draftFoods = Array.isArray(res.draftFoods) ? res.draftFoods : [];
         } else if (Array.isArray(res)) {
           draftFoods = res.map((x) => String(x).trim()).filter(Boolean);
         }
-        if (foods.length === 0 && draftFoods.length > 0) {
-          foods = draftStringsToFoodsWizard(draftFoods);
+        if (aiFoods.length === 0 && draftFoods.length > 0) {
+          aiFoods = draftStringsToFoodsWizard(draftFoods);
         }
+        const foodsFinal = mergeManualFoodsWithAiCompletion(manualBaseline, aiFoods);
         const targetVal = calorieStrategy != null ? String(calorieStrategy) : null;
         if (slotRow.templateId) {
           mealsUserTouchedRef.current = true;
-          const foodsSafe = normalizeMealFoodsArray(foods);
+          const foodsSafe = normalizeMealFoodsArray(foodsFinal);
           setMeals((prev) =>
             prev.map((m) =>
               m.id === slotRow.templateId
@@ -891,10 +999,10 @@ export default function PlanningWizard({
             delete n[slotRow.id];
             return n;
           });
-        } else if (foods.length > 0) {
+        } else if (foodsFinal.length > 0) {
           setStagingDraftById((prev) => ({
             ...prev,
-            [slotRow.id]: foodsArrayToDraftPillEntries(foods),
+            [slotRow.id]: foodsArrayToDraftPillEntries(foodsFinal),
           }));
         } else if (draftFoods.length > 0) {
           setStagingDraftById((prev) => ({ ...prev, [slotRow.id]: draftFoods }));
@@ -905,7 +1013,14 @@ export default function PlanningWizard({
         setWizardGenLoadingId(null);
       }
     },
-    [onGeneratePlanGhostMealDraft, calorieStrategy, wizardAiMealConstraintsPayload]
+    [
+      onGeneratePlanGhostMealDraft,
+      calorieStrategy,
+      wizardAiMealConstraintsPayload,
+      dailyLog,
+      wizardUserTargets,
+      dynOpts,
+    ]
   );
 
   const workoutDecForApply = useMemo(() => {
@@ -1615,7 +1730,118 @@ export default function PlanningWizard({
                             ) : null}
                           </div>
                         </div>
-                        <DraftFoodPillsMini foods={r.draftFoods} />
+                        {mealIdx >= 0 && template ? (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#a5f3fc', marginBottom: 4 }}>
+                              Alimenti (manuale — non sovrascritti da «Genera pasto»)
+                            </div>
+                            <DraftFoodPillsMini
+                              foods={normalizeMealFoodsArray(mealFoodsRead(template))}
+                              onRemoveIndex={
+                                proposedUnlocked
+                                  ? (idx) => removeTemplateFood(template.id, idx)
+                                  : undefined
+                              }
+                            />
+                            {proposedUnlocked ? (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  flexWrap: 'wrap',
+                                  gap: 8,
+                                  marginTop: 8,
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <input
+                                  type="text"
+                                  placeholder="Nome alimento"
+                                  value={mealManualFormByTpl[template.id]?.name ?? ''}
+                                  onChange={(e) =>
+                                    setMealManualFormByTpl((prev) => ({
+                                      ...prev,
+                                      [template.id]: {
+                                        name: e.target.value,
+                                        qty: prev[template.id]?.qty ?? '100',
+                                      },
+                                    }))
+                                  }
+                                  style={{
+                                    flex: '1 1 140px',
+                                    minWidth: 120,
+                                    padding: '6px 8px',
+                                    borderRadius: 8,
+                                    border: '1px solid rgba(34, 211, 238, 0.4)',
+                                    background: 'rgba(0,0,0,0.28)',
+                                    color: '#e0f2fe',
+                                    fontSize: '0.78rem',
+                                  }}
+                                />
+                                <label
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: '0.7rem',
+                                    color: '#cffafe',
+                                  }}
+                                >
+                                  g
+                                  <input
+                                    type="number"
+                                    min={5}
+                                    max={2000}
+                                    step={5}
+                                    value={mealManualFormByTpl[template.id]?.qty ?? '100'}
+                                    onChange={(e) =>
+                                      setMealManualFormByTpl((prev) => ({
+                                        ...prev,
+                                        [template.id]: {
+                                          name: prev[template.id]?.name ?? '',
+                                          qty: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    style={{
+                                      width: 72,
+                                      padding: '6px 8px',
+                                      borderRadius: 8,
+                                      border: '1px solid rgba(34, 211, 238, 0.4)',
+                                      background: 'rgba(0,0,0,0.28)',
+                                      color: '#e0f2fe',
+                                      fontSize: '0.78rem',
+                                    }}
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const row = mealManualFormByTpl[template.id] || {};
+                                    addManualFoodToTemplate(template.id, row.name, row.qty);
+                                    setMealManualFormByTpl((prev) => ({
+                                      ...prev,
+                                      [template.id]: { name: '', qty: '100' },
+                                    }));
+                                  }}
+                                  style={{
+                                    padding: '6px 12px',
+                                    borderRadius: 8,
+                                    border: '1px solid rgba(52, 211, 153, 0.45)',
+                                    background: 'rgba(52, 211, 153, 0.15)',
+                                    color: '#86efac',
+                                    fontWeight: 700,
+                                    fontSize: '0.72rem',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  Aggiungi
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <DraftFoodPillsMini foods={r.draftFoods} />
+                        )}
                         <div style={{ fontSize: '0.72rem', color: '#cffafe', marginTop: 6, lineHeight: 1.4 }}>
                           Target suggeriti: ~{t.kcal} kcal · Prot {t.prot}g · Carb {t.carb}g · Grassi {t.fat}g
                           <br />
