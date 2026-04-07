@@ -25,6 +25,7 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 import { useFirebase } from './useFirebase';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
+import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
 import {
@@ -1964,6 +1965,14 @@ export default function SalaComandi() {
   const highlightResetTimeoutRef = useRef(null);
   const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
+  /** Anteprima curve (energia/kcal) durante drag nodo timeline; null = stato committato. */
+  const [timelineStripPreview, setTimelineStripPreview] = useState(null);
+  const timelineStripPreviewGenRef = useRef(0);
+  const timelineStripPreviewDebounceRef = useRef(null);
+  const timelineStripPreviewLatestRef = useRef(null);
+  const timelineStripPreviewSlowRef = useRef(0);
+  const timelineStripPreviewDisabledRef = useRef(false);
+  const timelineStripPreviewDepsRef = useRef({});
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
@@ -8583,7 +8592,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     currentTime,
     accumuloSNC
   ]);
-  const chartData = energySimulation?.chartData ?? EMPTY_ENERGY_CHART_DATA;
+  const chartDataCommitted = energySimulation?.chartData ?? EMPTY_ENERGY_CHART_DATA;
+  const chartData = timelineStripPreview?.chartData ?? chartDataCommitted;
 
   const timelineEnergySeries = useMemo(
     () =>
@@ -8596,6 +8606,117 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         })
         .filter(Boolean),
     [chartData]
+  );
+
+  timelineStripPreviewDepsRef.current = {
+    nodesForEnergySimulation,
+    dailyLogForEnergy,
+    manualNodes,
+    getFoodItemsForMealSlot,
+    idealStrategy,
+    activeWaterIntake,
+    dailyWaterGoal,
+    yesterdayEnergyAt24,
+    userModel,
+    nervousSystemLoad,
+    currentTime,
+    accumuloSNC,
+    sleepStatus,
+    isSimulationMode,
+  };
+
+  const clearTimelineStripEnergyPreview = useCallback(() => {
+    if (timelineStripPreviewDebounceRef.current != null) {
+      window.clearTimeout(timelineStripPreviewDebounceRef.current);
+      timelineStripPreviewDebounceRef.current = null;
+    }
+    timelineStripPreviewLatestRef.current = null;
+    timelineStripPreviewGenRef.current += 1;
+    setTimelineStripPreview(null);
+  }, []);
+
+  const onTimelineStripPreviewDragStart = useCallback(() => {
+    timelineStripPreviewDisabledRef.current = false;
+    timelineStripPreviewSlowRef.current = 0;
+    timelineStripPreviewGenRef.current += 1;
+  }, []);
+
+  const scheduleTimelineStripEnergyPreview = useCallback(
+    (dragNodeId, hourDecimal) => {
+      if (isSimulationMode || sleepStatus === 'NIGHT_PENDING') return;
+      timelineStripPreviewLatestRef.current = { id: dragNodeId, hour: hourDecimal };
+      if (timelineStripPreviewDebounceRef.current != null) {
+        window.clearTimeout(timelineStripPreviewDebounceRef.current);
+      }
+      timelineStripPreviewDebounceRef.current = window.setTimeout(() => {
+        timelineStripPreviewDebounceRef.current = null;
+        const token = timelineStripPreviewGenRef.current;
+        window.requestAnimationFrame(() => {
+          if (token !== timelineStripPreviewGenRef.current) return;
+          const d = timelineStripPreviewDepsRef.current;
+          if (!d || d.isSimulationMode || d.sleepStatus === 'NIGHT_PENDING') return;
+          if (timelineStripPreviewDisabledRef.current) return;
+          const pending = timelineStripPreviewLatestRef.current;
+          if (!pending || pending.id == null) return;
+
+          const merged = applyTimelineStripHourToPreviewInputs(
+            pending.id,
+            pending.hour,
+            d.nodesForEnergySimulation,
+            d.dailyLogForEnergy,
+            d.getFoodItemsForMealSlot,
+            d.manualNodes
+          );
+          if (!merged) {
+            if (token === timelineStripPreviewGenRef.current) setTimelineStripPreview(null);
+            return;
+          }
+
+          const t0 = performance.now();
+          let sim;
+          try {
+            sim = generateRealEnergyData(
+              merged.nodes,
+              merged.log,
+              d.idealStrategy,
+              d.activeWaterIntake,
+              d.dailyWaterGoal,
+              d.yesterdayEnergyAt24?.energy ?? undefined,
+              d.yesterdayEnergyAt24?.idealEnergy ?? undefined,
+              d.userModel,
+              d.nervousSystemLoad,
+              d.currentTime,
+              d.accumuloSNC
+            );
+          } catch {
+            return;
+          }
+          const dt = performance.now() - t0;
+          if (dt > 55) {
+            timelineStripPreviewSlowRef.current += 1;
+            if (timelineStripPreviewSlowRef.current >= 2) {
+              timelineStripPreviewDisabledRef.current = true;
+              if (token === timelineStripPreviewGenRef.current) setTimelineStripPreview(null);
+              return;
+            }
+          }
+          if (token !== timelineStripPreviewGenRef.current) return;
+
+          let cal;
+          try {
+            cal = generateCalorieTimeline(merged.log);
+          } catch {
+            cal = { calorieTimeline: [], totalCalories: 0 };
+          }
+          setTimelineStripPreview({
+            chartData: sim.chartData,
+            calorieTimeline: cal.calorieTimeline,
+            totalCalories: cal.totalCalories,
+          });
+        });
+      }, 24);
+    },
+    [isSimulationMode, sleepStatus]
   );
 
   /** Input giornaliero per computeLongevityScore (allineato a chart, totali, rischio matrix, acqua). */
@@ -8745,8 +8866,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   const hasDigestionRisk = energySimulation?.hasDigestionRisk ?? false;
 
   const { calorieTimeline: calorieTimelineData, totalCalories: totalCaloriesTimeline } = useMemo(() => {
+    if (
+      timelineStripPreview?.calorieTimeline != null &&
+      Array.isArray(timelineStripPreview.calorieTimeline)
+    ) {
+      return {
+        calorieTimeline: timelineStripPreview.calorieTimeline,
+        totalCalories:
+          typeof timelineStripPreview.totalCalories === 'number' && !Number.isNaN(timelineStripPreview.totalCalories)
+            ? timelineStripPreview.totalCalories
+            : 0,
+      };
+    }
     return generateCalorieTimeline(activeLog);
-  }, [activeLog]);
+  }, [activeLog, timelineStripPreview]);
   const safeCalorieTimelineData = Array.isArray(calorieTimelineData) ? calorieTimelineData : [];
 
   useEffect(() => {
@@ -9653,6 +9786,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                 timelineEnergySeries={timelineEnergySeries}
                 updateMealTime={updateMealTime}
+                onStripDragChartPreviewStart={onTimelineStripPreviewDragStart}
+                onStripDragChartPreview={scheduleTimelineStripEnergyPreview}
+                onStripDragChartPreviewEnd={clearTimelineStripEnergyPreview}
               />
             </div>
             </div>
@@ -10734,6 +10870,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                   timelineEnergySeries={timelineEnergySeries}
                   updateMealTime={updateMealTime}
+                  onStripDragChartPreviewStart={onTimelineStripPreviewDragStart}
+                  onStripDragChartPreview={scheduleTimelineStripEnergyPreview}
+                  onStripDragChartPreviewEnd={clearTimelineStripEnergyPreview}
                 />
               </div>
             </div>

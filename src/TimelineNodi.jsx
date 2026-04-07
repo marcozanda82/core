@@ -150,6 +150,12 @@ export default function TimelineNodi({
   timelineEnergySeries,
   /** Commit nuovo orario (ore decimali 0–24) al mouseup dopo drag locale. */
   updateMealTime,
+  /** Inizio drag striscia: reset anteprima / performance guard (opzionale). */
+  onStripDragChartPreviewStart,
+  /** Anteprima curve durante drag: `(nodeId, hourDecimal)` — debounce lato parent (~24ms). */
+  onStripDragChartPreview,
+  /** Fine drag: invalida anteprima prima del commit. */
+  onStripDragChartPreviewEnd,
 }) {
   const reduceMotion = useReducedMotion();
   const [nowDecimalHour, setNowDecimalHour] = useState(() => getWallClockDecimalHour());
@@ -190,7 +196,8 @@ export default function TimelineNodi({
     }
     setDraggingId(node.id);
     document.body.style.userSelect = 'none';
-  }, []);
+    if (typeof onStripDragChartPreviewStart === 'function') onStripDragChartPreviewStart();
+  }, [onStripDragChartPreviewStart]);
 
   useEffect(() => {
     if (typeof nowLineDecimalHour === 'number' && !Number.isNaN(nowLineDecimalHour)) return undefined;
@@ -251,11 +258,18 @@ export default function TimelineNodi({
         magneticSnapActiveRef.current = magneticActive;
         setMagneticSnapActive(magneticActive);
       }
+
+      const n = stripDragNodeRef.current;
+      if (n != null && typeof onStripDragChartPreview === 'function') {
+        onStripDragChartPreview(n.id, displayPercent * 24);
+      }
     }
 
     function handleUp() {
       if (ended) return;
       ended = true;
+
+      if (typeof onStripDragChartPreviewEnd === 'function') onStripDragChartPreviewEnd();
 
       const capEl = stripDragCaptureElRef.current;
       const pid = stripDragPointerIdRef.current;
@@ -327,7 +341,7 @@ export default function TimelineNodi({
       stripDragNodeRef.current = null;
       magneticSnapActiveRef.current = false;
     };
-  }, [draggingId, updateMealTime, reduceMotion]);
+  }, [draggingId, updateMealTime, reduceMotion, onStripDragChartPreview, onStripDragChartPreviewEnd]);
 
   useEffect(() => {
     dragXRef.current = dragX;
