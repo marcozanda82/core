@@ -9785,6 +9785,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 energyPercent={bodyBattery?.currentEnergy ?? 0}
                 nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                 timelineEnergySeries={timelineEnergySeries}
+                timelineQualityChartData={chartData}
                 updateMealTime={updateMealTime}
                 onStripDragChartPreviewStart={onTimelineStripPreviewDragStart}
                 onStripDragChartPreview={scheduleTimelineStripEnergyPreview}
@@ -10869,6 +10870,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   energyPercent={bodyBattery?.currentEnergy ?? 0}
                   nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                   timelineEnergySeries={timelineEnergySeries}
+                  timelineQualityChartData={chartData}
                   updateMealTime={updateMealTime}
                   onStripDragChartPreviewStart={onTimelineStripPreviewDragStart}
                   onStripDragChartPreview={scheduleTimelineStripEnergyPreview}

@@ -9,8 +9,21 @@ import {
   buildTimelineEnergyStripGradient,
 } from './timeLayout';
 import { SHOW_TIME_ALIGNMENT_DEBUG } from './TimeAlignmentDebugOverlay';
+import {
+  buildTimelineNodeQualityMap,
+  qualityShadowForState,
+  TIMELINE_QUALITY_SHADOW,
+} from './timelineNodeQuality';
 
 const SUBTLE_SPRING = { type: 'spring', stiffness: 420, damping: 26, mass: 0.85 };
+
+function combineBoxShadow(base, qualityLayer) {
+  const b = base && base !== 'none' ? base : null;
+  const q = qualityLayer && qualityLayer !== 'none' ? qualityLayer : null;
+  if (!q) return b || 'none';
+  if (!b) return q;
+  return `${b}, ${q}`;
+}
 
 const NOW_LINE_GLOW =
   '0 0 4px rgba(0, 229, 255, 0.95), 0 0 10px rgba(0, 229, 255, 0.55), 0 0 18px rgba(255, 255, 255, 0.12)';
@@ -148,6 +161,11 @@ export default function TimelineNodi({
   nowLineDecimalHour,
   /** Punti energia giornata per sfondo gradient sotto la striscia: { time, energy } (0–24h, 0–100). */
   timelineEnergySeries,
+  /**
+   * Serie grafico giornata (stessi punti del ComposedChart) per campioni fisiologici sui nodi.
+   * Se assente, lo stato qualità resta neutro.
+   */
+  timelineQualityChartData,
   /** Commit nuovo orario (ore decimali 0–24) al mouseup dopo drag locale. */
   updateMealTime,
   /** Inizio drag striscia: reset anteprima / performance guard (opzionale). */
@@ -175,6 +193,11 @@ export default function TimelineNodi({
   const stripDragNodeRef = useRef(null);
   const magneticSnapActiveRef = useRef(false);
   const nodes = activeNodesWithStack ?? [];
+
+  const qualityById = useMemo(
+    () => buildTimelineNodeQualityMap(nodes, timelineQualityChartData),
+    [nodes, timelineQualityChartData]
+  );
 
   const beginTimelineStripDrag = useCallback((node, e) => {
     if (!e || (e.pointerType === 'mouse' && e.button !== 0)) return;
@@ -555,10 +578,27 @@ export default function TimelineNodi({
                 isStripDragging && stripMagneticOn
                   ? '0 0 22px rgba(255, 234, 0, 0.52), 0 0 42px rgba(255, 68, 68, 0.24)'
                   : null;
+              const qStateWork = qualityById.get(node.id) ?? 'neutral';
+              const qualityEligibleWork = !isActiveDrag && !isStripDragging && !isTouchingOrDragging;
+              const qWorkPulse =
+                qualityEligibleWork && !reduceMotion && qStateWork === 'suboptimal'
+                  ? [TIMELINE_QUALITY_SHADOW.suboptimalLo, TIMELINE_QUALITY_SHADOW.suboptimalHi]
+                  : null;
+              const qWorkRest =
+                qualityEligibleWork && !qWorkPulse ? qualityShadowForState(qStateWork, reduceMotion) : null;
+              const workBarTransition =
+                qWorkPulse && !isActiveDrag
+                  ? {
+                      opacity: { duration: NODE_ADD_DURATION, ease: NODE_ADD_EASE },
+                      scale: { duration: NODE_ADD_DURATION, ease: NODE_ADD_EASE },
+                      y: { duration: 0.18, ease: 'easeOut' },
+                      boxShadow: { duration: 2.7, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
+                    }
+                  : nodeAddTransition(reduceMotion, isActiveDrag);
               return (
                 <motion.div
                   key={node.id}
-                  className={`timeline-node ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
+                  className={`timeline-node timeline-node--quality-${qStateWork} ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
                   onPointerDown={(e) => {
                     startNodeDrag(node, 'all')(e);
                     beginTimelineStripDrag(node, e);
@@ -573,14 +613,19 @@ export default function TimelineNodi({
                     y: isDragging ? dragY - 45 : 0,
                     boxShadow:
                       reduceMotion
-                        ? 'none'
+                        ? workStripShadow ||
+                          (isActiveDrag ? 'none' : qualityEligibleWork && qWorkRest ? qWorkRest : 'none')
                         : workStripShadow
                           ? workStripShadow
                           : isActiveDrag
                             ? 'none'
-                            : [WORK_ADD_GLOW_PULSE, 'none'],
+                            : qWorkPulse
+                              ? qWorkPulse
+                              : qWorkRest
+                                ? [WORK_ADD_GLOW_PULSE, qWorkRest]
+                                : [WORK_ADD_GLOW_PULSE, 'none'],
                   }}
-                  transition={nodeAddTransition(reduceMotion, isActiveDrag)}
+                  transition={workBarTransition}
                   whileHover={!isActiveDrag ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
                   whileTap={
                     !isActiveDrag
@@ -635,10 +680,27 @@ export default function TimelineNodi({
                 isStripDragging && stripMagneticOn
                   ? '0 0 22px rgba(0, 229, 255, 0.5), 0 0 40px rgba(182, 102, 210, 0.28)'
                   : null;
+              const qStateCog = qualityById.get(node.id) ?? 'neutral';
+              const qualityEligibleCog = !isActiveDrag && !isStripDragging && !isTouchingOrDragging;
+              const qCogPulse =
+                qualityEligibleCog && !reduceMotion && qStateCog === 'suboptimal'
+                  ? [TIMELINE_QUALITY_SHADOW.suboptimalLo, TIMELINE_QUALITY_SHADOW.suboptimalHi]
+                  : null;
+              const qCogRest =
+                qualityEligibleCog && !qCogPulse ? qualityShadowForState(qStateCog, reduceMotion) : null;
+              const cogBarTransition =
+                qCogPulse && !isActiveDrag
+                  ? {
+                      opacity: { duration: NODE_ADD_DURATION, ease: NODE_ADD_EASE },
+                      scale: { duration: NODE_ADD_DURATION, ease: NODE_ADD_EASE },
+                      y: { duration: 0.18, ease: 'easeOut' },
+                      boxShadow: { duration: 2.7, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
+                    }
+                  : nodeAddTransition(reduceMotion, isActiveDrag);
               return (
                 <motion.div
                   key={node.id}
-                  className={`timeline-node ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
+                  className={`timeline-node timeline-node--quality-${qStateCog} ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
                   onPointerDown={(e) => {
                     startNodeDrag(node, 'all')(e);
                     beginTimelineStripDrag(node, e);
@@ -653,14 +715,19 @@ export default function TimelineNodi({
                     y: isDragging ? dragY - 45 : 0,
                     boxShadow:
                       reduceMotion
-                        ? 'none'
+                        ? cogStripShadow ||
+                          (isActiveDrag ? 'none' : qualityEligibleCog && qCogRest ? qCogRest : 'none')
                         : cogStripShadow
                           ? cogStripShadow
                           : isActiveDrag
                             ? 'none'
-                            : [COG_ADD_GLOW_PULSE, 'none'],
+                            : qCogPulse
+                              ? qCogPulse
+                              : qCogRest
+                                ? [COG_ADD_GLOW_PULSE, qCogRest]
+                                : [COG_ADD_GLOW_PULSE, 'none'],
                   }}
-                  transition={nodeAddTransition(reduceMotion, isActiveDrag)}
+                  transition={cogBarTransition}
                   whileHover={!isActiveDrag ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
                   whileTap={
                     !isActiveDrag
@@ -768,12 +835,30 @@ export default function TimelineNodi({
                 : isStripDragging && stripMagneticOn && isWorkoutPoint
                   ? '0 0 26px rgba(255, 68, 68, 0.52), 0 0 44px rgba(255, 234, 0, 0.22)'
                   : null;
+            const qStatePoint = qualityById.get(node.id) ?? 'neutral';
+            const qualityEligiblePoint = !isActiveDrag && !isStripDragging && !isTouchingOrDragging;
+            const qPointPulse =
+              qualityEligiblePoint && !reduceMotion && qStatePoint === 'suboptimal'
+                ? [TIMELINE_QUALITY_SHADOW.suboptimalLo, TIMELINE_QUALITY_SHADOW.suboptimalHi]
+                : null;
+            const qPointRest =
+              qualityEligiblePoint && !qPointPulse ? qualityShadowForState(qStatePoint, reduceMotion) : null;
+            const pointQualityTransition =
+              qPointPulse && !isActiveDrag
+                ? {
+                    opacity: { duration: NODE_ADD_DURATION, ease: NODE_ADD_EASE },
+                    scale: { duration: NODE_ADD_DURATION, ease: NODE_ADD_EASE },
+                    x: { duration: NODE_ADD_DURATION, ease: NODE_ADD_EASE },
+                    y: { duration: 0.18, ease: 'easeOut' },
+                    boxShadow: { duration: 2.7, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
+                  }
+                : nodeAddTransition(reduceMotion, isActiveDrag);
             const pointZ = isActiveDrag ? 10 : isTouchingOrDragging ? 100 : ghostVisual ? 9 : (importanceStyle.zIndex ?? 2);
             const left = nodeLeftPercentStr(displayTimeVal);
             return (
               <motion.div
                 key={node.id}
-                className={`timeline-node meal-node ${isActiveDrag ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
+                className={`timeline-node meal-node timeline-node--quality-${qStatePoint} ${isActiveDrag ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
                 onPointerDown={(e) => {
                   startNodeDrag(node, 'all')(e);
                   beginTimelineStripDrag(node, e);
@@ -792,14 +877,18 @@ export default function TimelineNodi({
                   x: '-50%',
                   y: isDragging ? dragY - 45 : 0,
                   boxShadow: reduceMotion
-                    ? pointBoxShadow
+                    ? combineBoxShadow(pointBoxShadow, qPointRest || undefined)
                     : mealWorkoutMagneticShadow
                       ? mealWorkoutMagneticShadow
                       : isActiveDrag
                         ? pointBoxShadow
-                        : [POINT_ADD_GLOW_PULSE, pointBoxShadow],
+                        : qPointPulse
+                          ? qPointPulse
+                          : qPointRest
+                            ? [POINT_ADD_GLOW_PULSE, combineBoxShadow(pointBoxShadow, qPointRest)]
+                            : [POINT_ADD_GLOW_PULSE, pointBoxShadow],
                 }}
-                transition={nodeAddTransition(reduceMotion, isActiveDrag)}
+                transition={pointQualityTransition}
                 whileHover={!isActiveDrag ? { scale: baseScale * 1.1, transition: SUBTLE_SPRING } : undefined}
                 whileTap={
                   !isActiveDrag
