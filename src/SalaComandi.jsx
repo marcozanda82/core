@@ -262,6 +262,29 @@ function planningMealSlotKeyForFirebase(row) {
   return `${mt}_${t.toFixed(3)}`;
 }
 
+const PLANNING_TIMING_SLOT_IDS = new Set(['mattina', 'pomeriggio', 'sera']);
+
+/** `timingByMacro` su RTDB: array di fasce per macro (migrazione da stringa singola). */
+function normalizeTimingByMacroForPlanningDoc(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (Array.isArray(v)) {
+      const arr = [];
+      for (const x of v) {
+        const s = String(x).trim();
+        if (PLANNING_TIMING_SLOT_IDS.has(s) && !arr.includes(s)) arr.push(s);
+      }
+      out[k] = arr;
+    } else if (typeof v === 'string' && PLANNING_TIMING_SLOT_IDS.has(v)) {
+      out[k] = [v];
+    } else {
+      out[k] = [];
+    }
+  }
+  return out;
+}
+
 /**
  * Documento RTDB `planning/{userId}/{date}` — separato da tracker_data.
  * @param {object} payload — output PlanningWizard (ghostMeals + wizardMeta + workout flags)
@@ -297,16 +320,22 @@ function buildPlanningFirebaseDoc(payload) {
     target: g.target != null ? g.target : undefined,
     source: g.source || undefined,
   }));
+  const workoutTimesDecPersist = (Array.isArray(payload.workoutTimesDec)
+    ? payload.workoutTimesDec
+    : typeof payload.workoutTimeDec === 'number' && !Number.isNaN(payload.workoutTimeDec)
+      ? [payload.workoutTimeDec]
+      : []
+  ).filter((x) => typeof x === 'number' && !Number.isNaN(x));
   const activities = {
     macros: Array.isArray(meta.macros) ? [...meta.macros] : [],
     muscles: Array.isArray(meta.muscles) ? [...meta.muscles] : [],
-    timingByMacro:
-      meta.timingByMacro && typeof meta.timingByMacro === 'object' ? { ...meta.timingByMacro } : {},
+    timingByMacro: normalizeTimingByMacroForPlanningDoc(meta.timingByMacro),
     addGhostWorkout: Boolean(payload.addGhostWorkout),
     workoutTimeDec:
       typeof payload.workoutTimeDec === 'number' && !Number.isNaN(payload.workoutTimeDec)
         ? payload.workoutTimeDec
-        : null,
+        : workoutTimesDecPersist[0] ?? null,
+    workoutTimesDec: workoutTimesDecPersist,
     stagingDraftBySlot,
   };
   return { meals, activities, createdAt: Date.now() };
@@ -8078,24 +8107,23 @@ ${dbKeys || 'n/d'}`;
 
       const baseManual = (manualNodes || []).filter((n) => n && n.type !== 'ghost_workout');
       let mergedManual = [...baseManual].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
-      const wDec = payload.workoutTimeDec;
-      if (
-        !isSimulationMode &&
-        payload.addGhostWorkout &&
-        typeof wDec === 'number' &&
-        !Number.isNaN(wDec) &&
-        !hasRealWorkout
-      ) {
-        mergedManual = [
-          ...baseManual,
-          {
-            id: `ghost_workout_${Date.now()}`,
-            type: 'ghost_workout',
-            time: wDec,
-            title: 'Allenamento Pianificato',
-            isGhost: true,
-          },
-        ].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+      const workoutTimesRaw = Array.isArray(payload.workoutTimesDec)
+        ? payload.workoutTimesDec
+        : typeof payload.workoutTimeDec === 'number' && !Number.isNaN(payload.workoutTimeDec)
+          ? [payload.workoutTimeDec]
+          : [];
+      const workoutTimes = [...new Set(workoutTimesRaw.filter((x) => typeof x === 'number' && !Number.isNaN(x)))].sort(
+        (a, b) => a - b
+      );
+      if (!isSimulationMode && payload.addGhostWorkout && workoutTimes.length > 0 && !hasRealWorkout) {
+        const ghostWos = workoutTimes.map((t, idx) => ({
+          id: `ghost_workout_${batchTs}_${idx}`,
+          type: 'ghost_workout',
+          time: t,
+          title: 'Allenamento Pianificato',
+          isGhost: true,
+        }));
+        mergedManual = [...baseManual, ...ghostWos].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
       }
 
       if (isSimulationMode) {

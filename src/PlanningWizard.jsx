@@ -33,6 +33,35 @@ const TIMING_KEYS = [
   { id: 'sera', label: 'Sera' },
 ];
 
+const VALID_TIMING_SLOT_IDS = new Set(TIMING_KEYS.map((k) => k.id));
+
+/** Una o più fasce per macro (RTDB legacy: singola stringa → [stringa]). */
+function normalizeTimingSlotList(val) {
+  if (Array.isArray(val)) {
+    const out = [];
+    for (const x of val) {
+      const s = String(x).trim();
+      if (VALID_TIMING_SLOT_IDS.has(s) && !out.includes(s)) out.push(s);
+    }
+    return out;
+  }
+  if (typeof val === 'string' && VALID_TIMING_SLOT_IDS.has(val)) return [val];
+  return [];
+}
+
+function normalizeTimingByMacroState(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  for (const k of Object.keys(raw)) {
+    out[k] = normalizeTimingSlotList(raw[k]);
+  }
+  return out;
+}
+
+function timingSlotLabel(slotId) {
+  return TIMING_KEYS.find((t) => t.id === slotId)?.label || slotId;
+}
+
 /** Template predefiniti per lo stato `meals` (slot proposti · canon + mealType invariati). */
 const PROPOSED_SLOTS = [
   { canon: 'colazione', label: 'Colazione', mealType: 'colazione', defaultHour: 8 },
@@ -733,7 +762,7 @@ export default function PlanningWizard({
       if (Array.isArray(act.macros)) setMacros(new Set(act.macros));
       if (Array.isArray(act.muscles)) setMuscles(new Set(act.muscles));
       if (act.timingByMacro && typeof act.timingByMacro === 'object') {
-        setTimingByMacro({ ...act.timingByMacro });
+        setTimingByMacro(normalizeTimingByMacroState(act.timingByMacro));
       }
     }
     planningMetaHydratedForNonce.current = hydrateNonce;
@@ -821,7 +850,7 @@ export default function PlanningWizard({
     if (macros.size === 0) return true;
     const timingSatisfied = [...macros].every((macroId) => {
       if (macroId === 'training' && trainingLockedFromLog) return true;
-      return Boolean(timingByMacro[macroId]);
+      return normalizeTimingSlotList(timingByMacro[macroId]).length > 0;
     });
     const musclesSatisfied =
       !macros.has('training') || muscles.size > 0 || trainingLockedFromLog;
@@ -860,9 +889,21 @@ export default function PlanningWizard({
   const mgConsumed = useMemo(() => sumMgFromLog(dailyLog), [dailyLog]);
 
   const toggleMacro = (id) => {
+    if (id === 'training' && trainingLockedFromLog && macros.has('training')) return;
     setMacros((prev) => {
       if (id === 'training' && trainingLockedFromLog && prev.has('training')) return prev;
-      return toggleInSet(prev, id);
+      const wasOn = prev.has(id);
+      const next = toggleInSet(prev, id);
+      if (wasOn) {
+        setTimingByMacro((tim) => {
+          const u = { ...tim };
+          delete u[id];
+          return u;
+        });
+      } else {
+        setTimingByMacro((tim) => ({ ...tim, [id]: [] }));
+      }
+      return next;
     });
   };
 
@@ -871,16 +912,26 @@ export default function PlanningWizard({
     setMuscles((prev) => toggleInSet(prev, name));
   };
 
-  const setTiming = (macroId, slot) => {
-    const end = FASCIA_END_DEC[slot];
-    if (
-      end != null &&
-      wizardRowDisabledByTime({ isGhost: false, timeDec: end }, nowDec)
-    ) {
-      return;
-    }
-    setTimingByMacro((prev) => ({ ...prev, [macroId]: slot }));
-  };
+  const addTimingBlock = useCallback(
+    (macroId, slotId) => {
+      const end = FASCIA_END_DEC[slotId];
+      if (end != null && wizardRowDisabledByTime({ isGhost: false, timeDec: end }, nowDec)) return;
+      setTimingByMacro((prev) => {
+        const cur = normalizeTimingSlotList(prev[macroId]);
+        if (cur.includes(slotId)) return { ...prev, [macroId]: cur };
+        return { ...prev, [macroId]: [...cur, slotId] };
+      });
+    },
+    [nowDec]
+  );
+
+  const removeTimingBlock = useCallback((macroId, index) => {
+    setTimingByMacro((prev) => {
+      const cur = normalizeTimingSlotList(prev[macroId]);
+      const next = cur.filter((_, i) => i !== index);
+      return { ...prev, [macroId]: next };
+    });
+  }, []);
 
   const goNext = useCallback(() => {
     if (step === 1 && !canAdvanceFrom1) return;
@@ -1023,20 +1074,24 @@ export default function PlanningWizard({
     ]
   );
 
-  const workoutDecForApply = useMemo(() => {
-    if (!hasTraining || hasRealWorkout) return null;
-    const slot = timingByMacro.training;
-    if (!slot) return null;
-    return fasciaToDecimal(slot);
-  }, [hasTraining, hasRealWorkout, timingByMacro]);
+  /** Orari decimali unici per ghost workout (una fascia = un anchor). */
+  const workoutTimesDecForApply = useMemo(() => {
+    if (!hasTraining || hasRealWorkout) return [];
+    const blocks = normalizeTimingSlotList(timingByMacro.training);
+    const decs = blocks
+      .map((slotId) => fasciaToDecimal(slotId))
+      .filter((x) => typeof x === 'number' && !Number.isNaN(x));
+    return [...new Set(decs)].sort((a, b) => a - b);
+  }, [hasTraining, hasRealWorkout, timingByMacro.training]);
 
   const handleConfirm = () => {
     if (wizardConfirmInFlightRef.current) return;
     wizardConfirmInFlightRef.current = true;
     try {
     const finalPlan = {
-      workoutTimeDec: workoutDecForApply,
-      addGhostWorkout: Boolean(hasTraining && !hasRealWorkout && workoutDecForApply != null),
+      workoutTimeDec: workoutTimesDecForApply[0] ?? null,
+      workoutTimesDec: [...workoutTimesDecForApply],
+      addGhostWorkout: Boolean(hasTraining && !hasRealWorkout && workoutTimesDecForApply.length > 0),
     };
     // Merge esplicito: ghostMeals = stato staging (include draftFoods da «Genera Pasto»)
     finalPlan.ghostMeals = stagingGhosts.map((g) => {
@@ -1068,7 +1123,7 @@ export default function PlanningWizard({
     finalPlan.wizardMeta = {
       macros: [...macros],
       muscles: [...muscles],
-      timingByMacro: { ...timingByMacro },
+      timingByMacro: normalizeTimingByMacroState(timingByMacro),
       stagingDraftById: { ...stagingDraftById },
     };
     onConfirmApply?.(finalPlan);
@@ -1130,16 +1185,21 @@ export default function PlanningWizard({
         staging: g,
       });
     });
-    if (hasTraining && !hasRealWorkout && workoutDecForApply != null) {
-      rows.push({
-        kind: 'ghost_wo_new',
-        timeDec: workoutDecForApply,
-        label: '⚡ Allenamento pianificato (nuovo)',
+    if (hasTraining && !hasRealWorkout && workoutTimesDecForApply.length > 0) {
+      workoutTimesDecForApply.forEach((wdec, idx) => {
+        rows.push({
+          kind: 'ghost_wo_new',
+          timeDec: wdec,
+          label:
+            workoutTimesDecForApply.length > 1
+              ? `⚡ Allenamento pianificato (${idx + 1}/${workoutTimesDecForApply.length})`
+              : '⚡ Allenamento pianificato (nuovo)',
+        });
       });
     }
     rows.sort((a, b) => timelineSortKey(a) - timelineSortKey(b));
     return rows;
-  }, [dailyLog, stagingGhosts, hasTraining, hasRealWorkout, workoutDecForApply]);
+  }, [dailyLog, stagingGhosts, hasTraining, hasRealWorkout, workoutTimesDecForApply]);
 
   const macroList = MACRO_OPTIONS.filter((m) => macros.has(m.id));
   const step1PastWorkoutFrozen = trainingLockedFromLog;
@@ -1174,7 +1234,7 @@ export default function PlanningWizard({
       {step === 1 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <p style={{ margin: '0 0 6px 0', fontSize: '0.82rem', color: 'rgba(200,210,220,0.9)' }}>
-            Le attività sono opzionali: puoi lasciare tutto deselezionato e pianificare solo i pasti. Se ne scegli una, imposta la fascia (e i muscoli per l’allenamento). Puoi deselezionare un macro cliccandolo di nuovo, se non è bloccato dal tempo.
+            Le attività sono opzionali: puoi lasciare tutto deselezionato e pianificare solo i pasti. Se ne scegli una, aggiungi almeno una fascia oraria (puoi combinarne più di una per attività; rimuovi con ×). Per l’allenamento servono anche i gruppi muscolari. Puoi deselezionare un macro cliccandolo di nuovo, se non è bloccato dal tempo.
           </p>
           <div
             style={{
@@ -1278,54 +1338,115 @@ export default function PlanningWizard({
 
             {macroList.length > 0 ? (
               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#7dd3fc' }}>Fascia oraria per attività</div>
-                {macroList.map(({ id, label }) => (
-                  <div
-                    key={id}
-                    style={{
-                      padding: '12px 12px',
-                      borderRadius: 12,
-                      background: 'rgba(255,255,255,0.03)',
-                      border: '1px solid rgba(255,248,220,0.08)',
-                    }}
-                  >
-                    <div style={{ fontWeight: 800, color: '#7dd3fc', fontSize: '0.85rem', marginBottom: 10 }}>
-                      {id === 'training' && muscles.size > 0 ? `${label}: ${MUSCLE_OPTIONS.filter((m) => muscles.has(m)).join(' e ')}` : label}
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#7dd3fc' }}>
+                  Fasce orarie per attività (aggiungi più blocchi se serve)
+                </div>
+                {macroList.map(({ id, label }) => {
+                  const blocks = normalizeTimingSlotList(timingByMacro[id]);
+                  return (
+                    <div
+                      key={id}
+                      style={{
+                        padding: '12px 12px',
+                        borderRadius: 12,
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,248,220,0.08)',
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, color: '#7dd3fc', fontSize: '0.85rem', marginBottom: 10 }}>
+                        {id === 'training' && muscles.size > 0 ? `${label}: ${MUSCLE_OPTIONS.filter((m) => muscles.has(m)).join(' e ')}` : label}
+                      </div>
+                      {blocks.length > 0 ? (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: 6,
+                            marginBottom: 10,
+                            alignItems: 'center',
+                          }}
+                        >
+                          {blocks.map((slotId, bIdx) => (
+                            <span
+                              key={`${slotId}_${bIdx}`}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '6px 10px',
+                                borderRadius: 10,
+                                background: 'rgba(0, 229, 255, 0.14)',
+                                border: '1px solid rgba(0, 229, 255, 0.35)',
+                                color: '#a5f3fc',
+                                fontSize: '0.76rem',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {timingSlotLabel(slotId)}
+                              <button
+                                type="button"
+                                title="Rimuovi fascia"
+                                onClick={() => removeTimingBlock(id, bIdx)}
+                                style={{
+                                  margin: 0,
+                                  padding: '0 5px',
+                                  border: 'none',
+                                  background: 'rgba(0,0,0,0.28)',
+                                  color: '#fda4af',
+                                  borderRadius: 6,
+                                  cursor: 'pointer',
+                                  fontSize: '0.9rem',
+                                  lineHeight: 1,
+                                }}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.72rem', color: 'rgba(200,220,235,0.65)', marginBottom: 10 }}>
+                          Nessuna fascia — aggiungi almeno una con i pulsanti sotto.
+                        </div>
+                      )}
+                      <div style={{ fontSize: '0.68rem', color: 'rgba(125,211,252,0.75)', marginBottom: 6 }}>
+                        Aggiungi fascia
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {TIMING_KEYS.map(({ id: slotId, label: slotLabel }) => {
+                          const slotPast = wizardRowDisabledByTime(
+                            { isGhost: false, timeDec: FASCIA_END_DEC[slotId] },
+                            nowDec
+                          );
+                          const already = blocks.includes(slotId);
+                          return (
+                            <button
+                              key={slotId}
+                              type="button"
+                              disabled={slotPast || already}
+                              onClick={() => addTimingBlock(id, slotId)}
+                              style={{
+                                flex: 1,
+                                minWidth: 88,
+                                padding: '10px 8px',
+                                borderRadius: 10,
+                                border: already ? '1px solid rgba(0, 229, 255, 0.45)' : '1px solid rgba(255,255,255,0.12)',
+                                background: already ? 'rgba(0, 229, 255, 0.12)' : 'rgba(0,0,0,0.2)',
+                                color: slotPast || already ? 'rgba(255,248,220,0.45)' : '#fff8e8',
+                                fontWeight: 700,
+                                fontSize: '0.78rem',
+                                cursor: slotPast || already ? 'not-allowed' : 'pointer',
+                                opacity: slotPast ? 0.45 : already ? 0.72 : 1,
+                              }}
+                            >
+                              {slotPast ? `${slotLabel} 🔒` : already ? `${slotLabel} ✓` : `+ ${slotLabel}`}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {TIMING_KEYS.map(({ id: slotId, label: slotLabel }) => {
-                        const on = timingByMacro[id] === slotId;
-                        const slotPast = wizardRowDisabledByTime(
-                          { isGhost: false, timeDec: FASCIA_END_DEC[slotId] },
-                          nowDec
-                        );
-                        return (
-                          <button
-                            key={slotId}
-                            type="button"
-                            disabled={slotPast}
-                            onClick={() => setTiming(id, slotId)}
-                            style={{
-                              flex: 1,
-                              minWidth: 88,
-                              padding: '10px 8px',
-                              borderRadius: 10,
-                              border: on ? '1px solid rgba(0, 229, 255, 0.6)' : '1px solid rgba(255,255,255,0.12)',
-                              background: on ? 'rgba(0, 229, 255, 0.18)' : 'rgba(0,0,0,0.2)',
-                              color: slotPast ? 'rgba(255,248,220,0.35)' : '#fff8e8',
-                              fontWeight: 700,
-                              fontSize: '0.78rem',
-                              cursor: slotPast ? 'not-allowed' : 'pointer',
-                              opacity: slotPast ? 0.45 : 1,
-                            }}
-                          >
-                            {slotPast ? `${slotLabel} 🔒` : slotLabel}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : null}
           </div>
