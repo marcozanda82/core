@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { getMealIcon } from './coreEngine';
 import {
@@ -36,6 +36,16 @@ function snapTimelineDragPercentForDisplay(percent) {
   const p = clampTimelineDragPercent(percent);
   return Math.round(p * 24 * 4) / 4 / 24;
 }
+
+/**
+ * Tap veloce: non committare orario se spostamento < MIN px e (durata ≤ MAX ms o MAX ≤ 0).
+ * - MAX ≤ 0: ignora solo la durata (resta il filtro sul movimento).
+ * - MIN = 0: disattiva del tutto il filtro “tap” (solo commit dedup / click guard restano).
+ */
+const STRIP_DRAG_TAP_MAX_MS = 160;
+const STRIP_DRAG_MIN_MOVE_PX = 6;
+/** Dedup commit ravvicinati (pointerup + mouseup, doppie chiamate). */
+const STRIP_DRAG_COMMIT_DEDUP_MS = 450;
 
 function nodeAddTransition(reduceMotion, isDragging) {
   if (reduceMotion || isDragging) return { duration: 0 };
@@ -92,7 +102,33 @@ export default function TimelineNodi({
   const [dragX, setDragX] = useState(null);
   const dragXRef = useRef(null);
   const containerRef = useRef(null);
+  const stripDragDownAtRef = useRef(0);
+  const stripDragStartClientXRef = useRef(null);
+  const stripDragMaxDeltaPxRef = useRef(0);
+  const stripDragPointerIdRef = useRef(null);
+  const stripDragCaptureElRef = useRef(null);
+  const stripDragLastCommitRef = useRef({ id: null, hour: null, at: 0 });
+  const stripDragSuppressClickRef = useRef(false);
   const nodes = activeNodesWithStack ?? [];
+
+  const beginTimelineStripDrag = useCallback((node, e) => {
+    if (!e || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    stripDragSuppressClickRef.current = false;
+    stripDragDownAtRef.current = performance.now();
+    stripDragStartClientXRef.current = typeof e.clientX === 'number' ? e.clientX : null;
+    stripDragMaxDeltaPxRef.current = 0;
+    stripDragPointerIdRef.current = e.pointerId != null ? e.pointerId : null;
+    stripDragCaptureElRef.current = e.currentTarget;
+    try {
+      if (typeof e.currentTarget?.setPointerCapture === 'function' && e.pointerId != null) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+    } catch {
+      /* ignore */
+    }
+    setDraggingId(node.id);
+    document.body.style.userSelect = 'none';
+  }, []);
 
   useEffect(() => {
     if (typeof nowLineDecimalHour === 'number' && !Number.isNaN(nowLineDecimalHour)) return undefined;
@@ -110,9 +146,11 @@ export default function TimelineNodi({
   }, [nowLineDecimalHour]);
 
   useEffect(() => {
-    function handleMove(e) {
-      if (!draggingId) return;
+    if (!draggingId) return undefined;
 
+    let ended = false;
+
+    function handleMove(e) {
       const el = containerRef.current;
       if (!el) return;
 
@@ -120,7 +158,18 @@ export default function TimelineNodi({
       const w = rect.width;
       if (!(w > 0)) return;
 
-      const x = e.clientX - rect.left;
+      const clientX = e.clientX;
+      if (!Number.isFinite(clientX)) return;
+
+      const startX = stripDragStartClientXRef.current;
+      if (typeof startX === 'number' && Number.isFinite(startX)) {
+        stripDragMaxDeltaPxRef.current = Math.max(
+          stripDragMaxDeltaPxRef.current,
+          Math.abs(clientX - startX)
+        );
+      }
+
+      const x = clientX - rect.left;
       let percent = x / w;
       percent = Math.max(0, Math.min(1, percent));
 
@@ -128,60 +177,93 @@ export default function TimelineNodi({
       setDragX(percent);
     }
 
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('pointermove', handleMove);
-    return () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('pointermove', handleMove);
-    };
-  }, [draggingId]);
-
-  useEffect(() => {
-    dragXRef.current = dragX;
-  }, [dragX]);
-
-  useEffect(() => {
-    if (!draggingId) return undefined;
-
-    let ended = false;
     function handleUp() {
       if (ended) return;
       ended = true;
-      document.body.style.userSelect = '';
-      const x = dragXRef.current;
-      if (x != null && typeof updateMealTime === 'function') {
-        const percent = clampTimelineDragPercent(x);
-        updateMealTime(draggingId, percent * 24);
+
+      const capEl = stripDragCaptureElRef.current;
+      const pid = stripDragPointerIdRef.current;
+      stripDragCaptureElRef.current = null;
+      stripDragPointerIdRef.current = null;
+      try {
+        if (capEl && typeof capEl.releasePointerCapture === 'function' && pid != null) {
+          capEl.releasePointerCapture(pid);
+        }
+      } catch {
+        /* ignore */
       }
+
+      document.body.style.userSelect = '';
+
+      const rawX = dragXRef.current;
+      const elapsed = performance.now() - stripDragDownAtRef.current;
+      const maxD = stripDragMaxDeltaPxRef.current;
+      const shortPress =
+        STRIP_DRAG_TAP_MAX_MS > 0 ? elapsed <= STRIP_DRAG_TAP_MAX_MS : false;
+      const tapLike = maxD < STRIP_DRAG_MIN_MOVE_PX && (STRIP_DRAG_TAP_MAX_MS <= 0 || shortPress);
+
+      if (!tapLike && rawX != null && typeof updateMealTime === 'function') {
+        const hour = clampTimelineDragPercent(rawX) * 24;
+        const nowT = performance.now();
+        const prev = stripDragLastCommitRef.current;
+        const duplicate =
+          prev &&
+          prev.id === draggingId &&
+          Math.abs(prev.hour - hour) < 1e-4 &&
+          nowT - prev.at < STRIP_DRAG_COMMIT_DEDUP_MS;
+        if (!duplicate) {
+          stripDragLastCommitRef.current = { id: draggingId, hour, at: nowT };
+          updateMealTime(draggingId, hour);
+          stripDragSuppressClickRef.current = true;
+        }
+      }
+
       setDraggingId(null);
       setDragX(null);
       dragXRef.current = null;
     }
 
-    window.addEventListener('mouseup', handleUp);
-    window.addEventListener('pointerup', handleUp);
-    window.addEventListener('pointercancel', handleUp);
+    document.addEventListener('pointermove', handleMove, { capture: true });
+    document.addEventListener('pointerup', handleUp, { capture: true });
+    document.addEventListener('pointercancel', handleUp, { capture: true });
+    document.addEventListener('mousemove', handleMove, { capture: true });
+    document.addEventListener('mouseup', handleUp, { capture: true });
+
     return () => {
-      window.removeEventListener('mouseup', handleUp);
-      window.removeEventListener('pointerup', handleUp);
-      window.removeEventListener('pointercancel', handleUp);
+      document.removeEventListener('pointermove', handleMove, { capture: true });
+      document.removeEventListener('pointerup', handleUp, { capture: true });
+      document.removeEventListener('pointercancel', handleUp, { capture: true });
+      document.removeEventListener('mousemove', handleMove, { capture: true });
+      document.removeEventListener('mouseup', handleUp, { capture: true });
+      const capEl = stripDragCaptureElRef.current;
+      const pid = stripDragPointerIdRef.current;
+      try {
+        if (capEl && typeof capEl.releasePointerCapture === 'function' && pid != null) {
+          capEl.releasePointerCapture(pid);
+        }
+      } catch {
+        /* ignore */
+      }
+      document.body.style.userSelect = '';
     };
   }, [draggingId, updateMealTime]);
 
-  const fireNodeClick = (node, event) => {
-    if (typeof onNodeClick === 'function') onNodeClick(node, event);
-    else if (typeof handleNodeTap === 'function') handleNodeTap(node)(event);
-  };
+  useEffect(() => {
+    dragXRef.current = dragX;
+  }, [dragX]);
 
-  const onTimelineNodeMouseDown = (node) => () => {
-    setDraggingId(node.id);
-    document.body.style.userSelect = 'none';
-    const restoreSelect = () => {
-      document.body.style.userSelect = '';
-    };
-    window.addEventListener('mouseup', restoreSelect, { once: true });
-    window.addEventListener('pointerup', restoreSelect, { once: true });
-  };
+  const onTimelineNodeClick = useCallback(
+    (node) => (e) => {
+      e.stopPropagation();
+      if (stripDragSuppressClickRef.current) {
+        stripDragSuppressClickRef.current = false;
+        return;
+      }
+      if (typeof onNodeClick === 'function') onNodeClick(node, e);
+      else if (typeof handleNodeTap === 'function') handleNodeTap(node)(e);
+    },
+    [onNodeClick, handleNodeTap]
+  );
 
   const showEnergyBar = energyPercent != null && Number.isFinite(Number(energyPercent));
   const energyFill = showEnergyBar ? Math.max(0, Math.min(100, Number(energyPercent))) : 0;
@@ -376,11 +458,13 @@ export default function TimelineNodi({
                 <motion.div
                   key={node.id}
                   className={`timeline-node ${isActiveDrag ? 'is-dragging' : ''}`}
-                  onPointerDown={startNodeDrag(node, 'all')}
-                  onMouseDown={onTimelineNodeMouseDown(node)}
+                  onPointerDown={(e) => {
+                    startNodeDrag(node, 'all')(e);
+                    beginTimelineStripDrag(node, e);
+                  }}
                   onPointerUp={releaseNodePointer}
                   onPointerCancel={releaseNodePointer}
-                  onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }}
+                  onClick={onTimelineNodeClick(node)}
                   initial={reduceMotion ? false : { opacity: barOpacity, scale: barScale * 0.8 }}
                   animate={{
                     opacity: barOpacity,
@@ -414,7 +498,7 @@ export default function TimelineNodi({
                     zIndex: isActiveDrag ? 10 : (isTouchingOrDragging ? 100 : 2),
                   }}
                 >
-                  <div onPointerDown={startNodeDrag(node, 'start')} onMouseDown={onTimelineNodeMouseDown(node)} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={(e) => { startNodeDrag(node, 'start')(e); beginTimelineStripDrag(node, e); }} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'start' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
@@ -422,7 +506,7 @@ export default function TimelineNodi({
                     )}
                     💼
                   </div>
-                  <div onPointerDown={startNodeDrag(node, 'end')} onMouseDown={onTimelineNodeMouseDown(node)} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={(e) => { startNodeDrag(node, 'end')(e); beginTimelineStripDrag(node, e); }} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'end' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
@@ -442,11 +526,13 @@ export default function TimelineNodi({
                 <motion.div
                   key={node.id}
                   className={`timeline-node ${isActiveDrag ? 'is-dragging' : ''}`}
-                  onPointerDown={startNodeDrag(node, 'all')}
-                  onMouseDown={onTimelineNodeMouseDown(node)}
+                  onPointerDown={(e) => {
+                    startNodeDrag(node, 'all')(e);
+                    beginTimelineStripDrag(node, e);
+                  }}
                   onPointerUp={releaseNodePointer}
                   onPointerCancel={releaseNodePointer}
-                  onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }}
+                  onClick={onTimelineNodeClick(node)}
                   initial={reduceMotion ? false : { opacity: barOpacity, scale: barScale * 0.8 }}
                   animate={{
                     opacity: barOpacity,
@@ -480,7 +566,7 @@ export default function TimelineNodi({
                     zIndex: isActiveDrag ? 10 : (isTouchingOrDragging ? 100 : 2),
                   }}
                 >
-                  <div onPointerDown={startNodeDrag(node, 'start')} onMouseDown={onTimelineNodeMouseDown(node)} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={(e) => { startNodeDrag(node, 'start')(e); beginTimelineStripDrag(node, e); }} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'start' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
@@ -488,7 +574,7 @@ export default function TimelineNodi({
                     )}
                     {cognitiveIcon}
                   </div>
-                  <div onPointerDown={startNodeDrag(node, 'end')} onMouseDown={onTimelineNodeMouseDown(node)} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={(e) => { startNodeDrag(node, 'end')(e); beginTimelineStripDrag(node, e); }} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
                     {(dragEdge === 'end' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
@@ -561,11 +647,13 @@ export default function TimelineNodi({
               <motion.div
                 key={node.id}
                 className={`timeline-node meal-node ${isActiveDrag ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}`}
-                onPointerDown={startNodeDrag(node, 'all')}
-                onMouseDown={onTimelineNodeMouseDown(node)}
+                onPointerDown={(e) => {
+                  startNodeDrag(node, 'all')(e);
+                  beginTimelineStripDrag(node, e);
+                }}
                 onPointerUp={releaseNodePointer}
                 onPointerCancel={releaseNodePointer}
-                onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }}
+                onClick={onTimelineNodeClick(node)}
                 initial={
                   reduceMotion
                     ? false
