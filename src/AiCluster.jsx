@@ -114,7 +114,9 @@ export default function AiCluster({
             title={introPhrase || undefined}
           >
             <span className="kentu-os-status__pulse" aria-hidden />
-            {introPhrase}
+            {introPhrase ? (
+              <span className="kentu-intro-phrase-text kentu-intro-phrase-text--glow">{introPhrase}</span>
+            ) : null}
           </div>
         </div>
         <KentuButton

@@ -1442,17 +1442,8 @@ function FirebaseDataLoadingLayer({ blocking, introPhrase }) {
       aria-live="polite"
       aria-busy={blocking}
     >
-      <style>{`
-        @keyframes kentuos-load-msg-in {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .kentuos-load-msg {
-          animation: kentuos-load-msg-in 0.65s ease-out forwards;
-        }
-      `}</style>
       <p
-        className="kentuos-load-msg"
+        className="kentu-intro-phrase-text kentu-intro-phrase-text--glow"
         style={{
           margin: 0,
           maxWidth: 'min(24rem, 90vw)',
@@ -1463,7 +1454,6 @@ function FirebaseDataLoadingLayer({ blocking, introPhrase }) {
           letterSpacing: '0.06em',
           lineHeight: 1.75,
           color: 'rgba(248, 250, 252, 0.95)',
-          textShadow: '0 0 48px rgba(212, 175, 55, 0.2), 0 1px 2px rgba(0,0,0,0.55)',
         }}
       >
         {introPhrase}
@@ -9435,6 +9425,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               />
             </div>
             <p
+              className="kentu-intro-phrase-text kentu-intro-phrase-text--glow"
               style={{
                 textAlign: 'center',
                 fontSize: '0.72rem',
