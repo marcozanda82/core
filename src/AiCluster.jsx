@@ -75,6 +75,8 @@ export default function AiCluster({
   onAddKey,
   onSaveApiCluster,
   onBack,
+  /** Stessa frase del mount SalaComandi (rotazione kentuIntroPhrases); nessuna seconda estrazione qui. */
+  introPhrase = '',
 }) {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   /** Con testo/immagini nell’input la hub si nascondeva: questo stato consente di forzarne la visibilità. */
@@ -107,9 +109,12 @@ export default function AiCluster({
         </KentuButton>
         <div className="kentu-os-brand">
           <img src="/nuovo%20logo%20trasparente2.png" alt="Kentu" decoding="async" />
-          <div className="kentu-os-status">
+          <div
+            className={`kentu-os-status${introPhrase ? ' kentu-os-status--intro' : ''}`}
+            title={introPhrase || undefined}
+          >
             <span className="kentu-os-status__pulse" aria-hidden />
-            KentuOS · ONLINE
+            {introPhrase}
           </div>
         </div>
         <KentuButton

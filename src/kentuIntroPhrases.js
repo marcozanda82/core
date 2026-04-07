@@ -105,7 +105,3 @@ export function takeNextKentuIntroPhrase() {
     return KENTU_INTRO_PHRASES[Math.floor(Math.random() * KENTU_INTRO_PHRASES.length)];
   }
 }
-
-export function getDefaultKentuChatHistory() {
-  return [{ sender: 'ai', text: takeNextKentuIntroPhrase() }];
-}

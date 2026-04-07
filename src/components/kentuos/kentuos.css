@@ -426,6 +426,19 @@
   color: var(--kentu-text-muted);
 }
 
+/* Frase intro dinamica: niente uppercase (testi italiani lunghi). */
+.kentu-os-status--intro {
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  text-align: center;
+  max-width: min(220px, 70vw);
+  white-space: normal;
+  hyphens: auto;
+}
+
 .kentu-os-status__pulse {
   width: 6px;
   height: 6px;

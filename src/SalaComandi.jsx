@@ -11689,6 +11689,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             onAddKey={handleAddKey}
             onSaveApiCluster={saveApiCluster}
             onBack={() => setActiveAction(null)}
+            introPhrase={introPhrase}
           />
           </div>
         )}
