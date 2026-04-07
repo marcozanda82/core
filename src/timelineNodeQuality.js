@@ -4,6 +4,61 @@
 
 /** @typedef {'optimal' | 'neutral' | 'suboptimal'} TimelineNodeQuality */
 
+function idMatch(a, b) {
+  return a === b || String(a) === String(b);
+}
+
+function nodeEndHourForStack(n) {
+  if (!n || typeof n !== 'object') return 0;
+  if (n.type === 'work' || n.type === 'cognitive') return n.time + (n.duration || 1);
+  if (n.type === 'nap' || n.type === 'meditation') return n.time + (n.duration ?? 0.25);
+  return n.time;
+}
+
+function nodesOverlapTimeline(a, b) {
+  const aEnd = nodeEndHourForStack(a);
+  const bEnd = nodeEndHourForStack(b);
+  return a.time <= bEnd && b.time <= aEnd;
+}
+
+/**
+ * Stessi stackIndex della timeline in SalaComandi (ordine per `time`).
+ * @param {object[]} nodeList
+ * @returns {object[]}
+ */
+export function assignTimelineStackIndices(nodeList) {
+  const list = Array.isArray(nodeList) ? nodeList : [];
+  const nodes = [...list].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+  return nodes.map((node, i) => {
+    let stackIndex = 0;
+    for (let j = 0; j < i; j++) {
+      if (nodesOverlapTimeline(nodes[j], node)) stackIndex++;
+    }
+    return { ...node, stackIndex };
+  });
+}
+
+/**
+ * Qualità del nodo come se fosse a `hourDecimal`, con overlap ricalcolato (drag striscia).
+ * @param {object} dragNode
+ * @param {object[]} allNodes
+ * @param {object[]|null|undefined} chartData
+ * @param {number} hourDecimal
+ * @returns {TimelineNodeQuality}
+ */
+export function qualityAtVirtualStripHour(dragNode, allNodes, chartData, hourDecimal) {
+  if (!dragNode || dragNode.id == null) return 'neutral';
+  const list = Array.isArray(allNodes) ? allNodes : [];
+  if (!chartData || !Array.isArray(chartData) || chartData.length === 0) return 'neutral';
+
+  const h = Math.max(0, Math.min(24, Number(hourDecimal) || 0));
+  const virtual = list.map((n) => (idMatch(n.id, dragNode.id) ? { ...n, time: h } : { ...n }));
+  const stacked = assignTimelineStackIndices(virtual);
+  const vn = stacked.find((n) => idMatch(n.id, dragNode.id));
+  if (!vn) return 'neutral';
+  return computeTimelineNodeQuality(vn, stacked, chartData);
+}
+
 function anchorsForNodeType(type) {
   if (type === 'meal' || type === 'ghost_meal') return [7.5, 12.5, 16, 19.5];
   if (type === 'work' || type === 'workout' || type === 'ghost_workout') return [9.5, 12, 18];

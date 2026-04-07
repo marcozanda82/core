@@ -11,6 +11,7 @@ import {
 import { SHOW_TIME_ALIGNMENT_DEBUG } from './TimeAlignmentDebugOverlay';
 import {
   buildTimelineNodeQualityMap,
+  qualityAtVirtualStripHour,
   qualityShadowForState,
   TIMELINE_QUALITY_SHADOW,
 } from './timelineNodeQuality';
@@ -114,6 +115,8 @@ const STRIP_DRAG_TAP_MAX_MS = 160;
 const STRIP_DRAG_MIN_MOVE_PX = 6;
 /** Dedup commit ravvicinati (pointerup + mouseup, doppie chiamate). */
 const STRIP_DRAG_COMMIT_DEDUP_MS = 450;
+/** Quanto il nodo “segue” il dito (1 = istantaneo). Più basso in zona subottima → attrito / resistenza morbida. */
+const STRIP_DRAG_FRICTION_FOLLOW = { suboptimal: 0.36, neutral: 0.78, optimal: 0.92 };
 
 function nodeAddTransition(reduceMotion, isDragging) {
   if (reduceMotion || isDragging) return { duration: 0 };
@@ -193,6 +196,13 @@ export default function TimelineNodi({
   const stripDragNodeRef = useRef(null);
   const magneticSnapActiveRef = useRef(false);
   const nodes = activeNodesWithStack ?? [];
+  /** Frazione 0–1 lungo striscia: smoothing durante drag (resistenza in zone subottime). */
+  const stripDragSmoothedFracRef = useRef(null);
+  const stripDragLastFrictionQRef = useRef(null);
+  const nodesForFrictionRef = useRef(nodes);
+  nodesForFrictionRef.current = nodes;
+  const chartForFrictionRef = useRef(timelineQualityChartData);
+  chartForFrictionRef.current = timelineQualityChartData;
 
   const qualityById = useMemo(
     () => buildTimelineNodeQualityMap(nodes, timelineQualityChartData),
@@ -210,6 +220,11 @@ export default function TimelineNodi({
     stripDragNodeRef.current = node;
     magneticSnapActiveRef.current = false;
     setMagneticSnapActive(false);
+    const t0 = Number(node.time);
+    stripDragSmoothedFracRef.current = clampTimelineDragPercent(
+      (Number.isFinite(t0) ? t0 : 0) / 24
+    );
+    stripDragLastFrictionQRef.current = null;
     try {
       if (typeof e.currentTarget?.setPointerCapture === 'function' && e.pointerId != null) {
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -273,7 +288,50 @@ export default function TimelineNodi({
         MAGNETIC_SNAP_THRESHOLD_PX,
         reduceMotion
       );
-      const displayPercent = snapTimelineDragPercentForDisplay(magnetP);
+
+      let smoothed = stripDragSmoothedFracRef.current;
+      if (!Number.isFinite(smoothed)) {
+        smoothed = clampTimelineDragPercent(magnetP);
+      }
+
+      let q = 'neutral';
+      if (!reduceMotion && nodeDrag) {
+        q = qualityAtVirtualStripHour(
+          nodeDrag,
+          nodesForFrictionRef.current,
+          chartForFrictionRef.current,
+          magnetP * 24
+        );
+      }
+
+      const follow = reduceMotion
+        ? 1
+        : q === 'suboptimal'
+          ? STRIP_DRAG_FRICTION_FOLLOW.suboptimal
+          : q === 'neutral'
+            ? STRIP_DRAG_FRICTION_FOLLOW.neutral
+            : STRIP_DRAG_FRICTION_FOLLOW.optimal;
+
+      smoothed = clampTimelineDragPercent(smoothed + (magnetP - smoothed) * follow);
+      stripDragSmoothedFracRef.current = smoothed;
+
+      if (
+        !reduceMotion &&
+        nodeDrag &&
+        q === 'suboptimal' &&
+        stripDragLastFrictionQRef.current !== 'suboptimal'
+      ) {
+        try {
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate(4);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      stripDragLastFrictionQRef.current = q;
+
+      const displayPercent = snapTimelineDragPercentForDisplay(smoothed);
 
       dragXRef.current = displayPercent;
       setDragX(displayPercent);
@@ -334,6 +392,8 @@ export default function TimelineNodi({
       stripDragNodeRef.current = null;
       magneticSnapActiveRef.current = false;
       setMagneticSnapActive(false);
+      stripDragSmoothedFracRef.current = null;
+      stripDragLastFrictionQRef.current = null;
       setDraggingId(null);
       setDragX(null);
       dragXRef.current = null;
@@ -363,6 +423,8 @@ export default function TimelineNodi({
       document.body.style.userSelect = '';
       stripDragNodeRef.current = null;
       magneticSnapActiveRef.current = false;
+      stripDragSmoothedFracRef.current = null;
+      stripDragLastFrictionQRef.current = null;
     };
   }, [draggingId, updateMealTime, reduceMotion, onStripDragChartPreview, onStripDragChartPreviewEnd]);
 
