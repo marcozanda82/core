@@ -291,8 +291,26 @@ export default function MealBuilder({
   const [swapPanelFoodId, setSwapPanelFoodId] = useState(null);
   const [swapToast, setSwapToast] = useState(false);
   const [smartCompleteLoading, setSmartCompleteLoading] = useState(false);
+  /** Vincoli opzionali per Genera/Completa pasto (passati al prompt AI). */
+  const [aiConstraintFixed, setAiConstraintFixed] = useState('');
+  const [aiConstraintExcluded, setAiConstraintExcluded] = useState('');
+  const [aiConstraintPreferred, setAiConstraintPreferred] = useState('');
 
   const mealBuilderScrollAnchorRef = useRef(null);
+
+  const buildAiMealConstraintsPayload = useCallback(() => {
+    const split = (s) =>
+      String(s || '')
+        .split(/[,;\n]/)
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .slice(0, 20);
+    return {
+      fixedFoods: split(aiConstraintFixed),
+      excludedFoods: split(aiConstraintExcluded),
+      preferredFoods: split(aiConstraintPreferred),
+    };
+  }, [aiConstraintFixed, aiConstraintExcluded, aiConstraintPreferred]);
 
   const toggleAddedFood = (id) => {
     const k = id != null ? String(id) : '';
@@ -864,11 +882,13 @@ export default function MealBuilder({
     if (typeof onSmartComplete !== 'function' || smartCompleteLoading) return;
     setSmartCompleteLoading(true);
     try {
-      await onSmartComplete(addedFoods);
+      const constraints = buildAiMealConstraintsPayload();
+      const hasAny = constraints.fixedFoods.length + constraints.excludedFoods.length + constraints.preferredFoods.length > 0;
+      await onSmartComplete(addedFoods, hasAny ? constraints : undefined);
     } finally {
       setSmartCompleteLoading(false);
     }
-  }, [onSmartComplete, smartCompleteLoading, addedFoods]);
+  }, [onSmartComplete, smartCompleteLoading, addedFoods, buildAiMealConstraintsPayload]);
 
   const onSmartCompleteRef = useRef(onSmartComplete);
   onSmartCompleteRef.current = onSmartComplete;
@@ -882,7 +902,7 @@ export default function MealBuilder({
       const fn = onSmartCompleteRef.current;
       if (typeof fn !== 'function') return;
       setSmartCompleteLoading(true);
-      void Promise.resolve(fn([])).finally(() => setSmartCompleteLoading(false));
+      void Promise.resolve(fn([], undefined)).finally(() => setSmartCompleteLoading(false));
     }, 480);
     return () => window.clearTimeout(t);
   }, [smartMealLaunchKey]);
@@ -1084,6 +1104,85 @@ export default function MealBuilder({
           </div>
           {typeof onSmartComplete === 'function' && (
             <div style={{ marginTop: 15, marginBottom: 15, width: '100%' }}>
+              <details
+                style={{
+                  marginBottom: 12,
+                  borderRadius: 12,
+                  border: '1px solid rgba(0, 229, 255, 0.2)',
+                  background: 'rgba(0, 229, 255, 0.05)',
+                  padding: '10px 12px',
+                }}
+              >
+                <summary style={{ cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, color: '#7dd3fc', userSelect: 'none' }}>
+                  Vincoli AI pasto (opzionale)
+                </summary>
+                <p style={{ margin: '8px 0 6px', fontSize: '0.68rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                  Separare con virgola o a capo. L’AI deve includere i fissi, evitare gli esclusi e privilegiare i preferiti se coerenti con il target.
+                </p>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: '0.68rem', color: '#a5f3fc' }}>
+                  Da includere
+                  <input
+                    type="text"
+                    value={aiConstraintFixed}
+                    onChange={(e) => setAiConstraintFixed(e.target.value)}
+                    placeholder="es. Riso basmati, Petto di pollo"
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      marginTop: 4,
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid #333',
+                      background: '#1a1a1a',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </label>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: '0.68rem', color: '#fca5a5' }}>
+                  Escludi
+                  <input
+                    type="text"
+                    value={aiConstraintExcluded}
+                    onChange={(e) => setAiConstraintExcluded(e.target.value)}
+                    placeholder="es. Latte, Glutine"
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      marginTop: 4,
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid #333',
+                      background: '#1a1a1a',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </label>
+                <label style={{ display: 'block', fontSize: '0.68rem', color: '#fde68a' }}>
+                  Preferiti
+                  <input
+                    type="text"
+                    value={aiConstraintPreferred}
+                    onChange={(e) => setAiConstraintPreferred(e.target.value)}
+                    placeholder="es. Verdure a foglia, Legumi"
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      marginTop: 4,
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid #333',
+                      background: '#1a1a1a',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </label>
+              </details>
               <button
                 type="button"
                 className="btn-primary-glow btn-glass"

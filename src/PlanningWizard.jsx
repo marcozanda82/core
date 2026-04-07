@@ -525,6 +525,10 @@ export default function PlanningWizard({
   const [timingByMacro, setTimingByMacro] = useState({});
   const [stagingDraftById, setStagingDraftById] = useState({});
   const [wizardGenLoadingId, setWizardGenLoadingId] = useState(null);
+  /** Vincoli opzionali per «✨ Genera Pasto» nel wizard (stesso schema MealBuilder / SalaComandi). */
+  const [wizardAiConstraintFixed, setWizardAiConstraintFixed] = useState('');
+  const [wizardAiConstraintExcluded, setWizardAiConstraintExcluded] = useState('');
+  const [wizardAiConstraintPreferred, setWizardAiConstraintPreferred] = useState('');
   /** Dopo modifica manuale ai pasti nello step 2+: non applicare più il kcal del piano settimanale in questa sessione. */
   const [mealEditsLockProfileKcal, setMealEditsLockProfileKcal] = useState(false);
   /** Slot proposti (ex PROPOSED_SLOTS): canon, label, mealType, defaultHour, id stabile. */
@@ -542,6 +546,20 @@ export default function PlanningWizard({
   );
 
   const nowDec = getLocalDecimalHourNow();
+
+  const wizardAiMealConstraintsPayload = useMemo(() => {
+    const split = (s) =>
+      String(s || '')
+        .split(/[,;\n]/)
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .slice(0, 20);
+    const fixedFoods = split(wizardAiConstraintFixed);
+    const excludedFoods = split(wizardAiConstraintExcluded);
+    const preferredFoods = split(wizardAiConstraintPreferred);
+    if (fixedFoods.length + excludedFoods.length + preferredFoods.length === 0) return undefined;
+    return { fixedFoods, excludedFoods, preferredFoods };
+  }, [wizardAiConstraintFixed, wizardAiConstraintExcluded, wizardAiConstraintPreferred]);
 
   const mealsUserTouchedRef = useRef(false);
   const lastInitialMealsSigRef = useRef(null);
@@ -844,6 +862,7 @@ export default function PlanningWizard({
           title: slotRow.title,
           microDesc: slotRow.microDesc || '',
           planTarget: calorieStrategy,
+          aiMealConstraints: wizardAiMealConstraintsPayload,
         });
         let foods = [];
         let draftFoods = [];
@@ -886,7 +905,7 @@ export default function PlanningWizard({
         setWizardGenLoadingId(null);
       }
     },
-    [onGeneratePlanGhostMealDraft, calorieStrategy]
+    [onGeneratePlanGhostMealDraft, calorieStrategy, wizardAiMealConstraintsPayload]
   );
 
   const workoutDecForApply = useMemo(() => {
@@ -1267,6 +1286,83 @@ export default function PlanningWizard({
               Usa il primo e l’ultimo orario tra i pasti e ridistribuisce quelli non bloccati (15 min). Gli orari modificati a mano restano bloccati.
             </span>
           </div>
+
+          <details
+            style={{
+              borderRadius: 12,
+              border: '1px solid rgba(167, 139, 250, 0.35)',
+              background: 'rgba(167, 139, 250, 0.06)',
+              padding: '10px 12px',
+            }}
+          >
+            <summary style={{ cursor: 'pointer', fontSize: '0.75rem', fontWeight: 800, color: '#c4b5fd', userSelect: 'none' }}>
+              Vincoli AI per «Genera pasto» (opzionale)
+            </summary>
+            <p style={{ margin: '8px 0 6px', fontSize: '0.68rem', color: '#a1a1aa', lineHeight: 1.4 }}>
+              Valgono per ogni generazione pasto da questo passo. Separare con virgola o a capo.
+            </p>
+            <label style={{ display: 'block', marginBottom: 8, fontSize: '0.68rem', color: '#a5f3fc' }}>
+              Da includere
+              <input
+                type="text"
+                value={wizardAiConstraintFixed}
+                onChange={(e) => setWizardAiConstraintFixed(e.target.value)}
+                placeholder="es. Avena, Yogurt greco"
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  marginTop: 4,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,248,220,0.12)',
+                  background: 'rgba(0,0,0,0.25)',
+                  color: '#fff8e8',
+                  fontSize: '0.78rem',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </label>
+            <label style={{ display: 'block', marginBottom: 8, fontSize: '0.68rem', color: '#fca5a5' }}>
+              Escludi
+              <input
+                type="text"
+                value={wizardAiConstraintExcluded}
+                onChange={(e) => setWizardAiConstraintExcluded(e.target.value)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  marginTop: 4,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,248,220,0.12)',
+                  background: 'rgba(0,0,0,0.25)',
+                  color: '#fff8e8',
+                  fontSize: '0.78rem',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </label>
+            <label style={{ display: 'block', fontSize: '0.68rem', color: '#fde68a' }}>
+              Preferiti
+              <input
+                type="text"
+                value={wizardAiConstraintPreferred}
+                onChange={(e) => setWizardAiConstraintPreferred(e.target.value)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  marginTop: 4,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,248,220,0.12)',
+                  background: 'rgba(0,0,0,0.25)',
+                  color: '#fff8e8',
+                  fontSize: '0.78rem',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </label>
+          </details>
 
           <div>
             <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#4ade80', marginBottom: 8, letterSpacing: '0.06em' }}>FATTI (registrati)</div>

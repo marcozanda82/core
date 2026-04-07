@@ -149,6 +149,23 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel, onGenerat
   const [pendingGhostProposals, setPendingGhostProposals] = useState({});
   const [generatingGhostIdx, setGeneratingGhostIdx] = useState(null);
   const [generateError, setGenerateError] = useState(null);
+  const [cardAiConstraintFixed, setCardAiConstraintFixed] = useState('');
+  const [cardAiConstraintExcluded, setCardAiConstraintExcluded] = useState('');
+  const [cardAiConstraintPreferred, setCardAiConstraintPreferred] = useState('');
+
+  const cardAiMealConstraintsPayload = useMemo(() => {
+    const split = (s) =>
+      String(s || '')
+        .split(/[,;\n]/)
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .slice(0, 20);
+    const fixedFoods = split(cardAiConstraintFixed);
+    const excludedFoods = split(cardAiConstraintExcluded);
+    const preferredFoods = split(cardAiConstraintPreferred);
+    if (fixedFoods.length + excludedFoods.length + preferredFoods.length === 0) return undefined;
+    return { fixedFoods, excludedFoods, preferredFoods };
+  }, [cardAiConstraintFixed, cardAiConstraintExcluded, cardAiConstraintPreferred]);
 
   useEffect(() => {
     setEditedPlan(normalizePlanFromProps(planData));
@@ -156,6 +173,9 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel, onGenerat
     setPendingGhostProposals({});
     setGeneratingGhostIdx(null);
     setGenerateError(null);
+    setCardAiConstraintFixed('');
+    setCardAiConstraintExcluded('');
+    setCardAiConstraintPreferred('');
   }, [planData]);
 
   const sortedWithIdx = useMemo(() => {
@@ -267,6 +287,7 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel, onGenerat
         title: gm.title,
         microDesc: gm.microDesc,
         planTarget: editedPlan?.target,
+        aiMealConstraints: cardAiMealConstraintsPayload,
       });
       setPendingGhostProposals((p) => ({ ...p, [gIdx]: draftFoods }));
     } catch (err) {
@@ -576,6 +597,49 @@ export default function DailyPlanCard({ planData, onConfirm, onCancel, onGenerat
               >
                 Pasti
               </div>
+              <details
+                style={{
+                  marginBottom: 10,
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(0, 229, 255, 0.22)',
+                  background: 'rgba(0, 229, 255, 0.06)',
+                }}
+              >
+                <summary style={{ cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700, color: '#7dd3fc', userSelect: 'none' }}>
+                  Vincoli AI per generazione pasti (opzionale)
+                </summary>
+                <p style={{ margin: '6px 0 4px', fontSize: '0.65rem', color: '#a1a1aa', lineHeight: 1.35 }}>
+                  Virgola o a capo. Valgono per ogni «Genera pasto» in questa card.
+                </p>
+                <label style={{ display: 'block', marginBottom: 6, fontSize: '0.65rem', color: '#a5f3fc' }}>
+                  Da includere
+                  <input
+                    type="text"
+                    value={cardAiConstraintFixed}
+                    onChange={(e) => setCardAiConstraintFixed(e.target.value)}
+                    style={{ ...inputBaseStyle, display: 'block', width: '100%', marginTop: 4, boxSizing: 'border-box' }}
+                  />
+                </label>
+                <label style={{ display: 'block', marginBottom: 6, fontSize: '0.65rem', color: '#fca5a5' }}>
+                  Escludi
+                  <input
+                    type="text"
+                    value={cardAiConstraintExcluded}
+                    onChange={(e) => setCardAiConstraintExcluded(e.target.value)}
+                    style={{ ...inputBaseStyle, display: 'block', width: '100%', marginTop: 4, boxSizing: 'border-box' }}
+                  />
+                </label>
+                <label style={{ display: 'block', fontSize: '0.65rem', color: '#fde68a' }}>
+                  Preferiti
+                  <input
+                    type="text"
+                    value={cardAiConstraintPreferred}
+                    onChange={(e) => setCardAiConstraintPreferred(e.target.value)}
+                    style={{ ...inputBaseStyle, display: 'block', width: '100%', marginTop: 4, boxSizing: 'border-box' }}
+                  />
+                </label>
+              </details>
               {generateError ? (
                 <div style={{ fontSize: '0.72rem', color: '#fca5a5', marginTop: 8, marginBottom: 4 }}>{generateError}</div>
               ) : null}

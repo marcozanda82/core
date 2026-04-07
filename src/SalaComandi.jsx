@@ -1050,6 +1050,64 @@ function buildRecentMealsContextForDinner(fullHistory, anchorDateStr) {
   return rows.map((r) => `- ${r.label} (~${r.kcal} kcal, P${r.prot} / C${r.carb} / F${r.fat} g)`).join('\n');
 }
 
+const AI_MEAL_CONSTRAINTS_MAX_ITEMS = 20;
+
+function normalizeAiMealConstraintList(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((x) => String(x).trim())
+      .filter(Boolean)
+      .slice(0, AI_MEAL_CONSTRAINTS_MAX_ITEMS);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[,;\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, AI_MEAL_CONSTRAINTS_MAX_ITEMS);
+  }
+  return [];
+}
+
+/**
+ * Blocco testo per prompt Gemini: fissi / esclusi / preferiti.
+ * @param {object} [constraints]
+ * @param {string|string[]} [constraints.fixedFoods]
+ * @param {string|string[]} [constraints.excludedFoods]
+ * @param {string|string[]} [constraints.preferredFoods]
+ */
+function buildAiMealConstraintsPromptBlock(constraints) {
+  const c = constraints && typeof constraints === 'object' ? constraints : {};
+  const fixed = normalizeAiMealConstraintList(c.fixedFoods ?? c.fixed);
+  const excluded = normalizeAiMealConstraintList(c.excludedFoods ?? c.excluded);
+  const preferred = normalizeAiMealConstraintList(c.preferredFoods ?? c.preferred);
+  if (fixed.length === 0 && excluded.length === 0 && preferred.length === 0) return '';
+  const lines = [
+    '',
+    'VINCOLI MENU (OBBLIGATORI — applica alla lista alimenti che generi):',
+  ];
+  if (fixed.length > 0) {
+    lines.push(
+      `- INCLUDI OBBLIGATORIAMENTE questi alimenti (grammi realistici per porzione; ogni nome deve comparire come voce distinta nell'output): ${fixed.join('; ')}`
+    );
+  }
+  if (excluded.length > 0) {
+    lines.push(
+      `- NON includere né sostituti stretti di: ${excluded.join('; ')} (niente derivati oculati dello stesso ingrediente).`
+    );
+  }
+  if (preferred.length > 0) {
+    lines.push(
+      `- PREFERISCI dove compatibile con target e storico (includi almeno uno se sensato): ${preferred.join('; ')}`
+    );
+  }
+  lines.push(
+    'Verifica prima di rispondere: tutti i fissi presenti; nessun escluso; preferiti rispettati se possibile senza violare i target.'
+  );
+  return lines.join('\n');
+}
+
 /** Righe compatte pasti ultimi 7 giorni (prompt generazione draftFoods). */
 function buildLast7DaysMealLinesForDraftPrompt(fullHistory, anchorDateStr) {
   if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr) return '(nessuno storico)';
@@ -7769,7 +7827,7 @@ Ottimo! Diario aggiornato. 🥗`;
   }, []);
 
   const handleGeneratePlanGhostMealDraft = useCallback(
-    async ({ mealType, time, title, microDesc, planTarget }) => {
+    async ({ mealType, time, title, microDesc, planTarget, aiMealConstraints }) => {
       const anchor = currentTrackerDate || getTodayString();
       const burnedKcalContext = (activeLog || [])
         .filter((item) => item && item.type === 'workout')
@@ -7787,6 +7845,7 @@ Ottimo! Diario aggiornato. 🥗`;
         .map((e) => `${e.desc || e.title || '?'} (~${Math.round(Number(e.kcal || e.cal) || 0)} kcal)`)
         .slice(0, 20)
         .join('; ');
+      const constraintsBlock = buildAiMealConstraintsPromptBlock(aiMealConstraints);
       const prompt = `Sei Kentu (nutrizionista operativo). Rispondi SOLO con un JSON valido su una riga o un blocco, senza testo prima o dopo, senza markdown.
 Formato preferito (voci strutturate con stime):
 {"items":[{"name":"Riso basmati","qty":200,"estKcal":260,"estPro":5,"estCar":58,"estFat":0.6,"dbKey":""}]}
@@ -7805,6 +7864,7 @@ Pasto pianificato (slot):
 
 Gerarchia obbligatoria: (1) ultimi 3-7 giorni pasti simili; (2) storico più lungo; (3) dispensa + database; (4) combinazione nuova solo se necessario.
 Ogni voce deve essere "grammi + nome" (es. 150g Tofu). Minimo 2 voci, massimo 10.
+${constraintsBlock}
 
 ULTIMI 7 GIORNI:
 ${recent7}
@@ -9105,12 +9165,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
   }, [targetMacrosPasto, mealType, idealStrategy]);
 
   const handleSmartMealCompletion = useCallback(
-    async (currentFoods) => {
+    async (currentFoods, aiMealConstraints) => {
       const foods = Array.isArray(currentFoods) ? currentFoods : [];
       const present = foods.map((f) => f.desc || f.name).filter(Boolean);
       const anchor = currentTrackerDate || getTodayString();
       const recent7 = buildLast7DaysMealLinesForDraftPrompt(fullHistory, anchor);
+      const constraintsBlock = buildAiMealConstraintsPromptBlock(aiMealConstraints);
       const prompt = `SMART MEAL COMPLETION: Devo completare il pasto '${String(mealType)}'. Target ricalcolato: ${JSON.stringify(targetMacrosPastoWithPlanning)}. Cibi già presenti (da NON rimuovere): ${present.join(', ') || 'Nessuno'}. Genera cibi suggeriti per raggiungere il target (pescando da storico o DB utente), coerenti con le abitudini reali degli ultimi giorni.
+${constraintsBlock}
 
 ULTIMI 7 GIORNI (pasti registrati):
 ${recent7}
