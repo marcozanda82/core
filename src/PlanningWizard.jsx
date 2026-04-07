@@ -550,6 +550,19 @@ export default function PlanningWizard({
     );
   }, []);
 
+  const updateMealTime = useCallback((id, newTime) => {
+    const t = Number(newTime);
+    if (!Number.isFinite(t)) return;
+    const rounded = Math.max(0, Math.min(24, Math.round(t * 4) / 4));
+    mealsUserTouchedRef.current = true;
+    setMealEditsLockProfileKcal(true);
+    setMeals((prev) =>
+      prev.map((m) =>
+        m.id === id ? { ...m, time: rounded, defaultHour: rounded } : m
+      )
+    );
+  }, []);
+
   const removeMeal = useCallback((index) => {
     if (typeof index !== 'number' || index < 0) return;
     mealsUserTouchedRef.current = true;
@@ -1360,11 +1373,7 @@ export default function PlanningWizard({
                                   value={timeInputVal}
                                   onChange={(e) => {
                                     const d = timeStrToDecimal(e.target.value);
-                                    if (!Number.isNaN(d))
-                                      updateMeal(mealIdx, {
-                                        defaultHour: d,
-                                        time: e.target.value || decimalHourToHHMM(d) || '12:00',
-                                      });
+                                    if (!Number.isNaN(d) && template?.id) updateMealTime(template.id, d);
                                   }}
                                   style={{
                                     padding: '6px 8px',
