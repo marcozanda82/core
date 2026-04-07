@@ -1,25 +1,38 @@
 /**
- * Frasi introduttive chat Kentu: rotazione su caricamento senza ripetizioni
- * fino a esaurimento elenco, poi nuovo mescolamento (evita stesso testo consecutivo).
+ * Frasi introduttive chat Kentu: tono minimale, calmo, su direzione e costanza.
+ * Rotazione senza ripetizioni fino a esaurimento elenco, poi nuovo mescolamento.
+ * La coda si resetta se l’epoch in localStorage è assente, > 7 giorni fa, o posteriore a `Date.now()` (orologio).
  */
 
 export const KENTU_INTRO_PHRASES = [
-  'KentuOS ONLINE. Interfaccia Premium e Motore Biochimico allineati.',
-  'Oggi costruiamo chiarezza su numeri e abitudini — sei nel posto giusto.',
-  'Un passo alla volta: il motore impara dai tuoi dati reali.',
-  'La costanza batte la perfezione. Iniziamo con calma e precisione.',
-  'Il tuo diario è la bussola; KentuOS ti affianca su pasti e obiettivi.',
-  'Piccole scelte coerenti, grandi risultati nel tempo.',
-  'Allinea energia, macro e sonno: sistema e insight sono pronti.',
-  'Traccia, rifinisci, migliora — senza drammi, con metodo.',
-  'Oggi è un buon giorno per essere sinceri coi numeri.',
-  'Ben tornato: interfaccia premium e motore biochimico in ascolto.',
-  'Focus su ciò che controlli: nutrizione, movimento, recupero.',
-  'KentuOS attivo. Trasforma i dati in decisioni semplici.',
+  'La direzione vale più della fretta.',
+  'Conta dove indirizzi la tua attenzione.',
+  'Un passo verso ciò che conta.',
+  'Costanza silenziosa giorno dopo giorno.',
+  'Meglio lento che fuori strada.',
+  'La direzione giusta non ha fretta.',
+  'Rallentare aiuta a vedere chiaro.',
+  'Non basta muoversi serve intenzione.',
+  'Ogni scelta disegna la tua rotta.',
+  'Coerenza di poco ma ogni giorno.',
+  'La rotta conta più del passo.',
+  'Dove vai importa come vai.',
+  'Intenzione chiara anche nei giorni piccoli.',
+  'Pace nel tenere la traccia scelta.',
+  'Un grado alla volta basta spesso.',
+  'Prima la bussola poi il passo.',
+  'Restare nel verso che scegli.',
+  'Il filo conduttore lo tieni tu.',
+  'Passo dopo passo verso il senso.',
+  'La calma è parte del percorso.',
 ];
 
 const LS_QUEUE_KEY = 'kentu_intro_queue_v1';
 const LS_LAST_KEY = 'kentu_intro_last_v1';
+/** Timestamp ms dell’ultimo avvio ciclo coda (rotazione “fresca” ogni 7 giorni). */
+const LS_QUEUE_EPOCH_KEY = 'kentu_intro_queue_epoch_v1';
+
+const QUEUE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function shuffleInPlace(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -42,8 +55,29 @@ function buildFreshQueue(avoidSameAs) {
 }
 
 /**
+ * Svuota coda e ultima frase e imposta un nuovo epoch se:
+ * epoch assente/non numerico, orologio indietro (`now < epoch`), o coda più vecchia di 7 giorni.
+ */
+function applyQueueExpirationIfNeeded() {
+  const rawEpoch = localStorage.getItem(LS_QUEUE_EPOCH_KEY);
+  const epoch = rawEpoch != null ? Number(rawEpoch) : NaN;
+  const now = Date.now();
+  const staleOrInvalid =
+    !Number.isFinite(epoch) ||
+    now < epoch ||
+    now - epoch > QUEUE_MAX_AGE_MS;
+  if (staleOrInvalid) {
+    localStorage.removeItem(LS_QUEUE_KEY);
+    localStorage.removeItem(LS_LAST_KEY);
+    localStorage.setItem(LS_QUEUE_EPOCH_KEY, String(now));
+  }
+}
+
+/**
  * Prossima frase intro (consuma dalla coda in localStorage).
  * Rotazione: nessuna ripetizione finché non sono passate tutte; poi nuovo shuffle.
+ * Ogni 7 giorni dalla data in `kentu_intro_queue_epoch_v1` la coda si azzera; se `Date.now()` è prima
+ * dell’epoch salvato (orologio spostato indietro) la coda si resetta allo stesso modo.
  */
 export function takeNextKentuIntroPhrase() {
   if (!KENTU_INTRO_PHRASES.length) return '';
@@ -51,6 +85,7 @@ export function takeNextKentuIntroPhrase() {
     return KENTU_INTRO_PHRASES[Math.floor(Math.random() * KENTU_INTRO_PHRASES.length)];
   }
   try {
+    applyQueueExpirationIfNeeded();
     let raw = localStorage.getItem(LS_QUEUE_KEY);
     let queue = raw ? JSON.parse(raw) : null;
     const valid =
