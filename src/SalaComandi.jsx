@@ -40,6 +40,7 @@ import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
 import PlanningWizard from './PlanningWizard';
+import { getDefaultKentuChatHistory } from './kentuIntroPhrases';
 import {
   createInitialWeeklyPlan,
   getWeekStartMondayKeyLocal,
@@ -1630,10 +1631,6 @@ function buildBodyMetricsColumnMap(headerLine) {
   return { columnMap, headerCells };
 }
 
-const DEFAULT_KENTU_CHAT_HISTORY = [
-  { sender: 'ai', text: 'KentuOS ONLINE. Interfaccia Premium e Motore Biochimico allineati.' },
-];
-
 function kentuChatStorageKey(dateStr) {
   return `kentu_chat_${dateStr}`;
 }
@@ -2643,7 +2640,7 @@ export default function SalaComandi() {
     } catch {
       /* noop */
     }
-    return DEFAULT_KENTU_CHAT_HISTORY;
+    return getDefaultKentuChatHistory();
   });
   const skipKentuChatPersistRef = useRef(false);
   const kentuChatBoundDateRef = useRef(null);
@@ -2692,9 +2689,14 @@ export default function SalaComandi() {
   useEffect(() => {
     const d = currentTrackerDate || getTodayString();
     skipKentuChatPersistRef.current = true;
-    kentuChatBoundDateRef.current = d;
     const stored = readKentuChatHistoryFromLocalStorage(d);
-    setChatHistory(stored ?? DEFAULT_KENTU_CHAT_HISTORY);
+    const prevBound = kentuChatBoundDateRef.current;
+    kentuChatBoundDateRef.current = d;
+    if (stored) {
+      setChatHistory(stored);
+    } else if (prevBound != null && prevBound !== d) {
+      setChatHistory(getDefaultKentuChatHistory());
+    }
   }, [currentTrackerDate]);
 
   useEffect(() => {
