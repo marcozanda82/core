@@ -158,6 +158,17 @@ html, body, #root {
   touch-action: none;
 }
 
+/* Cursore timeline: grab a riposo, grabbing mentre trascini (vedi anche SalaComandi.jsx) */
+.timeline-node,
+.meal-node {
+  cursor: grab;
+}
+.timeline-node.is-dragging,
+.meal-node.is-dragging {
+  cursor: grabbing;
+  z-index: 10;
+}
+
 /* Modale grafico fullscreen: fixed + inset:0 (no height) per stabilità mobile, safe-area */
 .chart-modal-root {
   box-sizing: border-box;

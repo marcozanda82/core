@@ -341,6 +341,8 @@ export default function TimelineNodi({
             else if (ratio > 1.2) borderColor = '#ffea00';
             const pointBorderColor = isWork ? '#ffea00' : (isCognitive ? '#00e5ff' : borderColor);
             const isDragging = draggingNode?.id === node.id;
+            const isStripDragging = draggingId === node.id;
+            const isActiveDrag = isDragging || isStripDragging;
             const isTouchingOrDragging = isDragging || (touchingNodeId === node.id);
             const dragY = isDragging ? dragOffsetY : 0;
             const displayTimeVal = (isDragging && dragLiveTime != null) ? dragLiveTime : node.time;
@@ -368,12 +370,12 @@ export default function TimelineNodi({
             if (isWork) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
               const left = nodeLeftPercentStr(barStartHour);
-              const barScale = isDragging ? 1.5 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
-              const barOpacity = isDragging ? 1 : (importanceStyle.opacity ?? 1);
+              const barScale = isActiveDrag ? 1.2 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
+              const barOpacity = isActiveDrag ? 1 : (importanceStyle.opacity ?? 1);
               return (
                 <motion.div
                   key={node.id}
-                  className={`timeline-node ${isDragging ? 'is-dragging' : ''}`}
+                  className={`timeline-node ${isActiveDrag ? 'is-dragging' : ''}`}
                   onPointerDown={startNodeDrag(node, 'all')}
                   onMouseDown={onTimelineNodeMouseDown(node)}
                   onPointerUp={releaseNodePointer}
@@ -384,12 +386,12 @@ export default function TimelineNodi({
                     opacity: barOpacity,
                     scale: barScale,
                     y: isDragging ? dragY - 45 : 0,
-                    boxShadow: reduceMotion || isDragging ? 'none' : [WORK_ADD_GLOW_PULSE, 'none'],
+                    boxShadow: reduceMotion || isActiveDrag ? 'none' : [WORK_ADD_GLOW_PULSE, 'none'],
                   }}
-                  transition={nodeAddTransition(reduceMotion, isDragging)}
-                  whileHover={!isDragging ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
+                  transition={nodeAddTransition(reduceMotion, isActiveDrag)}
+                  whileHover={!isActiveDrag ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
                   whileTap={
-                    !isDragging
+                    !isActiveDrag
                       ? { scale: barScale * 0.96, transition: { type: 'spring', stiffness: 520, damping: 14 } }
                       : undefined
                   }
@@ -401,15 +403,15 @@ export default function TimelineNodi({
                     marginTop: -18 - (node.stackIndex || 0) * 38,
                     height: '36px',
                     transformOrigin: 'center center',
-                    background: isDragging ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)',
+                    background: isActiveDrag ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)',
                     borderLeft: '2px solid #ffea00',
                     borderRight: '2px solid #ffea00',
                     borderRadius: '4px',
-                    cursor: isDragging ? 'grabbing' : 'pointer',
+                    cursor: isActiveDrag ? 'grabbing' : 'grab',
                     touchAction: 'none',
                     pointerEvents: isNodeFocused ? 'auto' : 'none',
-                    ...(isDragging ? {} : importanceStyle),
-                    zIndex: isTouchingOrDragging ? 100 : 2,
+                    ...(isActiveDrag ? {} : importanceStyle),
+                    zIndex: isActiveDrag ? 10 : (isTouchingOrDragging ? 100 : 2),
                   }}
                 >
                   <div onPointerDown={startNodeDrag(node, 'start')} onMouseDown={onTimelineNodeMouseDown(node)} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
@@ -434,12 +436,12 @@ export default function TimelineNodi({
             if (isCognitive) {
               const dragEdge = isDragging ? draggingNode?.edge : null;
               const left = nodeLeftPercentStr(barStartHour);
-              const barScale = isDragging ? 1.5 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
-              const barOpacity = isDragging ? 1 : (importanceStyle.opacity ?? 1);
+              const barScale = isActiveDrag ? 1.2 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
+              const barOpacity = isActiveDrag ? 1 : (importanceStyle.opacity ?? 1);
               return (
                 <motion.div
                   key={node.id}
-                  className={`timeline-node ${isDragging ? 'is-dragging' : ''}`}
+                  className={`timeline-node ${isActiveDrag ? 'is-dragging' : ''}`}
                   onPointerDown={startNodeDrag(node, 'all')}
                   onMouseDown={onTimelineNodeMouseDown(node)}
                   onPointerUp={releaseNodePointer}
@@ -450,12 +452,12 @@ export default function TimelineNodi({
                     opacity: barOpacity,
                     scale: barScale,
                     y: isDragging ? dragY - 45 : 0,
-                    boxShadow: reduceMotion || isDragging ? 'none' : [COG_ADD_GLOW_PULSE, 'none'],
+                    boxShadow: reduceMotion || isActiveDrag ? 'none' : [COG_ADD_GLOW_PULSE, 'none'],
                   }}
-                  transition={nodeAddTransition(reduceMotion, isDragging)}
-                  whileHover={!isDragging ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
+                  transition={nodeAddTransition(reduceMotion, isActiveDrag)}
+                  whileHover={!isActiveDrag ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
                   whileTap={
-                    !isDragging
+                    !isActiveDrag
                       ? { scale: barScale * 0.96, transition: { type: 'spring', stiffness: 520, damping: 14 } }
                       : undefined
                   }
@@ -467,15 +469,15 @@ export default function TimelineNodi({
                     marginTop: -18 - (node.stackIndex || 0) * 38,
                     height: '36px',
                     transformOrigin: 'center center',
-                    background: isDragging ? 'rgba(0, 229, 255, 0.3)' : cognitiveBg,
+                    background: isActiveDrag ? 'rgba(0, 229, 255, 0.3)' : cognitiveBg,
                     borderLeft: `2px solid ${cognitiveBorder}`,
                     borderRight: `2px solid ${cognitiveBorder}`,
                     borderRadius: '4px',
-                    cursor: isDragging ? 'grabbing' : 'pointer',
+                    cursor: isActiveDrag ? 'grabbing' : 'grab',
                     touchAction: 'none',
                     pointerEvents: isNodeFocused ? 'auto' : 'none',
-                    ...(isDragging ? {} : importanceStyle),
-                    zIndex: isTouchingOrDragging ? 100 : 2,
+                    ...(isActiveDrag ? {} : importanceStyle),
+                    zIndex: isActiveDrag ? 10 : (isTouchingOrDragging ? 100 : 2),
                   }}
                 >
                   <div onPointerDown={startNodeDrag(node, 'start')} onMouseDown={onTimelineNodeMouseDown(node)} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={(e) => { e.stopPropagation(); fireNodeClick(node, e); }} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
@@ -534,10 +536,10 @@ export default function TimelineNodi({
                 ? '1px dashed rgba(248, 113, 113, 0.38)'
                 : `2px solid ${nodeBorderColor}`;
             const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
-            const baseScale = isDragging ? 2 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
+            const baseScale = isActiveDrag ? 1.2 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
             const targetOpacity = ghostVisual
               ? (isTouchingOrDragging ? 0.82 : 0.6)
-              : isDragging
+              : isActiveDrag
                 ? 1
                 : (importanceStyle.opacity ?? 1);
             let pointBoxShadow = 'none';
@@ -553,12 +555,12 @@ export default function TimelineNodi({
             } else if (isCognitivePoint) {
               pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
             }
-            const pointZ = isTouchingOrDragging ? 100 : ghostVisual ? 9 : (importanceStyle.zIndex ?? 2);
+            const pointZ = isActiveDrag ? 10 : isTouchingOrDragging ? 100 : ghostVisual ? 9 : (importanceStyle.zIndex ?? 2);
             const left = nodeLeftPercentStr(displayTimeVal);
             return (
               <motion.div
                 key={node.id}
-                className={`timeline-node meal-node ${isDragging ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}`}
+                className={`timeline-node meal-node ${isActiveDrag ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}`}
                 onPointerDown={startNodeDrag(node, 'all')}
                 onMouseDown={onTimelineNodeMouseDown(node)}
                 onPointerUp={releaseNodePointer}
@@ -575,14 +577,14 @@ export default function TimelineNodi({
                   x: '-50%',
                   y: isDragging ? dragY - 45 : 0,
                   boxShadow:
-                    reduceMotion || isDragging
+                    reduceMotion || isActiveDrag
                       ? pointBoxShadow
                       : [POINT_ADD_GLOW_PULSE, pointBoxShadow],
                 }}
-                transition={nodeAddTransition(reduceMotion, isDragging)}
-                whileHover={!isDragging ? { scale: baseScale * 1.1, transition: SUBTLE_SPRING } : undefined}
+                transition={nodeAddTransition(reduceMotion, isActiveDrag)}
+                whileHover={!isActiveDrag ? { scale: baseScale * 1.1, transition: SUBTLE_SPRING } : undefined}
                 whileTap={
-                  !isDragging
+                  !isActiveDrag
                     ? { scale: baseScale * 0.94, transition: { type: 'spring', stiffness: 520, damping: 14 } }
                     : undefined
                 }
@@ -600,12 +602,12 @@ export default function TimelineNodi({
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: isDragging ? 'grabbing' : 'pointer',
+                  cursor: isActiveDrag ? 'grabbing' : 'grab',
                   touchAction: 'none',
                   pointerEvents: isNodeFocused || isGhostMeal || isGhostWorkout ? 'auto' : 'none',
                   zIndex: pointZ,
                   filter: ghostVisual ? 'none' : importanceStyle.filter,
-                  transition: isDragging ? 'none' : 'left 0.3s ease-out, background 0.15s, box-shadow 0.2s ease',
+                  transition: isActiveDrag ? 'none' : 'left 0.3s ease-out, background 0.15s, box-shadow 0.2s ease',
                 }}
               >
                 {!ghostVisual && !isMealPoint ? (

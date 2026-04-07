@@ -9748,11 +9748,10 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             cursor: grab;
           }
           .timeline-node.is-dragging, .meal-node.is-dragging {
-            transform: scale(2) translateY(-20px);
-            z-index: 9999 !important;
+            z-index: 10 !important;
             box-shadow: 0 15px 25px rgba(0,0,0,0.6);
             cursor: grabbing;
-            transition: transform 0.1s ease, box-shadow 0.2s ease;
+            transition: box-shadow 0.2s ease;
           }
           .node-time-label {
             pointer-events: none;
