@@ -4,6 +4,16 @@
  * La coda si resetta se l’epoch in localStorage è assente, > 7 giorni fa, o posteriore a `Date.now()` (orologio).
  */
 
+/**
+ * Contesto opzionale per una futura scelta frase (fasce orarie, stato utente, energia).
+ * Oggi ignorato dalla logica di selezione; la forma è stabile per integrazioni future.
+ *
+ * @typedef {object} KentuIntroPhraseContext
+ * @property {string} [timeOfDay] — fascia oraria (convenzione da definire, es. morning | afternoon | evening | night)
+ * @property {string} [userState] — stato macro (es. training | rest | focus)
+ * @property {number} [energyLevel] — livello energia normalizzato (es. 0–100)
+ */
+
 export const KENTU_INTRO_PHRASES = [
   'La direzione vale più della fretta.',
   'Conta dove indirizzi la tua attenzione.',
@@ -42,9 +52,41 @@ function getPhrasePool() {
 }
 
 /**
- * Frase casuale dall’elenco canonico; mai throw, mai stringa vuota se esiste almeno una voce valida.
+ * Normalizza il contesto per uso futuro (solo campi noti, oggetto immutabile).
+ * Non altera il comportamento attuale della rotazione frasi.
+ *
+ * @param {KentuIntroPhraseContext|null|undefined} raw
+ * @returns {Readonly<KentuIntroPhraseContext>}
  */
-function pickRandomKentuIntroPhrase() {
+export function normalizeKentuIntroPhraseContext(raw) {
+  try {
+    if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
+      return Object.freeze({});
+    }
+    /** @type {KentuIntroPhraseContext} */
+    const out = {};
+    if (raw.timeOfDay != null && String(raw.timeOfDay).trim() !== '') {
+      out.timeOfDay = String(raw.timeOfDay).trim();
+    }
+    if (raw.userState != null && String(raw.userState).trim() !== '') {
+      out.userState = String(raw.userState).trim();
+    }
+    if (raw.energyLevel != null) {
+      const n = Number(raw.energyLevel);
+      if (Number.isFinite(n)) out.energyLevel = n;
+    }
+    return Object.freeze(out);
+  } catch {
+    return Object.freeze({});
+  }
+}
+
+/**
+ * Frase casuale dall’elenco canonico; mai throw, mai stringa vuota se esiste almeno una voce valida.
+ * @param {Readonly<KentuIntroPhraseContext>} introPhraseContext — riservato a filtri/pesi futuri
+ */
+function pickRandomKentuIntroPhrase(introPhraseContext) {
+  void introPhraseContext;
   try {
     const pool = getPhrasePool().filter((x) => typeof x === 'string' && x.trim() !== '');
     if (pool.length === 0) return FALLBACK_INTRO_PHRASE;
@@ -71,7 +113,8 @@ function shuffleInPlace(arr) {
   return arr;
 }
 
-function buildFreshQueue(avoidSameAs) {
+function buildFreshQueue(avoidSameAs, introPhraseContext) {
+  void introPhraseContext;
   try {
     const pool = [...getPhrasePool()].filter((x) => typeof x === 'string' && x.trim() !== '');
     if (pool.length === 0) return [FALLBACK_INTRO_PHRASE];
@@ -147,15 +190,18 @@ function safeRemoveItem(key) {
  * Ogni 7 giorni dalla data in `kentu_intro_queue_epoch_v1` la coda si azzera; se `Date.now()` è prima
  * dell’epoch salvato (orologio spostato indietro) la coda si resetta allo stesso modo.
  *
+ * @param {KentuIntroPhraseContext|null|undefined} [context] — opzionale; normalizzato ma non ancora usato per la scelta.
+ *
  * Ritorna sempre una stringa non vuota (fallback: frase casuale o `FALLBACK_INTRO_PHRASE`). Non throw.
  */
-export function takeNextKentuIntroPhrase() {
+export function takeNextKentuIntroPhrase(context) {
+  const introPhraseContext = normalizeKentuIntroPhraseContext(context);
   try {
     const pool = getPhrasePool().filter((x) => typeof x === 'string' && x.trim() !== '');
     if (pool.length === 0) return FALLBACK_INTRO_PHRASE;
 
     if (typeof localStorage === 'undefined' || localStorage == null) {
-      return pickRandomKentuIntroPhrase();
+      return pickRandomKentuIntroPhrase(introPhraseContext);
     }
 
     applyQueueExpirationIfNeeded();
@@ -180,7 +226,7 @@ export function takeNextKentuIntroPhrase() {
     if (!queue) {
       const lastRaw = safeGetItem(LS_LAST_KEY);
       const last = typeof lastRaw === 'string' ? lastRaw : '';
-      queue = buildFreshQueue(last);
+      queue = buildFreshQueue(last, introPhraseContext);
       safeSetItem(LS_QUEUE_KEY, JSON.stringify(queue));
     }
 
@@ -190,8 +236,8 @@ export function takeNextKentuIntroPhrase() {
     safeSetItem(LS_QUEUE_KEY, JSON.stringify(queue));
     if (candidate) safeSetItem(LS_LAST_KEY, candidate);
 
-    return candidate || pickRandomKentuIntroPhrase();
+    return candidate || pickRandomKentuIntroPhrase(introPhraseContext);
   } catch {
-    return pickRandomKentuIntroPhrase();
+    return pickRandomKentuIntroPhrase(introPhraseContext);
   }
 }
