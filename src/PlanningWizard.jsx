@@ -128,7 +128,8 @@ function normalizeWizardInitialMeals(raw) {
     const foods = normalizeFoodsArray(mealFoodsRead(row));
     const timeStr = decimalHourToHHMM(dh) || '12:00';
     const target = row.target != null ? row.target : null;
-    out.push({ id, canon, mealType: mt, defaultHour: dh, label, foods, time: timeStr, target });
+    const timeLocked = row.timeLocked === true;
+    out.push({ id, canon, mealType: mt, defaultHour: dh, label, foods, time: timeStr, target, timeLocked });
   }
   return out.length > 0 ? out : null;
 }
@@ -187,6 +188,21 @@ function timeStrToDecimal(timeStr) {
   const min = Number(m[2]);
   if (Number.isNaN(h) || Number.isNaN(min)) return NaN;
   return Math.min(23, Math.max(0, h)) + min / 60;
+}
+
+/** Ore decimali 0–24 da un template pasto wizard (`defaultHour` o `time`). */
+function mealTemplateDecimalHour(m) {
+  if (!m || typeof m !== 'object') return 12;
+  if (typeof m.defaultHour === 'number' && !Number.isNaN(m.defaultHour)) return m.defaultHour;
+  const td = timeStrToDecimal(m.time);
+  if (!Number.isNaN(td)) return td;
+  return 12;
+}
+
+function roundMealTimeToQuarterHour(t) {
+  const n = Number(t);
+  if (!Number.isFinite(n)) return 12;
+  return Math.max(0, Math.min(24, Math.round(n * 4) / 4));
 }
 
 /** Ora decimale unificata per confronto con nowDec (pasti / workout reali nel diario). */
@@ -535,11 +551,13 @@ export default function PlanningWizard({
     if (typeof index !== 'number' || index < 0 || patch == null || typeof patch !== 'object') return;
     mealsUserTouchedRef.current = true;
     setMealEditsLockProfileKcal(true);
+    const touchesTime = Object.prototype.hasOwnProperty.call(patch, 'time') || Object.prototype.hasOwnProperty.call(patch, 'defaultHour');
     setMeals((prev) =>
       prev.map((m, i) => {
         if (i !== index) return { ...m, foods: mealFoodsRead(m) };
         const { foods: patchFoods, ...rest } = patch;
         const next = { ...m, ...rest };
+        if (touchesTime) next.timeLocked = true;
         if (patchFoods !== undefined) {
           next.foods = Array.isArray(patchFoods) ? patchFoods : [];
         } else {
@@ -553,14 +571,48 @@ export default function PlanningWizard({
   const updateMealTime = useCallback((id, newTime) => {
     const t = Number(newTime);
     if (!Number.isFinite(t)) return;
-    const rounded = Math.max(0, Math.min(24, Math.round(t * 4) / 4));
+    const rounded = roundMealTimeToQuarterHour(t);
     mealsUserTouchedRef.current = true;
     setMealEditsLockProfileKcal(true);
     setMeals((prev) =>
       prev.map((m) =>
-        m.id === id ? { ...m, time: rounded, defaultHour: rounded } : m
+        m.id === id ? { ...m, time: rounded, defaultHour: rounded, timeLocked: true } : m
       )
     );
+  }, []);
+
+  const recalculateMealTimesEvenly = useCallback(() => {
+    setMeals((prev) => {
+      if (!prev.length) return prev;
+      const decs = prev.map((m) => mealTemplateDecimalHour(m));
+      const spanStart = Math.min(...decs);
+      const spanEnd = Math.max(...decs);
+      if (!Number.isFinite(spanStart) || !Number.isFinite(spanEnd)) return prev;
+
+      const unlockedIdx = [];
+      prev.forEach((m, i) => {
+        if (!m.timeLocked) unlockedIdx.push(i);
+      });
+      if (unlockedIdx.length === 0) return prev;
+
+      const next = prev.map((m) => ({ ...m, foods: mealFoodsRead(m) }));
+      const n = unlockedIdx.length;
+      if (n === 1) {
+        const i = unlockedIdx[0];
+        const mid = roundMealTimeToQuarterHour((spanStart + spanEnd) / 2);
+        next[i] = { ...next[i], defaultHour: mid, time: mid };
+        return next;
+      }
+      const span = spanEnd - spanStart;
+      unlockedIdx.forEach((idx, j) => {
+        const raw = spanStart + (j / (n - 1)) * span;
+        const rounded = roundMealTimeToQuarterHour(raw);
+        next[idx] = { ...next[idx], defaultHour: rounded, time: rounded };
+      });
+      return next;
+    });
+    mealsUserTouchedRef.current = true;
+    setMealEditsLockProfileKcal(true);
   }, []);
 
   const removeMeal = useCallback((index) => {
@@ -590,6 +642,7 @@ export default function PlanningWizard({
         label: m.label,
         time: m.time,
         target: m.target,
+        timeLocked: !!m.timeLocked,
         foods: mealFoodsRead(m),
       }))
     );
@@ -1185,6 +1238,35 @@ export default function PlanningWizard({
           <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(200,210,220,0.9)' }}>
             Pasti del giorno e target dinamici (motore biochimico). I futuri usano ciò che resta da collimare alla giornata.
           </p>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              onClick={recalculateMealTimesEvenly}
+              disabled={meals.length < 2}
+              title={
+                meals.length < 2
+                  ? 'Servono almeno due slot pasto'
+                  : 'Riposiziona gli slot sbloccati tra il primo e l’ultimo orario attuale (slot con orario impostato a mano restano fissi)'
+              }
+              style={{
+                padding: '10px 14px',
+                borderRadius: 10,
+                border: '1px solid rgba(34, 211, 238, 0.4)',
+                background: meals.length < 2 ? 'rgba(255,255,255,0.04)' : 'rgba(34, 211, 238, 0.12)',
+                color: meals.length < 2 ? 'rgba(255,248,220,0.35)' : '#a5f3fc',
+                fontWeight: 800,
+                fontSize: '0.78rem',
+                cursor: meals.length < 2 ? 'not-allowed' : 'pointer',
+                letterSpacing: '0.04em',
+              }}
+            >
+              Ricalcola orari
+            </button>
+            <span style={{ fontSize: '0.68rem', color: 'rgba(200,210,220,0.75)', maxWidth: 320, lineHeight: 1.35 }}>
+              Usa il primo e l’ultimo orario tra i pasti e ridistribuisce quelli non bloccati (15 min). Gli orari modificati a mano restano bloccati.
+            </span>
+          </div>
 
           <div>
             <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#4ade80', marginBottom: 8, letterSpacing: '0.06em' }}>FATTI (registrati)</div>
