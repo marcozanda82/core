@@ -24,6 +24,12 @@ const WORK_ADD_GLOW_PULSE =
 const COG_ADD_GLOW_PULSE =
   '0 0 0 1px rgba(0,229,255,0.32), 0 0 14px rgba(0,229,255,0.48)';
 
+/** 0–1 fraction along 24h strip → snap to nearest 15 min for drag preview only (state keeps raw percent). */
+function snapTimelineDragPercentForDisplay(percent) {
+  const p = Math.max(0, Math.min(1, Number(percent)));
+  return Math.round(p * 24 * 4) / 4 / 24;
+}
+
 function nodeAddTransition(reduceMotion, isDragging) {
   if (reduceMotion || isDragging) return { duration: 0 };
   return {
@@ -326,7 +332,7 @@ export default function TimelineNodi({
             const nodeLeftPercentStr = (timeHours) => {
               const percent =
                 draggingId === node.id && dragX != null && Number.isFinite(Number(dragX))
-                  ? Number(dragX)
+                  ? snapTimelineDragPercentForDisplay(dragX)
                   : getTimePositionPercent(timeHours) / 100;
               const clamped = Math.max(0, Math.min(1, percent));
               return `${clamped * 100}%`;
