@@ -37,6 +37,61 @@ function snapTimelineDragPercentForDisplay(percent) {
   return Math.round(p * 24 * 4) / 4 / 24;
 }
 
+/** Distanza in px entro cui la timeline “attira” verso fasce orarie consigliate (soft, si esce trascinando oltre). */
+const MAGNETIC_SNAP_THRESHOLD_PX = 20;
+
+/**
+ * Centri (ore decimali 0–24) per attrazione magnetica durante il drag.
+ * Non vincolano il commit se l’utente esce dalla soglia.
+ */
+function getMagneticAnchorDecimalHours(node) {
+  if (!node || typeof node !== 'object') return [];
+  const t = node.type;
+  if (t === 'meal' || t === 'ghost_meal') {
+    return [7.5, 12.5, 16, 19.5];
+  }
+  if (t === 'work' || t === 'workout' || t === 'ghost_workout') {
+    return [9.5, 12, 18];
+  }
+  if (t === 'cognitive') {
+    return [10, 15, 20];
+  }
+  return [];
+}
+
+/**
+ * Attrazione morbida verso l’ancora più vicina in ore; oltre `thresholdPx` nessun effetto.
+ * @returns {{ percent: number, magneticActive: boolean }}
+ */
+function applyMagneticTimelineSnap(rawPercent, stripWidthPx, node, thresholdPx, reduceMotion) {
+  const p = clampTimelineDragPercent(rawPercent);
+  if (reduceMotion || !(stripWidthPx > 0) || !node) {
+    return { percent: p, magneticActive: false };
+  }
+  const anchors = getMagneticAnchorDecimalHours(node);
+  if (anchors.length === 0) return { percent: p, magneticActive: false };
+
+  const rawHour = p * 24;
+  let bestH = anchors[0];
+  let bestDistH = Math.abs(rawHour - bestH);
+  for (let i = 1; i < anchors.length; i++) {
+    const d = Math.abs(rawHour - anchors[i]);
+    if (d < bestDistH) {
+      bestDistH = d;
+      bestH = anchors[i];
+    }
+  }
+  const anchorPercent = clampTimelineDragPercent(bestH / 24);
+  const distPx = Math.abs(p - anchorPercent) * stripWidthPx;
+  if (distPx >= thresholdPx) {
+    return { percent: p, magneticActive: false };
+  }
+  const u = distPx / thresholdPx;
+  const strength = (1 - u) ** 1.35;
+  const blended = clampTimelineDragPercent(p + (anchorPercent - p) * strength);
+  return { percent: blended, magneticActive: strength > 0.08 };
+}
+
 /**
  * Tap veloce: non committare orario se spostamento < MIN px e (durata ≤ MAX ms o MAX ≤ 0).
  * - MAX ≤ 0: ignora solo la durata (resta il filtro sul movimento).
@@ -100,6 +155,7 @@ export default function TimelineNodi({
   const [nowDecimalHour, setNowDecimalHour] = useState(() => getWallClockDecimalHour());
   const [draggingId, setDraggingId] = useState(null);
   const [dragX, setDragX] = useState(null);
+  const [magneticSnapActive, setMagneticSnapActive] = useState(false);
   const dragXRef = useRef(null);
   const containerRef = useRef(null);
   const stripDragDownAtRef = useRef(0);
@@ -109,6 +165,9 @@ export default function TimelineNodi({
   const stripDragCaptureElRef = useRef(null);
   const stripDragLastCommitRef = useRef({ id: null, hour: null, at: 0 });
   const stripDragSuppressClickRef = useRef(false);
+  /** Nodo della striscia in drag (tipo → fasce magnetiche). */
+  const stripDragNodeRef = useRef(null);
+  const magneticSnapActiveRef = useRef(false);
   const nodes = activeNodesWithStack ?? [];
 
   const beginTimelineStripDrag = useCallback((node, e) => {
@@ -119,6 +178,9 @@ export default function TimelineNodi({
     stripDragMaxDeltaPxRef.current = 0;
     stripDragPointerIdRef.current = e.pointerId != null ? e.pointerId : null;
     stripDragCaptureElRef.current = e.currentTarget;
+    stripDragNodeRef.current = node;
+    magneticSnapActiveRef.current = false;
+    setMagneticSnapActive(false);
     try {
       if (typeof e.currentTarget?.setPointerCapture === 'function' && e.pointerId != null) {
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -173,8 +235,22 @@ export default function TimelineNodi({
       let percent = x / w;
       percent = Math.max(0, Math.min(1, percent));
 
-      dragXRef.current = percent;
-      setDragX(percent);
+      const nodeDrag = stripDragNodeRef.current;
+      const { percent: magnetP, magneticActive } = applyMagneticTimelineSnap(
+        percent,
+        w,
+        nodeDrag,
+        MAGNETIC_SNAP_THRESHOLD_PX,
+        reduceMotion
+      );
+      const displayPercent = snapTimelineDragPercentForDisplay(magnetP);
+
+      dragXRef.current = displayPercent;
+      setDragX(displayPercent);
+      if (magneticSnapActiveRef.current !== magneticActive) {
+        magneticSnapActiveRef.current = magneticActive;
+        setMagneticSnapActive(magneticActive);
+      }
     }
 
     function handleUp() {
@@ -218,6 +294,9 @@ export default function TimelineNodi({
         }
       }
 
+      stripDragNodeRef.current = null;
+      magneticSnapActiveRef.current = false;
+      setMagneticSnapActive(false);
       setDraggingId(null);
       setDragX(null);
       dragXRef.current = null;
@@ -245,8 +324,10 @@ export default function TimelineNodi({
         /* ignore */
       }
       document.body.style.userSelect = '';
+      stripDragNodeRef.current = null;
+      magneticSnapActiveRef.current = false;
     };
-  }, [draggingId, updateMealTime]);
+  }, [draggingId, updateMealTime, reduceMotion]);
 
   useEffect(() => {
     dragXRef.current = dragX;
@@ -425,6 +506,7 @@ export default function TimelineNodi({
             const isDragging = draggingNode?.id === node.id;
             const isStripDragging = draggingId === node.id;
             const isActiveDrag = isDragging || isStripDragging;
+            const stripMagneticOn = magneticSnapActive && draggingId === node.id && !reduceMotion;
             const isTouchingOrDragging = isDragging || (touchingNodeId === node.id);
             const dragY = isDragging ? dragOffsetY : 0;
             const displayTimeVal = (isDragging && dragLiveTime != null) ? dragLiveTime : node.time;
@@ -441,7 +523,7 @@ export default function TimelineNodi({
             const nodeLeftPercentStr = (timeHours) => {
               const percent =
                 draggingId === node.id && dragX != null && Number.isFinite(Number(dragX))
-                  ? snapTimelineDragPercentForDisplay(dragX)
+                  ? clampTimelineDragPercent(dragX)
                   : clampTimelineDragPercent(getTimePositionPercent(timeHours) / 100);
               return `${clampTimelineDragPercent(percent) * 100}%`;
             };
@@ -453,11 +535,16 @@ export default function TimelineNodi({
               const dragEdge = isDragging ? draggingNode?.edge : null;
               const left = nodeLeftPercentStr(barStartHour);
               const barScale = isActiveDrag ? 1.2 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
+              const barScaleDraw = barScale * (stripMagneticOn ? 1.08 : 1);
               const barOpacity = isActiveDrag ? 1 : (importanceStyle.opacity ?? 1);
+              const workStripShadow =
+                isStripDragging && stripMagneticOn
+                  ? '0 0 22px rgba(255, 234, 0, 0.52), 0 0 42px rgba(255, 68, 68, 0.24)'
+                  : null;
               return (
                 <motion.div
                   key={node.id}
-                  className={`timeline-node ${isActiveDrag ? 'is-dragging' : ''}`}
+                  className={`timeline-node ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
                   onPointerDown={(e) => {
                     startNodeDrag(node, 'all')(e);
                     beginTimelineStripDrag(node, e);
@@ -465,12 +552,19 @@ export default function TimelineNodi({
                   onPointerUp={releaseNodePointer}
                   onPointerCancel={releaseNodePointer}
                   onClick={onTimelineNodeClick(node)}
-                  initial={reduceMotion ? false : { opacity: barOpacity, scale: barScale * 0.8 }}
+                  initial={reduceMotion ? false : { opacity: barOpacity, scale: barScaleDraw * 0.8 }}
                   animate={{
                     opacity: barOpacity,
-                    scale: barScale,
+                    scale: barScaleDraw,
                     y: isDragging ? dragY - 45 : 0,
-                    boxShadow: reduceMotion || isActiveDrag ? 'none' : [WORK_ADD_GLOW_PULSE, 'none'],
+                    boxShadow:
+                      reduceMotion
+                        ? 'none'
+                        : workStripShadow
+                          ? workStripShadow
+                          : isActiveDrag
+                            ? 'none'
+                            : [WORK_ADD_GLOW_PULSE, 'none'],
                   }}
                   transition={nodeAddTransition(reduceMotion, isActiveDrag)}
                   whileHover={!isActiveDrag ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
@@ -521,11 +615,16 @@ export default function TimelineNodi({
               const dragEdge = isDragging ? draggingNode?.edge : null;
               const left = nodeLeftPercentStr(barStartHour);
               const barScale = isActiveDrag ? 1.2 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
+              const barScaleDraw = barScale * (stripMagneticOn ? 1.08 : 1);
               const barOpacity = isActiveDrag ? 1 : (importanceStyle.opacity ?? 1);
+              const cogStripShadow =
+                isStripDragging && stripMagneticOn
+                  ? '0 0 22px rgba(0, 229, 255, 0.5), 0 0 40px rgba(182, 102, 210, 0.28)'
+                  : null;
               return (
                 <motion.div
                   key={node.id}
-                  className={`timeline-node ${isActiveDrag ? 'is-dragging' : ''}`}
+                  className={`timeline-node ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
                   onPointerDown={(e) => {
                     startNodeDrag(node, 'all')(e);
                     beginTimelineStripDrag(node, e);
@@ -533,12 +632,19 @@ export default function TimelineNodi({
                   onPointerUp={releaseNodePointer}
                   onPointerCancel={releaseNodePointer}
                   onClick={onTimelineNodeClick(node)}
-                  initial={reduceMotion ? false : { opacity: barOpacity, scale: barScale * 0.8 }}
+                  initial={reduceMotion ? false : { opacity: barOpacity, scale: barScaleDraw * 0.8 }}
                   animate={{
                     opacity: barOpacity,
-                    scale: barScale,
+                    scale: barScaleDraw,
                     y: isDragging ? dragY - 45 : 0,
-                    boxShadow: reduceMotion || isActiveDrag ? 'none' : [COG_ADD_GLOW_PULSE, 'none'],
+                    boxShadow:
+                      reduceMotion
+                        ? 'none'
+                        : cogStripShadow
+                          ? cogStripShadow
+                          : isActiveDrag
+                            ? 'none'
+                            : [COG_ADD_GLOW_PULSE, 'none'],
                   }}
                   transition={nodeAddTransition(reduceMotion, isActiveDrag)}
                   whileHover={!isActiveDrag ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
@@ -623,6 +729,7 @@ export default function TimelineNodi({
                 : `2px solid ${nodeBorderColor}`;
             const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
             const baseScale = isActiveDrag ? 1.2 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
+            const pointScaleDraw = baseScale * (stripMagneticOn ? 1.08 : 1);
             const targetOpacity = ghostVisual
               ? (isTouchingOrDragging ? 0.82 : 0.6)
               : isActiveDrag
@@ -641,12 +748,18 @@ export default function TimelineNodi({
             } else if (isCognitivePoint) {
               pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
             }
+            const mealWorkoutMagneticShadow =
+              isStripDragging && stripMagneticOn && isMealPoint
+                ? '0 0 26px rgba(0, 229, 255, 0.58), 0 0 48px rgba(255, 255, 255, 0.12)'
+                : isStripDragging && stripMagneticOn && isWorkoutPoint
+                  ? '0 0 26px rgba(255, 68, 68, 0.52), 0 0 44px rgba(255, 234, 0, 0.22)'
+                  : null;
             const pointZ = isActiveDrag ? 10 : isTouchingOrDragging ? 100 : ghostVisual ? 9 : (importanceStyle.zIndex ?? 2);
             const left = nodeLeftPercentStr(displayTimeVal);
             return (
               <motion.div
                 key={node.id}
-                className={`timeline-node meal-node ${isActiveDrag ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}`}
+                className={`timeline-node meal-node ${isActiveDrag ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
                 onPointerDown={(e) => {
                   startNodeDrag(node, 'all')(e);
                   beginTimelineStripDrag(node, e);
@@ -657,17 +770,20 @@ export default function TimelineNodi({
                 initial={
                   reduceMotion
                     ? false
-                    : { opacity: targetOpacity, scale: baseScale * 0.8, x: '-50%' }
+                    : { opacity: targetOpacity, scale: pointScaleDraw * 0.8, x: '-50%' }
                 }
                 animate={{
                   opacity: targetOpacity,
-                  scale: baseScale,
+                  scale: pointScaleDraw,
                   x: '-50%',
                   y: isDragging ? dragY - 45 : 0,
-                  boxShadow:
-                    reduceMotion || isActiveDrag
-                      ? pointBoxShadow
-                      : [POINT_ADD_GLOW_PULSE, pointBoxShadow],
+                  boxShadow: reduceMotion
+                    ? pointBoxShadow
+                    : mealWorkoutMagneticShadow
+                      ? mealWorkoutMagneticShadow
+                      : isActiveDrag
+                        ? pointBoxShadow
+                        : [POINT_ADD_GLOW_PULSE, pointBoxShadow],
                 }}
                 transition={nodeAddTransition(reduceMotion, isActiveDrag)}
                 whileHover={!isActiveDrag ? { scale: baseScale * 1.1, transition: SUBTLE_SPRING } : undefined}
