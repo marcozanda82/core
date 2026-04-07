@@ -190,6 +190,16 @@ function normalizeDraftIngredient(row, index) {
   return mergeDraftNutrientExtras(base, row);
 }
 
+/** Macro effettivi alla porzione corrente (coda pasto / non ricetta). */
+function mealFoodMacrosAtPortion(f) {
+  if (!f || typeof f !== 'object') return { prot: 0, carb: 0, fat: 0 };
+  return {
+    prot: Number(f.prot ?? f.proteine) || 0,
+    carb: Number(f.carb ?? f.carboidrati) || 0,
+    fat: Number(f.fat ?? f.fatTotal ?? f.grassi) || 0,
+  };
+}
+
 export default function MealBuilder({
   onClose,
   mealType,
@@ -783,22 +793,46 @@ export default function MealBuilder({
     [addedFoods]
   );
 
+  const magicFillUnlockedFoods = useMemo(
+    () => magicFillEligibleFoods.filter((f) => !f.locked),
+    [magicFillEligibleFoods]
+  );
+
+  const toggleFoodQtyLock = useCallback((foodId) => {
+    setAddedFoods((prev) =>
+      prev.map((f) => (String(f.id) === String(foodId) ? { ...f, locked: !f.locked } : f))
+    );
+  }, [setAddedFoods]);
+
   const handleMagicFill = useCallback(() => {
-    if (magicFillEligibleFoods.length < 2) return;
+    if (magicFillEligibleFoods.length < 2 || magicFillUnlockedFoods.length < 1) return;
     const tm = targetMacrosPasto && targetMacrosPasto.kcal != null ? targetMacrosPasto : targetMacros;
     const target = {
       prot: Number(tm?.prot) || 0,
       carb: Number(tm?.carb) || 0,
       fat: Number(tm?.fat ?? tm?.fatTotal) || 0,
     };
-    const results = calculateMagicFill(magicFillEligibleFoods, target);
+    const lockedSum = { prot: 0, carb: 0, fat: 0 };
+    (addedFoods || []).forEach((f) => {
+      if (f.type === 'recipe' || f.isRecipe === true || !f.locked) return;
+      const m = mealFoodMacrosAtPortion(f);
+      lockedSum.prot += m.prot;
+      lockedSum.carb += m.carb;
+      lockedSum.fat += m.fat;
+    });
+    const residual = {
+      prot: Math.max(0, target.prot - lockedSum.prot),
+      carb: Math.max(0, target.carb - lockedSum.carb),
+      fat: Math.max(0, target.fat - lockedSum.fat),
+    };
+    const results = calculateMagicFill(magicFillUnlockedFoods, residual);
     const scaleKeys = new Set([
       'kcal', 'cal', 'prot', 'carb', 'fat', 'fatTotal',
       ...Object.values(TARGETS).flatMap((g) => Object.keys(g || {})),
     ]);
     setAddedFoods((prev) =>
       prev.map((f) => {
-        if (f.type === 'recipe' || f.isRecipe === true) return f;
+        if (f.type === 'recipe' || f.isRecipe === true || f.locked) return f;
         const hit = results.find((r) => String(r.id) === String(f.id));
         if (!hit) return f;
         const newQ = Math.max(5, Math.min(5000, hit.grams > 0 ? hit.grams : 5));
@@ -816,7 +850,15 @@ export default function MealBuilder({
     );
     setMagicFillToast(true);
     window.setTimeout(() => setMagicFillToast(false), 2200);
-  }, [magicFillEligibleFoods, targetMacrosPasto, targetMacros, TARGETS]);
+  }, [
+    addedFoods,
+    magicFillEligibleFoods,
+    magicFillUnlockedFoods,
+    targetMacrosPasto,
+    targetMacros,
+    TARGETS,
+    setAddedFoods,
+  ]);
 
   const handleSmartCompleteClick = useCallback(async () => {
     if (typeof onSmartComplete !== 'function' || smartCompleteLoading) return;
@@ -1760,6 +1802,7 @@ export default function MealBuilder({
                 const mgVal = Number(food.mg) || 0;
                 const mgRich = mgVal >= 30;
                 const qta = Number(food.qta ?? food.weight ?? 100) || 100;
+                const qtyLocked = food.locked === true;
                 const step = isRecipeItem ? 50 : (Number(food.unitStep) || 10);
                 const rowKey = String(food.id);
                 const recipeExpanded = !!expandedAddedFoods[rowKey];
@@ -1801,6 +1844,36 @@ export default function MealBuilder({
                             </button>
                           ) : null}
                           <span className="food-pill-name">{food.desc || food.name}</span>
+                          {!isRecipeItem && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFoodQtyLock(food.id);
+                                }}
+                                title={
+                                  qtyLocked
+                                    ? 'Quantità bloccata: il bilanciamento automatico non la modifica. Clic per sbloccare.'
+                                    : 'Blocca quantità: il bilanciamento automatico non la modificherà. Clic per bloccare.'
+                                }
+                                aria-label={qtyLocked ? 'Sblocca quantità per bilanciamento' : 'Blocca quantità per bilanciamento'}
+                                aria-pressed={qtyLocked}
+                                style={{
+                                  flexShrink: 0,
+                                  background: qtyLocked ? 'rgba(251, 191, 36, 0.18)' : 'rgba(255,255,255,0.06)',
+                                  border: `1px solid ${qtyLocked ? 'rgba(251, 191, 36, 0.45)' : '#333'}`,
+                                  borderRadius: '8px',
+                                  color: qtyLocked ? '#fcd34d' : '#94a3b8',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem',
+                                  padding: '2px 8px',
+                                  lineHeight: 1.2,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {qtyLocked ? '🔒' : '🔓'}
+                              </button>
+                          )}
                           {!isRecipeItem && (
                               <button
                                 type="button"
@@ -1997,7 +2070,7 @@ export default function MealBuilder({
                   </div>
                 );
               })}
-              {magicFillEligibleFoods.length >= 2 && (
+              {magicFillEligibleFoods.length >= 2 && magicFillUnlockedFoods.length >= 1 && (
                 <div
                   style={{
                     display: 'flex',

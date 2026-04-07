@@ -5057,6 +5057,7 @@ Ottimo! Diario aggiornato. 🥗`;
     if (!food) return;
     const currentQta = Number(food.qta ?? food.weight ?? 100) || 100;
     const newQta = Math.max(5, Math.min(5000, currentQta + deltaG));
+    if (newQta === currentQta) return;
     if (food.type === 'recipe') {
       const ratio = newQta / currentQta;
       const scaleKeys = new Set([
@@ -5065,7 +5066,7 @@ Ottimo! Diario aggiornato. 🥗`;
       ]);
       setAddedFoods(prev => prev.map(f => {
         if (f.id !== foodId) return f;
-        const next = { ...f, qta: newQta, weight: newQta };
+        const next = { ...f, qta: newQta, weight: newQta, locked: true };
         scaleKeys.forEach((k) => {
           if (f[k] != null && typeof f[k] === 'number' && !Number.isNaN(f[k])) {
             next[k] = f[k] * ratio;
@@ -5091,7 +5092,7 @@ Ottimo! Diario aggiornato. 🥗`;
       return;
     }
     const updated = estraiDatiFoodDb(food.desc || food.name, newQta, food.mealType || mealType);
-    setAddedFoods(prev => prev.map(f => f.id === foodId ? { ...updated, id: foodId } : f));
+    setAddedFoods(prev => prev.map(f => f.id === foodId ? { ...updated, id: foodId, locked: true } : f));
   };
 
   const saveCustomRecipeToFoodDb = useCallback(async ({ desc, kcal, prot, carb, fatTotal, ingredients }, existingKey) => {
@@ -12708,7 +12709,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   const qta = parseFloat(editQuantityValue);
                   if (!Number.isFinite(qta) || qta <= 0) return;
                   const { food, source } = selectedFoodForEdit;
-                  const newItem = { ...estraiDatiFoodDb(food.desc || food.name, qta, food.mealType), id: food.id };
+                  const newItem = { ...estraiDatiFoodDb(food.desc || food.name, qta, food.mealType), id: food.id, locked: true };
                   if (source === 'queue') setAddedFoods(prev => prev.map(f => f.id === food.id ? newItem : f));
                   else if (source === 'diary') {
                     if (isSimulationMode) {
