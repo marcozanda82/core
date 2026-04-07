@@ -40,7 +40,7 @@ import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
 import PlanningWizard from './PlanningWizard';
-import { getDefaultKentuChatHistory } from './kentuIntroPhrases';
+import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
   createInitialWeeklyPlan,
   getWeekStartMondayKeyLocal,
@@ -1398,7 +1398,7 @@ const LONGEVITY_NIGHT_PENDING_ENERGY_SIM = {
 };
 
 /** Overlay fullscreen: unico piano visibile finché auth/data non sono pronti per la dashboard/login. */
-function FirebaseDataLoadingLayer({ blocking }) {
+function FirebaseDataLoadingLayer({ blocking, introPhrase }) {
   const [mounted, setMounted] = useState(false);
   const [opaque, setOpaque] = useState(true);
 
@@ -1466,7 +1466,7 @@ function FirebaseDataLoadingLayer({ blocking }) {
           textShadow: '0 0 48px rgba(212, 175, 55, 0.2), 0 1px 2px rgba(0,0,0,0.55)',
         }}
       >
-        Inspired by Sardinia&apos;s Blue Zones
+        {introPhrase}
       </p>
     </div>,
     document.body
@@ -1959,6 +1959,7 @@ export default function SalaComandi() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [isBooting, setIsBooting] = useState(false);
+  const [introPhrase] = useState(() => takeNextKentuIntroPhrase());
 
   // STATI INTERFACCIA
   const [currentTime, setCurrentTime] = useState(8);
@@ -2640,7 +2641,7 @@ export default function SalaComandi() {
     } catch {
       /* noop */
     }
-    return getDefaultKentuChatHistory();
+    return [{ sender: 'ai', text: introPhrase }];
   });
   const skipKentuChatPersistRef = useRef(false);
   const kentuChatBoundDateRef = useRef(null);
@@ -2695,9 +2696,9 @@ export default function SalaComandi() {
     if (stored) {
       setChatHistory(stored);
     } else if (prevBound != null && prevBound !== d) {
-      setChatHistory(getDefaultKentuChatHistory());
+      setChatHistory([{ sender: 'ai', text: introPhrase }]);
     }
-  }, [currentTrackerDate]);
+  }, [currentTrackerDate, introPhrase]);
 
   useEffect(() => {
     if (skipKentuChatPersistRef.current) {
@@ -9445,7 +9446,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 lineHeight: 1.5,
               }}
             >
-              Inspired by Sardinia&apos;s Blue Zones
+              {introPhrase}
             </p>
             <p style={{textAlign: 'center', fontSize: '0.65rem', color: '#666', marginBottom: '20px'}}>SYSTEM ENCRYPTED. REQUIRE AUTHENTICATION.</p>
             <input type="email" placeholder="USER ID (EMAIL)" className="login-input" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
@@ -14651,7 +14652,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
 
   return (
     <>
-      <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} />
+      <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} introPhrase={introPhrase} />
       {salaContent}
     </>
   );
