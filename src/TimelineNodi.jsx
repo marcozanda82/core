@@ -24,9 +24,16 @@ const WORK_ADD_GLOW_PULSE =
 const COG_ADD_GLOW_PULSE =
   '0 0 0 1px rgba(0,229,255,0.32), 0 0 14px rgba(0,229,255,0.48)';
 
+/** Drag fraction along timeline (0–1); invalid values → 0 so the node stays on-strip. */
+function clampTimelineDragPercent(percent) {
+  const n = Number(percent);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
 /** 0–1 fraction along 24h strip → snap to nearest 15 min for drag preview only (state keeps raw percent). */
 function snapTimelineDragPercentForDisplay(percent) {
-  const p = Math.max(0, Math.min(1, Number(percent)));
+  const p = clampTimelineDragPercent(percent);
   return Math.round(p * 24 * 4) / 4 / 24;
 }
 
@@ -110,15 +117,23 @@ export default function TimelineNodi({
       if (!el) return;
 
       const rect = el.getBoundingClientRect();
+      const w = rect.width;
+      if (!(w > 0)) return;
+
       const x = e.clientX - rect.left;
+      let percent = x / w;
+      percent = Math.max(0, Math.min(1, percent));
 
-      const percent = Math.max(0, Math.min(1, x / rect.width));
-
+      dragXRef.current = percent;
       setDragX(percent);
     }
 
     window.addEventListener('mousemove', handleMove);
-    return () => window.removeEventListener('mousemove', handleMove);
+    window.addEventListener('pointermove', handleMove);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('pointermove', handleMove);
+    };
   }, [draggingId]);
 
   useEffect(() => {
@@ -128,11 +143,15 @@ export default function TimelineNodi({
   useEffect(() => {
     if (!draggingId) return undefined;
 
+    let ended = false;
     function handleUp() {
+      if (ended) return;
+      ended = true;
       document.body.style.userSelect = '';
       const x = dragXRef.current;
-      if (x != null && Number.isFinite(Number(x)) && typeof updateMealTime === 'function') {
-        updateMealTime(draggingId, Number(x) * 24);
+      if (x != null && typeof updateMealTime === 'function') {
+        const percent = clampTimelineDragPercent(x);
+        updateMealTime(draggingId, percent * 24);
       }
       setDraggingId(null);
       setDragX(null);
@@ -140,7 +159,13 @@ export default function TimelineNodi({
     }
 
     window.addEventListener('mouseup', handleUp);
-    return () => window.removeEventListener('mouseup', handleUp);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+    return () => {
+      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
   }, [draggingId, updateMealTime]);
 
   const fireNodeClick = (node, event) => {
@@ -333,9 +358,8 @@ export default function TimelineNodi({
               const percent =
                 draggingId === node.id && dragX != null && Number.isFinite(Number(dragX))
                   ? snapTimelineDragPercentForDisplay(dragX)
-                  : getTimePositionPercent(timeHours) / 100;
-              const clamped = Math.max(0, Math.min(1, percent));
-              return `${clamped * 100}%`;
+                  : clampTimelineDragPercent(getTimePositionPercent(timeHours) / 100);
+              return `${clampTimelineDragPercent(percent) * 100}%`;
             };
             const cognitiveIcon = node.subType === 'studio' ? '📚' : '💻';
             const cognitiveBg = 'rgba(0, 229, 255, 0.15)';
