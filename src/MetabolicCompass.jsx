@@ -257,7 +257,7 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
         }}
       >
         <div
-          role="img"
+          role="group"
           aria-label="Bussola metabolica"
           className="metabolic-compass-face"
           style={{
@@ -273,14 +273,13 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
           }}
         >
           <div
-            aria-hidden
             style={{
               position: 'absolute',
               inset: 0,
               borderRadius: '50%',
               transformOrigin: '50% 50%',
               transform: `rotate(${compassRotation}deg)`,
-              transition: 'transform 0.45s cubic-bezier(0.33, 0.86, 0.36, 1)',
+              transition: 'transform 0.4s ease',
               background: `
                 radial-gradient(ellipse 72% 72% at 50% 38%, rgba(35, 42, 54, 0.95) 0%, #12151c 48%, #07080c 100%),
                 radial-gradient(circle at 50% 35%, rgba(120, 140, 165, 0.06) 0%, transparent 55%)
@@ -300,12 +299,13 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
             />
             <CompassDialGrid directions={METABOLIC_COMPASS_DIRECTIONS} />
             {METABOLIC_COMPASS_DIRECTIONS.map(({ angle, label }) => (
-              <CompassLabel
+              <CompassDirectionLabel
                 key={`lbl-${angle}`}
-                style={compassLabelStyleFromAngle(angle, compassRotation)}
-              >
-                {label}
-              </CompassLabel>
+                labelText={label}
+                selected={goal === label}
+                onSelect={setGoal}
+                layoutStyle={compassLabelStyleFromAngle(angle, compassRotation)}
+              />
             ))}
           </div>
 
@@ -418,8 +418,7 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
   );
 }
 
-const LABEL_COUNTER_ROTATION_TRANSITION =
-  'transform 0.45s cubic-bezier(0.33, 0.86, 0.36, 1)';
+const LABEL_COUNTER_ROTATION_TRANSITION = 'transform 0.4s ease';
 
 /** Posizione % sul volto: 0° = Nord, positivo = orario. Contro-rotazione = testo sempre orizzontale. */
 function compassLabelStyleFromAngle(angle, compassRotationDeg, radiusPct = 41.5) {
@@ -435,27 +434,48 @@ function compassLabelStyleFromAngle(angle, compassRotationDeg, radiusPct = 41.5)
   };
 }
 
-function CompassLabel({ children, style }) {
+function CompassDirectionLabel({ labelText, selected, onSelect, layoutStyle }) {
   return (
-    <span
+    <button
+      type="button"
+      className="metabolic-compass-direction-label"
+      aria-pressed={selected}
+      aria-label={`Obiettivo ${labelText}`}
+      onClick={() => onSelect(labelText)}
       style={{
         position: 'absolute',
-        maxWidth: '30%',
+        maxWidth: '32%',
+        minHeight: 30,
         textAlign: 'center',
         fontSize: 9,
         fontWeight: 600,
         letterSpacing: '0.09em',
         textTransform: 'uppercase',
-        color: 'rgba(235, 238, 245, 0.48)',
         lineHeight: 1.2,
         fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        textShadow: '0 1px 3px rgba(0,0,0,0.85)',
-        pointerEvents: 'none',
-        ...style,
+        cursor: 'pointer',
+        border: 'none',
+        margin: 0,
+        padding: '5px 7px',
+        borderRadius: 8,
+        background: selected ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.02)',
+        color: selected ? 'rgba(248, 250, 255, 0.92)' : 'rgba(235, 238, 245, 0.48)',
+        textShadow: selected
+          ? '0 0 12px rgba(150, 210, 255, 0.42), 0 0 24px rgba(90, 170, 240, 0.18), 0 1px 3px rgba(0,0,0,0.88)'
+          : '0 1px 3px rgba(0,0,0,0.85)',
+        boxShadow: selected
+          ? '0 0 0 1px rgba(255,255,255,0.14), 0 0 18px rgba(110, 185, 255, 0.2)'
+          : 'none',
+        transition:
+          'color 0.35s ease, background 0.35s ease, text-shadow 0.35s ease, box-shadow 0.35s ease',
+        pointerEvents: 'auto',
+        zIndex: 1,
+        WebkitTapHighlightColor: 'transparent',
+        ...layoutStyle,
       }}
     >
-      {children}
-    </span>
+      {labelText}
+    </button>
   );
 }
 

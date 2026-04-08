@@ -653,6 +653,11 @@ html, body, #root {
   shape-rendering: geometricPrecision;
 }
 
+.metabolic-compass-direction-label:focus-visible {
+  outline: 1px solid rgba(180, 215, 255, 0.55);
+  outline-offset: 2px;
+}
+
 /* MetabolicCompass.jsx — bolle glassmorphism */
 .metabolic-compass-glass {
   color: #0f172a;

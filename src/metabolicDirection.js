@@ -29,13 +29,26 @@ export const METABOLIC_GOAL = {
 };
 
 /**
- * Angolo nel piano vettoriale (atan2) dell’obiettivo — usato per ago vs stato metabolico.
+ * Angolo nel piano vettoriale (atan2) per i tre obiettivi rapidi (riferimento documentale).
+ * Il calcolo effettivo per qualsiasi direzione rosa è {@link getMetabolicTargetAngle}.
  */
 export const METABOLIC_TARGET_ANGLE_DEG = {
   [METABOLIC_GOAL.RICOMPOSIZIONE]: 90,
   [METABOLIC_GOAL.MASSA]: 45,
   [METABOLIC_GOAL.PERDITA_GRASSO]: -135,
 };
+
+/** @param {number} deg */
+export function normalizeDeg180(deg) {
+  return ((((deg + 180) % 360) + 360) % 360) - 180;
+}
+
+function isCompassDirectionLabel(goal) {
+  return (
+    typeof goal === 'string' &&
+    METABOLIC_COMPASS_DIRECTIONS.some((d) => d.label === goal)
+  );
+}
 
 /**
  * Mappa l’obiettivo selezionato (label = voce in {@link METABOLIC_COMPASS_DIRECTIONS}) sull’angolo rosa.
@@ -101,13 +114,16 @@ export function metabolicAngleDegToCompassBearingDeg(angleDeg) {
 }
 
 /**
- * Angolo obiettivo in gradi per l’obiettivo selezionato (default: Ricomposizione).
- * @param {string} goal
+ * Angolo obiettivo nel piano atan2 per una qualsiasi direzione della rosa (o default Ricomposizione).
+ * Coerente con i tre valori storici in {@link METABOLIC_TARGET_ANGLE_DEG}.
+ *
+ * @param {string} goal label bussola
  * @returns {number}
  */
 export function getMetabolicTargetAngle(goal) {
-  const g = goal && METABOLIC_TARGET_ANGLE_DEG[goal] != null ? goal : METABOLIC_GOAL.RICOMPOSIZIONE;
-  return METABOLIC_TARGET_ANGLE_DEG[g];
+  const label = isCompassDirectionLabel(goal) ? goal : METABOLIC_GOAL.RICOMPOSIZIONE;
+  const compass = getCompassTargetAngleForGoal(label);
+  return normalizeDeg180(90 - compass);
 }
 
 /**
@@ -115,7 +131,7 @@ export function getMetabolicTargetAngle(goal) {
  *
  * @param {number} kcalBalance
  * @param {number} trainingLoad
- * @param {string} goal una di METABOLIC_GOAL / chiavi di METABOLIC_TARGET_ANGLE_DEG
+ * @param {string} goal label in {@link METABOLIC_COMPASS_DIRECTIONS}
  * @returns {{ angle: number, magnitude: number, targetAngle: number, finalAngle: number, x: number, y: number }}
  */
 export function computeMetabolicCompassOrientation(kcalBalance, trainingLoad, goal) {
