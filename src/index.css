@@ -663,6 +663,16 @@ html, body, #root {
   outline-offset: 1px;
 }
 
+/* Bussola bloccata: niente opacità “disabled” da UA — stesso aspetto, zero interazione */
+.metabolic-compass-interaction-surface[data-locked='true'] button:disabled {
+  opacity: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+.metabolic-compass-interaction-surface[data-locked='true'] input.metabolic-compass-range:disabled {
+  opacity: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+
 @keyframes metabolic-compass-center-pulse {
   0%,
   100% {

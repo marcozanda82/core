@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getCompassTargetAngleForGoal,
   getMetabolicTargetAngle,
@@ -166,6 +166,7 @@ export default function MetabolicCompass({
   );
 
   const [isLocked, setIsLocked] = useState(true);
+  const interactionSurfaceRef = useRef(null);
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState('7d');
   const [kcalBalance, setKcalBalance] = useState(0);
@@ -191,6 +192,14 @@ export default function MetabolicCompass({
       cb?.(false);
     };
   }, [onCompassInteractionUnlockChange]);
+
+  useEffect(() => {
+    const node = interactionSurfaceRef.current;
+    if (!node || typeof HTMLElement === 'undefined') return;
+    if ('inert' in HTMLElement.prototype) {
+      node.inert = isLocked;
+    }
+  }, [isLocked]);
 
   const dailyHistory = isControlled ? dailyHistoryProp : internalHistory;
 
@@ -236,7 +245,9 @@ export default function MetabolicCompass({
         onToggle={() => setIsLocked((v) => !v)}
       />
       <div
+        ref={interactionSurfaceRef}
         className="metabolic-compass-interaction-surface"
+        data-locked={isLocked ? 'true' : 'false'}
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -244,7 +255,8 @@ export default function MetabolicCompass({
           gap: 20,
           width: '100%',
           pointerEvents: isLocked ? 'none' : 'auto',
-          touchAction: isLocked ? undefined : 'pan-y',
+          touchAction: isLocked ? 'none' : 'pan-y',
+          userSelect: isLocked ? 'none' : undefined,
         }}
       >
       {/* Obiettivo */}
@@ -264,6 +276,7 @@ export default function MetabolicCompass({
             type="button"
             role="tab"
             aria-selected={goal === g}
+            disabled={isLocked}
             onClick={() => setGoal(g)}
             style={{
               padding: '7px 13px',
@@ -279,7 +292,7 @@ export default function MetabolicCompass({
               fontWeight: 560,
               letterSpacing: '0.04em',
               textTransform: 'uppercase',
-              cursor: 'pointer',
+              cursor: isLocked ? 'default' : 'pointer',
               fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
             }}
           >
@@ -312,6 +325,7 @@ export default function MetabolicCompass({
               type="button"
               role="tab"
               aria-selected={active}
+              disabled={isLocked}
               onClick={() => setSelectedTimeframe(value)}
               style={{
                 flex: 1,
@@ -320,7 +334,7 @@ export default function MetabolicCompass({
                 borderRadius: 9,
                 border: 'none',
                 margin: 0,
-                cursor: 'pointer',
+                cursor: isLocked ? 'default' : 'pointer',
                 fontSize: 10,
                 fontWeight: 650,
                 letterSpacing: '0.11em',
@@ -405,6 +419,7 @@ export default function MetabolicCompass({
                 key={`lbl-${angle}`}
                 labelText={label}
                 selected={goal === label}
+                disabled={isLocked}
                 onSelect={setGoal}
                 layoutStyle={compassLabelStyleFromAngle(angle, compassRotation)}
               />
@@ -507,6 +522,7 @@ export default function MetabolicCompass({
             max={METABOLIC_KCAL_NORMALIZATION_REF}
             value={kcalBalance}
             onChange={setKcalBalance}
+            disabled={isLocked}
           />
           <RangeBare
             aria-label="Carico allenamento"
@@ -514,6 +530,7 @@ export default function MetabolicCompass({
             max={METABOLIC_TRAINING_NORMALIZATION_REF}
             value={trainingLoad}
             onChange={setTrainingLoad}
+            disabled={isLocked}
           />
         </div>
       )}
@@ -607,13 +624,14 @@ function compassLabelStyleFromAngle(angle, compassRotationDeg, radiusPct = 41.5)
   };
 }
 
-function CompassDirectionLabel({ labelText, selected, onSelect, layoutStyle }) {
+function CompassDirectionLabel({ labelText, selected, disabled, onSelect, layoutStyle }) {
   return (
     <button
       type="button"
       className="metabolic-compass-direction-label"
       aria-pressed={selected}
       aria-label={`Obiettivo ${labelText}`}
+      disabled={disabled}
       onClick={() => onSelect(labelText)}
       style={{
         position: 'absolute',
@@ -626,7 +644,7 @@ function CompassDirectionLabel({ labelText, selected, onSelect, layoutStyle }) {
         textTransform: 'uppercase',
         lineHeight: 1.2,
         fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        cursor: 'pointer',
+        cursor: disabled ? 'default' : 'pointer',
         border: 'none',
         margin: 0,
         padding: '5px 7px',
@@ -652,7 +670,7 @@ function CompassDirectionLabel({ labelText, selected, onSelect, layoutStyle }) {
   );
 }
 
-function RangeBare({ 'aria-label': ariaLabel, min, max, value, onChange }) {
+function RangeBare({ 'aria-label': ariaLabel, min, max, value, onChange, disabled }) {
   return (
     <input
       type="range"
@@ -660,6 +678,7 @@ function RangeBare({ 'aria-label': ariaLabel, min, max, value, onChange }) {
       min={min}
       max={max}
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange(Number(e.target.value))}
       style={{
         width: '100%',
@@ -669,7 +688,7 @@ function RangeBare({ 'aria-label': ariaLabel, min, max, value, onChange }) {
         WebkitAppearance: 'none',
         background: 'rgba(255,255,255,0.08)',
         outline: 'none',
-        cursor: 'pointer',
+        cursor: disabled ? 'default' : 'pointer',
       }}
       className="metabolic-compass-range"
     />
