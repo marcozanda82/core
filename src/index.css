@@ -677,11 +677,11 @@ html, body, #root {
   filter: brightness(1.07);
 }
 
-.metabolic-compass-direction-label:not(:disabled):active {
+.metabolic-compass-direction-label:active {
   filter: brightness(1.14);
 }
 
-.metabolic-compass-direction-label--selected:not(:disabled):active {
+.metabolic-compass-direction-label--selected:active {
   filter: brightness(1.18);
 }
 
@@ -693,8 +693,8 @@ html, body, #root {
     filter: none;
   }
 
-  .metabolic-compass-direction-label:not(:disabled):active,
-  .metabolic-compass-direction-label--selected:not(:disabled):active {
+  .metabolic-compass-direction-label:active,
+  .metabolic-compass-direction-label--selected:active {
     filter: none;
   }
 }
@@ -707,12 +707,6 @@ html, body, #root {
 .metabolic-compass-timeframe button:focus-visible {
   outline: 1px solid rgba(200, 215, 235, 0.45);
   outline-offset: 1px;
-}
-
-/* Bussola bloccata: niente opacità “disabled” da UA — stesso aspetto, zero interazione */
-.metabolic-compass-interaction-surface[data-locked='true'] button:disabled {
-  opacity: 1;
-  -webkit-tap-highlight-color: transparent;
 }
 
 @keyframes metabolic-compass-center-pulse {

@@ -25,8 +25,7 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '30d', label: '30G' },
 ];
 
-/** Stato iniziale ogni volta che si entra nella schermata bussola; niente persistenza (localStorage). */
-const DEFAULT_COMPASS_LOCKED = true;
+/** Periodo predefinito al rientro nella schermata bussola. */
 const DEFAULT_COMPASS_TIMEFRAME = '7d';
 
 /** Lunghezza fissa dal centro al vertice ≈ 75% del raggio (= 37.5% del lato del volto quadrato). */
@@ -210,42 +209,19 @@ function metabolicCompassMicroPhrase(diffDeg, magnitude01) {
 }
 
 /**
- * @param {{ dailyHistory?: Array<{ kcalBalance: number, trainingLoad: number }>, onCompassInteractionUnlockChange?: (unlocked: boolean) => void, compassScreenActive?: boolean }} props
+ * @param {{ dailyHistory?: Array<{ kcalBalance: number, trainingLoad: number }>, compassScreenActive?: boolean }} props
  * `dailyHistory`: serie reale dal tracker (ultimo elemento = giorno corrente); passare `[]` se assente.
- * `onCompassInteractionUnlockChange`: notifica il parent (es. per disabilitare lo swipe tra tab quando la bussola è sbloccata).
- * `compassScreenActive`: quando passa da false a true, ripristina blocco + periodo ai default (nessuno stato sbloccato persistito tra sessioni o rientri).
+ * `compassScreenActive`: quando passa da false a true, ripristina il periodo al default (es. rientro tab bussola).
  */
 export default function MetabolicCompass({
   dailyHistory: dailyHistoryProp = [],
-  onCompassInteractionUnlockChange,
   compassScreenActive = true,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
-  const [isLocked, setIsLocked] = useState(DEFAULT_COMPASS_LOCKED);
-  const interactionSurfaceRef = useRef(null);
   const prevCompassScreenActiveRef = useRef(false);
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_COMPASS_TIMEFRAME);
-
-  useEffect(() => {
-    onCompassInteractionUnlockChange?.(!isLocked);
-  }, [isLocked, onCompassInteractionUnlockChange]);
-
-  useEffect(() => {
-    const cb = onCompassInteractionUnlockChange;
-    return () => {
-      cb?.(false);
-    };
-  }, [onCompassInteractionUnlockChange]);
-
-  useEffect(() => {
-    const node = interactionSurfaceRef.current;
-    if (!node || typeof HTMLElement === 'undefined') return;
-    if ('inert' in HTMLElement.prototype) {
-      node.inert = isLocked;
-    }
-  }, [isLocked]);
 
   useEffect(() => {
     if (!compassScreenActive) {
@@ -253,7 +229,6 @@ export default function MetabolicCompass({
       return;
     }
     if (!prevCompassScreenActiveRef.current) {
-      setIsLocked(DEFAULT_COMPASS_LOCKED);
       setSelectedTimeframe(DEFAULT_COMPASS_TIMEFRAME);
     }
     prevCompassScreenActiveRef.current = true;
@@ -301,7 +276,6 @@ export default function MetabolicCompass({
     <div
       className="metabolic-compass-root"
       style={{
-        position: 'relative',
         width: '100%',
         maxWidth: 400,
         margin: '0 auto',
@@ -309,23 +283,15 @@ export default function MetabolicCompass({
         boxSizing: 'border-box',
       }}
     >
-      <CompassLockToggle
-        isLocked={isLocked}
-        onToggle={() => setIsLocked((v) => !v)}
-      />
       <div
-        ref={interactionSurfaceRef}
         className="metabolic-compass-interaction-surface"
-        data-locked={isLocked ? 'true' : 'false'}
         style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           gap: 20,
           width: '100%',
-          pointerEvents: isLocked ? 'none' : 'auto',
-          touchAction: isLocked ? 'none' : 'pan-y',
-          userSelect: isLocked ? 'none' : undefined,
+          touchAction: 'pan-y',
         }}
       >
       {/* Obiettivo */}
@@ -345,7 +311,6 @@ export default function MetabolicCompass({
             type="button"
             role="tab"
             aria-selected={goal === g}
-            disabled={isLocked}
             onClick={() => setGoal(g)}
             style={{
               padding: '7px 13px',
@@ -361,7 +326,7 @@ export default function MetabolicCompass({
               fontWeight: 560,
               letterSpacing: '0.04em',
               textTransform: 'uppercase',
-              cursor: isLocked ? 'default' : 'pointer',
+              cursor: 'pointer',
               fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
             }}
           >
@@ -394,7 +359,6 @@ export default function MetabolicCompass({
               type="button"
               role="tab"
               aria-selected={active}
-              disabled={isLocked}
               onClick={() => setSelectedTimeframe(value)}
               style={{
                 flex: 1,
@@ -403,7 +367,7 @@ export default function MetabolicCompass({
                 borderRadius: 9,
                 border: 'none',
                 margin: 0,
-                cursor: isLocked ? 'default' : 'pointer',
+                cursor: 'pointer',
                 fontSize: 10,
                 fontWeight: 650,
                 letterSpacing: '0.11em',
@@ -511,7 +475,6 @@ export default function MetabolicCompass({
                 key={`lbl-${angle}`}
                 labelText={label}
                 selected={goal === label}
-                disabled={isLocked}
                 onSelect={setGoal}
                 layoutStyle={compassLabelStyleFromAngle(angle, compassRotation)}
               />
@@ -597,75 +560,6 @@ export default function MetabolicCompass({
   );
 }
 
-function CompassLockToggle({ isLocked, onToggle }) {
-  return (
-    <button
-      type="button"
-      className="metabolic-compass-lock-toggle"
-      aria-pressed={!isLocked}
-      aria-label={
-        isLocked
-          ? 'Sblocca la bussola per interagire'
-          : 'Blocca la bussola per scorrere tra le schede'
-      }
-      title={isLocked ? 'Sblocca' : 'Blocca'}
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-      style={{
-        position: 'absolute',
-        top: 4,
-        right: 4,
-        zIndex: 20,
-        width: 38,
-        height: 38,
-        borderRadius: '50%',
-        border: '1px solid rgba(255,255,255,0.12)',
-        background: 'rgba(12, 14, 18, 0.55)',
-        backdropFilter: 'blur(10px)',
-        WebkitBackdropFilter: 'blur(10px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-        color: isLocked ? 'rgba(255,255,255,0.5)' : 'rgba(120, 220, 190, 0.95)',
-        boxShadow: isLocked
-          ? 'none'
-          : '0 0 16px rgba(80, 200, 165, 0.2), inset 0 1px 0 rgba(255,255,255,0.08)',
-        transition:
-          'color 0.3s ease, background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease',
-        pointerEvents: 'auto',
-        WebkitTapHighlightColor: 'transparent',
-      }}
-    >
-      <svg
-        width="19"
-        height="19"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.65"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        {isLocked ? (
-          <>
-            <rect x="5" y="11" width="14" height="10" rx="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </>
-        ) : (
-          <>
-            <rect x="5" y="11" width="14" height="10" rx="2" />
-            <path d="M12 11V7a4 4 0 0 1 7.2-2.4" />
-          </>
-        )}
-      </svg>
-    </button>
-  );
-}
-
 const LABEL_COUNTER_ROTATION_TRANSITION = COMPASS_ROTATION_TRANSITION;
 
 /** Posizione % sul volto: 0° = Nord, positivo = orario. Contro-rotazione = testo sempre orizzontale. */
@@ -682,7 +576,7 @@ function compassLabelStyleFromAngle(angle, compassRotationDeg, radiusPct = 41.5)
   };
 }
 
-function CompassDirectionLabel({ labelText, selected, disabled, onSelect, layoutStyle }) {
+function CompassDirectionLabel({ labelText, selected, onSelect, layoutStyle }) {
   return (
     <button
       type="button"
@@ -693,11 +587,7 @@ function CompassDirectionLabel({ labelText, selected, disabled, onSelect, layout
       }
       aria-pressed={selected}
       aria-label={`Obiettivo ${labelText}`}
-      disabled={disabled}
-      onClick={() => {
-        if (disabled) return;
-        onSelect(labelText);
-      }}
+      onClick={() => onSelect(labelText)}
       style={{
         position: 'absolute',
         maxWidth: '34%',
@@ -709,7 +599,7 @@ function CompassDirectionLabel({ labelText, selected, disabled, onSelect, layout
         textTransform: 'uppercase',
         lineHeight: 1.2,
         fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        cursor: disabled ? 'default' : 'pointer',
+        cursor: 'pointer',
         border: 'none',
         margin: 0,
         padding: '6px 8px',
@@ -717,7 +607,7 @@ function CompassDirectionLabel({ labelText, selected, disabled, onSelect, layout
         transition:
           'color 0.35s ease, background 0.35s ease, text-shadow 0.35s ease, box-shadow 0.35s ease, filter 0.25s ease',
         pointerEvents: 'auto',
-        touchAction: disabled ? 'auto' : 'manipulation',
+        touchAction: 'manipulation',
         zIndex: selected ? 5 : 2,
         WebkitTapHighlightColor: 'transparent',
         ...layoutStyle,

@@ -2025,11 +2025,6 @@ export default function SalaComandi() {
   const mainTabTouchStartYRef = useRef(null);
   const mainTabTouchEndYRef = useRef(null);
   const mainTabSwipeIgnoreRef = useRef(false);
-  const bussolaCompassUnlockedRef = useRef(false);
-
-  const handleCompassInteractionUnlockChange = useCallback((unlocked) => {
-    bussolaCompassUnlockedRef.current = unlocked;
-  }, []);
 
   const handleMainTabTouchStart = useCallback((e) => {
     const el = e.target;
@@ -2038,16 +2033,6 @@ export default function SalaComandi() {
         mainTabSwipeIgnoreRef.current = true;
         return;
       }
-      if (el.closest('.metabolic-compass-lock-toggle')) {
-        mainTabSwipeIgnoreRef.current = true;
-        return;
-      }
-    }
-    /* Bussola + bussola sbloccata: niente swipe tra tab (evita conflitto con la bussola). */
-    if (activeBottomTab === 'bussola' && bussolaCompassUnlockedRef.current) {
-      mainTabSwipeIgnoreRef.current = true;
-      if (typeof e.stopPropagation === 'function') e.stopPropagation();
-      return;
     }
     mainTabSwipeIgnoreRef.current = false;
     const touch = e.targetTouches[0];
@@ -2058,7 +2043,7 @@ export default function SalaComandi() {
     mainTabTouchStartXRef.current = touch.clientX;
     mainTabTouchStartYRef.current = touch.clientY;
     mainTabTouchEndYRef.current = touch.clientY;
-  }, [activeBottomTab]);
+  }, []);
 
   const handleMainTabTouchMove = useCallback((e) => {
     if (mainTabSwipeIgnoreRef.current) {
@@ -11805,7 +11790,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           <MetabolicCompass
             dailyHistory={metabolicCompassDailyHistory}
             compassScreenActive={activeBottomTab === 'bussola'}
-            onCompassInteractionUnlockChange={handleCompassInteractionUnlockChange}
           />
         </div>
       )}
