@@ -28,6 +28,9 @@ const ARROW_ANALOG_TRANSITION =
 
 const ARROW_SHAFT_WIDTH_PX = 1.15;
 
+/** Rotazione volto + etichette: curva morbida al cambio obiettivo. */
+const COMPASS_ROTATION_TRANSITION = 'transform 0.48s cubic-bezier(0.45, 0, 0.2, 1)';
+
 /** Griglia bussola: cerchi concentrici + raggi (viewBox 100×100, centro 50,50). */
 const DIAL_GRID_RINGS = [12.5, 22.5, 32.5];
 const DIAL_RADIAL_INNER = 10;
@@ -90,31 +93,37 @@ function CompassDialGrid({ directions }) {
   );
 }
 
-/** Allineamento da |finalAngle|: alone coerenti (freccia = direzione reale). */
+/** Allineamento: freccia + alone — verde morbido / neutro / rosso morbido. */
 const ALIGNMENT_TIERS = {
   aligned: {
     needleBg:
-      'linear-gradient(180deg, rgba(210, 255, 240, 0.88) 0%, rgba(110, 230, 200, 0.42) 55%, rgba(55, 175, 145, 0.18) 100%)',
+      'linear-gradient(180deg, rgba(200, 255, 235, 0.9) 0%, rgba(95, 225, 185, 0.48) 52%, rgba(45, 170, 138, 0.2) 100%)',
     needleGlow:
-      '0 0 2px rgba(180, 255, 230, 0.55), 0 0 10px rgba(90, 215, 180, 0.28), 0 0 22px rgba(60, 185, 155, 0.14), 0 0 36px rgba(45, 150, 125, 0.06)',
+      '0 0 4px rgba(150, 255, 215, 0.7), 0 0 16px rgba(70, 215, 170, 0.42), 0 0 32px rgba(45, 185, 145, 0.2), 0 0 48px rgba(30, 150, 120, 0.07)',
+    needleFilter:
+      'blur(0.35px) drop-shadow(0 0 6px rgba(100, 235, 190, 0.55)) drop-shadow(0 0 18px rgba(55, 200, 160, 0.28))',
     centerGlow:
       '0 0 10px rgba(110, 240, 190, 0.75), 0 0 24px rgba(75, 210, 170, 0.4), inset 0 0 6px rgba(255,255,255,0.38)',
     centerRing: 'rgba(120, 235, 195, 0.55)',
   },
   partial: {
     needleBg:
-      'linear-gradient(180deg, rgba(235, 240, 248, 0.82) 0%, rgba(145, 168, 188, 0.38) 55%, rgba(85, 105, 122, 0.14) 100%)',
+      'linear-gradient(180deg, rgba(236, 240, 248, 0.84) 0%, rgba(150, 172, 192, 0.4) 52%, rgba(88, 108, 128, 0.15) 100%)',
     needleGlow:
-      '0 0 2px rgba(255,255,255,0.22), 0 0 9px rgba(165, 188, 208, 0.22), 0 0 20px rgba(125, 148, 168, 0.1)',
+      '0 0 3px rgba(255,255,255,0.28), 0 0 12px rgba(175, 190, 210, 0.28), 0 0 26px rgba(130, 148, 168, 0.12)',
+    needleFilter:
+      'blur(0.35px) drop-shadow(0 0 5px rgba(200, 210, 228, 0.38)) drop-shadow(0 0 16px rgba(145, 160, 180, 0.14))',
     centerGlow:
       '0 0 8px rgba(200, 210, 220, 0.35), 0 0 18px rgba(140, 155, 170, 0.15), inset 0 0 5px rgba(255,255,255,0.28)',
     centerRing: 'rgba(180, 195, 208, 0.35)',
   },
   off: {
     needleBg:
-      'linear-gradient(180deg, rgba(255, 218, 208, 0.86) 0%, rgba(230, 130, 115, 0.4) 55%, rgba(185, 75, 68, 0.16) 100%)',
+      'linear-gradient(180deg, rgba(255, 212, 200, 0.9) 0%, rgba(238, 125, 108, 0.46) 52%, rgba(190, 72, 65, 0.18) 100%)',
     needleGlow:
-      '0 0 2px rgba(255, 195, 180, 0.45), 0 0 10px rgba(240, 130, 115, 0.22), 0 0 24px rgba(200, 85, 75, 0.1)',
+      '0 0 4px rgba(255, 175, 155, 0.62), 0 0 16px rgba(245, 110, 95, 0.35), 0 0 32px rgba(210, 75, 65, 0.16), 0 0 46px rgba(175, 55, 50, 0.06)',
+    needleFilter:
+      'blur(0.35px) drop-shadow(0 0 6px rgba(255, 140, 120, 0.5)) drop-shadow(0 0 18px rgba(225, 85, 72, 0.26))',
     centerGlow:
       '0 0 10px rgba(255, 140, 125, 0.45), 0 0 22px rgba(210, 75, 70, 0.22), inset 0 0 5px rgba(255,255,255,0.22)',
     centerRing: 'rgba(255, 140, 125, 0.4)',
@@ -279,7 +288,7 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
               borderRadius: '50%',
               transformOrigin: '50% 50%',
               transform: `rotate(${compassRotation}deg)`,
-              transition: 'transform 0.4s ease',
+              transition: COMPASS_ROTATION_TRANSITION,
               background: `
                 radial-gradient(ellipse 72% 72% at 50% 38%, rgba(35, 42, 54, 0.95) 0%, #12151c 48%, #07080c 100%),
                 radial-gradient(circle at 50% 35%, rgba(120, 140, 165, 0.06) 0%, transparent 55%)
@@ -336,8 +345,7 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
                 borderRadius: 9999,
                 background: tierStyle.needleBg,
                 boxShadow: tierStyle.needleGlow,
-                filter:
-                  'blur(0.35px) drop-shadow(0 0 1px rgba(255,255,255,0.12))',
+                filter: tierStyle.needleFilter,
               }}
             />
           </div>
@@ -364,6 +372,7 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
             }}
           >
             <div
+              className="metabolic-compass-center-dot"
               style={{
                 width: 9,
                 height: 9,
@@ -376,7 +385,8 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
                       : 'radial-gradient(circle at 35% 30%, #fff8f6 0%, #f0a898 40%, #a84842 100%)',
                 boxShadow: tierStyle.centerGlow,
                 border: `1px solid ${tierStyle.centerRing}`,
-                transition: 'box-shadow 0.35s ease, background 0.35s ease, border-color 0.35s ease',
+                transition:
+                  'box-shadow 0.45s ease, background 0.45s ease, border-color 0.45s ease, transform 0.45s ease, opacity 0.45s ease',
               }}
             />
           </div>
@@ -418,7 +428,7 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
   );
 }
 
-const LABEL_COUNTER_ROTATION_TRANSITION = 'transform 0.4s ease';
+const LABEL_COUNTER_ROTATION_TRANSITION = COMPASS_ROTATION_TRANSITION;
 
 /** Posizione % sul volto: 0° = Nord, positivo = orario. Contro-rotazione = testo sempre orizzontale. */
 function compassLabelStyleFromAngle(angle, compassRotationDeg, radiusPct = 41.5) {

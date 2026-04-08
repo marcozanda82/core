@@ -658,6 +658,31 @@ html, body, #root {
   outline-offset: 2px;
 }
 
+@keyframes metabolic-compass-center-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.09);
+    opacity: 0.86;
+  }
+}
+
+.metabolic-compass-center-dot {
+  animation: metabolic-compass-center-pulse 2.75s ease-in-out infinite;
+  transform-origin: center center;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metabolic-compass-center-dot {
+    animation: none;
+    will-change: auto;
+  }
+}
+
 /* MetabolicCompass.jsx — bolle glassmorphism */
 .metabolic-compass-glass {
   color: #0f172a;
