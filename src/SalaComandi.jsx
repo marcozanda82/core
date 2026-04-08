@@ -168,6 +168,9 @@ const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'planning', 'longevita'];
 
 const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
 
+/** Movimento prima del long-press su nodo timeline: oltre soglia → annulla drag e lascia swipe/scroll (allineato a `STRIP_DRAG_ARM_CANCEL_MOVE_PX` in TimelineNodi). */
+const NODE_DRAG_ARM_CANCEL_MOVE_PX = 6;
+
 function readPersistedActiveBottomTab() {
   if (typeof localStorage === 'undefined') return 'oggi';
   try {
@@ -5393,7 +5396,6 @@ Ottimo! Diario aggiornato. 🥗`;
     const target = e.currentTarget;
     const startX = e.clientX;
     const startY = e.clientY;
-    const DRAG_THRESHOLD_PX = 15;
 
     longPressMoveCleanupRef.current?.();
     longPressMoveCleanupRef.current = null;
@@ -5404,18 +5406,19 @@ Ottimo! Diario aggiornato. 🥗`;
 
     const onMove = (ev) => {
       const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
-      if (dist > DRAG_THRESHOLD_PX) {
+      if (dist > NODE_DRAG_ARM_CANCEL_MOVE_PX) {
         if (longPressTimerRef.current) {
           clearTimeout(longPressTimerRef.current);
           longPressTimerRef.current = null;
         }
-        target.removeEventListener('pointermove', onMove);
+        target.removeEventListener('pointermove', onMove, { passive: true });
         longPressMoveCleanupRef.current = null;
       }
     };
-    target.addEventListener('pointermove', onMove);
+    const moveListenerOpts = { passive: true };
+    target.addEventListener('pointermove', onMove, moveListenerOpts);
     longPressMoveCleanupRef.current = () => {
-      target.removeEventListener('pointermove', onMove);
+      target.removeEventListener('pointermove', onMove, moveListenerOpts);
       longPressMoveCleanupRef.current = null;
     };
 
