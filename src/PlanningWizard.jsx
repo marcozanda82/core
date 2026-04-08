@@ -4,6 +4,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getDynamicMealTargets, normalizeMealFoodsArray, toCanonicalMealType } from './coreEngine';
 import { resolvePlanningWizardDailyKcal } from './weeklyPlanning';
+import {
+  PLANNING_DAY_MACRO_OPTIONS,
+  WORKOUT_MUSCLE_GROUP_DEFS,
+  inferMuscleGroupsFromWorkoutText,
+  normalizeMuscleGroupArray,
+} from './activityCatalog';
 
 /** Allineato a SalaComandi `planningMealSlotKeyForFirebase` per idratazione bozze pasto da RTDB. */
 function planningMealSlotKeyFromRow(row) {
@@ -17,15 +23,6 @@ function getLocalDecimalHourNow() {
   const d = new Date();
   return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
 }
-
-const MACRO_OPTIONS = [
-  { id: 'mental', label: 'Lavoro Mentale / PC' },
-  { id: 'physical', label: 'Lavoro Fisico' },
-  { id: 'training', label: 'Allenamento' },
-  { id: 'relax', label: 'Relax/Recupero' },
-];
-
-const MUSCLE_OPTIONS = ['Petto', 'Dorso', 'Gambe', 'Braccia', 'Spalle', 'Cardio'];
 
 const TIMING_KEYS = [
   { id: 'mattina', label: 'Mattina' },
@@ -285,22 +282,6 @@ function hasRealMealsInLog(log, nowDec) {
   });
 }
 
-function inferMusclesFromWorkoutText(workout) {
-  const text = `${workout?.desc || ''} ${workout?.name || ''} ${workout?.title || ''}`.toLowerCase();
-  if (!text.trim()) return [];
-  const found = [];
-  const push = (label) => {
-    if (MUSCLE_OPTIONS.includes(label) && !found.includes(label)) found.push(label);
-  };
-  if (/petto|torace|pectoral|bench|panca/.test(text)) push('Petto');
-  if (/dorso|schiena|lat\b|pull|remator|rowing|remata/.test(text)) push('Dorso');
-  if (/gambe|quadricip|femorali|leg day|squat|stacco/.test(text)) push('Gambe');
-  if (/bracci|bicipit|tricipit|curl|dip\b/.test(text)) push('Braccia');
-  if (/spalle|deltoid|shoulder|lateral/.test(text)) push('Spalle');
-  if (/cardio|corr|run|corsa|tapis|cyclette|bike|hiit|ellittic|nuot|swim|rowing machine/.test(text)) push('Cardio');
-  return found;
-}
-
 function computeOpenSnapshot(dailyLog) {
   const log = dailyLog || [];
   const nowDec = getLocalDecimalHourNow();
@@ -312,10 +293,10 @@ function computeOpenSnapshot(dailyLog) {
   const mealsPresentInLog = hasRealMealsInLog(log, nowDec);
   if (w) {
     macros.add('training');
-    inferMusclesFromWorkoutText(w).forEach((m) => muscles.add(m));
+    inferMuscleGroupsFromWorkoutText(w).forEach((m) => muscles.add(m));
     if (wizardTemporalLock(w, nowDec)) {
       trainingLockedFromLog = true;
-      inferMusclesFromWorkoutText(w).forEach((m) => lockedMuscles.add(m));
+      inferMuscleGroupsFromWorkoutText(w).forEach((m) => lockedMuscles.add(m));
     }
   }
   return { macros, muscles, lockedMuscles, trainingLockedFromLog, mealsPresentInLog };
@@ -760,7 +741,7 @@ export default function PlanningWizard({
     const act = firebasePlanning.activities;
     if (act && typeof act === 'object') {
       if (Array.isArray(act.macros)) setMacros(new Set(act.macros));
-      if (Array.isArray(act.muscles)) setMuscles(new Set(act.muscles));
+      if (Array.isArray(act.muscles)) setMuscles(new Set(normalizeMuscleGroupArray(act.muscles)));
       if (act.timingByMacro && typeof act.timingByMacro === 'object') {
         setTimingByMacro(normalizeTimingByMacroState(act.timingByMacro));
       }
@@ -1201,7 +1182,7 @@ export default function PlanningWizard({
     return rows;
   }, [dailyLog, stagingGhosts, hasTraining, hasRealWorkout, workoutTimesDecForApply]);
 
-  const macroList = MACRO_OPTIONS.filter((m) => macros.has(m.id));
+  const macroList = PLANNING_DAY_MACRO_OPTIONS.filter((m) => macros.has(m.id));
   const step1PastWorkoutFrozen = trainingLockedFromLog;
 
   return (
@@ -1246,7 +1227,7 @@ export default function PlanningWizard({
                 : {}),
             }}
           >
-            {MACRO_OPTIONS.map(({ id, label }) => {
+            {PLANNING_DAY_MACRO_OPTIONS.map(({ id, label }) => {
               const on = macros.has(id);
               const w0 = extractRealWorkout(dailyLog);
               const trainTimeLocked =
@@ -1306,15 +1287,15 @@ export default function PlanningWizard({
               <div style={{ marginTop: 6 }}>
                 <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#c4b5fd', marginBottom: 8 }}>Gruppi muscolari / sessione</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {MUSCLE_OPTIONS.map((name) => {
-                    const on = muscles.has(name);
-                    const locked = lockedMuscles.has(name) && on;
+                  {WORKOUT_MUSCLE_GROUP_DEFS.map(({ id: muscleId, label: muscleLabel }) => {
+                    const on = muscles.has(muscleId);
+                    const locked = lockedMuscles.has(muscleId) && on;
                     return (
                       <button
-                        key={name}
+                        key={muscleId}
                         type="button"
                         disabled={locked}
-                        onClick={() => toggleMuscle(name)}
+                        onClick={() => toggleMuscle(muscleId)}
                         style={{
                           padding: '12px 14px',
                           borderRadius: 10,
@@ -1327,7 +1308,7 @@ export default function PlanningWizard({
                           opacity: locked ? 0.88 : 1,
                         }}
                       >
-                        {name}
+                        {muscleLabel}
                         {locked ? ' 🔒' : ''}
                       </button>
                     );
@@ -1354,7 +1335,9 @@ export default function PlanningWizard({
                       }}
                     >
                       <div style={{ fontWeight: 800, color: '#7dd3fc', fontSize: '0.85rem', marginBottom: 10 }}>
-                        {id === 'training' && muscles.size > 0 ? `${label}: ${MUSCLE_OPTIONS.filter((m) => muscles.has(m)).join(' e ')}` : label}
+                        {id === 'training' && muscles.size > 0
+                          ? `${label}: ${WORKOUT_MUSCLE_GROUP_DEFS.filter((d) => muscles.has(d.id)).map((d) => d.label).join(' e ')}`
+                          : label}
                       </div>
                       {blocks.length > 0 ? (
                         <div

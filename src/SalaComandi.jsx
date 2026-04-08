@@ -43,6 +43,15 @@ import HomeView from './components/HomeView';
 import PlanningWizard from './PlanningWizard';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
+  WORKOUT_ACTIVITY_SELECTOR_IDS,
+  getWorkoutActivityTypeDef,
+  getWorkoutActivityLogDescription,
+  getCognitiveMetForActivity,
+  WORKOUT_MUSCLE_GROUP_DEFS,
+  normalizeMuscleGroupArray,
+  resolveWorkoutActivityTypeId,
+} from './activityCatalog';
+import {
   createInitialWeeklyPlan,
   getWeekStartMondayKeyLocal,
   sanitizeWeeklyPlanFromFirebase,
@@ -5737,22 +5746,37 @@ Ottimo! Diario aggiornato. 🥗`;
   };
 
   const handleSaveWorkout = () => {
-    const isWork = workoutType === 'lavoro';
-    const isCognitive = workoutType === 'studio' || workoutType === 'lavoro_pc';
+    const def = getWorkoutActivityTypeDef(workoutType);
+    const nodeKind = def?.nodeKind ?? 'workout';
+    const isWork = nodeKind === 'work';
+    const isCognitive = nodeKind === 'cognitive';
     const duration = Math.max(0.25, Number(workoutEndTime) - Number(workoutStartTime));
     const finalId = editingWorkoutId || (isWork ? 'work_' : isCognitive ? 'cognitive_' : 'workout_') + Date.now();
 
-    const descMuscles = workoutMuscles.length > 0 ? ` (${workoutMuscles.join(' + ')})` : '';
-    const desc = workoutType === 'pesi' ? `Sollevamento Pesi${descMuscles}` :
-                 workoutType === 'cardio' ? 'Cardio / Corsa' :
-                 workoutType === 'hiit' ? 'HIIT / Circuito' :
-                 workoutType === 'studio' ? 'Studio' :
-                 workoutType === 'lavoro_pc' ? 'Lavoro PC' : 'Attività Lavorativa';
-
-    const COGNITIVE_MET = { studio: 1.3, lavoro_pc: 1.5 };
-    const cognitiveKcal = isCognitive ? Math.round((COGNITIVE_MET[workoutType] || 1.4) * 70 * duration) : workoutKcal;
-    const nodeData = { id: finalId, type: isCognitive ? 'cognitive' : (isWork ? 'work' : 'workout'), time: Number(workoutStartTime), duration, kcal: isCognitive ? cognitiveKcal : workoutKcal, icon: isCognitive ? (workoutType === 'studio' ? '📚' : '💻') : (isWork ? '💼' : '🏋️'), subType: workoutType, muscles: workoutMuscles };
-    const logData = { id: finalId, type: 'workout', workoutType, desc, name: isCognitive ? desc : (isWork ? 'Lavoro' : desc), kcal: isCognitive ? cognitiveKcal : workoutKcal, cal: isCognitive ? cognitiveKcal : workoutKcal, duration };
+    const musclesCanon = normalizeMuscleGroupArray(workoutMuscles);
+    const desc = getWorkoutActivityLogDescription(workoutType, musclesCanon);
+    const cognitiveKcal = isCognitive ? Math.round(getCognitiveMetForActivity(workoutType) * 70 * duration) : workoutKcal;
+    const iconNode = isCognitive ? (def?.icon || '📚') : isWork ? '💼' : def?.icon || '🏋️';
+    const nodeData = {
+      id: finalId,
+      type: isCognitive ? 'cognitive' : isWork ? 'work' : 'workout',
+      time: Number(workoutStartTime),
+      duration,
+      kcal: isCognitive ? cognitiveKcal : workoutKcal,
+      icon: iconNode,
+      subType: workoutType,
+      muscles: musclesCanon,
+    };
+    const logData = {
+      id: finalId,
+      type: 'workout',
+      workoutType,
+      desc,
+      name: isCognitive ? desc : isWork ? 'Lavoro' : desc,
+      kcal: isCognitive ? cognitiveKcal : workoutKcal,
+      cal: isCognitive ? cognitiveKcal : workoutKcal,
+      duration,
+    };
 
     if (isSimulationMode) {
       setSimulatedLog(prev => {
@@ -11963,11 +11987,19 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               <div style={{ width: '70px' }}></div>
             </div>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '30px', flexWrap: 'wrap' }}>
-              {['pesi', 'cardio', 'hiit', 'lavoro', 'studio', 'lavoro_pc'].map(type => (
-                <button key={type} className={`type-btn ${workoutType === type ? 'active orange' : ''}`} onClick={() => setWorkoutType(type)}>
-                  {type === 'pesi' ? '🏋️ PESI' : type === 'cardio' ? '🏃 CARDIO' : type === 'hiit' ? '🔥 HIIT' : type === 'lavoro' ? '💼 LAVORO' : type === 'studio' ? '📚 STUDIO' : '💻 LAVORO PC'}
-                </button>
-              ))}
+              {WORKOUT_ACTIVITY_SELECTOR_IDS.map((typeId) => {
+                const ad = getWorkoutActivityTypeDef(typeId);
+                return (
+                  <button
+                    key={typeId}
+                    type="button"
+                    className={`type-btn ${workoutType === typeId ? 'active orange' : ''}`}
+                    onClick={() => setWorkoutType(typeId)}
+                  >
+                    {ad?.selectorButtonLabel ?? typeId}
+                  </button>
+                );
+              })}
             </div>
             <div style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px', gap: '8px' }}>
@@ -12013,27 +12045,45 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 </div>
               </div>
             </div>
-            {workoutType === 'pesi' && (
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>Gruppi Muscolari (Max 2)</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {['Gambe', 'Petto', 'Tricipiti', 'Bicipiti', 'ABS', 'Schiena', 'Spalle'].map(m => {
-                    const isActive = workoutMuscles.includes(m);
-                    return (
-                      <button key={m} type="button" onClick={() => {
-                        setWorkoutMuscles(prev => {
-                          if (prev.includes(m)) return prev.filter(x => x !== m);
-                          if (prev.length >= 2) return [prev[1], m];
-                          return [...prev, m];
-                        });
-                      }} style={{ padding: '8px 12px', fontSize: '0.75rem', borderRadius: '20px', border: '1px solid #444', background: isActive ? '#ff6d00' : '#222', color: isActive ? '#000' : '#aaa', fontWeight: isActive ? 'bold' : 'normal', cursor: 'pointer' }}>
-                        {m}
-                      </button>
-                    );
-                  })}
+            {workoutType === 'pesi' && (() => {
+              const pesiMuscleSet = new Set(normalizeMuscleGroupArray(workoutMuscles));
+              return (
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>Gruppi Muscolari (Max 2)</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {WORKOUT_MUSCLE_GROUP_DEFS.map(({ id: mId, label: mLabel }) => {
+                      const isActive = pesiMuscleSet.has(mId);
+                      return (
+                        <button
+                          key={mId}
+                          type="button"
+                          onClick={() => {
+                            setWorkoutMuscles((prev) => {
+                              const p = normalizeMuscleGroupArray(prev);
+                              if (p.includes(mId)) return p.filter((x) => x !== mId);
+                              if (p.length >= 2) return [p[1], mId];
+                              return [...p, mId];
+                            });
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: '0.75rem',
+                            borderRadius: '20px',
+                            border: '1px solid #444',
+                            background: isActive ? '#ff6d00' : '#222',
+                            color: isActive ? '#000' : '#aaa',
+                            fontWeight: isActive ? 'bold' : 'normal',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {mLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
             <div className="burn-slider-container">
               <span className="burn-label" style={{color: '#ff6d00'}}>OUTPUT ENERGETICO STIMATO</span>
               <div className="burn-value workout">{Math.min(750, workoutKcal)}</div>
@@ -14065,21 +14115,39 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 if (node.type === 'ghost_workout') {
                   const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 18;
                   setEditingWorkoutId(node.id);
-                  setWorkoutType(node.subType || 'pesi');
+                  const ghostSt = node.subType || 'pesi';
+                  setWorkoutType(resolveWorkoutActivityTypeId(ghostSt) ?? ghostSt);
                   setWorkoutStartTime(t);
                   setWorkoutEndTime(Math.min(24, t + (node.duration ?? 1)));
                   setWorkoutKcal(node.kcal || node.cal || 300);
-                  setWorkoutMuscles(Array.isArray(node.muscles) ? [...node.muscles] : (Array.isArray(node.workoutMuscles) ? [...node.workoutMuscles] : []));
+                  setWorkoutMuscles(
+                    normalizeMuscleGroupArray(
+                      Array.isArray(node.muscles)
+                        ? node.muscles
+                        : Array.isArray(node.workoutMuscles)
+                          ? node.workoutMuscles
+                          : []
+                    )
+                  );
                   setActiveAction('allenamento');
                   setIsDrawerOpen(true);
                   return;
                 }
                 setEditingWorkoutId(node.id);
-                setWorkoutType(node.subType || (node.type === 'work' ? 'lavoro' : 'pesi'));
+                const editSt = node.subType || (node.type === 'work' ? 'lavoro' : 'pesi');
+                setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
                 setWorkoutStartTime(node.time ?? 12);
                 setWorkoutEndTime((node.time ?? 12) + (node.duration ?? 1));
                 setWorkoutKcal(node.kcal || node.cal || 300);
-                setWorkoutMuscles(Array.isArray(node.muscles) ? [...node.muscles] : (Array.isArray(node.workoutMuscles) ? [...node.workoutMuscles] : []));
+                setWorkoutMuscles(
+                  normalizeMuscleGroupArray(
+                    Array.isArray(node.muscles)
+                      ? node.muscles
+                      : Array.isArray(node.workoutMuscles)
+                        ? node.workoutMuscles
+                        : []
+                  )
+                );
                 setActiveAction('allenamento');
                 setIsDrawerOpen(true);
               }} style={{ flex: 1, padding: '12px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>
