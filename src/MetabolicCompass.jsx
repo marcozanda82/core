@@ -185,9 +185,6 @@ function metabolicArrowMagnitudeStyle(tier, magnitude01, tierNeedleFilter) {
   return { boxShadow, filter, opacity };
 }
 
-/** Soglia magnitudine “bassa” per il messaggio di rafforzamento (coerente con hint visivo freccia). */
-const FEEDBACK_MAGNITUDE_LOW = 0.36;
-
 /** Differenza angolare minima in gradi (stesso piano dell’angolo motore `angleDeg`). */
 function absShortestAngleDeltaDeg(fromDeg, toDeg) {
   let d = fromDeg - toDeg;
@@ -195,17 +192,34 @@ function absShortestAngleDeltaDeg(fromDeg, toDeg) {
   return Math.abs(d);
 }
 
+function normalizeCompassBearing0to360(deg) {
+  let x = deg % 360;
+  if (x < 0) x += 360;
+  return x;
+}
+
 /**
- * Micro-feedback testuale: max ~4 parole lowercase senza punteggiatura.
- * Zone angolari allineate a {@link alignmentFromFinalAngle}.
+ * Zone direzionali sul bearing bussola (0° = nord, senso orario), fasce ~45°.
+ * → est ~90° · ↓ sud ~180° · ↙ sudovest ~225° · ↖ nordovest ~315°
  */
-function metabolicCompassMicroPhrase(diffDeg, magnitude01) {
-  const d = diffDeg;
-  const m = Math.min(1, Math.max(0, magnitude01));
-  if (d > 45) return 'correggi rotta';
-  if (m < FEEDBACK_MAGNITUDE_LOW && d <= 45) return 'continua aumenta stimolo';
-  if (d < 15) return 'direzione corretta';
-  return 'serve più stimolo';
+function metabolicCompassDirectionPhrase(bearingDeg) {
+  const b = normalizeCompassBearing0to360(bearingDeg);
+  if (b >= 67.5 && b < 112.5) return 'surplus non sfruttato';
+  if (b >= 157.5 && b < 202.5) return 'stress elevato';
+  if (b >= 202.5 && b < 247.5) return 'consumo attivo';
+  if (b >= 292.5 && b < 337.5) return 'fase conservativa';
+  return null;
+}
+
+/**
+ * Un solo suggerimento: base da |current−target|, raffinamento da direzione corrente se 15°–45°.
+ */
+function metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngleDeg) {
+  const diff = absShortestAngleDeltaDeg(angleDeg, targetMetabolicAngleDeg);
+  if (diff < 15) return 'direzione corretta';
+  if (diff > 45) return 'correggi direzione';
+  const bearing = metabolicAngleDegToCompassBearingDeg(angleDeg);
+  return metabolicCompassDirectionPhrase(bearing) ?? 'serve più stimolo';
 }
 
 /**
@@ -255,13 +269,9 @@ export default function MetabolicCompass({
   );
 
   const targetMetabolicAngle = useMemo(() => getMetabolicTargetAngle(goal), [goal]);
-  const angleDiffDeg = useMemo(
-    () => absShortestAngleDeltaDeg(angleDeg, targetMetabolicAngle),
+  const microSuggestionText = useMemo(
+    () => metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngle),
     [angleDeg, targetMetabolicAngle]
-  );
-  const microFeedbackPhrase = useMemo(
-    () => metabolicCompassMicroPhrase(angleDiffDeg, magnitude01),
-    [angleDiffDeg, magnitude01]
   );
 
   /** Angolo rosa dell’obiettivo (da {@link METABOLIC_COMPASS_DIRECTIONS}). */
@@ -385,29 +395,6 @@ export default function MetabolicCompass({
             </button>
           );
         })}
-      </div>
-
-      <div
-        className="metabolic-compass-micro-feedback"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        style={{
-          margin: '-6px 0 0',
-          width: '100%',
-          maxWidth: 340,
-          minHeight: '1.25em',
-          fontSize: 10,
-          fontWeight: 520,
-          letterSpacing: '0.05em',
-          lineHeight: 1.35,
-          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          color: 'rgba(232, 235, 242, 0.36)',
-          textAlign: 'center',
-          textTransform: 'lowercase',
-        }}
-      >
-        {microFeedbackPhrase}
       </div>
 
       {/* Volto bussola — strumento di navigazione */}
@@ -554,6 +541,32 @@ export default function MetabolicCompass({
             />
           </div>
         </div>
+      </div>
+
+      <div
+        className="metabolic-compass-micro-suggestion"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        style={{
+          margin: '14px 0 0',
+          width: '100%',
+          maxWidth: 340,
+          minHeight: '1.2em',
+          fontSize: 10,
+          fontWeight: 500,
+          letterSpacing: '0.04em',
+          lineHeight: 1.35,
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          color: 'rgba(232, 235, 242, 0.28)',
+          textAlign: 'center',
+          textTransform: 'lowercase',
+          background: 'none',
+          border: 'none',
+          padding: 0,
+        }}
+      >
+        {microSuggestionText}
       </div>
       </div>
     </div>
