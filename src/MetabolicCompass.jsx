@@ -28,6 +28,11 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
 /** Periodo predefinito al rientro nella schermata bussola. */
 const DEFAULT_COMPASS_TIMEFRAME = '7d';
 
+const MICRO_SUGGESTION_FINAL_OPACITY = 0.7;
+/** Attesa ≈ durata fade-out prima di aggiornare il testo, poi fade-in. */
+const MICRO_SUGGESTION_FADE_MS = 340;
+const MICRO_SUGGESTION_TRANSITION = 'opacity 0.34s cubic-bezier(0.4, 0, 0.2, 1)';
+
 /** Lunghezza fissa dal centro al vertice ≈ 75% del raggio (= 37.5% del lato del volto quadrato). */
 const ARROW_LENGTH_FRAC_OF_FACE = 0.375;
 
@@ -273,6 +278,31 @@ export default function MetabolicCompass({
     () => metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngle),
     [angleDeg, targetMetabolicAngle]
   );
+
+  const suggestionMountedRef = useRef(false);
+  const [displaySuggestion, setDisplaySuggestion] = useState(microSuggestionText);
+  const [suggestionLineOpacity, setSuggestionLineOpacity] = useState(MICRO_SUGGESTION_FINAL_OPACITY);
+
+  useEffect(() => {
+    if (!suggestionMountedRef.current) {
+      suggestionMountedRef.current = true;
+      return;
+    }
+    const reducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      setDisplaySuggestion(microSuggestionText);
+      setSuggestionLineOpacity(MICRO_SUGGESTION_FINAL_OPACITY);
+      return;
+    }
+    setSuggestionLineOpacity(0);
+    const t = window.setTimeout(() => {
+      setDisplaySuggestion(microSuggestionText);
+      setSuggestionLineOpacity(MICRO_SUGGESTION_FINAL_OPACITY);
+    }, MICRO_SUGGESTION_FADE_MS);
+    return () => window.clearTimeout(t);
+  }, [microSuggestionText]);
 
   /** Angolo rosa dell’obiettivo (da {@link METABOLIC_COMPASS_DIRECTIONS}). */
   const targetAngle = useMemo(() => getCompassTargetAngleForGoal(goal), [goal]);
@@ -549,24 +579,26 @@ export default function MetabolicCompass({
         aria-live="polite"
         aria-atomic="true"
         style={{
-          margin: '14px 0 0',
+          margin: '16px 0 0',
           width: '100%',
           maxWidth: 340,
-          minHeight: '1.2em',
-          fontSize: 10,
+          minHeight: '1.25em',
+          fontSize: 9,
           fontWeight: 500,
-          letterSpacing: '0.04em',
-          lineHeight: 1.35,
+          letterSpacing: '0.045em',
+          lineHeight: 1.4,
           fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          color: 'rgba(232, 235, 242, 0.28)',
+          color: 'rgb(232, 235, 242)',
           textAlign: 'center',
           textTransform: 'lowercase',
           background: 'none',
           border: 'none',
           padding: 0,
+          opacity: suggestionLineOpacity,
+          transition: MICRO_SUGGESTION_TRANSITION,
         }}
       >
-        {microSuggestionText}
+        {displaySuggestion}
       </div>
       </div>
     </div>

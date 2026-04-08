@@ -709,6 +709,12 @@ html, body, #root {
   outline-offset: 1px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .metabolic-compass-micro-suggestion {
+    transition: none !important;
+  }
+}
+
 @keyframes metabolic-compass-center-pulse {
   0%,
   100% {
