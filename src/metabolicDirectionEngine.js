@@ -2,13 +2,9 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 const RAD_TO_DEG = 180 / Math.PI;
 
-const W_TODAY = 0.2;
-const W_7 = 0.4;
-const W_14 = 0.25;
-const W_30 = 0.15;
-
 /** @typedef {'1d' | '7d' | '14d' | '30d'} MetabolicTimeframe */
 
+/** Finestra giorni per il sottoinsieme di `dailyHistory` (ultimo = oggi). */
 const TIMEFRAME_DAY_WINDOW = {
   '1d': 1,
   '7d': 7,
@@ -62,7 +58,9 @@ function tailAverage(days, maxLen) {
 }
 
 /**
- * Media sull’ultima finestra di N giorni + correzione di coerenza.
+ * Vettore target: media normalizzata sull’ultima finestra (1 / 7 / 14 / 30 giorni).
+ * Se ci sono meno giorni della finestra, {@link tailAverage} usa tutti i giorni disponibili.
+ * Poi correzione di coerenza (stessa logica di sempre).
  *
  * @param {Array<{ kcalBalance: number, trainingLoad: number }>} days — più vecchio → più recente; ultimo = oggi
  * @param {MetabolicTimeframe} [timeframe='7d']
@@ -71,17 +69,6 @@ function tailAverage(days, maxLen) {
 export function computeMetabolicEngineTargetVec(days, timeframe = '7d') {
   const windowDays = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
   let { x, y } = tailAverage(days, windowDays);
-
-  if (timeframe === '7d') {
-    const today = tailAverage(days, 1);
-    const avg7d = tailAverage(days, 7);
-    const avg14d = tailAverage(days, 14);
-    const avg30d = tailAverage(days, 30);
-    x =
-      W_TODAY * today.x + W_7 * avg7d.x + W_14 * avg14d.x + W_30 * avg30d.x;
-    y =
-      W_TODAY * today.y + W_7 * avg7d.y + W_14 * avg14d.y + W_30 * avg30d.y;
-  }
 
   if (x > 0 && y < 0.3) y *= 0.72;
   if (x < 0 && y > 0.8) y *= 0.94;
