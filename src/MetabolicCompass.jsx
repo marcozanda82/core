@@ -297,7 +297,10 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
             />
             <CompassDialGrid directions={METABOLIC_COMPASS_DIRECTIONS} />
             {METABOLIC_COMPASS_DIRECTIONS.map(({ angle, label }) => (
-              <CompassLabel key={`lbl-${angle}`} style={compassLabelStyleFromAngle(angle)}>
+              <CompassLabel
+                key={`lbl-${angle}`}
+                style={compassLabelStyleFromAngle(angle, compassRotation)}
+              >
                 {label}
               </CompassLabel>
             ))}
@@ -410,15 +413,20 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
   );
 }
 
-/** Posizione % sul volto: 0° = Nord, positivo = orario. */
-function compassLabelStyleFromAngle(angle, radiusPct = 41.5) {
+const LABEL_COUNTER_ROTATION_TRANSITION =
+  'transform 0.45s cubic-bezier(0.33, 0.86, 0.36, 1)';
+
+/** Posizione % sul volto: 0° = Nord, positivo = orario. Contro-rotazione = testo sempre orizzontale. */
+function compassLabelStyleFromAngle(angle, compassRotationDeg, radiusPct = 41.5) {
   const rad = (angle * Math.PI) / 180;
   const left = 50 + radiusPct * Math.sin(rad);
   const top = 50 - radiusPct * Math.cos(rad);
   return {
     left: `${left}%`,
     top: `${top}%`,
-    transform: 'translate(-50%, -50%)',
+    transformOrigin: '50% 50%',
+    transform: `translate(-50%, -50%) rotate(${-compassRotationDeg}deg)`,
+    transition: LABEL_COUNTER_ROTATION_TRANSITION,
   };
 }
 
