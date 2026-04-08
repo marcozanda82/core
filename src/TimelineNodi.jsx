@@ -117,6 +117,10 @@ const STRIP_DRAG_MIN_MOVE_PX = 6;
 const STRIP_DRAG_COMMIT_DEDUP_MS = 450;
 /** Quanto il nodo “segue” il dito (1 = istantaneo). Più basso in zona subottima → attrito / resistenza morbida. */
 const STRIP_DRAG_FRICTION_FOLLOW = { suboptimal: 0.36, neutral: 0.78, optimal: 0.92 };
+/** Attiva il drag sulla striscia solo dopo long-press (stesso ordine di grandezza di `startNodeDrag` in SalaComandi). */
+const STRIP_DRAG_ARM_LONG_PRESS_MS = 180;
+/** Prima dell’arm: movimento oltre soglia → scroll/swipe, niente drag sulla striscia. */
+const STRIP_DRAG_ARM_CANCEL_MOVE_PX = 15;
 
 function nodeAddTransition(reduceMotion, isDragging) {
   if (reduceMotion || isDragging) return { duration: 0 };
@@ -183,8 +187,13 @@ export default function TimelineNodi({
   const [draggingId, setDraggingId] = useState(null);
   const [dragX, setDragX] = useState(null);
   const [magneticSnapActive, setMagneticSnapActive] = useState(false);
+  /** Durante l’attesa long-press: `touch-action: pan-y` così lo scroll verticale non resta bloccato da `none`. */
+  const [stripArmPendingId, setStripArmPendingId] = useState(null);
   const dragXRef = useRef(null);
   const containerRef = useRef(null);
+  const stripArmPendingRef = useRef(null);
+  const stripDragArmTimerRef = useRef(null);
+  const stripArmDocCleanupRef = useRef(null);
   const stripDragDownAtRef = useRef(0);
   const stripDragStartClientXRef = useRef(null);
   const stripDragMaxDeltaPxRef = useRef(0);
@@ -209,14 +218,27 @@ export default function TimelineNodi({
     [nodes, timelineQualityChartData]
   );
 
-  const beginTimelineStripDrag = useCallback((node, e) => {
-    if (!e || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const cancelStripDragArm = useCallback(() => {
+    const p = stripArmPendingRef.current;
+    if (p) p.alive = false;
+    stripArmPendingRef.current = null;
+    if (stripDragArmTimerRef.current != null) {
+      window.clearTimeout(stripDragArmTimerRef.current);
+      stripDragArmTimerRef.current = null;
+    }
+    stripArmDocCleanupRef.current?.();
+    stripArmDocCleanupRef.current = null;
+    setStripArmPendingId(null);
+  }, []);
+
+  const activateTimelineStripDrag = useCallback((node, pe) => {
+    if (!node || !pe) return;
     stripDragSuppressClickRef.current = false;
     stripDragDownAtRef.current = performance.now();
-    stripDragStartClientXRef.current = typeof e.clientX === 'number' ? e.clientX : null;
+    stripDragStartClientXRef.current = typeof pe.clientX === 'number' ? pe.clientX : null;
     stripDragMaxDeltaPxRef.current = 0;
-    stripDragPointerIdRef.current = e.pointerId != null ? e.pointerId : null;
-    stripDragCaptureElRef.current = e.currentTarget;
+    stripDragPointerIdRef.current = pe.pointerId != null ? pe.pointerId : null;
+    stripDragCaptureElRef.current = pe.currentTarget;
     stripDragNodeRef.current = node;
     magneticSnapActiveRef.current = false;
     setMagneticSnapActive(false);
@@ -226,8 +248,8 @@ export default function TimelineNodi({
     );
     stripDragLastFrictionQRef.current = null;
     try {
-      if (typeof e.currentTarget?.setPointerCapture === 'function' && e.pointerId != null) {
-        e.currentTarget.setPointerCapture(e.pointerId);
+      if (typeof pe.currentTarget?.setPointerCapture === 'function' && pe.pointerId != null) {
+        pe.currentTarget.setPointerCapture(pe.pointerId);
       }
     } catch {
       /* ignore */
@@ -236,6 +258,102 @@ export default function TimelineNodi({
     document.body.style.userSelect = 'none';
     if (typeof onStripDragChartPreviewStart === 'function') onStripDragChartPreviewStart();
   }, [onStripDragChartPreviewStart]);
+
+  const scheduleStripArmAfterLongPress = useCallback(
+    (node, e) => {
+      if (!e || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      cancelStripDragArm();
+
+      const pointerId = e.pointerId;
+      const captureEl = e.currentTarget;
+      const startX = typeof e.clientX === 'number' ? e.clientX : null;
+      const startY = typeof e.clientY === 'number' ? e.clientY : null;
+
+      const pending = {
+        node,
+        pointerId: pointerId != null ? pointerId : null,
+        captureEl,
+        startX,
+        startY,
+        alive: true,
+      };
+      stripArmPendingRef.current = pending;
+      setStripArmPendingId(node.id);
+
+      const onDocMove = (ev) => {
+        if (!pending.alive) return;
+        if (pending.pointerId != null && ev.pointerId !== pending.pointerId) return;
+        const cx = ev.clientX;
+        const cy = ev.clientY;
+        if (
+          !Number.isFinite(startX) ||
+          !Number.isFinite(startY) ||
+          !Number.isFinite(cx) ||
+          !Number.isFinite(cy)
+        ) {
+          return;
+        }
+        if (Math.hypot(cx - startX, cy - startY) > STRIP_DRAG_ARM_CANCEL_MOVE_PX) {
+          cancelStripDragArm();
+        }
+      };
+
+      const onDocEnd = (ev) => {
+        if (pending.pointerId != null && ev.pointerId !== pending.pointerId) return;
+        cancelStripDragArm();
+      };
+
+      document.addEventListener('pointermove', onDocMove, { capture: true });
+      document.addEventListener('pointerup', onDocEnd, { capture: true });
+      document.addEventListener('pointercancel', onDocEnd, { capture: true });
+
+      stripArmDocCleanupRef.current = () => {
+        document.removeEventListener('pointermove', onDocMove, { capture: true });
+        document.removeEventListener('pointerup', onDocEnd, { capture: true });
+        document.removeEventListener('pointercancel', onDocEnd, { capture: true });
+        stripArmDocCleanupRef.current = null;
+      };
+
+      stripDragArmTimerRef.current = window.setTimeout(() => {
+        stripDragArmTimerRef.current = null;
+        if (!pending.alive || stripArmPendingRef.current !== pending) return;
+        stripArmDocCleanupRef.current?.();
+        stripArmDocCleanupRef.current = null;
+        stripArmPendingRef.current = null;
+        pending.alive = false;
+        setStripArmPendingId(null);
+
+        activateTimelineStripDrag(node, {
+          clientX: startX,
+          pointerId,
+          currentTarget: captureEl,
+        });
+      }, STRIP_DRAG_ARM_LONG_PRESS_MS);
+    },
+    [cancelStripDragArm, activateTimelineStripDrag]
+  );
+
+  const handleNodePointerEnd = useCallback(
+    (ev) => {
+      cancelStripDragArm();
+      if (typeof releaseNodePointer === 'function') releaseNodePointer(ev);
+    },
+    [cancelStripDragArm, releaseNodePointer]
+  );
+
+  useEffect(() => {
+    return () => {
+      const p = stripArmPendingRef.current;
+      if (p) p.alive = false;
+      stripArmPendingRef.current = null;
+      if (stripDragArmTimerRef.current != null) {
+        window.clearTimeout(stripDragArmTimerRef.current);
+        stripDragArmTimerRef.current = null;
+      }
+      stripArmDocCleanupRef.current?.();
+      stripArmDocCleanupRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof nowLineDecimalHour === 'number' && !Number.isNaN(nowLineDecimalHour)) return undefined;
@@ -663,10 +781,10 @@ export default function TimelineNodi({
                   className={`timeline-node timeline-node--quality-${qStateWork} ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
                   onPointerDown={(e) => {
                     startNodeDrag(node, 'all')(e);
-                    beginTimelineStripDrag(node, e);
+                    scheduleStripArmAfterLongPress(node, e);
                   }}
-                  onPointerUp={releaseNodePointer}
-                  onPointerCancel={releaseNodePointer}
+                  onPointerUp={handleNodePointerEnd}
+                  onPointerCancel={handleNodePointerEnd}
                   onClick={onTimelineNodeClick(node)}
                   initial={reduceMotion ? false : { opacity: barOpacity, scale: barScaleDraw * 0.8 }}
                   animate={{
@@ -707,13 +825,13 @@ export default function TimelineNodi({
                     borderRight: '2px solid #ffea00',
                     borderRadius: '4px',
                     cursor: isActiveDrag ? 'grabbing' : 'grab',
-                    touchAction: 'none',
+                    touchAction: stripArmPendingId === node.id ? 'pan-y' : 'none',
                     pointerEvents: isNodeFocused ? 'auto' : 'none',
                     ...(isActiveDrag ? {} : importanceStyle),
                     zIndex: isActiveDrag ? 10 : (isTouchingOrDragging ? 100 : 2),
                   }}
                 >
-                  <div onPointerDown={(e) => { startNodeDrag(node, 'start')(e); beginTimelineStripDrag(node, e); }} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={(e) => { startNodeDrag(node, 'start')(e); scheduleStripArmAfterLongPress(node, e); }} onPointerUp={handleNodePointerEnd} onPointerCancel={handleNodePointerEnd} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: stripArmPendingId === node.id ? 'pan-y' : 'none' }}>
                     {(dragEdge === 'start' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
@@ -721,7 +839,7 @@ export default function TimelineNodi({
                     )}
                     💼
                   </div>
-                  <div onPointerDown={(e) => { startNodeDrag(node, 'end')(e); beginTimelineStripDrag(node, e); }} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={(e) => { startNodeDrag(node, 'end')(e); scheduleStripArmAfterLongPress(node, e); }} onPointerUp={handleNodePointerEnd} onPointerCancel={handleNodePointerEnd} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: stripArmPendingId === node.id ? 'pan-y' : 'none' }}>
                     {(dragEdge === 'end' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
@@ -765,10 +883,10 @@ export default function TimelineNodi({
                   className={`timeline-node timeline-node--quality-${qStateCog} ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
                   onPointerDown={(e) => {
                     startNodeDrag(node, 'all')(e);
-                    beginTimelineStripDrag(node, e);
+                    scheduleStripArmAfterLongPress(node, e);
                   }}
-                  onPointerUp={releaseNodePointer}
-                  onPointerCancel={releaseNodePointer}
+                  onPointerUp={handleNodePointerEnd}
+                  onPointerCancel={handleNodePointerEnd}
                   onClick={onTimelineNodeClick(node)}
                   initial={reduceMotion ? false : { opacity: barOpacity, scale: barScaleDraw * 0.8 }}
                   animate={{
@@ -809,13 +927,13 @@ export default function TimelineNodi({
                     borderRight: `2px solid ${cognitiveBorder}`,
                     borderRadius: '4px',
                     cursor: isActiveDrag ? 'grabbing' : 'grab',
-                    touchAction: 'none',
+                    touchAction: stripArmPendingId === node.id ? 'pan-y' : 'none',
                     pointerEvents: isNodeFocused ? 'auto' : 'none',
                     ...(isActiveDrag ? {} : importanceStyle),
                     zIndex: isActiveDrag ? 10 : (isTouchingOrDragging ? 100 : 2),
                   }}
                 >
-                  <div onPointerDown={(e) => { startNodeDrag(node, 'start')(e); beginTimelineStripDrag(node, e); }} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={(e) => { startNodeDrag(node, 'start')(e); scheduleStripArmAfterLongPress(node, e); }} onPointerUp={handleNodePointerEnd} onPointerCancel={handleNodePointerEnd} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: stripArmPendingId === node.id ? 'pan-y' : 'none' }}>
                     {(dragEdge === 'start' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
@@ -823,7 +941,7 @@ export default function TimelineNodi({
                     )}
                     {cognitiveIcon}
                   </div>
-                  <div onPointerDown={(e) => { startNodeDrag(node, 'end')(e); beginTimelineStripDrag(node, e); }} onPointerUp={releaseNodePointer} onPointerCancel={releaseNodePointer} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: 'none' }}>
+                  <div onPointerDown={(e) => { startNodeDrag(node, 'end')(e); scheduleStripArmAfterLongPress(node, e); }} onPointerUp={handleNodePointerEnd} onPointerCancel={handleNodePointerEnd} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: stripArmPendingId === node.id ? 'pan-y' : 'none' }}>
                     {(dragEdge === 'end' || dragEdge === 'all') && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
@@ -923,10 +1041,10 @@ export default function TimelineNodi({
                 className={`timeline-node meal-node timeline-node--quality-${qStatePoint} ${isActiveDrag ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
                 onPointerDown={(e) => {
                   startNodeDrag(node, 'all')(e);
-                  beginTimelineStripDrag(node, e);
+                  scheduleStripArmAfterLongPress(node, e);
                 }}
-                onPointerUp={releaseNodePointer}
-                onPointerCancel={releaseNodePointer}
+                onPointerUp={handleNodePointerEnd}
+                onPointerCancel={handleNodePointerEnd}
                 onClick={onTimelineNodeClick(node)}
                 initial={
                   reduceMotion
@@ -972,7 +1090,7 @@ export default function TimelineNodi({
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: isActiveDrag ? 'grabbing' : 'grab',
-                  touchAction: 'none',
+                  touchAction: stripArmPendingId === node.id ? 'pan-y' : 'none',
                   pointerEvents: isNodeFocused || isGhostMeal || isGhostWorkout ? 'auto' : 'none',
                   zIndex: pointZ,
                   filter: ghostVisual ? 'none' : importanceStyle.filter,

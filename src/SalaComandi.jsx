@@ -5440,7 +5440,7 @@ Ottimo! Diario aggiornato. 🥗`;
         originalDuration: node.duration,
         edge
       });
-    }, 200);
+    }, 180);
   }, [activeLog, manualNodes, dailyLog]);
 
   const releaseNodePointer = (e) => {
