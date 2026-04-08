@@ -61,6 +61,7 @@ import {
 import AddEventMenuGrid from './components/AddEventMenuGrid';
 import WeeklyPlanning from './components/WeeklyPlanning';
 import MetabolicCompass from './MetabolicCompass';
+import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import {
   useSmartKentuTriggers,
   checkMorningBriefing,
@@ -2810,6 +2811,16 @@ export default function SalaComandi() {
     if (!fullHistory || typeof fullHistory !== 'object') return 0;
     return computeAccumuloSNC(fullHistory, 60);
   }, [fullHistory]);
+
+  const metabolicCompassDailyHistory = useMemo(
+    () =>
+      buildMetabolicCompassDailyHistory(
+        fullHistory,
+        currentTrackerDate || getTodayString(),
+        userTargets
+      ),
+    [fullHistory, currentTrackerDate, userTargets]
+  );
 
   // Alias semantico: livello SNC usato in UI / allarmi.
   const sncStressLevel = accumuloSNC;
@@ -11792,6 +11803,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           }}
         >
           <MetabolicCompass
+            dailyHistory={metabolicCompassDailyHistory}
             compassScreenActive={activeBottomTab === 'bussola'}
             onCompassInteractionUnlockChange={handleCompassInteractionUnlockChange}
           />

@@ -5,8 +5,6 @@ import {
   metabolicAngleDegToCompassBearingDeg,
   METABOLIC_COMPASS_DIRECTIONS,
   METABOLIC_GOAL,
-  METABOLIC_KCAL_NORMALIZATION_REF,
-  METABOLIC_TRAINING_NORMALIZATION_REF,
 } from './metabolicDirection';
 import { useMetabolicDirectionEngine } from './metabolicDirectionEngine';
 
@@ -213,43 +211,22 @@ function metabolicCompassMicroPhrase(diffDeg, magnitude01) {
 
 /**
  * @param {{ dailyHistory?: Array<{ kcalBalance: number, trainingLoad: number }>, onCompassInteractionUnlockChange?: (unlocked: boolean) => void, compassScreenActive?: boolean }} props
- * Se `dailyHistory` è fornito (non vuoto), il motore usa solo quello; altrimenti storico demo + slider su “oggi”.
+ * `dailyHistory`: serie reale dal tracker (ultimo elemento = giorno corrente); passare `[]` se assente.
  * `onCompassInteractionUnlockChange`: notifica il parent (es. per disabilitare lo swipe tra tab quando la bussola è sbloccata).
  * `compassScreenActive`: quando passa da false a true, ripristina blocco + periodo ai default (nessuno stato sbloccato persistito tra sessioni o rientri).
  */
 export default function MetabolicCompass({
-  dailyHistory: dailyHistoryProp,
+  dailyHistory: dailyHistoryProp = [],
   onCompassInteractionUnlockChange,
   compassScreenActive = true,
 } = {}) {
-  const isControlled =
-    Array.isArray(dailyHistoryProp) && dailyHistoryProp.length > 0;
-
-  const [internalHistory, setInternalHistory] = useState(
-    () =>
-      Array.from({ length: 30 }, () => ({
-        kcalBalance: 0,
-        trainingLoad: 45,
-      }))
-  );
+  const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
   const [isLocked, setIsLocked] = useState(DEFAULT_COMPASS_LOCKED);
   const interactionSurfaceRef = useRef(null);
   const prevCompassScreenActiveRef = useRef(false);
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_COMPASS_TIMEFRAME);
-  const [kcalBalance, setKcalBalance] = useState(0);
-  const [trainingLoad, setTrainingLoad] = useState(45);
-
-  useEffect(() => {
-    if (isControlled) return;
-    setInternalHistory((prev) => {
-      if (prev.length === 0) return prev;
-      const next = [...prev];
-      next[next.length - 1] = { kcalBalance, trainingLoad };
-      return next;
-    });
-  }, [kcalBalance, trainingLoad, isControlled]);
 
   useEffect(() => {
     onCompassInteractionUnlockChange?.(!isLocked);
@@ -281,8 +258,6 @@ export default function MetabolicCompass({
     }
     prevCompassScreenActiveRef.current = true;
   }, [compassScreenActive]);
-
-  const dailyHistory = isControlled ? dailyHistoryProp : internalHistory;
 
   const { angleDeg, magnitude } = useMetabolicDirectionEngine(
     dailyHistory,
@@ -617,40 +592,6 @@ export default function MetabolicCompass({
           </div>
         </div>
       </div>
-
-      {/* Input qualitativi — senza cifre visibili */}
-      {!isControlled && (
-        <div
-          className="metabolic-compass-controls"
-          style={{
-            width: '100%',
-            maxWidth: 320,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-            paddingTop: 6,
-            borderTop: '1px solid rgba(255,255,255,0.06)',
-            marginTop: 2,
-          }}
-        >
-          <RangeBare
-            aria-label="Bilancio energetico"
-            min={-METABOLIC_KCAL_NORMALIZATION_REF}
-            max={METABOLIC_KCAL_NORMALIZATION_REF}
-            value={kcalBalance}
-            onChange={setKcalBalance}
-            disabled={isLocked}
-          />
-          <RangeBare
-            aria-label="Carico allenamento"
-            min={0}
-            max={METABOLIC_TRAINING_NORMALIZATION_REF}
-            value={trainingLoad}
-            onChange={setTrainingLoad}
-            disabled={isLocked}
-          />
-        </div>
-      )}
       </div>
     </div>
   );
@@ -784,30 +725,5 @@ function CompassDirectionLabel({ labelText, selected, disabled, onSelect, layout
     >
       {labelText}
     </button>
-  );
-}
-
-function RangeBare({ 'aria-label': ariaLabel, min, max, value, onChange, disabled }) {
-  return (
-    <input
-      type="range"
-      aria-label={ariaLabel}
-      min={min}
-      max={max}
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(Number(e.target.value))}
-      style={{
-        width: '100%',
-        height: 4,
-        borderRadius: 4,
-        appearance: 'none',
-        WebkitAppearance: 'none',
-        background: 'rgba(255,255,255,0.08)',
-        outline: 'none',
-        cursor: disabled ? 'default' : 'pointer',
-      }}
-      className="metabolic-compass-range"
-    />
   );
 }
