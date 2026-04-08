@@ -176,6 +176,16 @@ function migrateIdealStrategy(raw) {
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
 const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'planning', 'bussola', 'longevita'];
 
+/** Voci barra inferiore (sempre tutte visibili; non condizionare al caricamento dati). */
+const BOTTOM_NAV_ITEMS = [
+  { id: 'oggi', label: 'Oggi', icon: '🏠' },
+  { id: 'analisi', label: 'Analisi', icon: '📊' },
+  { id: 'planning', label: 'Piano', icon: '📅' },
+  { id: 'bussola', label: 'Bussola', icon: '🧭' },
+  { id: 'longevita', label: 'Statistiche', icon: '🧬' },
+  { id: 'menu', label: 'Menu', icon: '≡' },
+];
+
 const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
 
 /** Movimento prima del long-press su nodo timeline: oltre soglia → annulla drag e lascia swipe/scroll (allineato a `MOVE_THRESHOLD_PX` in TimelineNodi). */
@@ -2000,6 +2010,13 @@ export default function SalaComandi() {
       /* ignore */
     }
   }, [activeBottomTab]);
+
+  useEffect(() => {
+    if (!MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)) {
+      setActiveBottomTab('oggi');
+    }
+  }, [activeBottomTab]);
+
   const [mainTabTouchStartX, setMainTabTouchStartX] = useState(null);
   const [mainTabTouchEndX, setMainTabTouchEndX] = useState(null);
   const mainTabTouchStartXRef = useRef(null);
@@ -9543,6 +9560,158 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
   // ========================================================
   // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
   // ========================================================
+  /** Barra Kentu + navigazione: sempre montata dopo login, anche durante caricamento dati (Bussola sempre visibile). */
+  const fixedAppBottomChrome = (
+    <>
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))',
+          left: 0,
+          right: 0,
+          display: 'flex',
+          gap: '10px',
+          alignItems: 'center',
+          paddingTop: '16px',
+          paddingBottom: '16px',
+          paddingLeft: '15px',
+          paddingRight: '15px',
+          background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          zIndex: 9998,
+          boxSizing: 'border-box',
+        }}
+      >
+        <div
+          onClick={() => {
+            setActiveAction('ai_chat');
+            setIsDrawerOpen(true);
+          }}
+          style={{
+            flex: 1,
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            background: '#1a1a1a',
+            borderRadius: '30px',
+            padding: '12px 20px',
+            border: '1px solid #333',
+            cursor: 'pointer',
+          }}
+        >
+          {kentuChatNotificationBadge ? (
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                top: 8,
+                right: 14,
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: '#f59e0b',
+                boxShadow: '0 0 10px rgba(245, 158, 11, 0.7)',
+                pointerEvents: 'none',
+              }}
+            />
+          ) : null}
+          <img
+            src="/nuova-icona.png"
+            alt=""
+            className="action-icon-img action-icon-img-fab"
+            width={22}
+            height={22}
+            decoding="async"
+          />
+          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Kentu...</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setShowChoiceModal(false);
+            setIsDrawerOpen(true);
+            setActiveAction(null);
+          }}
+          style={{
+            width: 50,
+            height: 50,
+            minWidth: 50,
+            background: '#222',
+            color: '#00e5ff',
+            border: '1px solid #333',
+            borderRadius: '16px',
+            fontSize: '1.8rem',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            cursor: 'pointer',
+            transition: '0.3s',
+            flexShrink: 0,
+          }}
+          aria-label="Aggiungi evento"
+        >
+          +
+        </button>
+      </div>
+
+      <nav
+        aria-label="Navigazione principale"
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '75px',
+          background: 'rgba(20, 20, 22, 0.90)',
+          backdropFilter: 'blur(15px)',
+          WebkitBackdropFilter: 'blur(15px)',
+          borderTop: '1px solid #333',
+          display: 'flex',
+          justifyContent: 'space-around',
+          alignItems: 'center',
+          zIndex: 9999,
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          boxSizing: 'border-box',
+        }}
+      >
+        {BOTTOM_NAV_ITEMS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => handleBottomNavTabSelect(t.id)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '4px',
+              cursor: 'pointer',
+              flex: '1 1 0',
+              minWidth: 0,
+              color: activeBottomTab === t.id ? '#00e5ff' : '#888',
+              fontSize: '0.7rem',
+              padding: '4px 0',
+            }}
+          >
+            <span
+              style={{
+                fontSize: t.id === 'menu' ? '1.45rem' : '1.25rem',
+                lineHeight: 1,
+                fontWeight: t.id === 'menu' ? 700 : undefined,
+              }}
+              aria-hidden
+            >
+              {t.icon}
+            </span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </nav>
+    </>
+  );
+
   let salaContent;
 
   if (!authReady) {
@@ -9611,7 +9780,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       </div>
     );
   } else if (!isInitialLoadComplete) {
-    salaContent = <div style={{ minHeight: '100dvh', width: '100%', background: '#050a12' }} aria-hidden />;
+    salaContent = (
+      <>
+        <div style={{ minHeight: '100dvh', width: '100%', background: '#050a12' }} aria-hidden />
+        {fixedAppBottomChrome}
+      </>
+    );
   } else if (isFullScreenGraph) {
     const currentChartType = availableFullscreenCharts[fullscreenChartIndex] || 'percent';
     const fullscreenChartLabel = currentChartType === 'percent' ? 'Energia SNC %' : currentChartType === 'cortisolo' ? 'Cortisolo' : currentChartType === 'calorieTimeline' ? 'Bilancio Calorico' : currentChartType === 'glicemia' ? 'Glicemia' : currentChartType === 'idratazione' ? 'Idratazione' : currentChartType === 'neuro' ? 'Recupero Neurologico' : currentChartType === 'digestione' ? 'Digestione' : currentChartType === 'kcal' ? 'Kcal' : 'Grafico';
@@ -14790,86 +14964,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         </div>
       )}
 
-      {/* Barra Kentu AI + FAB: visibile su Oggi, Analisi e Statistiche (sopra la bottom navigation) */}
-      <div style={{ position: 'fixed', bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))', left: 0, right: 0, display: 'flex', gap: '10px', alignItems: 'center', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '15px', paddingRight: '15px', background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)', borderTop: '1px solid rgba(255, 255, 255, 0.08)', zIndex: 9998, boxSizing: 'border-box' }}>
-        <div
-          onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(true); }}
-          style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', borderRadius: '30px', padding: '12px 20px', border: '1px solid #333', cursor: 'pointer' }}
-        >
-          {kentuChatNotificationBadge ? (
-            <span
-              aria-hidden
-              style={{
-                position: 'absolute',
-                top: 8,
-                right: 14,
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                background: '#f59e0b',
-                boxShadow: '0 0 10px rgba(245, 158, 11, 0.7)',
-                pointerEvents: 'none',
-              }}
-            />
-          ) : null}
-          <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-fab" width={22} height={22} decoding="async" />
-          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Kentu...</span>
-        </div>
-        <button type="button" onClick={() => { setShowChoiceModal(false); setIsDrawerOpen(true); setActiveAction(null); }} style={{ width: 50, height: 50, minWidth: 50, background: '#222', color: '#00e5ff', border: '1px solid #333', borderRadius: '16px', fontSize: '1.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: '0.3s', flexShrink: 0 }} aria-label="Aggiungi evento">+</button>
-      </div>
-
-      <nav
-        aria-label="Navigazione principale"
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: '75px',
-          background: 'rgba(20, 20, 22, 0.90)',
-          backdropFilter: 'blur(15px)',
-          WebkitBackdropFilter: 'blur(15px)',
-          borderTop: '1px solid #333',
-          display: 'flex',
-          justifyContent: 'space-around',
-          alignItems: 'center',
-          zIndex: 9999,
-          paddingBottom: 'env(safe-area-inset-bottom)',
-          boxSizing: 'border-box',
-        }}
-      >
-        {[
-          { id: 'oggi', label: 'Oggi', icon: '🏠' },
-          { id: 'analisi', label: 'Analisi', icon: '📊' },
-          { id: 'planning', label: 'Piano', icon: '📅' },
-          { id: 'bussola', label: 'Bussola', icon: '🧭' },
-          { id: 'longevita', label: 'Statistiche', icon: '🧬' },
-          { id: 'menu', label: 'Menu', icon: '≡' },
-        ].map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => handleBottomNavTabSelect(t.id)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '4px',
-              cursor: 'pointer',
-              flex: '1 1 0',
-              minWidth: 0,
-              color: activeBottomTab === t.id ? '#00e5ff' : '#888',
-              fontSize: '0.7rem',
-              padding: '4px 0',
-            }}
-          >
-            <span style={{ fontSize: t.id === 'menu' ? '1.45rem' : '1.25rem', lineHeight: 1, fontWeight: t.id === 'menu' ? 700 : undefined }} aria-hidden>{t.icon}</span>
-            <span>{t.label}</span>
-          </button>
-        ))}
-      </nav>
+      {fixedAppBottomChrome}
     </div>
   );
   }
