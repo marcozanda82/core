@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  getGoalCompassAngleDeg,
+  getCompassTargetAngleForGoal,
   getMetabolicTargetAngle,
   metabolicAngleDegToCompassBearingDeg,
   METABOLIC_COMPASS_DIRECTIONS,
@@ -171,11 +171,13 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
   const magnitude01 = Math.min(1, magnitude);
   const arrowLengthPx = ARROW_MIN_PX + magnitude01 * (ARROW_MAX_PX - ARROW_MIN_PX);
 
-  const goalCompassAngleDeg = useMemo(() => getGoalCompassAngleDeg(goal), [goal]);
-  /** Volto ruotato così l’obiettivo coincide con il Nord visivo; la freccia resta nel sistema schermo. */
-  const dialRotationDeg = -goalCompassAngleDeg;
-  /** Bearing reale sul volto + rotazione del volto → angolo schermo (CSS, 0° = alto, orario +). */
-  const arrowRotationDeg = metabolicAngleDegToCompassBearingDeg(angleDeg) + dialRotationDeg;
+  /** Angolo rosa dell’obiettivo (da {@link METABOLIC_COMPASS_DIRECTIONS}). */
+  const targetAngle = useMemo(() => getCompassTargetAngleForGoal(goal), [goal]);
+  /** Solo sfondo rosa: Nord visivo = obiettivo → rotazione opposta all’angolo target. */
+  const compassRotation = -targetAngle;
+  /** Bearing metabolico reale + rotazione sfondo (freccia non è nel contenitore ruotato). */
+  const arrowRotationDeg =
+    metabolicAngleDegToCompassBearingDeg(angleDeg) + compassRotation;
 
   return (
     <div
@@ -274,7 +276,7 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
               inset: 0,
               borderRadius: '50%',
               transformOrigin: '50% 50%',
-              transform: `rotate(${dialRotationDeg}deg)`,
+              transform: `rotate(${compassRotation}deg)`,
               transition: 'transform 0.45s cubic-bezier(0.33, 0.86, 0.36, 1)',
               background: `
                 radial-gradient(ellipse 72% 72% at 50% 38%, rgba(35, 42, 54, 0.95) 0%, #12151c 48%, #07080c 100%),

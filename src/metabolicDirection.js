@@ -38,22 +38,14 @@ export const METABOLIC_TARGET_ANGLE_DEG = {
 };
 
 /**
- * Angolo sulla rosa (0° = Nord / alto, orario positivo) per ogni obiettivo.
- * Ruotando il volto di `-getGoalCompassAngleDeg(goal)`, l’obiettivo finisce in alto.
+ * Mappa l’obiettivo selezionato (label = voce in {@link METABOLIC_COMPASS_DIRECTIONS}) sull’angolo rosa.
+ *
+ * @param {string} goalLabel es. {@link METABOLIC_GOAL}
+ * @returns {number} targetAngle in gradi (0° = Nord, orario +)
  */
-export const METABOLIC_GOAL_COMPASS_ANGLE_DEG = {
-  [METABOLIC_GOAL.RICOMPOSIZIONE]: 0,
-  [METABOLIC_GOAL.MASSA]: 45,
-  [METABOLIC_GOAL.PERDITA_GRASSO]: -135,
-};
-
-/**
- * @param {string} goal
- * @returns {number} gradi rosa per l’obiettivo selezionato
- */
-export function getGoalCompassAngleDeg(goal) {
-  const g = goal && METABOLIC_GOAL_COMPASS_ANGLE_DEG[goal] != null ? goal : METABOLIC_GOAL.RICOMPOSIZIONE;
-  return METABOLIC_GOAL_COMPASS_ANGLE_DEG[g];
+export function getCompassTargetAngleForGoal(goalLabel) {
+  const found = METABOLIC_COMPASS_DIRECTIONS.find((d) => d.label === goalLabel);
+  return found ? found.angle : 0;
 }
 
 const FINAL_ANGLE_MIN = -135;
