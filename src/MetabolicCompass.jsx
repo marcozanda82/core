@@ -200,11 +200,15 @@ function absShortestAngleDeltaDeg(fromDeg, toDeg) {
   return Math.abs(d);
 }
 
-/** Differenza con segno da `fromDeg` a `toDeg` nell’intervallo (−180, 180]. */
-function shortestAngleDeltaDeg(fromDeg, toDeg) {
-  let d = toDeg - fromDeg;
-  d = ((((d + 180) % 360) + 360) % 360) - 180;
-  return d;
+/**
+ * Differenza con segno da currentAngle a targetAngle nell’intervallo [−180, 180]
+ * (percorso più breve; gestisce anche angoli non normalizzati dopo integrazione).
+ */
+function shortestAngleDeltaDeg(currentAngle, targetAngle) {
+  let delta = targetAngle - currentAngle;
+  while (delta > 180) delta -= 360;
+  while (delta < -180) delta += 360;
+  return delta;
 }
 
 function normalizeCompassBearing0to360(deg) {
