@@ -1399,7 +1399,8 @@ const LONGEVITY_NIGHT_PENDING_ENERGY_SIM = {
 };
 
 /** Overlay fullscreen: unico piano visibile finché auth/data non sono pronti per la dashboard/login. */
-function FirebaseDataLoadingLayer({ blocking, introPhrase }) {
+function FirebaseDataLoadingLayer({ blocking }) {
+  const [introPhrase] = useState(() => takeNextKentuIntroPhrase());
   const [mounted, setMounted] = useState(false);
   const [opaque, setOpaque] = useState(true);
 
@@ -14785,7 +14786,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
 
   return (
     <>
-      <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} introPhrase={introPhrase} />
+      <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} />
       {salaContent}
     </>
   );

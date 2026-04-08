@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 
 export default function ProjectedAgeInsightModal({ open, onClose, contextBlock, callGeminiAPIWithRotation }) {
+  const [loadingPhrase] = useState(() => takeNextKentuIntroPhrase());
   const [phase, setPhase] = useState('loading');
   const [text, setText] = useState('');
 
@@ -103,8 +105,19 @@ L'utente ha appena cliccato sulla sua Età Biologica Proiettata, che è variata 
           </button>
         </div>
         {phase === 'loading' ? (
-          <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.9rem', lineHeight: 1.5 }}>
-            Kentu sta analizzando i biomarcatori...
+          <p
+            className="kentu-intro-phrase-text kentu-intro-phrase-text--glow"
+            style={{
+              margin: 0,
+              fontFamily: 'ui-serif, Georgia, "Times New Roman", serif',
+              fontWeight: 300,
+              fontSize: '0.9rem',
+              letterSpacing: '0.06em',
+              lineHeight: 1.55,
+              color: 'rgba(226, 232, 240, 0.92)',
+            }}
+          >
+            {loadingPhrase}
           </p>
         ) : (
           <div
