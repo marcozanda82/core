@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   getCompassTargetAngleForGoal,
   getMetabolicTargetAngle,
@@ -36,9 +36,12 @@ const MICRO_SUGGESTION_TRANSITION = 'opacity 0.34s cubic-bezier(0.4, 0, 0.2, 1)'
 /** Lunghezza fissa dal centro al vertice ≈ 75% del raggio (= 37.5% del lato del volto quadrato). */
 const ARROW_LENGTH_FRAC_OF_FACE = 0.375;
 
-/** Comportamento analogico: rotazione smussata; magnitudine modula alone / opacità, non l’altezza. */
-const ARROW_ANALOG_TRANSITION =
-  'transform 0.4s ease, box-shadow 0.45s ease, background 0.45s ease, filter 0.45s ease, opacity 0.45s ease';
+/** Rotazione ago: fisica spring+damping via requestAnimationFrame (niente transition su transform). */
+const ARROW_SPRING_STIFFNESS = 0.08;
+const ARROW_SPRING_DAMPING = 0.85;
+/** Solo proprietà visive; la rotazione è aggiornata ogni frame da ref. */
+const ARROW_SHAFT_VISUAL_TRANSITION =
+  'box-shadow 0.45s ease, background 0.45s ease, filter 0.45s ease, opacity 0.45s ease';
 
 const ARROW_SHAFT_WIDTH_PX = 1.15;
 
@@ -197,6 +200,13 @@ function absShortestAngleDeltaDeg(fromDeg, toDeg) {
   return Math.abs(d);
 }
 
+/** Differenza con segno da `fromDeg` a `toDeg` nell’intervallo (−180, 180]. */
+function shortestAngleDeltaDeg(fromDeg, toDeg) {
+  let d = toDeg - fromDeg;
+  d = ((((d + 180) % 360) + 360) % 360) - 180;
+  return d;
+}
+
 function normalizeCompassBearing0to360(deg) {
   let x = deg % 360;
   if (x < 0) x += 360;
@@ -311,6 +321,62 @@ export default function MetabolicCompass({
   /** Bearing metabolico reale + rotazione sfondo (freccia non è nel contenitore ruotato). */
   const arrowRotationDeg =
     metabolicAngleDegToCompassBearingDeg(angleDeg) + compassRotation;
+
+  const arrowShaftRef = useRef(null);
+  const angleRef = useRef(null);
+  const velocityRef = useRef(0);
+  const targetAngleRef = useRef(arrowRotationDeg);
+
+  useEffect(() => {
+    targetAngleRef.current = arrowRotationDeg;
+  }, [arrowRotationDeg]);
+
+  useLayoutEffect(() => {
+    if (angleRef.current !== null) return;
+    angleRef.current = arrowRotationDeg;
+    velocityRef.current = 0;
+    const el = arrowShaftRef.current;
+    if (el) {
+      el.style.transformOrigin = '50% 100%';
+      el.style.transform = `rotate(${angleRef.current}deg)`;
+    }
+    // Solo primo frame: allinea DOM prima della prima rAF; `arrowRotationDeg` è quello del mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- init once per mount
+  }, []);
+
+  useEffect(() => {
+    let rafId = 0;
+    const tick = () => {
+      const el = arrowShaftRef.current;
+      const target = targetAngleRef.current;
+      if (angleRef.current === null) {
+        angleRef.current = target;
+        velocityRef.current = 0;
+      }
+      const reducedMotion =
+        typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reducedMotion) {
+        angleRef.current = target;
+        velocityRef.current = 0;
+      } else {
+        const current = angleRef.current;
+        const delta = shortestAngleDeltaDeg(current, target);
+        const force = delta * ARROW_SPRING_STIFFNESS;
+        let v = velocityRef.current + force;
+        v *= ARROW_SPRING_DAMPING;
+        velocityRef.current = v;
+        angleRef.current = current + v;
+      }
+      if (el) {
+        el.style.transformOrigin = '50% 100%';
+        el.style.transform = `rotate(${angleRef.current}deg)`;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   return (
     <div
@@ -510,6 +576,7 @@ export default function MetabolicCompass({
             }}
           >
             <div
+              ref={arrowShaftRef}
               className="metabolic-compass-arrow-shaft"
               style={{
                 position: 'absolute',
@@ -519,8 +586,7 @@ export default function MetabolicCompass({
                 height: `${ARROW_LENGTH_FRAC_OF_FACE * 100}%`,
                 marginLeft: -ARROW_SHAFT_WIDTH_PX / 2,
                 transformOrigin: '50% 100%',
-                transform: `rotate(${arrowRotationDeg}deg)`,
-                transition: ARROW_ANALOG_TRANSITION,
+                transition: ARROW_SHAFT_VISUAL_TRANSITION,
                 borderRadius: 9999,
                 background: tierStyle.needleBg,
                 boxShadow: arrowMagStyle.boxShadow,
