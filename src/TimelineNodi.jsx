@@ -122,6 +122,9 @@ const STRIP_DRAG_ARM_LONG_PRESS_MS = 180;
 /** Long-press nodo + annullamento arm striscia su swipe: stessa soglia px. */
 const LONG_PRESS_MS = 180;
 const MOVE_THRESHOLD_PX = 6;
+/** Long-press in attesa: solo transform + opacity, niente shift di layout. */
+const NODE_LONG_PRESS_ARM_SCALE = 0.96;
+const NODE_LONG_PRESS_ARM_OPACITY_MUL = 0.93;
 
 function nodeAddTransition(reduceMotion, isDragging) {
   if (reduceMotion || isDragging) return { duration: 0 };
@@ -190,6 +193,8 @@ export default function TimelineNodi({
   const [magneticSnapActive, setMagneticSnapActive] = useState(false);
   /** Durante l’attesa long-press: `touch-action: pan-x pan-y` così swipe/scroll non restano bloccati da `none`. */
   const [stripArmPendingId, setStripArmPendingId] = useState(null);
+  /** Nodo in fase di attesa long-press (pointer giù, drag non ancora attivo). */
+  const [nodeDragArmPendingId, setNodeDragArmPendingId] = useState(null);
   const dragXRef = useRef(null);
   const containerRef = useRef(null);
   const stripArmPendingRef = useRef(null);
@@ -232,6 +237,7 @@ export default function TimelineNodi({
     longPressNodeDocCleanupRef.current = null;
     longPressActiveRef.current = false;
     pointerStartPosRef.current = null;
+    setNodeDragArmPendingId(null);
   }, []);
 
   const scheduleStartNodeDragAfterLongPress = useCallback(
@@ -288,6 +294,7 @@ export default function TimelineNodi({
         longPressNodeDocCleanupRef.current?.();
         longPressNodeDocCleanupRef.current = null;
         longPressActiveRef.current = true;
+        setNodeDragArmPendingId(null);
         const pos = pointerStartPosRef.current;
         startNodeDrag(node, edge)(e, {
           skipInnerLongPressDelay: true,
@@ -295,6 +302,7 @@ export default function TimelineNodi({
           clientY0: pos?.clientY,
         });
       }, LONG_PRESS_MS);
+      setNodeDragArmPendingId(node.id);
     },
     [startNodeDrag, cancelNodeLongPressArming]
   );
@@ -430,6 +438,7 @@ export default function TimelineNodi({
       }
       longPressActiveRef.current = false;
       pointerStartPosRef.current = null;
+      setNodeDragArmPendingId(null);
 
       cancelStripDragArm();
     },
@@ -453,6 +462,7 @@ export default function TimelineNodi({
       }
       longPressNodeDocCleanupRef.current?.();
       longPressNodeDocCleanupRef.current = null;
+      setNodeDragArmPendingId(null);
     };
   }, []);
 
@@ -826,6 +836,9 @@ export default function TimelineNodi({
             const isActiveDrag = isDragging || isStripDragging;
             const stripMagneticOn = magneticSnapActive && draggingId === node.id && !reduceMotion;
             const isTouchingOrDragging = isDragging || (touchingNodeId === node.id);
+            const isNodeLongPressArming = nodeDragArmPendingId === node.id && !isActiveDrag;
+            const longPressArmScaleMul = isNodeLongPressArming ? NODE_LONG_PRESS_ARM_SCALE : 1;
+            const longPressArmOpacityMul = isNodeLongPressArming ? NODE_LONG_PRESS_ARM_OPACITY_MUL : 1;
             const dragY = isDragging ? dragOffsetY : 0;
             const displayTimeVal = (isDragging && dragLiveTime != null) ? dragLiveTime : node.time;
             const workEndTime = node.time + (node.duration || 1);
@@ -889,8 +902,8 @@ export default function TimelineNodi({
                   onClick={onTimelineNodeClick(node)}
                   initial={reduceMotion ? false : { opacity: barOpacity, scale: barScaleDraw * 0.8 }}
                   animate={{
-                    opacity: barOpacity,
-                    scale: barScaleDraw,
+                    opacity: barOpacity * longPressArmOpacityMul,
+                    scale: barScaleDraw * longPressArmScaleMul,
                     y: isDragging ? dragY - 45 : 0,
                     boxShadow:
                       reduceMotion
@@ -907,9 +920,13 @@ export default function TimelineNodi({
                                 : [WORK_ADD_GLOW_PULSE, 'none'],
                   }}
                   transition={workBarTransition}
-                  whileHover={!isActiveDrag ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
+                  whileHover={
+                    !isActiveDrag && !isNodeLongPressArming
+                      ? { scale: barScale * 1.04, transition: SUBTLE_SPRING }
+                      : undefined
+                  }
                   whileTap={
-                    !isActiveDrag
+                    !isActiveDrag && !isNodeLongPressArming
                       ? { scale: barScale * 0.96, transition: { type: 'spring', stiffness: 520, damping: 14 } }
                       : undefined
                   }
@@ -991,8 +1008,8 @@ export default function TimelineNodi({
                   onClick={onTimelineNodeClick(node)}
                   initial={reduceMotion ? false : { opacity: barOpacity, scale: barScaleDraw * 0.8 }}
                   animate={{
-                    opacity: barOpacity,
-                    scale: barScaleDraw,
+                    opacity: barOpacity * longPressArmOpacityMul,
+                    scale: barScaleDraw * longPressArmScaleMul,
                     y: isDragging ? dragY - 45 : 0,
                     boxShadow:
                       reduceMotion
@@ -1009,9 +1026,13 @@ export default function TimelineNodi({
                                 : [COG_ADD_GLOW_PULSE, 'none'],
                   }}
                   transition={cogBarTransition}
-                  whileHover={!isActiveDrag ? { scale: barScale * 1.04, transition: SUBTLE_SPRING } : undefined}
+                  whileHover={
+                    !isActiveDrag && !isNodeLongPressArming
+                      ? { scale: barScale * 1.04, transition: SUBTLE_SPRING }
+                      : undefined
+                  }
                   whileTap={
-                    !isActiveDrag
+                    !isActiveDrag && !isNodeLongPressArming
                       ? { scale: barScale * 0.96, transition: { type: 'spring', stiffness: 520, damping: 14 } }
                       : undefined
                   }
@@ -1153,8 +1174,8 @@ export default function TimelineNodi({
                     : { opacity: targetOpacity, scale: pointScaleDraw * 0.8, x: '-50%' }
                 }
                 animate={{
-                  opacity: targetOpacity,
-                  scale: pointScaleDraw,
+                  opacity: targetOpacity * longPressArmOpacityMul,
+                  scale: pointScaleDraw * longPressArmScaleMul,
                   x: '-50%',
                   y: isDragging ? dragY - 45 : 0,
                   boxShadow: reduceMotion
@@ -1170,9 +1191,13 @@ export default function TimelineNodi({
                             : [POINT_ADD_GLOW_PULSE, pointBoxShadow],
                 }}
                 transition={pointQualityTransition}
-                whileHover={!isActiveDrag ? { scale: baseScale * 1.1, transition: SUBTLE_SPRING } : undefined}
+                whileHover={
+                  !isActiveDrag && !isNodeLongPressArming
+                    ? { scale: baseScale * 1.1, transition: SUBTLE_SPRING }
+                    : undefined
+                }
                 whileTap={
-                  !isActiveDrag
+                  !isActiveDrag && !isNodeLongPressArming
                     ? { scale: baseScale * 0.94, transition: { type: 'spring', stiffness: 520, damping: 14 } }
                     : undefined
                 }
