@@ -628,15 +628,22 @@ function CompassDirectionLabel({ labelText, selected, disabled, onSelect, layout
   return (
     <button
       type="button"
-      className="metabolic-compass-direction-label"
+      className={
+        selected
+          ? 'metabolic-compass-direction-label metabolic-compass-direction-label--selected'
+          : 'metabolic-compass-direction-label'
+      }
       aria-pressed={selected}
       aria-label={`Obiettivo ${labelText}`}
       disabled={disabled}
-      onClick={() => onSelect(labelText)}
+      onClick={() => {
+        if (disabled) return;
+        onSelect(labelText);
+      }}
       style={{
         position: 'absolute',
-        maxWidth: '32%',
-        minHeight: 30,
+        maxWidth: '34%',
+        minHeight: 32,
         textAlign: 'center',
         fontSize: 9,
         fontWeight: 600,
@@ -647,20 +654,13 @@ function CompassDirectionLabel({ labelText, selected, disabled, onSelect, layout
         cursor: disabled ? 'default' : 'pointer',
         border: 'none',
         margin: 0,
-        padding: '5px 7px',
+        padding: '6px 8px',
         borderRadius: 8,
-        background: selected ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.02)',
-        color: selected ? 'rgba(248, 250, 255, 0.92)' : 'rgba(235, 238, 245, 0.48)',
-        textShadow: selected
-          ? '0 0 12px rgba(150, 210, 255, 0.42), 0 0 24px rgba(90, 170, 240, 0.18), 0 1px 3px rgba(0,0,0,0.88)'
-          : '0 1px 3px rgba(0,0,0,0.85)',
-        boxShadow: selected
-          ? '0 0 0 1px rgba(255,255,255,0.14), 0 0 18px rgba(110, 185, 255, 0.2)'
-          : 'none',
         transition:
-          'color 0.35s ease, background 0.35s ease, text-shadow 0.35s ease, box-shadow 0.35s ease',
+          'color 0.35s ease, background 0.35s ease, text-shadow 0.35s ease, box-shadow 0.35s ease, filter 0.25s ease',
         pointerEvents: 'auto',
-        zIndex: 1,
+        touchAction: disabled ? 'auto' : 'manipulation',
+        zIndex: selected ? 5 : 2,
         WebkitTapHighlightColor: 'transparent',
         ...layoutStyle,
       }}
