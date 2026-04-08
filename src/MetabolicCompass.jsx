@@ -22,8 +22,11 @@ const GOALS = [
 const ARROW_MIN_PX = 12;
 const ARROW_MAX_PX = 102;
 
-const ARROW_TRANSITION =
-  'transform 0.55s cubic-bezier(0.33, 0.86, 0.36, 1), height 0.55s cubic-bezier(0.33, 0.86, 0.36, 1), opacity 0.4s ease, box-shadow 0.45s ease, background 0.4s ease';
+/** Comportamento analogico: rotazione e lunghezza smussate. */
+const ARROW_ANALOG_TRANSITION =
+  'transform 0.4s ease, height 0.4s ease, box-shadow 0.45s ease, background 0.45s ease, filter 0.45s ease';
+
+const ARROW_SHAFT_WIDTH_PX = 1.15;
 
 /** Griglia bussola: cerchi concentrici + raggi (viewBox 100×100, centro 50,50). */
 const DIAL_GRID_RINGS = [12.5, 22.5, 32.5];
@@ -91,27 +94,27 @@ function CompassDialGrid({ directions }) {
 const ALIGNMENT_TIERS = {
   aligned: {
     needleBg:
-      'linear-gradient(180deg, rgba(200, 255, 235, 0.95) 0%, rgba(95, 235, 195, 0.55) 45%, rgba(45, 165, 135, 0.25) 100%)',
+      'linear-gradient(180deg, rgba(210, 255, 240, 0.88) 0%, rgba(110, 230, 200, 0.42) 55%, rgba(55, 175, 145, 0.18) 100%)',
     needleGlow:
-      '0 0 4px rgba(160, 255, 220, 0.9), 0 0 12px rgba(80, 220, 175, 0.65), 0 0 24px rgba(50, 190, 155, 0.35), 0 0 40px rgba(40, 160, 130, 0.12)',
+      '0 0 2px rgba(180, 255, 230, 0.55), 0 0 10px rgba(90, 215, 180, 0.28), 0 0 22px rgba(60, 185, 155, 0.14), 0 0 36px rgba(45, 150, 125, 0.06)',
     centerGlow:
       '0 0 10px rgba(110, 240, 190, 0.75), 0 0 24px rgba(75, 210, 170, 0.4), inset 0 0 6px rgba(255,255,255,0.38)',
     centerRing: 'rgba(120, 235, 195, 0.55)',
   },
   partial: {
     needleBg:
-      'linear-gradient(180deg, rgba(230, 238, 245, 0.9) 0%, rgba(130, 155, 175, 0.5) 50%, rgba(70, 90, 105, 0.2) 100%)',
+      'linear-gradient(180deg, rgba(235, 240, 248, 0.82) 0%, rgba(145, 168, 188, 0.38) 55%, rgba(85, 105, 122, 0.14) 100%)',
     needleGlow:
-      '0 0 3px rgba(255,255,255,0.35), 0 0 10px rgba(170, 195, 215, 0.35), 0 0 22px rgba(120, 145, 165, 0.18)',
+      '0 0 2px rgba(255,255,255,0.22), 0 0 9px rgba(165, 188, 208, 0.22), 0 0 20px rgba(125, 148, 168, 0.1)',
     centerGlow:
       '0 0 8px rgba(200, 210, 220, 0.35), 0 0 18px rgba(140, 155, 170, 0.15), inset 0 0 5px rgba(255,255,255,0.28)',
     centerRing: 'rgba(180, 195, 208, 0.35)',
   },
   off: {
     needleBg:
-      'linear-gradient(180deg, rgba(255, 210, 200, 0.95) 0%, rgba(235, 120, 105, 0.55) 50%, rgba(175, 65, 60, 0.22) 100%)',
+      'linear-gradient(180deg, rgba(255, 218, 208, 0.86) 0%, rgba(230, 130, 115, 0.4) 55%, rgba(185, 75, 68, 0.16) 100%)',
     needleGlow:
-      '0 0 4px rgba(255, 180, 165, 0.85), 0 0 12px rgba(255, 120, 105, 0.45), 0 0 26px rgba(220, 80, 72, 0.22)',
+      '0 0 2px rgba(255, 195, 180, 0.45), 0 0 10px rgba(240, 130, 115, 0.22), 0 0 24px rgba(200, 85, 75, 0.1)',
     centerGlow:
       '0 0 10px rgba(255, 140, 125, 0.45), 0 0 22px rgba(210, 75, 70, 0.22), inset 0 0 5px rgba(255,255,255,0.22)',
     centerRing: 'rgba(255, 140, 125, 0.4)',
@@ -306,7 +309,7 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
             ))}
           </div>
 
-          {/* Freccia — sistema schermo */}
+          {/* Freccia analogica: pivot al centro, rotazione = bearing reale, lunghezza ∝ magnitudine */}
           <div
             aria-hidden
             style={{
@@ -324,15 +327,17 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
                 position: 'absolute',
                 left: 0,
                 bottom: 0,
-                width: 1.5,
-                height: arrowLengthPx,
-                marginLeft: -0.75,
+                width: ARROW_SHAFT_WIDTH_PX,
+                height: Math.max(ARROW_SHAFT_WIDTH_PX * 2, arrowLengthPx),
+                marginLeft: -ARROW_SHAFT_WIDTH_PX / 2,
                 transformOrigin: '50% 100%',
                 transform: `rotate(${arrowRotationDeg}deg)`,
-                transition: ARROW_TRANSITION,
-                borderRadius: 1,
+                transition: ARROW_ANALOG_TRANSITION,
+                borderRadius: 9999,
                 background: tierStyle.needleBg,
                 boxShadow: tierStyle.needleGlow,
+                filter:
+                  'blur(0.35px) drop-shadow(0 0 1px rgba(255,255,255,0.12))',
               }}
             />
           </div>
