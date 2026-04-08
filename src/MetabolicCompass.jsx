@@ -8,48 +8,48 @@ const OBIETTIVO_OPTIONS = ['Ricomposizione', 'Massa', 'Perdita Grasso'];
 
 const RADIUS = 110;
 
+/** Direzione obiettivo nel piano (x = bilancio, y = stimolo allenamento). */
+const TARGET_DIRECTION = {
+  Massa: { x: 1, y: 1 },
+  'Perdita Grasso': { x: -1, y: 0.6 },
+  Ricomposizione: { x: 0, y: 1 },
+};
+
 function clampAngle(deg) {
   return Math.max(-135, Math.min(135, deg));
 }
 
-/**
- * Angolo bussola (Nord = 0°, positivo = orario verso Est/Sud).
- * Surplus slider -50…50 → scala ×10 per confronti tipo ±500 kcal nel copy.
- */
-function computeActualAngle(obiettivo, surplusDeficit, allenamento) {
-  const s = surplusDeficit * 10;
-  const a = allenamento;
+function clamp1(n) {
+  return Math.max(-1, Math.min(1, n));
+}
 
-  if (obiettivo === 'Massa') {
-    const onTrack = s > 80 && a >= 45;
-    if (onTrack) return clampAngle(a - 50);
-    let ang = 0;
-    if (s <= 0) ang -= Math.min(135, (-s) / 10);
-    if (a < 40) ang += (40 - a) * 1.1;
-    return clampAngle(ang + (a - 50) * 0.15);
-  }
-
-  if (obiettivo === 'Perdita Grasso') {
-    const onTrack = s < -80 && a >= 40;
-    if (onTrack) return clampAngle((a - 50) * 0.12);
-    let ang = 0;
-    if (s > 0) ang += Math.min(135, s / 10);
-    if (a < 35) ang += (35 - a) * 0.9;
-    return clampAngle(ang + (a - 50) * 0.1);
-  }
-
-  // Ricomposizione
-  if (Math.abs(s) < 120 && a >= 38 && a <= 82) {
-    return clampAngle((s / 25) + (a - 50) * 0.08);
-  }
-  let ang = s / 12;
-  if (a < 38) ang += (38 - a) * 0.9;
-  if (a > 82) ang -= (a - 82) * 0.7;
-  return clampAngle(ang);
+function degFromAtan2(y, x) {
+  return Math.atan2(y, x) * (180 / Math.PI);
 }
 
 /**
- * Bussola metabolica — Premium Light/Ceramic, freccia e bolla progresso da vettori.
+ * Modello vettoriale: stato attuale vs direzione obiettivo ruotata a Nord (0°).
+ */
+function computeCompassAngles(obiettivo, surplusDeficit, allenamento) {
+  const normalizedSurplus = clamp1(surplusDeficit / 50);
+  const normalizedTraining = Math.max(0, Math.min(1, allenamento / 100));
+
+  const x = normalizedSurplus;
+  const y = normalizedTraining;
+
+  const actualAngle = degFromAtan2(y, x);
+
+  const t = TARGET_DIRECTION[obiettivo] ?? TARGET_DIRECTION.Ricomposizione;
+  const targetAngle = degFromAtan2(t.y, t.x);
+
+  const finalAngle = clampAngle(actualAngle - targetAngle);
+
+  return { finalAngle, x, y };
+}
+
+/**
+ * Bussola metabolica — Premium Light/Ceramic.
+ * Direzione = vettore (bilancio calorico, stimolo allenamento); Nord = direzione obiettivo.
  */
 export default function MetabolicCompass() {
   const [obiettivo, setObiettivo] = useState('Ricomposizione');
@@ -57,21 +57,22 @@ export default function MetabolicCompass() {
   const [surplusDeficit, setSurplusDeficit] = useState(0);
   const [allenamento, setAllenamento] = useState(50);
 
-  const actualAngle = useMemo(
-    () => computeActualAngle(obiettivo, surplusDeficit, allenamento),
+  const { finalAngle, x: vecX, y: vecY } = useMemo(
+    () => computeCompassAngles(obiettivo, surplusDeficit, allenamento),
     [obiettivo, surplusDeficit, allenamento]
   );
 
+  /** Bolla lungo l’ago: Nord = 0°, senso orario = positivo (come CSS rotate). */
   const { translateX, translateY } = useMemo(() => {
     const progressRatio = aderenza / 100;
-    const angleRad = (actualAngle - 90) * (Math.PI / 180);
+    const rad = (finalAngle * Math.PI) / 180;
     return {
-      translateX: Math.cos(angleRad) * progressRatio * RADIUS,
-      translateY: Math.sin(angleRad) * progressRatio * RADIUS,
+      translateX: Math.sin(rad) * progressRatio * RADIUS,
+      translateY: -Math.cos(rad) * progressRatio * RADIUS,
     };
-  }, [aderenza, actualAngle]);
+  }, [aderenza, finalAngle]);
 
-  const aligned = Math.abs(actualAngle) < 15;
+  const aligned = Math.abs(finalAngle) < 15;
   const statoLabel = aligned ? 'In Cammino (Allineato)' : 'Fuori Rotta';
   const suggerimento = aligned
     ? null
@@ -218,7 +219,7 @@ export default function MetabolicCompass() {
             pointerEvents: 'none',
             zIndex: 2,
             transformOrigin: 'bottom center',
-            transform: `translate(-50%, -100%) rotate(${actualAngle}deg)`,
+            transform: `translate(-50%, -100%) rotate(${finalAngle}deg)`,
             transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
             borderRadius: 4,
             background: 'linear-gradient(180deg, #0f172a 0%, #475569 55%, #64748b 100%)',
@@ -374,8 +375,8 @@ export default function MetabolicCompass() {
             lineHeight: 1.4,
           }}
         >
-          {obiettivo} · aderenza {aderenza}% · bilancio slider {surplusDeficit >= 0 ? '+' : ''}
-          {surplusDeficit} (×10 nel modello) · allenamento {allenamento}%
+          {obiettivo} · aderenza {aderenza}% · bilancio norm. {vecX.toFixed(2)} · stimolo {vecY.toFixed(2)} ·
+          deviazione {finalAngle.toFixed(0)}°
         </p>
       </footer>
     </div>
