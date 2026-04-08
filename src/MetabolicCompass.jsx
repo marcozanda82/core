@@ -31,12 +31,16 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
 const DEFAULT_COMPASS_LOCKED = true;
 const DEFAULT_COMPASS_TIMEFRAME = '7d';
 
-const ARROW_MIN_PX = 12;
-const ARROW_MAX_PX = 102;
+/** Lunghezza fissa dal centro al vertice ≈ 75% del raggio (= 37.5% del lato del volto quadrato). */
+const ARROW_LENGTH_FRAC_OF_FACE = 0.375;
 
-/** Comportamento analogico: rotazione e lunghezza smussate. */
+/** Opacità min quando magnitudine → 0 (freccia sempre leggibile). */
+const ARROW_MAGNITUDE_OPACITY_MIN = 0.74;
+const ARROW_MAGNITUDE_OPACITY_MAX = 1;
+
+/** Comportamento analogico: rotazione smussata; magnitudine non scala più l’altezza. */
 const ARROW_ANALOG_TRANSITION =
-  'transform 0.4s ease, height 0.4s ease, box-shadow 0.45s ease, background 0.45s ease, filter 0.45s ease';
+  'transform 0.4s ease, box-shadow 0.45s ease, background 0.45s ease, filter 0.45s ease, opacity 0.45s ease';
 
 const ARROW_SHAFT_WIDTH_PX = 1.15;
 
@@ -237,7 +241,9 @@ export default function MetabolicCompass({
   const tierStyle = ALIGNMENT_TIERS[tier];
 
   const magnitude01 = Math.min(1, magnitude);
-  const arrowLengthPx = ARROW_MIN_PX + magnitude01 * (ARROW_MAX_PX - ARROW_MIN_PX);
+  const arrowOpacity =
+    ARROW_MAGNITUDE_OPACITY_MIN +
+    magnitude01 * (ARROW_MAGNITUDE_OPACITY_MAX - ARROW_MAGNITUDE_OPACITY_MIN);
 
   /** Angolo rosa dell’obiettivo (da {@link METABOLIC_COMPASS_DIRECTIONS}). */
   const targetAngle = useMemo(() => getCompassTargetAngleForGoal(goal), [goal]);
@@ -445,26 +451,25 @@ export default function MetabolicCompass({
             ))}
           </div>
 
-          {/* Freccia analogica: pivot al centro, rotazione = bearing reale, lunghezza ∝ magnitudine */}
+          {/* Freccia: lunghezza fissa (~75% raggio); magnitudine → solo opacità */}
           <div
+            className="metabolic-compass-arrow-layer"
             aria-hidden
             style={{
               position: 'absolute',
-              left: '50%',
-              top: '50%',
-              width: 0,
-              height: 0,
+              inset: 0,
               pointerEvents: 'none',
               zIndex: 2,
             }}
           >
             <div
+              className="metabolic-compass-arrow-shaft"
               style={{
                 position: 'absolute',
-                left: 0,
-                bottom: 0,
+                left: '50%',
+                bottom: '50%',
                 width: ARROW_SHAFT_WIDTH_PX,
-                height: Math.max(ARROW_SHAFT_WIDTH_PX * 2, arrowLengthPx),
+                height: `${ARROW_LENGTH_FRAC_OF_FACE * 100}%`,
                 marginLeft: -ARROW_SHAFT_WIDTH_PX / 2,
                 transformOrigin: '50% 100%',
                 transform: `rotate(${arrowRotationDeg}deg)`,
@@ -473,6 +478,7 @@ export default function MetabolicCompass({
                 background: tierStyle.needleBg,
                 boxShadow: tierStyle.needleGlow,
                 filter: tierStyle.needleFilter,
+                opacity: arrowOpacity,
               }}
             />
           </div>
