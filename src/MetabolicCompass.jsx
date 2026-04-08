@@ -21,6 +21,68 @@ const ARROW_MAX_PX = 102;
 const ARROW_TRANSITION =
   'transform 0.55s cubic-bezier(0.33, 0.86, 0.36, 1), height 0.55s cubic-bezier(0.33, 0.86, 0.36, 1), opacity 0.4s ease, box-shadow 0.45s ease, background 0.4s ease';
 
+/** Griglia bussola: cerchi concentrici + raggi (viewBox 100×100, centro 50,50). */
+const DIAL_GRID_RINGS = [12.5, 22.5, 32.5];
+const DIAL_RADIAL_INNER = 10;
+const DIAL_RADIAL_OUTER = 44.5;
+
+function isCardinalCompassAngle(angleDeg) {
+  return angleDeg === 0 || angleDeg === 90 || angleDeg === 180 || angleDeg === -90;
+}
+
+function CompassDialGrid({ directions }) {
+  return (
+    <svg
+      className="metabolic-compass-dial-grid"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+      }}
+    >
+      {DIAL_GRID_RINGS.map((r) => (
+        <circle
+          key={`ring-${r}`}
+          cx={50}
+          cy={50}
+          r={r}
+          fill="none"
+          stroke="rgba(255,255,255,0.045)"
+          strokeWidth={0.35}
+          vectorEffect="nonScalingStroke"
+        />
+      ))}
+      {directions.map(({ angleDeg }) => {
+        const rad = (angleDeg * Math.PI) / 180;
+        const sin = Math.sin(rad);
+        const cos = Math.cos(rad);
+        const x1 = 50 + DIAL_RADIAL_INNER * sin;
+        const y1 = 50 - DIAL_RADIAL_INNER * cos;
+        const x2 = 50 + DIAL_RADIAL_OUTER * sin;
+        const y2 = 50 - DIAL_RADIAL_OUTER * cos;
+        const card = isCardinalCompassAngle(angleDeg);
+        return (
+          <line
+            key={`rad-${angleDeg}`}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            stroke={card ? 'rgba(255,255,255,0.085)' : 'rgba(255,255,255,0.038)'}
+            strokeWidth={card ? 0.45 : 0.28}
+            vectorEffect="nonScalingStroke"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 /** Allineamento da |finalAngle|: alone coerenti (freccia = direzione reale). */
 const ALIGNMENT_TIERS = {
   aligned: {
@@ -89,7 +151,7 @@ export default function MetabolicCompass() {
       className="metabolic-compass-root"
       style={{
         width: '100%',
-        maxWidth: 380,
+        maxWidth: 400,
         margin: '0 auto',
         padding: 'clamp(1rem, 4vw, 1.25rem)',
         boxSizing: 'border-box',
@@ -99,7 +161,7 @@ export default function MetabolicCompass() {
         gap: 20,
       }}
     >
-      {/* Obiettivo — solo parole */}
+      {/* Obiettivo */}
       <div
         role="tablist"
         aria-label="Obiettivo"
@@ -107,7 +169,7 @@ export default function MetabolicCompass() {
           display: 'flex',
           flexWrap: 'wrap',
           justifyContent: 'center',
-          gap: 8,
+          gap: 6,
         }}
       >
         {GOALS.map((g) => (
@@ -118,18 +180,19 @@ export default function MetabolicCompass() {
             aria-selected={goal === g}
             onClick={() => setGoal(g)}
             style={{
-              padding: '8px 14px',
+              padding: '7px 13px',
               borderRadius: 100,
               border:
                 goal === g
-                  ? '1px solid rgba(255,255,255,0.22)'
-                  : '1px solid rgba(255,255,255,0.08)',
+                  ? '1px solid rgba(255,255,255,0.18)'
+                  : '1px solid rgba(255,255,255,0.06)',
               background:
-                goal === g ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)',
-              color: goal === g ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)',
-              fontSize: 12,
+                goal === g ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
+              color: goal === g ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.4)',
+              fontSize: 11,
               fontWeight: 560,
-              letterSpacing: '0.02em',
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
               cursor: 'pointer',
               fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
             }}
@@ -139,130 +202,158 @@ export default function MetabolicCompass() {
         ))}
       </div>
 
-      {/* Volto bussola: alone fisso, volto (sfondo + rosa) ruota con l’obiettivo */}
+      {/* Volto bussola — strumento di navigazione */}
       <div
+        className="metabolic-compass-bezel"
         style={{
           position: 'relative',
-          width: 'min(100%, 300px)',
-          aspectRatio: '1',
+          width: 'min(100%, 320px)',
+          padding: '2.25%',
           borderRadius: '50%',
+          background:
+            'linear-gradient(155deg, rgba(58,64,76,0.5) 0%, rgba(22,24,32,0.92) 38%, rgba(10,11,16,1) 100%)',
           boxShadow: `
-            inset 0 0 0 1px rgba(255,255,255,0.06),
-            inset 0 1px 20px rgba(255,255,255,0.04),
-            0 24px 48px rgba(0,0,0,0.45)
+            inset 0 1px 0 rgba(255,255,255,0.1),
+            inset 0 -1px 0 rgba(0,0,0,0.55),
+            0 20px 50px rgba(0,0,0,0.5),
+            0 4px 16px rgba(0,0,0,0.35)
           `,
-          overflow: 'hidden',
         }}
       >
         <div
-          aria-hidden
+          role="img"
+          aria-label="Bussola metabolica"
+          className="metabolic-compass-face"
           style={{
-            position: 'absolute',
-            inset: 0,
+            position: 'relative',
+            width: '100%',
+            aspectRatio: '1',
             borderRadius: '50%',
-            transformOrigin: '50% 50%',
-            transform: `rotate(${dialRotationDeg}deg)`,
-            transition: 'transform 0.45s ease',
-            background:
-              'radial-gradient(ellipse 85% 85% at 50% 42%, #1c2128 0%, #0d0f12 52%, #060708 100%)',
-          }}
-        >
-          {/* Tacche cardinali (8 direzioni) */}
-          {METABOLIC_COMPASS_DIRECTIONS.map(({ angleDeg }) => (
-            <div
-              key={`tick-${angleDeg}`}
-              aria-hidden
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                width: angleDeg % 90 === 0 ? 2 : 1,
-                height: '15%',
-                marginLeft: angleDeg % 90 === 0 ? -1 : -0.5,
-                transformOrigin: '50% 100%',
-                transform: `translateY(-100%) rotate(${angleDeg}deg)`,
-                background:
-                  angleDeg % 90 === 0
-                    ? 'linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 100%)'
-                    : 'linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 100%)',
-                borderRadius: 1,
-                pointerEvents: 'none',
-              }}
-            />
-          ))}
-
-          {/* Etichette rosa — posizione da angolo bussola (0° = alto sul volto) */}
-          {METABOLIC_COMPASS_DIRECTIONS.map(({ angleDeg, label }) => (
-            <CompassLabel key={`lbl-${angleDeg}`} style={compassLabelStyleFromAngleDeg(angleDeg)}>
-              {label}
-            </CompassLabel>
-          ))}
-        </div>
-
-        {/* Freccia metabolica: centro = pivot, bearing reale dopo rotazione volto, lunghezza ∝ magnitudine */}
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            width: 0,
-            height: 0,
-            pointerEvents: 'none',
-            zIndex: 1,
+            overflow: 'hidden',
+            boxShadow: `
+              inset 0 0 0 1px rgba(255,255,255,0.05),
+              inset 0 2px 24px rgba(0,0,0,0.45)
+            `,
           }}
         >
           <div
+            aria-hidden
             style={{
               position: 'absolute',
-              left: 0,
-              bottom: 0,
-              width: 1.5,
-              height: arrowLengthPx,
-              marginLeft: -0.75,
-              transformOrigin: '50% 100%',
-              transform: `rotate(${arrowRotationDeg}deg)`,
-              transition: ARROW_TRANSITION,
-              borderRadius: 1,
-              background: tierStyle.needleBg,
-              boxShadow: tierStyle.needleGlow,
+              inset: 0,
+              borderRadius: '50%',
+              transformOrigin: '50% 50%',
+              transform: `rotate(${dialRotationDeg}deg)`,
+              transition: 'transform 0.45s cubic-bezier(0.33, 0.86, 0.36, 1)',
+              background: `
+                radial-gradient(ellipse 72% 72% at 50% 38%, rgba(35, 42, 54, 0.95) 0%, #12151c 48%, #07080c 100%),
+                radial-gradient(circle at 50% 35%, rgba(120, 140, 165, 0.06) 0%, transparent 55%)
+              `,
             }}
-          />
-        </div>
+          >
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                background:
+                  'radial-gradient(circle at 50% 42%, transparent 0%, transparent 48%, rgba(0,0,0,0.4) 100%)',
+                pointerEvents: 'none',
+              }}
+            />
+            <CompassDialGrid directions={METABOLIC_COMPASS_DIRECTIONS} />
+            {METABOLIC_COMPASS_DIRECTIONS.map(({ angleDeg, label }) => (
+              <CompassLabel key={`lbl-${angleDeg}`} style={compassLabelStyleFromAngleDeg(angleDeg)}>
+                {label}
+              </CompassLabel>
+            ))}
+          </div>
 
-        {/* Utente al centro — sopra volto e ago */}
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 12,
-            height: 12,
-            borderRadius: '50%',
-            background:
-              tier === 'aligned'
-                ? 'radial-gradient(circle at 35% 35%, #ffffff 0%, #a8f0d8 42%, #2d8f78 100%)'
-                : tier === 'partial'
-                  ? 'radial-gradient(circle at 35% 35%, #f2f6f8 0%, #b8c5d0 45%, #5a6b78 100%)'
-                  : 'radial-gradient(circle at 35% 35%, #fff5f4 0%, #f0b0a8 42%, #a84845 100%)',
-            boxShadow: tierStyle.centerGlow,
-            border: `1px solid ${tierStyle.centerRing}`,
-            transition: 'box-shadow 0.35s ease, background 0.35s ease, border-color 0.35s ease',
-            zIndex: 2,
-          }}
-        />
+          {/* Freccia — sistema schermo */}
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              width: 0,
+              height: 0,
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                bottom: 0,
+                width: 1.5,
+                height: arrowLengthPx,
+                marginLeft: -0.75,
+                transformOrigin: '50% 100%',
+                transform: `rotate(${arrowRotationDeg}deg)`,
+                transition: ARROW_TRANSITION,
+                borderRadius: 1,
+                background: tierStyle.needleBg,
+                boxShadow: tierStyle.needleGlow,
+              }}
+            />
+          </div>
+
+          {/* Origine utente */}
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 3,
+              width: 22,
+              height: 22,
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              background: 'rgba(0,0,0,0.25)',
+              boxShadow: 'inset 0 0 10px rgba(0,0,0,0.55)',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}
+          >
+            <div
+              style={{
+                width: 9,
+                height: 9,
+                borderRadius: '50%',
+                background:
+                  tier === 'aligned'
+                    ? 'radial-gradient(circle at 35% 30%, #ffffff 0%, #9ee8d0 38%, #2a8f72 100%)'
+                    : tier === 'partial'
+                      ? 'radial-gradient(circle at 35% 30%, #f8fbfd 0%, #b0c2d2 42%, #4a5d6c 100%)'
+                      : 'radial-gradient(circle at 35% 30%, #fff8f6 0%, #f0a898 40%, #a84842 100%)',
+                boxShadow: tierStyle.centerGlow,
+                border: `1px solid ${tierStyle.centerRing}`,
+                transition: 'box-shadow 0.35s ease, background 0.35s ease, border-color 0.35s ease',
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Input qualitativi — senza cifre visibili */}
       <div
+        className="metabolic-compass-controls"
         style={{
           width: '100%',
+          maxWidth: 320,
           display: 'flex',
           flexDirection: 'column',
-          gap: 14,
-          paddingTop: 4,
+          gap: 12,
+          paddingTop: 6,
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          marginTop: 2,
         }}
       >
         <RangeBare
@@ -285,7 +376,7 @@ export default function MetabolicCompass() {
 }
 
 /** Posizione % sul volto: 0° = Nord, positivo = orario. */
-function compassLabelStyleFromAngleDeg(angleDeg, radiusPct = 40) {
+function compassLabelStyleFromAngleDeg(angleDeg, radiusPct = 41.5) {
   const rad = (angleDeg * Math.PI) / 180;
   const left = 50 + radiusPct * Math.sin(rad);
   const top = 50 - radiusPct * Math.cos(rad);
@@ -301,15 +392,16 @@ function CompassLabel({ children, style }) {
     <span
       style={{
         position: 'absolute',
-        maxWidth: '34%',
+        maxWidth: '30%',
         textAlign: 'center',
-        fontSize: 10,
-        fontWeight: 550,
-        letterSpacing: '0.06em',
+        fontSize: 9,
+        fontWeight: 600,
+        letterSpacing: '0.09em',
         textTransform: 'uppercase',
-        color: 'rgba(255,255,255,0.38)',
-        lineHeight: 1.25,
-        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+        color: 'rgba(235, 238, 245, 0.48)',
+        lineHeight: 1.2,
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        textShadow: '0 1px 3px rgba(0,0,0,0.85)',
         pointerEvents: 'none',
         ...style,
       }}

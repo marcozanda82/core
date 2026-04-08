@@ -648,6 +648,11 @@ html, body, #root {
   }
 }
 
+/* MetabolicCompass — griglia SVG */
+.metabolic-compass-dial-grid {
+  shape-rendering: geometricPrecision;
+}
+
 /* MetabolicCompass.jsx — bolle glassmorphism */
 .metabolic-compass-glass {
   color: #0f172a;
