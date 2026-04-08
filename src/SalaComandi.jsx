@@ -2041,14 +2041,12 @@ export default function SalaComandi() {
         mainTabSwipeIgnoreRef.current = true;
         return;
       }
-      if (
-        activeBottomTab === 'bussola' &&
-        bussolaCompassUnlockedRef.current &&
-        el.closest('.metabolic-compass-interaction-surface')
-      ) {
-        mainTabSwipeIgnoreRef.current = true;
-        return;
-      }
+    }
+    /* Bussola + bussola sbloccata: niente swipe tra tab (evita conflitto con la bussola). */
+    if (activeBottomTab === 'bussola' && bussolaCompassUnlockedRef.current) {
+      mainTabSwipeIgnoreRef.current = true;
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      return;
     }
     mainTabSwipeIgnoreRef.current = false;
     const touch = e.targetTouches[0];
@@ -2062,7 +2060,10 @@ export default function SalaComandi() {
   }, [activeBottomTab]);
 
   const handleMainTabTouchMove = useCallback((e) => {
-    if (mainTabSwipeIgnoreRef.current) return;
+    if (mainTabSwipeIgnoreRef.current) {
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      return;
+    }
     const touch = e.targetTouches[0];
     if (!touch) return;
     setMainTabTouchEndX(touch.clientX);
@@ -2073,6 +2074,7 @@ export default function SalaComandi() {
   const handleMainTabTouchEnd = useCallback(
     (e) => {
       if (mainTabSwipeIgnoreRef.current) {
+        if (typeof e.stopPropagation === 'function') e.stopPropagation();
         mainTabSwipeIgnoreRef.current = false;
         setMainTabTouchStartX(null);
         setMainTabTouchEndX(null);
@@ -2143,7 +2145,10 @@ export default function SalaComandi() {
     [activeBottomTab]
   );
 
-  const handleMainTabTouchCancel = useCallback(() => {
+  const handleMainTabTouchCancel = useCallback((e) => {
+    if (mainTabSwipeIgnoreRef.current && typeof e?.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
     mainTabSwipeIgnoreRef.current = false;
     setMainTabTouchStartX(null);
     setMainTabTouchEndX(null);
