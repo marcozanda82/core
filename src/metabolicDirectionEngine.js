@@ -7,6 +7,15 @@ const W_7 = 0.4;
 const W_14 = 0.25;
 const W_30 = 0.15;
 
+/** @typedef {'1d' | '7d' | '14d' | '30d'} MetabolicTimeframe */
+
+const TIMEFRAME_DAY_WINDOW = {
+  '1d': 1,
+  '7d': 7,
+  '14d': 14,
+  '30d': 30,
+};
+
 const SMOOTH_ALPHA = 0.15;
 const ANGLE_NOISE_HALF_SPAN_DEG = 2;
 
@@ -53,21 +62,26 @@ function tailAverage(days, maxLen) {
 }
 
 /**
- * Peso combinato (oggi, 7g, 14g, 30g) + correzione di coerenza. Nessuna categoria nominale.
+ * Media sull’ultima finestra di N giorni + correzione di coerenza.
  *
- * @param {Array<{ kcalBalance: number, trainingLoad: number }>} days — ordinati dal più vecchio al più recente; ultimo = oggi
+ * @param {Array<{ kcalBalance: number, trainingLoad: number }>} days — più vecchio → più recente; ultimo = oggi
+ * @param {MetabolicTimeframe} [timeframe='7d']
  * @returns {{ x: number, y: number }}
  */
-export function computeMetabolicEngineTargetVec(days) {
-  const today = tailAverage(days, 1);
-  const avg7d = tailAverage(days, 7);
-  const avg14d = tailAverage(days, 14);
-  const avg30d = tailAverage(days, 30);
+export function computeMetabolicEngineTargetVec(days, timeframe = '7d') {
+  const windowDays = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
+  let { x, y } = tailAverage(days, windowDays);
 
-  let x =
-    W_TODAY * today.x + W_7 * avg7d.x + W_14 * avg14d.x + W_30 * avg30d.x;
-  let y =
-    W_TODAY * today.y + W_7 * avg7d.y + W_14 * avg14d.y + W_30 * avg30d.y;
+  if (timeframe === '7d') {
+    const today = tailAverage(days, 1);
+    const avg7d = tailAverage(days, 7);
+    const avg14d = tailAverage(days, 14);
+    const avg30d = tailAverage(days, 30);
+    x =
+      W_TODAY * today.x + W_7 * avg7d.x + W_14 * avg14d.x + W_30 * avg30d.x;
+    y =
+      W_TODAY * today.y + W_7 * avg7d.y + W_14 * avg14d.y + W_30 * avg30d.y;
+  }
 
   if (x > 0 && y < 0.3) y *= 0.72;
   if (x < 0 && y > 0.8) y *= 0.94;
@@ -75,9 +89,9 @@ export function computeMetabolicEngineTargetVec(days) {
   return { x, y };
 }
 
-export function historyFingerprint(days) {
-  if (!days?.length) return '';
-  return `${days.length}:${days.map((d) => `${d.kcalBalance},${d.trainingLoad}`).join(';')}`;
+export function historyFingerprint(days, timeframe = '7d') {
+  if (!days?.length) return `|${timeframe}`;
+  return `${days.length}:${days.map((d) => `${d.kcalBalance},${d.trainingLoad}`).join(';')}|${timeframe}`;
 }
 
 /**
@@ -96,10 +110,11 @@ export function lerpVec(prev, next, t) {
  * Output motore: angolo (con micro-rumore stabile per fingerprint) e magnitudine dal vettore smussato.
  *
  * @param {Array<{ kcalBalance: number, trainingLoad: number }>} dailyHistory
+ * @param {MetabolicTimeframe} [timeframe='7d']
  * @returns {{ angleDeg: number, angle: number, magnitude: number, x: number, y: number }}
  */
-export function useMetabolicDirectionEngine(dailyHistory) {
-  const fp = historyFingerprint(dailyHistory);
+export function useMetabolicDirectionEngine(dailyHistory, timeframe = '7d') {
+  const fp = historyFingerprint(dailyHistory, timeframe);
 
   const angleNoiseDeg = useMemo(
     () => (Math.random() * 2 - 1) * ANGLE_NOISE_HALF_SPAN_DEG,
@@ -110,11 +125,11 @@ export function useMetabolicDirectionEngine(dailyHistory) {
   const [smoothed, setSmoothed] = useState({ x: 0, y: 0 });
 
   useLayoutEffect(() => {
-    const target = computeMetabolicEngineTargetVec(dailyHistory);
+    const target = computeMetabolicEngineTargetVec(dailyHistory, timeframe);
     const next = lerpVec(previousVecRef.current, target, SMOOTH_ALPHA);
     previousVecRef.current = next;
     setSmoothed(next);
-  }, [fp]); // eslint-disable-line react-hooks/exhaustive-deps -- fp codifica dailyHistory
+  }, [fp]); // eslint-disable-line react-hooks/exhaustive-deps -- fp codifica dailyHistory+timeframe
 
   return useMemo(() => {
     const angleRad = Math.atan2(smoothed.y, smoothed.x);

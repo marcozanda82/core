@@ -19,6 +19,14 @@ const GOALS = [
   METABOLIC_GOAL.PERDITA_GRASSO,
 ];
 
+/** UI segmenti periodo; `value` = stato `selectedTimeframe`. */
+const METABOLIC_COMPASS_TIMEFRAMES = [
+  { value: '1d', label: 'OGGI' },
+  { value: '7d', label: '7G' },
+  { value: '14d', label: '14G' },
+  { value: '30d', label: '30G' },
+];
+
 const ARROW_MIN_PX = 12;
 const ARROW_MAX_PX = 102;
 
@@ -154,6 +162,7 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
   );
 
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
+  const [selectedTimeframe, setSelectedTimeframe] = useState('7d');
   const [kcalBalance, setKcalBalance] = useState(0);
   const [trainingLoad, setTrainingLoad] = useState(45);
 
@@ -169,7 +178,10 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
 
   const dailyHistory = isControlled ? dailyHistoryProp : internalHistory;
 
-  const { angleDeg, magnitude } = useMetabolicDirectionEngine(dailyHistory);
+  const { angleDeg, magnitude } = useMetabolicDirectionEngine(
+    dailyHistory,
+    selectedTimeframe
+  );
 
   const finalAngle = useMemo(() => {
     const targetAngle = getMetabolicTargetAngle(goal);
@@ -245,6 +257,58 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
             {g}
           </button>
         ))}
+      </div>
+
+      {/* Periodo — controllo segmentato orizzontale */}
+      <div
+        role="tablist"
+        aria-label="Periodo analisi"
+        className="metabolic-compass-timeframe"
+        style={{
+          display: 'flex',
+          width: '100%',
+          maxWidth: 340,
+          padding: 3,
+          gap: 2,
+          borderRadius: 12,
+          boxSizing: 'border-box',
+          background: 'rgba(255,255,255,0.04)',
+        }}
+      >
+        {METABOLIC_COMPASS_TIMEFRAMES.map(({ value, label }) => {
+          const active = selectedTimeframe === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSelectedTimeframe(value)}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: '8px 5px',
+                borderRadius: 9,
+                border: 'none',
+                margin: 0,
+                cursor: 'pointer',
+                fontSize: 10,
+                fontWeight: 650,
+                letterSpacing: '0.11em',
+                textTransform: 'uppercase',
+                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+                color: active ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.36)',
+                background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+                boxShadow: active ? '0 0 18px rgba(255,255,255,0.05)' : 'none',
+                transition:
+                  'background 0.35s ease, color 0.35s ease, box-shadow 0.35s ease',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Volto bussola — strumento di navigazione */}

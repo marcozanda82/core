@@ -658,6 +658,11 @@ html, body, #root {
   outline-offset: 2px;
 }
 
+.metabolic-compass-timeframe button:focus-visible {
+  outline: 1px solid rgba(200, 215, 235, 0.45);
+  outline-offset: 1px;
+}
+
 @keyframes metabolic-compass-center-pulse {
   0%,
   100% {
