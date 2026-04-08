@@ -30,8 +30,8 @@ const DIAL_GRID_RINGS = [12.5, 22.5, 32.5];
 const DIAL_RADIAL_INNER = 10;
 const DIAL_RADIAL_OUTER = 44.5;
 
-function isCardinalCompassAngle(angleDeg) {
-  return angleDeg === 0 || angleDeg === 90 || angleDeg === 180 || angleDeg === -90;
+function isCardinalCompassAngle(angle) {
+  return angle === 0 || angle === 90 || angle === 180 || angle === -90;
 }
 
 function CompassDialGrid({ directions }) {
@@ -61,18 +61,18 @@ function CompassDialGrid({ directions }) {
           vectorEffect="nonScalingStroke"
         />
       ))}
-      {directions.map(({ angleDeg }) => {
-        const rad = (angleDeg * Math.PI) / 180;
+      {directions.map(({ angle }) => {
+        const rad = (angle * Math.PI) / 180;
         const sin = Math.sin(rad);
         const cos = Math.cos(rad);
         const x1 = 50 + DIAL_RADIAL_INNER * sin;
         const y1 = 50 - DIAL_RADIAL_INNER * cos;
         const x2 = 50 + DIAL_RADIAL_OUTER * sin;
         const y2 = 50 - DIAL_RADIAL_OUTER * cos;
-        const card = isCardinalCompassAngle(angleDeg);
+        const card = isCardinalCompassAngle(angle);
         return (
           <line
-            key={`rad-${angleDeg}`}
+            key={`rad-${angle}`}
             x1={x1}
             y1={y1}
             x2={x2}
@@ -294,8 +294,8 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
               }}
             />
             <CompassDialGrid directions={METABOLIC_COMPASS_DIRECTIONS} />
-            {METABOLIC_COMPASS_DIRECTIONS.map(({ angleDeg, label }) => (
-              <CompassLabel key={`lbl-${angleDeg}`} style={compassLabelStyleFromAngleDeg(angleDeg)}>
+            {METABOLIC_COMPASS_DIRECTIONS.map(({ angle, label }) => (
+              <CompassLabel key={`lbl-${angle}`} style={compassLabelStyleFromAngle(angle)}>
                 {label}
               </CompassLabel>
             ))}
@@ -409,8 +409,8 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
 }
 
 /** Posizione % sul volto: 0° = Nord, positivo = orario. */
-function compassLabelStyleFromAngleDeg(angleDeg, radiusPct = 41.5) {
-  const rad = (angleDeg * Math.PI) / 180;
+function compassLabelStyleFromAngle(angle, radiusPct = 41.5) {
+  const rad = (angle * Math.PI) / 180;
   const left = 50 + radiusPct * Math.sin(rad);
   const top = 50 - radiusPct * Math.cos(rad);
   return {

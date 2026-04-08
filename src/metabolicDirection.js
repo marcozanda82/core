@@ -1,23 +1,24 @@
 /**
- * Rosa fissa: 8 direzioni (gradi sul quadrante, 0° = Nord / alto, positivo = orario).
- * Mappa canonica per etichette e geometria del volto bussola.
+ * Bussola metabolica fissa: 8 direzioni semantiche.
+ * Convenzione: 0° = Nord / alto, senso orario positivo.
+ * Ordine = senso orario da Nord (struttura stabile per rosa e logica).
+ *
+ * @type {ReadonlyArray<Readonly<{ label: string, angle: number }>>}
  */
-export const METABOLIC_COMPASS_DIRECTION_BY_ANGLE_DEG = new Map(
-  Object.freeze([
-    [0, Object.freeze({ angleDeg: 0, label: 'Ricomposizione' })],
-    [45, Object.freeze({ angleDeg: 45, label: 'Massa Pulita' })],
-    [90, Object.freeze({ angleDeg: 90, label: 'Accumulo Grasso' })],
-    [135, Object.freeze({ angleDeg: 135, label: 'Surplus Disfunzionale' })],
-    [180, Object.freeze({ angleDeg: 180, label: 'Catabolismo' })],
-    [-135, Object.freeze({ angleDeg: -135, label: 'Perdita Grasso' })],
-    [-90, Object.freeze({ angleDeg: -90, label: 'Digiuno / Autofagia' })],
-    [-45, Object.freeze({ angleDeg: -45, label: 'Recupero Attivo' })],
-  ])
-);
+export const METABOLIC_COMPASS_DIRECTIONS = Object.freeze([
+  Object.freeze({ label: 'Ricomposizione', angle: 0 }),
+  Object.freeze({ label: 'Massa Pulita', angle: 45 }),
+  Object.freeze({ label: 'Accumulo Grasso', angle: 90 }),
+  Object.freeze({ label: 'Surplus Disfunzionale', angle: 135 }),
+  Object.freeze({ label: 'Catabolismo', angle: 180 }),
+  Object.freeze({ label: 'Perdita Grasso', angle: -135 }),
+  Object.freeze({ label: 'Digiuno / Autofagia', angle: -90 }),
+  Object.freeze({ label: 'Recupero Attivo', angle: -45 }),
+]);
 
-/** Ordine fisso per disegnare la rosa (senso orario da Nord). */
-export const METABOLIC_COMPASS_DIRECTIONS = Object.freeze(
-  [0, 45, 90, 135, 180, -135, -90, -45].map((a) => METABOLIC_COMPASS_DIRECTION_BY_ANGLE_DEG.get(a))
+/** Lookup per angolo (gradi rosa) → voce di {@link METABOLIC_COMPASS_DIRECTIONS}. */
+export const METABOLIC_COMPASS_DIRECTION_BY_ANGLE = new Map(
+  METABOLIC_COMPASS_DIRECTIONS.map((d) => [d.angle, d])
 );
 
 /** Obiettivi con angolo “Nord” bussola (direzione target nel piano vettoriale). */
