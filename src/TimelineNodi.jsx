@@ -119,8 +119,7 @@ const STRIP_DRAG_COMMIT_DEDUP_MS = 450;
 const STRIP_DRAG_FRICTION_FOLLOW = { suboptimal: 0.36, neutral: 0.78, optimal: 0.92 };
 /** Attiva il drag sulla striscia solo dopo long-press (stesso ordine di grandezza di `startNodeDrag` in SalaComandi). */
 const STRIP_DRAG_ARM_LONG_PRESS_MS = 180;
-/** Prima dell’arm: movimento oltre soglia → annulla drag e lascia lo swipe/scroll (= `NODE_DRAG_ARM_CANCEL_MOVE_PX` in SalaComandi). */
-const STRIP_DRAG_ARM_CANCEL_MOVE_PX = 6;
+/** Long-press nodo + annullamento arm striscia su swipe: stessa soglia px. */
 const LONG_PRESS_MS = 180;
 const MOVE_THRESHOLD_PX = 6;
 
@@ -254,11 +253,16 @@ export default function TimelineNodi({
       longPressActiveRef.current = false;
 
       const onDocMove = (ev) => {
+        if (longPressActiveRef.current) return;
+        if (longPressTimerRef.current == null) return;
         if (pointerId != null && ev.pointerId !== pointerId) return;
+        const origin = pointerStartPosRef.current;
+        if (!origin || !Number.isFinite(origin.clientX) || !Number.isFinite(origin.clientY)) return;
         const cx = ev.clientX;
         const cy = ev.clientY;
         if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
-        if (Math.hypot(cx - startX, cy - startY) > MOVE_THRESHOLD_PX) {
+        const dist = Math.hypot(cx - origin.clientX, cy - origin.clientY);
+        if (dist > MOVE_THRESHOLD_PX) {
           cancelNodeLongPressArming();
         }
       };
@@ -370,7 +374,8 @@ export default function TimelineNodi({
         ) {
           return;
         }
-        if (Math.hypot(cx - startX, cy - startY) > STRIP_DRAG_ARM_CANCEL_MOVE_PX) {
+        const dist = Math.hypot(cx - startX, cy - startY);
+        if (dist > MOVE_THRESHOLD_PX) {
           cancelStripDragArm();
         }
       };

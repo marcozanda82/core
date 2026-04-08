@@ -177,7 +177,7 @@ const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'planning', 'longevita'];
 
 const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
 
-/** Movimento prima del long-press su nodo timeline: oltre soglia → annulla drag e lascia swipe/scroll (allineato a `STRIP_DRAG_ARM_CANCEL_MOVE_PX` in TimelineNodi). */
+/** Movimento prima del long-press su nodo timeline: oltre soglia → annulla drag e lascia swipe/scroll (allineato a `MOVE_THRESHOLD_PX` in TimelineNodi). */
 const NODE_DRAG_ARM_CANCEL_MOVE_PX = 6;
 
 function readPersistedActiveBottomTab() {
