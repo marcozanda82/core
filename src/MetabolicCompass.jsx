@@ -27,6 +27,10 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '30d', label: '30G' },
 ];
 
+/** Stato iniziale ogni volta che si entra nella schermata bussola; niente persistenza (localStorage). */
+const DEFAULT_COMPASS_LOCKED = true;
+const DEFAULT_COMPASS_TIMEFRAME = '7d';
+
 const ARROW_MIN_PX = 12;
 const ARROW_MAX_PX = 102;
 
@@ -146,13 +150,15 @@ function alignmentFromFinalAngle(finalAngle) {
 }
 
 /**
- * @param {{ dailyHistory?: Array<{ kcalBalance: number, trainingLoad: number }>, onCompassInteractionUnlockChange?: (unlocked: boolean) => void }} props
+ * @param {{ dailyHistory?: Array<{ kcalBalance: number, trainingLoad: number }>, onCompassInteractionUnlockChange?: (unlocked: boolean) => void, compassScreenActive?: boolean }} props
  * Se `dailyHistory` è fornito (non vuoto), il motore usa solo quello; altrimenti storico demo + slider su “oggi”.
  * `onCompassInteractionUnlockChange`: notifica il parent (es. per disabilitare lo swipe tra tab quando la bussola è sbloccata).
+ * `compassScreenActive`: quando passa da false a true, ripristina blocco + periodo ai default (nessuno stato sbloccato persistito tra sessioni o rientri).
  */
 export default function MetabolicCompass({
   dailyHistory: dailyHistoryProp,
   onCompassInteractionUnlockChange,
+  compassScreenActive = true,
 } = {}) {
   const isControlled =
     Array.isArray(dailyHistoryProp) && dailyHistoryProp.length > 0;
@@ -165,10 +171,11 @@ export default function MetabolicCompass({
       }))
   );
 
-  const [isLocked, setIsLocked] = useState(true);
+  const [isLocked, setIsLocked] = useState(DEFAULT_COMPASS_LOCKED);
   const interactionSurfaceRef = useRef(null);
+  const prevCompassScreenActiveRef = useRef(false);
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
-  const [selectedTimeframe, setSelectedTimeframe] = useState('7d');
+  const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_COMPASS_TIMEFRAME);
   const [kcalBalance, setKcalBalance] = useState(0);
   const [trainingLoad, setTrainingLoad] = useState(45);
 
@@ -200,6 +207,18 @@ export default function MetabolicCompass({
       node.inert = isLocked;
     }
   }, [isLocked]);
+
+  useEffect(() => {
+    if (!compassScreenActive) {
+      prevCompassScreenActiveRef.current = false;
+      return;
+    }
+    if (!prevCompassScreenActiveRef.current) {
+      setIsLocked(DEFAULT_COMPASS_LOCKED);
+      setSelectedTimeframe(DEFAULT_COMPASS_TIMEFRAME);
+    }
+    prevCompassScreenActiveRef.current = true;
+  }, [compassScreenActive]);
 
   const dailyHistory = isControlled ? dailyHistoryProp : internalHistory;
 

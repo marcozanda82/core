@@ -11792,6 +11792,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           }}
         >
           <MetabolicCompass
+            compassScreenActive={activeBottomTab === 'bussola'}
             onCompassInteractionUnlockChange={handleCompassInteractionUnlockChange}
           />
         </div>
