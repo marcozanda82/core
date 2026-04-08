@@ -1,17 +1,81 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 const NAVY = '#0f172a';
 const CERAMIC_BG =
   'linear-gradient(165deg, #ffffff 0%, #f4f6f8 45%, #eceff2 100%)';
 
+const OBIETTIVO_OPTIONS = ['Ricomposizione', 'Massa', 'Perdita Grasso'];
+
+const RADIUS = 110;
+
+function clampAngle(deg) {
+  return Math.max(-135, Math.min(135, deg));
+}
+
 /**
- * Mockup interattivo statico: bussola metabolica stile Premium Light/Ceramic.
- * Nessuna rotazione o modello biochimico — solo UI e stato locale slider.
+ * Angolo bussola (Nord = 0°, positivo = orario verso Est/Sud).
+ * Surplus slider -50…50 → scala ×10 per confronti tipo ±500 kcal nel copy.
+ */
+function computeActualAngle(obiettivo, surplusDeficit, allenamento) {
+  const s = surplusDeficit * 10;
+  const a = allenamento;
+
+  if (obiettivo === 'Massa') {
+    const onTrack = s > 80 && a >= 45;
+    if (onTrack) return clampAngle(a - 50);
+    let ang = 0;
+    if (s <= 0) ang -= Math.min(135, (-s) / 10);
+    if (a < 40) ang += (40 - a) * 1.1;
+    return clampAngle(ang + (a - 50) * 0.15);
+  }
+
+  if (obiettivo === 'Perdita Grasso') {
+    const onTrack = s < -80 && a >= 40;
+    if (onTrack) return clampAngle((a - 50) * 0.12);
+    let ang = 0;
+    if (s > 0) ang += Math.min(135, s / 10);
+    if (a < 35) ang += (35 - a) * 0.9;
+    return clampAngle(ang + (a - 50) * 0.1);
+  }
+
+  // Ricomposizione
+  if (Math.abs(s) < 120 && a >= 38 && a <= 82) {
+    return clampAngle((s / 25) + (a - 50) * 0.08);
+  }
+  let ang = s / 12;
+  if (a < 38) ang += (38 - a) * 0.9;
+  if (a > 82) ang -= (a - 82) * 0.7;
+  return clampAngle(ang);
+}
+
+/**
+ * Bussola metabolica — Premium Light/Ceramic, freccia e bolla progresso da vettori.
  */
 export default function MetabolicCompass() {
+  const [obiettivo, setObiettivo] = useState('Ricomposizione');
   const [aderenza, setAderenza] = useState(72);
   const [surplusDeficit, setSurplusDeficit] = useState(0);
   const [allenamento, setAllenamento] = useState(50);
+
+  const actualAngle = useMemo(
+    () => computeActualAngle(obiettivo, surplusDeficit, allenamento),
+    [obiettivo, surplusDeficit, allenamento]
+  );
+
+  const { translateX, translateY } = useMemo(() => {
+    const progressRatio = aderenza / 100;
+    const angleRad = (actualAngle - 90) * (Math.PI / 180);
+    return {
+      translateX: Math.cos(angleRad) * progressRatio * RADIUS,
+      translateY: Math.sin(angleRad) * progressRatio * RADIUS,
+    };
+  }, [aderenza, actualAngle]);
+
+  const aligned = Math.abs(actualAngle) < 15;
+  const statoLabel = aligned ? 'In Cammino (Allineato)' : 'Fuori Rotta';
+  const suggerimento = aligned
+    ? null
+    : 'Correggi i macro o l\'allenamento per riallinearti al Nord.';
 
   const compassSize = 'min(300px, 92vw)';
 
@@ -54,6 +118,41 @@ export default function MetabolicCompass() {
         >
           Metabolic Compass
         </h2>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>Obiettivo</span>
+          <div
+            role="group"
+            aria-label="Selezione obiettivo"
+            style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}
+          >
+            {OBIETTIVO_OPTIONS.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => setObiettivo(opt)}
+                style={{
+                  flex: '1 1 auto',
+                  minWidth: 'min(100%, 108px)',
+                  padding: '8px 10px',
+                  borderRadius: 12,
+                  border:
+                    obiettivo === opt
+                      ? '1px solid rgba(14, 165, 233, 0.55)'
+                      : '1px solid rgba(15, 23, 42, 0.12)',
+                  background:
+                    obiettivo === opt ? 'rgba(14, 165, 233, 0.12)' : 'rgba(255,255,255,0.65)',
+                  color: NAVY,
+                  fontSize: 11,
+                  fontWeight: 650,
+                  cursor: 'pointer',
+                }}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <SliderRow
           label="Aderenza"
@@ -107,6 +206,26 @@ export default function MetabolicCompass() {
           }}
         />
 
+        {/* Freccia / ago */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            width: 8,
+            height: RADIUS,
+            pointerEvents: 'none',
+            zIndex: 2,
+            transformOrigin: 'bottom center',
+            transform: `translate(-50%, -100%) rotate(${actualAngle}deg)`,
+            transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+            borderRadius: 4,
+            background: 'linear-gradient(180deg, #0f172a 0%, #475569 55%, #64748b 100%)',
+            boxShadow: '0 2px 8px rgba(15, 23, 42, 0.25)',
+          }}
+        />
+
         {/* Cerchio partenza */}
         <button
           type="button"
@@ -124,10 +243,11 @@ export default function MetabolicCompass() {
             boxShadow: '0 2px 8px rgba(15, 23, 42, 0.35), inset 0 1px 0 rgba(255,255,255,0.15)',
             cursor: 'default',
             padding: 0,
+            zIndex: 4,
           }}
         />
 
-        {/* Ore 12 — Obiettivo */}
+        {/* Ore 12 — Obiettivo (etichetta fissa) */}
         <div
           className="metabolic-compass-glass"
           style={{
@@ -139,36 +259,78 @@ export default function MetabolicCompass() {
             padding: '10px 12px',
             borderRadius: 999,
             textAlign: 'center',
+            zIndex: 3,
           }}
         >
           <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.75, letterSpacing: '0.06em' }}>
             OBIETTIVO
           </div>
-          <div style={{ fontSize: 13, fontWeight: 650, marginTop: 2 }}>Ricomposizione</div>
+          <div style={{ fontSize: 13, fontWeight: 650, marginTop: 2 }}>{obiettivo}</div>
         </div>
 
-        {/* Ore 2 — Progresso (mock) */}
+        {/* Progressi cumulativi — lungo la freccia (aderenza) */}
         <div
           className="metabolic-compass-glass"
           style={{
             position: 'absolute',
-            left: 'calc(50% + 38% * 0.8660254)',
-            top: 'calc(50% - 38% * 0.5)',
-            transform: 'translate(-50%, -50%)',
-            minWidth: 88,
-            padding: '10px 12px',
+            left: '50%',
+            top: '50%',
+            zIndex: 5,
+            minWidth: 92,
+            maxWidth: 120,
+            padding: '8px 10px',
             borderRadius: 999,
             textAlign: 'center',
+            transform: `translate(calc(-50% + ${translateX}px), calc(-50% + ${translateY}px))`,
+            transition: 'transform 0.3s ease-out',
           }}
         >
-          <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.75, letterSpacing: '0.06em' }}>
-            PROGRESSO
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+            }}
+          >
+            <span
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.55)',
+                border: '1px solid rgba(255,255,255,0.9)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 14,
+                flexShrink: 0,
+              }}
+              aria-hidden
+            >
+              👤
+            </span>
+            <div style={{ textAlign: 'left', minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  opacity: 0.72,
+                  letterSpacing: '0.05em',
+                  lineHeight: 1.2,
+                }}
+              >
+                PROGRESSI CUMULATIVI
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 650, marginTop: 2, lineHeight: 1.25 }}>
+                {aderenza}% aderenza
+              </div>
+            </div>
           </div>
-          <div style={{ fontSize: 13, fontWeight: 650, marginTop: 2 }}>Massa</div>
         </div>
       </div>
 
-      {/* Stato in basso (mock) */}
+      {/* Stato */}
       <footer
         style={{
           width: '100%',
@@ -186,11 +348,24 @@ export default function MetabolicCompass() {
             opacity: 0.55,
           }}
         >
-          STATO (MOCK)
+          STATO
         </p>
         <p style={{ margin: 0, fontSize: 'clamp(0.9rem, 2.8vw, 1rem)', fontWeight: 600, lineHeight: 1.45 }}>
-          Zona neutra · indicatori collegati in una versione futura
+          {statoLabel}
         </p>
+        {suggerimento ? (
+          <p
+            style={{
+              margin: '0.45rem 0 0',
+              fontSize: 12,
+              opacity: 0.72,
+              lineHeight: 1.45,
+              fontWeight: 500,
+            }}
+          >
+            {suggerimento}
+          </p>
+        ) : null}
         <p
           style={{
             margin: '0.5rem 0 0',
@@ -199,8 +374,8 @@ export default function MetabolicCompass() {
             lineHeight: 1.4,
           }}
         >
-          Aderenza {aderenza}% · bilancio {surplusDeficit >= 0 ? '+' : ''}
-          {surplusDeficit} · allenamento {allenamento}%
+          {obiettivo} · aderenza {aderenza}% · bilancio slider {surplusDeficit >= 0 ? '+' : ''}
+          {surplusDeficit} (×10 nel modello) · allenamento {allenamento}%
         </p>
       </footer>
     </div>
