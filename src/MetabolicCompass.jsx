@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   computeMetabolicCompassOrientation,
   getGoalCompassAngleDeg,
+  metabolicAngleDegToCompassBearingDeg,
   METABOLIC_COMPASS_DIRECTIONS,
   METABOLIC_GOAL,
   METABOLIC_KCAL_NORMALIZATION_REF,
@@ -14,34 +15,37 @@ const GOALS = [
   METABOLIC_GOAL.PERDITA_GRASSO,
 ];
 
-const NEEDLE_MIN_PX = 28;
-const NEEDLE_MAX_PX = 96;
+const ARROW_MIN_PX = 12;
+const ARROW_MAX_PX = 102;
 
-/** Allineamento da |finalAngle|: ago + alone coerenti. */
+const ARROW_TRANSITION =
+  'transform 0.55s cubic-bezier(0.33, 0.86, 0.36, 1), height 0.55s cubic-bezier(0.33, 0.86, 0.36, 1), opacity 0.4s ease, box-shadow 0.45s ease, background 0.4s ease';
+
+/** Allineamento da |finalAngle|: alone coerenti (freccia = direzione reale). */
 const ALIGNMENT_TIERS = {
   aligned: {
     needleBg:
-      'linear-gradient(180deg, rgba(130, 245, 205, 0.98) 0%, rgba(72, 205, 165, 0.62) 48%, rgba(38, 145, 118, 0.48) 100%)',
+      'linear-gradient(180deg, rgba(200, 255, 235, 0.95) 0%, rgba(95, 235, 195, 0.55) 45%, rgba(45, 165, 135, 0.25) 100%)',
     needleGlow:
-      '0 0 14px rgba(90, 235, 185, 0.55), 0 0 28px rgba(65, 215, 165, 0.32), 0 0 42px rgba(50, 195, 150, 0.14)',
+      '0 0 4px rgba(160, 255, 220, 0.9), 0 0 12px rgba(80, 220, 175, 0.65), 0 0 24px rgba(50, 190, 155, 0.35), 0 0 40px rgba(40, 160, 130, 0.12)',
     centerGlow:
       '0 0 10px rgba(110, 240, 190, 0.75), 0 0 24px rgba(75, 210, 170, 0.4), inset 0 0 6px rgba(255,255,255,0.38)',
     centerRing: 'rgba(120, 235, 195, 0.55)',
   },
   partial: {
     needleBg:
-      'linear-gradient(180deg, rgba(175, 195, 205, 0.88) 0%, rgba(95, 120, 135, 0.42) 52%, rgba(52, 68, 80, 0.36) 100%)',
+      'linear-gradient(180deg, rgba(230, 238, 245, 0.9) 0%, rgba(130, 155, 175, 0.5) 50%, rgba(70, 90, 105, 0.2) 100%)',
     needleGlow:
-      '0 0 10px rgba(255,255,255,0.14), 0 0 22px rgba(150, 170, 185, 0.1)',
+      '0 0 3px rgba(255,255,255,0.35), 0 0 10px rgba(170, 195, 215, 0.35), 0 0 22px rgba(120, 145, 165, 0.18)',
     centerGlow:
       '0 0 8px rgba(200, 210, 220, 0.35), 0 0 18px rgba(140, 155, 170, 0.15), inset 0 0 5px rgba(255,255,255,0.28)',
     centerRing: 'rgba(180, 195, 208, 0.35)',
   },
   off: {
     needleBg:
-      'linear-gradient(180deg, rgba(255, 168, 158, 0.95) 0%, rgba(215, 95, 88, 0.52) 50%, rgba(130, 52, 55, 0.42) 100%)',
+      'linear-gradient(180deg, rgba(255, 210, 200, 0.95) 0%, rgba(235, 120, 105, 0.55) 50%, rgba(175, 65, 60, 0.22) 100%)',
     needleGlow:
-      '0 0 14px rgba(255, 130, 118, 0.38), 0 0 28px rgba(225, 85, 78, 0.2), 0 0 38px rgba(190, 60, 58, 0.1)',
+      '0 0 4px rgba(255, 180, 165, 0.85), 0 0 12px rgba(255, 120, 105, 0.45), 0 0 26px rgba(220, 80, 72, 0.22)',
     centerGlow:
       '0 0 10px rgba(255, 140, 125, 0.45), 0 0 22px rgba(210, 75, 70, 0.22), inset 0 0 5px rgba(255,255,255,0.22)',
     centerRing: 'rgba(255, 140, 125, 0.4)',
@@ -63,7 +67,7 @@ export default function MetabolicCompass() {
   const [kcalBalance, setKcalBalance] = useState(0);
   const [trainingLoad, setTrainingLoad] = useState(45);
 
-  const { finalAngle, magnitude } = useMemo(
+  const { angle, finalAngle, magnitude } = useMemo(
     () => computeMetabolicCompassOrientation(kcalBalance, trainingLoad, goal),
     [kcalBalance, trainingLoad, goal]
   );
@@ -72,11 +76,13 @@ export default function MetabolicCompass() {
   const tierStyle = ALIGNMENT_TIERS[tier];
 
   const magnitude01 = Math.min(1, magnitude);
-  const needleLengthPx = NEEDLE_MIN_PX + magnitude01 * (NEEDLE_MAX_PX - NEEDLE_MIN_PX);
+  const arrowLengthPx = ARROW_MIN_PX + magnitude01 * (ARROW_MAX_PX - ARROW_MIN_PX);
 
   const goalCompassAngleDeg = useMemo(() => getGoalCompassAngleDeg(goal), [goal]);
-  /** Volto ruotato così l’obiettivo coincide con il Nord visivo; l’ago non segue questa rotazione. */
+  /** Volto ruotato così l’obiettivo coincide con il Nord visivo; la freccia resta nel sistema schermo. */
   const dialRotationDeg = -goalCompassAngleDeg;
+  /** Bearing reale sul volto + rotazione del volto → angolo schermo (CSS, 0° = alto, orario +). */
+  const arrowRotationDeg = metabolicAngleDegToCompassBearingDeg(angle) + dialRotationDeg;
 
   return (
     <div
@@ -193,7 +199,7 @@ export default function MetabolicCompass() {
           ))}
         </div>
 
-        {/* Ago — non ruota con il volto */}
+        {/* Freccia metabolica: centro = pivot, bearing reale dopo rotazione volto, lunghezza ∝ magnitudine */}
         <div
           aria-hidden
           style={{
@@ -211,14 +217,13 @@ export default function MetabolicCompass() {
               position: 'absolute',
               left: 0,
               bottom: 0,
-              width: 3,
-              height: needleLengthPx,
-              marginLeft: -1.5,
+              width: 1.5,
+              height: arrowLengthPx,
+              marginLeft: -0.75,
               transformOrigin: '50% 100%',
-              transform: `rotate(${finalAngle}deg)`,
-              transition:
-                'transform 0.4s ease, height 0.4s ease, box-shadow 0.35s ease, background 0.35s ease',
-              borderRadius: 2,
+              transform: `rotate(${arrowRotationDeg}deg)`,
+              transition: ARROW_TRANSITION,
+              borderRadius: 1,
               background: tierStyle.needleBg,
               boxShadow: tierStyle.needleGlow,
             }}

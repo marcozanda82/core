@@ -100,6 +100,14 @@ export function computeMetabolicDirectionAngleDeg(kcalBalance, trainingLoad) {
 }
 
 /**
+ * Da angolo atan2(y,x) (0° = asse +x, positivo = antiorario) a bearing sul volto bussola
+ * (0° = Nord / alto, positivo = orario), coerente con tacche ed etichette.
+ */
+export function metabolicAngleDegToCompassBearingDeg(angleDeg) {
+  return 90 - angleDeg;
+}
+
+/**
  * Angolo obiettivo in gradi per l’obiettivo selezionato (default: Ricomposizione).
  * @param {string} goal
  * @returns {number}
