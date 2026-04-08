@@ -60,6 +60,7 @@ import {
 } from './weeklyPlanning';
 import AddEventMenuGrid from './components/AddEventMenuGrid';
 import WeeklyPlanning from './components/WeeklyPlanning';
+import MetabolicCompass from './MetabolicCompass';
 import {
   useSmartKentuTriggers,
   checkMorningBriefing,
@@ -173,7 +174,7 @@ function migrateIdealStrategy(raw) {
 }
 
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
-const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'planning', 'longevita'];
+const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'planning', 'bussola', 'longevita'];
 
 const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
 
@@ -11577,6 +11578,26 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           />
         </div>
       )}
+      {activeBottomTab === 'bussola' && (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            padding: '16px 12px',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            width: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
+          <MetabolicCompass />
+        </div>
+      )}
       </div>
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
@@ -14821,6 +14842,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           { id: 'oggi', label: 'Oggi', icon: '🏠' },
           { id: 'analisi', label: 'Analisi', icon: '📊' },
           { id: 'planning', label: 'Piano', icon: '📅' },
+          { id: 'bussola', label: 'Bussola', icon: '🧭' },
           { id: 'longevita', label: 'Statistiche', icon: '🧬' },
           { id: 'menu', label: 'Menu', icon: '≡' },
         ].map((t) => (
@@ -14836,7 +14858,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               alignItems: 'center',
               gap: '4px',
               cursor: 'pointer',
-              flex: 1,
+              flex: '1 1 0',
               minWidth: 0,
               color: activeBottomTab === t.id ? '#00e5ff' : '#888',
               fontSize: '0.7rem',
