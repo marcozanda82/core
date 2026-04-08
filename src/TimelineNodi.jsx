@@ -418,11 +418,22 @@ export default function TimelineNodi({
 
   const handleNodePointerEnd = useCallback(
     (ev) => {
-      cancelNodeLongPressArming();
+      if (longPressTimerRef.current != null) {
+        window.clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      longPressNodeDocCleanupRef.current?.();
+      longPressNodeDocCleanupRef.current = null;
+
+      if (longPressActiveRef.current && typeof releaseNodePointer === 'function') {
+        releaseNodePointer(ev);
+      }
+      longPressActiveRef.current = false;
+      pointerStartPosRef.current = null;
+
       cancelStripDragArm();
-      if (typeof releaseNodePointer === 'function') releaseNodePointer(ev);
     },
-    [cancelNodeLongPressArming, cancelStripDragArm, releaseNodePointer]
+    [cancelStripDragArm, releaseNodePointer]
   );
 
   useEffect(() => {
