@@ -13,6 +13,44 @@ const GOALS = [
 const NEEDLE_MIN_PX = 28;
 const NEEDLE_MAX_PX = 96;
 
+/** Allineamento da |finalAngle|: ago + alone coerenti. */
+const ALIGNMENT_TIERS = {
+  aligned: {
+    needleBg:
+      'linear-gradient(180deg, rgba(130, 245, 205, 0.98) 0%, rgba(72, 205, 165, 0.62) 48%, rgba(38, 145, 118, 0.48) 100%)',
+    needleGlow:
+      '0 0 14px rgba(90, 235, 185, 0.55), 0 0 28px rgba(65, 215, 165, 0.32), 0 0 42px rgba(50, 195, 150, 0.14)',
+    centerGlow:
+      '0 0 10px rgba(110, 240, 190, 0.75), 0 0 24px rgba(75, 210, 170, 0.4), inset 0 0 6px rgba(255,255,255,0.38)',
+    centerRing: 'rgba(120, 235, 195, 0.55)',
+  },
+  partial: {
+    needleBg:
+      'linear-gradient(180deg, rgba(175, 195, 205, 0.88) 0%, rgba(95, 120, 135, 0.42) 52%, rgba(52, 68, 80, 0.36) 100%)',
+    needleGlow:
+      '0 0 10px rgba(255,255,255,0.14), 0 0 22px rgba(150, 170, 185, 0.1)',
+    centerGlow:
+      '0 0 8px rgba(200, 210, 220, 0.35), 0 0 18px rgba(140, 155, 170, 0.15), inset 0 0 5px rgba(255,255,255,0.28)',
+    centerRing: 'rgba(180, 195, 208, 0.35)',
+  },
+  off: {
+    needleBg:
+      'linear-gradient(180deg, rgba(255, 168, 158, 0.95) 0%, rgba(215, 95, 88, 0.52) 50%, rgba(130, 52, 55, 0.42) 100%)',
+    needleGlow:
+      '0 0 14px rgba(255, 130, 118, 0.38), 0 0 28px rgba(225, 85, 78, 0.2), 0 0 38px rgba(190, 60, 58, 0.1)',
+    centerGlow:
+      '0 0 10px rgba(255, 140, 125, 0.45), 0 0 22px rgba(210, 75, 70, 0.22), inset 0 0 5px rgba(255,255,255,0.22)',
+    centerRing: 'rgba(255, 140, 125, 0.4)',
+  },
+};
+
+function alignmentFromFinalAngle(finalAngle) {
+  const difference = Math.abs(finalAngle);
+  if (difference < 15) return { tier: 'aligned', difference };
+  if (difference <= 45) return { tier: 'partial', difference };
+  return { tier: 'off', difference };
+}
+
 /**
  * Bussola metabolica — lettura immediata, stile scuro premium (Whoop / Apple).
  */
@@ -25,6 +63,9 @@ export default function MetabolicCompass() {
     () => computeMetabolicCompassOrientation(kcalBalance, trainingLoad, goal),
     [kcalBalance, trainingLoad, goal]
   );
+
+  const { tier } = useMemo(() => alignmentFromFinalAngle(finalAngle), [finalAngle]);
+  const tierStyle = ALIGNMENT_TIERS[tier];
 
   const needleLengthPx = NEEDLE_MIN_PX + magnitude * (NEEDLE_MAX_PX - NEEDLE_MIN_PX);
 
@@ -134,12 +175,11 @@ export default function MetabolicCompass() {
               marginLeft: -1.5,
               transformOrigin: '50% 100%',
               transform: `rotate(${finalAngle}deg)`,
-              transition: 'transform 0.4s ease, height 0.4s ease',
+              transition:
+                'transform 0.4s ease, height 0.4s ease, box-shadow 0.35s ease, background 0.35s ease',
               borderRadius: 2,
-              background:
-                'linear-gradient(180deg, rgba(120, 220, 200, 0.95) 0%, rgba(72, 180, 170, 0.5) 55%, rgba(45, 120, 115, 0.35) 100%)',
-              boxShadow:
-                '0 0 12px rgba(100, 210, 190, 0.35), 0 0 24px rgba(80, 200, 180, 0.12)',
+              background: tierStyle.needleBg,
+              boxShadow: tierStyle.needleGlow,
             }}
           />
         </div>
@@ -155,9 +195,15 @@ export default function MetabolicCompass() {
             width: 12,
             height: 12,
             borderRadius: '50%',
-            background: 'radial-gradient(circle at 35% 35%, #ffffff 0%, #a8e8e0 40%, #3d9a8f 100%)',
-            boxShadow:
-              '0 0 10px rgba(130, 230, 210, 0.65), 0 0 22px rgba(90, 200, 185, 0.35), inset 0 0 6px rgba(255,255,255,0.35)',
+            background:
+              tier === 'aligned'
+                ? 'radial-gradient(circle at 35% 35%, #ffffff 0%, #a8f0d8 42%, #2d8f78 100%)'
+                : tier === 'partial'
+                  ? 'radial-gradient(circle at 35% 35%, #f2f6f8 0%, #b8c5d0 45%, #5a6b78 100%)'
+                  : 'radial-gradient(circle at 35% 35%, #fff5f4 0%, #f0b0a8 42%, #a84845 100%)',
+            boxShadow: tierStyle.centerGlow,
+            border: `1px solid ${tierStyle.centerRing}`,
+            transition: 'box-shadow 0.35s ease, background 0.35s ease, border-color 0.35s ease',
             zIndex: 2,
           }}
         />
