@@ -121,6 +121,10 @@ const STRIP_DRAG_FRICTION_FOLLOW = { suboptimal: 0.36, neutral: 0.78, optimal: 0
 const STRIP_DRAG_ARM_LONG_PRESS_MS = 180;
 /** Prima dell’arm: movimento oltre soglia → annulla drag e lascia lo swipe/scroll (= `NODE_DRAG_ARM_CANCEL_MOVE_PX` in SalaComandi). */
 const STRIP_DRAG_ARM_CANCEL_MOVE_PX = 6;
+/** (Scaffolding) Long-press drag — da collegare alla logica futura. */
+const LONG_PRESS_MS = 180;
+/** (Scaffolding) Soglia movimento prima dell’attivazione long-press. */
+const MOVE_THRESHOLD_PX = 6;
 
 function nodeAddTransition(reduceMotion, isDragging) {
   if (reduceMotion || isDragging) return { duration: 0 };
@@ -212,6 +216,12 @@ export default function TimelineNodi({
   nodesForFrictionRef.current = nodes;
   const chartForFrictionRef = useRef(timelineQualityChartData);
   chartForFrictionRef.current = timelineQualityChartData;
+  /** (Scaffolding) Timer long-press drag — `null` se nessun timeout attivo. */
+  const longPressTimerRef = useRef(null);
+  /** (Scaffolding) `true` quando il long-press ha abilitato il drag. */
+  const longPressActiveRef = useRef(false);
+  /** (Scaffolding) Posizione iniziale pointer `{ clientX, clientY }` o `null`. */
+  const pointerStartPosRef = useRef(null);
 
   const qualityById = useMemo(
     () => buildTimelineNodeQualityMap(nodes, timelineQualityChartData),
