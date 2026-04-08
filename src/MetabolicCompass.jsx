@@ -146,10 +146,14 @@ function alignmentFromFinalAngle(finalAngle) {
 }
 
 /**
- * @param {{ dailyHistory?: Array<{ kcalBalance: number, trainingLoad: number }> }} props
+ * @param {{ dailyHistory?: Array<{ kcalBalance: number, trainingLoad: number }>, onCompassInteractionUnlockChange?: (unlocked: boolean) => void }} props
  * Se `dailyHistory` è fornito (non vuoto), il motore usa solo quello; altrimenti storico demo + slider su “oggi”.
+ * `onCompassInteractionUnlockChange`: notifica il parent (es. per disabilitare lo swipe tra tab quando la bussola è sbloccata).
  */
-export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}) {
+export default function MetabolicCompass({
+  dailyHistory: dailyHistoryProp,
+  onCompassInteractionUnlockChange,
+} = {}) {
   const isControlled =
     Array.isArray(dailyHistoryProp) && dailyHistoryProp.length > 0;
 
@@ -161,6 +165,7 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
       }))
   );
 
+  const [isLocked, setIsLocked] = useState(true);
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState('7d');
   const [kcalBalance, setKcalBalance] = useState(0);
@@ -175,6 +180,17 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
       return next;
     });
   }, [kcalBalance, trainingLoad, isControlled]);
+
+  useEffect(() => {
+    onCompassInteractionUnlockChange?.(!isLocked);
+  }, [isLocked, onCompassInteractionUnlockChange]);
+
+  useEffect(() => {
+    const cb = onCompassInteractionUnlockChange;
+    return () => {
+      cb?.(false);
+    };
+  }, [onCompassInteractionUnlockChange]);
 
   const dailyHistory = isControlled ? dailyHistoryProp : internalHistory;
 
@@ -207,17 +223,30 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
     <div
       className="metabolic-compass-root"
       style={{
+        position: 'relative',
         width: '100%',
         maxWidth: 400,
         margin: '0 auto',
         padding: 'clamp(1rem, 4vw, 1.25rem)',
         boxSizing: 'border-box',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 20,
       }}
     >
+      <CompassLockToggle
+        isLocked={isLocked}
+        onToggle={() => setIsLocked((v) => !v)}
+      />
+      <div
+        className="metabolic-compass-interaction-surface"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 20,
+          width: '100%',
+          pointerEvents: isLocked ? 'none' : 'auto',
+          touchAction: isLocked ? undefined : 'pan-y',
+        }}
+      >
       {/* Obiettivo */}
       <div
         role="tablist"
@@ -488,7 +517,77 @@ export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}
           />
         </div>
       )}
+      </div>
     </div>
+  );
+}
+
+function CompassLockToggle({ isLocked, onToggle }) {
+  return (
+    <button
+      type="button"
+      className="metabolic-compass-lock-toggle"
+      aria-pressed={!isLocked}
+      aria-label={
+        isLocked
+          ? 'Sblocca la bussola per interagire'
+          : 'Blocca la bussola per scorrere tra le schede'
+      }
+      title={isLocked ? 'Sblocca' : 'Blocca'}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      style={{
+        position: 'absolute',
+        top: 4,
+        right: 4,
+        zIndex: 20,
+        width: 38,
+        height: 38,
+        borderRadius: '50%',
+        border: '1px solid rgba(255,255,255,0.12)',
+        background: 'rgba(12, 14, 18, 0.55)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        color: isLocked ? 'rgba(255,255,255,0.5)' : 'rgba(120, 220, 190, 0.95)',
+        boxShadow: isLocked
+          ? 'none'
+          : '0 0 16px rgba(80, 200, 165, 0.2), inset 0 1px 0 rgba(255,255,255,0.08)',
+        transition:
+          'color 0.3s ease, background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease',
+        pointerEvents: 'auto',
+        WebkitTapHighlightColor: 'transparent',
+      }}
+    >
+      <svg
+        width="19"
+        height="19"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.65"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        {isLocked ? (
+          <>
+            <rect x="5" y="11" width="14" height="10" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </>
+        ) : (
+          <>
+            <rect x="5" y="11" width="14" height="10" rx="2" />
+            <path d="M12 11V7a4 4 0 0 1 7.2-2.4" />
+          </>
+        )}
+      </svg>
+    </button>
   );
 }
 

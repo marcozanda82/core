@@ -2024,11 +2024,28 @@ export default function SalaComandi() {
   const mainTabTouchStartYRef = useRef(null);
   const mainTabTouchEndYRef = useRef(null);
   const mainTabSwipeIgnoreRef = useRef(false);
+  const bussolaCompassUnlockedRef = useRef(false);
+
+  const handleCompassInteractionUnlockChange = useCallback((unlocked) => {
+    bussolaCompassUnlockedRef.current = unlocked;
+  }, []);
 
   const handleMainTabTouchStart = useCallback((e) => {
     const el = e.target;
     if (el && typeof el.closest === 'function') {
       if (el.closest('.chart-scroll-container') || el.closest('.mini-timeline-hitbox')) {
+        mainTabSwipeIgnoreRef.current = true;
+        return;
+      }
+      if (el.closest('.metabolic-compass-lock-toggle')) {
+        mainTabSwipeIgnoreRef.current = true;
+        return;
+      }
+      if (
+        activeBottomTab === 'bussola' &&
+        bussolaCompassUnlockedRef.current &&
+        el.closest('.metabolic-compass-interaction-surface')
+      ) {
         mainTabSwipeIgnoreRef.current = true;
         return;
       }
@@ -2042,7 +2059,7 @@ export default function SalaComandi() {
     mainTabTouchStartXRef.current = touch.clientX;
     mainTabTouchStartYRef.current = touch.clientY;
     mainTabTouchEndYRef.current = touch.clientY;
-  }, []);
+  }, [activeBottomTab]);
 
   const handleMainTabTouchMove = useCallback((e) => {
     if (mainTabSwipeIgnoreRef.current) return;
@@ -11769,7 +11786,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             boxSizing: 'border-box',
           }}
         >
-          <MetabolicCompass />
+          <MetabolicCompass
+            onCompassInteractionUnlockChange={handleCompassInteractionUnlockChange}
+          />
         </div>
       )}
       </div>
