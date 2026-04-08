@@ -59,6 +59,60 @@ export function qualityAtVirtualStripHour(dragNode, allNodes, chartData, hourDec
   return computeTimelineNodeQuality(vn, stacked, chartData);
 }
 
+/**
+ * Qualità lungo la striscia durante drag: modello pieno se c’è chart, altrimenti euristica oraria.
+ * Estendibile in seguito (curva energia, digestione, sovrapposizioni custom) senza cambiare la firma pubblica di `getDragResistanceFactor`.
+ * @param {object|null} node
+ * @param {number} hourDecimal
+ * @param {object[]|null|undefined} allNodes
+ * @param {object[]|null|undefined} chartData
+ * @param {boolean} reduceMotion
+ * @returns {TimelineNodeQuality}
+ */
+export function resolveStripDragQuality(node, hourDecimal, allNodes, chartData, reduceMotion) {
+  if (reduceMotion || !node) return 'neutral';
+  const h = Math.max(0, Math.min(24, Number(hourDecimal) || 0));
+  if (chartData && Array.isArray(chartData) && chartData.length > 0) {
+    return qualityAtVirtualStripHour(node, Array.isArray(allNodes) ? allNodes : [], chartData, h);
+  }
+  return placeholderStripQualityByHour(h);
+}
+
+/** Fallback quando manca chart: notte molto tarda / mattina molto presto → peggiore. */
+function placeholderStripQualityByHour(h) {
+  if (h < 5 || h >= 23.5) return 'suboptimal';
+  if (h < 7.5 || h > 22.25) return 'neutral';
+  return 'optimal';
+}
+
+/**
+ * @param {TimelineNodeQuality} quality
+ * @returns {number} moltiplicatore movimento 0.6–1 (soft friction, non blocca il drag)
+ */
+export function qualityToDragResistanceMultiplier(quality) {
+  if (quality === 'optimal') return 1;
+  if (quality === 'neutral') return 0.85;
+  return Math.max(0.6, 0.7);
+}
+
+/**
+ * Resistenza “fisica” al drag in funzione di qualità alla posizione oraria.
+ * @param {object|null} node
+ * @param {number} timeDecimal ore 0–24
+ * @param {{ allNodes?: object[], chartData?: object[]|null, reduceMotion?: boolean }} [options]
+ * @returns {number}
+ */
+export function getDragResistanceFactor(node, timeDecimal, options = {}) {
+  const q = resolveStripDragQuality(
+    node,
+    timeDecimal,
+    options.allNodes,
+    options.chartData,
+    Boolean(options.reduceMotion)
+  );
+  return qualityToDragResistanceMultiplier(q);
+}
+
 function anchorsForNodeType(type) {
   if (type === 'meal' || type === 'ghost_meal') return [7.5, 12.5, 16, 19.5];
   if (type === 'work' || type === 'workout' || type === 'ghost_workout') return [9.5, 12, 18];
