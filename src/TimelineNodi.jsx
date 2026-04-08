@@ -181,6 +181,8 @@ export default function TimelineNodi({
   energyPercent,
   /** Click sulla striscia (non sui nodi): apre pianificazione pasto all’orario cliccato. */
   onTimelineTrackClick,
+  /** Long press sulla striscia vuota: stesso obiettivo del click (menu inserimento rapido). */
+  onTimelineTrackLongPress,
   /** Se impostato (es. da SalaComandi), stessa ora del grafico: ore + minuti/60. */
   nowLineDecimalHour,
   /** Punti energia giornata per sfondo gradient sotto la striscia: { time, energy } (0–24h, 0–100). */
@@ -220,6 +222,9 @@ export default function TimelineNodi({
   const stripDragCaptureElRef = useRef(null);
   const stripDragLastCommitRef = useRef({ id: null, hour: null, at: 0 });
   const stripDragSuppressClickRef = useRef(false);
+  const trackLongPressTimerRef = useRef(null);
+  const trackLongPressStartRef = useRef(null);
+  const trackLongPressSuppressClickRef = useRef(false);
   /** Nodo della striscia in drag (tipo → fasce magnetiche). */
   const stripDragNodeRef = useRef(null);
   const magneticSnapActiveRef = useRef(false);
@@ -473,6 +478,46 @@ export default function TimelineNodi({
     [cancelStripDragArm, releaseNodePointer]
   );
 
+  const clearTimelineTrackLongPress = useCallback(() => {
+    if (trackLongPressTimerRef.current != null) {
+      window.clearTimeout(trackLongPressTimerRef.current);
+      trackLongPressTimerRef.current = null;
+    }
+    trackLongPressStartRef.current = null;
+  }, []);
+
+  const onTimelineTrackPointerDown = useCallback(
+    (e) => {
+      if (typeof onTimelineTrackLongPress !== 'function') return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (e.target.closest?.('.timeline-node')) return;
+      clearTimelineTrackLongPress();
+      const x = e.clientX;
+      const y = e.clientY;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      trackLongPressStartRef.current = { x, y };
+      trackLongPressTimerRef.current = window.setTimeout(() => {
+        trackLongPressTimerRef.current = null;
+        trackLongPressStartRef.current = null;
+        trackLongPressSuppressClickRef.current = true;
+        onTimelineTrackLongPress(e);
+      }, 520);
+    },
+    [onTimelineTrackLongPress, clearTimelineTrackLongPress]
+  );
+
+  const onTimelineTrackPointerMove = useCallback(
+    (e) => {
+      const s = trackLongPressStartRef.current;
+      if (!s || trackLongPressTimerRef.current == null) return;
+      const cx = e.clientX;
+      const cy = e.clientY;
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+      if (Math.hypot(cx - s.x, cy - s.y) > 10) clearTimelineTrackLongPress();
+    },
+    [clearTimelineTrackLongPress]
+  );
+
   useEffect(() => {
     return () => {
       const p = stripArmPendingRef.current;
@@ -491,6 +536,10 @@ export default function TimelineNodi({
       longPressNodeDocCleanupRef.current?.();
       longPressNodeDocCleanupRef.current = null;
       setNodeDragArmPendingId(null);
+      if (trackLongPressTimerRef.current != null) {
+        window.clearTimeout(trackLongPressTimerRef.current);
+        trackLongPressTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -734,7 +783,11 @@ export default function TimelineNodi({
         ref={timelineContainerRef}
         role={onTimelineTrackClick ? 'button' : undefined}
         tabIndex={onTimelineTrackClick ? 0 : undefined}
-        aria-label={onTimelineTrackClick ? 'Clicca per pianificare un pasto in questo orario' : undefined}
+        aria-label={
+          onTimelineTrackClick
+            ? 'Timeline giornata: tap sullo spazio vuoto per aggiungere pasto, attività o evento'
+            : undefined
+        }
         onKeyDown={
           onTimelineTrackClick
             ? (e) => {
@@ -745,7 +798,15 @@ export default function TimelineNodi({
               }
             : undefined
         }
+        onPointerDown={onTimelineTrackPointerDown}
+        onPointerMove={onTimelineTrackPointerMove}
+        onPointerUp={clearTimelineTrackLongPress}
+        onPointerCancel={clearTimelineTrackLongPress}
         onClick={(e) => {
+          if (trackLongPressSuppressClickRef.current) {
+            trackLongPressSuppressClickRef.current = false;
+            return;
+          }
           if (typeof onTimelineTrackClick !== 'function') return;
           if (e.target.closest?.('.timeline-node')) return;
           onTimelineTrackClick(e);

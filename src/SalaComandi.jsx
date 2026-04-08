@@ -2375,6 +2375,8 @@ export default function SalaComandi() {
   }, [sleepModal, isSimulationMode, dailyLog, simulatedLog]);
 
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
+  /** Menu inserimento rapido timeline: `{ hour, view: 'main' | 'events' }`. */
+  const [timelineInsertUI, setTimelineInsertUI] = useState(null);
   const [editingQuickNode, setEditingQuickNode] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [userProfile, setUserProfile] = useState({
@@ -4450,41 +4452,44 @@ export default function SalaComandi() {
     return mealIdFromCanonical(bestMatch);
   };
 
-  const openMealPlannerFromTimeline = useCallback(
+  const computeTimelineHourFromPointer = useCallback((e) => {
+    const el = timelineContainerRef.current;
+    if (!el || typeof el.getBoundingClientRect !== 'function') return null;
+    const rect = el.getBoundingClientRect();
+    if (!(rect.width > 0)) return null;
+    const clientX =
+      typeof e?.clientX === 'number' && Number.isFinite(e.clientX) ? e.clientX : rect.left + rect.width / 2;
+    const x = clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, x / rect.width));
+    let hour = ratio * 24;
+    hour = Math.max(0, Math.min(24, Math.round(hour * 4) / 4));
+    return hour;
+  }, []);
+
+  const openTimelineQuickAddAtPointer = useCallback(
     (e) => {
       if (isSimulationMode) return;
       if (draggingNode != null || touchingNodeId != null) return;
-      const el = timelineContainerRef.current;
-      if (!el || typeof el.getBoundingClientRect !== 'function') return;
-      const rect = el.getBoundingClientRect();
-      if (!(rect.width > 0)) return;
-      const clientX =
-        typeof e?.clientX === 'number' && Number.isFinite(e.clientX) ? e.clientX : rect.left + rect.width / 2;
-      const x = clientX - rect.left;
-      const ratio = Math.max(0, Math.min(1, x / rect.width));
-      let hour = ratio * 24;
-      hour = Math.max(0, Math.min(24, Math.round(hour * 4) / 4));
-
-      const predicted = predictMealType(hour);
+      const hour = computeTimelineHourFromPointer(e);
+      if (hour == null) return;
       setSelectedNodeReport(null);
-      setAddedFoods([]);
-      setEditingMealId(null);
-      setMealPlannerGhostNote('');
-      setMealType(predicted);
-      setDrawerMealTime(hour);
-      setDrawerMealTimeStr(decimalToTimeStr(hour));
-      setActiveAction('pasto');
-      setIsDrawerOpen(true);
-      setMealBuilderSmartLaunchKey((k) => k + 1);
+      setTimelineInsertUI({ hour, view: 'main' });
     },
-    [
-      isSimulationMode,
-      draggingNode,
-      touchingNodeId,
-      predictMealType,
-      decimalToTimeStr,
-    ]
+    [isSimulationMode, draggingNode, touchingNodeId, computeTimelineHourFromPointer]
   );
+
+  const openTimelineQuickAddAtCenter = useCallback(() => {
+    openTimelineQuickAddAtPointer({});
+  }, [openTimelineQuickAddAtPointer]);
+
+  useEffect(() => {
+    if (timelineInsertUI == null) return undefined;
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') setTimelineInsertUI(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [timelineInsertUI]);
 
   /** Alimenti del diario che appartengono allo slot pasto (mealType o composito mealType_decimalTime come nel Pie). */
   const getFoodItemsForMealSlot = useCallback((log, slotId) => {
@@ -9965,7 +9970,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 startNodeDrag={startNodeDrag}
                 releaseNodePointer={releaseNodePointer}
                 onNodeClick={onTimelineNodeClick}
-                onTimelineTrackClick={openMealPlannerFromTimeline}
+                onTimelineTrackClick={openTimelineQuickAddAtPointer}
+                onTimelineTrackLongPress={openTimelineQuickAddAtPointer}
                 handleNodeTap={handleNodeTap}
                 decimalToTimeStr={decimalToTimeStr}
                 syncDatiFirebase={syncDatiFirebase}
@@ -10004,6 +10010,19 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             border: '1px solid rgba(255, 255, 255, 0.15)'
           }}
         >
+          <button
+            type="button"
+            className="zoom-btn-vertical"
+            onClick={openTimelineQuickAddAtCenter}
+            title="Aggiungi sulla timeline (ora centrale striscia)"
+            aria-label="Aggiungi sulla timeline"
+            style={{
+              background: 'linear-gradient(145deg, rgba(0,229,255,0.35), rgba(0,120,140,0.45))',
+              borderColor: 'rgba(0,229,255,0.45)',
+            }}
+          >
+            ⊕
+          </button>
           <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
           <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
           <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
@@ -10752,6 +10771,19 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', transform: 'none' }}>
             {(activeBottomTab === 'analisi' || !activeAction || activeAction === 'home') && (
             <div className="zoom-vertical-bar" aria-label="Controlli zoom">
+              <button
+                type="button"
+                className="zoom-btn-vertical"
+                onClick={openTimelineQuickAddAtCenter}
+                title="Aggiungi sulla timeline (ora centrale)"
+                aria-label="Aggiungi sulla timeline"
+                style={{
+                  background: 'linear-gradient(145deg, rgba(0,229,255,0.35), rgba(0,120,140,0.45))',
+                  borderColor: 'rgba(0,229,255,0.45)',
+                }}
+              >
+                ⊕
+              </button>
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
               <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
@@ -11050,7 +11082,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   startNodeDrag={startNodeDrag}
                   releaseNodePointer={releaseNodePointer}
                   onNodeClick={onTimelineNodeClick}
-                  onTimelineTrackClick={openMealPlannerFromTimeline}
+                  onTimelineTrackClick={openTimelineQuickAddAtPointer}
+                onTimelineTrackLongPress={openTimelineQuickAddAtPointer}
                   handleNodeTap={handleNodeTap}
                   decimalToTimeStr={decimalToTimeStr}
                   syncDatiFirebase={syncDatiFirebase}
@@ -13787,6 +13820,270 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 Salva
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {timelineInsertUI != null && (
+        <div
+          role="presentation"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100019,
+            background: 'rgba(0,0,0,0.55)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+            paddingLeft: 12,
+            paddingRight: 12,
+          }}
+          onClick={() => setTimelineInsertUI(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Aggiungi sulla timeline"
+            onClick={(ev) => ev.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 400,
+              marginBottom: 8,
+              borderRadius: 20,
+              background: 'linear-gradient(180deg, #1a1f2e 0%, #12151c 100%)',
+              border: '1px solid rgba(0,229,255,0.25)',
+              boxShadow: '0 -8px 40px rgba(0,0,0,0.45)',
+              padding: '18px 16px 20px',
+              color: '#e8f4ff',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: '0.65rem', color: '#7dd3fc', letterSpacing: '0.12em', fontWeight: 700 }}>
+                  INSERIMENTO TIMELINE
+                </div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 700, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+                  🕐 {decimalToTimeStr(timelineInsertUI.hour)}
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Chiudi"
+                onClick={() => setTimelineInsertUI(null)}
+                style={{
+                  width: 36,
+                  height: 36,
+                  border: 'none',
+                  borderRadius: 10,
+                  background: 'rgba(255,255,255,0.08)',
+                  color: '#cbd5e1',
+                  fontSize: '1.25rem',
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            </div>
+            {timelineInsertUI.view === 'main' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hour = timelineInsertUI.hour;
+                    setTimelineInsertUI(null);
+                    const predicted = predictMealType(hour);
+                    setAddedFoods([]);
+                    setEditingMealId(null);
+                    setMealPlannerGhostNote('');
+                    setMealType(predicted);
+                    setDrawerMealTime(hour);
+                    setDrawerMealTimeStr(decimalToTimeStr(hour));
+                    setActiveAction('pasto');
+                    setIsDrawerOpen(true);
+                    setMealBuilderSmartLaunchKey((k) => k + 1);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '14px 16px',
+                    borderRadius: 14,
+                    border: '1px solid rgba(0,229,255,0.35)',
+                    background: 'rgba(0,229,255,0.12)',
+                    color: '#e0f2fe',
+                    fontSize: '0.95rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  🍽️ Aggiungi pasto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hour = timelineInsertUI.hour;
+                    setTimelineInsertUI(null);
+                    setEditingWorkoutId(null);
+                    setWorkoutEndTime(Math.min(24, hour + 0.5));
+                    setWorkoutStartTime(Math.max(0, hour - 0.25));
+                    setActiveAction('allenamento');
+                    setIsDrawerOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '14px 16px',
+                    borderRadius: 14,
+                    border: '1px solid rgba(255,109,0,0.4)',
+                    background: 'rgba(255,109,0,0.12)',
+                    color: '#ffedd5',
+                    fontSize: '0.95rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  ⚡ Aggiungi attività / allenamento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimelineInsertUI((u) => (u ? { ...u, view: 'events' } : u))}
+                  style={{
+                    width: '100%',
+                    padding: '14px 16px',
+                    borderRadius: 14,
+                    border: '1px solid rgba(148,163,184,0.35)',
+                    background: 'rgba(255,255,255,0.05)',
+                    color: '#cbd5e1',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  📌 Altro evento (acqua, riposo…)
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setTimelineInsertUI((u) => (u ? { ...u, view: 'main' } : u))}
+                  style={{
+                    fontSize: '0.8rem',
+                    color: '#94a3b8',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    marginBottom: 2,
+                    padding: '4px 0',
+                  }}
+                >
+                  ‹ Indietro
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hour = timelineInsertUI.hour;
+                    setTimelineInsertUI(null);
+                    setDrawerWaterTime(hour);
+                    setActiveAction('acqua');
+                    setIsDrawerOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(0,229,255,0.3)',
+                    background: 'rgba(0,229,255,0.08)',
+                    color: '#bae6fd',
+                    fontSize: '0.88rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  💧 Acqua
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hour = timelineInsertUI.hour;
+                    setTimelineInsertUI(null);
+                    setDrawerFastChargeStart(hour);
+                    setDrawerFastChargeEnd(Math.min(24, hour + 0.5));
+                    setActiveAction('fast_charge_nap');
+                    setIsDrawerOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(129,140,248,0.35)',
+                    background: 'rgba(99,102,241,0.1)',
+                    color: '#c7d2fe',
+                    fontSize: '0.88rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  😴 Pisolino
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hour = timelineInsertUI.hour;
+                    setTimelineInsertUI(null);
+                    setDrawerFastChargeStart(hour);
+                    setDrawerFastChargeEnd(Math.min(24, hour + 0.5));
+                    setActiveAction('fast_charge_meditation');
+                    setIsDrawerOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(34,197,94,0.35)',
+                    background: 'rgba(22,163,74,0.1)',
+                    color: '#bbf7d0',
+                    fontSize: '0.88rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  🧘 Meditazione
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hour = timelineInsertUI.hour;
+                    setTimelineInsertUI(null);
+                    setDrawerFastChargeTime(hour);
+                    setActiveAction('fast_charge_supplements');
+                    setIsDrawerOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(168,85,247,0.35)',
+                    background: 'rgba(126,34,206,0.12)',
+                    color: '#e9d5ff',
+                    fontSize: '0.88rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  💊 Integrazione
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
