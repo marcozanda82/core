@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   computeMetabolicCompassOrientation,
+  getGoalCompassAngleDeg,
   METABOLIC_COMPASS_DIRECTIONS,
   METABOLIC_GOAL,
 } from './metabolicDirection';
@@ -70,6 +71,10 @@ export default function MetabolicCompass() {
 
   const needleLengthPx = NEEDLE_MIN_PX + magnitude * (NEEDLE_MAX_PX - NEEDLE_MIN_PX);
 
+  const goalCompassAngleDeg = useMemo(() => getGoalCompassAngleDeg(goal), [goal]);
+  /** Volto ruotato così l’obiettivo coincide con il Nord visivo; l’ago non segue questa rotazione. */
+  const dialRotationDeg = -goalCompassAngleDeg;
+
   return (
     <div
       className="metabolic-compass-root"
@@ -125,53 +130,67 @@ export default function MetabolicCompass() {
         ))}
       </div>
 
-      {/* Volto bussola */}
+      {/* Volto bussola: alone fisso, volto (sfondo + rosa) ruota con l’obiettivo */}
       <div
         style={{
           position: 'relative',
           width: 'min(100%, 300px)',
           aspectRatio: '1',
           borderRadius: '50%',
-          background: 'radial-gradient(ellipse 85% 85% at 50% 42%, #1c2128 0%, #0d0f12 52%, #060708 100%)',
           boxShadow: `
             inset 0 0 0 1px rgba(255,255,255,0.06),
             inset 0 1px 20px rgba(255,255,255,0.04),
             0 24px 48px rgba(0,0,0,0.45)
           `,
+          overflow: 'hidden',
         }}
       >
-        {/* Tacche cardinali (8 direzioni) */}
-        {METABOLIC_COMPASS_DIRECTIONS.map(({ angleDeg }) => (
-          <div
-            key={`tick-${angleDeg}`}
-            aria-hidden
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              width: angleDeg % 90 === 0 ? 2 : 1,
-              height: '15%',
-              marginLeft: angleDeg % 90 === 0 ? -1 : -0.5,
-              transformOrigin: '50% 100%',
-              transform: `translateY(-100%) rotate(${angleDeg}deg)`,
-              background:
-                angleDeg % 90 === 0
-                  ? 'linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 100%)'
-                  : 'linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 100%)',
-              borderRadius: 1,
-              pointerEvents: 'none',
-            }}
-          />
-        ))}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            transformOrigin: '50% 50%',
+            transform: `rotate(${dialRotationDeg}deg)`,
+            transition: 'transform 0.45s ease',
+            background:
+              'radial-gradient(ellipse 85% 85% at 50% 42%, #1c2128 0%, #0d0f12 52%, #060708 100%)',
+          }}
+        >
+          {/* Tacche cardinali (8 direzioni) */}
+          {METABOLIC_COMPASS_DIRECTIONS.map(({ angleDeg }) => (
+            <div
+              key={`tick-${angleDeg}`}
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                width: angleDeg % 90 === 0 ? 2 : 1,
+                height: '15%',
+                marginLeft: angleDeg % 90 === 0 ? -1 : -0.5,
+                transformOrigin: '50% 100%',
+                transform: `translateY(-100%) rotate(${angleDeg}deg)`,
+                background:
+                  angleDeg % 90 === 0
+                    ? 'linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 100%)'
+                    : 'linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 100%)',
+                borderRadius: 1,
+                pointerEvents: 'none',
+              }}
+            />
+          ))}
 
-        {/* Etichette rosa — posizione da angolo bussola (0° = alto) */}
-        {METABOLIC_COMPASS_DIRECTIONS.map(({ angleDeg, label }) => (
-          <CompassLabel key={`lbl-${angleDeg}`} style={compassLabelStyleFromAngleDeg(angleDeg)}>
-            {label}
-          </CompassLabel>
-        ))}
+          {/* Etichette rosa — posizione da angolo bussola (0° = alto sul volto) */}
+          {METABOLIC_COMPASS_DIRECTIONS.map(({ angleDeg, label }) => (
+            <CompassLabel key={`lbl-${angleDeg}`} style={compassLabelStyleFromAngleDeg(angleDeg)}>
+              {label}
+            </CompassLabel>
+          ))}
+        </div>
 
-        {/* Ago */}
+        {/* Ago — non ruota con il volto */}
         <div
           aria-hidden
           style={{
@@ -181,6 +200,7 @@ export default function MetabolicCompass() {
             width: 0,
             height: 0,
             pointerEvents: 'none',
+            zIndex: 1,
           }}
         >
           <div
@@ -202,7 +222,7 @@ export default function MetabolicCompass() {
           />
         </div>
 
-        {/* Utente al centro */}
+        {/* Utente al centro — sopra volto e ago */}
         <div
           aria-hidden
           style={{

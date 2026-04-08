@@ -27,12 +27,33 @@ export const METABOLIC_GOAL = {
   PERDITA_GRASSO: 'Perdita Grasso',
 };
 
-/** Angolo (gradi) della direzione obiettivo; ruotando la bussola, questo diventa Nord (0° sul display). */
+/**
+ * Angolo nel piano vettoriale (atan2) dell’obiettivo — usato per ago vs stato metabolico.
+ */
 export const METABOLIC_TARGET_ANGLE_DEG = {
   [METABOLIC_GOAL.RICOMPOSIZIONE]: 90,
   [METABOLIC_GOAL.MASSA]: 45,
   [METABOLIC_GOAL.PERDITA_GRASSO]: -135,
 };
+
+/**
+ * Angolo sulla rosa (0° = Nord / alto, orario positivo) per ogni obiettivo.
+ * Ruotando il volto di `-getGoalCompassAngleDeg(goal)`, l’obiettivo finisce in alto.
+ */
+export const METABOLIC_GOAL_COMPASS_ANGLE_DEG = {
+  [METABOLIC_GOAL.RICOMPOSIZIONE]: 0,
+  [METABOLIC_GOAL.MASSA]: 45,
+  [METABOLIC_GOAL.PERDITA_GRASSO]: -135,
+};
+
+/**
+ * @param {string} goal
+ * @returns {number} gradi rosa per l’obiettivo selezionato
+ */
+export function getGoalCompassAngleDeg(goal) {
+  const g = goal && METABOLIC_GOAL_COMPASS_ANGLE_DEG[goal] != null ? goal : METABOLIC_GOAL.RICOMPOSIZIONE;
+  return METABOLIC_GOAL_COMPASS_ANGLE_DEG[g];
+}
 
 const FINAL_ANGLE_MIN = -135;
 const FINAL_ANGLE_MAX = 135;
