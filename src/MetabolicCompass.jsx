@@ -34,11 +34,7 @@ const DEFAULT_COMPASS_TIMEFRAME = '7d';
 /** Lunghezza fissa dal centro al vertice ≈ 75% del raggio (= 37.5% del lato del volto quadrato). */
 const ARROW_LENGTH_FRAC_OF_FACE = 0.375;
 
-/** Opacità min quando magnitudine → 0 (freccia sempre leggibile). */
-const ARROW_MAGNITUDE_OPACITY_MIN = 0.74;
-const ARROW_MAGNITUDE_OPACITY_MAX = 1;
-
-/** Comportamento analogico: rotazione smussata; magnitudine non scala più l’altezza. */
+/** Comportamento analogico: rotazione smussata; magnitudine modula alone / opacità, non l’altezza. */
 const ARROW_ANALOG_TRANSITION =
   'transform 0.4s ease, box-shadow 0.45s ease, background 0.45s ease, filter 0.45s ease, opacity 0.45s ease';
 
@@ -114,8 +110,6 @@ const ALIGNMENT_TIERS = {
   aligned: {
     needleBg:
       'linear-gradient(180deg, rgba(200, 255, 235, 0.9) 0%, rgba(95, 225, 185, 0.48) 52%, rgba(45, 170, 138, 0.2) 100%)',
-    needleGlow:
-      '0 0 4px rgba(150, 255, 215, 0.7), 0 0 16px rgba(70, 215, 170, 0.42), 0 0 32px rgba(45, 185, 145, 0.2), 0 0 48px rgba(30, 150, 120, 0.07)',
     needleFilter:
       'blur(0.35px) drop-shadow(0 0 6px rgba(100, 235, 190, 0.55)) drop-shadow(0 0 18px rgba(55, 200, 160, 0.28))',
     centerGlow:
@@ -125,8 +119,6 @@ const ALIGNMENT_TIERS = {
   partial: {
     needleBg:
       'linear-gradient(180deg, rgba(236, 240, 248, 0.84) 0%, rgba(150, 172, 192, 0.4) 52%, rgba(88, 108, 128, 0.15) 100%)',
-    needleGlow:
-      '0 0 3px rgba(255,255,255,0.28), 0 0 12px rgba(175, 190, 210, 0.28), 0 0 26px rgba(130, 148, 168, 0.12)',
     needleFilter:
       'blur(0.35px) drop-shadow(0 0 5px rgba(200, 210, 228, 0.38)) drop-shadow(0 0 16px rgba(145, 160, 180, 0.14))',
     centerGlow:
@@ -136,8 +128,6 @@ const ALIGNMENT_TIERS = {
   off: {
     needleBg:
       'linear-gradient(180deg, rgba(255, 212, 200, 0.9) 0%, rgba(238, 125, 108, 0.46) 52%, rgba(190, 72, 65, 0.18) 100%)',
-    needleGlow:
-      '0 0 4px rgba(255, 175, 155, 0.62), 0 0 16px rgba(245, 110, 95, 0.35), 0 0 32px rgba(210, 75, 65, 0.16), 0 0 46px rgba(175, 55, 50, 0.06)',
     needleFilter:
       'blur(0.35px) drop-shadow(0 0 6px rgba(255, 140, 120, 0.5)) drop-shadow(0 0 18px rgba(225, 85, 72, 0.26))',
     centerGlow:
@@ -151,6 +141,51 @@ function alignmentFromFinalAngle(finalAngle) {
   if (difference < 15) return { tier: 'aligned', difference };
   if (difference <= 45) return { tier: 'partial', difference };
   return { tier: 'off', difference };
+}
+
+/** Tint alone freccia per tier (allineata ai gradienti allineamento). */
+const ARROW_HALO_RGB = {
+  aligned: { r: 118, g: 224, b: 192 },
+  partial: { r: 172, g: 184, b: 204 },
+  off: { r: 232, g: 124, b: 108 },
+};
+
+function smoothstep01(t) {
+  const x = Math.max(0, Math.min(1, t));
+  return x * x * (3 - 2 * x);
+}
+
+/**
+ * Intensità metabolica: alone e luminosità crescono con la magnitudine; opacità leggermente più bassa se debole.
+ * Resta sobrio (niente bloom aggressivo).
+ */
+function metabolicArrowMagnitudeStyle(tier, magnitude01, tierNeedleFilter) {
+  const m = Math.max(0, Math.min(1, magnitude01));
+  const s = smoothstep01(m);
+  const { r, g, b } = ARROW_HALO_RGB[tier] ?? ARROW_HALO_RGB.partial;
+
+  const aNear = 0.09 + 0.3 * s;
+  const aMid = 0.04 + 0.17 * s;
+  const aFar = 0.012 + 0.068 * s;
+  const blurNear = 3.5 + 5.5 * s;
+  const blurMid = 11 + 17 * s;
+  const blurFar = 22 + 30 * s;
+
+  const boxShadow = [
+    `0 0 ${blurNear}px rgba(${r},${g},${b},${aNear})`,
+    `0 0 ${blurMid}px rgba(${r},${g},${b},${aMid})`,
+    `0 0 ${blurFar}px rgba(${r},${g},${b},${aFar})`,
+  ].join(', ');
+
+  const brightness = 1 + 0.036 * s;
+  const filter = `${tierNeedleFilter} brightness(${brightness})`;
+
+  const opacityLow = 0.66;
+  const opacityHigh = 1;
+  const opacityT = 0.35 * m + 0.65 * s;
+  const opacity = opacityLow + (opacityHigh - opacityLow) * opacityT;
+
+  return { boxShadow, filter, opacity };
 }
 
 /**
@@ -241,9 +276,10 @@ export default function MetabolicCompass({
   const tierStyle = ALIGNMENT_TIERS[tier];
 
   const magnitude01 = Math.min(1, magnitude);
-  const arrowOpacity =
-    ARROW_MAGNITUDE_OPACITY_MIN +
-    magnitude01 * (ARROW_MAGNITUDE_OPACITY_MAX - ARROW_MAGNITUDE_OPACITY_MIN);
+  const arrowMagStyle = useMemo(
+    () => metabolicArrowMagnitudeStyle(tier, magnitude01, tierStyle.needleFilter),
+    [tier, magnitude01, tierStyle.needleFilter]
+  );
 
   /** Angolo rosa dell’obiettivo (da {@link METABOLIC_COMPASS_DIRECTIONS}). */
   const targetAngle = useMemo(() => getCompassTargetAngleForGoal(goal), [goal]);
@@ -451,7 +487,7 @@ export default function MetabolicCompass({
             ))}
           </div>
 
-          {/* Freccia: lunghezza fissa (~75% raggio); magnitudine → solo opacità */}
+          {/* Freccia: lunghezza fissa; magnitudine → alone + opacità + luminosità leggera */}
           <div
             className="metabolic-compass-arrow-layer"
             aria-hidden
@@ -476,9 +512,9 @@ export default function MetabolicCompass({
                 transition: ARROW_ANALOG_TRANSITION,
                 borderRadius: 9999,
                 background: tierStyle.needleBg,
-                boxShadow: tierStyle.needleGlow,
-                filter: tierStyle.needleFilter,
-                opacity: arrowOpacity,
+                boxShadow: arrowMagStyle.boxShadow,
+                filter: arrowMagStyle.filter,
+                opacity: arrowMagStyle.opacity,
               }}
             />
           </div>
