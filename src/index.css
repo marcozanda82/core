@@ -657,3 +657,33 @@ html, body, #root {
   border: 1px solid rgba(255, 255, 255, 0.8);
   box-shadow: 0 0 15px rgba(14, 165, 233, 0.3);
 }
+
+/* Slider bussola — niente numeri, thumb premium */
+.metabolic-compass-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #e8fffa 0%, #7dd3c0 100%);
+  box-shadow: 0 0 10px rgba(120, 210, 190, 0.45);
+  border: none;
+  margin-top: -5px;
+}
+.metabolic-compass-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 4px;
+}
+.metabolic-compass-range::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #e8fffa 0%, #7dd3c0 100%);
+  box-shadow: 0 0 10px rgba(120, 210, 190, 0.45);
+  border: none;
+}
+.metabolic-compass-range::-moz-range-track {
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
