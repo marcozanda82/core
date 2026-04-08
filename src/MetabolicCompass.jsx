@@ -1,13 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  computeMetabolicCompassOrientation,
   getGoalCompassAngleDeg,
+  getMetabolicTargetAngle,
   metabolicAngleDegToCompassBearingDeg,
   METABOLIC_COMPASS_DIRECTIONS,
   METABOLIC_GOAL,
   METABOLIC_KCAL_NORMALIZATION_REF,
   METABOLIC_TRAINING_NORMALIZATION_REF,
 } from './metabolicDirection';
+import { useMetabolicDirectionEngine } from './metabolicDirectionEngine';
+
+const FINAL_ANGLE_MIN = -135;
+const FINAL_ANGLE_MAX = 135;
 
 const GOALS = [
   METABOLIC_GOAL.RICOMPOSIZIONE,
@@ -122,17 +126,44 @@ function alignmentFromFinalAngle(finalAngle) {
 }
 
 /**
- * Bussola metabolica — lettura immediata, stile scuro premium (Whoop / Apple).
+ * @param {{ dailyHistory?: Array<{ kcalBalance: number, trainingLoad: number }> }} props
+ * Se `dailyHistory` è fornito (non vuoto), il motore usa solo quello; altrimenti storico demo + slider su “oggi”.
  */
-export default function MetabolicCompass() {
+export default function MetabolicCompass({ dailyHistory: dailyHistoryProp } = {}) {
+  const isControlled =
+    Array.isArray(dailyHistoryProp) && dailyHistoryProp.length > 0;
+
+  const [internalHistory, setInternalHistory] = useState(
+    () =>
+      Array.from({ length: 30 }, () => ({
+        kcalBalance: 0,
+        trainingLoad: 45,
+      }))
+  );
+
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [kcalBalance, setKcalBalance] = useState(0);
   const [trainingLoad, setTrainingLoad] = useState(45);
 
-  const { angle, finalAngle, magnitude } = useMemo(
-    () => computeMetabolicCompassOrientation(kcalBalance, trainingLoad, goal),
-    [kcalBalance, trainingLoad, goal]
-  );
+  useEffect(() => {
+    if (isControlled) return;
+    setInternalHistory((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      next[next.length - 1] = { kcalBalance, trainingLoad };
+      return next;
+    });
+  }, [kcalBalance, trainingLoad, isControlled]);
+
+  const dailyHistory = isControlled ? dailyHistoryProp : internalHistory;
+
+  const { angleDeg, magnitude } = useMetabolicDirectionEngine(dailyHistory);
+
+  const finalAngle = useMemo(() => {
+    const targetAngle = getMetabolicTargetAngle(goal);
+    const raw = angleDeg - targetAngle;
+    return Math.max(FINAL_ANGLE_MIN, Math.min(FINAL_ANGLE_MAX, raw));
+  }, [angleDeg, goal]);
 
   const { tier } = useMemo(() => alignmentFromFinalAngle(finalAngle), [finalAngle]);
   const tierStyle = ALIGNMENT_TIERS[tier];
@@ -144,7 +175,7 @@ export default function MetabolicCompass() {
   /** Volto ruotato così l’obiettivo coincide con il Nord visivo; la freccia resta nel sistema schermo. */
   const dialRotationDeg = -goalCompassAngleDeg;
   /** Bearing reale sul volto + rotazione del volto → angolo schermo (CSS, 0° = alto, orario +). */
-  const arrowRotationDeg = metabolicAngleDegToCompassBearingDeg(angle) + dialRotationDeg;
+  const arrowRotationDeg = metabolicAngleDegToCompassBearingDeg(angleDeg) + dialRotationDeg;
 
   return (
     <div
@@ -343,34 +374,36 @@ export default function MetabolicCompass() {
       </div>
 
       {/* Input qualitativi — senza cifre visibili */}
-      <div
-        className="metabolic-compass-controls"
-        style={{
-          width: '100%',
-          maxWidth: 320,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-          paddingTop: 6,
-          borderTop: '1px solid rgba(255,255,255,0.06)',
-          marginTop: 2,
-        }}
-      >
-        <RangeBare
-          aria-label="Bilancio energetico"
-          min={-METABOLIC_KCAL_NORMALIZATION_REF}
-          max={METABOLIC_KCAL_NORMALIZATION_REF}
-          value={kcalBalance}
-          onChange={setKcalBalance}
-        />
-        <RangeBare
-          aria-label="Carico allenamento"
-          min={0}
-          max={METABOLIC_TRAINING_NORMALIZATION_REF}
-          value={trainingLoad}
-          onChange={setTrainingLoad}
-        />
-      </div>
+      {!isControlled && (
+        <div
+          className="metabolic-compass-controls"
+          style={{
+            width: '100%',
+            maxWidth: 320,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            paddingTop: 6,
+            borderTop: '1px solid rgba(255,255,255,0.06)',
+            marginTop: 2,
+          }}
+        >
+          <RangeBare
+            aria-label="Bilancio energetico"
+            min={-METABOLIC_KCAL_NORMALIZATION_REF}
+            max={METABOLIC_KCAL_NORMALIZATION_REF}
+            value={kcalBalance}
+            onChange={setKcalBalance}
+          />
+          <RangeBare
+            aria-label="Carico allenamento"
+            min={0}
+            max={METABOLIC_TRAINING_NORMALIZATION_REF}
+            value={trainingLoad}
+            onChange={setTrainingLoad}
+          />
+        </div>
+      )}
     </div>
   );
 }
