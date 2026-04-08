@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   computeMetabolicCompassOrientation,
+  METABOLIC_COMPASS_DIRECTIONS,
   METABOLIC_GOAL,
 } from './metabolicDirection';
 
@@ -139,19 +140,36 @@ export default function MetabolicCompass() {
           `,
         }}
       >
-        {/* Etichette bordo */}
-        <CompassLabel style={{ left: '50%', top: '7%', transform: 'translateX(-50%)' }}>
-          Ricomposizione
-        </CompassLabel>
-        <CompassLabel style={{ left: '78%', top: '20%', transform: 'translate(-50%, -50%)' }}>
-          Massa
-        </CompassLabel>
-        <CompassLabel style={{ left: '22%', top: '78%', transform: 'translate(-50%, -50%)' }}>
-          Perdita Grasso
-        </CompassLabel>
-        <CompassLabel style={{ left: '50%', bottom: '6%', transform: 'translateX(-50%)' }}>
-          Catabolismo
-        </CompassLabel>
+        {/* Tacche cardinali (8 direzioni) */}
+        {METABOLIC_COMPASS_DIRECTIONS.map(({ angleDeg }) => (
+          <div
+            key={`tick-${angleDeg}`}
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              width: angleDeg % 90 === 0 ? 2 : 1,
+              height: '15%',
+              marginLeft: angleDeg % 90 === 0 ? -1 : -0.5,
+              transformOrigin: '50% 100%',
+              transform: `translateY(-100%) rotate(${angleDeg}deg)`,
+              background:
+                angleDeg % 90 === 0
+                  ? 'linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 100%)'
+                  : 'linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 100%)',
+              borderRadius: 1,
+              pointerEvents: 'none',
+            }}
+          />
+        ))}
+
+        {/* Etichette rosa — posizione da angolo bussola (0° = alto) */}
+        {METABOLIC_COMPASS_DIRECTIONS.map(({ angleDeg, label }) => (
+          <CompassLabel key={`lbl-${angleDeg}`} style={compassLabelStyleFromAngleDeg(angleDeg)}>
+            {label}
+          </CompassLabel>
+        ))}
 
         {/* Ago */}
         <div
@@ -236,6 +254,18 @@ export default function MetabolicCompass() {
       </div>
     </div>
   );
+}
+
+/** Posizione % sul volto: 0° = Nord, positivo = orario. */
+function compassLabelStyleFromAngleDeg(angleDeg, radiusPct = 40) {
+  const rad = (angleDeg * Math.PI) / 180;
+  const left = 50 + radiusPct * Math.sin(rad);
+  const top = 50 - radiusPct * Math.cos(rad);
+  return {
+    left: `${left}%`,
+    top: `${top}%`,
+    transform: 'translate(-50%, -50%)',
+  };
 }
 
 function CompassLabel({ children, style }) {
