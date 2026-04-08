@@ -59,22 +59,44 @@ const FINAL_ANGLE_MIN = -135;
 const FINAL_ANGLE_MAX = 135;
 
 /**
- * Modello vettoriale della direzione metabolica (solo matematica, nessuna UI).
+ * Riferimento per mappare il bilancio kcal dello slider su x ∈ [-1, 1] (input tipico ±500).
+ * @type {number}
+ */
+export const METABOLIC_KCAL_NORMALIZATION_REF = 500;
+
+/**
+ * Riferimento per mappare il carico allenamento su y ∈ [0, 1] (input tipico 0–100).
+ * @type {number}
+ */
+export const METABOLIC_TRAINING_NORMALIZATION_REF = 100;
+
+const RAD_TO_DEG = 180 / Math.PI;
+
+/**
+ * Modello vettoriale: x e y normalizzati, angolo = atan2(y, x), nessun clamp né branching.
  *
- * @param {number} kcalBalance kcal assunte − target kcal
- * @param {number} trainingLoad carico allenamento 0–100
- * @returns {{ angle: number, magnitude: number }}
- *   angle in gradi (atan2), magnitude in [0, 1]
+ * @param {number} kcalBalance
+ * @param {number} trainingLoad
+ * @returns {{ x: number, y: number, angleDeg: number, magnitude: number }}
+ *   angleDeg in gradi; magnitude = hypot(x, y)
  */
 export function computeMetabolicDirection(kcalBalance, trainingLoad) {
-  const x = clamp(kcalBalance / 500, -1, 1);
-  const y = clamp(trainingLoad / 100, 0, 1);
+  const x = kcalBalance / METABOLIC_KCAL_NORMALIZATION_REF;
+  const y = trainingLoad / METABOLIC_TRAINING_NORMALIZATION_REF;
+  const angleDeg = Math.atan2(y, x) * RAD_TO_DEG;
+  const magnitude = Math.hypot(x, y);
 
-  const angle = Math.atan2(y, x) * (180 / Math.PI);
-  const rawMag = Math.sqrt(x * x + y * y);
-  const magnitude = clamp(rawMag, 0, 1);
+  return { x, y, angleDeg, magnitude };
+}
 
-  return { angle, magnitude };
+/**
+ * Solo angolo metabolico (gradi), stesso modello di {@link computeMetabolicDirection}.
+ * @param {number} kcalBalance
+ * @param {number} trainingLoad
+ * @returns {number}
+ */
+export function computeMetabolicDirectionAngleDeg(kcalBalance, trainingLoad) {
+  return computeMetabolicDirection(kcalBalance, trainingLoad).angleDeg;
 }
 
 /**
@@ -93,14 +115,21 @@ export function getMetabolicTargetAngle(goal) {
  * @param {number} kcalBalance
  * @param {number} trainingLoad
  * @param {string} goal una di METABOLIC_GOAL / chiavi di METABOLIC_TARGET_ANGLE_DEG
- * @returns {{ angle: number, magnitude: number, targetAngle: number, finalAngle: number }}
+ * @returns {{ angle: number, magnitude: number, targetAngle: number, finalAngle: number, x: number, y: number }}
  */
 export function computeMetabolicCompassOrientation(kcalBalance, trainingLoad, goal) {
-  const { angle, magnitude } = computeMetabolicDirection(kcalBalance, trainingLoad);
+  const { x, y, angleDeg, magnitude } = computeMetabolicDirection(kcalBalance, trainingLoad);
   const targetAngle = getMetabolicTargetAngle(goal);
-  const finalAngle = clamp(angle - targetAngle, FINAL_ANGLE_MIN, FINAL_ANGLE_MAX);
+  const finalAngle = clamp(angleDeg - targetAngle, FINAL_ANGLE_MIN, FINAL_ANGLE_MAX);
 
-  return { angle, magnitude, targetAngle, finalAngle };
+  return {
+    x,
+    y,
+    angle: angleDeg,
+    magnitude,
+    targetAngle,
+    finalAngle,
+  };
 }
 
 function clamp(value, min, max) {

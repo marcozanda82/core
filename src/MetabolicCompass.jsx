@@ -4,6 +4,8 @@ import {
   getGoalCompassAngleDeg,
   METABOLIC_COMPASS_DIRECTIONS,
   METABOLIC_GOAL,
+  METABOLIC_KCAL_NORMALIZATION_REF,
+  METABOLIC_TRAINING_NORMALIZATION_REF,
 } from './metabolicDirection';
 
 const GOALS = [
@@ -69,7 +71,8 @@ export default function MetabolicCompass() {
   const { tier } = useMemo(() => alignmentFromFinalAngle(finalAngle), [finalAngle]);
   const tierStyle = ALIGNMENT_TIERS[tier];
 
-  const needleLengthPx = NEEDLE_MIN_PX + magnitude * (NEEDLE_MAX_PX - NEEDLE_MIN_PX);
+  const magnitude01 = Math.min(1, magnitude);
+  const needleLengthPx = NEEDLE_MIN_PX + magnitude01 * (NEEDLE_MAX_PX - NEEDLE_MIN_PX);
 
   const goalCompassAngleDeg = useMemo(() => getGoalCompassAngleDeg(goal), [goal]);
   /** Volto ruotato così l’obiettivo coincide con il Nord visivo; l’ago non segue questa rotazione. */
@@ -259,15 +262,15 @@ export default function MetabolicCompass() {
       >
         <RangeBare
           aria-label="Bilancio energetico"
-          min={-500}
-          max={500}
+          min={-METABOLIC_KCAL_NORMALIZATION_REF}
+          max={METABOLIC_KCAL_NORMALIZATION_REF}
           value={kcalBalance}
           onChange={setKcalBalance}
         />
         <RangeBare
           aria-label="Carico allenamento"
           min={0}
-          max={100}
+          max={METABOLIC_TRAINING_NORMALIZATION_REF}
           value={trainingLoad}
           onChange={setTrainingLoad}
         />
