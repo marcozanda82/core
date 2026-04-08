@@ -5399,12 +5399,12 @@ Ottimo! Diario aggiornato. 🥗`;
     setSelectedNodeReport(node);
   };
 
-  const startNodeDrag = useCallback((node, edge) => (e) => {
+  const startNodeDrag = useCallback((node, edge) => (e, activationOpts) => {
     e.stopPropagation();
     setTouchingNodeId(node.id);
     const target = e.currentTarget;
-    const startX = e.clientX;
-    const startY = e.clientY;
+    const startX = Number.isFinite(activationOpts?.clientX0) ? activationOpts.clientX0 : e.clientX;
+    const startY = Number.isFinite(activationOpts?.clientY0) ? activationOpts.clientY0 : e.clientY;
 
     longPressMoveCleanupRef.current?.();
     longPressMoveCleanupRef.current = null;
@@ -5431,6 +5431,7 @@ Ottimo! Diario aggiornato. 🥗`;
       longPressMoveCleanupRef.current = null;
     };
 
+    const innerDelayMs = activationOpts?.skipInnerLongPressDelay === true ? 0 : 180;
     longPressTimerRef.current = setTimeout(() => {
       longPressTimerRef.current = null;
       longPressMoveCleanupRef.current?.();
@@ -5452,7 +5453,7 @@ Ottimo! Diario aggiornato. 🥗`;
         originalDuration: node.duration,
         edge
       });
-    }, 180);
+    }, innerDelayMs);
   }, [activeLog, manualNodes, dailyLog]);
 
   const releaseNodePointer = (e) => {
