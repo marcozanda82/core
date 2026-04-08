@@ -1,5 +1,7 @@
 .ghost-dashboard {
   min-height: 100vh;
+  min-height: calc(var(--vh, 1vh) * 100);
+  min-height: 100dvh;
   background: #121212;
   color: #e4e6eb;
   padding: 24px 20px;

@@ -11,9 +11,12 @@ body {
   color: #e4e6eb;
 }
 
-/* Test: evitare che un parent globale tagli il layout (es. modal fullscreen su mobile) */
+/* Altezza viewport mobile: `100dvh` + `--vh` da innerHeight (main.jsx) come rete di sicurezza */
 html, body, #root {
   height: 100% !important;
+  min-height: 100vh;
+  min-height: calc(var(--vh, 1vh) * 100);
+  min-height: 100dvh;
   overflow: visible !important;
   background: #050a12;
 }
