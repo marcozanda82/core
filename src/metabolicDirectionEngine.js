@@ -1,10 +1,11 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { getTodayString } from './coreEngine';
 
 const RAD_TO_DEG = 180 / Math.PI;
 
 /** @typedef {'1d' | '7d' | '14d' | '30d'} MetabolicTimeframe */
 
-/** Finestra giorni per il sottoinsieme di `dailyHistory` (ultimo = oggi). */
+/** Finestra giorni per il sottoinsieme di `dailyHistory` (ultimo = ultimo giorno incluso nel dataset, mai oggi). */
 const TIMEFRAME_DAY_WINDOW = {
   '1d': 1,
   '7d': 7,
@@ -21,6 +22,16 @@ function clamp(value, min, max) {
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
+}
+
+/**
+ * Esclude voci con `date === oggi` prima del calcolo bussola (doppio controllo rispetto al builder).
+ *
+ * @param {Array<{ date?: string, kcalBalance: number, trainingLoad: number }>} days
+ */
+function compassHistoryWithoutToday(days) {
+  const today = getTodayString();
+  return (days || []).filter((e) => e?.date !== today);
 }
 
 /**
@@ -62,13 +73,14 @@ function tailAverage(days, maxLen) {
  * Se ci sono meno giorni della finestra, {@link tailAverage} usa tutti i giorni disponibili.
  * Poi correzione di coerenza (stessa logica di sempre).
  *
- * @param {Array<{ kcalBalance: number, trainingLoad: number }>} days — più vecchio → più recente; ultimo = oggi
+ * @param {Array<{ date?: string, kcalBalance: number, trainingLoad: number }>} days — più vecchio → più recente; ultimo = ieri (calendario)
  * @param {MetabolicTimeframe} [timeframe='7d']
  * @returns {{ x: number, y: number }}
  */
 export function computeMetabolicEngineTargetVec(days, timeframe = '7d') {
   const windowDays = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
-  let { x, y } = tailAverage(days, windowDays);
+  const safeDays = compassHistoryWithoutToday(days);
+  let { x, y } = tailAverage(safeDays, windowDays);
 
   if (x > 0 && y < 0.3) y *= 0.72;
   if (x < 0 && y > 0.8) y *= 0.94;
@@ -77,8 +89,9 @@ export function computeMetabolicEngineTargetVec(days, timeframe = '7d') {
 }
 
 export function historyFingerprint(days, timeframe = '7d') {
-  if (!days?.length) return `|${timeframe}`;
-  return `${days.length}:${days.map((d) => `${d.kcalBalance},${d.trainingLoad}`).join(';')}|${timeframe}`;
+  const safeDays = compassHistoryWithoutToday(days);
+  if (!safeDays.length) return `|${timeframe}`;
+  return `${safeDays.length}:${safeDays.map((d) => `${d.date ?? ''}:${d.kcalBalance},${d.trainingLoad}`).join(';')}|${timeframe}`;
 }
 
 /**
@@ -96,7 +109,7 @@ export function lerpVec(prev, next, t) {
 /**
  * Output motore: angolo (con micro-rumore stabile per fingerprint) e magnitudine dal vettore smussato.
  *
- * @param {Array<{ kcalBalance: number, trainingLoad: number }>} dailyHistory
+ * @param {Array<{ date?: string, kcalBalance: number, trainingLoad: number }>} dailyHistory
  * @param {MetabolicTimeframe} [timeframe='7d']
  * @returns {{ angleDeg: number, angle: number, magnitude: number, x: number, y: number }}
  */

@@ -19,7 +19,7 @@ const GOALS = [
 
 /** UI segmenti periodo; `value` = stato `selectedTimeframe`. */
 const METABOLIC_COMPASS_TIMEFRAMES = [
-  { value: '1d', label: 'OGGI' },
+  { value: '1d', label: 'IERI' },
   { value: '7d', label: '7G' },
   { value: '14d', label: '14G' },
   { value: '30d', label: '30G' },
@@ -242,8 +242,8 @@ function metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngleDeg) {
 }
 
 /**
- * @param {{ dailyHistory?: Array<{ kcalBalance: number, trainingLoad: number }>, compassScreenActive?: boolean }} props
- * `dailyHistory`: serie reale dal tracker (ultimo elemento = giorno corrente); passare `[]` se assente.
+ * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance: number, trainingLoad: number }>, compassScreenActive?: boolean }} props
+ * `dailyHistory`: serie dal tracker (ultimo = ieri di calendario; oggi escluso); passare `[]` se assente.
  * `compassScreenActive`: quando passa da false a true, ripristina il periodo al default (es. rientro tab bussola).
  */
 export default function MetabolicCompass({
