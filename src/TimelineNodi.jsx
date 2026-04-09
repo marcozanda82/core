@@ -139,6 +139,10 @@ const STRIP_DRAG_RESIST_MOTION = {
   boxShadow: { duration: 0.18, ease: 'easeOut' },
 };
 
+/** Fuori striscia verticale → hint cancellazione (drag orizzontale sulla timeline). */
+const STRIP_DRAG_OUTSIDE_DELETE_SCALE = 1.08;
+const STRIP_DRAG_OUTSIDE_DELETE_OPACITY_MUL = 0.72;
+
 function nodeAddTransition(reduceMotion, isDragging) {
   if (reduceMotion || isDragging) return { duration: 0 };
   return {
@@ -200,6 +204,8 @@ export default function TimelineNodi({
   onStripDragChartPreview,
   /** Fine drag: invalida anteprima prima del commit. */
   onStripDragChartPreviewEnd,
+  /** Rilascio con puntatore sopra/sotto la striscia oraria → cancella nodo (gesto tipo app mobile). */
+  onStripDragOutsideDelete,
 }) {
   const reduceMotion = useReducedMotion();
   const [nowDecimalHour, setNowDecimalHour] = useState(() => getWallClockDecimalHour());
@@ -237,6 +243,9 @@ export default function TimelineNodi({
   const stripDragVisualQRef = useRef(null);
   /** Tier qualità durante drag striscia (solo per feedback visivo; aggiornato al cambio tier). */
   const [stripDragLiveQuality, setStripDragLiveQuality] = useState(null);
+  /** Puntatore Y fuori da {@link timelineContainerRef} durante strip-drag. */
+  const [stripDragOutsideVertical, setStripDragOutsideVertical] = useState(false);
+  const stripDragOutsideVerticalRef = useRef(false);
   const nodesForFrictionRef = useRef(nodes);
   nodesForFrictionRef.current = nodes;
   const chartForFrictionRef = useRef(timelineQualityChartData);
@@ -354,6 +363,8 @@ export default function TimelineNodi({
     stripDragNodeRef.current = node;
     magneticSnapActiveRef.current = false;
     setMagneticSnapActive(false);
+    stripDragOutsideVerticalRef.current = false;
+    setStripDragOutsideVertical(false);
     const t0 = Number(node.time);
     stripDragSmoothedFracRef.current = clampTimelineDragPercent(
       (Number.isFinite(t0) ? t0 : 0) / 24
@@ -564,6 +575,17 @@ export default function TimelineNodi({
     let ended = false;
 
     function handleMove(e) {
+      const clientY = e.clientY;
+      const stripRect = timelineContainerRef?.current?.getBoundingClientRect?.();
+      let pointerOutsideStrip = false;
+      if (stripRect && Number.isFinite(clientY)) {
+        pointerOutsideStrip = clientY < stripRect.top || clientY > stripRect.bottom;
+      }
+      if (pointerOutsideStrip !== stripDragOutsideVerticalRef.current) {
+        stripDragOutsideVerticalRef.current = pointerOutsideStrip;
+        setStripDragOutsideVertical(pointerOutsideStrip);
+      }
+
       const el = containerRef.current;
       if (!el) return;
 
@@ -650,7 +672,11 @@ export default function TimelineNodi({
       }
 
       const n = stripDragNodeRef.current;
-      if (n != null && typeof onStripDragChartPreview === 'function') {
+      if (
+        n != null &&
+        !pointerOutsideStrip &&
+        typeof onStripDragChartPreview === 'function'
+      ) {
         onStripDragChartPreview(n.id, displayPercent * 24);
       }
     }
@@ -660,6 +686,11 @@ export default function TimelineNodi({
       ended = true;
 
       if (typeof onStripDragChartPreviewEnd === 'function') onStripDragChartPreviewEnd();
+
+      const droppedOutsideStrip = stripDragOutsideVerticalRef.current;
+      const nodeForDelete = stripDragNodeRef.current;
+      stripDragOutsideVerticalRef.current = false;
+      setStripDragOutsideVertical(false);
 
       const capEl = stripDragCaptureElRef.current;
       const pid = stripDragPointerIdRef.current;
@@ -674,6 +705,25 @@ export default function TimelineNodi({
       }
 
       document.body.style.userSelect = '';
+
+      if (droppedOutsideStrip) {
+        if (typeof onStripDragOutsideDelete === 'function' && nodeForDelete) {
+          onStripDragOutsideDelete(nodeForDelete);
+        }
+        stripDragSuppressClickRef.current = true;
+        stripDragNodeRef.current = null;
+        magneticSnapActiveRef.current = false;
+        setMagneticSnapActive(false);
+        stripDragSmoothedFracRef.current = null;
+        stripDragPrevMagnetFracRef.current = null;
+        stripDragLastFrictionQRef.current = null;
+        stripDragVisualQRef.current = null;
+        setStripDragLiveQuality(null);
+        setDraggingId(null);
+        setDragX(null);
+        dragXRef.current = null;
+        return;
+      }
 
       const rawX = dragXRef.current;
       const elapsed = performance.now() - stripDragDownAtRef.current;
@@ -740,8 +790,18 @@ export default function TimelineNodi({
       stripDragLastFrictionQRef.current = null;
       stripDragVisualQRef.current = null;
       setStripDragLiveQuality(null);
+      stripDragOutsideVerticalRef.current = false;
+      setStripDragOutsideVertical(false);
     };
-  }, [draggingId, updateMealTime, reduceMotion, onStripDragChartPreview, onStripDragChartPreviewEnd]);
+  }, [
+    draggingId,
+    updateMealTime,
+    reduceMotion,
+    onStripDragChartPreview,
+    onStripDragChartPreviewEnd,
+    onStripDragOutsideDelete,
+    timelineContainerRef,
+  ]);
 
   useEffect(() => {
     dragXRef.current = dragX;
@@ -943,6 +1003,12 @@ export default function TimelineNodi({
                 : { scaleMul: 1, opacityMul: 1, dragGlowExtra: null };
             const stripResistDragGlow =
               isStripDragging && !stripMagneticOn ? stripResistVisual.dragGlowExtra : null;
+            const stripDropDeleteActive = isStripDragging && stripDragOutsideVertical;
+            const stripDeleteScaleMul =
+              stripDropDeleteActive && !reduceMotion ? STRIP_DRAG_OUTSIDE_DELETE_SCALE : 1;
+            const stripDeleteOpacityMul = stripDropDeleteActive
+              ? STRIP_DRAG_OUTSIDE_DELETE_OPACITY_MUL
+              : 1;
             const dragY = isDragging ? dragOffsetY : 0;
             const displayTimeVal = (isDragging && dragLiveTime != null) ? dragLiveTime : node.time;
             const workEndTime = node.time + (node.duration || 1);
@@ -1008,26 +1074,38 @@ export default function TimelineNodi({
                   onClick={onTimelineNodeClick(node)}
                   initial={reduceMotion ? false : { opacity: barOpacity, scale: barScaleDraw * 0.8 }}
                   animate={{
-                    opacity: barOpacity * longPressArmOpacityMul * stripResistVisual.opacityMul,
-                    scale: barScaleDraw * longPressArmScaleMul * stripResistVisual.scaleMul,
+                    opacity:
+                      barOpacity *
+                      longPressArmOpacityMul *
+                      stripResistVisual.opacityMul *
+                      stripDeleteOpacityMul,
+                    scale:
+                      barScaleDraw *
+                      longPressArmScaleMul *
+                      stripResistVisual.scaleMul *
+                      stripDeleteScaleMul,
                     y: isDragging ? dragY - 45 : 0,
                     boxShadow:
                       reduceMotion
                         ? workStripShadow ||
-                          (isActiveDrag
-                            ? stripResistDragGlow || 'none'
-                            : qualityEligibleWork && qWorkRest
-                              ? qWorkRest
-                              : 'none')
-                        : workStripShadow
-                          ? workStripShadow
-                          : isActiveDrag
-                            ? stripResistDragGlow || 'none'
-                            : qWorkPulse
-                              ? qWorkPulse
-                              : qWorkRest
-                                ? [WORK_ADD_GLOW_PULSE, qWorkRest]
-                                : [WORK_ADD_GLOW_PULSE, 'none'],
+                          (stripDropDeleteActive
+                            ? '0 0 22px rgba(239, 68, 68, 0.55)'
+                            : isActiveDrag
+                              ? stripResistDragGlow || 'none'
+                              : qualityEligibleWork && qWorkRest
+                                ? qWorkRest
+                                : 'none')
+                        : stripDropDeleteActive
+                          ? '0 0 26px rgba(239, 68, 68, 0.65), 0 0 48px rgba(220, 38, 38, 0.35)'
+                          : workStripShadow
+                            ? workStripShadow
+                            : isActiveDrag
+                              ? stripResistDragGlow || 'none'
+                              : qWorkPulse
+                                ? qWorkPulse
+                                : qWorkRest
+                                  ? [WORK_ADD_GLOW_PULSE, qWorkRest]
+                                  : [WORK_ADD_GLOW_PULSE, 'none'],
                   }}
                   transition={workBarTransition}
                   whileHover={
@@ -1048,9 +1126,13 @@ export default function TimelineNodi({
                     marginTop: -18 - (node.stackIndex || 0) * 38,
                     height: '36px',
                     transformOrigin: 'center center',
-                    background: isActiveDrag ? 'rgba(255, 234, 0, 0.3)' : 'rgba(255, 234, 0, 0.15)',
-                    borderLeft: '2px solid #ffea00',
-                    borderRight: '2px solid #ffea00',
+                    background: stripDropDeleteActive
+                      ? 'rgba(239, 68, 68, 0.38)'
+                      : isActiveDrag
+                        ? 'rgba(255, 234, 0, 0.3)'
+                        : 'rgba(255, 234, 0, 0.15)',
+                    borderLeft: stripDropDeleteActive ? '2px solid #ef4444' : '2px solid #ffea00',
+                    borderRight: stripDropDeleteActive ? '2px solid #ef4444' : '2px solid #ffea00',
                     borderRadius: '4px',
                     cursor: isActiveDrag ? 'grabbing' : 'grab',
                     touchAction: stripArmPendingId === node.id ? 'pan-x pan-y' : 'none',
@@ -1120,26 +1202,38 @@ export default function TimelineNodi({
                   onClick={onTimelineNodeClick(node)}
                   initial={reduceMotion ? false : { opacity: barOpacity, scale: barScaleDraw * 0.8 }}
                   animate={{
-                    opacity: barOpacity * longPressArmOpacityMul * stripResistVisual.opacityMul,
-                    scale: barScaleDraw * longPressArmScaleMul * stripResistVisual.scaleMul,
+                    opacity:
+                      barOpacity *
+                      longPressArmOpacityMul *
+                      stripResistVisual.opacityMul *
+                      stripDeleteOpacityMul,
+                    scale:
+                      barScaleDraw *
+                      longPressArmScaleMul *
+                      stripResistVisual.scaleMul *
+                      stripDeleteScaleMul,
                     y: isDragging ? dragY - 45 : 0,
                     boxShadow:
                       reduceMotion
                         ? cogStripShadow ||
-                          (isActiveDrag
-                            ? stripResistDragGlow || 'none'
-                            : qualityEligibleCog && qCogRest
-                              ? qCogRest
-                              : 'none')
-                        : cogStripShadow
-                          ? cogStripShadow
-                          : isActiveDrag
-                            ? stripResistDragGlow || 'none'
-                            : qCogPulse
-                              ? qCogPulse
-                              : qCogRest
-                                ? [COG_ADD_GLOW_PULSE, qCogRest]
-                                : [COG_ADD_GLOW_PULSE, 'none'],
+                          (stripDropDeleteActive
+                            ? '0 0 22px rgba(239, 68, 68, 0.55)'
+                            : isActiveDrag
+                              ? stripResistDragGlow || 'none'
+                              : qualityEligibleCog && qCogRest
+                                ? qCogRest
+                                : 'none')
+                        : stripDropDeleteActive
+                          ? '0 0 26px rgba(239, 68, 68, 0.65), 0 0 48px rgba(220, 38, 38, 0.35)'
+                          : cogStripShadow
+                            ? cogStripShadow
+                            : isActiveDrag
+                              ? stripResistDragGlow || 'none'
+                              : qCogPulse
+                                ? qCogPulse
+                                : qCogRest
+                                  ? [COG_ADD_GLOW_PULSE, qCogRest]
+                                  : [COG_ADD_GLOW_PULSE, 'none'],
                   }}
                   transition={cogBarTransition}
                   whileHover={
@@ -1160,9 +1254,13 @@ export default function TimelineNodi({
                     marginTop: -18 - (node.stackIndex || 0) * 38,
                     height: '36px',
                     transformOrigin: 'center center',
-                    background: isActiveDrag ? 'rgba(0, 229, 255, 0.3)' : cognitiveBg,
-                    borderLeft: `2px solid ${cognitiveBorder}`,
-                    borderRight: `2px solid ${cognitiveBorder}`,
+                    background: stripDropDeleteActive
+                      ? 'rgba(239, 68, 68, 0.38)'
+                      : isActiveDrag
+                        ? 'rgba(0, 229, 255, 0.3)'
+                        : cognitiveBg,
+                    borderLeft: `2px solid ${stripDropDeleteActive ? '#ef4444' : cognitiveBorder}`,
+                    borderRight: `2px solid ${stripDropDeleteActive ? '#ef4444' : cognitiveBorder}`,
                     borderRadius: '4px',
                     cursor: isActiveDrag ? 'grabbing' : 'grab',
                     touchAction: stripArmPendingId === node.id ? 'pan-x pan-y' : 'none',
@@ -1226,6 +1324,8 @@ export default function TimelineNodi({
               : isGhostWorkout
                 ? '1px dashed rgba(248, 113, 113, 0.38)'
                 : `2px solid ${nodeBorderColor}`;
+            const pointBgDisplay = stripDropDeleteActive ? 'rgba(239, 68, 68, 0.44)' : bgColor;
+            const pointBorderDisplay = stripDropDeleteActive ? '2px solid #ef4444' : borderStyle;
             const timeLabelStr = isDragging && dragLiveTime != null ? decimalToTimeStr(dragLiveTime) : `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
             const baseScale = isActiveDrag ? 1.2 : (isTouchingOrDragging ? 1.4 : (isImportant ? 1 : 0.8));
             const pointScaleDraw = baseScale * (stripMagneticOn ? 1.08 : 1);
@@ -1292,27 +1392,39 @@ export default function TimelineNodi({
                     : { opacity: targetOpacity, scale: pointScaleDraw * 0.8, x: '-50%' }
                 }
                 animate={{
-                  opacity: targetOpacity * longPressArmOpacityMul * stripResistVisual.opacityMul,
-                  scale: pointScaleDraw * longPressArmScaleMul * stripResistVisual.scaleMul,
+                  opacity:
+                    targetOpacity *
+                    longPressArmOpacityMul *
+                    stripResistVisual.opacityMul *
+                    stripDeleteOpacityMul,
+                  scale:
+                    pointScaleDraw *
+                    longPressArmScaleMul *
+                    stripResistVisual.scaleMul *
+                    stripDeleteScaleMul,
                   x: '-50%',
                   y: isDragging ? dragY - 45 : 0,
                   boxShadow: reduceMotion
-                    ? mealWorkoutMagneticShadow ||
-                      combineBoxShadow(
-                        pointBoxShadow,
-                        stripResistDragGlow || qPointRest || undefined
-                      )
-                    : mealWorkoutMagneticShadow
-                      ? mealWorkoutMagneticShadow
-                      : isActiveDrag
-                        ? stripResistDragGlow
-                          ? combineBoxShadow(pointBoxShadow, stripResistDragGlow)
-                          : pointBoxShadow
-                        : qPointPulse
-                          ? qPointPulse
-                          : qPointRest
-                            ? [POINT_ADD_GLOW_PULSE, combineBoxShadow(pointBoxShadow, qPointRest)]
-                            : [POINT_ADD_GLOW_PULSE, pointBoxShadow],
+                    ? stripDropDeleteActive
+                      ? '0 0 22px rgba(239, 68, 68, 0.55)'
+                      : mealWorkoutMagneticShadow ||
+                        combineBoxShadow(
+                          pointBoxShadow,
+                          stripResistDragGlow || qPointRest || undefined
+                        )
+                    : stripDropDeleteActive
+                      ? '0 0 28px rgba(239, 68, 68, 0.7), 0 0 52px rgba(220, 38, 38, 0.4)'
+                      : mealWorkoutMagneticShadow
+                        ? mealWorkoutMagneticShadow
+                        : isActiveDrag
+                          ? stripResistDragGlow
+                            ? combineBoxShadow(pointBoxShadow, stripResistDragGlow)
+                            : pointBoxShadow
+                          : qPointPulse
+                            ? qPointPulse
+                            : qPointRest
+                              ? [POINT_ADD_GLOW_PULSE, combineBoxShadow(pointBoxShadow, qPointRest)]
+                              : [POINT_ADD_GLOW_PULSE, pointBoxShadow],
                 }}
                 transition={pointQualityTransition}
                 whileHover={
@@ -1333,8 +1445,8 @@ export default function TimelineNodi({
                   width: '36px',
                   height: '36px',
                   borderRadius: '50%',
-                  background: bgColor,
-                  border: borderStyle,
+                  background: pointBgDisplay,
+                  border: pointBorderDisplay,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',

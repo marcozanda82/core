@@ -4568,6 +4568,46 @@ export default function SalaComandi() {
     [isSimulationMode, syncDatiFirebase, pushTimelineUndoSnapshot, getFoodItemsForMealSlot]
   );
 
+  /** Cancellazione dopo drag orizzontale sulla striscia con puntatore fuori dalla fascia verticale della timeline. */
+  const onTimelineStripDragOutsideDelete = useCallback(
+    (node) => {
+      if (!node || isSimulationMode) return;
+      const dragId = node.id;
+      const dragType = node.type;
+      const dlSnap = dailyLogRef.current;
+      const mnSnap = manualNodesRef.current;
+      const idMatch = (a, b) => a === b || String(a) === String(b);
+      const isGhostDrag = dragType === 'ghost_meal' || dragType === 'ghost_workout';
+
+      if (isGhostDrag) {
+        setGhostProgramDeleteModal({ nodeId: dragId, dragType });
+        return;
+      }
+
+      const confirmDelete = window.confirm('Vuoi eliminare questo elemento?');
+      if (!confirmDelete) return;
+
+      if (dragType === 'meal') {
+        const slotId = String(node.mealId || node.id);
+        const itemIds = getFoodItemsForMealSlot(dlSnap, slotId).map((i) => i.id).filter((id) => id != null);
+        if (itemIds.length === 0) return;
+        const idSet = new Set(itemIds.map((x) => String(x)));
+        const newLog = dlSnap.filter((item) => !idSet.has(String(item.id)));
+        setDailyLog(newLog);
+        syncDatiFirebase(newLog, mnSnap);
+        pushTimelineUndoSnapshot(newLog, mnSnap);
+      } else {
+        const newLog = dlSnap.filter((item) => !idMatch(item.id, dragId));
+        const newNodes = mnSnap.filter((n) => !idMatch(n.id, dragId));
+        setDailyLog(newLog);
+        setManualNodes(newNodes);
+        syncDatiFirebase(newLog, newNodes);
+        pushTimelineUndoSnapshot(newLog, newNodes);
+      }
+    },
+    [isSimulationMode, getFoodItemsForMealSlot, syncDatiFirebase, pushTimelineUndoSnapshot]
+  );
+
   /**
    * Carica un pasto nel costruttore. Accetta mealType o id composito "mealType_time" (es. snack_16.5).
    * Con id composito carica solo i food con quel mealType e quel mealTime.
@@ -9985,6 +10025,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 onStripDragChartPreviewStart={onTimelineStripPreviewDragStart}
                 onStripDragChartPreview={scheduleTimelineStripEnergyPreview}
                 onStripDragChartPreviewEnd={clearTimelineStripEnergyPreview}
+                onStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
               />
             </div>
             </div>
@@ -11097,6 +11138,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   onStripDragChartPreviewStart={onTimelineStripPreviewDragStart}
                   onStripDragChartPreview={scheduleTimelineStripEnergyPreview}
                   onStripDragChartPreviewEnd={clearTimelineStripEnergyPreview}
+                  onStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
                 />
               </div>
             </div>
