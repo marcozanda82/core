@@ -6,6 +6,7 @@ import {
   METABOLIC_COMPASS_DIRECTIONS,
   METABOLIC_GOAL,
 } from './metabolicDirection';
+import { getTodayString } from './coreEngine';
 import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
 
 const FINAL_ANGLE_MIN = -135;
@@ -257,6 +258,29 @@ function computeMetabolicCompassDirection(dailyHistory, timeframe) {
   return { angleDeg, magnitude, x, y };
 }
 
+/** Allineato a {@link computeMetabolicEngineTargetVec} (escluso oggi, ultima finestra). */
+const COMPASS_DEBUG_TIMEFRAME_DAYS = { '1d': 1, '7d': 7, '14d': 14, '30d': 30 };
+
+function formatMetabolicCompassDebugDate(isoYmd) {
+  if (!isoYmd || typeof isoYmd !== 'string') return '—';
+  const ymd = isoYmd.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return '—';
+  const t = new Date(`${ymd}T12:00:00`);
+  if (Number.isNaN(t.getTime())) return '—';
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' }).format(t);
+}
+
+function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
+  const today = getTodayString();
+  const safe = (dailyHistory || []).filter((e) => e?.date !== today);
+  const windowLen = COMPASS_DEBUG_TIMEFRAME_DAYS[timeframe] ?? COMPASS_DEBUG_TIMEFRAME_DAYS['7d'];
+  const slice = safe.length <= windowLen ? safe : safe.slice(-windowLen);
+  return {
+    startDate: slice[0]?.date,
+    endDate: slice[slice.length - 1]?.date,
+  };
+}
+
 /**
  * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance: number, trainingLoad: number }>, compassScreenActive?: boolean }} props
  * `dailyHistory`: serie dal tracker (ultimo = ieri di calendario; oggi escluso); passare `[]` se assente.
@@ -297,6 +321,18 @@ export default function MetabolicCompass({
 
   const angleDeg = snapshot?.angleDeg ?? 0;
   const magnitude = snapshot?.magnitude ?? 0;
+
+  /** TEMPORARY: verifica finestra date in test */
+  const compassDebugRangeLine = useMemo(() => {
+    const tfLabel =
+      METABOLIC_COMPASS_TIMEFRAMES.find((t) => t.value === selectedTimeframe)?.label ??
+      selectedTimeframe;
+    const { startDate, endDate } = getMetabolicCompassWindowDateRange(
+      dailyHistory,
+      selectedTimeframe
+    );
+    return `${tfLabel} · ${formatMetabolicCompassDebugDate(startDate)} → ${formatMetabolicCompassDebugDate(endDate)}`;
+  }, [dailyHistory, selectedTimeframe]);
 
   const finalAngle = useMemo(() => {
     const targetAngle = getMetabolicTargetAngle(goal);
@@ -667,6 +703,28 @@ export default function MetabolicCompass({
             />
           </div>
         </div>
+      </div>
+
+      {/* TEMPORARY DEBUG — rimuovere dopo test */}
+      <div
+        className="metabolic-compass-debug-range"
+        aria-hidden
+        style={{
+          margin: '8px 0 0',
+          width: '100%',
+          maxWidth: 340,
+          fontSize: 8,
+          fontWeight: 500,
+          letterSpacing: '0.05em',
+          lineHeight: 1.35,
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          color: 'rgba(232, 235, 242, 0.38)',
+          textAlign: 'center',
+          opacity: 0.55,
+          userSelect: 'none',
+        }}
+      >
+        {compassDebugRangeLine}
       </div>
 
       <div
