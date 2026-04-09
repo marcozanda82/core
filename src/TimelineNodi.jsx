@@ -29,6 +29,29 @@ const GLOW_ACTIVE_DRAG_COGNITIVE =
 const GLOW_ACTIVE_DRAG_POINT =
   '0 0 0 3px rgba(255,255,255,0.3), 0 14px 44px rgba(0,0,0,0.62), 0 0 38px rgba(255,255,255,0.14)';
 
+/** Feedback “magnetic confidence” durante drag striscia (solo visivo; logica snap invariata). */
+const NODE_MAGNETIC_SNAP_SCALE = 2;
+const NODE_MAGNETIC_SNAP_PULSE_PEAK = 2.1;
+const GLOW_MAGNETIC_CONFIDENT = '0 0 12px rgba(0, 229, 255, 0.6)';
+const MAGNETIC_SNAP_PULSE_PEAK_HOLD_MS = 28;
+const MAGNETIC_HAPTIC_SETTLE_MS = 140;
+const MAGNETIC_STEADY_SCALE_MUL = NODE_MAGNETIC_SNAP_SCALE / NODE_ACTIVE_DRAG_SCALE;
+const MAGNETIC_PULSE_SCALE_MUL = NODE_MAGNETIC_SNAP_PULSE_PEAK / NODE_ACTIVE_DRAG_SCALE;
+const MAGNETIC_HAPTIC_BOUNCE_PX = 1.6;
+/** Scala durante fascia magnetica: tween breve invece dello spring lungo (settle ~120–160ms). */
+const MAGNETIC_DRAG_SCALE_TRANSITION = { duration: 0.15, ease: [0.22, 1, 0.36, 1] };
+
+function withMagneticConfidentGlow(shadow, stripMagneticVisual, isStripDragging) {
+  if (!stripMagneticVisual || !isStripDragging || !shadow || shadow === 'none') return shadow;
+  return combineBoxShadow(shadow, GLOW_MAGNETIC_CONFIDENT);
+}
+
+function timelineStripMagneticDragTransition(reduceMotion, isVerticalBodyDrag) {
+  const base = timelineNodeActiveDragTransition(reduceMotion, isVerticalBodyDrag);
+  if (reduceMotion) return base;
+  return { ...base, scale: MAGNETIC_DRAG_SCALE_TRANSITION };
+}
+
 function timelineNodeActiveDragTransition(reduceMotion, isVerticalBodyDrag) {
   if (reduceMotion) {
     return {
@@ -258,6 +281,9 @@ export default function TimelineNodi({
   const [draggingId, setDraggingId] = useState(null);
   const [dragX, setDragX] = useState(null);
   const [magneticSnapActive, setMagneticSnapActive] = useState(false);
+  const [magneticSnapEnterNonce, setMagneticSnapEnterNonce] = useState(0);
+  const [stripMagneticScaleMul, setStripMagneticScaleMul] = useState(1);
+  const [magneticSnapHapticY, setMagneticSnapHapticY] = useState(0);
   /** Durante l’attesa long-press: `touch-action: pan-x pan-y` così swipe/scroll non restano bloccati da `none`. */
   const [stripArmPendingId, setStripArmPendingId] = useState(null);
   /** Nodo in fase di attesa long-press (pointer giù, drag non ancora attivo). */
@@ -616,6 +642,38 @@ export default function TimelineNodi({
   }, [nowLineDecimalHour]);
 
   useEffect(() => {
+    const stripMagneticOn = magneticSnapActive && draggingId != null;
+    if (!stripMagneticOn) {
+      setStripMagneticScaleMul(1);
+      setMagneticSnapHapticY(0);
+      return;
+    }
+    if (reduceMotion) {
+      setStripMagneticScaleMul(MAGNETIC_STEADY_SCALE_MUL);
+    }
+  }, [magneticSnapActive, draggingId, reduceMotion]);
+
+  useEffect(() => {
+    if (magneticSnapEnterNonce === 0 || reduceMotion) return;
+    const stripMagneticOn = magneticSnapActive && draggingId != null;
+    if (!stripMagneticOn) return;
+    setStripMagneticScaleMul(MAGNETIC_PULSE_SCALE_MUL);
+    const tHold = window.setTimeout(() => {
+      setStripMagneticScaleMul(MAGNETIC_STEADY_SCALE_MUL);
+    }, MAGNETIC_SNAP_PULSE_PEAK_HOLD_MS);
+    return () => window.clearTimeout(tHold);
+  }, [magneticSnapEnterNonce, reduceMotion, magneticSnapActive, draggingId]);
+
+  useEffect(() => {
+    if (magneticSnapEnterNonce === 0 || reduceMotion) return;
+    const stripMagneticOn = magneticSnapActive && draggingId != null;
+    if (!stripMagneticOn) return;
+    setMagneticSnapHapticY(-MAGNETIC_HAPTIC_BOUNCE_PX);
+    const t = window.setTimeout(() => setMagneticSnapHapticY(0), MAGNETIC_HAPTIC_SETTLE_MS);
+    return () => window.clearTimeout(t);
+  }, [magneticSnapEnterNonce, reduceMotion, magneticSnapActive, draggingId]);
+
+  useEffect(() => {
     if (!draggingId) return undefined;
 
     let ended = false;
@@ -713,8 +771,12 @@ export default function TimelineNodi({
       dragXRef.current = displayPercent;
       setDragX(displayPercent);
       if (magneticSnapActiveRef.current !== magneticActive) {
+        const wasMagnetic = magneticSnapActiveRef.current;
         magneticSnapActiveRef.current = magneticActive;
         setMagneticSnapActive(magneticActive);
+        if (magneticActive && !wasMagnetic) {
+          setMagneticSnapEnterNonce((n) => n + 1);
+        }
       }
 
       const n = stripDragNodeRef.current;
@@ -1038,7 +1100,8 @@ export default function TimelineNodi({
             const isDragging = draggingNode?.id === node.id;
             const isStripDragging = draggingId === node.id;
             const isActiveDrag = isDragging || isStripDragging;
-            const stripMagneticOn = magneticSnapActive && draggingId === node.id && !reduceMotion;
+            const stripMagneticVisual = magneticSnapActive && draggingId === node.id;
+            const stripMagneticMotion = stripMagneticVisual && !reduceMotion;
             const isTouchingOrDragging = isDragging || (touchingNodeId === node.id);
             const isNodeLongPressArming = nodeDragArmPendingId === node.id && !isActiveDrag;
             const longPressArmScaleMul = isNodeLongPressArming ? NODE_LONG_PRESS_ARM_SCALE : 1;
@@ -1048,7 +1111,7 @@ export default function TimelineNodi({
                 ? STRIP_DRAG_RESIST_VISUAL[stripDragLiveQuality] ?? STRIP_DRAG_RESIST_VISUAL.neutral
                 : { scaleMul: 1, opacityMul: 1, dragGlowExtra: null };
             const stripResistDragGlow =
-              isStripDragging && !stripMagneticOn ? stripResistVisual.dragGlowExtra : null;
+              isStripDragging && !stripMagneticVisual ? stripResistVisual.dragGlowExtra : null;
             const stripDropDeleteActive = isStripDragging && stripDragOutsideVertical;
             const stripDeleteScaleMul =
               stripDropDeleteActive && !reduceMotion ? STRIP_DRAG_OUTSIDE_DELETE_SCALE : 1;
@@ -1109,10 +1172,11 @@ export default function TimelineNodi({
                   : isImportant
                     ? 1
                     : 0.8;
-              const barScaleDraw = barScale * (stripMagneticOn ? 1.08 : 1);
+              const barScaleDraw =
+                barScale * (isStripDragging && stripMagneticVisual ? stripMagneticScaleMul : 1);
               const barOpacity = isActiveDrag ? 1 : (importanceStyle.opacity ?? 1);
               const workStripShadow =
-                isStripDragging && stripMagneticOn
+                isStripDragging && stripMagneticVisual
                   ? '0 0 22px rgba(255, 234, 0, 0.52), 0 0 42px rgba(255, 68, 68, 0.24)'
                   : null;
               const qStateWork = qualityById.get(node.id) ?? 'neutral';
@@ -1132,14 +1196,16 @@ export default function TimelineNodi({
                       boxShadow: { duration: 2.7, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
                     }
                   : isActiveDrag
-                    ? timelineNodeActiveDragTransition(reduceMotion, isDragging)
+                    ? isStripDragging && stripMagneticVisual
+                      ? timelineStripMagneticDragTransition(reduceMotion, isDragging)
+                      : timelineNodeActiveDragTransition(reduceMotion, isDragging)
                     : isStripDragging && !reduceMotion
                       ? STRIP_DRAG_RESIST_MOTION
                       : nodeAddTransition(reduceMotion, isActiveDrag);
               return (
                 <motion.div
                   key={node.id}
-                  className={`timeline-node timeline-node--quality-${qStateWork} ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
+                  className={`timeline-node timeline-node--quality-${qStateWork} ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticVisual ? ' timeline-node--magnetic-snap' : ''}`}
                   onPointerDown={(e) => {
                     scheduleStripArmAfterLongPress(node, e);
                     scheduleStartNodeDragAfterLongPress(node, 'all', e);
@@ -1159,18 +1225,24 @@ export default function TimelineNodi({
                       longPressArmScaleMul *
                       stripResistVisual.scaleMul *
                       stripDeleteScaleMul,
-                    y: isDragging ? dragY - 45 : 0,
+                    y:
+                      (isDragging ? dragY - 45 : 0) +
+                      (isStripDragging && stripMagneticMotion ? magneticSnapHapticY : 0),
                     boxShadow:
                       reduceMotion
                         ? workStripShadow ||
                           (stripDropDeleteActive
                             ? '0 0 22px rgba(239, 68, 68, 0.55)'
                             : isActiveDrag
-                              ? combineBoxShadow(
-                                  workStripShadow
-                                    ? combineBoxShadow(GLOW_ACTIVE_DRAG_WORK, workStripShadow)
-                                    : GLOW_ACTIVE_DRAG_WORK,
-                                  stripResistDragGlow || undefined
+                              ? withMagneticConfidentGlow(
+                                  combineBoxShadow(
+                                    workStripShadow
+                                      ? combineBoxShadow(GLOW_ACTIVE_DRAG_WORK, workStripShadow)
+                                      : GLOW_ACTIVE_DRAG_WORK,
+                                    stripResistDragGlow || undefined
+                                  ),
+                                  stripMagneticVisual,
+                                  isStripDragging
                                 )
                               : qualityEligibleWork && qWorkRest
                                 ? qWorkRest
@@ -1178,11 +1250,15 @@ export default function TimelineNodi({
                         : stripDropDeleteActive
                           ? '0 0 26px rgba(239, 68, 68, 0.65), 0 0 48px rgba(220, 38, 38, 0.35)'
                           : isActiveDrag
-                            ? combineBoxShadow(
-                                workStripShadow
-                                  ? combineBoxShadow(GLOW_ACTIVE_DRAG_WORK, workStripShadow)
-                                  : GLOW_ACTIVE_DRAG_WORK,
-                                stripResistDragGlow || undefined
+                            ? withMagneticConfidentGlow(
+                                combineBoxShadow(
+                                  workStripShadow
+                                    ? combineBoxShadow(GLOW_ACTIVE_DRAG_WORK, workStripShadow)
+                                    : GLOW_ACTIVE_DRAG_WORK,
+                                  stripResistDragGlow || undefined
+                                ),
+                                stripMagneticVisual,
+                                isStripDragging
                               )
                             : workStripShadow
                               ? workStripShadow
@@ -1231,6 +1307,9 @@ export default function TimelineNodi({
                     touchAction: stripArmPendingId === node.id ? 'pan-x pan-y' : 'none',
                     pointerEvents: isNodeFocused ? 'auto' : 'none',
                     ...(isActiveDrag ? {} : importanceStyle),
+                    ...(isActiveDrag && stripMagneticVisual && isStripDragging
+                      ? { filter: 'brightness(1.07) contrast(1.06)' }
+                      : {}),
                     zIndex: isActiveDrag ? NODE_ACTIVE_DRAG_Z_INDEX : isTouchingOrDragging ? 100 : 2,
                   }}
                 >
@@ -1275,10 +1354,11 @@ export default function TimelineNodi({
                   : isImportant
                     ? 1
                     : 0.8;
-              const barScaleDraw = barScale * (stripMagneticOn ? 1.08 : 1);
+              const barScaleDraw =
+                barScale * (isStripDragging && stripMagneticVisual ? stripMagneticScaleMul : 1);
               const barOpacity = isActiveDrag ? 1 : (importanceStyle.opacity ?? 1);
               const cogStripShadow =
-                isStripDragging && stripMagneticOn
+                isStripDragging && stripMagneticVisual
                   ? '0 0 22px rgba(0, 229, 255, 0.5), 0 0 40px rgba(182, 102, 210, 0.28)'
                   : null;
               const qStateCog = qualityById.get(node.id) ?? 'neutral';
@@ -1298,14 +1378,16 @@ export default function TimelineNodi({
                       boxShadow: { duration: 2.7, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
                     }
                   : isActiveDrag
-                    ? timelineNodeActiveDragTransition(reduceMotion, isDragging)
+                    ? isStripDragging && stripMagneticVisual
+                      ? timelineStripMagneticDragTransition(reduceMotion, isDragging)
+                      : timelineNodeActiveDragTransition(reduceMotion, isDragging)
                     : isStripDragging && !reduceMotion
                       ? STRIP_DRAG_RESIST_MOTION
                       : nodeAddTransition(reduceMotion, isActiveDrag);
               return (
                 <motion.div
                   key={node.id}
-                  className={`timeline-node timeline-node--quality-${qStateCog} ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
+                  className={`timeline-node timeline-node--quality-${qStateCog} ${isActiveDrag ? 'is-dragging' : ''}${stripMagneticVisual ? ' timeline-node--magnetic-snap' : ''}`}
                   onPointerDown={(e) => {
                     scheduleStripArmAfterLongPress(node, e);
                     scheduleStartNodeDragAfterLongPress(node, 'all', e);
@@ -1325,18 +1407,24 @@ export default function TimelineNodi({
                       longPressArmScaleMul *
                       stripResistVisual.scaleMul *
                       stripDeleteScaleMul,
-                    y: isDragging ? dragY - 45 : 0,
+                    y:
+                      (isDragging ? dragY - 45 : 0) +
+                      (isStripDragging && stripMagneticMotion ? magneticSnapHapticY : 0),
                     boxShadow:
                       reduceMotion
                         ? cogStripShadow ||
                           (stripDropDeleteActive
                             ? '0 0 22px rgba(239, 68, 68, 0.55)'
                             : isActiveDrag
-                              ? combineBoxShadow(
-                                  cogStripShadow
-                                    ? combineBoxShadow(GLOW_ACTIVE_DRAG_COGNITIVE, cogStripShadow)
-                                    : GLOW_ACTIVE_DRAG_COGNITIVE,
-                                  stripResistDragGlow || undefined
+                              ? withMagneticConfidentGlow(
+                                  combineBoxShadow(
+                                    cogStripShadow
+                                      ? combineBoxShadow(GLOW_ACTIVE_DRAG_COGNITIVE, cogStripShadow)
+                                      : GLOW_ACTIVE_DRAG_COGNITIVE,
+                                    stripResistDragGlow || undefined
+                                  ),
+                                  stripMagneticVisual,
+                                  isStripDragging
                                 )
                               : qualityEligibleCog && qCogRest
                                 ? qCogRest
@@ -1344,11 +1432,15 @@ export default function TimelineNodi({
                         : stripDropDeleteActive
                           ? '0 0 26px rgba(239, 68, 68, 0.65), 0 0 48px rgba(220, 38, 38, 0.35)'
                           : isActiveDrag
-                            ? combineBoxShadow(
-                                cogStripShadow
-                                  ? combineBoxShadow(GLOW_ACTIVE_DRAG_COGNITIVE, cogStripShadow)
-                                  : GLOW_ACTIVE_DRAG_COGNITIVE,
-                                stripResistDragGlow || undefined
+                            ? withMagneticConfidentGlow(
+                                combineBoxShadow(
+                                  cogStripShadow
+                                    ? combineBoxShadow(GLOW_ACTIVE_DRAG_COGNITIVE, cogStripShadow)
+                                    : GLOW_ACTIVE_DRAG_COGNITIVE,
+                                  stripResistDragGlow || undefined
+                                ),
+                                stripMagneticVisual,
+                                isStripDragging
                               )
                             : cogStripShadow
                               ? cogStripShadow
@@ -1389,6 +1481,9 @@ export default function TimelineNodi({
                     touchAction: stripArmPendingId === node.id ? 'pan-x pan-y' : 'none',
                     pointerEvents: isNodeFocused ? 'auto' : 'none',
                     ...(isActiveDrag ? {} : importanceStyle),
+                    ...(isActiveDrag && stripMagneticVisual && isStripDragging
+                      ? { filter: 'brightness(1.07) contrast(1.06)' }
+                      : {}),
                     zIndex: isActiveDrag ? NODE_ACTIVE_DRAG_Z_INDEX : isTouchingOrDragging ? 100 : 2,
                   }}
                 >
@@ -1477,7 +1572,8 @@ export default function TimelineNodi({
                 : isImportant
                   ? 1
                   : 0.8;
-            const pointScaleDraw = baseScale * (stripMagneticOn ? 1.08 : 1);
+            const pointScaleDraw =
+              baseScale * (isStripDragging && stripMagneticVisual ? stripMagneticScaleMul : 1);
             const targetOpacity = ghostVisual
               ? (isTouchingOrDragging ? 0.82 : 0.6)
               : isActiveDrag
@@ -1497,9 +1593,9 @@ export default function TimelineNodi({
               pointBoxShadow = '0 0 8px rgba(182,102,210,0.4)';
             }
             const mealWorkoutMagneticShadow =
-              isStripDragging && stripMagneticOn && isMealPoint
+              isStripDragging && stripMagneticVisual && isMealPoint
                 ? '0 0 26px rgba(0, 229, 255, 0.58), 0 0 48px rgba(255, 255, 255, 0.12)'
-                : isStripDragging && stripMagneticOn && isWorkoutPoint
+                : isStripDragging && stripMagneticVisual && isWorkoutPoint
                   ? '0 0 26px rgba(255, 68, 68, 0.52), 0 0 44px rgba(255, 234, 0, 0.22)'
                   : null;
             const qStatePoint = qualityById.get(node.id) ?? 'neutral';
@@ -1520,19 +1616,25 @@ export default function TimelineNodi({
                     boxShadow: { duration: 2.7, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
                   }
                 : isActiveDrag
-                  ? timelineNodeActiveDragTransition(reduceMotion, isDragging)
+                  ? isStripDragging && stripMagneticVisual
+                    ? timelineStripMagneticDragTransition(reduceMotion, isDragging)
+                    : timelineNodeActiveDragTransition(reduceMotion, isDragging)
                   : isStripDragging && !reduceMotion
                     ? STRIP_DRAG_RESIST_MOTION
                     : nodeAddTransition(reduceMotion, isActiveDrag);
             const pointActiveShadow =
               isActiveDrag && !stripDropDeleteActive
-                ? combineBoxShadow(
-                    mealWorkoutMagneticShadow
-                      ? combineBoxShadow(GLOW_ACTIVE_DRAG_POINT, mealWorkoutMagneticShadow)
-                      : GLOW_ACTIVE_DRAG_POINT,
-                    stripResistDragGlow
-                      ? combineBoxShadow(pointBoxShadow, stripResistDragGlow)
-                      : pointBoxShadow
+                ? withMagneticConfidentGlow(
+                    combineBoxShadow(
+                      mealWorkoutMagneticShadow
+                        ? combineBoxShadow(GLOW_ACTIVE_DRAG_POINT, mealWorkoutMagneticShadow)
+                        : GLOW_ACTIVE_DRAG_POINT,
+                      stripResistDragGlow
+                        ? combineBoxShadow(pointBoxShadow, stripResistDragGlow)
+                        : pointBoxShadow
+                    ),
+                    stripMagneticVisual,
+                    isStripDragging
                   )
                 : null;
             const pointZ = isActiveDrag
@@ -1546,7 +1648,7 @@ export default function TimelineNodi({
             return (
               <motion.div
                 key={node.id}
-                className={`timeline-node meal-node timeline-node--quality-${qStatePoint} ${isActiveDrag ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}${stripMagneticOn ? ' timeline-node--magnetic-snap' : ''}`}
+                className={`timeline-node meal-node timeline-node--quality-${qStatePoint} ${isActiveDrag ? 'is-dragging' : ''} ${ghostVisual ? 'ghost-node' : ''}${stripMagneticVisual ? ' timeline-node--magnetic-snap' : ''}`}
                 onPointerDown={(e) => {
                   scheduleStripArmAfterLongPress(node, e);
                   scheduleStartNodeDragAfterLongPress(node, 'all', e);
@@ -1571,7 +1673,9 @@ export default function TimelineNodi({
                     stripResistVisual.scaleMul *
                     stripDeleteScaleMul,
                   x: '-50%',
-                  y: isDragging ? dragY - 45 : 0,
+                  y:
+                    (isDragging ? dragY - 45 : 0) +
+                    (isStripDragging && stripMagneticMotion ? magneticSnapHapticY : 0),
                   boxShadow: reduceMotion
                     ? stripDropDeleteActive
                       ? '0 0 22px rgba(239, 68, 68, 0.55)'
@@ -1627,7 +1731,9 @@ export default function TimelineNodi({
                   pointerEvents: isNodeFocused || isGhostMeal || isGhostWorkout ? 'auto' : 'none',
                   zIndex: pointZ,
                   filter: isActiveDrag
-                    ? 'saturate(1.14) contrast(1.12) brightness(1.08)'
+                    ? stripMagneticVisual && isStripDragging
+                      ? 'saturate(1.18) contrast(1.15) brightness(1.1)'
+                      : 'saturate(1.14) contrast(1.12) brightness(1.08)'
                     : ghostVisual
                       ? 'none'
                       : importanceStyle.filter,
