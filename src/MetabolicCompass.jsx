@@ -6,7 +6,7 @@ import {
   METABOLIC_COMPASS_DIRECTIONS,
   METABOLIC_GOAL,
 } from './metabolicDirection';
-import { useMetabolicDirectionEngine } from './metabolicDirectionEngine';
+import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
 
 const FINAL_ANGLE_MIN = -135;
 const FINAL_ANGLE_MAX = 135;
@@ -241,6 +241,22 @@ function metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngleDeg) {
   return metabolicCompassDirectionPhrase(bearing) ?? 'serve più stimolo';
 }
 
+const METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG = 180 / Math.PI;
+
+/**
+ * Direzione metabolica per il periodo selezionato: stesso vettore del motore, senza smoothing né rumore angolare.
+ *
+ * @param {Array<{ date?: string, kcalBalance: number, trainingLoad: number }>} dailyHistory
+ * @param {'1d' | '7d' | '14d' | '30d'} timeframe
+ */
+function computeMetabolicCompassDirection(dailyHistory, timeframe) {
+  const { x, y } = computeMetabolicEngineTargetVec(dailyHistory, timeframe);
+  const angleRad = Math.atan2(y, x);
+  const angleDeg = Number.isFinite(angleRad) ? angleRad * METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG : 0;
+  const magnitude = Math.hypot(x, y);
+  return { angleDeg, magnitude, x, y };
+}
+
 /**
  * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance: number, trainingLoad: number }>, compassScreenActive?: boolean }} props
  * `dailyHistory`: serie dal tracker (ultimo = ieri di calendario; oggi escluso); passare `[]` se assente.
@@ -255,6 +271,7 @@ export default function MetabolicCompass({
   const prevCompassScreenActiveRef = useRef(false);
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_COMPASS_TIMEFRAME);
+  const [snapshot, setSnapshot] = useState(null);
 
   useEffect(() => {
     if (!compassScreenActive) {
@@ -267,10 +284,19 @@ export default function MetabolicCompass({
     prevCompassScreenActiveRef.current = true;
   }, [compassScreenActive]);
 
-  const { angleDeg, magnitude } = useMetabolicDirectionEngine(
-    dailyHistory,
-    selectedTimeframe
+  const compassHistoryKey = useMemo(
+    () => historyFingerprint(dailyHistory, selectedTimeframe),
+    [dailyHistory, selectedTimeframe]
   );
+
+  useEffect(() => {
+    const result = computeMetabolicCompassDirection(dailyHistory, selectedTimeframe);
+    setSnapshot(result);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- compassHistoryKey = historyFingerprint(dailyHistory, selectedTimeframe)
+  }, [compassHistoryKey]);
+
+  const angleDeg = snapshot?.angleDeg ?? 0;
+  const magnitude = snapshot?.magnitude ?? 0;
 
   const finalAngle = useMemo(() => {
     const targetAngle = getMetabolicTargetAngle(goal);
