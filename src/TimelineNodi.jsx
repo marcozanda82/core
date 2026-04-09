@@ -143,6 +143,23 @@ const STRIP_DRAG_RESIST_MOTION = {
 const STRIP_DRAG_OUTSIDE_DELETE_SCALE = 1.08;
 const STRIP_DRAG_OUTSIDE_DELETE_OPACITY_MUL = 0.72;
 
+/** Ora live nel nodo durante drag (striscia o long-press verticale). */
+const TIMELINE_DRAG_LIVE_TIME_IN_NODE_STYLE = {
+  position: 'absolute',
+  inset: 0,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontWeight: 800,
+  color: '#ffffff',
+  textShadow: '0 0 8px rgba(0,0,0,1), 0 0 2px #000, 0 1px 0 #000',
+  letterSpacing: '0.04em',
+  lineHeight: 1,
+  pointerEvents: 'none',
+  zIndex: 6,
+  textAlign: 'center',
+};
+
 function nodeAddTransition(reduceMotion, isDragging) {
   if (reduceMotion || isDragging) return { duration: 0 };
   return {
@@ -1028,6 +1045,27 @@ export default function TimelineNodi({
                   : clampTimelineDragPercent(getTimePositionPercent(timeHours) / 100);
               return `${clampTimelineDragPercent(percent) * 100}%`;
             };
+            const stripDragLiveHourDecimal =
+              draggingId === node.id && dragX != null && Number.isFinite(Number(dragX))
+                ? clampTimelineDragPercent(Number(dragX)) * 24
+                : null;
+            const verticalDragLiveHourDecimal =
+              isDragging && draggingNode?.id === node.id && dragLiveTime != null
+                ? Number(dragLiveTime)
+                : null;
+            const dragLiveHourForNode =
+              verticalDragLiveHourDecimal != null && Number.isFinite(verticalDragLiveHourDecimal)
+                ? verticalDragLiveHourDecimal
+                : stripDragLiveHourDecimal != null && Number.isFinite(stripDragLiveHourDecimal)
+                  ? stripDragLiveHourDecimal
+                  : null;
+            const showDragLiveTimeInside =
+              isActiveDrag && dragLiveHourForNode != null && Number.isFinite(dragLiveHourForNode);
+            const dragLiveTimeInsideStr = showDragLiveTimeInside
+              ? typeof decimalToTimeStr === 'function'
+                ? decimalToTimeStr(dragLiveHourForNode)
+                : `${Math.floor(dragLiveHourForNode)}:${String(Math.round((dragLiveHourForNode % 1) * 60)).padStart(2, '0')}`
+              : '';
             const cognitiveIcon = node.subType === 'studio' ? '📚' : '💻';
             const cognitiveBg = 'rgba(0, 229, 255, 0.15)';
             const cognitiveBorder = '#00e5ff';
@@ -1141,8 +1179,19 @@ export default function TimelineNodi({
                     zIndex: isActiveDrag ? 10 : (isTouchingOrDragging ? 100 : 2),
                   }}
                 >
+                  {showDragLiveTimeInside ? (
+                    <span
+                      aria-live="polite"
+                      style={{
+                        ...TIMELINE_DRAG_LIVE_TIME_IN_NODE_STYLE,
+                        fontSize: 'clamp(0.55rem, 2.2vw, 0.75rem)',
+                      }}
+                    >
+                      {dragLiveTimeInsideStr}
+                    </span>
+                  ) : null}
                   <div onPointerDown={(e) => { scheduleStripArmAfterLongPress(node, e); scheduleStartNodeDragAfterLongPress(node, 'start', e); }} onPointerUp={handleNodePointerEnd} onPointerCancel={handleNodePointerEnd} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: stripArmPendingId === node.id ? 'pan-x pan-y' : 'none' }}>
-                    {(dragEdge === 'start' || dragEdge === 'all') && (
+                    {(dragEdge === 'start' || dragEdge === 'all') && !showDragLiveTimeInside && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
                       </div>
@@ -1150,7 +1199,7 @@ export default function TimelineNodi({
                     💼
                   </div>
                   <div onPointerDown={(e) => { scheduleStripArmAfterLongPress(node, e); scheduleStartNodeDragAfterLongPress(node, 'end', e); }} onPointerUp={handleNodePointerEnd} onPointerCancel={handleNodePointerEnd} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: '2px solid #ffea00', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: stripArmPendingId === node.id ? 'pan-x pan-y' : 'none' }}>
-                    {(dragEdge === 'end' || dragEdge === 'all') && (
+                    {(dragEdge === 'end' || dragEdge === 'all') && !showDragLiveTimeInside && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: '#ffea00', color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
                       </div>
@@ -1269,8 +1318,19 @@ export default function TimelineNodi({
                     zIndex: isActiveDrag ? 10 : (isTouchingOrDragging ? 100 : 2),
                   }}
                 >
+                  {showDragLiveTimeInside ? (
+                    <span
+                      aria-live="polite"
+                      style={{
+                        ...TIMELINE_DRAG_LIVE_TIME_IN_NODE_STYLE,
+                        fontSize: 'clamp(0.55rem, 2.2vw, 0.75rem)',
+                      }}
+                    >
+                      {dragLiveTimeInsideStr}
+                    </span>
+                  ) : null}
                   <div onPointerDown={(e) => { scheduleStripArmAfterLongPress(node, e); scheduleStartNodeDragAfterLongPress(node, 'start', e); }} onPointerUp={handleNodePointerEnd} onPointerCancel={handleNodePointerEnd} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', left: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: stripArmPendingId === node.id ? 'pan-x pan-y' : 'none' }}>
-                    {(dragEdge === 'start' || dragEdge === 'all') && (
+                    {(dragEdge === 'start' || dragEdge === 'all') && !showDragLiveTimeInside && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time)}:{String(Math.round((node.time % 1) * 60)).padStart(2, '0')}
                       </div>
@@ -1278,7 +1338,7 @@ export default function TimelineNodi({
                     {cognitiveIcon}
                   </div>
                   <div onPointerDown={(e) => { scheduleStripArmAfterLongPress(node, e); scheduleStartNodeDragAfterLongPress(node, 'end', e); }} onPointerUp={handleNodePointerEnd} onPointerCancel={handleNodePointerEnd} onClick={onTimelineNodeClick(node)} style={{ position: 'absolute', right: '-18px', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.8)', border: `2px solid ${cognitiveBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'ew-resize', touchAction: stripArmPendingId === node.id ? 'pan-x pan-y' : 'none' }}>
-                    {(dragEdge === 'end' || dragEdge === 'all') && (
+                    {(dragEdge === 'end' || dragEdge === 'all') && !showDragLiveTimeInside && (
                       <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', background: cognitiveBorder, color: '#000', padding: '2px 6px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', zIndex: 60, whiteSpace: 'nowrap', boxShadow: '0 2px 5px rgba(0,0,0,0.5)' }}>
                         {Math.floor(node.time + (node.duration || 1))}:{String(Math.round(((node.time + (node.duration || 1)) % 1) * 60)).padStart(2, '0')}
                       </div>
@@ -1459,12 +1519,27 @@ export default function TimelineNodi({
                   transition: isActiveDrag ? 'none' : 'left 0.3s ease-out, background 0.15s, box-shadow 0.2s ease',
                 }}
               >
-                {!ghostVisual && !isMealPoint ? (
-                  <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor)))), marginBottom: '2px', transition: 'color 0.2s' }}>
-                    {timeLabelStr}
+                {showDragLiveTimeInside ? (
+                  <span
+                    aria-live="polite"
+                    className="timeline-node-drag-live-time"
+                    style={{
+                      ...TIMELINE_DRAG_LIVE_TIME_IN_NODE_STYLE,
+                      fontSize: isPesi ? '0.58rem' : '0.68rem',
+                    }}
+                  >
+                    {dragLiveTimeInsideStr}
                   </span>
-                ) : null}
-                <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || (isPesi ? pointBorderColor : 'inherit'))))) }}>{iconContent}</span>
+                ) : (
+                  <>
+                    {!ghostVisual && !isMealPoint ? (
+                      <span className="node-time-label" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || pointBorderColor)))), marginBottom: '2px', transition: 'color 0.2s' }}>
+                        {timeLabelStr}
+                      </span>
+                    ) : null}
+                    <span style={{ lineHeight: 1, fontSize: isPesi ? '0.55rem' : '1rem', fontWeight: isPesi ? 'bold' : 'normal', color: isStimulant ? '#f59e0b' : (isWater ? '#00e5ff' : (isAlcohol ? '#f44336' : (isCognitivePoint ? '#b666d2' : (bioTypeBorder || (isPesi ? pointBorderColor : 'inherit'))))) }}>{iconContent}</span>
+                  </>
+                )}
               </motion.div>
             );
           })}
