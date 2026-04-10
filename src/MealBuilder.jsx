@@ -1260,7 +1260,7 @@ export default function MealBuilder({
                         +
                       </button>
                     </div>
-                    {showFoodDropdown && (isSearching || foodNameInput.trim() || (foodDropdownSuggestions && foodDropdownSuggestions.length > 0)) && (
+                    {showFoodDropdown && (!!foodNameInput.trim() || isSearching || ((foodDropdownSuggestions && foodDropdownSuggestions.length > 0))) && (
                       <div
                         style={{
                           position: 'absolute',
