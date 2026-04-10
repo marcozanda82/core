@@ -1,0 +1,11 @@
+{
+  "Pollo, intero, cotto al forno": ["pollo arrosto", "pollo allo spiedo"],
+  "Bovino, adulto, carne macinata, cruda": ["carne trita", "macinato di manzo", "hamburger crudo"],
+  "Uovo, di gallina, intero, cotto in camicia": ["uovo sodo", "uova lesse", "uova cotte"],
+  "Uovo, di gallina, intero, cotto in padella": ["uovo al tegamino", "uovo fritto", "uova strapazzate"],
+  "Patate, cotte al forno": ["patate arrosto", "patate al forno"],
+  "Olio, di oliva extra vergine": ["olio evo", "olio di oliva", "olio per cucinare"],
+  "Bevanda analcolica tipo cola": ["coca cola", "pepsi", "coca"],
+  "Suino, prosciutto crudo, disossato": ["prosciutto crudo", "crudo di parma", "san daniele"],
+  "Siero di latte, proteine isolate": ["whey", "proteine in polvere", "pro in polvere"]
+}
