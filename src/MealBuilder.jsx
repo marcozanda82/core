@@ -3,6 +3,7 @@
  * Estratto da SalaComandi.jsx. La logica saveMealToDiary resta nel genitore; qui solo rendering e onClick.
  */
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import FoodSearch from './FoodSearch';
 import { useDailyData } from './context/DailyDataContext';
 import { TARGETS } from './useBiochimico';
 import {
@@ -229,18 +230,11 @@ export default function MealBuilder({
   setIsBarcodeScannerOpen,
   barcodeVideoRef,
   onCloseBarcodeScanner,
-  foodInputRef,
   foodNameInput,
   setFoodNameInput,
   foodWeightInput,
   setFoodWeightInput,
   handleAddFoodManual,
-  foodDropdownSuggestions,
-  getLastQuantityForFood,
-  showFoodDropdown,
-  setShowFoodDropdown,
-  generateFoodWithAI,
-  isGeneratingFood,
   abitudiniIeri,
   addedFoods,
   setAddedFoods,
@@ -269,6 +263,38 @@ export default function MealBuilder({
 }) {
   const { consumedFoods: diaryConsumedFoods, totals: diaryTotals, targetKcal: diaryTargetKcal } = useDailyData();
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
+
+  /** CREA (Fuse): aggiunge al pasto in costruzione con macro già alla porzione. */
+  const handleFoodAddedFromSearch = useCallback(
+    (food) => {
+      if (!food || typeof food !== 'object') return;
+      const grams = Math.max(0, Number(food.grams) || 0);
+      const kcal = Math.max(0, Number(food.kcal) || 0);
+      const prot = Math.max(0, Number(food.pro) || 0);
+      const carb = Math.max(0, Number(food.carbs) || 0);
+      const fat = Math.max(0, Number(food.fat) || 0);
+      const uid = `crea_${food.id ?? 'x'}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const item = {
+        id: uid,
+        type: 'food',
+        mealType,
+        desc: String(food.name || '').trim() || 'Alimento',
+        name: String(food.name || '').trim() || 'Alimento',
+        qta: grams,
+        weight: grams,
+        kcal,
+        cal: kcal,
+        prot,
+        carb,
+        fat,
+        fatTotal: fat,
+        category: food.category,
+        _sourceCREA: true,
+      };
+      setAddedFoods((prev) => [item, ...prev]);
+    },
+    [mealType, setAddedFoods]
+  );
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
   const [mealCarouselTab, setMealCarouselTab] = useState('macro');
   const [numpadFoodId, setNumpadFoodId] = useState(null);
@@ -351,7 +377,6 @@ export default function MealBuilder({
     const name = String(food.desc || food.name || '').trim() || 'Ricetta';
     const w = Math.max(50, Math.min(5000, Math.round(Number(food.qta ?? food.weight) || 100)));
     setAddedFoods((prev) => prev.filter((f) => f.id !== foodId));
-    setShowFoodDropdown(false);
     setRecipeSearchResults([]);
     setShowRecipeDropdown(false);
     setExtraSearchResults([]);
@@ -478,20 +503,6 @@ export default function MealBuilder({
     setComplexPortionWeight(100);
     setEditingRecipeKey(recipe.key != null ? String(recipe.key) : null);
   };
-
-  const sortedSuggestions = useMemo(() => {
-    const list = foodDropdownSuggestions || [];
-    if (list.length === 0 || recentFoods.length === 0) return list;
-    return [...list].sort((a, b) => {
-      const aId = a.id ?? a.key;
-      const bId = b.id ?? b.key;
-      const aRecent = recentFoods.includes(aId);
-      const bRecent = recentFoods.includes(bId);
-      if (aRecent && !bRecent) return -1;
-      if (!aRecent && bRecent) return 1;
-      return 0;
-    });
-  }, [foodDropdownSuggestions, recentFoods]);
 
   const handleMealCarouselScroll = (e) => {
     const { scrollLeft, clientWidth } = e.target;
@@ -1249,45 +1260,73 @@ export default function MealBuilder({
             <div style={{ position: 'sticky', top: '-20px', zIndex: 50, background: '#111', paddingTop: '20px', paddingBottom: '10px', borderBottom: '1px solid #333', margin: '0 -15px 20px -15px', paddingLeft: '15px', paddingRight: '15px' }}>
               {!isComplexMode ? (
                 <>
-                  <div className="quick-add-bar">
-                    <div style={{ position: 'relative', flex: 3, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+                  <div style={{ marginBottom: 12, maxWidth: 420 }}>
+                    <FoodSearch onFoodAdded={handleFoodAddedFromSearch} />
+                  </div>
+                  {foodNameInput.trim() ? (
+                    <div
+                      className="quick-add-bar"
+                      style={{ marginBottom: 12, flexWrap: 'wrap', alignItems: 'center', gap: 8 }}
+                    >
+                      <span style={{ fontSize: '0.72rem', color: '#94a3b8', flex: '1 1 100%' }}>Da barcode (grammi + aggiungi)</span>
+                      <span
+                        style={{
+                          flex: '2 1 120px',
+                          minWidth: 0,
+                          fontSize: '0.85rem',
+                          color: '#e2e8f0',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={foodNameInput}
+                      >
+                        {foodNameInput}
+                      </span>
                       <input
-                        ref={foodInputRef}
-                        type="text"
-                        className="quick-input input-name"
-                        placeholder="Es. Pollo"
-                        value={foodNameInput}
-                        onChange={(e) => setFoodNameInput(e.target.value)}
-                        onFocus={() => setShowFoodDropdown(true)}
-                        onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') document.getElementById('weight-input')?.focus(); }}
-                        style={{ flex: 3, width: '100%', paddingRight: foodNameInput ? '36px' : undefined, boxSizing: 'border-box' }}
+                        id="weight-input"
+                        type="number"
+                        inputMode="decimal"
+                        className="quick-input input-weight"
+                        placeholder="g"
+                        value={foodWeightInput}
+                        onChange={(e) => setFoodWeightInput(e.target.value)}
+                        onFocus={(e) => {
+                          if (numpadFoodId) e.target.blur();
+                        }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()}
+                        style={{ flex: '0 0 80px', maxWidth: '90px', textAlign: 'center', boxSizing: 'border-box' }}
                       />
-                      {foodNameInput ? (
-                        <button type="button" onClick={() => setFoodNameInput('')} aria-label="Cancella ricerca" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', width: '28px', height: '28px', minWidth: 28, minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', color: '#888', fontSize: '1rem', cursor: 'pointer', lineHeight: 1 }}>✕</button>
-                      ) : null}
+                      <button type="button" className="quick-add-btn" onClick={handleAddFoodManual}>
+                        +
+                      </button>
                     </div>
-                    <input
-                      id="weight-input"
-                      type="number"
-                      inputMode="decimal"
-                      className="quick-input input-weight"
-                      placeholder="g"
-                      value={foodWeightInput}
-                      onChange={(e) => setFoodWeightInput(e.target.value)}
-                      onFocus={(e) => { if (numpadFoodId) e.target.blur(); }}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()}
-                      style={{ flex: 1, maxWidth: '80px', textAlign: 'center', boxSizing: 'border-box' }}
-                    />
-                    <button type="button" title="Scansiona barcode" onClick={() => setIsBarcodeScannerOpen(prev => !prev)} style={{ padding: '10px 12px', background: isBarcodeScannerOpen ? '#00e5ff' : 'rgba(255,255,255,0.08)', border: '1px solid #333', borderRadius: '10px', cursor: 'pointer', fontSize: '1.1rem' }}>📷</button>
-                    <button type="button" className="quick-add-btn" onClick={handleAddFoodManual}>+</button>
+                  ) : null}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      title="Scansiona barcode"
+                      onClick={() => setIsBarcodeScannerOpen((prev) => !prev)}
+                      style={{
+                        padding: '10px 14px',
+                        background: isBarcodeScannerOpen ? '#00e5ff' : 'rgba(255,255,255,0.08)',
+                        border: '1px solid #333',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        color: isBarcodeScannerOpen ? '#000' : '#e2e8f0',
+                      }}
+                    >
+                      📷 Barcode
+                    </button>
+                    <span style={{ fontSize: '0.68rem', color: '#64748b' }}>Open Food Facts → compila grammi e +</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
                       setIsComplexMode(true);
                       setEditingRecipeKey(null);
-                      setShowFoodDropdown(false);
                       setRecipeSearchResults([]);
                       setShowRecipeDropdown(false);
                       setExtraSearchResults([]);
@@ -1869,7 +1908,7 @@ export default function MealBuilder({
                 </button>
               </div>
             )}
-            {!isComplexMode && foodNameInput.trim() === '' && abitudiniIeri.length > 0 && (
+            {!isComplexMode && abitudiniIeri.length > 0 && (
               <div style={{ marginBottom: '16px' }}>
                 <button type="button" onClick={() => setIsAbitudiniOpen(prev => !prev)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid #333', borderRadius: '10px', color: '#888', fontSize: '0.7rem', letterSpacing: '1px', cursor: 'pointer', textAlign: 'left' }}>
                   <span>Abitudini di ieri</span>
@@ -1883,35 +1922,6 @@ export default function MealBuilder({
                       </button>
                     ))}
                   </div>
-                )}
-              </div>
-            )}
-            {!isComplexMode && showFoodDropdown && (foodNameInput.trim() || sortedSuggestions.length > 0) && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#1e1e1e', border: '1px solid #333', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '250px', overflowY: 'auto', zIndex: 1000, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', margin: 0, padding: 0 }}>
-                {sortedSuggestions.map(s => (
-                  <div
-                    key={s.key}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => { setFoodNameInput(s.desc); setFoodWeightInput(getLastQuantityForFood(s.desc) || ''); setShowFoodDropdown(false); setTimeout(() => document.getElementById('weight-input')?.focus(), 50); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFoodNameInput(s.desc); setFoodWeightInput(getLastQuantityForFood(s.desc) || ''); setShowFoodDropdown(false); setTimeout(() => document.getElementById('weight-input')?.focus(), 50); } }}
-                    style={{ padding: '14px 16px', borderBottom: '1px solid #2a2a2a', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', minHeight: '48px', boxSizing: 'border-box' }}
-                  >
-                    <span style={{ fontWeight: '500', fontSize: '1rem' }}>{s.desc}</span>
-                    <span style={{ fontSize: '0.85rem', color: '#00e5ff' }}>{s.kcal != null ? `${Math.round(s.kcal)} kcal` : (s.kcalPer100 != null ? `${Math.round(s.kcalPer100)} kcal/100g` : '')}</span>
-                  </div>
-                ))}
-                {foodNameInput.trim() && (
-                  <button type="button" style={{ width: '100%', padding: '14px 16px', minHeight: '48px', boxSizing: 'border-box', textAlign: 'left', background: 'rgba(179, 136, 255, 0.15)', border: 'none', borderBottom: '1px solid #2a2a2a', color: '#b388ff', cursor: isGeneratingFood ? 'wait' : 'pointer', fontSize: '1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }} onClick={() => generateFoodWithAI(foodNameInput.trim())} disabled={isGeneratingFood}>
-                    {isGeneratingFood ? (
-                      '⏳ Generazione in corso...'
-                    ) : (
-                      <>
-                        <img src="/nuova-icona.png" alt="" width={22} height={22} decoding="async" style={{ objectFit: 'contain', flexShrink: 0 }} />
-                        <span>{`Genera con AI: "${foodNameInput.trim()}"`}</span>
-                      </>
-                    )}
-                  </button>
                 )}
               </div>
             )}

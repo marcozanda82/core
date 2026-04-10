@@ -144,7 +144,6 @@ import {
   getDynamicMealTargets,
   normalizeMealFoodItem,
   normalizeMealFoodsArray,
-  scoreFoodForSmartMealBuilder,
   buildSmartMealPhysioContextSnippet,
   parseKentuInvisibleCmd,
   normalizeCalorieStrategyTarget,
@@ -2240,10 +2239,7 @@ export default function SalaComandi() {
   const [inspectedFood, setInspectedFood] = useState(null);
   const [editFoodData, setEditFoodData] = useState(null);
   const [isAIVerifying, setIsAIVerifying] = useState(false);
-  
-  const [foodDropdownSuggestions, setFoodDropdownSuggestions] = useState([]);
-  const [showFoodDropdown, setShowFoodDropdown] = useState(false);
-  const [isGeneratingFood, setIsGeneratingFood] = useState(false);
+
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
   const barcodeVideoRef = useRef(null);
   const barcodeStreamRef = useRef(null);
@@ -2677,7 +2673,6 @@ export default function SalaComandi() {
   const lastLogFromFirebaseRef = useRef(null);
   const pendingLogRef = useRef(null);
   const pendingNodesRef = useRef(null);
-  const foodInputRef = useRef(null);
   const csvInputRef = useRef(null);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
   const [startupSafetyBypass, setStartupSafetyBypass] = useState(false);
@@ -3892,30 +3887,6 @@ export default function SalaComandi() {
     });
     return { averages, daysFound: totalDaysFound };
   };
-
-  useEffect(() => {
-    const q = (foodNameInput || '').trim().toLowerCase();
-    if (!q) {
-      setFoodDropdownSuggestions([]);
-      return;
-    }
-    const keys = Object.keys(foodDb || {});
-    const baseMt = String(mealType || 'pranzo').split('_')[0].toLowerCase();
-    const smartSort = baseMt === 'pranzo' || baseMt === 'cena';
-    const matches = keys.filter(k => {
-      const d = foodDb[k];
-      const desc = (d?.desc || d?.name || '').toLowerCase();
-      return desc.includes(q);
-    });
-    const ordered = smartSort
-      ? [...matches].sort(
-          (a, b) => scoreFoodForSmartMealBuilder(foodDb[b]) - scoreFoodForSmartMealBuilder(foodDb[a])
-        )
-      : matches;
-    setFoodDropdownSuggestions(
-      ordered.slice(0, 10).map(k => ({ key: k, desc: foodDb[k]?.desc || foodDb[k]?.name || k }))
-    );
-  }, [foodNameInput, foodDb, mealType]);
 
   useEffect(() => {
     if (!draggingNode) return;
@@ -5234,7 +5205,6 @@ Ottimo! Diario aggiornato. 🥗`;
     setAddedFoods([item, ...addedFoods]);
     setFoodNameInput('');
     setFoodWeightInput('');
-    setTimeout(() => foodInputRef.current?.focus(), 100);
   };
 
   const handleCalibrateFoodWeight = (foodId, deltaG) => {
@@ -8239,67 +8209,6 @@ ${dbKeys || 'n/d'}`;
     if (!Array.isArray(rows) || rows.length === 0) return null;
     return rows;
   }, [remotePlanning]);
-
-  const generateFoodWithAI = async (foodName) => {
-    const name = (foodName || foodNameInput || '').trim();
-    if (!name) return;
-    if (!userUid) { 
-      alert('Effettua il login per salvare nuovi alimenti.'); 
-      return; 
-    }
-    setIsGeneratingFood(true);
-    try {
-      const prompt = `Restituisci SOLO un JSON valido, senza altro testo, con i valori nutrizionali per 100g dell'alimento "${name}".
-Chiavi obbligatorie (numeri): desc (stringa con il nome), kcal, prot, carb, fatTotal, fibre.
-Aggiungi se possibile: leu, iso, val, lys, vitA, vitc, vitD, ca, fe, mg, zn, omega3 (tutti in mg o µg come standard RDA).
-Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}`;
-      const raw = await callGeminiAPIWithRotation(prompt);
-      let jsonStr = raw.trim();
-      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (jsonMatch) jsonStr = jsonMatch[1].trim();
-      const data = JSON.parse(jsonStr);
-      const desc = data.desc || name;
-      const entryPer100 = { desc };
-      ['kcal', 'cal', 'prot', 'carb', 'fatTotal', 'fibre', 'leu', 'iso', 'val', 'lys', 'vitA', 'vitc', 'vitD', 'ca', 'fe', 'mg', 'zn', 'omega3'].forEach(k => {
-        if (typeof data[k] === 'number' && data[k] > 0) entryPer100[k] = data[k];
-      });
-      Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g]).forEach(k => {
-        if (entryPer100[k] == null || entryPer100[k] === 0) entryPer100[k] = getAverageEstimate(k, desc);
-      }));
-      if (entryPer100.kcal == null || entryPer100.kcal === 0) entryPer100.kcal = entryPer100.cal ?? getAverageEstimate('kcal', desc);
-      entryPer100.cal = entryPer100.cal ?? entryPer100.kcal;
-      const newKey = `food_${Date.now()}_${String(desc).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
-      const basePath = `users/${userUid}/tracker_data`;
-      await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
-      setFoodDb(prev => ({ ...prev, [newKey]: entryPer100 }));
-      const weight = parseFloat(foodWeightInput) || 100;
-      const ratio = weight / 100;
-      const newItem = {
-        id: Date.now() + Math.random(),
-        type: 'food',
-        mealType,
-        desc,
-        qta: weight,
-        weight
-      };
-      Object.keys(entryPer100).forEach(k => {
-        if (typeof entryPer100[k] === 'number' && k !== 'id') newItem[k] = entryPer100[k] * ratio;
-      });
-      Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g]).forEach(k => {
-        if (newItem[k] == null || newItem[k] === 0) newItem[k] = (getAverageEstimate(k, desc) / 100) * weight;
-      }));
-      newItem.kcal = newItem.kcal ?? newItem.cal ?? (getAverageEstimate('kcal', desc) / 100) * weight;
-      newItem.cal = newItem.cal ?? newItem.kcal;
-      setAddedFoods(prev => [...prev, newItem]);
-      setFoodNameInput('');
-      setFoodWeightInput('');
-      setShowFoodDropdown(false);
-    } catch (e) {
-      alert(`Generazione alimento fallita: ${e.message}`);
-    } finally {
-      setIsGeneratingFood(false);
-    }
-  };
 
   const waterProgress = Math.min((waterIntake / dailyWaterGoal) * 100, 100);
   
@@ -12368,18 +12277,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             setIsBarcodeScannerOpen={setIsBarcodeScannerOpen}
             barcodeVideoRef={barcodeVideoRef}
             onCloseBarcodeScanner={closeBarcodeScanner}
-            foodInputRef={foodInputRef}
             foodNameInput={foodNameInput}
             setFoodNameInput={setFoodNameInput}
             foodWeightInput={foodWeightInput}
             setFoodWeightInput={setFoodWeightInput}
             handleAddFoodManual={handleAddFoodManual}
-            foodDropdownSuggestions={foodDropdownSuggestions}
-            getLastQuantityForFood={getLastQuantityForFood}
-            showFoodDropdown={showFoodDropdown}
-            setShowFoodDropdown={setShowFoodDropdown}
-            generateFoodWithAI={generateFoodWithAI}
-            isGeneratingFood={isGeneratingFood}
             abitudiniIeri={abitudiniIeri}
             addedFoods={addedFoods}
             setAddedFoods={setAddedFoods}
