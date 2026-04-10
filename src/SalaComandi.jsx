@@ -2344,16 +2344,16 @@ export default function SalaComandi() {
           q,
           requestId,
           results: results.map((item) => ({
-            id: item?.id ?? null,
-            name_it: item?.name_it ?? null,
+            id: item?.food?.id ?? null,
+            name_it: item?.food?.name_it ?? null,
             score: item?.score ?? null,
           })),
         });
 
         setFoodDropdownSuggestions(
           results.map((item) => ({
-            key: String(item?.id ?? ''),
-            desc: String(item?.name_it || '').trim(),
+            key: String(item?.food?.id ?? ''),
+            desc: String(item?.food?.name_it || '').trim(),
           })).filter((item) => item.key && item.desc),
         );
       } catch (error) {
