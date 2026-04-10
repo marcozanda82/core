@@ -2337,6 +2337,7 @@ export default function SalaComandi() {
 
         const data = await response.json();
         const results = Array.isArray(data?.results) ? data.results : [];
+        console.log('SEARCH RESULTS:', results);
 
         if (isCancelled || requestId !== foodSearchRequestIdRef.current) return;
 
