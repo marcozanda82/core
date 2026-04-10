@@ -1,7 +1,16 @@
-import {
-  searchFoodsCanonical,
-  type CanonicalSearchResultItem,
-} from '../src/engine/searchFoodsCanonical';
+// import {
+//   searchFoodsCanonical,
+//   type CanonicalSearchResultItem,
+// } from '../src/engine/searchFoodsCanonical';
+
+type CanonicalSearchResultItem = {
+  food: {
+    id: string;
+    name_it: string;
+    name_en?: string | null;
+  };
+  score?: number;
+};
 
 type ApiRequestLike = {
   method?: string;
@@ -60,7 +69,9 @@ export default async function handler(
 
   try {
     console.log('[api/search-foods] before search execution', { q });
-    const results = await searchFoodsCanonical(q, { maxSearchResults: 10 });
+    const results: CanonicalSearchResultItem[] = [
+      { food: { id: '1', name_it: 'Pollo test' }, score: 1 },
+    ];
     console.log('[api/search-foods] raw results', results);
     console.log('[api/search-foods] returning results', {
       q,
