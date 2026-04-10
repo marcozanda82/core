@@ -9,7 +9,53 @@ const fuse = new Fuse(creaFoodsLite, {
   ],
   threshold: 0.3,
   minMatchCharLength: 2,
+  includeMatches: true,
 });
+
+/** Unisce intervalli [start,end] inclusivi evitando sovrapposizioni. */
+function mergeInclusiveIndices(indices) {
+  if (!indices?.length) return [];
+  const sorted = [...indices].sort((a, b) => a[0] - b[0]);
+  const out = [[sorted[0][0], sorted[0][1]]];
+  for (let i = 1; i < sorted.length; i++) {
+    const [s, e] = sorted[i];
+    const last = out[out.length - 1];
+    if (s <= last[1] + 1) last[1] = Math.max(last[1], e);
+    else out.push([s, e]);
+  }
+  return out;
+}
+
+/**
+ * Evidenzia i caratteri indicati da Fuse (`matches`) per il campo `keyName`.
+ * Azzurro neon allineato al tema app (SalaComandi).
+ */
+function HighlightMatch({ text, matches, keyName }) {
+  const str = text == null ? '' : String(text);
+  const matchEntry = matches?.find((m) => m.key === keyName);
+  const rawIndices = matchEntry?.indices;
+  if (!str || !rawIndices?.length) {
+    return <span>{str}</span>;
+  }
+  const ranges = mergeInclusiveIndices(rawIndices);
+  const nodes = [];
+  let cursor = 0;
+  ranges.forEach(([start, end], i) => {
+    if (start > cursor) {
+      nodes.push(<span key={`n-${i}-a`}>{str.slice(cursor, start)}</span>);
+    }
+    nodes.push(
+      <span key={`h-${i}`} className="food-search-match-highlight">
+        {str.slice(start, end + 1)}
+      </span>
+    );
+    cursor = end + 1;
+  });
+  if (cursor < str.length) {
+    nodes.push(<span key="n-tail">{str.slice(cursor)}</span>);
+  }
+  return <span>{nodes}</span>;
+}
 
 function macroAtPortion(per100, grams) {
   const g = Math.max(0, Number(grams));
@@ -53,7 +99,7 @@ export default function FoodSearch({ onFoodAdded }) {
       return;
     }
     const searchResults = fuse.search(v);
-    setResults(searchResults.slice(0, 15).map((res) => res.item));
+    setResults(searchResults.slice(0, 15));
   }
 
   function handleSelect(item) {
@@ -279,12 +325,12 @@ export default function FoodSearch({ onFoodAdded }) {
             padding: '6px 0',
           }}
         >
-          {results.map((item) => (
+          {results.map((result) => (
             <button
-              key={item.id}
+              key={result.item.id}
               type="button"
               role="option"
-              onClick={() => handleSelect(item)}
+              onClick={() => handleSelect(result.item)}
               style={{
                 width: '100%',
                 display: 'flex',
@@ -315,7 +361,7 @@ export default function FoodSearch({ onFoodAdded }) {
                     wordBreak: 'break-word',
                   }}
                 >
-                  {item.name}
+                  <HighlightMatch text={result.item.name} matches={result.matches} keyName="name" />
                 </div>
                 <div
                   style={{
@@ -325,7 +371,7 @@ export default function FoodSearch({ onFoodAdded }) {
                     lineHeight: 1.25,
                   }}
                 >
-                  {item.category}
+                  <HighlightMatch text={result.item.category} matches={result.matches} keyName="category" />
                 </div>
               </div>
               <div
@@ -349,7 +395,7 @@ export default function FoodSearch({ onFoodAdded }) {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {Math.round(Number(item.kcal) || 0)} kcal
+                  {Math.round(Number(result.item.kcal) || 0)} kcal
                 </span>
                 <span
                   style={{
@@ -359,8 +405,8 @@ export default function FoodSearch({ onFoodAdded }) {
                     letterSpacing: '0.02em',
                   }}
                 >
-                  P:{Number(item.pro).toFixed(1)} F:{Number(item.fat).toFixed(1)} C:
-                  {Number(item.carbs).toFixed(1)}
+                  P:{Number(result.item.pro).toFixed(1)} F:{Number(result.item.fat).toFixed(1)} C:
+                  {Number(result.item.carbs).toFixed(1)}
                 </span>
               </div>
             </button>

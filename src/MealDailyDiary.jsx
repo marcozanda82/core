@@ -2,31 +2,12 @@
  * Diario alimentare giornaliero (tab Oggi): ricerca CREA, totali in tempo reale, lista porzioni.
  * Il drawer pasti completo resta in MealBuilder.jsx (activeAction === 'pasto').
  */
-import React, { useState, useMemo, useCallback } from 'react';
+import React from 'react';
 import FoodSearch from './FoodSearch';
+import { useDailyData } from './context/DailyDataContext';
 
 export default function MealDailyDiary() {
-  const [consumedFoods, setConsumedFoods] = useState([]);
-
-  const totals = useMemo(() => {
-    return consumedFoods.reduce(
-      (acc, curr) => ({
-        kcal: acc.kcal + curr.kcal,
-        pro: acc.pro + curr.pro,
-        fat: acc.fat + curr.fat,
-        carbs: acc.carbs + curr.carbs,
-      }),
-      { kcal: 0, pro: 0, fat: 0, carbs: 0 }
-    );
-  }, [consumedFoods]);
-
-  const handleFoodAdded = useCallback((newFood) => {
-    setConsumedFoods((prev) => [...prev, newFood]);
-  }, []);
-
-  const removeFood = useCallback((index) => {
-    setConsumedFoods((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const { consumedFoods, totals, addFood, removeFood } = useDailyData();
 
   const glass = {
     background: 'linear-gradient(145deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 100%)',
@@ -48,7 +29,7 @@ export default function MealDailyDiary() {
       }}
     >
       <div style={{ marginBottom: 14 }}>
-        <FoodSearch onFoodAdded={handleFoodAdded} />
+        <FoodSearch onFoodAdded={addFood} />
       </div>
 
       <div style={{ ...glass, padding: '22px 20px 20px', marginBottom: 16 }}>

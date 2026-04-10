@@ -6,7 +6,6 @@ import {
   METABOLIC_COMPASS_DIRECTIONS,
   METABOLIC_GOAL,
 } from './metabolicDirection';
-import { getTodayString } from './coreEngine';
 import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
 
 const FINAL_ANGLE_MIN = -135;
@@ -271,8 +270,7 @@ function formatMetabolicCompassDebugDate(isoYmd) {
 }
 
 function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
-  const today = getTodayString();
-  const safe = (dailyHistory || []).filter((e) => e?.date !== today);
+  const safe = dailyHistory || [];
   const windowLen = COMPASS_DEBUG_TIMEFRAME_DAYS[timeframe] ?? COMPASS_DEBUG_TIMEFRAME_DAYS['7d'];
   const slice = safe.length <= windowLen ? safe : safe.slice(-windowLen);
   return {
@@ -283,7 +281,7 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
 
 /**
  * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance: number, trainingLoad: number }>, compassScreenActive?: boolean }} props
- * `dailyHistory`: serie dal tracker (ultimo = ieri di calendario; oggi escluso); passare `[]` se assente.
+ * `dailyHistory`: serie giornaliera (kcalBalance, trainingLoad); può includere oggi (es. DailyDataContext). Passare `[]` se assente.
  * `compassScreenActive`: quando passa da false a true, ripristina il periodo al default (es. rientro tab bussola).
  */
 export default function MetabolicCompass({

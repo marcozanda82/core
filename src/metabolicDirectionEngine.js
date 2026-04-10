@@ -1,11 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { getTodayString } from './coreEngine';
 
 const RAD_TO_DEG = 180 / Math.PI;
 
 /** @typedef {'1d' | '7d' | '14d' | '30d'} MetabolicTimeframe */
 
-/** Finestra giorni per il sottoinsieme di `dailyHistory` (ultimo = ultimo giorno incluso nel dataset, mai oggi). */
+/** Finestra giorni per il sottoinsieme di `dailyHistory` (ultimo = giorno più recente nel dataset, può includere oggi). */
 const TIMEFRAME_DAY_WINDOW = {
   '1d': 1,
   '7d': 7,
@@ -25,13 +24,12 @@ function lerp(a, b, t) {
 }
 
 /**
- * Esclude voci con `date === oggi` prima del calcolo bussola (doppio controllo rispetto al builder).
+ * Serie giornaliera per la bussola: include anche oggi quando presente (es. diario CREA da DailyDataContext).
  *
  * @param {Array<{ date?: string, kcalBalance: number, trainingLoad: number }>} days
  */
-function compassHistoryWithoutToday(days) {
-  const today = getTodayString();
-  return (days || []).filter((e) => e?.date !== today);
+function compassHistoryForEngine(days) {
+  return days || [];
 }
 
 /**
@@ -79,7 +77,7 @@ function tailAverage(days, maxLen) {
  */
 export function computeMetabolicEngineTargetVec(days, timeframe = '7d') {
   const windowDays = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
-  const safeDays = compassHistoryWithoutToday(days);
+  const safeDays = compassHistoryForEngine(days);
   let { x, y } = tailAverage(safeDays, windowDays);
 
   if (x > 0 && y < 0.3) y *= 0.72;
@@ -89,7 +87,7 @@ export function computeMetabolicEngineTargetVec(days, timeframe = '7d') {
 }
 
 export function historyFingerprint(days, timeframe = '7d') {
-  const safeDays = compassHistoryWithoutToday(days);
+  const safeDays = compassHistoryForEngine(days);
   if (!safeDays.length) return `|${timeframe}`;
   return `${safeDays.length}:${safeDays.map((d) => `${d.date ?? ''}:${d.kcalBalance},${d.trainingLoad}`).join(';')}|${timeframe}`;
 }
