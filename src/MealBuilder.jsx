@@ -4,7 +4,6 @@
  */
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import FoodSearch from './FoodSearch';
-import { useDailyData } from './context/DailyDataContext';
 import { TARGETS } from './useBiochimico';
 import {
   MEAL_TYPES,
@@ -261,7 +260,6 @@ export default function MealBuilder({
   /** Incrementato da timeline: avvia una volta «Genera pasto» (smart) con lista vuota. */
   smartMealLaunchKey = 0,
 }) {
-  const { consumedFoods: diaryConsumedFoods, totals: diaryTotals, targetKcal: diaryTargetKcal } = useDailyData();
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
 
   /** CREA (Fuse): aggiunge al pasto in costruzione con macro già alla porzione. */
@@ -1114,31 +1112,6 @@ export default function MealBuilder({
             ) : (
               <p style={{ margin: 0, fontSize: '0.7rem', color: '#86efac', lineHeight: 1.4 }}>✅ Equilibrio Serale Ottimale. La strategia attuale supporta bassi livelli di stress.            </p>
             )}
-          </div>
-          <div
-            style={{
-              marginBottom: '14px',
-              padding: '10px 12px',
-              borderRadius: '10px',
-              border: '1px solid rgba(0, 229, 255, 0.25)',
-              background: 'rgba(0, 229, 255, 0.06)',
-            }}
-          >
-            <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#7dd3fc', letterSpacing: '0.08em', marginBottom: '6px' }}>
-              Diario CREA (oggi) — stesso contesto della bussola
-            </div>
-            <div style={{ fontSize: '0.75rem', color: '#e2e8f0', lineHeight: 1.45 }}>
-              <span style={{ color: '#94a3b8' }}>Kcal registrate:</span>{' '}
-              <strong style={{ color: '#00e5ff' }}>{Math.round(diaryTotals.kcal)}</strong>
-              {' · '}
-              <span style={{ color: '#94a3b8' }}>Bilancio vs target {diaryTargetKcal}:</span>{' '}
-              <strong style={{ color: diaryTotals.kcal - diaryTargetKcal <= 0 ? '#4ade80' : '#fbbf24' }}>
-                {diaryTotals.kcal - diaryTargetKcal >= 0 ? '+' : ''}
-                {Math.round(diaryTotals.kcal - diaryTargetKcal)}
-              </strong>
-              {' · '}
-              <span style={{ color: '#94a3b8' }}>Voci:</span> {diaryConsumedFoods.length}
-            </div>
           </div>
           {typeof onSmartComplete === 'function' && (
             <div style={{ marginTop: 15, marginBottom: 15, width: '100%' }}>

@@ -28,7 +28,6 @@ import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
-import { useDailyData } from './context/DailyDataContext';
 import {
   getTimePositionPercent,
   getWallClockDecimalHour,
@@ -62,6 +61,7 @@ import {
 import AddEventMenuGrid from './components/AddEventMenuGrid';
 import WeeklyPlanning from './components/WeeklyPlanning';
 import MetabolicCompass from './MetabolicCompass';
+import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import {
   useSmartKentuTriggers,
   checkMorningBriefing,
@@ -1946,7 +1946,6 @@ function parseSmartCompletionJsonFromAiResponse(raw) {
 
 export default function SalaComandi() {
   const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
-  const { fullHistory: compassDailyDataHistory } = useDailyData();
   const isAuthenticated = !!user;
   const userUid = user?.uid ?? null;
 
@@ -2771,6 +2770,17 @@ export default function SalaComandi() {
     if (!fullHistory || typeof fullHistory !== 'object') return 0;
     return computeAccumuloSNC(fullHistory, 60);
   }, [fullHistory]);
+
+  /** Serie giornaliera reale (Firebase `fullHistory`) per la bussola metabolica. */
+  const metabolicCompassDailyHistory = useMemo(
+    () =>
+      buildMetabolicCompassDailyHistory(
+        fullHistory,
+        currentTrackerDate || getTodayString(),
+        userTargets
+      ),
+    [fullHistory, currentTrackerDate, userTargets]
+  );
 
   // Alias semantico: livello SNC usato in UI / allarmi.
   const sncStressLevel = accumuloSNC;
@@ -11707,7 +11717,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           }}
         >
           <MetabolicCompass
-            dailyHistory={compassDailyDataHistory}
+            dailyHistory={metabolicCompassDailyHistory}
             compassScreenActive={activeBottomTab === 'bussola'}
           />
         </div>

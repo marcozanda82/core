@@ -1,10 +1,11 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { getTodayString } from './coreEngine';
 
 const RAD_TO_DEG = 180 / Math.PI;
 
 /** @typedef {'1d' | '7d' | '14d' | '30d'} MetabolicTimeframe */
 
-/** Finestra giorni per il sottoinsieme di `dailyHistory` (ultimo = giorno più recente nel dataset, può includere oggi). */
+/** Finestra giorni per il sottoinsieme di `dailyHistory` (ultimo = ieri di calendario; oggi escluso dal vettore). */
 const TIMEFRAME_DAY_WINDOW = {
   '1d': 1,
   '7d': 7,
@@ -24,12 +25,13 @@ function lerp(a, b, t) {
 }
 
 /**
- * Serie giornaliera per la bussola: include anche oggi quando presente (es. diario CREA da DailyDataContext).
+ * Esclude voci con `date === oggi` (serie Firebase: ultimo giorno = ieri).
  *
  * @param {Array<{ date?: string, kcalBalance: number, trainingLoad: number }>} days
  */
 function compassHistoryForEngine(days) {
-  return days || [];
+  const today = getTodayString();
+  return (days || []).filter((e) => e?.date !== today);
 }
 
 /**
