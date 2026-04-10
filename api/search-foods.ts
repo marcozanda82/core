@@ -36,6 +36,7 @@ function mapResult(item: CanonicalSearchResultItem) {
     id: item.food.id,
     name_it: item.food.name_it,
     name_en: item.food.name_en ?? null,
+    canonicalId: item.canonicalId ?? null,
   };
 }
 

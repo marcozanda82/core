@@ -2332,6 +2332,16 @@ export default function SalaComandi() {
 
         if (isCancelled) return;
 
+        console.log('[food-search frontend] canonical search results', {
+          q,
+          results: results.map((item) => ({
+            id: item?.id ?? null,
+            canonicalId: item?.canonicalId ?? null,
+            name_it: item?.name_it ?? null,
+            name_en: item?.name_en ?? null,
+          })),
+        });
+
         setFoodDropdownSuggestions(
           results.map((item) => ({
             key: String(item?.id ?? ''),
