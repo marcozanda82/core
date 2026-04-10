@@ -2320,6 +2320,22 @@ export default function SalaComandi() {
     const controller = new AbortController();
     const requestId = ++foodSearchRequestIdRef.current;
 
+    const getLocalFallbackSuggestions = () => {
+      const lowerQ = q.toLowerCase();
+      return Object.keys(foodDb || {})
+        .filter((key) => {
+          const row = foodDb[key];
+          const desc = String(row?.desc || row?.name || '').toLowerCase();
+          return desc.includes(lowerQ);
+        })
+        .slice(0, 10)
+        .map((key) => ({
+          key: String(key),
+          desc: String(foodDb[key]?.desc || foodDb[key]?.name || '').trim(),
+        }))
+        .filter((item) => item.key && item.desc);
+    };
+
     const timeoutId = window.setTimeout(async () => {
       if (isCancelled) return;
       setIsSearching(true);
@@ -2351,16 +2367,18 @@ export default function SalaComandi() {
           })),
         });
 
-        setFoodDropdownSuggestions(
-          results.map((item) => ({
+        const apiSuggestions = results.map((item) => ({
             key: String(item?.food?.id ?? ''),
             desc: String(item?.food?.name_it || '').trim(),
-          })).filter((item) => item.key && item.desc),
+          })).filter((item) => item.key && item.desc);
+
+        setFoodDropdownSuggestions(
+          apiSuggestions.length > 0 ? apiSuggestions : getLocalFallbackSuggestions(),
         );
       } catch (error) {
         if (controller.signal.aborted || isCancelled || requestId !== foodSearchRequestIdRef.current) return;
         console.error('food search dropdown failed', error);
-        setFoodDropdownSuggestions([]);
+        setFoodDropdownSuggestions(getLocalFallbackSuggestions());
       } finally {
         if (!controller.signal.aborted && !isCancelled && requestId === foodSearchRequestIdRef.current) {
           setIsSearching(false);
@@ -2374,7 +2392,7 @@ export default function SalaComandi() {
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [foodNameInput]);
+  }, [foodNameInput, foodDb]);
 
   const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
   /** Incrementato ad ogni apertura wizard: consente idratazione da Firebase senza sovrascrivere durante l’editing. */
