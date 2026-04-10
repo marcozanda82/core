@@ -2306,22 +2306,50 @@ export default function SalaComandi() {
   }, []);
 
   useEffect(() => {
-    const q = (foodNameInput || '').trim().toLowerCase();
+    const q = (foodNameInput || '').trim();
     if (!q) {
       setFoodDropdownSuggestions([]);
-      return;
+      return undefined;
     }
-    const keys = Object.keys(foodDb || {});
-    const matches = keys
-      .filter((k) => {
-        const d = foodDb[k];
-        const desc = (d?.desc || d?.name || '').toLowerCase();
-        return desc.includes(q);
-      })
-      .slice(0, 10)
-      .map((k) => ({ key: k, desc: foodDb[k]?.desc || foodDb[k]?.name || k }));
-    setFoodDropdownSuggestions(matches);
-  }, [foodNameInput, foodDb]);
+
+    let isCancelled = false;
+    const controller = new AbortController();
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/search-foods?q=${encodeURIComponent(q)}`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`search-foods request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const results = Array.isArray(data?.results) ? data.results : [];
+
+        if (isCancelled) return;
+
+        setFoodDropdownSuggestions(
+          results.map((item) => ({
+            key: String(item?.id ?? ''),
+            desc: String(item?.name_it || item?.name_en || '').trim(),
+          })).filter((item) => item.key && item.desc),
+        );
+      } catch (error) {
+        if (controller.signal.aborted || isCancelled) return;
+        console.error('food search dropdown failed', error);
+        setFoodDropdownSuggestions([]);
+      }
+    }, 250);
+
+    return () => {
+      isCancelled = true;
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [foodNameInput]);
 
   const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
   /** Incrementato ad ogni apertura wizard: consente idratazione da Firebase senza sovrascrivere durante l’editing. */
