@@ -2317,6 +2317,7 @@ export default function SalaComandi() {
 
     const timeoutId = window.setTimeout(async () => {
       try {
+        console.log('[food-search frontend] fetching canonical search', { q });
         const response = await fetch(`/api/search-foods?q=${encodeURIComponent(q)}`, {
           method: 'GET',
           signal: controller.signal,

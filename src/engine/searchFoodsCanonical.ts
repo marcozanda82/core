@@ -37,13 +37,24 @@ export async function searchFoodsCanonical(
   const normalizedQuery = String(query || '').trim();
   if (!normalizedQuery) return [];
 
+  console.log('[searchFoodsCanonical] called', {
+    query: normalizedQuery,
+    maxSearchResults: options.maxSearchResults ?? null,
+  });
+
   if (!implementation) {
     console.warn('[searchFoodsCanonical] No backend implementation registered yet.');
     return [];
   }
 
   const result = await implementation(normalizedQuery, options);
-  if (!result) return [];
-  return Array.isArray(result) ? result : [result];
+  const normalizedResult = !result ? [] : (Array.isArray(result) ? result : [result]);
+
+  console.log('[searchFoodsCanonical] completed', {
+    query: normalizedQuery,
+    resultCount: normalizedResult.length,
+  });
+
+  return normalizedResult;
 }
 

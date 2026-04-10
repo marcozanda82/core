@@ -51,6 +51,7 @@ export default async function handler(
   }
 
   const q = extractQueryParam(req, 'q');
+  console.log('[api/search-foods] request', { q });
 
   if (!q) {
     res.status(200).json({ results: [] });
@@ -59,6 +60,10 @@ export default async function handler(
 
   try {
     const results = await searchFoodsCanonical(q, { maxSearchResults: 10 });
+    console.log('[api/search-foods] returning results', {
+      q,
+      resultCount: results.length,
+    });
     res.status(200).json({
       results: results.slice(0, 10).map(mapResult),
     });
