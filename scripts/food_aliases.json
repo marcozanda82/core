@@ -1,11 +1,3290 @@
 {
-  "Pollo, intero, cotto al forno": ["pollo arrosto", "pollo allo spiedo"],
-  "Bovino, adulto, carne macinata, cruda": ["carne trita", "macinato di manzo", "hamburger crudo"],
-  "Uovo, di gallina, intero, cotto in camicia": ["uovo sodo", "uova lesse", "uova cotte"],
-  "Uovo, di gallina, intero, cotto in padella": ["uovo al tegamino", "uovo fritto", "uova strapazzate"],
-  "Patate, cotte al forno": ["patate arrosto", "patate al forno"],
-  "Olio, di oliva extra vergine": ["olio evo", "olio di oliva", "olio per cucinare"],
-  "Bevanda analcolica tipo cola": ["coca cola", "pepsi", "coca"],
-  "Suino, prosciutto crudo, disossato": ["prosciutto crudo", "crudo di parma", "san daniele"],
-  "Siero di latte, proteine isolate": ["whey", "proteine in polvere", "pro in polvere"]
+  "Farro perlato, crudo": [
+    "farro perlato",
+    "farro",
+    "farro perlato crudo"
+  ],
+  "Farro perlato, cotto, bollito": [
+    "farro perlato",
+    "farro",
+    "farro perlato lesso"
+  ],
+  "Frumento duro": [
+    "frumento"
+  ],
+  "Frumento tenero": [
+    "frumento"
+  ],
+  "Couscous, crudo": [
+    "couscous",
+    "couscous crudo",
+    "cous cous"
+  ],
+  "Couscous, cotto": [
+    "couscous",
+    "couscous cotto",
+    "cous cous"
+  ],
+  "Grano saraceno": [
+    "grano"
+  ],
+  "Mais, dolce, in scatola, sgocciolato": [
+    "mais"
+  ],
+  "Polenta, cruda": [
+    "polenta",
+    "polenta crudo"
+  ],
+  "Polenta, cotta": [
+    "polenta",
+    "polenta cotto"
+  ],
+  "Miglio, decorticato": [
+    "miglio"
+  ],
+  "Orzo perlato": [
+    "orzo"
+  ],
+  "Orzo perlato, cotto, bollito": [
+    "orzo perlato",
+    "orzo",
+    "orzo perlato lesso"
+  ],
+  "Quinoa, cruda": [
+    "quinoa",
+    "quinoa crudo"
+  ],
+  "Quinoa, cotta, bollita": [
+    "quinoa",
+    "quinoa lesso",
+    "quinoa cotto"
+  ],
+  "Riso, brillato": [
+    "riso",
+    "riso cotto",
+    "riso in bianco"
+  ],
+  "Riso, brillato, cotto, bollito": [
+    "riso",
+    "riso lesso",
+    "riso cotto"
+  ],
+  "Riso, integrale": [
+    "riso",
+    "riso cotto",
+    "riso in bianco"
+  ],
+  "Riso, integrale, cotto, bollito": [
+    "riso",
+    "riso lesso",
+    "riso cotto"
+  ],
+  "Riso, parboiled": [
+    "riso",
+    "riso cotto",
+    "riso in bianco"
+  ],
+  "Riso, parboiled, cotto, bollito": [
+    "riso",
+    "riso lesso",
+    "riso cotto"
+  ],
+  "Riso Basmati, crudo": [
+    "riso basmati",
+    "riso",
+    "riso basmati crudo"
+  ],
+  "Riso Basmati, cotto, bollito": [
+    "riso basmati",
+    "riso",
+    "riso basmati lesso"
+  ],
+  "Riso Venere, crudo": [
+    "riso venere",
+    "riso",
+    "riso venere crudo"
+  ],
+  "Riso Venere, cotto, bollito": [
+    "riso venere",
+    "riso",
+    "riso venere lesso"
+  ],
+  "Crusca di frumento": [
+    "crusca di",
+    "crusca"
+  ],
+  "Farina d'avena": [
+    "farina",
+    "fiocchi avena",
+    "avena"
+  ],
+  "Farina d'orzo": [
+    "farina",
+    "orzo perlato",
+    "orzo"
+  ],
+  "Farina di frumento, tipo 00": [
+    "farina di",
+    "farina",
+    "farina di frumento"
+  ],
+  "Farina di frumento, tipo 0": [
+    "farina di",
+    "farina",
+    "farina di frumento"
+  ],
+  "Farina di frumento, integrale": [
+    "farina di",
+    "farina",
+    "farina di frumento"
+  ],
+  "Farina di frumento, duro": [
+    "farina di",
+    "farina",
+    "farina di frumento"
+  ],
+  "Farina di mais": [
+    "farina di",
+    "farina"
+  ],
+  "Farina di riso": [
+    "farina di",
+    "farina",
+    "riso cotto"
+  ],
+  "Farina di segale": [
+    "farina di",
+    "farina"
+  ],
+  "Farina di soia": [
+    "farina di",
+    "farina"
+  ],
+  "Mais, amido": [
+    "mais"
+  ],
+  "Farina di manioca": [
+    "farina di",
+    "farina"
+  ],
+  "Germe di frumento": [
+    "germe di",
+    "germe"
+  ],
+  "Pane al malto": [
+    "pane al",
+    "pane"
+  ],
+  "Pane di segale": [
+    "pane di",
+    "pane"
+  ],
+  "Pane bianco": [
+    "pane"
+  ],
+  "Pane di tipo semintegrale": [
+    "pane di",
+    "pane"
+  ],
+  "Pane di tipo integrale": [
+    "pane di",
+    "pane"
+  ],
+  "Pane formato rosetta": [
+    "pane formato",
+    "pane"
+  ],
+  "Panini al latte": [
+    "panini al",
+    "panini",
+    "latte intero"
+  ],
+  "Panini all'olio": [
+    "panini",
+    "olio evo",
+    "olio d'oliva"
+  ],
+  "Pane azzimo": [
+    "pane"
+  ],
+  "Pizza bianca": [
+    "pizza"
+  ],
+  "Pizza con pomodoro": [
+    "pizza con",
+    "pizza",
+    "pomodori"
+  ],
+  "Pizza con pomodoro e mozzarella": [
+    "Pizza con pomodoro",
+    "mozzarella",
+    "pizza con"
+  ],
+  "Pasta di semola": [
+    "pasta di",
+    "pasta",
+    "paste"
+  ],
+  "Pasta di semola, cotta, bollita": [
+    "pasta di",
+    "pasta",
+    "pasta di semola"
+  ],
+  "Pasta di semola, integrale": [
+    "pasta di",
+    "pasta",
+    "pasta di semola"
+  ],
+  "Pasta di semola, integrale, cotta, bollita": [
+    "pasta di",
+    "pasta",
+    "pasta di semola"
+  ],
+  "Pasta all'uovo, secca": [
+    "pasta all'uovo",
+    "pasta",
+    "paste"
+  ],
+  "Pasta all'uovo, secca, cotta, bollita": [
+    "pasta all'uovo",
+    "pasta",
+    "pasta all'uovo lesso"
+  ],
+  "Ravioli, crudi, freschi": [
+    "ravioli",
+    "ravioli crudo"
+  ],
+  "Ravioli, cotti": [
+    "ravioli",
+    "ravioli cotto"
+  ],
+  "Tortellini, freschi": [
+    "tortellini"
+  ],
+  "Tortellini, freschi, cotti": [
+    "tortellini",
+    "tortellini cotto"
+  ],
+  "Tortellini, secchi": [
+    "tortellini"
+  ],
+  "Biscotti, frollini": [
+    "biscotti"
+  ],
+  "Biscotti, integrali": [
+    "biscotti"
+  ],
+  "Biscotti, secchi": [
+    "biscotti"
+  ],
+  "Biscotti, alla soia": [
+    "biscotti"
+  ],
+  "Biscotti, integrali, con soia": [
+    "biscotti"
+  ],
+  "Biscotti, wafers": [
+    "biscotti"
+  ],
+  "Crackers, al formaggio": [
+    "crackers"
+  ],
+  "Crackers, alla soia": [
+    "crackers"
+  ],
+  "Crackers, salati": [
+    "crackers"
+  ],
+  "Crackers, integrali": [
+    "crackers"
+  ],
+  "Fette biscottate": [
+    "fette"
+  ],
+  "Fette biscottate, integrali": [
+    "fette biscottate",
+    "fette"
+  ],
+  "Bastoncini di crusca di frumento": [
+    "bastoncini di",
+    "bastoncini"
+  ],
+  "Corn flakes": [
+    "corn"
+  ],
+  "Fiocchi d'avena": [
+    "fiocchi",
+    "fiocchi avena",
+    "avena"
+  ],
+  "Riso, soffiato, da prima colazione": [
+    "riso",
+    "riso cotto",
+    "riso in bianco"
+  ],
+  "Ceci, secchi": [
+    "ceci"
+  ],
+  "Ceci, secchi, cotti, bolliti": [
+    "ceci",
+    "ceci lesso",
+    "ceci cotto"
+  ],
+  "Ceci, in scatola, scolati": [
+    "ceci"
+  ],
+  "Fagioli, cotti, bolliti": [
+    "fagioli",
+    "fagioli lesso",
+    "fagioli cotto"
+  ],
+  "Fagioli, Borlotti, freschi": [
+    "fagioli"
+  ],
+  "Fagioli, Borlotti, freschi, cotti, bolliti": [
+    "fagioli",
+    "fagioli lesso",
+    "fagioli cotto"
+  ],
+  "Fagioli, Borlotti, secchi": [
+    "fagioli"
+  ],
+  "Fagioli, Borlotti, secchi, cotti, bolliti": [
+    "fagioli",
+    "fagioli lesso",
+    "fagioli cotto"
+  ],
+  "Fagioli, Borlotti, in scatola, scolati": [
+    "fagioli"
+  ],
+  "Fagioli, Cannellini, secchi": [
+    "fagioli"
+  ],
+  "Fagioli, Cannellini, secchi, cotti, bolliti": [
+    "fagioli",
+    "fagioli lesso",
+    "fagioli cotto"
+  ],
+  "Fagioli, Cannellini in scatola, scolati": [
+    "fagioli"
+  ],
+  "Fagioli dall'occhio, secchi": [
+    "fagioli dall'occhio",
+    "fagioli"
+  ],
+  "Fagiolini a corallo, cotti, bolliti": [
+    "fagiolini a",
+    "fagiolini",
+    "fagiolini a corallo"
+  ],
+  "Fagiolini, freschi": [
+    "fagiolini"
+  ],
+  "Fagiolini, surgelati, cotti, bolliti": [
+    "fagiolini",
+    "fagiolini lesso",
+    "fagiolini cotto"
+  ],
+  "Fave, fresche": [
+    "fave"
+  ],
+  "Fave, fresche, cotte, in padella": [
+    "fave",
+    "fave cotto",
+    "fave in padella"
+  ],
+  "Fave, secche": [
+    "fave"
+  ],
+  "Fave, secche, sgusciate, crude": [
+    "fave",
+    "fave crudo"
+  ],
+  "Fave, secche, sgusciate, cotte, bollite": [
+    "fave",
+    "fave lesso",
+    "fave cotto"
+  ],
+  "Lenticchie, secche": [
+    "lenticchie"
+  ],
+  "Lenticchie, secche, cotte, bollite": [
+    "lenticchie",
+    "lenticchie lesso",
+    "lenticchie cotto"
+  ],
+  "Lenticchie, in scatola, scolate": [
+    "lenticchie"
+  ],
+  "Lupini, ammollati": [
+    "lupini"
+  ],
+  "Piselli, freschi": [
+    "piselli"
+  ],
+  "Piselli, freschi, cotti, in padella": [
+    "piselli",
+    "piselli cotto",
+    "piselli in padella"
+  ],
+  "Piselli, secchi": [
+    "piselli"
+  ],
+  "Piselli, in scatola, scolati": [
+    "piselli"
+  ],
+  "Piselli, surgelati": [
+    "piselli"
+  ],
+  "Soia, secca": [
+    "soia"
+  ],
+  "Soia, isolato proteico": [
+    "soia"
+  ],
+  "Aglio Rosso di Castelliri": [
+    "aglio rosso",
+    "aglio"
+  ],
+  "Aglio Rosso di Procerno": [
+    "aglio rosso",
+    "aglio"
+  ],
+  "Aglio Rosso di Sulmona": [
+    "aglio rosso",
+    "aglio"
+  ],
+  "Aglio Bianco Piacentino": [
+    "aglio bianco",
+    "aglio"
+  ],
+  "Agretti, crudi": [
+    "agretti",
+    "agretti crudo"
+  ],
+  "Agretti, cotti, bolliti": [
+    "agretti",
+    "agretti lesso",
+    "agretti cotto"
+  ],
+  "Asparagi di bosco, crudi": [
+    "asparagi di",
+    "asparagi",
+    "asparagi di bosco"
+  ],
+  "Asparagi di campo, crudi": [
+    "asparagi di",
+    "asparagi",
+    "asparagi di campo"
+  ],
+  "Asparagi di campo, cotti, bolliti": [
+    "asparagi di",
+    "asparagi",
+    "asparagi di campo"
+  ],
+  "Asparagi di serra, crudi": [
+    "asparagi di",
+    "asparagi",
+    "asparagi di serra"
+  ],
+  "Barbabietole rosse, crude": [
+    "barbabietole rosse",
+    "barbabietole",
+    "barbabietole rosse crudo"
+  ],
+  "Barbabietole rosse, cotte, bollite": [
+    "barbabietole rosse",
+    "barbabietole",
+    "barbabietole rosse lesso"
+  ],
+  "Bieta, cruda": [
+    "bieta",
+    "bieta crudo"
+  ],
+  "Bieta, cotta, al microonde": [
+    "bieta",
+    "bieta al microonde"
+  ],
+  "Bieta, cotta, bollita": [
+    "bieta",
+    "bieta lesso",
+    "bieta cotto"
+  ],
+  "Broccoletti di rapa, crudi": [
+    "broccoletti di",
+    "broccoletti",
+    "broccoletti di rapa"
+  ],
+  "Broccoletti di rapa, cotti, bolliti": [
+    "broccoletti di",
+    "broccoletti",
+    "broccoletti di rapa"
+  ],
+  "Broccolo a testa, cotto, bollito": [
+    "broccolo a",
+    "broccolo",
+    "broccolo a testa"
+  ],
+  "Broccolo a testa, crudo": [
+    "broccolo a",
+    "broccolo",
+    "broccolo a testa"
+  ],
+  "Carciofi, crudi": [
+    "carciofi",
+    "carciofi crudo"
+  ],
+  "Carciofi, cotti, al microonde": [
+    "carciofi",
+    "carciofi al microonde"
+  ],
+  "Carciofi, cotti, bolliti": [
+    "carciofi",
+    "carciofi lesso",
+    "carciofi cotto"
+  ],
+  "Carciofi, surgelati": [
+    "carciofi"
+  ],
+  "Carciofo Romanesco IGP": [
+    "carciofo romanesco",
+    "carciofo"
+  ],
+  "Carciofo, verde, precoce": [
+    "carciofo"
+  ],
+  "Carciofo, violetto, precoce": [
+    "carciofo"
+  ],
+  "Carciofo, Spinoso sardo": [
+    "carciofo"
+  ],
+  "Cardi, crudi": [
+    "cardi",
+    "cardi crudo"
+  ],
+  "Carote, crude": [
+    "carote",
+    "carote crudo"
+  ],
+  "Carote, cotte, al microonde": [
+    "carote",
+    "carote al microonde"
+  ],
+  "Carote, cotte, bollite": [
+    "carote",
+    "carote lesso",
+    "carote cotto"
+  ],
+  "Cavolfiore, crudo": [
+    "cavolfiore",
+    "cavolfiore crudo"
+  ],
+  "Cavolfiore, cotto, al microonde": [
+    "cavolfiore",
+    "cavolfiore al microonde"
+  ],
+  "Cavolfiore, cotto, bollito": [
+    "cavolfiore",
+    "cavolfiore lesso",
+    "cavolfiore cotto"
+  ],
+  "Cavoli di Bruxelles, crudi": [
+    "cavoli di",
+    "cavoli",
+    "cavoli di bruxelles"
+  ],
+  "Cavoli di Bruxelles, cotti, bolliti": [
+    "cavoli di",
+    "cavoli",
+    "cavoli di bruxelles"
+  ],
+  "Cavolo broccolo verde ramoso, crudo": [
+    "cavolo broccolo",
+    "cavolo",
+    "cavolo broccolo verde ramoso"
+  ],
+  "Cavolo broccolo verde ramoso, cotto, bollito": [
+    "cavolo broccolo",
+    "cavolo",
+    "cavolo broccolo verde ramoso"
+  ],
+  "Cavolo cappuccio, rosso, crudo": [
+    "cavolo cappuccio",
+    "cavolo",
+    "cavolo cappuccio crudo"
+  ],
+  "Cardi, cotti, bolliti": [
+    "cardi",
+    "cardi lesso",
+    "cardi cotto"
+  ],
+  "Cavolo cappuccio, verde, crudo": [
+    "cavolo cappuccio",
+    "cavolo",
+    "cavolo cappuccio crudo"
+  ],
+  "Cavolo cappuccio, verde, cotto, bollito": [
+    "cavolo cappuccio",
+    "cavolo",
+    "cavolo cappuccio lesso"
+  ],
+  "Cavolo verza, cruda": [
+    "cavolo verza",
+    "cavolo",
+    "cavolo verza crudo"
+  ],
+  "Cavolo verza, cotto, bollito": [
+    "cavolo verza",
+    "cavolo",
+    "cavolo verza lesso"
+  ],
+  "Cetrioli, freschi": [
+    "cetrioli"
+  ],
+  "Cicoria, da taglio, coltivata, cruda": [
+    "cicoria",
+    "cicoria crudo"
+  ],
+  "Cicoria, di campo, cruda": [
+    "cicoria",
+    "cicoria crudo"
+  ],
+  "Cicoria, di campo, cotta, bollita": [
+    "cicoria",
+    "cicoria lesso",
+    "cicoria cotto"
+  ],
+  "Cicoria, witloof o indivia belga, cruda": [
+    "cicoria",
+    "cicoria crudo"
+  ],
+  "Cipolle, crude": [
+    "cipolle",
+    "cipolle crudo"
+  ],
+  "Cipolle, cotte, bollite": [
+    "cipolle",
+    "cipolle lesso",
+    "cipolle cotto"
+  ],
+  "Cipolline, crude": [
+    "cipolline",
+    "cipolline crudo"
+  ],
+  "Cipolline, cotte, bollite": [
+    "cipolline",
+    "cipolline lesso",
+    "cipolline cotto"
+  ],
+  "Finocchi, crudi": [
+    "finocchi",
+    "finocchi crudo"
+  ],
+  "Finocchi, cotti, al microonde": [
+    "finocchi",
+    "finocchi al microonde"
+  ],
+  "Finocchi, cotti, bolliti": [
+    "finocchi",
+    "finocchi lesso",
+    "finocchi cotto"
+  ],
+  "Fiori di zucca, freschi": [
+    "fiori di",
+    "fiori",
+    "fiori di zucca"
+  ],
+  "Foglie di rapa, crude": [
+    "foglie di",
+    "foglie",
+    "foglie di rapa"
+  ],
+  "Germogli di soia": [
+    "germogli di",
+    "germogli"
+  ],
+  "Indivia, fresca": [
+    "indivia"
+  ],
+  "Lattuga, fresca": [
+    "lattuga"
+  ],
+  "Lattuga, a cappuccio, fresca": [
+    "lattuga"
+  ],
+  "Lattuga, da taglio, fresca": [
+    "lattuga"
+  ],
+  "Lattughino, fresco": [
+    "lattughino"
+  ],
+  "Lattughino IV gamma, fresco": [
+    "lattughino iv",
+    "lattughino",
+    "lattughino iv gamma"
+  ],
+  "Radicchio, rosso, fresco": [
+    "radicchio"
+  ],
+  "Radicchio rosso di Treviso IGP, precoce": [
+    "radicchio rosso",
+    "radicchio",
+    "radicchio rosso di treviso igp"
+  ],
+  "Radicchio rosso di Treviso IGP, tardivo": [
+    "radicchio rosso",
+    "radicchio",
+    "radicchio rosso di treviso igp"
+  ],
+  "Radicchio variegato di Castelfranco IGP": [
+    "radicchio variegato",
+    "radicchio"
+  ],
+  "Radicchio, verde, fresco": [
+    "radicchio"
+  ],
+  "Rughetta o rucola, fresca": [
+    "Rughetta",
+    "rucola",
+    "rughetta o"
+  ],
+  "Scarola IV gamma, fresca": [
+    "scarola iv",
+    "scarola",
+    "scarola iv gamma"
+  ],
+  "Tarassaco o dente di leone, fresco": [
+    "Tarassaco",
+    "dente di leone",
+    "tarassaco o"
+  ],
+  "Melanzane, crude": [
+    "melanzane",
+    "melanzane crudo",
+    "mele"
+  ],
+  "Melanzane, cotte, in padella": [
+    "melanzane",
+    "melanzane cotto",
+    "melanzane in padella"
+  ],
+  "Melanzane, cotte, al microonde": [
+    "melanzane",
+    "melanzane al microonde",
+    "mele"
+  ],
+  "Peperoni, crudi": [
+    "peperoni",
+    "peperoni crudo"
+  ],
+  "Peperoni, cotti, in padella": [
+    "peperoni",
+    "peperoni cotto",
+    "peperoni in padella"
+  ],
+  "Peperoni, rossi e gialli, crudi": [
+    "peperoni",
+    "peperoni crudo"
+  ],
+  "Peperoni, gialli, crudi": [
+    "peperoni",
+    "peperoni crudo"
+  ],
+  "Peperoni, gialli, cotti, al microonde": [
+    "peperoni",
+    "peperoni al microonde"
+  ],
+  "Peperoni, rossi, crudi": [
+    "peperoni",
+    "peperoni crudo"
+  ],
+  "Peperoni, rossi, cotti, al microonde": [
+    "peperoni",
+    "peperoni al microonde"
+  ],
+  "Peperoni, verdi, crudi": [
+    "peperoni",
+    "peperoni crudo"
+  ],
+  "Porri, crudi": [
+    "porri",
+    "porri crudo"
+  ],
+  "Porri, cotti, bolliti": [
+    "porri",
+    "porri lesso",
+    "porri cotto"
+  ],
+  "Rape, crude": [
+    "rape",
+    "rape crudo"
+  ],
+  "Rape, cotte, bollite": [
+    "rape",
+    "rape lesso",
+    "rape cotto"
+  ],
+  "Ravanelli, freschi": [
+    "ravanelli"
+  ],
+  "Sedano, crudo": [
+    "sedano",
+    "sedano crudo"
+  ],
+  "Sedano, cotto, al microonde": [
+    "sedano",
+    "sedano al microonde"
+  ],
+  "Sedano rapa, crudo": [
+    "sedano rapa",
+    "sedano",
+    "sedano rapa crudo"
+  ],
+  "Spinaci, crudi": [
+    "spinaci",
+    "spinaci crudo"
+  ],
+  "Spinaci, cotti, al microonde": [
+    "spinaci",
+    "spinaci al microonde"
+  ],
+  "Spinaci, cotti, bolliti": [
+    "spinaci",
+    "spinaci lesso",
+    "spinaci cotto"
+  ],
+  "Spinaci, surgelati": [
+    "spinaci"
+  ],
+  "Zucca gialla, fresca": [
+    "zucca gialla",
+    "zucca"
+  ],
+  "Zucchine, crude": [
+    "zucchine",
+    "zucchine crudo"
+  ],
+  "Zucchine, cotte, bollite": [
+    "zucchine",
+    "zucchine lesso",
+    "zucchine cotto"
+  ],
+  "Zucchine, chiare": [
+    "zucchine"
+  ],
+  "Zucchine chiare, cotte, al vapore": [
+    "zucchine chiare",
+    "zucchine",
+    "zucchine chiare cotto"
+  ],
+  "Zucchine chiare, cotte, in padella grigliate": [
+    "zucchine chiare",
+    "zucchine",
+    "zucchine chiare cotto"
+  ],
+  "Zucchine, chiare, cotte, al microonde": [
+    "zucchine",
+    "zucchine al microonde"
+  ],
+  "Zucchine, scure, crude": [
+    "zucchine",
+    "zucchine crudo"
+  ],
+  "Zucchine, scure, cotte, al vapore": [
+    "zucchine",
+    "zucchine cotto"
+  ],
+  "Zucchine, scure, cotte, in padella grigliate": [
+    "zucchine",
+    "zucchine cotto",
+    "zucchine in padella"
+  ],
+  "Zucchine, scure, cotte, al microonde": [
+    "zucchine",
+    "zucchine al microonde"
+  ],
+  "Funghi coltivati, prataioli, crudi": [
+    "funghi coltivati",
+    "funghi",
+    "funghi coltivati crudo"
+  ],
+  "Funghi coltivati, prataioli, cotti, in padella": [
+    "funghi coltivati",
+    "funghi",
+    "funghi coltivati cotto"
+  ],
+  "Funghi coltivati, pleurotes, crudi": [
+    "funghi coltivati",
+    "funghi",
+    "funghi coltivati crudo"
+  ],
+  "Funghi coltivati, pleurotes, cotti, in padella": [
+    "funghi coltivati",
+    "funghi",
+    "funghi coltivati cotto"
+  ],
+  "Funghi ovuli, crudi": [
+    "funghi ovuli",
+    "funghi",
+    "funghi ovuli crudo"
+  ],
+  "Funghi porcini, crudi": [
+    "funghi porcini",
+    "funghi",
+    "funghi porcini crudo"
+  ],
+  "Tartufo, nero": [
+    "tartufo"
+  ],
+  "Patate, crude": [
+    "patate",
+    "patate crudo",
+    "patata"
+  ],
+  "Patate, con buccia, cotte, bollite": [
+    "patate",
+    "patate lesso",
+    "patate cotto"
+  ],
+  "Patate, cotte, arrosto": [
+    "patate",
+    "patate cotto",
+    "patata"
+  ],
+  "Patate, cotte, al microonde": [
+    "patate",
+    "patate al microonde",
+    "patata"
+  ],
+  "Patate, senza buccia, cotte, bollite": [
+    "patate",
+    "patate lesso",
+    "patate cotto"
+  ],
+  "Patate, fritte": [
+    "patate",
+    "patata"
+  ],
+  "Patatine, fritte, confezionate in busta": [
+    "patatine"
+  ],
+  "Patate novelle, crude": [
+    "patate novelle",
+    "patate",
+    "patate novelle crudo"
+  ],
+  "Patate novelle, cotte, al microonde": [
+    "patate novelle",
+    "patate",
+    "patate novelle al microonde"
+  ],
+  "Patate novelle, cotte, bollte": [
+    "patate novelle",
+    "patate",
+    "patate novelle cotto"
+  ],
+  "Gnocchi di patate, crudi": [
+    "gnocchi di",
+    "gnocchi",
+    "gnocchi di patate"
+  ],
+  "Gnocchi di patate, cotti": [
+    "gnocchi di",
+    "gnocchi",
+    "gnocchi di patate"
+  ],
+  "Topinambur, cotto, bollito": [
+    "topinambur",
+    "topinambur lesso",
+    "topinambur cotto"
+  ],
+  "Pomodori, da insalata, freschi": [
+    "pomodori"
+  ],
+  "Pomodori, maturi, freschi": [
+    "pomodori"
+  ],
+  "Pomodori, San Marzano, freschi": [
+    "pomodori"
+  ],
+  "Pomodori, Nerina, verdi, freschi": [
+    "pomodori"
+  ],
+  "Pomodori, Nerina, rossi, freschi": [
+    "pomodori"
+  ],
+  "Pomodorini ciliegino, freschi": [
+    "pomodorini ciliegino",
+    "pomodorini"
+  ],
+  "Pomodori, conserva": [
+    "pomodori"
+  ],
+  "Pomodori, passata": [
+    "pomodori"
+  ],
+  "Pomodori, pelati in scatola": [
+    "pomodori"
+  ],
+  "Pomodori, succo": [
+    "pomodori"
+  ],
+  "Basilico, fresco": [
+    "basilico"
+  ],
+  "Menta, fresca": [
+    "menta"
+  ],
+  "Pepe nero": [
+    "pepe"
+  ],
+  "Peperoncini piccanti, freschi": [
+    "peperoncini piccanti",
+    "peperoncini"
+  ],
+  "Prezzemolo, fresco": [
+    "prezzemolo"
+  ],
+  "Rosmarino, fresco": [
+    "rosmarino"
+  ],
+  "Salvia, fresco": [
+    "salvia"
+  ],
+  "Vegetali misti, surgelati": [
+    "vegetali misti",
+    "vegetali"
+  ],
+  "Albicocche, fresche": [
+    "albicocche"
+  ],
+  "Albicocche, disidratate": [
+    "albicocche"
+  ],
+  "Albicocche, sciroppate": [
+    "albicocche"
+  ],
+  "Albicocche, secche": [
+    "albicocche"
+  ],
+  "Cocomero, fresco": [
+    "cocomero"
+  ],
+  "Fichi, freschi": [
+    "fichi"
+  ],
+  "Fichi, seccati al forno e mandorlati": [
+    "fichi",
+    "fichi al forno"
+  ],
+  "Fichi, canditi": [
+    "fichi"
+  ],
+  "Fichi, secchi": [
+    "fichi"
+  ],
+  "Fichi d'india, freschi": [
+    "fichi d'india",
+    "fichi"
+  ],
+  "Loti o kaki, freschi": [
+    "Loti",
+    "kaki",
+    "loti o"
+  ],
+  "Melagrane, fresche": [
+    "melagrane",
+    "mele",
+    "mela"
+  ],
+  "Mele, fresche, senza buccia": [
+    "mele"
+  ],
+  "Mele, fresche, con buccia": [
+    "mele"
+  ],
+  "Mele, fresche, annurche": [
+    "mele"
+  ],
+  "Mele, fresche, deliziose": [
+    "mele"
+  ],
+  "Mele, fresche, golden": [
+    "mele"
+  ],
+  "Mele, fresche, granny smith": [
+    "mele"
+  ],
+  "Mele, fresche, imperatore": [
+    "mele"
+  ],
+  "Mele, fresche, renette": [
+    "mele"
+  ],
+  "Mele, disidratate": [
+    "mele"
+  ],
+  "Mele cotogne, fresche": [
+    "mele cotogne",
+    "mele"
+  ],
+  "Melone, d'estate, fresco": [
+    "melone"
+  ],
+  "Melone, d'inverno, fresco": [
+    "melone"
+  ],
+  "Nespole, fresche": [
+    "nespole"
+  ],
+  "Pere, fresche, senza buccia": [
+    "pere"
+  ],
+  "Pere, fresche, Abate Fetel": [
+    "pere"
+  ],
+  "Pere, fresche, Coscia": [
+    "pere"
+  ],
+  "Pere, fresche, Kaiser": [
+    "pere"
+  ],
+  "Pere, fresche, Max-Red Barlett": [
+    "pere"
+  ],
+  "Pere, fresche, William": [
+    "pere"
+  ],
+  "Pere, candite": [
+    "pere"
+  ],
+  "Pesche, fresche, senza buccia": [
+    "pesche"
+  ],
+  "Pesche, fresche, con buccia": [
+    "pesche"
+  ],
+  "Pesche, disidratate": [
+    "pesche"
+  ],
+  "Pesche, sciroppate": [
+    "pesche"
+  ],
+  "Pesche, secche": [
+    "pesche"
+  ],
+  "Peschenoci, fresche": [
+    "peschenoci"
+  ],
+  "Prugne, fresche": [
+    "prugne"
+  ],
+  "Prugne, gialle": [
+    "prugne"
+  ],
+  "Prugne, rosse": [
+    "prugne"
+  ],
+  "Prugne, secche": [
+    "prugne"
+  ],
+  "Uva, fresca": [
+    "uva"
+  ],
+  "Uva, bianca, fresca": [
+    "uva"
+  ],
+  "Uva, nera, fresca": [
+    "uva"
+  ],
+  "Uva, secca": [
+    "uva"
+  ],
+  "Uva, succo, in cartone": [
+    "uva"
+  ],
+  "Ananas, fresco": [
+    "ananas"
+  ],
+  "Ananas, sciroppato": [
+    "ananas"
+  ],
+  "Anona, fresca": [
+    "anona"
+  ],
+  "Avocado, fresco": [
+    "avocado"
+  ],
+  "Babaco, fresco": [
+    "babaco"
+  ],
+  "Banane, fresche": [
+    "banane"
+  ],
+  "Cocco, fresco": [
+    "cocco"
+  ],
+  "Cocco, essiccato": [
+    "cocco"
+  ],
+  "Feijoa, fresca": [
+    "feijoa"
+  ],
+  "Guava, fresca": [
+    "guava"
+  ],
+  "Kiwi, freschi": [
+    "kiwi"
+  ],
+  "Litchi, freschi": [
+    "litchi"
+  ],
+  "Mango, fresco": [
+    "mango"
+  ],
+  "Papaia, fresca": [
+    "papaia"
+  ],
+  "Passiflora, fresca": [
+    "passiflora"
+  ],
+  "Datteri, secchi": [
+    "datteri"
+  ],
+  "Amarene, fresche": [
+    "amarene"
+  ],
+  "Ciliege, fresche": [
+    "ciliege"
+  ],
+  "Ciliege, candite": [
+    "ciliege"
+  ],
+  "Fragole, fresche": [
+    "fragole"
+  ],
+  "Lamponi, freschi": [
+    "lamponi"
+  ],
+  "Mora di rovo": [
+    "mora di",
+    "mora"
+  ],
+  "Mirtilli, freschi": [
+    "mirtilli"
+  ],
+  "Ribes, freschi": [
+    "ribes"
+  ],
+  "Arance, fresche": [
+    "arance"
+  ],
+  "Arance bionde, fresche": [
+    "arance bionde",
+    "arance"
+  ],
+  "Arance Valencia, fresche": [
+    "arance valencia",
+    "arance"
+  ],
+  "Arance Washington Navel, fresche": [
+    "arance washington",
+    "arance",
+    "arance washington navel"
+  ],
+  "Arance rosse, fresche": [
+    "arance rosse",
+    "arance"
+  ],
+  "Arance Moro, fresche": [
+    "arance moro",
+    "arance"
+  ],
+  "Arance Sanguinello, fresche": [
+    "arance sanguinello",
+    "arance"
+  ],
+  "Arance Tarocco, fresche": [
+    "arance tarocco",
+    "arance"
+  ],
+  "Arance succo, fresco": [
+    "arance succo",
+    "arance"
+  ],
+  "Arance bionde succo, fresco": [
+    "arance bionde",
+    "arance",
+    "arance bionde succo"
+  ],
+  "Arance rosse succo, fresco": [
+    "arance rosse",
+    "arance",
+    "arance rosse succo"
+  ],
+  "Clementine, fresche": [
+    "clementine"
+  ],
+  "Limoni, freschi": [
+    "limoni"
+  ],
+  "Limoni, succo": [
+    "limoni"
+  ],
+  "Mandaranci, freschi": [
+    "mandaranci"
+  ],
+  "Mandarini, freschi": [
+    "mandarini"
+  ],
+  "Pompelmo, fresco": [
+    "pompelmo"
+  ],
+  "Arachidi, tostate": [
+    "arachidi"
+  ],
+  "Castagne, arrostite": [
+    "castagne"
+  ],
+  "Castagne, bollite": [
+    "castagne",
+    "castagne lesso"
+  ],
+  "Castagne, secche": [
+    "castagne"
+  ],
+  "Mandorle dolci, secche": [
+    "mandorle dolci",
+    "mandorle"
+  ],
+  "Nocciole, secche": [
+    "nocciole"
+  ],
+  "Noci, secche": [
+    "noci"
+  ],
+  "Noci pecan": [
+    "noci"
+  ],
+  "Pistacchio di Bronte DOP": [
+    "pistacchio di",
+    "pistacchio"
+  ],
+  "Olive da tavola conservate": [
+    "olive da",
+    "olive"
+  ],
+  "Olive, nere": [
+    "olive"
+  ],
+  "Olive, verdi": [
+    "olive"
+  ],
+  "Olive, verdi, in salamoia": [
+    "olive"
+  ],
+  "Oliva Nocellara del Belice": [
+    "oliva nocellara",
+    "oliva",
+    "olio evo"
+  ],
+  "Oliva Giarraffa": [
+    "oliva",
+    "olio evo",
+    "olio d'oliva"
+  ],
+  "Succo di frutta": [
+    "succo di",
+    "succo"
+  ],
+  "Cocktail di frutta sciroppata": [
+    "cocktail di",
+    "cocktail"
+  ],
+  "Burro d'arachidi": [
+    "burro"
+  ],
+  "Margarina, 100% vegetale": [
+    "margarina"
+  ],
+  "Margarina, 2/3 di grassi animali, 1/3 di grassi vegetali": [
+    "margarina"
+  ],
+  "Olio di oliva": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di oliva extra vergine": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di arachide": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di cocco": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di colza": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di germe di grano": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di girasole": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di mais": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di mandorle dolci": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di palma": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di sesamo": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di soia": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olio di vinacciolo": [
+    "olio di",
+    "olio",
+    "olio evo"
+  ],
+  "Olii vegetali": [
+    "olii"
+  ],
+  "Bovino adulto o vitellone, tagli anteriori, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, tagli posteriori, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, costata, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, fesa, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, filetto, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, girello, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, lombata, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, noce, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, scamone, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, sottofesa, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, copertina di sotto, copertina di spalla, sottospalla e collo, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, geretto anteriore e posteriore, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, pancia, biancostato e punta di petto, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Bovino adulto o vitellone, spalla, muscolo, girello e fesone, crudo": [
+    "Bovino adulto",
+    "vitellone",
+    "bovino"
+  ],
+  "Vitello, filetto, crudo": [
+    "vitello",
+    "vitello crudo"
+  ],
+  "Vitello, filetto, cotto in padella": [
+    "vitello",
+    "vitello cotto",
+    "vitello in padella"
+  ],
+  "Bufalo, solo tessuto muscolare, crudo": [
+    "bufalo",
+    "bufalo crudo"
+  ],
+  "Cavallo, tessuto muscolare e grasso, crudo": [
+    "cavallo",
+    "cavallo crudo"
+  ],
+  "Cavallo, solo tessuto muscolare, crudo": [
+    "cavallo",
+    "cavallo crudo"
+  ],
+  "Agnello, crudo": [
+    "agnello",
+    "agnello crudo"
+  ],
+  "Agnello, cotto, al forno": [
+    "agnello",
+    "agnello al forno",
+    "agnello cotto"
+  ],
+  "Agnello, coscio, crudo": [
+    "agnello",
+    "agnello crudo"
+  ],
+  "Agnello, coscio, cotto, al forno": [
+    "agnello",
+    "agnello al forno",
+    "agnello cotto"
+  ],
+  "Agnello, costoletta, crudo": [
+    "agnello",
+    "agnello crudo"
+  ],
+  "Agnello, costoletta, cotto, al forno": [
+    "agnello",
+    "agnello al forno",
+    "agnello cotto"
+  ],
+  "Capra, solo tessuto muscolare, crudo": [
+    "capra",
+    "capra crudo"
+  ],
+  "Capretto, crudo": [
+    "capretto",
+    "capretto crudo"
+  ],
+  "Pecora, solo tessuto muscolare, crudo": [
+    "pecora",
+    "pecora crudo"
+  ],
+  "Maiale, coscio, crudo": [
+    "maiale",
+    "maiale crudo"
+  ],
+  "Maiale, lombo, crudo": [
+    "maiale",
+    "maiale crudo"
+  ],
+  "Maiale, spalla, crudo": [
+    "maiale",
+    "maiale crudo"
+  ],
+  "Maiale, bistecca, crudo": [
+    "maiale",
+    "maiale crudo"
+  ],
+  "Maiale, bistecca, cotto, in padella": [
+    "maiale",
+    "maiale cotto",
+    "maiale in padella"
+  ],
+  "Maiale, pesante, coscio, crudo": [
+    "maiale",
+    "maiale crudo"
+  ],
+  "Maiale, pesante, lombo, crudo": [
+    "maiale",
+    "maiale crudo"
+  ],
+  "Maiale, pesante, spalla, crudo": [
+    "maiale",
+    "maiale crudo"
+  ],
+  "Anatra domestica, crudo": [
+    "anatra domestica",
+    "anatra",
+    "anatra domestica crudo"
+  ],
+  "Faraona, coscio, con pelle, crudo": [
+    "faraona",
+    "faraona crudo"
+  ],
+  "Faraona, coscio, senza pelle, crudo": [
+    "faraona",
+    "faraona crudo"
+  ],
+  "Faraona, coscio, senza pelle, cotto, allo spiedo": [
+    "faraona",
+    "faraona cotto"
+  ],
+  "Faraona, petto, senza pelle, crudo": [
+    "faraona",
+    "faraona crudo"
+  ],
+  "Faraona, petto, senza pelle, cotto, allo spiedo": [
+    "faraona",
+    "faraona cotto"
+  ],
+  "Gallina, crudo": [
+    "gallina",
+    "gallina crudo"
+  ],
+  "Oca, crudo": [
+    "oca",
+    "oca crudo"
+  ],
+  "Pollo, intero, con pelle, crudo": [
+    "pollo",
+    "pollo crudo"
+  ],
+  "Pollo, intero, con pelle, cotto, al forno": [
+    "pollo",
+    "pollo al forno",
+    "pollo cotto"
+  ],
+  "Pollo, intero, senza pelle, crudo": [
+    "pollo",
+    "pollo crudo"
+  ],
+  "Pollo, intero, senza pelle, cotto, al forno": [
+    "pollo",
+    "pollo al forno",
+    "pollo cotto"
+  ],
+  "Pollo, intero, con pelle, cotto, arrosto": [
+    "pollo",
+    "pollo cotto"
+  ],
+  "Pollo, intero, senza pelle, cotto, arrosto": [
+    "pollo",
+    "pollo cotto"
+  ],
+  "Pollo, ala, con pelle, crudo": [
+    "pollo",
+    "pollo crudo"
+  ],
+  "Pollo, ala, con pelle, cotta, al forno": [
+    "pollo",
+    "pollo al forno",
+    "pollo cotto"
+  ],
+  "Pollo, fuso, con pelle, crudo": [
+    "pollo",
+    "pollo crudo"
+  ],
+  "Pollo, fuso, con pelle, cotto, al forno": [
+    "pollo",
+    "pollo al forno",
+    "pollo cotto"
+  ],
+  "Pollo, fuso, senza pelle, crudo": [
+    "pollo",
+    "pollo crudo"
+  ],
+  "Pollo, fuso, senza pelle, cotto, al forno": [
+    "pollo",
+    "pollo al forno",
+    "pollo cotto"
+  ],
+  "Pollo, petto, crudo": [
+    "pollo",
+    "pollo crudo"
+  ],
+  "Pollo, petto, cotto, in padella": [
+    "pollo",
+    "pollo cotto",
+    "pollo in padella"
+  ],
+  "Pollo, sovracoscio, con pelle, crudo": [
+    "pollo",
+    "pollo crudo"
+  ],
+  "Pollo, sovracoscio, con pelle, cotto, al forno": [
+    "pollo",
+    "pollo al forno",
+    "pollo cotto"
+  ],
+  "Pollo, sovracoscio, senza pelle, crudo": [
+    "pollo",
+    "pollo crudo"
+  ],
+  "Pollo, sovracoscio, senza pelle, cotto, al forno": [
+    "pollo",
+    "pollo al forno",
+    "pollo cotto"
+  ],
+  "Tacchino intero, con pelle, crudo": [
+    "tacchino intero",
+    "tacchino",
+    "tacchino intero crudo"
+  ],
+  "Tacchino intero, senza pelle, crudo": [
+    "tacchino intero",
+    "tacchino",
+    "tacchino intero crudo"
+  ],
+  "Tacchino intero, senza pelle, cotto, al forno": [
+    "tacchino intero",
+    "tacchino",
+    "tacchino intero al forno"
+  ],
+  "Tacchino, coscio, con pelle, crudo": [
+    "tacchino",
+    "tacchino crudo",
+    "petto tacchino"
+  ],
+  "Tacchino, fesa, crudo": [
+    "tacchino",
+    "tacchino crudo",
+    "petto tacchino"
+  ],
+  "Tacchino, fesa, cotta, al forno": [
+    "tacchino",
+    "tacchino al forno",
+    "tacchino cotto"
+  ],
+  "Tacchino, fuso, con pelle, crudo": [
+    "tacchino",
+    "tacchino crudo",
+    "petto tacchino"
+  ],
+  "Tacchino, fuso, con pelle, cotto, al forno": [
+    "tacchino",
+    "tacchino al forno",
+    "tacchino cotto"
+  ],
+  "Tacchino, fuso, senza pelle, crudo": [
+    "tacchino",
+    "tacchino crudo",
+    "petto tacchino"
+  ],
+  "Tacchino, fuso, senza pelle, cotto, al forno": [
+    "tacchino",
+    "tacchino al forno",
+    "tacchino cotto"
+  ],
+  "Tacchino, sovracoscio, senza pelle, crudo": [
+    "tacchino",
+    "tacchino crudo",
+    "petto tacchino"
+  ],
+  "Tacchino, sovracoscio, senza pelle, cotto, al forno": [
+    "tacchino",
+    "tacchino al forno",
+    "tacchino cotto"
+  ],
+  "Coniglio intero, crudo": [
+    "coniglio intero",
+    "coniglio",
+    "coniglio intero crudo"
+  ],
+  "Coniglio, intero, cotto": [
+    "coniglio",
+    "coniglio cotto"
+  ],
+  "Coniglio, intero surgelato, crudo": [
+    "coniglio",
+    "coniglio crudo"
+  ],
+  "Coniglio, coscio, crudo": [
+    "coniglio",
+    "coniglio crudo"
+  ],
+  "Cervo, solo tessuto muscolare, crudo": [
+    "cervo",
+    "cervo crudo"
+  ],
+  "Daino, solo tessuto muscolare, crudo": [
+    "daino",
+    "daino crudo"
+  ],
+  "Fagiano, crudo": [
+    "fagiano",
+    "fagiano crudo"
+  ],
+  "Piccione giovane, crudo": [
+    "piccione giovane",
+    "piccione",
+    "piccione giovane crudo"
+  ],
+  "Quaglia, crudo": [
+    "quaglia",
+    "quaglia crudo"
+  ],
+  "Struzzo, solo tessuto muscolare, crudo": [
+    "struzzo",
+    "struzzo crudo"
+  ],
+  "Struzzo, solo tessuto muscolare, cotto, al forno": [
+    "struzzo",
+    "struzzo al forno",
+    "struzzo cotto"
+  ],
+  "Lumaca, cruda": [
+    "lumaca",
+    "lumaca crudo"
+  ],
+  "Rana, crudo": [
+    "rana",
+    "rana crudo"
+  ],
+  "Bresaola della Valtellina IGP": [
+    "bresaola della",
+    "bresaola"
+  ],
+  "Capocollo di Calabria": [
+    "capocollo di",
+    "capocollo"
+  ],
+  "Cotechino, confezionato precotto": [
+    "cotechino",
+    "cotechino cotto"
+  ],
+  "Cotechino Modena IGP, cotto": [
+    "cotechino modena",
+    "cotechino",
+    "cotechino modena igp"
+  ],
+  "Mortadella Bologna IGP": [
+    "mortadella bologna",
+    "mortadella"
+  ],
+  "Mortadella di bovini e suini": [
+    "Mortadella di bovini",
+    "suini",
+    "mortadella di"
+  ],
+  "Pancetta magretta": [
+    "pancetta"
+  ],
+  "Pancetta tesa": [
+    "pancetta"
+  ],
+  "Pancetta arrotolata": [
+    "pancetta"
+  ],
+  "Prosciutto cotto": [
+    "prosciutto"
+  ],
+  "Prosciutto cotto, sgrassato": [
+    "prosciutto cotto",
+    "prosciutto"
+  ],
+  "Prosciutto cotto, alta qualità": [
+    "prosciutto cotto",
+    "prosciutto"
+  ],
+  "Prosciutto cotto, alta qualità, sgrassato": [
+    "prosciutto cotto",
+    "prosciutto"
+  ],
+  "Prosciutto cotto, scelto": [
+    "prosciutto cotto",
+    "prosciutto"
+  ],
+  "Prosciutto cotto, scelto, sgrassato": [
+    "prosciutto cotto",
+    "prosciutto"
+  ],
+  "Prosciutto crudo, di Modena DOP": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo, di Modena DOP, sgrassato": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo di montagna": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo DOP, di Parma": [
+    "prosciutto crudo",
+    "prosciutto",
+    "prosciutto crudo dop"
+  ],
+  "Prosciutto crudo, di Parma DOP, sgrassato": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo, di Pietraroja": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo, di San Daniele DOP": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo, di San Daniele DOP, sgrassato": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo, disossato": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo, disossato, sgrassato": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo, gambuccio": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo, Nazionale": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Prosciutto crudo, Nazionale, sgrassato": [
+    "prosciutto crudo",
+    "prosciutto"
+  ],
+  "Salame Brianza": [
+    "salame"
+  ],
+  "Salami italiani alla cacciatora DOP": [
+    "salami italiani",
+    "salami"
+  ],
+  "Salame Fabriano": [
+    "salame"
+  ],
+  "Salame Felino": [
+    "salame"
+  ],
+  "Salame Milano": [
+    "salame"
+  ],
+  "Salame Napoli": [
+    "salame"
+  ],
+  "Salame nostrano": [
+    "salame"
+  ],
+  "Salame ungherese": [
+    "salame"
+  ],
+  "Salsiccia di fegato": [
+    "salsiccia di",
+    "salsiccia"
+  ],
+  "Salsiccia di suino, fresca": [
+    "salsiccia di",
+    "salsiccia",
+    "salsiccia di suino"
+  ],
+  "Salsiccia di suino, fresca, cotta, in padella": [
+    "salsiccia di",
+    "salsiccia",
+    "salsiccia di suino"
+  ],
+  "Salsiccia di suino, secca": [
+    "salsiccia di",
+    "salsiccia",
+    "salsiccia di suino"
+  ],
+  "Salsiccia di Calabria": [
+    "salsiccia di",
+    "salsiccia"
+  ],
+  "Soppressata di Calabria": [
+    "soppressata di",
+    "soppressata"
+  ],
+  "Speck dell'Alto Adige IGP": [
+    "speck dell'alto",
+    "speck"
+  ],
+  "Wurstel di puro suino, crudo": [
+    "wurstel di",
+    "wurstel",
+    "wurstel di puro suino"
+  ],
+  "Wurstel di puro suino, cotto": [
+    "wurstel di",
+    "wurstel",
+    "wurstel di puro suino"
+  ],
+  "Zampone confezionato, precotto": [
+    "zampone confezionato",
+    "zampone",
+    "zampone confezionato cotto"
+  ],
+  "Zampone Modena IGP, cotto": [
+    "zampone modena",
+    "zampone",
+    "zampone modena igp"
+  ],
+  "Carne bovina in gelatina, in scatola": [
+    "carne bovina",
+    "carne",
+    "carne bovina in gelatina"
+  ],
+  "Carne bovina pressata, in scatola": [
+    "carne bovina",
+    "carne",
+    "carne bovina pressata"
+  ],
+  "Patè di coniglio": [
+    "patè di",
+    "patè"
+  ],
+  "Patè di fegato": [
+    "patè di",
+    "patè"
+  ],
+  "Patè di pollo": [
+    "patè di",
+    "patè"
+  ],
+  "Patè di prosciutto": [
+    "patè di",
+    "patè"
+  ],
+  "Animelle di bovini": [
+    "animelle di",
+    "animelle"
+  ],
+  "Animelle di bovini, cotte": [
+    "animelle di",
+    "animelle",
+    "animelle di bovini"
+  ],
+  "Cervello di bovini": [
+    "cervello di",
+    "cervello"
+  ],
+  "Coratella di agnello": [
+    "coratella di",
+    "coratella"
+  ],
+  "Coratella di vitello": [
+    "coratella di",
+    "coratella"
+  ],
+  "Cuore di bovini": [
+    "cuore di",
+    "cuore"
+  ],
+  "Cuore di bovini, cotto": [
+    "cuore di",
+    "cuore",
+    "cuore di bovini"
+  ],
+  "Cuore di equini": [
+    "cuore di",
+    "cuore"
+  ],
+  "Cuore di ovini": [
+    "cuore di",
+    "cuore"
+  ],
+  "Cuore di pollo": [
+    "cuore di",
+    "cuore"
+  ],
+  "Cuore di pollo, cotto": [
+    "cuore di",
+    "cuore",
+    "cuore di pollo"
+  ],
+  "Cuore di suino": [
+    "cuore di",
+    "cuore",
+    "maiale"
+  ],
+  "Cuore di tacchino": [
+    "cuore di",
+    "cuore",
+    "tacchino"
+  ],
+  "Cuore di tacchino, cotto": [
+    "cuore di",
+    "cuore",
+    "cuore di tacchino"
+  ],
+  "Fegato di bovini": [
+    "fegato di",
+    "fegato"
+  ],
+  "Fegato di bovini, cotto": [
+    "fegato di",
+    "fegato",
+    "fegato di bovini"
+  ],
+  "Fegato di equini": [
+    "fegato di",
+    "fegato"
+  ],
+  "Fegato di ovini": [
+    "fegato di",
+    "fegato"
+  ],
+  "Fegato di pollo": [
+    "fegato di",
+    "fegato"
+  ],
+  "Fegato di pollo, cotto": [
+    "fegato di",
+    "fegato",
+    "fegato di pollo"
+  ],
+  "Fegato di suini": [
+    "fegato di",
+    "fegato"
+  ],
+  "Fegato di suini, cotto": [
+    "fegato di",
+    "fegato",
+    "fegato di suini"
+  ],
+  "Fegato di tacchino": [
+    "fegato di",
+    "fegato",
+    "tacchino"
+  ],
+  "Fegato di tacchino, cotto": [
+    "fegato di",
+    "fegato",
+    "fegato di tacchino"
+  ],
+  "Lingua di bovini": [
+    "lingua di",
+    "lingua"
+  ],
+  "Lingua di bovini, cotta, fritta": [
+    "lingua di",
+    "lingua",
+    "lingua di bovini"
+  ],
+  "Milza di bovini": [
+    "milza di",
+    "milza"
+  ],
+  "Polmone di bovini": [
+    "polmone di",
+    "polmone"
+  ],
+  "Rene di bovini": [
+    "rene di",
+    "rene"
+  ],
+  "Trippa di bovini": [
+    "trippa di",
+    "trippa"
+  ],
+  "Cheese burger, fast food": [
+    "cheese burger",
+    "cheese"
+  ],
+  "Hamburger, fast food": [
+    "hamburger"
+  ],
+  "Chicken Nuggets, fast food": [
+    "chicken nuggets",
+    "chicken"
+  ],
+  "Hamburger piccolo, solo carne, fast food": [
+    "hamburger piccolo",
+    "hamburger"
+  ],
+  "Panino, fast food": [
+    "panino"
+  ],
+  "Panino con hamburger piccolo, fast food": [
+    "panino con",
+    "panino",
+    "panino con hamburger piccolo"
+  ],
+  "Patatine, fritte, fast food": [
+    "patatine"
+  ],
+  "Acciuga o alice": [
+    "Acciuga",
+    "alice",
+    "acciuga o"
+  ],
+  "Acciuga o alice, sott'olio": [
+    "Acciuga",
+    "alice",
+    "acciuga o"
+  ],
+  "Acciuga o alice, sotto sale": [
+    "Acciuga",
+    "alice",
+    "acciuga o"
+  ],
+  "Anguilla, affumicata": [
+    "anguilla"
+  ],
+  "Anguilla, marinata": [
+    "anguilla"
+  ],
+  "Anguilla di fiume": [
+    "anguilla di",
+    "anguilla"
+  ],
+  "Anguilla di mare": [
+    "anguilla di",
+    "anguilla"
+  ],
+  "Anguilla d'allevamento, filetti": [
+    "anguilla d'allevamento",
+    "anguilla"
+  ],
+  "Aringa, affumicata": [
+    "aringa"
+  ],
+  "Aringa, marinata": [
+    "aringa"
+  ],
+  "Aringa, sotto sale": [
+    "aringa"
+  ],
+  "Cefalo muggine": [
+    "cefalo"
+  ],
+  "Bottarga, cefalo muggine": [
+    "bottarga"
+  ],
+  "Cernia surgelata": [
+    "cernia"
+  ],
+  "Dentice, surgelato": [
+    "dentice"
+  ],
+  "Melù o pesce molo": [
+    "Melù",
+    "pesce molo",
+    "melù o"
+  ],
+  "Melù o pesce molo, stoccafisso, secco": [
+    "Melù",
+    "pesce molo",
+    "melù o"
+  ],
+  "Melù o pesce molo, stoccafisso, ammollato": [
+    "Melù",
+    "pesce molo",
+    "melù o"
+  ],
+  "Merluzzo o nasello": [
+    "Merluzzo",
+    "nasello",
+    "merluzzo o"
+  ],
+  "Merluzzo o nasello, surgelato": [
+    "Merluzzo",
+    "nasello",
+    "merluzzo o"
+  ],
+  "Merluzzo o nasello, surgelato, cotto, in forno": [
+    "Merluzzo",
+    "nasello",
+    "merluzzo o"
+  ],
+  "Merluzzo o nasello, surgelato, cotto, al microonde": [
+    "Merluzzo",
+    "nasello",
+    "merluzzo o"
+  ],
+  "Merluzzo o nasello, surgelato, filetti": [
+    "Merluzzo",
+    "nasello",
+    "merluzzo o"
+  ],
+  "Merluzzo o nasello, baccalà, secco": [
+    "Merluzzo",
+    "nasello",
+    "merluzzo o"
+  ],
+  "Merluzzo o nasello, baccalà, ammollato": [
+    "Merluzzo",
+    "nasello",
+    "merluzzo o"
+  ],
+  "Merluzzo o nasello, bastoncini di pesce, surgelati": [
+    "Merluzzo",
+    "nasello",
+    "merluzzo o"
+  ],
+  "Orata, surgelata": [
+    "orata"
+  ],
+  "Orata fresca, filetti": [
+    "orata fresca",
+    "orata"
+  ],
+  "Orata fresca d'allevamento, filetti": [
+    "orata fresca",
+    "orata",
+    "orata fresca d'allevamento"
+  ],
+  "Pagello bocca d'oro": [
+    "pagello bocca",
+    "pagello"
+  ],
+  "Pesce gatto": [
+    "pesce",
+    "filetto"
+  ],
+  "Salmone, fresco": [
+    "salmone",
+    "pesce",
+    "filetto"
+  ],
+  "Salmone, affumicato": [
+    "salmone",
+    "pesce",
+    "filetto"
+  ],
+  "Salmone, in salamoia": [
+    "salmone",
+    "pesce",
+    "filetto"
+  ],
+  "Sardine, fritte": [
+    "sardine"
+  ],
+  "Sgombro o maccarello": [
+    "Sgombro",
+    "maccarello",
+    "sgombro o"
+  ],
+  "Sgombro o maccarello, in salamoia": [
+    "Sgombro",
+    "maccarello",
+    "sgombro o"
+  ],
+  "Sogliola, surgelata": [
+    "sogliola"
+  ],
+  "Spigola d'allevamento, filetti": [
+    "spigola d'allevamento",
+    "spigola"
+  ],
+  "Caviale, storione": [
+    "caviale"
+  ],
+  "Tonno": [
+    "pesce",
+    "filetto"
+  ],
+  "Tonno in salamoia, sgocciolato": [
+    "tonno in",
+    "tonno",
+    "tonno in salamoia"
+  ],
+  "Tonno sott'olio, sgocciolato": [
+    "tonno sott'olio",
+    "tonno",
+    "pesce"
+  ],
+  "Trota surgelata": [
+    "trota"
+  ],
+  "Trota surgelata, cotta, al microonde": [
+    "trota surgelata",
+    "trota",
+    "trota surgelata al microonde"
+  ],
+  "Trota surgelata, cotta, in forno": [
+    "trota surgelata",
+    "trota",
+    "trota surgelata al forno"
+  ],
+  "Trota iridea d'allevamento, filetti": [
+    "trota iridea",
+    "trota",
+    "trota iridea d'allevamento"
+  ],
+  "Suro o sugarello": [
+    "Suro",
+    "sugarello",
+    "suro o"
+  ],
+  "Calamaro surgelato": [
+    "calamaro"
+  ],
+  "Cozza o mitilo": [
+    "Cozza",
+    "mitilo",
+    "cozza o"
+  ],
+  "Aragosta, bollita": [
+    "aragosta",
+    "aragosta lesso"
+  ],
+  "Gamberi": [
+    "pesce",
+    "filetto"
+  ],
+  "Gamberi sgusciati, surgelati": [
+    "gamberi sgusciati",
+    "gamberi",
+    "pesce"
+  ],
+  "Granchio, in scatola": [
+    "granchio"
+  ],
+  "Latte di capra": [
+    "latte di",
+    "latte",
+    "latte intero"
+  ],
+  "Latte di pecora": [
+    "latte di",
+    "latte",
+    "latte intero"
+  ],
+  "Latte di bufala": [
+    "latte di",
+    "latte",
+    "latte intero"
+  ],
+  "Latte di vacca, pastorizzato, intero": [
+    "latte di",
+    "latte",
+    "latte di vacca"
+  ],
+  "Latte di vacca, pastorizzato, parzialmente scremato": [
+    "latte di",
+    "latte",
+    "latte di vacca"
+  ],
+  "Latte di vacca, pastorizzato, scremato": [
+    "latte di",
+    "latte",
+    "latte di vacca"
+  ],
+  "Latte di vacca, condensato, zuccherato": [
+    "latte di",
+    "latte",
+    "latte di vacca"
+  ],
+  "Latte di vacca, evaporato, non zuccherato": [
+    "latte di",
+    "latte",
+    "latte di vacca"
+  ],
+  "Latte di vacca, in polvere, intero": [
+    "latte di",
+    "latte",
+    "latte di vacca"
+  ],
+  "Latte di vacca, in polvere, parzialmente scremato": [
+    "latte di",
+    "latte",
+    "latte di vacca"
+  ],
+  "Latte di vacca, in polvere, scremato": [
+    "latte di",
+    "latte",
+    "latte di vacca"
+  ],
+  "Latte di vacca, UHT, intero": [
+    "latte di",
+    "latte",
+    "latte di vacca"
+  ],
+  "Latte di vacca, UHT, parzialmente scremato": [
+    "latte di",
+    "latte",
+    "latte di vacca"
+  ],
+  "Crema di latte, 12% di lipidi": [
+    "crema di",
+    "crema",
+    "crema di latte"
+  ],
+  "Panna da montare, 35% di lipidi": [
+    "panna da",
+    "panna",
+    "panna da montare"
+  ],
+  "Panna da cucina, sterilizzata, 23% di lipidi": [
+    "panna da",
+    "panna",
+    "panna da cucina"
+  ],
+  "Yogurt, da latte intero": [
+    "yogurt",
+    "yaourt"
+  ],
+  "Yogurt, 0% lipidi": [
+    "yogurt",
+    "yaourt"
+  ],
+  "Yogurt greco, da latte intero": [
+    "yogurt greco",
+    "yogurt",
+    "yaourt"
+  ],
+  "Yogurt greco, da latte magro, alla frutta": [
+    "yogurt greco",
+    "yogurt",
+    "yaourt"
+  ],
+  "Yogurt greco, 0% lipidi": [
+    "yogurt greco",
+    "yogurt",
+    "yaourt"
+  ],
+  "Yogurt greco, 0% lipidi, aromatizzato": [
+    "yogurt greco",
+    "yogurt",
+    "yaourt"
+  ],
+  "Yogurt da latte intero, alla frutta": [
+    "yogurt da",
+    "yogurt",
+    "yogurt da latte intero"
+  ],
+  "Yogurt da latte, parzialmente scremato": [
+    "yogurt da",
+    "yogurt",
+    "yogurt da latte"
+  ],
+  "Yogurt da latte, scremato": [
+    "yogurt da",
+    "yogurt",
+    "yogurt da latte"
+  ],
+  "Yogurt caprino": [
+    "yogurt",
+    "yaourt"
+  ],
+  "Formaggio molle da tavola": [
+    "formaggio molle",
+    "formaggio"
+  ],
+  "Butirro calabro": [
+    "butirro"
+  ],
+  "Cacioricotta di capra": [
+    "cacioricotta di",
+    "cacioricotta"
+  ],
+  "Caciotta mista": [
+    "caciotta"
+  ],
+  "Caciotta romana di pecora": [
+    "caciotta romana",
+    "caciotta"
+  ],
+  "Caciotta toscana": [
+    "caciotta"
+  ],
+  "Caciottina vaccina": [
+    "caciottina"
+  ],
+  "Caciottina fresca": [
+    "caciottina"
+  ],
+  "Dolce verde": [
+    "dolce"
+  ],
+  "Fior di latte": [
+    "fior di",
+    "fior",
+    "latte intero"
+  ],
+  "Formaggino con ridotto contenuto di grasso": [
+    "formaggino con",
+    "formaggino"
+  ],
+  "Formaggio cremoso spalmabile": [
+    "formaggio cremoso",
+    "formaggio"
+  ],
+  "Grana Padano, DOP": [
+    "grana padano",
+    "grana"
+  ],
+  "Latteria": [
+    "latte intero",
+    "latte fresco"
+  ],
+  "Mozzarella di bufala": [
+    "mozzarella di",
+    "mozzarella"
+  ],
+  "Mozzarella di bufala campana DOP": [
+    "mozzarella di",
+    "mozzarella"
+  ],
+  "Mozzarella di vacca": [
+    "mozzarella di",
+    "mozzarella"
+  ],
+  "Parmigiano Reggiano DOP": [
+    "parmigiano reggiano",
+    "parmigiano"
+  ],
+  "Caciottina mista": [
+    "caciottina"
+  ],
+  "Pecorino romano": [
+    "pecorino"
+  ],
+  "Pecorino siciliano": [
+    "pecorino"
+  ],
+  "Ricotta di bufala": [
+    "ricotta di",
+    "ricotta"
+  ],
+  "Ricotta di pecora": [
+    "ricotta di",
+    "ricotta"
+  ],
+  "Ricotta di vacca": [
+    "ricotta di",
+    "ricotta"
+  ],
+  "Fiocchi di formaggio magro": [
+    "fiocchi di",
+    "fiocchi"
+  ],
+  "Formaggio cremoso spalmabile, light": [
+    "formaggio cremoso",
+    "formaggio",
+    "formaggio cremoso spalmabile"
+  ],
+  "Uova di anatra, intero": [
+    "uova di",
+    "uova",
+    "uova di anatra"
+  ],
+  "Uova di gallina, intero": [
+    "uova di",
+    "uova",
+    "uova di gallina"
+  ],
+  "Uova di gallina, intero , cotto, alla coque o sodo": [
+    "uova di",
+    "uova",
+    "uova di gallina"
+  ],
+  "Uova di gallina, intero , cotto, a frittata o strapazzato": [
+    "uova di",
+    "uova",
+    "uova di gallina"
+  ],
+  "Uova di gallina, intero, congelato": [
+    "uova di",
+    "uova",
+    "uova di gallina"
+  ],
+  "Uova di gallina, intero, in polvere": [
+    "uova di",
+    "uova",
+    "uova di gallina"
+  ],
+  "Uova di gallina, albume": [
+    "uova di",
+    "uova",
+    "uova di gallina"
+  ],
+  "Uova di gallina, tuorlo": [
+    "uova di",
+    "uova",
+    "uova di gallina"
+  ],
+  "Uova di gallina, tuorlo , cotto, in camicia": [
+    "uova di",
+    "uova",
+    "uova di gallina"
+  ],
+  "Uova di gallina, tuorlo, congelato": [
+    "uova di",
+    "uova",
+    "uova di gallina"
+  ],
+  "Uova di gallina, tuorlo, in polvere": [
+    "uova di",
+    "uova",
+    "uova di gallina"
+  ],
+  "Uova di oca, intero": [
+    "uova di",
+    "uova",
+    "uova di oca"
+  ],
+  "Uova di tacchina, intero": [
+    "uova di",
+    "uova",
+    "uova di tacchina"
+  ],
+  "Sego di bue": [
+    "sego di",
+    "sego"
+  ],
+  "Strutto o sugna": [
+    "Strutto",
+    "sugna",
+    "strutto o"
+  ],
+  "Olio di fegato di merluzzo": [
+    "olio di",
+    "olio",
+    "pesce"
+  ],
+  "Zucchero, saccarosio": [
+    "zucchero"
+  ],
+  "Caramelle dure": [
+    "caramelle"
+  ],
+  "Caramelle tipo \"mou\"": [
+    "caramelle tipo",
+    "caramelle"
+  ],
+  "Lenti colorate ripiene di cioccolato": [
+    "lenti colorate",
+    "lenti"
+  ],
+  "Gomme da masticare, lastrine e confetti": [
+    "gomme da",
+    "gomme",
+    "gomme da masticare"
+  ],
+  "Torrone alla mandorla": [
+    "torrone alla",
+    "torrone"
+  ],
+  "Cioccolato, al latte": [
+    "cioccolato"
+  ],
+  "Cioccolato, fondente": [
+    "cioccolato"
+  ],
+  "Cioccolato, al latte con nocciole": [
+    "cioccolato"
+  ],
+  "Crema di nocciole e cacao": [
+    "Crema di nocciole",
+    "cacao",
+    "crema di"
+  ],
+  "Gelato confezionato, cacao, in vaschetta": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, caffè, in vaschetta": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, fior di latte, in vaschetta": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, fior di latte, ricoperto di sorbetto alla fragola": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, nocciola, in vaschetta": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, panna, in vaschetta": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, panna ricoperta di cioccolato fondente": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, stracciatella, in vaschetta": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, vaniglia, in vaschetta": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, biscotto con crema, zabaione e cioccolato": [
+    "gelato confezionato",
+    "gelato",
+    "gelato confezionato cotto"
+  ],
+  "Gelato confezionato, cono con panna e cioccolato": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, cono con panna, scaglie di cioccolato e noccioline": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, ghiacciolo all'arancio": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Gelato confezionato, sorbetto al limone, in vaschetta": [
+    "gelato confezionato",
+    "gelato"
+  ],
+  "Baba' al rhum": [
+    "baba' al",
+    "baba'"
+  ],
+  "Cannoli alla crema, industriale": [
+    "cannoli alla",
+    "cannoli",
+    "cannoli alla crema"
+  ],
+  "Crostata, con crema al cacao, industriale": [
+    "crostata"
+  ],
+  "Crostata, con marmellata, industriale": [
+    "crostata"
+  ],
+  "Crostata, con marmellata di albicocche, industriale": [
+    "crostata"
+  ],
+  "Torta margherita": [
+    "torta"
+  ],
+  "Merendine, con marmellata, industriale": [
+    "merendine"
+  ],
+  "Merendine, farcite con cacao, industriale": [
+    "merendine"
+  ],
+  "Merendine, tipo pan di Spagna, industriale": [
+    "merendine"
+  ],
+  "Merendine, tipo briosche, industriale": [
+    "merendine"
+  ],
+  "Merendine, tipo pasta frolla, industriale": [
+    "merendine"
+  ],
+  "Barretta al cocco ricoperta di cioccolato": [
+    "barretta al",
+    "barretta"
+  ],
+  "Wafer ricoperto di cioccolato": [
+    "wafer ricoperto",
+    "wafer"
+  ],
+  "Savoiardi, industriali": [
+    "savoiardi"
+  ],
+  "Pasta di mandorle": [
+    "pasta di",
+    "pasta"
+  ],
+  "Bevanda tipo cola": [
+    "bevanda tipo",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Aperitivo a base di vino": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Birra chiara": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Vino da pasto bianco": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Vino da pasto rosso": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Marsala tipico": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Vermouth dolce": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Vermouth secco": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Liquori da dessert": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Marsala all'uovo": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Brandy": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Grappa": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Whisky": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Bevanda alcolica, Spumante": [
+    "bevanda alcolica",
+    "bevanda"
+  ],
+  "Ketchup, salsa": [
+    "ketchup"
+  ],
+  "Maionese, industriale": [
+    "maionese"
+  ],
+  "Dadi da brodo": [
+    "dadi da",
+    "dadi"
+  ],
+  "Lievito di birra, compresso": [
+    "lievito di",
+    "lievito",
+    "lievito di birra"
+  ],
+  "Farina di castagne": [
+    "farina di",
+    "farina"
+  ],
+  "Fecola di patate": [
+    "fecola di",
+    "fecola"
+  ],
+  "Pappa reale": [
+    "pappa"
+  ],
+  "Cacao amaro, in polvere": [
+    "cacao amaro",
+    "cacao"
+  ],
+  "Tè, foglie": [
+    "tè"
+  ],
+  "Caffe' tostato": [
+    "caffe'"
+  ],
+  "Soia, bevanda": [
+    "soia"
+  ],
+  "Soia, salsa": [
+    "soia"
+  ],
+  "Soia, yogurt": [
+    "soia"
+  ],
+  "Minestre in scatola, crema di asparagi": [
+    "minestre in",
+    "minestre",
+    "minestre in scatola"
+  ],
+  "Minestre in scatola, crema di cipolle": [
+    "minestre in",
+    "minestre",
+    "minestre in scatola"
+  ],
+  "Minestre in scatola, crema di funghi": [
+    "minestre in",
+    "minestre",
+    "minestre in scatola"
+  ],
+  "Minestre in scatola, crema di pollo": [
+    "minestre in",
+    "minestre",
+    "minestre in scatola"
+  ],
+  "Minestre in scatola, crema di pomodori": [
+    "minestre in",
+    "minestre",
+    "minestre in scatola"
+  ],
+  "Minestrone, cotto": [
+    "minestrone",
+    "minestrone cotto"
+  ],
+  "Minestrone liofilizzato": [
+    "minestrone"
+  ],
+  "Pizza Napoletana Margherita STG": [
+    "pizza napoletana",
+    "pizza"
+  ],
+  "Cannoli siciliani": [
+    "cannoli"
+  ],
+  "Brasato al Barolo": [
+    "brasato al",
+    "brasato"
+  ],
+  "Baccalà alla vicentina": [
+    "baccalà alla",
+    "baccalà"
+  ],
+  "Sugo di pomodoro": [
+    "sugo di",
+    "sugo",
+    "pomodori"
+  ],
+  "Ragù alla bolognese": [
+    "ragù alla",
+    "ragù"
+  ],
+  "Pesto alla genovese": [
+    "pesto alla",
+    "pesto"
+  ],
+  "Risotto alla parmigiana": [
+    "risotto alla",
+    "risotto"
+  ],
+  "Pasta e fagioli": [
+    "Pasta",
+    "fagioli",
+    "pasta e"
+  ],
+  "Spezzatino di vitellone al vino rosso": [
+    "spezzatino di",
+    "spezzatino"
+  ],
+  "Scaloppina di tacchino al limone": [
+    "scaloppina di",
+    "scaloppina",
+    "tacchino"
+  ],
+  "Trota al forno": [
+    "trota al",
+    "trota"
+  ],
+  "Merluzzo in umido": [
+    "merluzzo in",
+    "merluzzo",
+    "pesce"
+  ],
+  "Pasta al sugo di pomodoro": [
+    "pasta al",
+    "pasta",
+    "pomodori"
+  ],
+  "Pasta al ragù alla bolognese": [
+    "pasta al",
+    "pasta"
+  ],
+  "Pasta al pesto alla genovese": [
+    "pasta al",
+    "pasta"
+  ],
+  "Riso al sugo di pomodoro": [
+    "riso al",
+    "riso",
+    "pomodori"
+  ],
+  "Riso al ragù alla bolognese": [
+    "riso al",
+    "riso"
+  ],
+  "Riso burro e Parmigiano reggiano": [
+    "Riso burro",
+    "Parmigiano reggiano",
+    "riso"
+  ],
+  "Gnocchi al sugo di pomodoro": [
+    "gnocchi al",
+    "gnocchi",
+    "pomodori"
+  ],
+  "Gnocchi al ragù alla bolognese": [
+    "gnocchi al",
+    "gnocchi"
+  ],
+  "Gnocchi al pesto alla genovese": [
+    "gnocchi al",
+    "gnocchi"
+  ],
+  "Ravioli al burro e salvia": [
+    "Ravioli al burro",
+    "salvia",
+    "ravioli al"
+  ],
+  "Ravioli al sugo di pomodoro": [
+    "ravioli al",
+    "ravioli",
+    "pomodori"
+  ],
+  "Polenta al sugo di pomodoro": [
+    "polenta al",
+    "polenta",
+    "pomodori"
+  ],
+  "Polenta al ragù alla bolognese": [
+    "polenta al",
+    "polenta"
+  ],
+  "Alici al forno": [
+    "alici al",
+    "alici"
+  ],
+  "Spigola al cartoccio": [
+    "spigola al",
+    "spigola"
+  ],
+  "Sogliola al vino bianco": [
+    "sogliola al",
+    "sogliola"
+  ],
+  "Frittata prosciutto e formaggio": [
+    "Frittata prosciutto",
+    "formaggio",
+    "frittata"
+  ],
+  "Pasta cacio e pepe": [
+    "Pasta cacio",
+    "pepe",
+    "pasta"
+  ],
+  "Pasta burro e parmigiano": [
+    "Pasta burro",
+    "parmigiano",
+    "pasta"
+  ],
+  "Pasta aglio, olio e peperoncino": [
+    "pasta aglio",
+    "pasta"
+  ],
+  "Alici marinate": [
+    "alici"
+  ],
+  "Pasta alla carbonara": [
+    "pasta alla",
+    "pasta"
+  ],
+  "Pasta alle vongole": [
+    "pasta alle",
+    "pasta"
+  ],
+  "Pasta alla amatriciana": [
+    "pasta alla",
+    "pasta"
+  ],
+  "Carciofi alla romana": [
+    "carciofi alla",
+    "carciofi"
+  ],
+  "Pomodori al riso": [
+    "pomodori al",
+    "pomodori"
+  ],
+  "Parmigiana di melanzane": [
+    "parmigiana di",
+    "parmigiana",
+    "mele"
+  ],
+  "Pan di Spagna": [
+    "pan di"
+  ],
+  "Torta di mele": [
+    "torta di",
+    "torta"
+  ],
+  "Maionese, artigianale": [
+    "maionese"
+  ],
+  "Pasta integrale al sugo di pomodoro": [
+    "pasta integrale",
+    "pasta",
+    "pomodori"
+  ],
+  "Zucchine grigliate": [
+    "zucchine"
+  ],
+  "Riso Cantonese": [
+    "riso"
+  ],
+  "Kebab solo carne": [
+    "kebab solo",
+    "kebab"
+  ],
+  "Involtini Primavera": [
+    "involtini"
+  ],
+  "Nuvole di gamberi": [
+    "nuvole di",
+    "nuvole",
+    "pesce"
+  ],
+  "Ravioli al vapore": [
+    "ravioli al",
+    "ravioli"
+  ],
+  "Spaghetti fritti": [
+    "spaghetti"
+  ],
+  "Pollo all'ananas": [
+    "pollo"
+  ],
+  "Pollo alle mandorle": [
+    "pollo alle",
+    "pollo"
+  ],
+  "Maiale in agrodolce": [
+    "maiale in",
+    "maiale"
+  ],
+  "Gamberetti con funghi e bambù": [
+    "Gamberetti con funghi",
+    "bambù",
+    "gamberetti con"
+  ],
+  "Frutta mista caramellata": [
+    "frutta mista",
+    "frutta"
+  ],
+  "Gelato misto fritto": [
+    "gelato misto",
+    "gelato"
+  ]
 }
