@@ -2233,6 +2233,9 @@ export default function SalaComandi() {
   const [drawerMealTimeStr, setDrawerMealTimeStr] = useState('12:00');
   const [foodNameInput, setFoodNameInput] = useState('');
   const [foodWeightInput, setFoodWeightInput] = useState('');
+  const [foodDropdownSuggestions, setFoodDropdownSuggestions] = useState([]);
+  const [showFoodDropdown, setShowFoodDropdown] = useState(false);
+  const [isGeneratingFood, setIsGeneratingFood] = useState(false);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
   const [inspectedFood, setInspectedFood] = useState(null);
   const [editFoodData, setEditFoodData] = useState(null);
@@ -2242,7 +2245,8 @@ export default function SalaComandi() {
   const barcodeVideoRef = useRef(null);
   const barcodeStreamRef = useRef(null);
   const barcodeScanIntervalRef = useRef(null);
-  
+  const foodInputRef = useRef(null);
+
   const [selectedFoodForInfo, setSelectedFoodForInfo] = useState(null);
   const [selectedFoodForEdit, setSelectedFoodForEdit] = useState(null);
   const [nutrientModal, setNutrientModal] = useState(null);
@@ -2300,6 +2304,24 @@ export default function SalaComandi() {
       /* ignore */
     }
   }, []);
+
+  useEffect(() => {
+    const q = (foodNameInput || '').trim().toLowerCase();
+    if (!q) {
+      setFoodDropdownSuggestions([]);
+      return;
+    }
+    const keys = Object.keys(foodDb || {});
+    const matches = keys
+      .filter((k) => {
+        const d = foodDb[k];
+        const desc = (d?.desc || d?.name || '').toLowerCase();
+        return desc.includes(q);
+      })
+      .slice(0, 10)
+      .map((k) => ({ key: k, desc: foodDb[k]?.desc || foodDb[k]?.name || k }));
+    setFoodDropdownSuggestions(matches);
+  }, [foodNameInput, foodDb]);
 
   const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
   /** Incrementato ad ogni apertura wizard: consente idratazione da Firebase senza sovrascrivere durante l’editing. */
@@ -6006,6 +6028,67 @@ Ottimo! Diario aggiornato. 🥗`;
     }
     throw new Error("Cluster API esaurito.");
   };
+
+  const generateFoodWithAI = useCallback(async (foodName) => {
+    const name = (foodName || foodNameInput || '').trim();
+    if (!name) return;
+    if (!userUid) {
+      alert('Effettua il login per salvare nuovi alimenti.');
+      return;
+    }
+    setIsGeneratingFood(true);
+    try {
+      const prompt = `Restituisci SOLO un JSON valido, senza altro testo, con i valori nutrizionali per 100g dell'alimento "${name}".
+Chiavi obbligatorie (numeri): desc (stringa con il nome), kcal, prot, carb, fatTotal, fibre.
+Aggiungi se possibile: leu, iso, val, lys, vitA, vitc, vitD, ca, fe, mg, zn, omega3 (tutti in mg o µg come standard RDA).
+Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}`;
+      const raw = await callGeminiAPIWithRotation(prompt);
+      let jsonStr = raw.trim();
+      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) jsonStr = jsonMatch[1].trim();
+      const data = JSON.parse(jsonStr);
+      const desc = data.desc || name;
+      const entryPer100 = { desc };
+      ['kcal', 'cal', 'prot', 'carb', 'fatTotal', 'fibre', 'leu', 'iso', 'val', 'lys', 'vitA', 'vitc', 'vitD', 'ca', 'fe', 'mg', 'zn', 'omega3'].forEach((k) => {
+        if (typeof data[k] === 'number' && data[k] > 0) entryPer100[k] = data[k];
+      });
+      Object.keys(TARGETS).forEach((g) => Object.keys(TARGETS[g]).forEach((k) => {
+        if (entryPer100[k] == null || entryPer100[k] === 0) entryPer100[k] = getAverageEstimate(k, desc);
+      }));
+      if (entryPer100.kcal == null || entryPer100.kcal === 0) entryPer100.kcal = entryPer100.cal ?? getAverageEstimate('kcal', desc);
+      entryPer100.cal = entryPer100.cal ?? entryPer100.kcal;
+      const newKey = `food_${Date.now()}_${String(desc).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
+      const basePath = `users/${userUid}/tracker_data`;
+      await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
+      setFoodDb((prev) => ({ ...prev, [newKey]: entryPer100 }));
+      const weight = parseFloat(foodWeightInput) || 100;
+      const ratio = weight / 100;
+      const newItem = {
+        id: Date.now() + Math.random(),
+        type: 'food',
+        mealType,
+        desc,
+        qta: weight,
+        weight
+      };
+      Object.keys(entryPer100).forEach((k) => {
+        if (typeof entryPer100[k] === 'number' && k !== 'id') newItem[k] = entryPer100[k] * ratio;
+      });
+      Object.keys(TARGETS).forEach((g) => Object.keys(TARGETS[g]).forEach((k) => {
+        if (newItem[k] == null || newItem[k] === 0) newItem[k] = (getAverageEstimate(k, desc) / 100) * weight;
+      }));
+      newItem.kcal = newItem.kcal ?? newItem.cal ?? (getAverageEstimate('kcal', desc) / 100) * weight;
+      newItem.cal = newItem.cal ?? newItem.kcal;
+      setAddedFoods((prev) => [...prev, newItem]);
+      setFoodNameInput('');
+      setFoodWeightInput('');
+      setShowFoodDropdown(false);
+    } catch (e) {
+      alert(`Generazione alimento fallita: ${e.message}`);
+    } finally {
+      setIsGeneratingFood(false);
+    }
+  }, [userUid, mealType, foodNameInput, foodWeightInput, callGeminiAPIWithRotation, getAverageEstimate, db, setFoodDb, setAddedFoods, setFoodNameInput, setFoodWeightInput, setShowFoodDropdown]);
 
   const handleVerifyFoodAI = async () => {
     if (!editFoodData || !(editFoodData.name || editFoodData.nome || editFoodData.desc)) return;
@@ -12285,6 +12368,13 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             setFoodNameInput={setFoodNameInput}
             foodWeightInput={foodWeightInput}
             setFoodWeightInput={setFoodWeightInput}
+            foodInputRef={foodInputRef}
+            foodDropdownSuggestions={foodDropdownSuggestions}
+            getLastQuantityForFood={getLastQuantityForFood}
+            showFoodDropdown={showFoodDropdown}
+            setShowFoodDropdown={setShowFoodDropdown}
+            generateFoodWithAI={generateFoodWithAI}
+            isGeneratingFood={isGeneratingFood}
             handleAddFoodManual={handleAddFoodManual}
             abitudiniIeri={abitudiniIeri}
             addedFoods={addedFoods}
