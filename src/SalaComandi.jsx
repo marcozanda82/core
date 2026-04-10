@@ -2235,6 +2235,7 @@ export default function SalaComandi() {
   const [foodWeightInput, setFoodWeightInput] = useState('');
   const [foodDropdownSuggestions, setFoodDropdownSuggestions] = useState([]);
   const [showFoodDropdown, setShowFoodDropdown] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [isGeneratingFood, setIsGeneratingFood] = useState(false);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
   const [inspectedFood, setInspectedFood] = useState(null);
@@ -2308,6 +2309,7 @@ export default function SalaComandi() {
   useEffect(() => {
     const q = (foodNameInput || '').trim();
     if (!q) {
+      setIsSearching(false);
       setFoodDropdownSuggestions([]);
       return undefined;
     }
@@ -2316,6 +2318,9 @@ export default function SalaComandi() {
     const controller = new AbortController();
 
     const timeoutId = window.setTimeout(async () => {
+      if (isCancelled) return;
+      setIsSearching(true);
+      setShowFoodDropdown(true);
       try {
         console.log('[food-search frontend] fetching canonical search', { q });
         const response = await fetch(`/api/search-foods?q=${encodeURIComponent(q)}`, {
@@ -2351,6 +2356,11 @@ export default function SalaComandi() {
         if (controller.signal.aborted || isCancelled) return;
         console.error('food search dropdown failed', error);
         setFoodDropdownSuggestions([]);
+      } finally {
+        if (!controller.signal.aborted && !isCancelled) {
+          setIsSearching(false);
+          setShowFoodDropdown(true);
+        }
       }
     }, 250);
 
@@ -12408,6 +12418,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             setFoodWeightInput={setFoodWeightInput}
             foodInputRef={foodInputRef}
             foodDropdownSuggestions={foodDropdownSuggestions}
+            isSearching={isSearching}
             getLastQuantityForFood={getLastQuantityForFood}
             showFoodDropdown={showFoodDropdown}
             setShowFoodDropdown={setShowFoodDropdown}
