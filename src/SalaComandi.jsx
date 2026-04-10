@@ -2247,6 +2247,7 @@ export default function SalaComandi() {
   const barcodeStreamRef = useRef(null);
   const barcodeScanIntervalRef = useRef(null);
   const foodInputRef = useRef(null);
+  const foodSearchRequestIdRef = useRef(0);
 
   const [selectedFoodForInfo, setSelectedFoodForInfo] = useState(null);
   const [selectedFoodForEdit, setSelectedFoodForEdit] = useState(null);
@@ -2309,6 +2310,7 @@ export default function SalaComandi() {
   useEffect(() => {
     const q = (foodNameInput || '').trim();
     if (!q) {
+      foodSearchRequestIdRef.current += 1;
       setIsSearching(false);
       setFoodDropdownSuggestions([]);
       return undefined;
@@ -2316,6 +2318,7 @@ export default function SalaComandi() {
 
     let isCancelled = false;
     const controller = new AbortController();
+    const requestId = ++foodSearchRequestIdRef.current;
 
     const timeoutId = window.setTimeout(async () => {
       if (isCancelled) return;
@@ -2335,10 +2338,11 @@ export default function SalaComandi() {
         const data = await response.json();
         const results = Array.isArray(data?.results) ? data.results : [];
 
-        if (isCancelled) return;
+        if (isCancelled || requestId !== foodSearchRequestIdRef.current) return;
 
         console.log('[food-search frontend] canonical search results', {
           q,
+          requestId,
           results: results.map((item) => ({
             id: item?.id ?? null,
             name_it: item?.name_it ?? null,
@@ -2353,11 +2357,11 @@ export default function SalaComandi() {
           })).filter((item) => item.key && item.desc),
         );
       } catch (error) {
-        if (controller.signal.aborted || isCancelled) return;
+        if (controller.signal.aborted || isCancelled || requestId !== foodSearchRequestIdRef.current) return;
         console.error('food search dropdown failed', error);
         setFoodDropdownSuggestions([]);
       } finally {
-        if (!controller.signal.aborted && !isCancelled) {
+        if (!controller.signal.aborted && !isCancelled && requestId === foodSearchRequestIdRef.current) {
           setIsSearching(false);
           setShowFoodDropdown(true);
         }
