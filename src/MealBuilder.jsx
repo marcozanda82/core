@@ -1276,45 +1276,56 @@ export default function MealBuilder({
                           boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                         }}
                       >
-                        {isSearching && (
+                        {isSearching ? (
                           <div
                             style={{
                               width: '100%',
                               padding: '12px 16px',
                               color: '#94a3b8',
                               fontSize: '0.85rem',
-                              borderBottom: foodDropdownSuggestions.length > 0 ? '1px solid #2a2a2a' : 'none',
                             }}
                           >
-                            Ricerca in corso...
+                            🔍 Searching...
                           </div>
-                        )}
-                        {(foodDropdownSuggestions || []).map((s) => (
-                          <button
-                            key={s.key}
-                            type="button"
-                            onMouseDown={(e) => e.preventDefault()}
+                        ) : (foodDropdownSuggestions || []).length === 0 ? (
+                          <div
                             style={{
                               width: '100%',
                               padding: '12px 16px',
-                              textAlign: 'left',
-                              background: 'none',
-                              border: 'none',
-                              color: '#fff',
-                              cursor: 'pointer',
-                              fontSize: '0.9rem',
-                              borderBottom: '1px solid #2a2a2a',
-                            }}
-                            onClick={() => {
-                              setFoodNameInput(s.desc);
-                              setFoodWeightInput(getLastQuantityForFood(s.desc) || '');
-                              setShowFoodDropdown(false);
-                              setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
+                              color: '#94a3b8',
+                              fontSize: '0.85rem',
                             }}
                           >
-                            {s.desc}
-                          </button>
-                        ))}
+                            Nessun risultato
+                          </div>
+                        ) : (
+                          (foodDropdownSuggestions || []).map((s) => (
+                            <button
+                              key={s.key}
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              style={{
+                                width: '100%',
+                                padding: '12px 16px',
+                                textAlign: 'left',
+                                background: 'none',
+                                border: 'none',
+                                color: '#fff',
+                                cursor: 'pointer',
+                                fontSize: '0.9rem',
+                                borderBottom: '1px solid #2a2a2a',
+                              }}
+                              onClick={() => {
+                                setFoodNameInput(s.desc);
+                                setFoodWeightInput(getLastQuantityForFood(s.desc) || '');
+                                setShowFoodDropdown(false);
+                                setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
+                              }}
+                            >
+                              {s.desc}
+                            </button>
+                          ))
+                        )}
                         {foodNameInput.trim() ? (
                           <button
                             type="button"
