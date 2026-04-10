@@ -2336,16 +2336,15 @@ export default function SalaComandi() {
           q,
           results: results.map((item) => ({
             id: item?.id ?? null,
-            canonicalId: item?.canonicalId ?? null,
             name_it: item?.name_it ?? null,
-            name_en: item?.name_en ?? null,
+            score: item?.score ?? null,
           })),
         });
 
         setFoodDropdownSuggestions(
           results.map((item) => ({
             key: String(item?.id ?? ''),
-            desc: String(item?.name_it || item?.name_en || '').trim(),
+            desc: String(item?.name_it || '').trim(),
           })).filter((item) => item.key && item.desc),
         );
       } catch (error) {

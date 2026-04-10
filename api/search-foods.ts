@@ -35,8 +35,7 @@ function mapResult(item: CanonicalSearchResultItem) {
   return {
     id: item.food.id,
     name_it: item.food.name_it,
-    name_en: item.food.name_en ?? null,
-    canonicalId: item.canonicalId ?? null,
+    score: typeof item.score === 'number' ? item.score : null,
   };
 }
 
@@ -66,7 +65,7 @@ export default async function handler(
       resultCount: results.length,
     });
     res.status(200).json({
-      results: results.slice(0, 10).map(mapResult),
+      results: results.slice(0, 5).map(mapResult),
     });
   } catch (error) {
     console.error('[api/search-foods] search failed', error);
