@@ -28,6 +28,7 @@ import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
+import MealDailyDiary from './MealDailyDiary';
 import {
   getTimePositionPercent,
   getWallClockDecimalHour,
@@ -10654,6 +10655,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           {homeLongevityInsightLine}
         </div>
       ) : null}
+
+      {/* Diario giornaliero (FoodSearch + totali + lista) — tab Oggi, vista home */}
+      {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && (
+        <MealDailyDiary />
+      )}
 
       {(activeBottomTab === 'analisi' || (activeBottomTab === 'oggi' && userProfile?.level === 'pro')) && (
       <>
