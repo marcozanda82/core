@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import Fuse from 'fuse.js';
 import creaFoodsLite from './data/crea_foods_lite.json';
 
@@ -63,13 +63,35 @@ function macroAtPortion(per100, grams) {
   return (Number(per100) * g) / 100;
 }
 
+function getGeminiApiKeyFromStorage() {
+  try {
+    const raw = localStorage.getItem('ghost_api_cluster');
+    const arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return null;
+    const key = arr.find((k) => k && String(k).trim());
+    return key ? String(key).trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function stripJsonFence(text) {
+  return String(text || '')
+    .replace(/```json/gi, '')
+    .replace(/```/g, '')
+    .trim();
+}
+
 export default function FoodSearch({ onFoodAdded }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [selectedFood, setSelectedFood] = useState(null);
   const [grams, setGrams] = useState(100);
+  const [isTranslating, setIsTranslating] = useState(false);
 
-  const showDropdown = useMemo(() => results.length > 0, [results]);
+  const qTrim = query.trim();
+  const showAiFallback = qTrim.length > 2 && results.length === 0;
+  const showListDropdown = results.length > 0 || showAiFallback;
 
   const gramsNum = useMemo(() => {
     if (grams === '') return 0;
@@ -101,6 +123,73 @@ export default function FoodSearch({ onFoodAdded }) {
     const searchResults = fuse.search(v);
     setResults(searchResults.slice(0, 15));
   }
+
+  const handleAiTranslation = useCallback(async () => {
+    const q = query.trim();
+    if (q.length < 3) return;
+    setIsTranslating(true);
+    try {
+      const apiKey = getGeminiApiKeyFromStorage();
+      if (!apiKey) {
+        alert('Configura una chiave API Gemini nelle impostazioni dell’app (cluster API).');
+        setIsTranslating(false);
+        return;
+      }
+
+      const qEsc = String(q).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const systemText = `Sei un nutrizionista esperto e un traduttore di dati. L'utente ha inserito questa stringa di testo: '${qEsc}'. Il tuo compito è estrarre o stimare i dati nutrizionali con massima precisione. Se la stringa contiene una grammatura (es. 'due fette' o '150g'), calcola i valori su quella grammatura, altrimenti usa 100g. Devi rispondere ESCLUSIVAMENTE con un oggetto JSON valido (senza markdown o backtick) con le seguenti chiavi: "name" (nome pulito e professionale dell'alimento), "grams" (numero), "kcal" (numero), "pro" (numero), "fat" (numero), "carbs" (numero), "category" (stringa, es. 'AI Translation').`;
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemText }] },
+            contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con l\'oggetto JSON richiesto.' }] }],
+            generationConfig: { temperature: 0.2 },
+          }),
+        }
+      );
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText.slice(0, 200) || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!raw) throw new Error('Risposta vuota dal modello');
+
+      const cleaned = stripJsonFence(raw);
+      const start = cleaned.indexOf('{');
+      const end = cleaned.lastIndexOf('}');
+      if (start === -1 || end === -1 || end <= start) throw new Error('JSON non trovato');
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
+
+      const gramsNum = Math.max(0, Number(parsed.grams) || 100);
+      const finalItem = {
+        id: `ai_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        name: String(parsed.name || 'Alimento').trim() || 'Alimento',
+        category: String(parsed.category || 'AI Translation').trim() || 'AI Translation',
+        grams: gramsNum,
+        kcal: Math.max(0, Number(parsed.kcal) || 0),
+        pro: Math.max(0, Number(parsed.pro) || 0),
+        fat: Math.max(0, Number(parsed.fat) || 0),
+        carbs: Math.max(0, Number(parsed.carbs) || 0),
+        timestamp: new Date().toISOString(),
+      };
+
+      if (typeof onFoodAdded === 'function') {
+        onFoodAdded(finalItem);
+      }
+      setQuery('');
+      setResults([]);
+    } catch (e) {
+      console.error('FoodSearch AI translation:', e);
+      alert("Non sono riuscito a capire l'alimento, riprova con parole diverse");
+    } finally {
+      setIsTranslating(false);
+    }
+  }, [query, onFoodAdded]);
 
   function handleSelect(item) {
     setSelectedFood(item);
@@ -288,7 +377,7 @@ export default function FoodSearch({ onFoodAdded }) {
         placeholder="Cerca alimento CREA…"
         autoComplete="off"
         aria-autocomplete="list"
-        aria-expanded={showDropdown}
+        aria-expanded={showListDropdown}
         style={{
           width: '100%',
           boxSizing: 'border-box',
@@ -305,7 +394,7 @@ export default function FoodSearch({ onFoodAdded }) {
           WebkitBackdropFilter: 'blur(8px)',
         }}
       />
-      {showDropdown ? (
+      {showListDropdown ? (
         <div
           role="listbox"
           style={{
@@ -411,6 +500,41 @@ export default function FoodSearch({ onFoodAdded }) {
               </div>
             </button>
           ))}
+          {(results.length > 0 || showAiFallback) && qTrim.length > 2 ? (
+            <div style={{ padding: '8px 10px 10px', borderTop: '1px solid rgba(15, 23, 42, 0.06)' }}>
+              <button
+                type="button"
+                disabled={isTranslating}
+                onClick={() => void handleAiTranslation()}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  color: isTranslating ? '#64748b' : '#0f172a',
+                  cursor: isTranslating ? 'wait' : 'pointer',
+                  textAlign: 'center',
+                  borderRadius: 12,
+                  border: '1px solid transparent',
+                  background:
+                    'linear-gradient(135deg, rgba(255,255,255,0.55) 0%, rgba(224, 231, 255, 0.45) 50%, rgba(207, 250, 254, 0.5) 100%)',
+                  boxShadow:
+                    '0 0 0 1px rgba(99, 102, 241, 0.25), 0 0 0 1px rgba(14, 165, 233, 0.2) inset, 0 4px 16px rgba(15, 23, 42, 0.08)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                  opacity: isTranslating ? 0.85 : 1,
+                }}
+              >
+                {isTranslating ? (
+                  'Sto decifrando l\'alimento…'
+                ) : (
+                  <span>
+                    {`✨ Analizza '${qTrim.length > 40 ? `${qTrim.slice(0, 40)}…` : qTrim}' con l'AI`}
+                  </span>
+                )}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
