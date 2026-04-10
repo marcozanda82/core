@@ -59,7 +59,9 @@ export default async function handler(
   }
 
   try {
+    console.log('[api/search-foods] before search execution', { q });
     const results = await searchFoodsCanonical(q, { maxSearchResults: 10 });
+    console.log('[api/search-foods] raw results', results);
     console.log('[api/search-foods] returning results', {
       q,
       resultCount: results.length,
@@ -68,8 +70,17 @@ export default async function handler(
       results: results.slice(0, 5).map(mapResult),
     });
   } catch (error) {
-    console.error('[api/search-foods] search failed', error);
-    res.status(500).json({ error: 'Food search failed' });
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error('[api/search-foods] search failed', {
+      q,
+      message: err.message,
+      stack: err.stack,
+    });
+    res.status(500).json({
+      ok: false,
+      error: err.message,
+      stack: err.stack,
+    });
   }
 }
 
