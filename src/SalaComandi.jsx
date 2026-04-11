@@ -23,6 +23,7 @@ import {
 import { calculateMetabolicVariance } from './metabolicEngine';
 
 import { useFirebase } from './useFirebase';
+import { useFoodDb } from './useFoodDb';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
@@ -2220,6 +2221,7 @@ export default function SalaComandi() {
   const [dayProfile, setDayProfile] = useState('upper');
   const [calorieTuning, setCalorieTuning] = useState(0);
   const [foodDb, setFoodDb] = useState({});
+  const { foodDb: csvFoodDb } = useFoodDb();
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
   dailyLogRef.current = dailyLog;
@@ -13347,7 +13349,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             dailyKcalTarget={dynamicDailyKcal}
           />
           {selectedFoodForInfo ? (
-            <FoodLabelModal foodItem={selectedFoodForInfo} foodDb={foodDb} onClose={() => setSelectedFoodForInfo(null)} />
+            <FoodLabelModal foodItem={selectedFoodForInfo} foodDb={csvFoodDb} onClose={() => setSelectedFoodForInfo(null)} />
           ) : null}
         </>,
         document.body
