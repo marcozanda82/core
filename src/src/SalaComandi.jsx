@@ -2313,6 +2313,8 @@ export default function SalaComandi() {
       return;
     }
 
+    if (!foodDb) return;
+
     const keys = Object.keys(foodDb || {});
 
     const matches = keys
@@ -3458,7 +3460,9 @@ export default function SalaComandi() {
       }
     });
 
-    get(ref(db, `${basePath}/trackerFoodDatabase`)).then(s => { if (s.exists()) setFoodDb(s.val()); });
+    get(ref(db, `${basePath}/trackerFoodDatabase`)).then((s) => {
+      setFoodDb(s.exists() ? (s.val() || {}) : {});
+    });
 
     return () => {
       unsubBodyMetrics();
