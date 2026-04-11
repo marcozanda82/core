@@ -24,6 +24,7 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
+import { searchFoods } from './foodSearch';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
@@ -2221,7 +2222,7 @@ export default function SalaComandi() {
   const [dayProfile, setDayProfile] = useState('upper');
   const [calorieTuning, setCalorieTuning] = useState(0);
   const [foodDb, setFoodDb] = useState({});
-  const { foodDb: csvFoodDb } = useFoodDb();
+  const { foodDb: csvFoodDb, loading: csvFoodDbLoading } = useFoodDb();
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
   dailyLogRef.current = dailyLog;
@@ -6111,16 +6112,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     setCreaResults([]);
     setIsCreaLoading(true);
     try {
-      const res = await fetch(`/api/search-foods?q=${encodeURIComponent(query)}`);
-      if (!res.ok) {
-        const text = await res.text();
-        console.error('CREA error raw:', text);
+      if (csvFoodDbLoading) {
         setCreaResults([]);
         return;
       }
 
-      const data = await res.json();
-      setCreaResults(data?.results || []);
+      const results = searchFoods(csvFoodDb, query);
+      setCreaResults(results || []);
       setShowFoodDropdown(true);
     } catch (err) {
       console.error('CREA search failed', err);
@@ -6128,7 +6126,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     } finally {
       setIsCreaLoading(false);
     }
-  }, [setShowFoodDropdown]);
+  }, [csvFoodDb, csvFoodDbLoading, setShowFoodDropdown]);
 
   const handleVerifyFoodAI = async () => {
     if (!editFoodData || !(editFoodData.name || editFoodData.nome || editFoodData.desc)) return;
