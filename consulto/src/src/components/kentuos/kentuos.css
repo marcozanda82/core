@@ -1,0 +1,659 @@
+/* KentuOS — premium AI / biohacking surface (AiCluster) */
+:root {
+  --kentu-bg: #0b0f14;
+  --kentu-surface: rgba(16, 20, 28, 0.78);
+  --kentu-border: rgba(99, 102, 241, 0.22);
+  --kentu-border-glow: rgba(139, 92, 246, 0.35);
+  --kentu-text: #e8edf4;
+  --kentu-text-muted: rgba(148, 163, 184, 0.92);
+  --kentu-accent-a: #3b82f6;
+  --kentu-accent-b: #8b5cf6;
+  --kentu-positive: #34d399;
+  --kentu-warn: #fbbf24;
+  --kentu-negative: #f87171;
+  --kentu-radius-lg: 18px;
+  --kentu-radius-md: 14px;
+  --kentu-radius-sm: 10px;
+}
+
+@keyframes kentu-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes kentu-pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 20px 2px rgba(59, 130, 246, 0.2);
+  }
+}
+
+.ai-cluster-root.kentu-os {
+  background: var(--kentu-bg);
+  border-radius: 0;
+  padding: 2px 2px 0;
+  box-sizing: border-box;
+}
+
+.kentu-os .chat-container {
+  background: transparent;
+}
+
+.kentu-os .chat-messages {
+  gap: 14px;
+}
+
+/* —— Card primitives —— */
+.kentu-card {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: var(--kentu-surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--kentu-border);
+  border-radius: var(--kentu-radius-md);
+  box-shadow:
+    0 4px 32px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  color: var(--kentu-text);
+  animation: kentu-card-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.kentu-card:hover {
+  border-color: var(--kentu-border-glow);
+  box-shadow:
+    0 6px 36px rgba(0, 0, 0, 0.5),
+    0 0 24px rgba(59, 130, 246, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.kentu-card--hero {
+  border-radius: var(--kentu-radius-lg);
+  padding: 20px 18px 18px;
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  background: linear-gradient(155deg, rgba(22, 28, 42, 0.88) 0%, rgba(14, 18, 26, 0.82) 100%);
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(139, 92, 246, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.kentu-card--hero:hover {
+  box-shadow:
+    0 10px 44px rgba(0, 0, 0, 0.58),
+    0 0 32px rgba(139, 92, 246, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.kentu-card--insight {
+  padding: 14px 16px 14px;
+}
+
+.kentu-card--typing {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 16px 18px;
+}
+
+.kentu-card--settings {
+  padding: 16px 14px;
+}
+
+/* —— Badge —— */
+.kentu-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.kentu-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.kentu-badge--positive {
+  color: var(--kentu-positive);
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.28);
+}
+.kentu-badge--positive .kentu-badge__dot {
+  background: var(--kentu-positive);
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+}
+
+.kentu-badge--negative {
+  color: var(--kentu-negative);
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+.kentu-badge--negative .kentu-badge__dot {
+  background: var(--kentu-negative);
+  box-shadow: 0 0 8px rgba(248, 113, 113, 0.55);
+}
+
+.kentu-badge--warn {
+  color: var(--kentu-warn);
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.32);
+}
+.kentu-badge--warn .kentu-badge__dot {
+  background: var(--kentu-warn);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.5);
+}
+
+.kentu-badge--neutral {
+  color: var(--kentu-text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.kentu-badge--neutral .kentu-badge__dot {
+  background: rgba(148, 163, 184, 0.9);
+}
+
+/* —— Typography inside cards —— */
+.kentu-insight-hero__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.kentu-insight-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: #f8fafc;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.kentu-card--hero .kentu-insight-title {
+  font-size: 1.18rem;
+}
+
+.kentu-insight-sub {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kentu-text-muted);
+  margin: 0 0 8px;
+}
+
+.kentu-insight-list {
+  margin: 0;
+  padding: 0 0 0 1.1em;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.95);
+}
+
+.kentu-insight-list li {
+  margin-bottom: 6px;
+}
+
+.kentu-insight-list--clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.kentu-insight-raw {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: rgba(226, 232, 240, 0.92);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.kentu-line-clamp-4 {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* —— Metric bar (text [███░] → visual) —— */
+.kentu-metric-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--kentu-text-muted);
+}
+
+.kentu-metric-row__label {
+  flex: 0 0 38%;
+  min-width: 0;
+  font-weight: 600;
+  color: rgba(203, 213, 225, 0.95);
+}
+
+.kentu-metric-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.kentu-metric-bar__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--kentu-accent-a), var(--kentu-accent-b));
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.35);
+  transition: width 0.35s ease;
+}
+
+.kentu-metric-row__hint {
+  flex: 0 0 32%;
+  text-align: right;
+  font-size: 0.68rem;
+  color: var(--kentu-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* —— Buttons —— */
+.kentu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  border-radius: var(--kentu-radius-sm);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.kentu-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.kentu-btn--primary {
+  color: #fff;
+  background: linear-gradient(135deg, var(--kentu-accent-a), var(--kentu-accent-b));
+  box-shadow: 0 4px 18px rgba(139, 92, 246, 0.42);
+  padding: 10px 16px;
+}
+
+.kentu-btn--primary:hover,
+.kentu-btn--primary:focus-visible {
+  box-shadow: 0 6px 26px rgba(99, 102, 241, 0.5);
+  outline: none;
+}
+
+.kentu-btn--secondary {
+  color: rgba(226, 232, 240, 0.95);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 8px 14px;
+}
+
+.kentu-btn--secondary:hover,
+.kentu-btn--secondary:focus-visible {
+  border-color: rgba(139, 92, 246, 0.35);
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.15);
+  outline: none;
+}
+
+.kentu-btn--ghost {
+  color: var(--kentu-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 8px 10px;
+}
+
+.kentu-btn--ghost:hover,
+.kentu-btn--ghost:focus-visible {
+  color: #e2e8f0;
+  border-color: rgba(255, 255, 255, 0.1);
+  outline: none;
+}
+
+.kentu-btn--icon {
+  padding: 8px;
+  border-radius: var(--kentu-radius-sm);
+}
+
+.kentu-btn--sm {
+  font-size: 0.68rem;
+  padding: 6px 12px;
+}
+
+/* —— User capsule (not chat bubble) —— */
+.kentu-user-capsule {
+  max-width: min(92%, 420px);
+  padding: 10px 16px;
+  border-radius: var(--kentu-radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.25);
+}
+
+.kentu-user-capsule__label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--kentu-text-muted);
+  margin-bottom: 6px;
+}
+
+/* —— Header —— */
+.kentu-os-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.kentu-os-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.kentu-os-brand img {
+  max-height: 22px;
+  width: auto;
+  max-width: min(120px, 32vw);
+  object-fit: contain;
+  opacity: 0.95;
+}
+
+.kentu-os-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--kentu-text-muted);
+}
+
+/* Frase intro dinamica: niente uppercase (testi italiani lunghi). */
+.kentu-os-status--intro {
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  text-align: center;
+  max-width: min(220px, 70vw);
+  white-space: normal;
+  hyphens: auto;
+}
+
+.kentu-os-status__pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--kentu-positive);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.7);
+  animation: kentu-pulse-glow 2.4s ease-in-out infinite;
+}
+
+/* —— Command grid —— */
+.kentu-hub-panel {
+  margin-top: 10px;
+  padding: 14px 12px 16px;
+}
+
+.kentu-hub-section-title {
+  font-size: 0.58rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--kentu-text-muted);
+  margin-bottom: 12px;
+  font-weight: 800;
+}
+
+.kentu-hub-group-label {
+  font-size: 0.6rem;
+  color: rgba(147, 197, 253, 0.85);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.kentu-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.kentu-grid-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 16px 10px;
+  min-height: 112px;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: var(--kentu-radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--kentu-text);
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.kentu-grid-item:hover,
+.kentu-grid-item:focus-visible {
+  border-color: rgba(139, 92, 246, 0.35);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.12);
+  outline: none;
+}
+
+.kentu-grid-item:active {
+  transform: scale(0.97);
+}
+
+.kentu-grid-item--highlight {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: linear-gradient(160deg, rgba(59, 130, 246, 0.12) 0%, rgba(139, 92, 246, 0.08) 100%);
+  box-shadow:
+    0 0 24px rgba(139, 92, 246, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.kentu-grid-item__icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(199, 210, 254, 0.95);
+  filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.35));
+}
+
+.kentu-grid-item__icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.kentu-grid-item__title {
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  color: #f1f5f9;
+}
+
+.kentu-grid-item__desc {
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kentu-text-muted);
+  line-height: 1.35;
+  max-width: 100%;
+}
+
+.kentu-hub-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: var(--kentu-radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: rgba(226, 232, 240, 0.95);
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.kentu-hub-toggle:hover,
+.kentu-hub-toggle:focus-visible {
+  border-color: rgba(139, 92, 246, 0.3);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+  outline: none;
+}
+
+.kentu-hub-toggle:active {
+  transform: scale(0.99);
+}
+
+/* —— Input strip —— */
+.kentu-input-strip {
+  margin-top: 10px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 6px 8px 6px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 4px 28px rgba(0, 0, 0, 0.35);
+}
+
+.kentu-input-strip .chat-input {
+  font-size: 0.95rem !important;
+}
+
+.kentu-send-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.kentu-send-btn--idle {
+  opacity: 0.42;
+  filter: saturate(0.55);
+  cursor: default;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
+}
+
+.kentu-send-btn--idle:hover {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
+  transform: none !important;
+}
+
+.kentu-send-btn--idle:active {
+  transform: none !important;
+}
+
+.kentu-send-btn--idle.kentu-btn:active {
+  transform: none !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* —— Typing —— */
+.kentu-os .typing-indicator {
+  gap: 6px;
+}
+
+.kentu-os .dot {
+  background: rgba(139, 92, 246, 0.85);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.5);
+}
+
+/* —— Quick actions row —— */
+.kentu-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}

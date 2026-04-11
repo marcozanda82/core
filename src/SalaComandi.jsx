@@ -2307,16 +2307,11 @@ export default function SalaComandi() {
 
   useEffect(() => {
     const q = (foodNameInput || '').trim().toLowerCase();
-
     if (!q) {
       setFoodDropdownSuggestions([]);
       return;
     }
-
-    if (!foodDb) return;
-
     const keys = Object.keys(foodDb || {});
-
     const matches = keys
       .filter((k) => {
         const d = foodDb[k];
@@ -2324,11 +2319,7 @@ export default function SalaComandi() {
         return desc.includes(q);
       })
       .slice(0, 10)
-      .map((k) => ({
-        key: k,
-        desc: foodDb[k]?.desc || foodDb[k]?.name || k,
-      }));
-
+      .map((k) => ({ key: k, desc: foodDb[k]?.desc || foodDb[k]?.name || k }));
     setFoodDropdownSuggestions(matches);
   }, [foodNameInput, foodDb]);
 
@@ -3460,9 +3451,7 @@ export default function SalaComandi() {
       }
     });
 
-    get(ref(db, `${basePath}/trackerFoodDatabase`)).then((s) => {
-      setFoodDb(s.exists() ? (s.val() || {}) : {});
-    });
+    get(ref(db, `${basePath}/trackerFoodDatabase`)).then(s => { if (s.exists()) setFoodDb(s.val()); });
 
     return () => {
       unsubBodyMetrics();
