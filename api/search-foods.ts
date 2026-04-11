@@ -1,6 +1,5 @@
 import {
   searchFoodsCanonical,
-  type CanonicalSearchResultItem,
 } from '../src/engine/searchFoodsCanonical';
 
 type ApiRequestLike = {
@@ -31,11 +30,11 @@ function extractQueryParam(req: ApiRequestLike, key: string): string {
   return '';
 }
 
-function mapResult(item: CanonicalSearchResultItem) {
+function mapResult(item: any) {
   return {
-    id: item.food.id,
-    name_it: item.food.name_it,
-    score: typeof item.score === 'number' ? item.score : null,
+    id: item?.food?.id || item?.fdcId || item?.id || item?.code || Math.random().toString(36).substring(7),
+    name_it: item?.food?.name_it || item?.food?.name || item?.name_it || item?.product_name || item?.name || item?.description || 'Alimento sconosciuto',
+    score: typeof item?.score === 'number' ? item.score : null,
   };
 }
 
@@ -60,14 +59,15 @@ export default async function handler(
 
   try {
     console.log('[api/search-foods] before search execution', { q });
-    const results: CanonicalSearchResultItem[] = await searchFoodsCanonical(q);
-    console.log('[api/search-foods] raw results', results);
+    const rawData: any = await searchFoodsCanonical(q);
+    const resultsArray = Array.isArray(rawData) ? rawData : (rawData?.results || rawData?.foods || rawData?.products || []);
+    console.log('[api/search-foods] raw results', resultsArray);
     console.log('[api/search-foods] returning results', {
       q,
-      resultCount: results.length,
+      resultCount: resultsArray.length,
     });
     res.status(200).json({
-      results: results.slice(0, 5).map(mapResult),
+      results: resultsArray.slice(0, 15).map(mapResult),
     });
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));

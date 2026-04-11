@@ -2386,7 +2386,7 @@ export default function SalaComandi() {
         setFoodDropdownSuggestions(uniqueSuggestions);
       } catch (error) {
         if (controller.signal.aborted || isCancelled || requestId !== foodSearchRequestIdRef.current) return;
-        console.error('food search dropdown failed', error);
+        console.error("Errore chiamata API:", error);
         setFoodDropdownSuggestions(getLocalFallbackSuggestions());
       } finally {
         if (!controller.signal.aborted && !isCancelled && requestId === foodSearchRequestIdRef.current) {
