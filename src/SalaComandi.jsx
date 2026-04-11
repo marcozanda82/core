@@ -2234,6 +2234,8 @@ export default function SalaComandi() {
   const [foodNameInput, setFoodNameInput] = useState('');
   const [foodWeightInput, setFoodWeightInput] = useState('');
   const [foodDropdownSuggestions, setFoodDropdownSuggestions] = useState([]);
+  const [creaResults, setCreaResults] = useState([]);
+  const [isCreaLoading, setIsCreaLoading] = useState(false);
   const [showFoodDropdown, setShowFoodDropdown] = useState(false);
   const [isGeneratingFood, setIsGeneratingFood] = useState(false);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
@@ -6089,6 +6091,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       setIsGeneratingFood(false);
     }
   }, [userUid, mealType, foodNameInput, foodWeightInput, callGeminiAPIWithRotation, getAverageEstimate, db, setFoodDb, setAddedFoods, setFoodNameInput, setFoodWeightInput, setShowFoodDropdown]);
+
+  const triggerCreaSearch = useCallback(async (query) => {
+    if (!query) return;
+
+    setShowFoodDropdown(true);
+    setCreaResults([]);
+    setIsCreaLoading(true);
+    try {
+      const res = await fetch(`/api/search-foods?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      setCreaResults(data.results || []);
+      setShowFoodDropdown(true);
+    } catch (err) {
+      console.error('CREA search failed', err);
+      setCreaResults([]);
+    } finally {
+      setIsCreaLoading(false);
+    }
+  }, [setShowFoodDropdown]);
 
   const handleVerifyFoodAI = async () => {
     if (!editFoodData || !(editFoodData.name || editFoodData.nome || editFoodData.desc)) return;
@@ -12370,10 +12391,13 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             setFoodWeightInput={setFoodWeightInput}
             foodInputRef={foodInputRef}
             foodDropdownSuggestions={foodDropdownSuggestions}
+            creaResults={creaResults}
+            isCreaLoading={isCreaLoading}
             getLastQuantityForFood={getLastQuantityForFood}
             showFoodDropdown={showFoodDropdown}
             setShowFoodDropdown={setShowFoodDropdown}
             generateFoodWithAI={generateFoodWithAI}
+            triggerCreaSearch={triggerCreaSearch}
             isGeneratingFood={isGeneratingFood}
             handleAddFoodManual={handleAddFoodManual}
             abitudiniIeri={abitudiniIeri}

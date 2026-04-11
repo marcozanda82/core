@@ -234,6 +234,8 @@ export default function MealBuilder({
   setFoodWeightInput,
   foodInputRef,
   foodDropdownSuggestions = [],
+  creaResults = [],
+  isCreaLoading = false,
   getLastQuantityForFood = () => null,
   showFoodDropdown = false,
   setShowFoodDropdown = () => {},
@@ -1338,6 +1340,57 @@ export default function MealBuilder({
                           >
                             🔍 Cerca su CREA
                           </button>
+                        ) : null}
+                        {foodNameInput.trim() && (isCreaLoading || (creaResults && creaResults.length > 0)) ? (
+                          <div
+                            style={{
+                              borderTop: '1px solid #2a2a2a',
+                            }}
+                          >
+                            {isCreaLoading ? (
+                              <div
+                                style={{
+                                  width: '100%',
+                                  padding: '12px 16px',
+                                  color: '#94a3b8',
+                                  fontSize: '0.88rem',
+                                }}
+                              >
+                                Caricamento...
+                              </div>
+                            ) : null}
+                            {(creaResults || []).map((result, index) => {
+                              const desc = String(
+                                result?.name_it || result?.desc || result?.name || result?.product_name || ''
+                              ).trim();
+                              if (!desc) return null;
+                              return (
+                                <button
+                                  key={result?.id || `${desc}-${index}`}
+                                  type="button"
+                                  style={{
+                                    width: '100%',
+                                    padding: '12px 16px',
+                                    textAlign: 'left',
+                                    background: 'rgba(103, 232, 249, 0.06)',
+                                    border: 'none',
+                                    borderBottom: '1px solid #2a2a2a',
+                                    color: '#e2e8f0',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem',
+                                  }}
+                                  onClick={() => {
+                                    setFoodNameInput(desc);
+                                    setFoodWeightInput(getLastQuantityForFood(desc) || '');
+                                    setShowFoodDropdown(false);
+                                    setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
+                                  }}
+                                >
+                                  {desc}
+                                </button>
+                              );
+                            })}
+                          </div>
                         ) : null}
                       </div>
                     )}
