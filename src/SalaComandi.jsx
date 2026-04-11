@@ -3429,11 +3429,11 @@ export default function SalaComandi() {
     get(ref(db, `users/${user.uid}/profile_targets`)).then(profileSnap => {
       if (profileSnap.exists()) {
         const data = profileSnap.val();
-        if (data.profile) {
+        if (data?.profile) {
           setUserProfile(prev => ({ ...prev, ...data.profile }));
-          setBirthDate(typeof data.profile.birthDate === 'string' ? data.profile.birthDate : '');
+          setBirthDate(typeof data?.profile?.birthDate === 'string' ? data.profile.birthDate : '');
         }
-        if (data.targets) setUserTargets(prev => ({ ...prev, ...data.targets }));
+        if (data?.targets) setUserTargets(prev => ({ ...prev, ...data.targets }));
       }
     });
 
@@ -4875,12 +4875,12 @@ export default function SalaComandi() {
   const fetchOpenFoodFactsProduct = async (barcode) => {
     const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json?fields=product_name,ingredients_text_it,ingredients_text,nutriments`);
     const data = await res.json();
-    if (data.status === 0 || !data.product) return null;
-    const p = data.product;
-    const nut = p.nutriments || {};
+    if (data?.status === 0 || !data?.product) return null;
+    const p = data?.product;
+    const nut = p?.nutriments || {};
     const toNum = (v) => (v != null && v !== '' ? parseFloat(v) : undefined);
     const entryPer100 = {
-      desc: p.product_name || `Barcode ${barcode}`,
+      desc: p?.product_name || `Barcode ${barcode}`,
       kcal: toNum(nut['energy-kcal_100g']) ?? toNum(nut['energy_100g']) ? (nut['energy_100g'] / 4.184) : undefined,
       prot: toNum(nut.proteins_100g),
       carb: toNum(nut.carbohydrates_100g),
@@ -6028,7 +6028,11 @@ Ottimo! Diario aggiornato. 🥗`;
         }
         const data = await response.json();
         if (attempt > 0) setActiveKeyIndex(currentIndex);
-        return data.candidates[0].content.parts[0].text;
+        const generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (generatedText == null) {
+          console.warn('Gemini API response missing text payload', { data });
+        }
+        return generatedText;
       } catch (e) {
         if (attempt === validKeys.length - 1) throw e;
         attempt++;
@@ -6114,7 +6118,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       }
 
       const data = await res.json();
-      setCreaResults(data.results || []);
+      setCreaResults(data?.results || []);
       setShowFoodDropdown(true);
     } catch (err) {
       console.error('CREA search failed', err);

@@ -22,7 +22,7 @@ export function useGoldStandard(url = '/crea_gold_standard.json') {
       })
       .then((data) => {
         if (cancelled) return;
-        const list = Array.isArray(data) ? data : (data.alimenti || data.foods || []);
+        const list = Array.isArray(data) ? data : (data?.alimenti || data?.foods || []);
         setFoods(list);
       })
       .catch((err) => {
