@@ -2307,11 +2307,14 @@ export default function SalaComandi() {
 
   useEffect(() => {
     const q = (foodNameInput || '').trim().toLowerCase();
+
     if (!q) {
       setFoodDropdownSuggestions([]);
       return;
     }
+
     const keys = Object.keys(foodDb || {});
+
     const matches = keys
       .filter((k) => {
         const d = foodDb[k];
@@ -2319,7 +2322,11 @@ export default function SalaComandi() {
         return desc.includes(q);
       })
       .slice(0, 10)
-      .map((k) => ({ key: k, desc: foodDb[k]?.desc || foodDb[k]?.name || k }));
+      .map((k) => ({
+        key: k,
+        desc: foodDb[k]?.desc || foodDb[k]?.name || k,
+      }));
+
     setFoodDropdownSuggestions(matches);
   }, [foodNameInput, foodDb]);
 
