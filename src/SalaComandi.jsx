@@ -2352,7 +2352,8 @@ export default function SalaComandi() {
         }
 
         const data = await response.json();
-        const results = Array.isArray(data?.results) ? data.results : [];
+        const results = data?.results ?? data ?? [];
+        const dataArray = Array.isArray(results) ? results : (results?.foods || results?.products || []);
         console.log('SEARCH RESULTS:', results);
 
         if (isCancelled || requestId !== foodSearchRequestIdRef.current) return;
@@ -2360,16 +2361,27 @@ export default function SalaComandi() {
         console.log('[food-search frontend] canonical search results', {
           q,
           requestId,
-          results: results.map((item) => ({
-            id: item?.food?.id ?? null,
-            name_it: item?.food?.name_it ?? null,
+          results: dataArray.map((item) => ({
+            id: item?.food?.id ?? item?.fdcId ?? item?.id ?? null,
+            name_it: item?.food?.name_it ?? item?.food?.name ?? item?.food?.description ?? item?.name ?? item?.description ?? null,
             score: item?.score ?? null,
           })),
         });
 
-        const apiSuggestions = results.map((item) => ({
-            key: String(item?.food?.id ?? ''),
-            desc: String(item?.food?.name_it || item?.food?.name || item?.food?.description || '').trim(),
+        console.log('DEBUG RICERCA - API:', results);
+        console.log('DEBUG RICERCA - LOCAL:', getLocalFallbackSuggestions());
+
+        const apiSuggestions = dataArray.map((item) => ({
+            key: String(item?.food?.id || item?.fdcId || item?.id || ''),
+            desc: String(
+              item?.food?.name_it ||
+              item?.food?.name ||
+              item?.food?.description ||
+              item?.name_it ||
+              item?.name ||
+              item?.description ||
+              ''
+            ).trim(),
           })).filter((item) => item.key && item.desc);
 
         const localSuggestions = getLocalFallbackSuggestions();
