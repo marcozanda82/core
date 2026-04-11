@@ -2235,7 +2235,6 @@ export default function SalaComandi() {
   const [foodWeightInput, setFoodWeightInput] = useState('');
   const [foodDropdownSuggestions, setFoodDropdownSuggestions] = useState([]);
   const [showFoodDropdown, setShowFoodDropdown] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
   const [isGeneratingFood, setIsGeneratingFood] = useState(false);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
   const [inspectedFood, setInspectedFood] = useState(null);
@@ -2247,7 +2246,6 @@ export default function SalaComandi() {
   const barcodeStreamRef = useRef(null);
   const barcodeScanIntervalRef = useRef(null);
   const foodInputRef = useRef(null);
-  const foodSearchRequestIdRef = useRef(0);
 
   const [selectedFoodForInfo, setSelectedFoodForInfo] = useState(null);
   const [selectedFoodForEdit, setSelectedFoodForEdit] = useState(null);
@@ -2308,99 +2306,21 @@ export default function SalaComandi() {
   }, []);
 
   useEffect(() => {
-    const q = (foodNameInput || '').trim();
+    const q = (foodNameInput || '').trim().toLowerCase();
     if (!q) {
-      foodSearchRequestIdRef.current += 1;
-      setIsSearching(false);
       setFoodDropdownSuggestions([]);
-      return undefined;
+      return;
     }
-
-    let isCancelled = false;
-    const controller = new AbortController();
-    const requestId = ++foodSearchRequestIdRef.current;
-
-    const getLocalFallbackSuggestions = () => {
-      const lowerQ = q.toLowerCase();
-      return Object.keys(foodDb || {})
-        .filter((key) => {
-          const row = foodDb[key];
-          const desc = String(row?.desc || row?.name || '').toLowerCase();
-          return desc.includes(lowerQ);
-        })
-        .slice(0, 10)
-        .map((key) => ({
-          key: String(key),
-          desc: String(foodDb[key]?.desc || foodDb[key]?.name || '').trim(),
-        }))
-        .filter((item) => item.key && item.desc);
-    };
-
-    const timeoutId = window.setTimeout(async () => {
-      if (isCancelled) return;
-      setIsSearching(true);
-      setShowFoodDropdown(true);
-      try {
-        console.log('[food-search frontend] fetching canonical search', { q });
-        const response = await fetch(`/api/search-foods?q=${encodeURIComponent(q)}`, {
-          method: 'GET',
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`search-foods request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const results = data?.results ?? data ?? [];
-        const dataArray = Array.isArray(results) ? results : (results?.foods || results?.products || []);
-        console.log('SEARCH RESULTS:', results);
-
-        if (isCancelled || requestId !== foodSearchRequestIdRef.current) return;
-
-        console.log('[food-search frontend] canonical search results', {
-          q,
-          requestId,
-          results: dataArray.map((item) => ({
-            id: item?.food?.id ?? item?.fdcId ?? item?.id ?? null,
-            name_it: item?.food?.name_it ?? item?.food?.name ?? item?.food?.description ?? item?.name ?? item?.description ?? null,
-            score: item?.score ?? null,
-          })),
-        });
-
-        console.log('DEBUG RICERCA - API:', results);
-        console.log('DEBUG RICERCA - LOCAL:', getLocalFallbackSuggestions());
-
-        console.log("STRUTTURA JSON ALIMENTO:", JSON.stringify(dataArray[0], null, 2));
-        const apiSuggestions = dataArray.map((item) => ({
-            key: String(item?.food?.id || item?.fdcId || item?.id || item?.code || item?.ndbno || Math.random().toString(36).substr(2, 9)),
-            desc: String(item?.food?.name_it || item?.food?.name || item?.food?.description || item?.name_it || item?.product_name || item?.name || item?.description || item?.title || 'Senza nome').trim(),
-        })).filter((item) => item.key && item.desc && item.desc !== 'Senza nome');
-
-        const localSuggestions = getLocalFallbackSuggestions();
-        const combinedSuggestions = [...localSuggestions, ...apiSuggestions];
-        const uniqueSuggestions = combinedSuggestions.filter(
-          (item, index, arr) => arr.findIndex((candidate) => candidate.key === item.key) === index,
-        );
-
-        setFoodDropdownSuggestions(uniqueSuggestions);
-      } catch (error) {
-        if (controller.signal.aborted || isCancelled || requestId !== foodSearchRequestIdRef.current) return;
-        console.error("Errore chiamata API:", error);
-        setFoodDropdownSuggestions(getLocalFallbackSuggestions());
-      } finally {
-        if (!controller.signal.aborted && !isCancelled && requestId === foodSearchRequestIdRef.current) {
-          setIsSearching(false);
-          setShowFoodDropdown(true);
-        }
-      }
-    }, 250);
-
-    return () => {
-      isCancelled = true;
-      controller.abort();
-      window.clearTimeout(timeoutId);
-    };
+    const keys = Object.keys(foodDb || {});
+    const matches = keys
+      .filter((k) => {
+        const d = foodDb[k];
+        const desc = (d?.desc || d?.name || '').toLowerCase();
+        return desc.includes(q);
+      })
+      .slice(0, 10)
+      .map((k) => ({ key: k, desc: foodDb[k]?.desc || foodDb[k]?.name || k }));
+    setFoodDropdownSuggestions(matches);
   }, [foodNameInput, foodDb]);
 
   const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
@@ -12460,7 +12380,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             setFoodWeightInput={setFoodWeightInput}
             foodInputRef={foodInputRef}
             foodDropdownSuggestions={foodDropdownSuggestions}
-            isSearching={isSearching}
             getLastQuantityForFood={getLastQuantityForFood}
             showFoodDropdown={showFoodDropdown}
             setShowFoodDropdown={setShowFoodDropdown}

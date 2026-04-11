@@ -234,7 +234,6 @@ export default function MealBuilder({
   setFoodWeightInput,
   foodInputRef,
   foodDropdownSuggestions = [],
-  isSearching = false,
   getLastQuantityForFood = () => null,
   showFoodDropdown = false,
   setShowFoodDropdown = () => {},
@@ -1219,10 +1218,7 @@ export default function MealBuilder({
                         value={foodNameInput}
                         onChange={(e) => setFoodNameInput(e.target.value)}
                         onFocus={() => setShowFoodDropdown(true)}
-                        onBlur={() => setTimeout(() => {
-                          if (isSearching || (foodDropdownSuggestions && foodDropdownSuggestions.length > 0)) return;
-                          setShowFoodDropdown(false);
-                        }, 200)}
+                        onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') document.getElementById('weight-input')?.focus();
                         }}
@@ -1260,7 +1256,7 @@ export default function MealBuilder({
                         +
                       </button>
                     </div>
-                    {showFoodDropdown && (!!foodNameInput.trim() || isSearching || ((foodDropdownSuggestions && foodDropdownSuggestions.length > 0))) && (
+                    {showFoodDropdown && (foodNameInput.trim() || (foodDropdownSuggestions && foodDropdownSuggestions.length > 0)) && (
                       <div
                         style={{
                           position: 'absolute',
@@ -1276,56 +1272,31 @@ export default function MealBuilder({
                           boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                         }}
                       >
-                        {isSearching ? (
-                          <div
+                        {(foodDropdownSuggestions || []).map((s) => (
+                          <button
+                            key={s.key}
+                            type="button"
                             style={{
                               width: '100%',
                               padding: '12px 16px',
-                              color: '#94a3b8',
-                              fontSize: '0.85rem',
+                              textAlign: 'left',
+                              background: 'none',
+                              border: 'none',
+                              color: '#fff',
+                              cursor: 'pointer',
+                              fontSize: '0.9rem',
+                              borderBottom: '1px solid #2a2a2a',
+                            }}
+                            onClick={() => {
+                              setFoodNameInput(s.desc);
+                              setFoodWeightInput(getLastQuantityForFood(s.desc) || '');
+                              setShowFoodDropdown(false);
+                              setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                             }}
                           >
-                            🔍 Searching...
-                          </div>
-                        ) : (foodDropdownSuggestions || []).length === 0 ? (
-                          <div
-                            style={{
-                              width: '100%',
-                              padding: '12px 16px',
-                              color: '#94a3b8',
-                              fontSize: '0.85rem',
-                            }}
-                          >
-                            Nessun risultato
-                          </div>
-                        ) : (
-                          (foodDropdownSuggestions || []).map((s) => (
-                            <button
-                              key={s.key}
-                              type="button"
-                              onMouseDown={(e) => e.preventDefault()}
-                              style={{
-                                width: '100%',
-                                padding: '12px 16px',
-                                textAlign: 'left',
-                                background: 'none',
-                                border: 'none',
-                                color: '#fff',
-                                cursor: 'pointer',
-                                fontSize: '0.9rem',
-                                borderBottom: '1px solid #2a2a2a',
-                              }}
-                              onClick={() => {
-                                setFoodNameInput(s.desc);
-                                setFoodWeightInput(getLastQuantityForFood(s.desc) || '');
-                                setShowFoodDropdown(false);
-                                setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
-                              }}
-                            >
-                              {s.desc}
-                            </button>
-                          ))
-                        )}
+                            {s.desc}
+                          </button>
+                        ))}
                         {foodNameInput.trim() ? (
                           <button
                             type="button"
