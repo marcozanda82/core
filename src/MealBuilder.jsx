@@ -12,6 +12,8 @@ import {
   categorizeFood,
 } from './coreEngine';
 import { getTimePositionPercent } from './timeLayout';
+import { useFoodDb } from './useFoodDb';
+import { searchFoods } from './foodSearch';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -299,8 +301,11 @@ export default function MealBuilder({
   const [aiConstraintFixed, setAiConstraintFixed] = useState('');
   const [aiConstraintExcluded, setAiConstraintExcluded] = useState('');
   const [aiConstraintPreferred, setAiConstraintPreferred] = useState('');
+  const [localFoodSearchResults, setLocalFoodSearchResults] = useState([]);
+  const [isLocalFoodSearchLoading, setIsLocalFoodSearchLoading] = useState(false);
 
   const mealBuilderScrollAnchorRef = useRef(null);
+  const { foodDb: localFoodDb, loading: isLocalFoodDbLoading } = useFoodDb();
 
   const buildAiMealConstraintsPayload = useCallback(() => {
     const split = (s) =>
@@ -411,6 +416,44 @@ export default function MealBuilder({
     });
     return () => registerAddFoodCallback(null);
   }, [registerAddFoodCallback]);
+
+  const runLocalFoodSearch = useCallback((query) => {
+    const trimmedQuery = String(query || '').trim();
+    if (!trimmedQuery) {
+      setLocalFoodSearchResults([]);
+      setIsLocalFoodSearchLoading(false);
+      return [];
+    }
+
+    if (isLocalFoodDbLoading) {
+      setIsLocalFoodSearchLoading(true);
+      return [];
+    }
+
+    setIsLocalFoodSearchLoading(true);
+    try {
+      const results = searchFoods(localFoodDb, trimmedQuery);
+      setLocalFoodSearchResults(results);
+      return results;
+    } catch (error) {
+      console.error('[MealBuilder] local food search failed', error);
+      setLocalFoodSearchResults([]);
+      return [];
+    } finally {
+      setIsLocalFoodSearchLoading(false);
+    }
+  }, [localFoodDb, isLocalFoodDbLoading]);
+
+  useEffect(() => {
+    const query = String(foodNameInput || '').trim();
+    if (!query) {
+      setLocalFoodSearchResults([]);
+      setIsLocalFoodSearchLoading(false);
+      return;
+    }
+
+    runLocalFoodSearch(query);
+  }, [foodNameInput, runLocalFoodSearch]);
 
   useEffect(() => {
     if (!isComplexMode) {
@@ -1336,18 +1379,18 @@ export default function MealBuilder({
                               fontSize: '0.9rem',
                               fontWeight: '600',
                             }}
-                            onClick={() => triggerCreaSearch(foodNameInput.trim())}
+                            onClick={() => runLocalFoodSearch(foodNameInput.trim())}
                           >
                             🔍 Cerca su CREA
                           </button>
                         ) : null}
-                        {foodNameInput.trim() && (isCreaLoading || (creaResults && creaResults.length > 0)) ? (
+                        {foodNameInput.trim() && (isLocalFoodSearchLoading || (localFoodSearchResults && localFoodSearchResults.length > 0)) ? (
                           <div
                             style={{
                               borderTop: '1px solid #2a2a2a',
                             }}
                           >
-                            {isCreaLoading ? (
+                            {isLocalFoodSearchLoading ? (
                               <div
                                 style={{
                                   width: '100%',
@@ -1359,7 +1402,7 @@ export default function MealBuilder({
                                 Caricamento...
                               </div>
                             ) : null}
-                            {(creaResults || []).map((result, index) => {
+                            {(localFoodSearchResults || []).map((result, index) => {
                               const desc = String(
                                 result?.name_it || result?.desc || result?.name || result?.product_name || ''
                               ).trim();
