@@ -6100,6 +6100,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     setIsCreaLoading(true);
     try {
       const res = await fetch(`/api/search-foods?q=${encodeURIComponent(query)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        console.error('CREA error raw:', text);
+        setCreaResults([]);
+        return;
+      }
+
       const data = await res.json();
       setCreaResults(data.results || []);
       setShowFoodDropdown(true);
