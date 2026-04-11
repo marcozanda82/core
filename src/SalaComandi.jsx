@@ -2219,7 +2219,7 @@ export default function SalaComandi() {
   // STRATEGIA E DATABASE
   const [dayProfile, setDayProfile] = useState('upper');
   const [calorieTuning, setCalorieTuning] = useState(0);
-  const [foodDb, setFoodDb] = useState({});
+  const [foodDb, setFoodDb] = useState(null);
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
   dailyLogRef.current = dailyLog;
@@ -3422,6 +3422,7 @@ export default function SalaComandi() {
       setPredictiveCalibration({ errors: [] });
       setTdeeHistory([]);
       setWeeklyPlan(createInitialWeeklyPlan());
+      setFoodDb(null);
       weeklyPlanningListenerReadyRef.current = false;
       weeklyPlanningRemoteSigRef.current = '';
       return;
@@ -3522,8 +3523,6 @@ export default function SalaComandi() {
       }
     });
 
-    get(ref(db, `${basePath}/trackerFoodDatabase`)).then(s => { if (s.exists()) setFoodDb(s.val()); });
-
     return () => {
       unsubBodyMetrics();
       unsubTdeeHistory();
@@ -3531,6 +3530,21 @@ export default function SalaComandi() {
       unsubToday?.();
     };
   }, [user]);
+
+  useEffect(() => {
+    if (!db || !user?.uid) {
+      setFoodDb(null);
+      return;
+    }
+    const foodRef = ref(db, `food_db/${user.uid}`);
+    const unsubFoodDb = onValue(foodRef, (snap) => {
+      const raw = snap.exists() ? snap.val() : null;
+      const next = raw != null && typeof raw === 'object' ? raw : null;
+      setFoodDb(next);
+      console.log('Food DB updated', Object.keys(next || {}).length);
+    });
+    return () => unsubFoodDb();
+  }, [db, user?.uid]);
 
   // Fallback: quando fullHistory è popolato ma dailyLog è ancora vuoto (es. primo caricamento), sincronizza il log del giorno corrente
   useEffect(() => {
@@ -4976,8 +4990,7 @@ export default function SalaComandi() {
         }));
         if (entryPer100.kcal == null) entryPer100.kcal = getDefaultNutrientValue('kcal', fullHistory);
         const newKey = `food_${Date.now()}_${String(name).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
-        const basePath = `users/${userUid}/tracker_data`;
-        await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
+        await set(ref(db, `food_db/${userUid}/${newKey}`), entryPer100);
         setFoodDb(prev => ({ ...prev, [newKey]: entryPer100 }));
       }
       setFoodNameInput(name);
@@ -5354,7 +5367,6 @@ Ottimo! Diario aggiornato. 🥗`;
 
   const saveCustomRecipeToFoodDb = useCallback(async ({ desc, kcal, prot, carb, fatTotal, ingredients }, existingKey) => {
     if (!userUid || !desc) return null;
-    const basePath = `users/${userUid}/tracker_data`;
     const slug = String(desc).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 40);
     const trimmed = existingKey != null && String(existingKey).trim() !== '' ? String(existingKey).trim() : '';
     const dbKey = trimmed || `recipe_${Date.now()}_${slug}`;
@@ -5370,14 +5382,13 @@ Ottimo! Diario aggiornato. 🥗`;
     Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => {
       if (entryPer100[k] == null) entryPer100[k] = getDefaultNutrientValue(k, fullHistory);
     }));
-    await set(ref(db, `${basePath}/trackerFoodDatabase/${dbKey}`), entryPer100);
+    await set(ref(db, `food_db/${userUid}/${dbKey}`), entryPer100);
     setFoodDb(prev => ({ ...(prev || {}), [dbKey]: entryPer100 }));
     return dbKey;
   }, [userUid, db, fullHistory]);
 
   const saveFoodEntryPer100ToFoodDb = useCallback(async (entry) => {
     if (!userUid || !entry?.desc) return;
-    const basePath = `users/${userUid}/tracker_data`;
     const name = String(entry.desc).trim();
     const slug = name.replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 40);
     const newKey = `food_${Date.now()}_${slug}`;
@@ -5391,13 +5402,13 @@ Ottimo! Diario aggiornato. 🥗`;
       payload.kcal = getDefaultNutrientValue('kcal', fullHistory);
     }
     if (payload.fatTotal == null && payload.fat != null) payload.fatTotal = Number(payload.fat);
-    await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), payload);
+    await set(ref(db, `food_db/${userUid}/${newKey}`), payload);
     setFoodDb(prev => ({ ...(prev || {}), [newKey]: payload }));
   }, [userUid, db, fullHistory]);
 
   const deleteRecipeFromFoodDb = useCallback(async (recipeKey) => {
     if (!userUid || !recipeKey) return;
-    const path = `users/${userUid}/tracker_data/trackerFoodDatabase/${recipeKey}`;
+    const path = `food_db/${userUid}/${recipeKey}`;
     await remove(ref(db, path));
     setFoodDb((prev) => {
       const next = { ...(prev || {}) };
@@ -6129,9 +6140,8 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       if (entryPer100.kcal == null || entryPer100.kcal === 0) entryPer100.kcal = entryPer100.cal ?? getAverageEstimate('kcal', desc);
       entryPer100.cal = entryPer100.cal ?? entryPer100.kcal;
       const newKey = `food_${Date.now()}_${String(desc).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
-      const basePath = `users/${userUid}/tracker_data`;
-      await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
-      setFoodDb((prev) => ({ ...prev, [newKey]: entryPer100 }));
+      await set(ref(db, `food_db/${userUid}/${newKey}`), entryPer100);
+      setFoodDb((prev) => ({ ...(prev || {}), [newKey]: entryPer100 }));
       const weight = parseFloat(foodWeightInput) || 100;
       const ratio = weight / 100;
       const newItem = {
