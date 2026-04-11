@@ -13781,6 +13781,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   const existing = sleepModal.editingId
                     ? logLook.find((e) => e?.id === sleepModal.editingId && e?.type === 'sleep')
                     : null;
+                  if (sleepModal.editingId && !existing) {
+                    console.warn('[SalaComandi] sleep entry not found while saving edit', { editingId: sleepModal.editingId });
+                  }
                   const entry = {
                     type: 'sleep',
                     id,
