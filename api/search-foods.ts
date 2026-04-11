@@ -59,6 +59,7 @@ export default async function handler(
 
   try {
     console.log('[api/search-foods] before search execution', { q });
+    console.log('[api/search-foods] calling searchFoodsCanonical', { q });
     const rawData: any = await searchFoodsCanonical(q);
     const resultsArray = Array.isArray(rawData) ? rawData : (rawData?.results || rawData?.foods || rawData?.products || []);
     console.log('[api/search-foods] raw results', resultsArray);
