@@ -238,6 +238,7 @@ export default function MealBuilder({
   showFoodDropdown = false,
   setShowFoodDropdown = () => {},
   generateFoodWithAI = async () => {},
+  triggerCreaSearch = () => {},
   isGeneratingFood = false,
   handleAddFoodManual,
   abitudiniIeri,
@@ -1315,6 +1316,27 @@ export default function MealBuilder({
                             disabled={isGeneratingFood}
                           >
                             {isGeneratingFood ? '⏳ Generazione in corso...' : `✨ Genera con AI: "${foodNameInput.trim()}"`}
+                          </button>
+                        ) : null}
+                        {foodNameInput.trim() ? (
+                          <button
+                            type="button"
+                            className="dropdown-action-button"
+                            style={{
+                              width: '100%',
+                              padding: '12px 16px',
+                              textAlign: 'left',
+                              background: 'rgba(56, 189, 248, 0.12)',
+                              border: 'none',
+                              borderTop: '1px solid #2a2a2a',
+                              color: '#67e8f9',
+                              cursor: 'pointer',
+                              fontSize: '0.9rem',
+                              fontWeight: '600',
+                            }}
+                            onClick={() => triggerCreaSearch(foodNameInput.trim())}
+                          >
+                            🔍 Cerca su CREA
                           </button>
                         ) : null}
                       </div>
