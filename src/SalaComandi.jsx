@@ -2369,12 +2369,16 @@ export default function SalaComandi() {
 
         const apiSuggestions = results.map((item) => ({
             key: String(item?.food?.id ?? ''),
-            desc: String(item?.food?.name_it || '').trim(),
+            desc: String(item?.food?.name_it || item?.food?.name || item?.food?.description || '').trim(),
           })).filter((item) => item.key && item.desc);
 
-        setFoodDropdownSuggestions(
-          apiSuggestions.length > 0 ? apiSuggestions : getLocalFallbackSuggestions(),
+        const localSuggestions = getLocalFallbackSuggestions();
+        const combinedSuggestions = [...localSuggestions, ...apiSuggestions];
+        const uniqueSuggestions = combinedSuggestions.filter(
+          (item, index, arr) => arr.findIndex((candidate) => candidate.key === item.key) === index,
         );
+
+        setFoodDropdownSuggestions(uniqueSuggestions);
       } catch (error) {
         if (controller.signal.aborted || isCancelled || requestId !== foodSearchRequestIdRef.current) return;
         console.error('food search dropdown failed', error);
