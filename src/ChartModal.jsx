@@ -143,7 +143,10 @@ export default function ChartModal({
     const borderColor = node.type === 'stimulant' ? '#f59e0b' : node.type === 'water' ? '#00e5ff' : node.type === 'work' ? '#ffea00' : node.type === 'cognitive' ? '#b666d2' : node.type === 'nap' ? '#818cf8' : node.type === 'meditation' ? '#22c55e' : node.type === 'supplements' ? '#a855f7' : node.type === 'sunlight' ? '#fbbf24' : '#00e5ff';
     const timeLabelStr = `${Math.floor(node.time)}:${String(Math.round((node.time % 1) * 60)).padStart(2, '0')}`;
     const safeDailyLog = dailyLog || [];
-    const logItemForNode = isSimulationMode && safeDailyLog.length > 0 ? (node.type === 'meal' ? safeDailyLog.find(item => item.type === 'food' && item.mealType === node.id) : node.type === 'workout' ? safeDailyLog.find(item => item.type === 'workout' && item.id === node.id) : node.type === 'stimulant' ? safeDailyLog.find(item => item.type === 'stimulant' && item.id === node.id) : null) : null;
+    const logItemForNode = isSimulationMode && safeDailyLog.length > 0 ? (node.type === 'meal' ? safeDailyLog.find(item => item.type === 'food' && item.mealType === node.id) || null : node.type === 'workout' ? safeDailyLog.find(item => item.type === 'workout' && item.id === node.id) || null : node.type === 'stimulant' ? safeDailyLog.find(item => item.type === 'stimulant' && item.id === node.id) || null : null) : null;
+    if (isSimulationMode && !logItemForNode) {
+      console.warn("Missing logItemForNode", node);
+    }
     const isSelected = isSimulationMode && selectedSimNode && logItemForNode && selectedSimNode.id === logItemForNode.id;
     const nodeStyle = { zIndex: isPrimary ? 10 : 1, filter: isPrimary ? 'none' : 'grayscale(100%)', opacity: isPrimary ? 1 : 0.4, transform: isPrimary ? (isWork || isCognitive ? undefined : 'translateX(-50%)') : (isWork || isCognitive ? 'scale(0.8)' : 'translateX(-50%) scale(0.8)'), transition: 'all 0.3s ease', pointerEvents: isSimulationMode && (node.type === 'meal' || node.type === 'workout' || node.type === 'stimulant') ? 'auto' : 'none', cursor: isSimulationMode && logItemForNode ? 'pointer' : 'default' };
     const handleNodeClick = (e) => { e.stopPropagation(); if (isSimulationMode && logItemForNode) setSelectedSimNode(prev => prev?.id === logItemForNode.id ? null : logItemForNode); };
