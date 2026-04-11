@@ -1004,7 +1004,7 @@ const ZEN_SESSION_DURATION_OPTIONS = [
 ];
 
 function getNeuralResetZenStep(patternId, phaseName) {
-  return NEURAL_RESET_PATTERNS[patternId]?.steps.find((s) => s.phase === phaseName);
+  return NEURAL_RESET_PATTERNS[patternId]?.steps.find((s) => s?.phase === phaseName);
 }
 
 function getZenBreathAudioFade(phaseName, phaseMs) {
@@ -2381,8 +2381,11 @@ export default function SalaComandi() {
     if (sleepModal == null) return;
     const logSrc = isSimulationMode ? (simulatedLog || []) : dailyLog;
     const item = sleepModal.editingId
-      ? logSrc.find((e) => e && e.id === sleepModal.editingId && e.type === 'sleep')
+      ? logSrc.find((e) => e?.id === sleepModal.editingId && e?.type === 'sleep')
       : null;
+    if (sleepModal.editingId && !item) {
+      console.warn('[SalaComandi] sleep entry not found for edit', { editingId: sleepModal.editingId });
+    }
     if (item) {
       const bed = Number(item.bedtime ?? item.sleepStart);
       const wake = Number(item.wakeTime ?? item.sleepEnd);
@@ -3109,7 +3112,7 @@ export default function SalaComandi() {
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
   const effectiveWakeTimeForSleep = useMemo(() => {
-    const sleepEntry = (activeLog || []).find(e => e.type === 'sleep');
+    const sleepEntry = (activeLog || []).find(e => e?.type === 'sleep');
     if (!sleepEntry) return null;
     let wt = sleepEntry.wakeTime;
     if (wt == null || typeof wt !== 'number') {
@@ -3123,7 +3126,7 @@ export default function SalaComandi() {
 
   const nodesForEnergySimulation = useMemo(() => {
     const base = activeNodes || [];
-    const sleepEntry = (activeLog || []).find(e => e.type === 'sleep');
+    const sleepEntry = (activeLog || []).find(e => e?.type === 'sleep');
     if (!sleepEntry) return base;
     const sleepHours = sleepEntry.hours ?? sleepEntry.duration ?? sleepEntry.sleepHours ?? 7;
     const deepMin = sleepEntry.deepMin ?? sleepEntry.deepMinutes ?? (typeof sleepEntry.deep === 'number' ? sleepEntry.deep : 60);
@@ -4139,7 +4142,7 @@ export default function SalaComandi() {
       if (!isZenActive) setZenSessionRemainingSec(null);
       return undefined;
     }
-    const opt = ZEN_SESSION_DURATION_OPTIONS.find((o) => o.value === zenSessionDurationKey);
+    const opt = ZEN_SESSION_DURATION_OPTIONS.find((o) => o?.value === zenSessionDurationKey);
     const total = opt?.sec;
     if (total == null) return undefined;
     setZenSessionRemainingSec(total);
@@ -4537,7 +4540,7 @@ export default function SalaComandi() {
         return;
       }
 
-      const ghost = dlSnap.find((item) => idMatch(item.id, dragId) && item.type === 'ghost_meal');
+      const ghost = dlSnap.find((item) => idMatch(item?.id, dragId) && item?.type === 'ghost_meal');
       if (ghost) {
         const nextLog = dlSnap.map((item) =>
           idMatch(item.id, dragId) && item.type === 'ghost_meal'
@@ -4793,7 +4796,7 @@ export default function SalaComandi() {
     const equivalents = getEquivalentMealTypes(mealTypeKey);
 
     const first = (activeLog || []).find(item =>
-      (item.type === 'food' || item.type === 'recipe') && equivalents.includes(item.mealType)
+      (item?.type === 'food' || item?.type === 'recipe') && equivalents.includes(item?.mealType)
     );
     const fromFirst = first != null ? getMealTimeFromLogItem(first) : null;
     if (fromFirst != null) return fromFirst;
@@ -4857,10 +4860,10 @@ export default function SalaComandi() {
       const log = fullStorico[key]?.log;
       if (!Array.isArray(log)) continue;
       const flat = normalizeLogData(log);
-      const found = flat.filter(i => i.type === 'food' || i.type === 'recipe').find(i => 
-        norm(i.desc || i.name) === target || 
-        norm(i.desc || i.name).includes(target) || 
-        target.includes(norm(i.desc || i.name))
+      const found = flat.filter(i => i?.type === 'food' || i?.type === 'recipe').find(i => 
+        norm(i?.desc || i?.name) === target || 
+        norm(i?.desc || i?.name).includes(target) || 
+        target.includes(norm(i?.desc || i?.name))
       );
       if (found != null && (found.qta != null || found.weight != null)) {
         return String(found.qta ?? found.weight ?? '');
@@ -4997,7 +5000,7 @@ export default function SalaComandi() {
     const dbKey =
       preferredDbKey != null && foodDb[preferredDbKey] != null
         ? preferredDbKey
-        : Object.keys(foodDb).find(k => foodDb[k].desc?.toLowerCase().includes(nome.toLowerCase()));
+        : Object.keys(foodDb).find(k => foodDb?.[k]?.desc?.toLowerCase()?.includes(nome.toLowerCase()));
     if (dbKey) {
       const dbF = foodDb[dbKey];
       if (dbF.isRecipe && Array.isArray(dbF.ingredients) && dbF.ingredients.length > 0) {
@@ -5158,7 +5161,7 @@ export default function SalaComandi() {
       const logSnap = dailyLogRef.current || [];
       const src =
         logSnap.find(
-          (e) => e && e.type === 'ghost_meal' && e.id != null && String(e.id) === String(node.id)
+          (e) => e?.type === 'ghost_meal' && e?.id != null && String(e.id) === String(node.id)
         ) || node;
       const mt = toCanonicalMealType(String(src.mealType || 'pranzo').split('_')[0]) || 'pranzo';
       let t = src.mealTime;
@@ -5241,8 +5244,11 @@ Ottimo! Diario aggiornato. 🥗`;
   };
 
   const handleCalibrateFoodWeight = (foodId, deltaG) => {
-    const food = addedFoods.find(f => f.id === foodId);
-    if (!food) return;
+    const food = addedFoods.find(f => f?.id === foodId);
+    if (!food) {
+      console.warn('[SalaComandi] food not found for calibration', { foodId });
+      return;
+    }
     const currentQta = Number(food.qta ?? food.weight ?? 100) || 100;
     const newQta = Math.max(5, Math.min(5000, currentQta + deltaG));
     if (newQta === currentQta) return;
@@ -6808,7 +6814,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       const currentDecimalTime = new Date().getHours() + (new Date().getMinutes() / 60);
       const roundedTime = Math.round(currentDecimalTime * 2) / 2;
-      const currentCortisolScore = cortisolCurve?.find(c => c.time === roundedTime)?.cortisolScore ?? 0;
+      const currentCortisolScore = cortisolCurve?.find(c => c?.time === roundedTime)?.cortisolScore ?? 0;
 
       const piccoAnabolico = Math.max(0, ...(anabolicCurve?.map(c => c.anabolicScore) ?? [0]));
       const piccoCortisolo = Math.max(0, ...(cortisolCurve?.map(c => c.cortisolScore) ?? [0]));
@@ -8839,7 +8845,7 @@ ${dbKeys || 'n/d'}`;
         ? Math.max(0, Math.min(100, 100 - longevityData.masterScore))
         : undefined;
 
-    const sleepEntry = (activeLog || []).find(e => e && e.type === 'sleep');
+    const sleepEntry = (activeLog || []).find(e => e?.type === 'sleep');
     const sleepHoursRaw = sleepEntry
       ? Number(sleepEntry.hours ?? sleepEntry.duration ?? sleepEntry.sleepHours ?? NaN)
       : NaN;
@@ -9172,7 +9178,7 @@ ${dbKeys || 'n/d'}`;
 
   const isNightDeficit = displayTime >= 20 && targetKcalForAlerts > 0 && ((totalCaloriesTimeline || 0) / targetKcalForAlerts) <= 0.60;
   const isProteinSaturated = displayTime <= 15 && (targetMacros?.prot ?? 0) > 0 && ((totalMacrosTimeline.prot || 0) / (targetMacros.prot || 1)) >= 0.90;
-  const upcomingWorkout = allNodes.find(n => (n.type === 'workout' || n.type === 'work') && n.time > displayTime && n.time <= displayTime + 2);
+  const upcomingWorkout = allNodes.find(n => (n?.type === 'workout' || n?.type === 'work') && n?.time > displayTime && n?.time <= displayTime + 2);
   const isWorkoutCrash = !!upcomingWorkout && (dotY ?? 50) <= 40;
   const activeAlertsArray = [
     hasCrashRisk && 'glicemia',
@@ -9186,7 +9192,7 @@ ${dbKeys || 'n/d'}`;
   const scale = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
 
   const wakeHourForRiserva = (() => {
-    const sleepEntry = (activeLog || []).find(i => i.type === 'sleep');
+    const sleepEntry = (activeLog || []).find(i => i?.type === 'sleep');
     return sleepEntry?.wakeTime ?? sleepEntry?.sleepEnd ?? 7.5;
   })();
   const piccoMattutinoRiserva = 85;
@@ -11372,8 +11378,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                             onClick={(data, index, e) => {
                               if (e && e.stopPropagation) e.stopPropagation();
                               if (data.id === 'rimanenti') return;
-                              const pastoCorrente = mealPieDisplayData.find((m) => m.id === data.id);
-                              if (!pastoCorrente) return;
+                              const pastoCorrente = mealPieDisplayData.find((m) => m?.id === data.id);
+                              if (!pastoCorrente) {
+                                console.warn('[SalaComandi] meal pie entry not found', { id: data.id });
+                                return;
+                              }
                               const entry = pastoCorrente;
                               const mealName = entry.name || entry.id || 'Pasto';
                               const compositeId = String(entry.id);
@@ -13770,7 +13779,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   const id = sleepModal.editingId || `sleep_${Date.now()}`;
                   const logLook = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
                   const existing = sleepModal.editingId
-                    ? logLook.find((e) => e && e.id === sleepModal.editingId && e.type === 'sleep')
+                    ? logLook.find((e) => e?.id === sleepModal.editingId && e?.type === 'sleep')
                     : null;
                   const entry = {
                     type: 'sleep',
@@ -14810,7 +14819,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
 
       {/* POP-UP READY TO TRAIN (digestione) */}
       {showTrainingPopup && (() => {
-        const pastoRecente = (activeLog || []).find(item => (item.type === 'food' || item.type === 'recipe') && displayTime - item.mealTime >= 0 && displayTime - item.mealTime <= 1);
+        const pastoRecente = (activeLog || []).find(item => (item?.type === 'food' || item?.type === 'recipe') && displayTime - item?.mealTime >= 0 && displayTime - item?.mealTime <= 1);
         const mealTime = pastoRecente?.mealTime ?? 0;
         const waitMinutesTotal = 90;
         const elapsedMinutes = (displayTime - mealTime) * 60;
