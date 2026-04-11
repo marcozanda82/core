@@ -303,9 +303,65 @@ export default function MealBuilder({
   const [aiConstraintPreferred, setAiConstraintPreferred] = useState('');
   const [localFoodSearchResults, setLocalFoodSearchResults] = useState([]);
   const [isLocalFoodSearchLoading, setIsLocalFoodSearchLoading] = useState(false);
+  const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
 
   const mealBuilderScrollAnchorRef = useRef(null);
   const { foodDb: localFoodDb, loading: isLocalFoodDbLoading } = useFoodDb();
+
+  const enrichAddedFoodItem = useCallback((item, selection, weightInputValue) => {
+    if (!item || !selection?.id) return item;
+
+    const sourceRow = selection?.row || foodDb?.[selection.id] || localFoodDb?.[selection.id] || null;
+    const weight = Number(weightInputValue ?? item?.qta ?? item?.weight ?? 100) || 100;
+    const factor = weight / 100;
+    const selectedName = String(selection?.desc || item?.desc || item?.name || '').trim();
+    const toFiniteNumber = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const scaled = (value) => {
+      const numeric = toFiniteNumber(value);
+      return numeric == null ? null : numeric * factor;
+    };
+    const fallbackKcal = scaled(sourceRow?.kcal ?? sourceRow?.cal);
+    const fallbackProt = scaled(sourceRow?.prot);
+    const fallbackCarb = scaled(sourceRow?.carb);
+    const fallbackFat = scaled(sourceRow?.fat ?? sourceRow?.fatTotal);
+
+    return {
+      ...item,
+      foodDbKey: selection.id,
+      desc: selectedName || item?.desc || item?.name,
+      name: selectedName || item?.name || item?.desc,
+      kcal: toFiniteNumber(item?.kcal) ?? toFiniteNumber(item?.cal) ?? fallbackKcal ?? 0,
+      prot: toFiniteNumber(item?.prot) ?? fallbackProt ?? 0,
+      carb: toFiniteNumber(item?.carb) ?? fallbackCarb ?? 0,
+      fat: toFiniteNumber(item?.fat) ?? toFiniteNumber(item?.fatTotal) ?? fallbackFat ?? 0,
+      ...(toFiniteNumber(item?.fatTotal) == null && fallbackFat != null ? { fatTotal: fallbackFat } : {}),
+    };
+  }, [foodDb, localFoodDb]);
+
+  const handleAddSelectedFood = useCallback(() => {
+    if (!foodNameInput || !foodWeightInput) return;
+
+    if (selectedFoodMatch?.id && typeof estraiDatiFoodDb === 'function' && typeof setAddedFoods === 'function') {
+      const trimmedName = foodNameInput.trim();
+      const parsedWeight = parseFloat(foodWeightInput);
+      const preferredDbKey = foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : undefined;
+      const baseItem = estraiDatiFoodDb(trimmedName, parsedWeight, mealType, preferredDbKey);
+      const enrichedItem = enrichAddedFoodItem(baseItem, selectedFoodMatch, parsedWeight);
+      setAddedFoods((prev) => [enrichedItem, ...prev]);
+      setFoodNameInput('');
+      setFoodWeightInput('');
+      setSelectedFoodMatch(null);
+      return;
+    }
+
+    if (typeof handleAddFoodManual === 'function') {
+      handleAddFoodManual();
+    }
+    setSelectedFoodMatch(null);
+  }, [selectedFoodMatch, estraiDatiFoodDb, setAddedFoods, foodNameInput, foodWeightInput, foodDb, mealType, enrichAddedFoodItem, setFoodNameInput, setFoodWeightInput, handleAddFoodManual]);
 
   const buildAiMealConstraintsPayload = useCallback(() => {
     const split = (s) =>
@@ -1262,7 +1318,10 @@ export default function MealBuilder({
                         className="quick-input input-name"
                         placeholder="Es. Pollo"
                         value={foodNameInput}
-                        onChange={(e) => setFoodNameInput(e.target.value)}
+                        onChange={(e) => {
+                          setFoodNameInput(e.target.value);
+                          setSelectedFoodMatch(null);
+                        }}
                         onFocus={() => setShowFoodDropdown(true)}
                         onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)}
                         onKeyDown={(e) => {
@@ -1280,7 +1339,7 @@ export default function MealBuilder({
                         onFocus={(e) => {
                           if (numpadFoodId) e.target.blur();
                         }}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddFoodManual()}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddSelectedFood()}
                         style={{ textAlign: 'center', boxSizing: 'border-box' }}
                       />
                       <button
@@ -1298,7 +1357,7 @@ export default function MealBuilder({
                       >
                         📷
                       </button>
-                      <button type="button" className="quick-add-btn" onClick={handleAddFoodManual}>
+                      <button type="button" className="quick-add-btn" onClick={handleAddSelectedFood}>
                         +
                       </button>
                     </div>
@@ -1336,6 +1395,11 @@ export default function MealBuilder({
                             onClick={() => {
                               setFoodNameInput(s.desc);
                               setFoodWeightInput(getLastQuantityForFood(s.desc) || '');
+                              setSelectedFoodMatch({
+                                id: s.key,
+                                desc: s.desc,
+                                row: foodDb?.[s.key] || localFoodDb?.[s.key] || null,
+                              });
                               setShowFoodDropdown(false);
                               setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                             }}
@@ -1425,6 +1489,11 @@ export default function MealBuilder({
                                   onClick={() => {
                                     setFoodNameInput(desc);
                                     setFoodWeightInput(getLastQuantityForFood(desc) || '');
+                                    setSelectedFoodMatch({
+                                      id: result?.id || null,
+                                      desc,
+                                      row: localFoodDb?.[result?.id] || foodDb?.[result?.id] || null,
+                                    });
                                     setShowFoodDropdown(false);
                                     setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                                   }}
