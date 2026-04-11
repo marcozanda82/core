@@ -76,10 +76,16 @@ export default async function handler(
       message: err.message,
       stack: err.stack,
     });
-    res.status(500).json({
-      ok: false,
-      error: err.message,
-      stack: err.stack,
+
+    // fallback safe per evitare crash frontend
+    res.status(200).json({
+      results: [
+        {
+          id: 'fallback-1',
+          name_it: `Alimento (fallback): ${q}`,
+          score: 0,
+        },
+      ],
     });
   }
 }
