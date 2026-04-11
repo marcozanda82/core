@@ -2371,18 +2371,11 @@ export default function SalaComandi() {
         console.log('DEBUG RICERCA - API:', results);
         console.log('DEBUG RICERCA - LOCAL:', getLocalFallbackSuggestions());
 
+        console.log("STRUTTURA JSON ALIMENTO:", JSON.stringify(dataArray[0], null, 2));
         const apiSuggestions = dataArray.map((item) => ({
-            key: String(item?.food?.id || item?.fdcId || item?.id || ''),
-            desc: String(
-              item?.food?.name_it ||
-              item?.food?.name ||
-              item?.food?.description ||
-              item?.name_it ||
-              item?.name ||
-              item?.description ||
-              ''
-            ).trim(),
-          })).filter((item) => item.key && item.desc);
+            key: String(item?.food?.id || item?.fdcId || item?.id || item?.code || item?.ndbno || Math.random().toString(36).substr(2, 9)),
+            desc: String(item?.food?.name_it || item?.food?.name || item?.food?.description || item?.name_it || item?.product_name || item?.name || item?.description || item?.title || 'Senza nome').trim(),
+        })).filter((item) => item.key && item.desc && item.desc !== 'Senza nome');
 
         const localSuggestions = getLocalFallbackSuggestions();
         const combinedSuggestions = [...localSuggestions, ...apiSuggestions];
