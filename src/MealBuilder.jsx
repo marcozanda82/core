@@ -30,15 +30,17 @@ function normalizeRecentFoodEntry(entry) {
 
   const name = String(entry.name || '').trim();
   const id = String(entry.id ?? name).trim();
-  const lastUsed = Number(entry.lastUsed ?? entry.timestamp);
-  const count = Number(entry.count);
+  const lastUsed = Number(entry.lastUsedAt ?? entry.lastUsed ?? entry.timestamp);
+  const count = Number(entry.usageCount ?? entry.count);
 
   if (!id || !name || !Number.isFinite(lastUsed)) return null;
   return {
     id,
     name,
     lastUsed,
+    lastUsedAt: lastUsed,
     count: Number.isFinite(count) && count > 0 ? Math.floor(count) : 1,
+    usageCount: Number.isFinite(count) && count > 0 ? Math.floor(count) : 1,
   };
 }
 
@@ -111,7 +113,9 @@ function loadRecentFoodEntries() {
             id: name,
             name,
             lastUsed: Date.now() - index,
+            lastUsedAt: Date.now() - index,
             count: 1,
+            usageCount: 1,
           };
         })
         .filter(Boolean)
@@ -788,7 +792,9 @@ export default function MealBuilder({
           id,
           name,
           lastUsed,
+          lastUsedAt: lastUsed,
           count: existingEntry ? existingEntry.count + 1 : 1,
+          usageCount: existingEntry ? existingEntry.count + 1 : 1,
         },
         ...prev.filter((entry) => String(entry?.id ?? '').trim() !== id),
       ]).slice(0, MAX_RECENT_FOODS);

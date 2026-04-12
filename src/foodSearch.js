@@ -32,15 +32,17 @@ function loadRecentFoodEntries() {
 
         const name = String(entry.name || '').trim();
         const id = String(entry.id ?? name).trim();
-        const lastUsed = Number(entry.lastUsed ?? entry.timestamp);
-        const count = Number(entry.count);
+        const lastUsed = Number(entry.lastUsedAt ?? entry.lastUsed ?? entry.timestamp);
+        const count = Number(entry.usageCount ?? entry.count);
 
         if (!id || !name || !Number.isFinite(lastUsed)) return null;
         return {
           id,
           name,
           lastUsed,
+          lastUsedAt: lastUsed,
           count: Number.isFinite(count) && count > 0 ? Math.floor(count) : 1,
+          usageCount: Number.isFinite(count) && count > 0 ? Math.floor(count) : 1,
         };
       })
       .filter(Boolean);
