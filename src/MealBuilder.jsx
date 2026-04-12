@@ -22,7 +22,7 @@ const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
 const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
 const MAX_RECENT_FOODS = 30;
 const PERSONAL_RESULTS_THRESHOLD = 3;
-const SMART_SUGGESTIONS_LIMIT = 4;
+const SMART_SUGGESTIONS_LIMIT = 5;
 const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const RECENT_FOOD_MEDIUM_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 const FOOD_PAIR_SUGGESTIONS = {
@@ -43,16 +43,27 @@ function normalizeRecentFoodEntry(entry) {
   const id = String(entry.id ?? name).trim();
   const lastUsed = Number(entry.lastUsedAt ?? entry.lastUsed ?? entry.timestamp);
   const count = Number(entry.usageCount ?? entry.count);
+  const mealType = normalizeTrackedMealType(entry.mealType);
 
   if (!id || !name || !Number.isFinite(lastUsed)) return null;
   return {
     id,
     name,
+    mealType,
     lastUsed,
     lastUsedAt: lastUsed,
     count: Number.isFinite(count) && count > 0 ? Math.floor(count) : 1,
     usageCount: Number.isFinite(count) && count > 0 ? Math.floor(count) : 1,
   };
+}
+
+function normalizeTrackedMealType(value) {
+  const meal = String(value || '').trim().toLowerCase();
+  if (meal.includes('colazione')) return 'colazione';
+  if (meal.includes('pranzo')) return 'pranzo';
+  if (meal.includes('cena')) return 'cena';
+  if (meal.includes('snack') || meal.includes('spuntino')) return 'snack';
+  return '';
 }
 
 function dedupeRecentFoodEntries(entries) {
@@ -110,6 +121,19 @@ function getMealContextKey(mealType, drawerMealTime) {
   return 'dinner';
 }
 
+function getMealSuggestionLabel(mealType, drawerMealTime) {
+  const normalizedMealType = normalizeTrackedMealType(mealType);
+  if (normalizedMealType === 'colazione') return 'a colazione';
+  if (normalizedMealType === 'pranzo') return 'a pranzo';
+  if (normalizedMealType === 'cena') return 'a cena';
+  if (normalizedMealType === 'snack') return 'come snack';
+
+  const contextKey = getMealContextKey(mealType, drawerMealTime);
+  if (contextKey === 'morning') return 'a colazione';
+  if (contextKey === 'lunch') return 'a pranzo';
+  return 'a cena';
+}
+
 function loadRecentFoodEntries() {
   try {
     const parsed = JSON.parse(localStorage.getItem(RECENT_FOODS_STORAGE_KEY) || '[]');
@@ -137,6 +161,7 @@ function loadRecentFoodEntries() {
           return {
             id: name,
             name,
+            mealType: '',
             lastUsed: Date.now() - index,
             lastUsedAt: Date.now() - index,
             count: 1,
@@ -667,6 +692,14 @@ export default function MealBuilder({
     () => recentFoodEntries.map((entry) => entry.id).filter(Boolean),
     [recentFoodEntries]
   );
+  const normalizedTrackedMealType = useMemo(
+    () => normalizeTrackedMealType(mealType),
+    [mealType]
+  );
+  const mealSuggestionLabel = useMemo(
+    () => getMealSuggestionLabel(mealType, drawerMealTime),
+    [drawerMealTime, mealType]
+  );
   const normalizedFoodSearchQuery = useMemo(
     () => normalizeSearchQuery(foodNameInput),
     [foodNameInput]
@@ -677,17 +710,28 @@ export default function MealBuilder({
   );
   const visibleRecentFoodEntries = useMemo(() => {
     const normalizedQuery = normalizeSearchQuery(foodNameInput);
+    const mealSpecificEntries = recentFoodEntries.filter((entry) => (
+      normalizedTrackedMealType && entry.mealType === normalizedTrackedMealType
+    ));
+
     if (normalizedQuery.length <= 2) {
-      return [...recentFoodEntries]
-        .sort((a, b) => {
-          const smartScoreA = getRecentFoodSmartScore(a);
-          const smartScoreB = getRecentFoodSmartScore(b);
-          if (smartScoreB !== smartScoreA) return smartScoreB - smartScoreA;
-          if ((Number(b?.lastUsed) || 0) !== (Number(a?.lastUsed) || 0)) return (Number(b?.lastUsed) || 0) - (Number(a?.lastUsed) || 0);
-          return (Number(b?.count) || 0) - (Number(a?.count) || 0);
-        })
-        .sort((a, b) => (Number(b?.lastUsedAt ?? b?.lastUsed) || 0) - (Number(a?.lastUsedAt ?? a?.lastUsed) || 0))
-        .slice(0, SMART_SUGGESTIONS_LIMIT);
+      const sortedMealRecent = [...mealSpecificEntries].sort(
+        (a, b) => (Number(b?.lastUsedAt ?? b?.lastUsed) || 0) - (Number(a?.lastUsedAt ?? a?.lastUsed) || 0)
+      );
+      const sortedGlobalRecent = [...recentFoodEntries].sort(
+        (a, b) => (Number(b?.lastUsedAt ?? b?.lastUsed) || 0) - (Number(a?.lastUsedAt ?? a?.lastUsed) || 0)
+      );
+      const selectedIds = new Set();
+      const combined = [];
+
+      [...sortedMealRecent, ...sortedGlobalRecent].forEach((entry) => {
+        const entryId = String(entry?.id ?? '').trim();
+        if (!entryId || selectedIds.has(entryId) || combined.length >= SMART_SUGGESTIONS_LIMIT) return;
+        selectedIds.add(entryId);
+        combined.push(entry);
+      });
+
+      return combined;
     }
 
     const queryWords = normalizedQuery.split(' ').filter(Boolean);
@@ -698,25 +742,30 @@ export default function MealBuilder({
         return queryWords.every((word) => normalizedName.includes(word));
       })
       .slice(0, SMART_SUGGESTIONS_LIMIT);
-  }, [foodNameInput, recentFoodEntries]);
+  }, [foodNameInput, normalizedTrackedMealType, recentFoodEntries]);
   const visibleFrequentFoodEntries = useMemo(() => {
     const normalizedQuery = normalizeSearchQuery(foodNameInput);
-    const sortedBySmartScore = [...recentFoodEntries].sort((a, b) => {
-      const smartScoreA = getRecentFoodSmartScore(a);
-      const smartScoreB = getRecentFoodSmartScore(b);
-      if (smartScoreB !== smartScoreA) return smartScoreB - smartScoreA;
-      if ((Number(b?.count) || 0) !== (Number(a?.count) || 0)) return (Number(b?.count) || 0) - (Number(a?.count) || 0);
-      return (Number(b?.lastUsed) || 0) - (Number(a?.lastUsed) || 0);
-    });
+    const mealSpecificEntries = recentFoodEntries.filter((entry) => (
+      normalizedTrackedMealType && entry.mealType === normalizedTrackedMealType
+    ));
+    const sortByFrequency = (a, b) => {
+      if ((Number(b?.usageCount ?? b?.count) || 0) !== (Number(a?.usageCount ?? a?.count) || 0)) {
+        return (Number(b?.usageCount ?? b?.count) || 0) - (Number(a?.usageCount ?? a?.count) || 0);
+      }
+      return (Number(b?.lastUsedAt ?? b?.lastUsed) || 0) - (Number(a?.lastUsedAt ?? a?.lastUsed) || 0);
+    };
+    const sortedMealFrequent = [...mealSpecificEntries].sort(sortByFrequency);
+    const sortedGlobalFrequent = [...recentFoodEntries].sort(sortByFrequency);
     const recentIds = new Set(
       (!normalizedQuery ? [] : visibleRecentFoodEntries)
         .map((entry) => String(entry?.id ?? '').trim())
         .filter(Boolean)
     );
 
-    const filteredEntries = sortedBySmartScore.filter((entry) => {
+    const filteredEntries = [...sortedMealFrequent, ...sortedGlobalFrequent].filter((entry, index, array) => {
       const entryId = String(entry?.id ?? '').trim();
-      if (recentIds.has(entryId)) return false;
+      if (!entryId || recentIds.has(entryId)) return false;
+      if (array.findIndex((item) => String(item?.id ?? '').trim() === entryId) !== index) return false;
 
       if (!normalizedQuery) return true;
 
@@ -727,16 +776,8 @@ export default function MealBuilder({
       return queryWords.every((word) => normalizedName.includes(word));
     });
 
-    return [...filteredEntries]
-      .sort((a, b) => {
-        const frequencyScoreA = getRecentFoodFrequencyScore(a?.count);
-        const frequencyScoreB = getRecentFoodFrequencyScore(b?.count);
-        if (frequencyScoreB !== frequencyScoreA) return frequencyScoreB - frequencyScoreA;
-        if ((Number(b?.count) || 0) !== (Number(a?.count) || 0)) return (Number(b?.count) || 0) - (Number(a?.count) || 0);
-        return (Number(b?.lastUsed) || 0) - (Number(a?.lastUsed) || 0);
-      })
-      .slice(0, SMART_SUGGESTIONS_LIMIT);
-  }, [foodNameInput, recentFoodEntries, visibleRecentFoodEntries]);
+    return filteredEntries.slice(0, SMART_SUGGESTIONS_LIMIT);
+  }, [foodNameInput, normalizedTrackedMealType, recentFoodEntries, visibleRecentFoodEntries]);
   const smartSuggestedFoods = useMemo(() => {
     if (!isShortFoodQuery || !foodDb || typeof foodDb !== 'object') return [];
 
@@ -853,6 +894,7 @@ export default function MealBuilder({
   const trackRecentFood = useCallback((food) => {
     const name = String(food?.name || '').trim();
     const id = String(food?.id ?? name).trim();
+    const trackedMealType = normalizeTrackedMealType(food?.mealType ?? mealType);
     if (!id || !name) return;
 
     setRecentFoodEntries((prev) => {
@@ -862,6 +904,7 @@ export default function MealBuilder({
         {
           id,
           name,
+          mealType: trackedMealType,
           lastUsed,
           lastUsedAt: lastUsed,
           count: existingEntry ? existingEntry.count + 1 : 1,
@@ -876,7 +919,7 @@ export default function MealBuilder({
 
       return next;
     });
-  }, []);
+  }, [mealType]);
 
   const handleAddSelectedFood = useCallback(() => {
     if (!foodNameInput || !foodWeightInput) return;
@@ -1865,7 +1908,7 @@ export default function MealBuilder({
                                 borderBottom: '1px solid #2a2a2a',
                               }}
                             >
-                              ⭐ Frequenti
+                              {`⭐ I tuoi preferiti ${mealSuggestionLabel}`}
                             </div>
                             {visibleFrequentFoodEntries.map((entry) => (
                               <button
@@ -1902,7 +1945,7 @@ export default function MealBuilder({
                                 borderBottom: '1px solid #2a2a2a',
                               }}
                             >
-                              🕒 Recenti
+                              {`🕒 Recenti ${mealSuggestionLabel}`}
                             </div>
                             {visibleRecentFoodEntries.map((entry) => (
                               <button
