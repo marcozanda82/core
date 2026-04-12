@@ -23,10 +23,16 @@ function loadRecentFoodEntries() {
 
         const name = String(entry.name || '').trim();
         const id = String(entry.id ?? name).trim();
-        const timestamp = Number(entry.timestamp);
+        const lastUsed = Number(entry.lastUsed ?? entry.timestamp);
+        const count = Number(entry.count);
 
-        if (!id || !name || !Number.isFinite(timestamp)) return null;
-        return { id, name, timestamp };
+        if (!id || !name || !Number.isFinite(lastUsed)) return null;
+        return {
+          id,
+          name,
+          lastUsed,
+          count: Number.isFinite(count) && count > 0 ? Math.floor(count) : 1,
+        };
       })
       .filter(Boolean);
   } catch (_) {
@@ -34,8 +40,8 @@ function loadRecentFoodEntries() {
   }
 }
 
-function getRecencyBonus(timestamp, now) {
-  const ageMs = now - Number(timestamp);
+function getRecencyBonus(lastUsed, now) {
+  const ageMs = now - Number(lastUsed);
   if (!Number.isFinite(ageMs) || ageMs < 0) return 0;
   if (ageMs <= RECENT_FOOD_HIGH_WINDOW_MS) return 5;
   if (ageMs <= RECENT_FOOD_MEDIUM_WINDOW_MS) return 3;
@@ -49,7 +55,7 @@ function buildRecentFoodBonusMap() {
 
   for (let i = 0; i < recentEntries.length; i += 1) {
     const entry = recentEntries[i];
-    const bonus = getRecencyBonus(entry.timestamp, now);
+    const bonus = getRecencyBonus(entry.lastUsed, now);
     if (bonus <= 0) continue;
 
     const idKey = String(entry.id || '').trim();

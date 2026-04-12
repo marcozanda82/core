@@ -20,47 +20,78 @@ const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
 ]);
 
 const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
+const MAX_RECENT_FOODS = 30;
 
 function normalizeRecentFoodEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
 
   const name = String(entry.name || '').trim();
   const id = String(entry.id ?? name).trim();
-  const timestamp = Number(entry.timestamp);
+  const lastUsed = Number(entry.lastUsed ?? entry.timestamp);
+  const count = Number(entry.count);
 
-  if (!id || !name || !Number.isFinite(timestamp)) return null;
-  return { id, name, timestamp };
+  if (!id || !name || !Number.isFinite(lastUsed)) return null;
+  return {
+    id,
+    name,
+    lastUsed,
+    count: Number.isFinite(count) && count > 0 ? Math.floor(count) : 1,
+  };
+}
+
+function dedupeRecentFoodEntries(entries) {
+  const seen = new Set();
+  return entries.filter((entry) => {
+    const key = String(entry?.id ?? '').trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function sortRecentFoodEntries(entries) {
-  return [...entries].sort((a, b) => b.timestamp - a.timestamp);
+  return [...entries].sort((a, b) => b.lastUsed - a.lastUsed);
 }
 
 function loadRecentFoodEntries() {
   try {
     const parsed = JSON.parse(localStorage.getItem(RECENT_FOODS_STORAGE_KEY) || '[]');
     if (Array.isArray(parsed)) {
-      return sortRecentFoodEntries(
+      const normalized = dedupeRecentFoodEntries(sortRecentFoodEntries(
         parsed.map(normalizeRecentFoodEntry).filter(Boolean)
-      ).slice(0, 20);
+      )).slice(0, MAX_RECENT_FOODS);
+
+      // Lazy-migrate older shapes (e.g. timestamp-only entries) to the new format.
+      try {
+        localStorage.setItem(RECENT_FOODS_STORAGE_KEY, JSON.stringify(normalized));
+      } catch (_) {}
+
+      return normalized;
     }
   } catch (_) {}
 
   try {
     const legacy = JSON.parse(localStorage.getItem('recentFoods') || '[]');
     if (Array.isArray(legacy)) {
-      return sortRecentFoodEntries(
+      const migrated = dedupeRecentFoodEntries(sortRecentFoodEntries(
         legacy.map((item, index) => {
           const name = String(item || '').trim();
           if (!name) return null;
           return {
             id: name,
             name,
-            timestamp: Date.now() - index,
+            lastUsed: Date.now() - index,
+            count: 1,
           };
         })
         .filter(Boolean)
-      ).slice(0, 20);
+      )).slice(0, MAX_RECENT_FOODS);
+
+      try {
+        localStorage.setItem(RECENT_FOODS_STORAGE_KEY, JSON.stringify(migrated));
+      } catch (_) {}
+
+      return migrated;
     }
   } catch (_) {}
 
@@ -655,11 +686,17 @@ export default function MealBuilder({
     if (!id || !name) return;
 
     setRecentFoodEntries((prev) => {
-      const timestamp = Date.now();
+      const lastUsed = Date.now();
+      const existingEntry = prev.find((entry) => String(entry?.id ?? '').trim() === id);
       const next = [
-        { id, name, timestamp },
+        {
+          id,
+          name,
+          lastUsed,
+          count: existingEntry ? existingEntry.count + 1 : 1,
+        },
         ...prev.filter((entry) => String(entry?.id ?? '').trim() !== id),
-      ].slice(0, 20);
+      ].slice(0, MAX_RECENT_FOODS);
 
       try {
         localStorage.setItem(RECENT_FOODS_STORAGE_KEY, JSON.stringify(next));
@@ -1600,7 +1637,7 @@ export default function MealBuilder({
                             </div>
                             {visibleRecentFoodEntries.map((entry) => (
                               <button
-                                key={`recent-${entry.id}-${entry.timestamp}`}
+                                key={`recent-${entry.id}-${entry.lastUsed}`}
                                 type="button"
                                 style={{
                                   width: '100%',
