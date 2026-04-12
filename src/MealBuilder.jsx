@@ -116,6 +116,51 @@ function isIngredientNameInFoodDb(ingredientName, foodDb) {
   });
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightSearchMatches(text, query) {
+  const sourceText = String(text || '');
+  const normalizedQuery = String(query || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!sourceText || !normalizedQuery) return escapeHtml(sourceText);
+
+  const words = [...new Set(normalizedQuery.split(' ').filter(Boolean))];
+  if (words.length === 0) return escapeHtml(sourceText);
+
+  const pattern = new RegExp(`(${words.map(escapeRegExp).join('|')})`, 'gi');
+  let html = '';
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(sourceText)) !== null) {
+    const matchedText = match[0];
+    const start = match.index;
+    const end = start + matchedText.length;
+
+    html += escapeHtml(sourceText.slice(lastIndex, start));
+    html += `<mark>${escapeHtml(matchedText)}</mark>`;
+    lastIndex = end;
+  }
+
+  html += escapeHtml(sourceText.slice(lastIndex));
+  return html;
+}
+
 function scaleDraftIngredientWithPer100(ing, per100) {
   const w = Math.max(5, Number(ing.weight) || 100);
   const factor = w / 100;
@@ -1494,7 +1539,11 @@ export default function MealBuilder({
                                     setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                                   }}
                                 >
-                                  {desc}
+                                  <span
+                                    dangerouslySetInnerHTML={{
+                                      __html: highlightSearchMatches(desc, foodNameInput),
+                                    }}
+                                  />
                                 </button>
                               );
                             })}
