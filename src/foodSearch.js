@@ -1,5 +1,7 @@
 function normalizeSearchText(value) {
   return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
     .replace(/\s+/g, ' ')
@@ -132,6 +134,44 @@ function scoreQueryWord(queryWord, itemWords) {
   return bestScore;
 }
 
+function getTokenMatchSummary(queryWords, itemWords) {
+  let exactMatches = 0;
+  let fuzzyMatches = 0;
+  let partialMatches = 0;
+
+  for (let i = 0; i < queryWords.length; i += 1) {
+    const queryWord = queryWords[i];
+    const wordScore = scoreQueryWord(queryWord, itemWords);
+
+    if (wordScore === 2) {
+      exactMatches += 1;
+      continue;
+    }
+
+    if (wordScore === 1) {
+      fuzzyMatches += 1;
+      continue;
+    }
+
+    if (itemWords.some((itemWord) => itemWord.includes(queryWord))) {
+      partialMatches += 1;
+    }
+  }
+
+  const matchedTokens = exactMatches + fuzzyMatches + partialMatches;
+  const allTokensMatch = matchedTokens === queryWords.length;
+  const exactPhraseMatch = itemWords.join(' ') === queryWords.join(' ');
+
+  return {
+    exactMatches,
+    fuzzyMatches,
+    partialMatches,
+    matchedTokens,
+    allTokensMatch,
+    exactPhraseMatch,
+  };
+}
+
 export function searchFoods(foodDb, query) {
   if (!foodDb || typeof foodDb !== 'object') return [];
 
@@ -155,26 +195,38 @@ export function searchFoods(foodDb, query) {
 
     const itemWords = normalizedName.split(' ').filter(Boolean);
     if (itemWords.length === 0) continue;
+    const matchSummary = getTokenMatchSummary(queryWords, itemWords);
+    if (matchSummary.matchedTokens === 0) continue;
 
-    let score = 0;
-    for (let j = 0; j < queryWords.length; j += 1) {
-      score += scoreQueryWord(queryWords[j], itemWords);
+    let searchScore = 0;
+    if (matchSummary.exactPhraseMatch) {
+      searchScore = 1000 + (queryWords.length * 20);
+    } else if (matchSummary.allTokensMatch) {
+      searchScore = 700
+        + (matchSummary.exactMatches * 20)
+        + (matchSummary.fuzzyMatches * 10)
+        + (matchSummary.partialMatches * 5);
+    } else {
+      searchScore = 300
+        + (matchSummary.matchedTokens * 15)
+        + (matchSummary.exactMatches * 10)
+        + (matchSummary.fuzzyMatches * 5)
+        + matchSummary.partialMatches;
     }
-
-    if (score === 0) continue;
 
     const smartScore = Math.max(
       recentFoodSmartScores.get(String(id).trim()) || 0,
       recentFoodSmartScores.get(normalizedName) || 0
     );
-    const finalScore = score + smartScore;
+    const finalScore = searchScore + smartScore;
 
-    results.push({ id, name, score, smartScore, finalScore });
+    results.push({ id, name, searchScore, smartScore, finalScore, matchSummary });
   }
 
   results.sort((a, b) => {
     if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore;
-    return b.score - a.score;
+    if (b.searchScore !== a.searchScore) return b.searchScore - a.searchScore;
+    return b.matchSummary.matchedTokens - a.matchSummary.matchedTokens;
   });
 
   return results.slice(0, 50).map(({ id, name }) => ({ id, name }));

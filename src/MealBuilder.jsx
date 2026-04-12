@@ -233,12 +233,10 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function escapeRegExp(value) {
-  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function normalizeSearchQuery(value) {
   return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
     .replace(/\s+/g, ' ')
@@ -254,21 +252,57 @@ function highlightSearchMatches(text, query) {
   const words = [...new Set(normalizedQuery.split(' ').filter(Boolean))];
   if (words.length === 0) return escapeHtml(sourceText);
 
-  const pattern = new RegExp(`(${words.map(escapeRegExp).join('|')})`, 'gi');
-  let html = '';
-  let lastIndex = 0;
-  let match;
+  const normalizedChars = [];
+  const normalizedIndexMap = [];
 
-  while ((match = pattern.exec(sourceText)) !== null) {
-    const matchedText = match[0];
-    const start = match.index;
-    const end = start + matchedText.length;
+  for (let i = 0; i < sourceText.length; i += 1) {
+    const normalizedChar = sourceText[i]
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
 
-    html += escapeHtml(sourceText.slice(lastIndex, start));
-    html += `<mark>${escapeHtml(matchedText)}</mark>`;
-    lastIndex = end;
+    for (let j = 0; j < normalizedChar.length; j += 1) {
+      normalizedChars.push(normalizedChar[j]);
+      normalizedIndexMap.push(i);
+    }
   }
 
+  const normalizedText = normalizedChars.join('');
+  const ranges = [];
+
+  words.forEach((word) => {
+    let searchFrom = 0;
+    while (searchFrom < normalizedText.length) {
+      const matchIndex = normalizedText.indexOf(word, searchFrom);
+      if (matchIndex === -1) break;
+
+      const start = normalizedIndexMap[matchIndex];
+      const end = normalizedIndexMap[matchIndex + word.length - 1] + 1;
+      ranges.push([start, end]);
+      searchFrom = matchIndex + word.length;
+    }
+  });
+
+  if (ranges.length === 0) return escapeHtml(sourceText);
+
+  ranges.sort((a, b) => a[0] - b[0]);
+  const mergedRanges = [];
+  ranges.forEach(([start, end]) => {
+    const previousRange = mergedRanges[mergedRanges.length - 1];
+    if (!previousRange || start > previousRange[1]) {
+      mergedRanges.push([start, end]);
+      return;
+    }
+    previousRange[1] = Math.max(previousRange[1], end);
+  });
+
+  let html = '';
+  let lastIndex = 0;
+  mergedRanges.forEach(([start, end]) => {
+    html += escapeHtml(sourceText.slice(lastIndex, start));
+    html += `<mark>${escapeHtml(sourceText.slice(start, end))}</mark>`;
+    lastIndex = end;
+  });
   html += escapeHtml(sourceText.slice(lastIndex));
   return html;
 }
