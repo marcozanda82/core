@@ -2,6 +2,8 @@
  * Porzioni per alimento: categoria da nome, unità (g), default da uso (localStorage).
  */
 
+import { getGramsPerUnitOverride, resolveFood } from './userFoodOverrides';
+
 export const FOOD_UNIT_USAGE_STORAGE_KEY = 'food_unit_usage_v1';
 
 /** Categoria alimento (da nome + regole unità). */
@@ -210,6 +212,73 @@ function unitsForCategory(category, desc) {
   return [...byGrams.values()].sort((a, b) => a.grams - b.grams);
 }
 
+function replaceApproxGramsInLabel(label, newG) {
+  const g = Math.round(Number(newG)) || 0;
+  if (!g) return String(label);
+  let next = String(label).replace(/\(~\s*[\d.]+\s*g\)/gi, `(~${g} g)`);
+  if (next === label) {
+    next = String(label).replace(/\(~[\d.]+\s*g\)/i, `(~${g} g)`);
+  }
+  return next;
+}
+
+function relabelServingUnit(oldUnit, newG) {
+  const g = Math.round(Number(newG)) || 0;
+  let label = replaceApproxGramsInLabel(oldUnit.label, g);
+  if (label === oldUnit.label) {
+    const m = String(oldUnit.label).match(/^([^(]+)/);
+    const head = (m ? m[1] : 'Porzione').trim() || 'Porzione';
+    label = `${head} (~${g} g)`;
+  }
+  return { ...oldUnit, grams: g, label };
+}
+
+/**
+ * Applica override utente sul template di porzione (non modifica CREA).
+ */
+function applyGramsPerUnitOverride(units, defaultUnit, foodId) {
+  const gOv = getGramsPerUnitOverride(foodId);
+  if (gOv == null || !Array.isArray(units) || !defaultUnit) {
+    return { units: [...units], defaultUnit: { ...defaultUnit } };
+  }
+  const targetGrams = defaultUnit.grams;
+
+  if (targetGrams === 100 && Math.round(gOv) !== 100) {
+    const extra = { label: `Porzione (~${Math.round(gOv)} g)`, grams: Math.round(gOv) };
+    const merged = [...units, extra];
+    const dedupe = new Map();
+    merged.forEach((u) => {
+      if (!dedupe.has(u.grams)) dedupe.set(u.grams, u);
+    });
+    const sorted = [...dedupe.values()].sort((a, b) => a.grams - b.grams);
+    return { units: sorted, defaultUnit: { ...extra } };
+  }
+
+  const idx = units.findIndex((u) => u.grams === targetGrams);
+  if (idx < 0) {
+    const extra = relabelServingUnit({ label: defaultUnit.label, grams: targetGrams }, gOv);
+    const merged = [...units.filter((u) => u.grams !== Math.round(gOv)), extra];
+    const dedupe = new Map();
+    merged.forEach((u) => {
+      if (!dedupe.has(u.grams)) dedupe.set(u.grams, u);
+    });
+    const sorted = [...dedupe.values()].sort((a, b) => a.grams - b.grams);
+    const du = sorted.find((u) => u.grams === Math.round(gOv)) || extra;
+    return { units: sorted, defaultUnit: { ...du } };
+  }
+
+  const patched = relabelServingUnit(units[idx], gOv);
+  const next = [...units];
+  next[idx] = patched;
+  const dedupe = new Map();
+  next.forEach((u) => {
+    if (!dedupe.has(u.grams)) dedupe.set(u.grams, u);
+  });
+  const sorted = [...dedupe.values()].sort((a, b) => a.grams - b.grams);
+  const du = sorted.find((u) => u.grams === Math.round(gOv)) || { ...defaultUnit, ...patched };
+  return { units: sorted, defaultUnit: { ...du } };
+}
+
 /**
  * @param {object} row — riga DB per 100g (desc, kcal, …)
  * @param {string} [foodDbKey] — per statistiche uso locale
@@ -224,7 +293,8 @@ export function buildFoodUnits(row, foodDbKey = '') {
   let defaultUnit = pickDefaultFromUsage(list, usage) || pickHeuristicDefault(list, category);
   if (!defaultUnit) defaultUnit = list.find((u) => u.grams === 100) || list[0];
 
-  return { units: list, defaultUnit, category };
+  const patched = applyGramsPerUnitOverride(list, defaultUnit, foodDbKey);
+  return { units: patched.units, defaultUnit: patched.defaultUnit, category };
 }
 
 function pickDefaultFromUsage(units, usage) {
@@ -282,7 +352,7 @@ export function enrichDbRowWithFoodUnits(row, foodDbKey) {
   if (!row || typeof row !== 'object') return row;
   if (row.isRecipe === true || row.type === 'recipe') return row;
   const { units, defaultUnit, category } = buildFoodUnits(row, foodDbKey);
-  return { ...row, category, units, defaultUnit };
+  return resolveFood({ ...row, id: foodDbKey, category, units, defaultUnit });
 }
 
 /**
@@ -294,5 +364,12 @@ export function enrichPortionItemWithDbUnits(foodItem, dbRowPer100, foodDbKey) {
   if (dbRowPer100.isRecipe === true || dbRowPer100.type === 'recipe') return foodItem;
   const key = String(foodDbKey || '').trim();
   const { units, defaultUnit, category } = buildFoodUnits(dbRowPer100, key);
-  return { ...foodItem, category, units, defaultUnit, foodDbKey: foodItem.foodDbKey || key };
+  return resolveFood({
+    ...foodItem,
+    id: key,
+    category,
+    units,
+    defaultUnit,
+    foodDbKey: foodItem.foodDbKey || key,
+  });
 }

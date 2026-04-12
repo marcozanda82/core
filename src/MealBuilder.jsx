@@ -27,6 +27,13 @@ import {
   getMealTypeFoodPreferenceCount,
 } from './mealSuggestionHabits';
 import { buildFoodUnits } from './foodUnits';
+import {
+  resolveFood,
+  setFoodOverride,
+  resetFoodOverride,
+  getGramsPerUnitOverride,
+  USER_FOOD_OVERRIDES_EVENT,
+} from './userFoodOverrides';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -70,10 +77,11 @@ function buildFoodUnitsForSelection(selectedMatch, nameFallback) {
   const desc = String(selectedMatch.desc || nameFallback || '').trim();
   if (!desc) return null;
   const id = selectedMatch.id != null ? String(selectedMatch.id).trim() : '';
-  const row =
+  const rowBase =
     selectedMatch.row && typeof selectedMatch.row === 'object'
       ? selectedMatch.row
       : { desc };
+  const row = id ? resolveFood({ ...rowBase, id }) : { ...rowBase };
   return buildFoodUnits(row, id);
 }
 
@@ -1106,17 +1114,35 @@ export default function MealBuilder({
   const [portionUnitGrams, setPortionUnitGrams] = useState(null);
   /** Moltiplicatore unità (es. 2 fette). */
   const [portionQuantityInput, setPortionQuantityInput] = useState('1');
+  const [overrideVersion, setOverrideVersion] = useState(0);
+  const [portionOverrideEditorOpen, setPortionOverrideEditorOpen] = useState(false);
+  const [portionOverrideDraft, setPortionOverrideDraft] = useState('');
+  const [portionOverrideSetDefault, setPortionOverrideSetDefault] = useState(false);
+  const [unsavedGramsEditCount, setUnsavedGramsEditCount] = useState(0);
+  const [showOverrideSavePrompt, setShowOverrideSavePrompt] = useState(false);
 
   const mealBuilderScrollAnchorRef = useRef(null);
   const foodDropdownContainerRef = useRef(null);
   const { foodDb: localFoodDb } = useFoodDb();
+
+  useEffect(() => {
+    const onUpd = () => setOverrideVersion((v) => v + 1);
+    window.addEventListener(USER_FOOD_OVERRIDES_EVENT, onUpd);
+    return () => window.removeEventListener(USER_FOOD_OVERRIDES_EVENT, onUpd);
+  }, []);
 
   const selectedFoodUnitHint = useMemo(() => {
     if (!selectedFoodMatch) return null;
     const built = buildFoodUnitsForSelection(selectedFoodMatch, foodNameInput.trim());
     if (!built?.units?.length || !built.defaultUnit?.label) return null;
     return built;
-  }, [selectedFoodMatch, foodNameInput]);
+  }, [selectedFoodMatch, foodNameInput, overrideVersion]);
+
+  useEffect(() => {
+    setUnsavedGramsEditCount(0);
+    setPortionOverrideEditorOpen(false);
+    setShowOverrideSavePrompt(false);
+  }, [selectedFoodMatch?.id]);
 
   /** Alla selezione alimento: abitudine → g manuali; altrimenti unità predefinita × 1. */
   useEffect(() => {
@@ -1150,6 +1176,62 @@ export default function MealBuilder({
     const total = Math.max(1, Math.round(portionUnitGrams * qty));
     setFoodWeightInput(String(total));
   }, [portionUnitGrams, portionQuantityInput]);
+
+  const selectedFoodIdStr =
+    selectedFoodMatch?.id != null ? String(selectedFoodMatch.id).trim() : '';
+  const hasGramOverride = Boolean(
+    selectedFoodIdStr && getGramsPerUnitOverride(selectedFoodIdStr) != null
+  );
+
+  const openPortionOverrideEditor = useCallback(() => {
+    const hint = selectedFoodUnitHint;
+    const g =
+      portionUnitGrams != null && Number.isFinite(portionUnitGrams)
+        ? portionUnitGrams
+        : hint?.defaultUnit?.grams != null && Number.isFinite(Number(hint.defaultUnit.grams))
+          ? Number(hint.defaultUnit.grams)
+          : '';
+    setPortionOverrideDraft(g === '' ? '' : String(Math.round(Number(g))));
+    setPortionOverrideSetDefault(false);
+    setPortionOverrideEditorOpen(true);
+  }, [selectedFoodUnitHint, portionUnitGrams]);
+
+  const commitPortionOverrideEditor = useCallback(() => {
+    const raw = String(portionOverrideDraft).trim().replace(',', '.');
+    const newValue = parseFloat(raw);
+    if (!Number.isFinite(newValue) || newValue <= 0) return;
+
+    setPortionUnitGrams(newValue);
+    setPortionOverrideEditorOpen(false);
+
+    if (portionOverrideSetDefault && selectedFoodIdStr) {
+      setFoodOverride(selectedFoodIdStr, { gramsPerUnit: newValue });
+      setUnsavedGramsEditCount(0);
+      setShowOverrideSavePrompt(false);
+    } else if (selectedFoodIdStr) {
+      setUnsavedGramsEditCount((c) => {
+        const next = c + 1;
+        if (next >= 2) setShowOverrideSavePrompt(true);
+        return next;
+      });
+    }
+    setPortionOverrideSetDefault(false);
+  }, [portionOverrideDraft, portionOverrideSetDefault, selectedFoodIdStr]);
+
+  const saveCurrentGramsPerUnitAsDefault = useCallback(() => {
+    if (!selectedFoodIdStr) return;
+    const g =
+      portionUnitGrams != null && Number.isFinite(portionUnitGrams)
+        ? portionUnitGrams
+        : selectedFoodUnitHint?.defaultUnit?.grams != null &&
+            Number.isFinite(Number(selectedFoodUnitHint.defaultUnit.grams))
+          ? Number(selectedFoodUnitHint.defaultUnit.grams)
+          : NaN;
+    if (!Number.isFinite(g) || g <= 0) return;
+    setFoodOverride(selectedFoodIdStr, { gramsPerUnit: g });
+    setUnsavedGramsEditCount(0);
+    setShowOverrideSavePrompt(false);
+  }, [selectedFoodIdStr, portionUnitGrams, selectedFoodUnitHint]);
 
   const enrichAddedFoodItem = useCallback((item, selection, weightInputValue) => {
     if (!item || !selection?.id) return item;
@@ -2972,11 +3054,218 @@ export default function MealBuilder({
                             lineHeight: 1.4,
                           }}
                         >
-                          <span style={{ color: '#94a3b8' }}>Categoria: </span>
-                          {selectedFoodUnitHint.category}
-                          <span style={{ color: '#475569' }}> · </span>
-                          <span style={{ color: '#94a3b8' }}>Suggerito: </span>
-                          {selectedFoodUnitHint.defaultUnit.label}
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              alignItems: 'baseline',
+                              gap: '4px 6px',
+                            }}
+                          >
+                            <span style={{ color: '#94a3b8' }}>Categoria: </span>
+                            {selectedFoodUnitHint.category}
+                            <span style={{ color: '#475569' }}> · </span>
+                            <span style={{ color: '#94a3b8' }}>Suggerito: </span>
+                            {selectedFoodUnitHint.defaultUnit.label}
+                            <span style={{ color: '#475569' }}> ≈ </span>
+                            <button
+                              type="button"
+                              onClick={openPortionOverrideEditor}
+                              title="Modifica i grammi per unità"
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                padding: 0,
+                                margin: 0,
+                                cursor: 'pointer',
+                                color: '#c4b5fd',
+                                textDecoration: 'underline',
+                                fontVariantNumeric: 'tabular-nums',
+                                fontSize: 'inherit',
+                              }}
+                            >
+                              {(() => {
+                                const unitG =
+                                  portionUnitGrams != null && Number.isFinite(portionUnitGrams)
+                                    ? portionUnitGrams
+                                    : Number(selectedFoodUnitHint.defaultUnit.grams);
+                                return Number.isFinite(unitG) ? `${Math.round(unitG)} g` : '—';
+                              })()}
+                            </button>
+                            {hasGramOverride ? (
+                              <span style={{ color: '#22c55e', fontSize: '0.62rem' }}>(personalizzato)</span>
+                            ) : null}
+                          </div>
+                          {portionOverrideEditorOpen ? (
+                            <div
+                              style={{
+                                marginTop: 8,
+                                padding: '8px 10px',
+                                borderRadius: 10,
+                                border: '1px solid #444',
+                                background: '#15151c',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 8,
+                              }}
+                            >
+                              <label style={{ color: '#94a3b8', fontSize: '0.68rem' }}>
+                                Quantità in grammi (per 1× unità)
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  min={1}
+                                  step={1}
+                                  value={portionOverrideDraft}
+                                  onChange={(e) => setPortionOverrideDraft(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      commitPortionOverrideEditor();
+                                    }
+                                  }}
+                                  style={{
+                                    display: 'block',
+                                    width: '100%',
+                                    marginTop: 4,
+                                    padding: '6px 8px',
+                                    borderRadius: 8,
+                                    border: '1px solid #555',
+                                    background: '#1a1a22',
+                                    color: '#e2e8f0',
+                                    fontSize: '0.8rem',
+                                    boxSizing: 'border-box',
+                                  }}
+                                />
+                              </label>
+                              {selectedFoodIdStr ? (
+                                <label
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    cursor: 'pointer',
+                                    color: '#cbd5e1',
+                                    fontSize: '0.72rem',
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={portionOverrideSetDefault}
+                                    onChange={(e) => setPortionOverrideSetDefault(e.target.checked)}
+                                  />
+                                  Imposta come default per questo alimento
+                                </label>
+                              ) : null}
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={commitPortionOverrideEditor}
+                                  style={{
+                                    padding: '6px 12px',
+                                    borderRadius: 8,
+                                    border: 'none',
+                                    background: '#6366f1',
+                                    color: '#fff',
+                                    cursor: 'pointer',
+                                    fontSize: '0.75rem',
+                                  }}
+                                >
+                                  ✔ Applica
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPortionOverrideEditorOpen(false);
+                                    setPortionOverrideSetDefault(false);
+                                  }}
+                                  style={{
+                                    padding: '6px 10px',
+                                    borderRadius: 8,
+                                    border: '1px solid #444',
+                                    background: 'transparent',
+                                    color: '#94a3b8',
+                                    cursor: 'pointer',
+                                    fontSize: '0.75rem',
+                                  }}
+                                >
+                                  Annulla
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                          {showOverrideSavePrompt && selectedFoodIdStr ? (
+                            <div
+                              style={{
+                                marginTop: 8,
+                                padding: '8px 10px',
+                                borderRadius: 10,
+                                border: '1px solid #4c3d10',
+                                background: 'rgba(251,191,36,0.08)',
+                                color: '#fde68a',
+                                fontSize: '0.72rem',
+                              }}
+                            >
+                              <div style={{ marginBottom: 6 }}>
+                                Vuoi salvare questa quantità come default?
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                <button
+                                  type="button"
+                                  onClick={saveCurrentGramsPerUnitAsDefault}
+                                  style={{
+                                    padding: '4px 10px',
+                                    borderRadius: 8,
+                                    border: 'none',
+                                    background: '#eab308',
+                                    color: '#1c1917',
+                                    cursor: 'pointer',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  Salva come default
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowOverrideSavePrompt(false)}
+                                  style={{
+                                    padding: '4px 10px',
+                                    borderRadius: 8,
+                                    border: '1px solid #666',
+                                    background: 'transparent',
+                                    color: '#cbd5e1',
+                                    cursor: 'pointer',
+                                    fontSize: '0.7rem',
+                                  }}
+                                >
+                                  Non ora
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                          {selectedFoodIdStr && hasGramOverride ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                resetFoodOverride(selectedFoodIdStr);
+                                setShowOverrideSavePrompt(false);
+                                setUnsavedGramsEditCount(0);
+                              }}
+                              style={{
+                                marginTop: 6,
+                                background: 'none',
+                                border: 'none',
+                                padding: 0,
+                                cursor: 'pointer',
+                                color: '#94a3b8',
+                                fontSize: '0.65rem',
+                                textDecoration: 'underline',
+                              }}
+                            >
+                              Pulisci personalizzazione
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     ) : null}
