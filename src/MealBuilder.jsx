@@ -13,7 +13,6 @@ import {
 } from './coreEngine';
 import { getTimePositionPercent } from './timeLayout';
 import { useFoodDb } from './useFoodDb';
-import { searchFoods } from './foodSearch';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -301,12 +300,11 @@ export default function MealBuilder({
   const [aiConstraintFixed, setAiConstraintFixed] = useState('');
   const [aiConstraintExcluded, setAiConstraintExcluded] = useState('');
   const [aiConstraintPreferred, setAiConstraintPreferred] = useState('');
-  const [localFoodSearchResults, setLocalFoodSearchResults] = useState([]);
-  const [isLocalFoodSearchLoading, setIsLocalFoodSearchLoading] = useState(false);
+  const [showCreaResults, setShowCreaResults] = useState(false);
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
 
   const mealBuilderScrollAnchorRef = useRef(null);
-  const { foodDb: localFoodDb, loading: isLocalFoodDbLoading } = useFoodDb();
+  const { foodDb: localFoodDb } = useFoodDb();
 
   const enrichAddedFoodItem = useCallback((item, selection, weightInputValue) => {
     if (!item || !selection?.id) return item;
@@ -473,43 +471,11 @@ export default function MealBuilder({
     return () => registerAddFoodCallback(null);
   }, [registerAddFoodCallback]);
 
-  const runLocalFoodSearch = useCallback((query) => {
-    const trimmedQuery = String(query || '').trim();
-    if (!trimmedQuery) {
-      setLocalFoodSearchResults([]);
-      setIsLocalFoodSearchLoading(false);
-      return [];
-    }
-
-    if (isLocalFoodDbLoading) {
-      setIsLocalFoodSearchLoading(true);
-      return [];
-    }
-
-    setIsLocalFoodSearchLoading(true);
-    try {
-      const results = searchFoods(localFoodDb, trimmedQuery);
-      setLocalFoodSearchResults(results);
-      return results;
-    } catch (error) {
-      console.error('[MealBuilder] local food search failed', error);
-      setLocalFoodSearchResults([]);
-      return [];
-    } finally {
-      setIsLocalFoodSearchLoading(false);
-    }
-  }, [localFoodDb, isLocalFoodDbLoading]);
-
   useEffect(() => {
-    const query = String(foodNameInput || '').trim();
-    if (!query) {
-      setLocalFoodSearchResults([]);
-      setIsLocalFoodSearchLoading(false);
-      return;
+    if (!creaResults.length) {
+      setShowCreaResults(false);
     }
-
-    runLocalFoodSearch(query);
-  }, [foodNameInput, runLocalFoodSearch]);
+  }, [creaResults]);
 
   useEffect(() => {
     if (!isComplexMode) {
@@ -1443,30 +1409,60 @@ export default function MealBuilder({
                               fontSize: '0.9rem',
                               fontWeight: '600',
                             }}
-                            onClick={() => runLocalFoodSearch(foodNameInput.trim())}
+                            onClick={() => {
+                              setShowCreaResults(false);
+                              triggerCreaSearch(foodNameInput.trim());
+                            }}
                           >
                             🔍 Cerca su CREA
                           </button>
                         ) : null}
-                        {foodNameInput.trim() && (isLocalFoodSearchLoading || (localFoodSearchResults && localFoodSearchResults.length > 0)) ? (
+                        {foodNameInput.trim() && creaResults.length > 0 ? (
+                          <button
+                            type="button"
+                            className="dropdown-action-button"
+                            style={{
+                              width: '100%',
+                              padding: '12px 16px',
+                              textAlign: 'left',
+                              background: 'rgba(56, 189, 248, 0.12)',
+                              border: 'none',
+                              borderTop: '1px solid #2a2a2a',
+                              color: '#67e8f9',
+                              cursor: 'pointer',
+                              fontSize: '0.9rem',
+                              fontWeight: '600',
+                            }}
+                            onClick={() => setShowCreaResults((prev) => !prev)}
+                          >
+                            {showCreaResults ? `Nascondi CREA (${creaResults.length})` : `Mostra CREA (${creaResults.length})`}
+                          </button>
+                        ) : null}
+                        {foodNameInput.trim() && isCreaLoading ? (
                           <div
                             style={{
                               borderTop: '1px solid #2a2a2a',
                             }}
                           >
-                            {isLocalFoodSearchLoading ? (
-                              <div
-                                style={{
-                                  width: '100%',
-                                  padding: '12px 16px',
-                                  color: '#94a3b8',
-                                  fontSize: '0.88rem',
-                                }}
-                              >
-                                Caricamento...
-                              </div>
-                            ) : null}
-                            {(localFoodSearchResults || []).map((result, index) => {
+                            <div
+                              style={{
+                                width: '100%',
+                                padding: '12px 16px',
+                                color: '#94a3b8',
+                                fontSize: '0.88rem',
+                              }}
+                            >
+                              Caricamento...
+                            </div>
+                          </div>
+                        ) : null}
+                        {foodNameInput.trim() && showCreaResults ? (
+                          <div
+                            style={{
+                              borderTop: '1px solid #2a2a2a',
+                            }}
+                          >
+                            {(creaResults || []).map((result, index) => {
                               const desc = String(
                                 result?.name_it || result?.desc || result?.name || result?.product_name || ''
                               ).trim();
