@@ -582,6 +582,16 @@ export default function MealBuilder({
     () => recentFoodEntries.map((entry) => entry.id).filter(Boolean),
     [recentFoodEntries]
   );
+  const recentFoodLookup = useMemo(() => {
+    const lookup = new Set();
+    recentFoodEntries.forEach((entry) => {
+      const id = String(entry?.id ?? '').trim();
+      const name = normalizeSearchQuery(entry?.name);
+      if (id) lookup.add(`id:${id}`);
+      if (name) lookup.add(`name:${name}`);
+    });
+    return lookup;
+  }, [recentFoodEntries]);
   const visibleRecentFoodEntries = useMemo(() => {
     const normalizedQuery = normalizeSearchQuery(foodNameInput);
     if (!normalizedQuery) return recentFoodEntries.slice(0, 5);
@@ -595,6 +605,49 @@ export default function MealBuilder({
       })
       .slice(0, 5);
   }, [foodNameInput, recentFoodEntries]);
+  const isRecentFood = useCallback((foodId, foodName) => {
+    const id = String(foodId ?? '').trim();
+    const name = normalizeSearchQuery(foodName);
+    return recentFoodLookup.has(`id:${id}`) || recentFoodLookup.has(`name:${name}`);
+  }, [recentFoodLookup]);
+
+  const renderFoodOptionLabel = useCallback((foodName, query, foodId) => {
+    const isRecent = isRecentFood(foodId, foodName);
+
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+        }}
+      >
+        <span
+          dangerouslySetInnerHTML={{
+            __html: highlightSearchMatches(foodName, query),
+          }}
+        />
+        {isRecent ? (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '2px 6px',
+              borderRadius: 999,
+              background: 'rgba(103, 232, 249, 0.12)',
+              color: '#67e8f9',
+              fontSize: '0.68rem',
+              fontWeight: 600,
+              lineHeight: 1.2,
+            }}
+          >
+            Recente
+          </span>
+        ) : null}
+      </span>
+    );
+  }, [isRecentFood]);
 
   const trackRecentFood = useCallback((food) => {
     const name = String(food?.name || '').trim();
@@ -1562,11 +1615,7 @@ export default function MealBuilder({
                                 }}
                                 onClick={() => handleSelectRecentFood(entry)}
                               >
-                                <span
-                                  dangerouslySetInnerHTML={{
-                                    __html: highlightSearchMatches(entry.name, foodNameInput),
-                                  }}
-                                />
+                                {renderFoodOptionLabel(entry.name, foodNameInput, entry.id)}
                               </button>
                             ))}
                           </>
@@ -1599,7 +1648,7 @@ export default function MealBuilder({
                               setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                             }}
                           >
-                            {s.desc}
+                            {renderFoodOptionLabel(s.desc, foodNameInput, s.key)}
                           </button>
                         ))}
                         {foodNameInput.trim() ? (
@@ -1728,11 +1777,7 @@ export default function MealBuilder({
                                           setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                                         }}
                                       >
-                                        <span
-                                          dangerouslySetInnerHTML={{
-                                            __html: highlightSearchMatches(desc, foodNameInput),
-                                          }}
-                                        />
+                                        {renderFoodOptionLabel(desc, foodNameInput, result?.id || desc)}
                                       </button>
                                     );
                                   })}
