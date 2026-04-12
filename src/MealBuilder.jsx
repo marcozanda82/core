@@ -77,11 +77,29 @@ function buildFoodUnitsForSelection(selectedMatch, nameFallback) {
   return buildFoodUnits(row, id);
 }
 
-function portionSelectValueFromGrams(gramsInput, units) {
-  const g = parseFloat(String(gramsInput ?? '').replace(',', '.'));
-  if (!Number.isFinite(g) || !Array.isArray(units) || units.length === 0) return PORTION_UNIT_CUSTOM;
-  const hit = units.find((u) => Math.abs(Number(u.grams) - g) < 1e-6);
+/** Valore `<select>`: template unità scelto o personalizzato. */
+function portionTemplateSelectValue(unitGramsState, units) {
+  if (unitGramsState == null || !Number.isFinite(unitGramsState) || !Array.isArray(units)) {
+    return PORTION_UNIT_CUSTOM;
+  }
+  const hit = units.find((u) => Math.abs(Number(u.grams) - unitGramsState) < 1e-6);
   return hit ? String(hit.grams) : PORTION_UNIT_CUSTOM;
+}
+
+function parsePortionQuantity(qStr) {
+  const q = parseFloat(String(qStr ?? '').replace(',', '.'));
+  return Number.isFinite(q) && q > 0 ? q : 1;
+}
+
+/** Grammi totali per nutrienti: unit.grams × quantity, altrimenti campo g manuale. */
+function computePortionGramsForNutrition(foodWeightInput, portionUnitGrams, portionQuantityInput) {
+  const per = portionUnitGrams;
+  const qty = parsePortionQuantity(portionQuantityInput);
+  if (per != null && Number.isFinite(per) && qty > 0) {
+    return Math.max(1, Math.round(per * qty));
+  }
+  const g = parseFloat(String(foodWeightInput ?? '').replace(',', '.'));
+  return Number.isFinite(g) && g > 0 ? Math.max(1, Math.round(g)) : NaN;
 }
 
 function normalizeRecentFoodEntry(entry) {
@@ -1084,6 +1102,10 @@ export default function MealBuilder({
   const [aiConstraintPreferred, setAiConstraintPreferred] = useState('');
   const [isCreaExpanded, setIsCreaExpanded] = useState(false);
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
+  /** Grammi per 1× unità template (null = totale g solo dal campo peso / abitudine). */
+  const [portionUnitGrams, setPortionUnitGrams] = useState(null);
+  /** Moltiplicatore unità (es. 2 fette). */
+  const [portionQuantityInput, setPortionQuantityInput] = useState('1');
 
   const mealBuilderScrollAnchorRef = useRef(null);
   const foodDropdownContainerRef = useRef(null);
@@ -1096,20 +1118,38 @@ export default function MealBuilder({
     return built;
   }, [selectedFoodMatch, foodNameInput]);
 
-  /** Se l’utente non ha grammi da abitudine, usa la porzione predefinita (g). */
+  /** Alla selezione alimento: abitudine → g manuali; altrimenti unità predefinita × 1. */
   useEffect(() => {
-    if (!selectedFoodMatch) return;
-    const built = buildFoodUnitsForSelection(
-      selectedFoodMatch,
-      String(selectedFoodMatch.desc || '').trim()
-    );
+    if (!selectedFoodMatch) {
+      setPortionQuantityInput('1');
+      setPortionUnitGrams(null);
+      return;
+    }
+    const desc = String(selectedFoodMatch.desc || '').trim();
+    const built = buildFoodUnitsForSelection(selectedFoodMatch, desc);
     if (!built?.defaultUnit) return;
-    setFoodWeightInput((prev) => {
-      const t = String(prev ?? '').trim();
-      if (t !== '') return prev;
-      return String(built.defaultUnit.grams);
-    });
-  }, [selectedFoodMatch]);
+
+    const habitStr = typeof getLastQuantityForFood === 'function' ? getLastQuantityForFood(desc) || '' : '';
+    const habitG = parseFloat(String(habitStr).replace(',', '.'));
+    if (Number.isFinite(habitG) && habitG > 0) {
+      setPortionUnitGrams(null);
+      setPortionQuantityInput('1');
+      setFoodWeightInput(String(Math.round(habitG)));
+      return;
+    }
+
+    setPortionQuantityInput('1');
+    setPortionUnitGrams(Number(built.defaultUnit.grams));
+    setFoodWeightInput(String(Math.max(1, Math.round(Number(built.defaultUnit.grams)))));
+  }, [selectedFoodMatch, getLastQuantityForFood]);
+
+  /** In modalità unità+quantità, aggiorna il campo totale g (nutrienti). */
+  useEffect(() => {
+    if (portionUnitGrams == null || !Number.isFinite(portionUnitGrams)) return;
+    const qty = parsePortionQuantity(portionQuantityInput);
+    const total = Math.max(1, Math.round(portionUnitGrams * qty));
+    setFoodWeightInput(String(total));
+  }, [portionUnitGrams, portionQuantityInput]);
 
   const enrichAddedFoodItem = useCallback((item, selection, weightInputValue) => {
     if (!item || !selection?.id) return item;
@@ -1648,9 +1688,11 @@ export default function MealBuilder({
       ? String(selectedFoodMatch.id).trim()
       : trackedName;
 
+    const parsedWeight = computePortionGramsForNutrition(foodWeightInput, portionUnitGrams, portionQuantityInput);
+    if (!Number.isFinite(parsedWeight) || parsedWeight <= 0) return;
+
     if (selectedFoodMatch?.id && typeof estraiDatiFoodDb === 'function' && typeof setAddedFoods === 'function') {
       const trimmedName = foodNameInput.trim();
-      const parsedWeight = parseFloat(foodWeightInput);
       const preferredDbKey = foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : undefined;
       const baseItem = estraiDatiFoodDb(trimmedName, parsedWeight, mealType, preferredDbKey);
       const enrichedItem = enrichAddedFoodItem(baseItem, selectedFoodMatch, parsedWeight);
@@ -1659,6 +1701,8 @@ export default function MealBuilder({
       trackRecentFood({ id: trackedId, name: trimmedName });
       setFoodNameInput('');
       setFoodWeightInput('');
+      setPortionQuantityInput('1');
+      setPortionUnitGrams(null);
       setSelectedFoodMatch(null);
       return;
     }
@@ -1668,8 +1712,27 @@ export default function MealBuilder({
       trackRecentFood({ id: trackedId, name: trackedName });
       handleAddFoodManual();
     }
+    setPortionQuantityInput('1');
+    setPortionUnitGrams(null);
     setSelectedFoodMatch(null);
-  }, [selectedFoodMatch, estraiDatiFoodDb, setAddedFoods, foodNameInput, foodWeightInput, foodDb, mealType, enrichAddedFoodItem, setFoodNameInput, setFoodWeightInput, handleAddFoodManual, trackMealFoodPatterns, addedFoods, trackRecentFood]);
+  }, [
+    selectedFoodMatch,
+    estraiDatiFoodDb,
+    setAddedFoods,
+    foodNameInput,
+    foodWeightInput,
+    portionUnitGrams,
+    portionQuantityInput,
+    foodDb,
+    mealType,
+    enrichAddedFoodItem,
+    setFoodNameInput,
+    setFoodWeightInput,
+    handleAddFoodManual,
+    trackMealFoodPatterns,
+    addedFoods,
+    trackRecentFood,
+  ]);
 
   const handleSelectRecentFood = useCallback((entry) => {
     const desc = String(entry?.name || '').trim();
@@ -2777,7 +2840,10 @@ export default function MealBuilder({
                         placeholder="g"
                         title="Peso in grammi (usato per i nutrienti). Scegli un’unità qui sotto oppure inserisci i g a mano."
                         value={foodWeightInput}
-                        onChange={(e) => setFoodWeightInput(e.target.value)}
+                        onChange={(e) => {
+                          setPortionUnitGrams(null);
+                          setFoodWeightInput(e.target.value);
+                        }}
                         onFocus={(e) => {
                           if (numpadFoodId) e.target.blur();
                         }}
@@ -2821,11 +2887,14 @@ export default function MealBuilder({
                           </label>
                           <select
                             id="portion-unit-select"
-                            value={portionSelectValueFromGrams(foodWeightInput, selectedFoodUnitHint.units)}
+                            value={portionTemplateSelectValue(portionUnitGrams, selectedFoodUnitHint.units)}
                             onChange={(e) => {
                               const v = e.target.value;
-                              if (v === PORTION_UNIT_CUSTOM) return;
-                              setFoodWeightInput(v);
+                              if (v === PORTION_UNIT_CUSTOM) {
+                                setPortionUnitGrams(null);
+                                return;
+                              }
+                              setPortionUnitGrams(Number(v));
                             }}
                             style={{
                               flex: 1,
@@ -2849,6 +2918,34 @@ export default function MealBuilder({
                               Altro — modifica i grammi nel campo sopra
                             </option>
                           </select>
+                          <label
+                            htmlFor="portion-qty-input"
+                            style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap' }}
+                          >
+                            Quantità
+                          </label>
+                          <input
+                            id="portion-qty-input"
+                            type="number"
+                            inputMode="decimal"
+                            min={0.25}
+                            step={0.25}
+                            title="Numero di unità (es. 2 = doppia porzione). Usato solo con un’unità selezionata."
+                            disabled={portionUnitGrams == null}
+                            value={portionQuantityInput}
+                            onChange={(e) => setPortionQuantityInput(e.target.value)}
+                            style={{
+                              width: 72,
+                              padding: '8px 6px',
+                              borderRadius: 10,
+                              border: '1px solid #444',
+                              background: portionUnitGrams == null ? '#25252d' : '#1a1a22',
+                              color: portionUnitGrams == null ? '#64748b' : '#e2e8f0',
+                              fontSize: '0.8rem',
+                              textAlign: 'center',
+                              boxSizing: 'border-box',
+                            }}
+                          />
                           <span
                             style={{
                               fontSize: '0.78rem',
@@ -2858,8 +2955,12 @@ export default function MealBuilder({
                             }}
                           >
                             {(() => {
-                              const g = parseFloat(String(foodWeightInput || '').replace(',', '.'));
-                              return Number.isFinite(g) ? `= ${Math.round(g)} g (calcolo)` : '';
+                              const g = computePortionGramsForNutrition(
+                                foodWeightInput,
+                                portionUnitGrams,
+                                portionQuantityInput
+                              );
+                              return Number.isFinite(g) ? `= ${g} g (nutrienti)` : '';
                             })()}
                           </span>
                         </div>
