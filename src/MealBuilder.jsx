@@ -1351,7 +1351,15 @@ export default function MealBuilder({
   const enrichAddedFoodItem = useCallback((item, selection, weightInputValue) => {
     if (!item || !selection?.id) return item;
 
+    const selId = String(selection.id || '').trim();
     const sourceRow = selection?.row || foodDb?.[selection.id] || localFoodDb?.[selection.id] || null;
+    const inMainDb = foodDb?.[selection.id] != null;
+    const inLocalDb = localFoodDb?.[selection.id] != null;
+    const preferRowMacros = Boolean(
+      sourceRow
+      && (selId.startsWith('USDA_') || (!inMainDb && !inLocalDb))
+    );
+
     const weight = Number(weightInputValue ?? item?.qta ?? item?.weight ?? 100) || 100;
     const factor = weight / 100;
     const selectedName = String(selection?.desc || item?.desc || item?.name || '').trim();
@@ -1373,11 +1381,21 @@ export default function MealBuilder({
       foodDbKey: selection.id,
       desc: selectedName || item?.desc || item?.name,
       name: selectedName || item?.name || item?.desc,
-      kcal: toFiniteNumber(item?.kcal) ?? toFiniteNumber(item?.cal) ?? fallbackKcal ?? 0,
-      prot: toFiniteNumber(item?.prot) ?? fallbackProt ?? 0,
-      carb: toFiniteNumber(item?.carb) ?? fallbackCarb ?? 0,
-      fat: toFiniteNumber(item?.fat) ?? toFiniteNumber(item?.fatTotal) ?? fallbackFat ?? 0,
-      ...(toFiniteNumber(item?.fatTotal) == null && fallbackFat != null ? { fatTotal: fallbackFat } : {}),
+      kcal: preferRowMacros
+        ? (toFiniteNumber(fallbackKcal) ?? 0)
+        : (toFiniteNumber(item?.kcal) ?? toFiniteNumber(item?.cal) ?? fallbackKcal ?? 0),
+      prot: preferRowMacros
+        ? (toFiniteNumber(fallbackProt) ?? 0)
+        : (toFiniteNumber(item?.prot) ?? fallbackProt ?? 0),
+      carb: preferRowMacros
+        ? (toFiniteNumber(fallbackCarb) ?? 0)
+        : (toFiniteNumber(item?.carb) ?? fallbackCarb ?? 0),
+      fat: preferRowMacros
+        ? (toFiniteNumber(fallbackFat) ?? 0)
+        : (toFiniteNumber(item?.fat) ?? toFiniteNumber(item?.fatTotal) ?? fallbackFat ?? 0),
+      ...(toFiniteNumber(item?.fatTotal) == null && fallbackFat != null
+        ? { fatTotal: preferRowMacros ? (toFiniteNumber(fallbackFat) ?? fallbackFat) : fallbackFat }
+        : {}),
     };
   }, [foodDb, localFoodDb]);
 
@@ -4076,6 +4094,16 @@ export default function MealBuilder({
                                 <div
                                   style={{
                                     borderTop: '1px solid #2a2a2a',
+                                    maxHeight: 320,
+                                    overflowY: 'auto',
+                                  }}
+                                  onScroll={(e) => {
+                                    const el = e.currentTarget;
+                                    if (el.scrollHeight - el.scrollTop - el.clientHeight > 72) return;
+                                    const q = String(foodNameInput || '').trim();
+                                    if (q.length >= 2 && typeof triggerCreaSearch === 'function') {
+                                      triggerCreaSearch(q, { onlyUsda: true });
+                                    }
                                   }}
                                 >
                                   {results.map((result, index) => {
@@ -4105,14 +4133,32 @@ export default function MealBuilder({
                                           setSelectedFoodMatch({
                                             id: result?.id || null,
                                             desc,
-                                            row: localFoodDb?.[result?.id] || foodDb?.[result?.id] || null,
+                                            row: result?.row || localFoodDb?.[result?.id] || foodDb?.[result?.id] || null,
                                           });
                                           trackRecentFood({ id: result?.id || desc, name: desc });
                                           setShowFoodDropdown(false);
                                           setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                                         }}
                                       >
-                                        {renderFoodOptionLabel(desc, foodNameInput, result?.id || desc)}
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                          {renderFoodOptionLabel(desc, foodNameInput, result?.id || desc)}
+                                          {result?.sourceBadgeLabel ? (
+                                            <span
+                                              style={{
+                                                fontSize: '0.62rem',
+                                                fontWeight: 700,
+                                                letterSpacing: '0.04em',
+                                                textTransform: 'uppercase',
+                                                padding: '2px 6px',
+                                                borderRadius: 6,
+                                                background: result?.foodSource === 'USDA' ? 'rgba(148, 163, 184, 0.2)' : 'rgba(34, 197, 94, 0.18)',
+                                                color: result?.foodSource === 'USDA' ? '#94a3b8' : '#4ade80',
+                                              }}
+                                            >
+                                              {result.sourceBadgeLabel}
+                                            </span>
+                                          ) : null}
+                                        </span>
                                       </button>
                                     );
                                   })}

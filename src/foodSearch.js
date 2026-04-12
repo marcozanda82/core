@@ -228,7 +228,10 @@ function isPrefixMatch(normalizedName, itemWords, normalizedQuery) {
   return itemWords.some((itemWord) => itemWord.startsWith(normalizedQuery));
 }
 
-export function searchFoods(foodDb, query, options = {}) {
+/**
+ * Stessi criteri di `searchFoods`, con punteggi per fusion CREA + altre fonti.
+ */
+export function searchFoodsDetailed(foodDb, query, options = {}) {
   if (!foodDb || typeof foodDb !== 'object') return [];
 
   const normalizedQuery = normalizeSearchText(query);
@@ -286,7 +289,18 @@ export function searchFoods(foodDb, query, options = {}) {
     return b.matchSummary.matchedTokens - a.matchSummary.matchedTokens;
   });
 
-  return results.slice(0, limit).map(({ id, name }) => ({ id, name }));
+  return results.slice(0, limit).map(({ id, name, matchScore, recencyScore, frequencyScore, score }) => ({
+    id,
+    name,
+    matchScore,
+    recencyScore,
+    frequencyScore,
+    textScore: score,
+  }));
+}
+
+export function searchFoods(foodDb, query, options = {}) {
+  return searchFoodsDetailed(foodDb, query, options).map(({ id, name }) => ({ id, name }));
 }
 
 export default searchFoods;

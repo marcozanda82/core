@@ -25,6 +25,7 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
 import { searchFoods } from './foodSearch';
+import { getCreaFusionPayload, fuseUsdaIntoCrea } from './foodSourceFusion';
 import { recordMealFoodCooccurrence } from './foodCooccurrence';
 import { recordMealSuggestionHabits } from './mealSuggestionHabits';
 import {
@@ -2257,6 +2258,10 @@ export default function SalaComandi() {
   const [foodDropdownSuggestions, setFoodDropdownSuggestions] = useState([]);
   const [creaResults, setCreaResults] = useState([]);
   const [isCreaLoading, setIsCreaLoading] = useState(false);
+  const creaUsdaAbortRef = useRef(null);
+  const lastCreaNormalizedRef = useRef(null);
+  const lastCreaQueryRef = useRef('');
+  const usdaFusionDoneForQueryRef = useRef('');
   const [showFoodDropdown, setShowFoodDropdown] = useState(false);
   const [isGeneratingFood, setIsGeneratingFood] = useState(false);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
@@ -6196,8 +6201,39 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     }
   }, [userUid, mealType, foodNameInput, foodWeightInput, callGeminiAPIWithRotation, getAverageEstimate, db, setFoodDb, setAddedFoods, setFoodNameInput, setFoodWeightInput, setShowFoodDropdown]);
 
-  const triggerCreaSearch = useCallback(async (query) => {
-    if (!query) return;
+  const triggerCreaSearch = useCallback(async (query, opts = {}) => {
+    const q = String(query || '').trim();
+    if (!q) return;
+
+    const onlyUsda = opts.onlyUsda === true;
+    if (onlyUsda) {
+      if (lastCreaQueryRef.current !== q || !Array.isArray(lastCreaNormalizedRef.current)) {
+        return;
+      }
+      if (usdaFusionDoneForQueryRef.current === q) return;
+      creaUsdaAbortRef.current?.abort();
+      const ac = new AbortController();
+      creaUsdaAbortRef.current = ac;
+      try {
+        const merged = await fuseUsdaIntoCrea(lastCreaNormalizedRef.current, q, {
+          signal: ac.signal,
+          minQueryLengthForUsda: 2,
+        });
+        if (!ac.signal.aborted) {
+          setCreaResults(merged);
+          usdaFusionDoneForQueryRef.current = q;
+        }
+      } catch {
+        /* CREA invariata */
+      }
+      return;
+    }
+
+    creaUsdaAbortRef.current?.abort();
+    const ac = new AbortController();
+    creaUsdaAbortRef.current = ac;
+    usdaFusionDoneForQueryRef.current = '';
+    lastCreaQueryRef.current = q;
 
     setShowFoodDropdown(true);
     setCreaResults([]);
@@ -6208,9 +6244,30 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         return;
       }
 
-      const results = searchFoods(csvFoodDb, query, { includeUserHistory: false });
-      setCreaResults(results || []);
+      const { creaNormalized, uiItems } = getCreaFusionPayload(csvFoodDb, q, {
+        includeUserHistory: false,
+        creaLimit: 50,
+      });
+      lastCreaNormalizedRef.current = creaNormalized;
+      setCreaResults(uiItems);
       setShowFoodDropdown(true);
+      setIsCreaLoading(false);
+
+      const loadUsda = opts.loadUsda !== false && q.length >= 2;
+      if (!loadUsda) return;
+
+      try {
+        const merged = await fuseUsdaIntoCrea(creaNormalized, q, {
+          signal: ac.signal,
+          minQueryLengthForUsda: 2,
+        });
+        if (!ac.signal.aborted) {
+          setCreaResults(merged);
+          usdaFusionDoneForQueryRef.current = q;
+        }
+      } catch {
+        /* USDA opzionale: lista CREA già mostrata */
+      }
     } catch (err) {
       console.error('CREA search failed', err);
       setCreaResults([]);
