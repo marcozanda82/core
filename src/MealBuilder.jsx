@@ -62,6 +62,28 @@ const CONTEXT_SUGGESTION_KEYWORDS = {
   dinner: ['zucchine', 'verdure', 'insalata', 'pesce', 'salmone', 'uova', 'ricotta'],
 };
 
+const PORTION_UNIT_CUSTOM = '__custom__';
+
+/** Riga sintetica se il DB non ha ancora `row` (es. CREA). */
+function buildFoodUnitsForSelection(selectedMatch, nameFallback) {
+  if (!selectedMatch) return null;
+  const desc = String(selectedMatch.desc || nameFallback || '').trim();
+  if (!desc) return null;
+  const id = selectedMatch.id != null ? String(selectedMatch.id).trim() : '';
+  const row =
+    selectedMatch.row && typeof selectedMatch.row === 'object'
+      ? selectedMatch.row
+      : { desc };
+  return buildFoodUnits(row, id);
+}
+
+function portionSelectValueFromGrams(gramsInput, units) {
+  const g = parseFloat(String(gramsInput ?? '').replace(',', '.'));
+  if (!Number.isFinite(g) || !Array.isArray(units) || units.length === 0) return PORTION_UNIT_CUSTOM;
+  const hit = units.find((u) => Math.abs(Number(u.grams) - g) < 1e-6);
+  return hit ? String(hit.grams) : PORTION_UNIT_CUSTOM;
+}
+
 function normalizeRecentFoodEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
 
@@ -1068,11 +1090,25 @@ export default function MealBuilder({
   const { foodDb: localFoodDb } = useFoodDb();
 
   const selectedFoodUnitHint = useMemo(() => {
-    if (!selectedFoodMatch?.row || typeof selectedFoodMatch.row !== 'object') return null;
-    const id = selectedFoodMatch.id != null ? String(selectedFoodMatch.id).trim() : '';
-    const { units, defaultUnit, category } = buildFoodUnits(selectedFoodMatch.row, id);
-    if (!defaultUnit?.label) return null;
-    return { units, defaultUnit, category };
+    if (!selectedFoodMatch) return null;
+    const built = buildFoodUnitsForSelection(selectedFoodMatch, foodNameInput.trim());
+    if (!built?.units?.length || !built.defaultUnit?.label) return null;
+    return built;
+  }, [selectedFoodMatch, foodNameInput]);
+
+  /** Se l’utente non ha grammi da abitudine, usa la porzione predefinita (g). */
+  useEffect(() => {
+    if (!selectedFoodMatch) return;
+    const built = buildFoodUnitsForSelection(
+      selectedFoodMatch,
+      String(selectedFoodMatch.desc || '').trim()
+    );
+    if (!built?.defaultUnit) return;
+    setFoodWeightInput((prev) => {
+      const t = String(prev ?? '').trim();
+      if (t !== '') return prev;
+      return String(built.defaultUnit.grams);
+    });
   }, [selectedFoodMatch]);
 
   const enrichAddedFoodItem = useCallback((item, selection, weightInputValue) => {
@@ -2739,6 +2775,7 @@ export default function MealBuilder({
                         inputMode="decimal"
                         className="quick-input input-weight"
                         placeholder="g"
+                        title="Peso in grammi (usato per i nutrienti). Scegli un’unità qui sotto oppure inserisci i g a mano."
                         value={foodWeightInput}
                         onChange={(e) => setFoodWeightInput(e.target.value)}
                         onFocus={(e) => {
@@ -2767,22 +2804,79 @@ export default function MealBuilder({
                       </button>
                     </div>
                     {selectedFoodUnitHint ? (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          fontSize: '0.7rem',
-                          color: '#94a3b8',
-                          lineHeight: 1.45,
-                        }}
-                      >
-                        <span style={{ color: '#cbd5e1' }}>Categoria: </span>
-                        {selectedFoodUnitHint.category}
-                        <span style={{ color: '#64748b' }}> · </span>
-                        <span style={{ color: '#cbd5e1' }}>Unità: </span>
-                        {selectedFoodUnitHint.units.map((u) => u.label).join(' · ')}
-                        <span style={{ display: 'block', marginTop: 4, color: '#a5b4fc' }}>
-                          {`Predefinito (uso più frequente): ${selectedFoodUnitHint.defaultUnit.label}`}
-                        </span>
+                      <div style={{ marginTop: 10 }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
+                            gap: '10px 12px',
+                          }}
+                        >
+                          <label
+                            htmlFor="portion-unit-select"
+                            style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap' }}
+                          >
+                            Unità
+                          </label>
+                          <select
+                            id="portion-unit-select"
+                            value={portionSelectValueFromGrams(foodWeightInput, selectedFoodUnitHint.units)}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v === PORTION_UNIT_CUSTOM) return;
+                              setFoodWeightInput(v);
+                            }}
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              maxWidth: '100%',
+                              padding: '8px 10px',
+                              borderRadius: 10,
+                              border: '1px solid #444',
+                              background: '#1a1a22',
+                              color: '#e2e8f0',
+                              fontSize: '0.8rem',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {selectedFoodUnitHint.units.map((u) => (
+                              <option key={`${u.grams}-${u.label}`} value={String(u.grams)}>
+                                {`${u.label} → ${u.grams} g`}
+                              </option>
+                            ))}
+                            <option value={PORTION_UNIT_CUSTOM}>
+                              Altro — modifica i grammi nel campo sopra
+                            </option>
+                          </select>
+                          <span
+                            style={{
+                              fontSize: '0.78rem',
+                              color: '#a5b4fc',
+                              fontVariantNumeric: 'tabular-nums',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {(() => {
+                              const g = parseFloat(String(foodWeightInput || '').replace(',', '.'));
+                              return Number.isFinite(g) ? `= ${Math.round(g)} g (calcolo)` : '';
+                            })()}
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: '0.68rem',
+                            color: '#64748b',
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          <span style={{ color: '#94a3b8' }}>Categoria: </span>
+                          {selectedFoodUnitHint.category}
+                          <span style={{ color: '#475569' }}> · </span>
+                          <span style={{ color: '#94a3b8' }}>Suggerito: </span>
+                          {selectedFoodUnitHint.defaultUnit.label}
+                        </div>
                       </div>
                     ) : null}
                     {showFoodDropdown && (
