@@ -32,6 +32,8 @@ import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
 import AiCluster from './AiCluster';
 import MealBuilder from './MealBuilder';
+import { UserNutritionGoalsProvider } from './UserNutritionGoalsContext';
+import { mergeProfileNutritionFromServer, buildNutritionGoalsSnapshot } from './userNutritionGoals';
 import {
   getTimePositionPercent,
   getWallClockDecimalHour,
@@ -2415,12 +2417,20 @@ export default function SalaComandi() {
     height: 175,
     activityLevel: '1.55',
     goal: 'maintain',
+    nutritionGoal: 'maintain',
+    targetCalories: 2000,
+    proteinTarget: null,
     level: 'base'
   });
   const [userTargets, setUserTargets] = useState({ ...DEFAULT_TARGETS });
   const [birthDate, setBirthDate] = useState('');
   const userProfileRef = useRef(userProfile);
   userProfileRef.current = userProfile;
+
+  const nutritionGoalsValue = useMemo(
+    () => buildNutritionGoalsSnapshot(userProfile, userTargets),
+    [userProfile, userTargets]
+  );
 
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(300);
@@ -3435,11 +3445,24 @@ export default function SalaComandi() {
     get(ref(db, `users/${user.uid}/profile_targets`)).then(profileSnap => {
       if (profileSnap.exists()) {
         const data = profileSnap.val();
-        if (data?.profile) {
-          setUserProfile(prev => ({ ...prev, ...data.profile }));
-          setBirthDate(typeof data?.profile?.birthDate === 'string' ? data.profile.birthDate : '');
-        }
         if (data?.targets) setUserTargets(prev => ({ ...prev, ...data.targets }));
+        if (data?.profile) {
+          const merged = mergeProfileNutritionFromServer(data.profile);
+          setUserProfile(prev => ({ ...prev, ...merged }));
+          setBirthDate(typeof merged?.birthDate === 'string' ? merged.birthDate : '');
+          if (merged.targetCalories != null && Number.isFinite(Number(merged.targetCalories))) {
+            setUserTargets(prev => ({
+              ...prev,
+              kcal: Math.round(Number(merged.targetCalories)),
+            }));
+          }
+          if (merged.proteinTarget != null && merged.proteinTarget !== '') {
+            setUserTargets(prev => ({
+              ...prev,
+              prot: Math.round(Number(merged.proteinTarget)),
+            }));
+          }
+        }
       }
     });
 
@@ -3849,20 +3872,28 @@ export default function SalaComandi() {
   };
 
   const calculateSmartTargets = () => {
-    const { gender, age, weight, height, activityLevel, goal } = userProfile;
+    const { gender, age, weight, height, activityLevel, nutritionGoal, goal } = userProfile;
     const w = parseFloat(weight) || 75;
     const h = parseFloat(height) || 175;
     const a = parseFloat(age) || 30;
     let bmr = (10 * w) + (6.25 * h) - (5 * a);
     bmr += (gender === 'M') ? 5 : -161;
     let tdee = bmr * parseFloat(activityLevel || '1.55');
-    if (goal === 'lose') tdee -= 500;
-    if (goal === 'gain') tdee += 300;
+    const ng = nutritionGoal || (goal === 'lose' ? 'cut' : goal === 'gain' ? 'bulk' : 'maintain');
+    if (ng === 'cut') tdee -= 500;
+    if (ng === 'bulk') tdee += 300;
     const kcal = Math.round(tdee);
     const prot = Math.round(w * 2.0);
     const fat = Math.round((kcal * 0.25) / 9);
     const carb = Math.round((kcal - (prot * 4) - (fat * 9)) / 4);
     const water = Math.round(w * 35);
+    setUserProfile((prev) => ({
+      ...prev,
+      nutritionGoal: ng,
+      goal: ng === 'cut' ? 'lose' : ng === 'bulk' ? 'gain' : 'maintain',
+      targetCalories: kcal,
+      proteinTarget: prev.proteinTarget,
+    }));
     setUserTargets(prev => ({
       ...prev,
       kcal,
@@ -13406,12 +13437,66 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     <option value="1.725">Attivo (6-7 allenamenti)</option>
                   </select>
                 </label>
-                <label style={{ display: 'block' }}>Obiettivo:
-                  <select value={userProfile.goal} onChange={e => setUserProfile({ ...userProfile, goal: e.target.value })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}>
-                    <option value="lose">Dimagrimento</option>
+                <label style={{ display: 'block' }}>Obiettivo nutrizionale:
+                  <select
+                    value={userProfile.nutritionGoal || 'maintain'}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setUserProfile({
+                        ...userProfile,
+                        nutritionGoal: v,
+                        goal: v === 'cut' ? 'lose' : v === 'bulk' ? 'gain' : 'maintain',
+                      });
+                    }}
+                    style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
+                  >
+                    <option value="cut">Deficit (cut)</option>
                     <option value="maintain">Mantenimento</option>
-                    <option value="gain">Aumento Massa</option>
+                    <option value="bulk">Surplus (bulk)</option>
                   </select>
+                </label>
+                <label style={{ display: 'block', gridColumn: '1 / -1' }}>
+                  Calorie target (giornaliere)
+                  <input
+                    type="number"
+                    min={800}
+                    max={12000}
+                    inputMode="numeric"
+                    value={userProfile.targetCalories ?? userTargets.kcal ?? ''}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10);
+                      const nextCal = Number.isFinite(n) ? n : null;
+                      setUserProfile({ ...userProfile, targetCalories: nextCal });
+                      if (Number.isFinite(n)) {
+                        setUserTargets((prev) => ({ ...prev, kcal: n }));
+                      }
+                    }}
+                    style={{ width: '100%', marginTop: '4px', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
+                  />
+                </label>
+                <label style={{ display: 'block', gridColumn: '1 / -1' }}>
+                  Proteine (g) — opzionale, lascia vuoto per usare il valore dai macro
+                  <input
+                    type="number"
+                    min={30}
+                    max={400}
+                    inputMode="numeric"
+                    placeholder="Auto"
+                    value={userProfile.proteinTarget ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value.trim();
+                      if (raw === '') {
+                        setUserProfile({ ...userProfile, proteinTarget: null });
+                        return;
+                      }
+                      const n = parseInt(raw, 10);
+                      if (Number.isFinite(n)) {
+                        setUserProfile({ ...userProfile, proteinTarget: n });
+                        setUserTargets((prev) => ({ ...prev, prot: n }));
+                      }
+                    }}
+                    style={{ width: '100%', marginTop: '4px', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
+                  />
                 </label>
                 <label style={{ display: 'block' }}>Livello interfaccia:
                   <select value={userProfile.level || 'pro'} onChange={e => setUserProfile({ ...userProfile, level: e.target.value })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}>
@@ -13478,8 +13563,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 type="button"
                 onClick={() => {
                   const computedAge = calculateAge(birthDate);
-                  const profilePayload = { ...userProfile, birthDate: birthDate || '' };
+                  let profilePayload = { ...userProfile, birthDate: birthDate || '' };
                   if (computedAge != null) profilePayload.age = computedAge;
+                  if (profilePayload.targetCalories == null && userTargets.kcal != null) {
+                    profilePayload.targetCalories = Math.round(Number(userTargets.kcal));
+                  }
+                  profilePayload = mergeProfileNutritionFromServer(profilePayload);
                   setUserProfile(profilePayload);
                   saveProfileToFirebase(profilePayload, userTargets);
                 }}
@@ -15185,9 +15274,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
     !startupSafetyBypass && (!authReady || (isAuthenticated && !isDataLoaded));
 
   return (
-    <>
-      <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} />
-      {salaContent}
-    </>
+    <UserNutritionGoalsProvider value={nutritionGoalsValue}>
+      <>
+        <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} />
+        {salaContent}
+      </>
+    </UserNutritionGoalsProvider>
   );
 }
