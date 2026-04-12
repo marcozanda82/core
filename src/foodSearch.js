@@ -8,7 +8,7 @@ function normalizeSearchText(value) {
 
 const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
 const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
-const RECENT_FOOD_MEDIUM_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const RECENT_FOOD_MEDIUM_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
 function loadRecentFoodEntries() {
   if (typeof localStorage === 'undefined') return [];
@@ -40,7 +40,7 @@ function loadRecentFoodEntries() {
   }
 }
 
-function getRecencyBonus(lastUsed, now) {
+function getRecencyScore(lastUsed, now) {
   const ageMs = now - Number(lastUsed);
   if (!Number.isFinite(ageMs) || ageMs < 0) return 0;
   if (ageMs <= RECENT_FOOD_HIGH_WINDOW_MS) return 5;
@@ -48,28 +48,37 @@ function getRecencyBonus(lastUsed, now) {
   return 1;
 }
 
-function buildRecentFoodBonusMap() {
+function getFrequencyScore(count) {
+  const normalizedCount = Math.max(1, Number(count) || 1);
+  return Math.min(4, Math.floor(Math.log2(normalizedCount)) + 1);
+}
+
+function getSmartScore(entry, now) {
+  return getRecencyScore(entry?.lastUsed, now) + getFrequencyScore(entry?.count);
+}
+
+function buildRecentFoodSmartScoreMap() {
   const now = Date.now();
   const recentEntries = loadRecentFoodEntries();
-  const bonuses = new Map();
+  const smartScores = new Map();
 
   for (let i = 0; i < recentEntries.length; i += 1) {
     const entry = recentEntries[i];
-    const bonus = getRecencyBonus(entry.lastUsed, now);
-    if (bonus <= 0) continue;
+    const smartScore = getSmartScore(entry, now);
+    if (smartScore <= 0) continue;
 
     const idKey = String(entry.id || '').trim();
     const nameKey = normalizeSearchText(entry.name);
 
     if (idKey) {
-      bonuses.set(idKey, Math.max(bonus, bonuses.get(idKey) || 0));
+      smartScores.set(idKey, Math.max(smartScore, smartScores.get(idKey) || 0));
     }
     if (nameKey) {
-      bonuses.set(nameKey, Math.max(bonus, bonuses.get(nameKey) || 0));
+      smartScores.set(nameKey, Math.max(smartScore, smartScores.get(nameKey) || 0));
     }
   }
 
-  return bonuses;
+  return smartScores;
 }
 
 function levenshteinDistance(a, b) {
@@ -134,7 +143,7 @@ export function searchFoods(foodDb, query) {
 
   const results = [];
   const entries = Object.entries(foodDb);
-  const recentFoodBonuses = buildRecentFoodBonusMap();
+  const recentFoodSmartScores = buildRecentFoodSmartScoreMap();
 
   for (let i = 0; i < entries.length; i += 1) {
     const [id, food] = entries[i];
@@ -154,13 +163,13 @@ export function searchFoods(foodDb, query) {
 
     if (score === 0) continue;
 
-    const recencyBonus = Math.max(
-      recentFoodBonuses.get(String(id).trim()) || 0,
-      recentFoodBonuses.get(normalizedName) || 0
+    const smartScore = Math.max(
+      recentFoodSmartScores.get(String(id).trim()) || 0,
+      recentFoodSmartScores.get(normalizedName) || 0
     );
-    const finalScore = score + recencyBonus;
+    const finalScore = score + smartScore;
 
-    results.push({ id, name, score, finalScore });
+    results.push({ id, name, score, smartScore, finalScore });
   }
 
   results.sort((a, b) => {
