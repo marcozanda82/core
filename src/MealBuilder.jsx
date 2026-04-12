@@ -1086,6 +1086,8 @@ export default function MealBuilder({
   onSmartComplete,
   /** Incrementato da timeline: avvia una volta «Genera pasto» (smart) con lista vuota. */
   smartMealLaunchKey = 0,
+  /** Coach giornata: apre pasto realistico 1 tap (generatePracticalMeal). */
+  coachPracticalLaunchKey = 0,
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
 
@@ -1135,6 +1137,7 @@ export default function MealBuilder({
   const [practicalMealDraft, setPracticalMealDraft] = useState(null);
   const [practicalMealError, setPracticalMealError] = useState('');
   const practicalVarietyRef = useRef(0);
+  const lastCoachPracticalKeyRef = useRef(0);
 
   const mealBuilderScrollAnchorRef = useRef(null);
   const foodDropdownContainerRef = useRef(null);
@@ -2107,6 +2110,14 @@ export default function MealBuilder({
     trackMealFoodPatterns,
     trackRecentFood,
   ]);
+
+  useEffect(() => {
+    if (!coachPracticalLaunchKey || coachPracticalLaunchKey === lastCoachPracticalKeyRef.current) return;
+    lastCoachPracticalKeyRef.current = coachPracticalLaunchKey;
+    if (addedFoods.length === 0) {
+      runPracticalMealGenerate([]);
+    }
+  }, [coachPracticalLaunchKey, addedFoods.length, runPracticalMealGenerate]);
 
   useEffect(() => {
     if (addedFoods.length > 0) {

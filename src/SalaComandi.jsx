@@ -75,6 +75,12 @@ import WeeklyPlanning from './components/WeeklyPlanning';
 import MetabolicCompass from './MetabolicCompass';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import {
+  evaluateAiDayCoach,
+  consumeCoachPeriod,
+  recordCoachIgnore,
+  recordCoachAccept,
+} from './aiDayCoach';
+import {
   useSmartKentuTriggers,
   checkMorningBriefing,
   checkEveningBriefing,
@@ -2242,6 +2248,8 @@ export default function SalaComandi() {
   const [mealType, setMealType] = useState('cena');
   const [mealPlannerGhostNote, setMealPlannerGhostNote] = useState('');
   const [mealBuilderSmartLaunchKey, setMealBuilderSmartLaunchKey] = useState(0);
+  const [mealBuilderCoachPracticalKey, setMealBuilderCoachPracticalKey] = useState(0);
+  const [coachPrefsTick, setCoachPrefsTick] = useState(0);
   const [drawerMealTime, setDrawerMealTime] = useState(12);
   const [drawerMealTimeStr, setDrawerMealTimeStr] = useState('12:00');
   const [foodNameInput, setFoodNameInput] = useState('');
@@ -9161,6 +9169,62 @@ ${dbKeys || 'n/d'}`;
   const targetMacros = { prot: userTargets?.prot ?? 150, carb: userTargets?.carb ?? 200, fat: userTargets?.fatTotal ?? userTargets?.fat ?? 65 };
   const totalMacrosTimeline = { prot: totali?.prot ?? 0, carb: totali?.carb ?? 0, fat: totali?.fatTotal ?? totali?.fat ?? 0 };
 
+  const aiCoachEval = useMemo(() => {
+    if (!activeLog || currentTrackerDate !== getTodayString() || isSimulationMode) {
+      return { suggestion: null, state: null, period: null };
+    }
+    const tCal = Math.round(Number(dynamicDailyKcal) || Number(targetKcalForAlerts) || 0);
+    return evaluateAiDayCoach({
+      todayLog: activeLog,
+      userHistory: [],
+      targetCalories: tCal,
+      decimalHour: getWallClockDecimalHour(),
+      todayStr: getTodayString(),
+      toCanonicalMealType,
+    });
+  }, [
+    activeLog,
+    coachPrefsTick,
+    currentTrackerDate,
+    dynamicDailyKcal,
+    isSimulationMode,
+    targetKcalForAlerts,
+    toCanonicalMealType,
+  ]);
+
+  const handleAiCoachIgnore = useCallback(() => {
+    const s = aiCoachEval?.suggestion;
+    const period = aiCoachEval?.period;
+    if (!s?.ruleId || !period) return;
+    recordCoachIgnore(s.ruleId);
+    consumeCoachPeriod(getTodayString(), period);
+    setCoachPrefsTick((x) => x + 1);
+  }, [aiCoachEval]);
+
+  const handleAiCoachCreateMeal = useCallback(() => {
+    const s = aiCoachEval?.suggestion;
+    const period = aiCoachEval?.period;
+    if (!s?.action?.mealType || !period) return;
+    recordCoachAccept(s.ruleId);
+    consumeCoachPeriod(getTodayString(), period);
+    setCoachPrefsTick((x) => x + 1);
+    const canon = s.action.mealType;
+    const mealId = mealIdFromCanonical(canon);
+    setMealType(mealId);
+    const t = getDefaultMealTime(mealId);
+    setDrawerMealTime(t);
+    setDrawerMealTimeStr(decimalToTimeStr(t));
+    setAddedFoods([]);
+    setSelectedMealCenter(null);
+    setEditingMealId(null);
+    setFoodNameInput('');
+    setFoodWeightInput('');
+    setActiveAction('pasto');
+    setIsDrawerOpen(true);
+    setIsMealBuilderOpen(true);
+    setMealBuilderCoachPracticalKey((k) => k + 1);
+  }, [aiCoachEval, decimalToTimeStr, getDefaultMealTime, mealIdFromCanonical]);
+
   useEffect(() => {
     if (kentuActiveTrigger !== 'agenda') kentuAgendaAwaitingRef.current = false;
   }, [kentuActiveTrigger]);
@@ -10762,6 +10826,76 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         </span>
       </div>
       )}
+
+      {activeBottomTab === 'oggi'
+        && currentTrackerDate === getTodayString()
+        && !isSimulationMode
+        && !isMealBuilderOpen
+        && (!isDrawerOpen || activeAction === 'home' || activeAction == null)
+        && aiCoachEval?.suggestion ? (
+          <div
+            style={{
+              marginBottom: 12,
+              marginLeft: 12,
+              marginRight: 12,
+              padding: '12px 14px',
+              borderRadius: 14,
+              border: '1px solid rgba(250, 204, 21, 0.35)',
+              background: 'rgba(250, 204, 21, 0.08)',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '0.65rem',
+                color: '#fde68a',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                marginBottom: 8,
+                fontWeight: 700,
+              }}
+            >
+              💡 Suggerimento
+            </div>
+            <p style={{ margin: '0 0 12px', fontSize: '0.88rem', color: '#fef9c3', lineHeight: 1.45 }}>
+              {aiCoachEval.suggestion.message}
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              {aiCoachEval.suggestion.action ? (
+                <button
+                  type="button"
+                  onClick={handleAiCoachCreateMeal}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: '#facc15',
+                    color: '#422006',
+                    fontWeight: 800,
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {aiCoachEval.suggestion.action.label || '✨ Crea pasto'}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={handleAiCoachIgnore}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'transparent',
+                  color: '#94a3b8',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ✖ Ignora
+              </button>
+            </div>
+          </div>
+        ) : null}
 
       {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
         <div style={{ fontSize: '13px', opacity: 0.7, color: '#94a3b8', marginBottom: '6px' }}>
@@ -12526,6 +12660,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             plannerNoteFromAi={mealPlannerGhostNote}
             onSmartComplete={handleSmartMealCompletion}
             smartMealLaunchKey={mealBuilderSmartLaunchKey}
+            coachPracticalLaunchKey={mealBuilderCoachPracticalKey}
           />
         )}
 
