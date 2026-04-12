@@ -5137,8 +5137,8 @@ export default function SalaComandi() {
           foodItem[k] = macroKeys.includes(k) ? (getAverageEstimate(k, nome) / 100) * qta || getDefaultNutrientValue(k, fullHistory) : getDefaultNutrientValue(k, fullHistory);
       }));
     }
-    const { units, defaultUnit } = buildFoodUnits({ desc: nome }, '');
-    return { ...foodItem, units, defaultUnit };
+    const { units, defaultUnit, category } = buildFoodUnits({ desc: nome }, '');
+    return { ...foodItem, units, defaultUnit, category };
   }, [foodDb, getAverageEstimate, fullHistory]);
 
   /**
@@ -6170,6 +6170,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       });
       newItem.units = entrySaved.units;
       newItem.defaultUnit = entrySaved.defaultUnit;
+      newItem.category = entrySaved.category;
       newItem.foodDbKey = newKey;
       Object.keys(TARGETS).forEach((g) => Object.keys(TARGETS[g]).forEach((k) => {
         if (newItem[k] == null || newItem[k] === 0) newItem[k] = (getAverageEstimate(k, desc) / 100) * weight;

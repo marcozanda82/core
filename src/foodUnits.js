@@ -1,8 +1,22 @@
 /**
- * Porzioni per alimento: unità comuni (g) + default da uso ripetuto (localStorage).
+ * Porzioni per alimento: categoria da nome, unità (g), default da uso (localStorage).
  */
 
 export const FOOD_UNIT_USAGE_STORAGE_KEY = 'food_unit_usage_v1';
+
+/** Categoria alimento (da nome + regole unità). */
+export const FOOD_CATEGORIES = {
+  BREAD: 'bread',
+  PASTA: 'pasta',
+  RICE: 'rice',
+  OIL: 'oil',
+  DAIRY: 'dairy',
+  CANNED: 'canned',
+  FRUIT: 'fruit',
+  GENERIC: 'generic',
+};
+
+const KNOWN_CATEGORIES = new Set(Object.values(FOOD_CATEGORIES));
 
 const FRUIT_UNIT_GRAMS = [
   [/banana/i, 120],
@@ -112,20 +126,41 @@ export function estimateFruitUnitGrams(desc) {
   return 120;
 }
 
-/** Profilo semantico da nome (IT) per regole porzione. */
-export function detectFoodSemanticKind(desc) {
+/**
+ * Categoria da nome (substring / pattern, ordine = priorità).
+ * Esempi: "pane" → bread, "pasta" → pasta, "riso" → rice, "olio" → oil, "yogurt" → dairy, "tonno" → canned.
+ */
+export function inferFoodCategoryFromName(desc) {
   const s = String(desc || '').toLowerCase();
-  if (/\b(yogurt|yoghurt)\b/i.test(s)) return 'yogurt';
-  if (/\bolio\b|\boil\b/i.test(s) || /^olio\b/i.test(s)) return 'oil';
-  if (/\btonno\b|tonno\s|skipjack/i.test(s)) return 'tuna';
-  if (/pasta|spaghetti|penne|fusilli|rigatoni|tagliatelle|orecchiette|lasagne|gnocch|\briso\b|risotto|cous|orzo\b|farro\b|fregola/i.test(s)) {
-    return 'pasta_rice';
-  }
-  if (/pane|fette biscottate|focaccia|brioche|toast|pagnotta|bagel|grissin|focacc/i.test(s)) return 'bread';
+
+  if (s.includes('olio')) return FOOD_CATEGORIES.OIL;
+  if (s.includes('tonno') || s.includes('sgombro') || /\bsardine\b/.test(s)) return FOOD_CATEGORIES.CANNED;
+  if (s.includes('yogurt') || s.includes('yoghurt') || s.includes('kefir')) return FOOD_CATEGORIES.DAIRY;
+  if (s.includes('pasta')) return FOOD_CATEGORIES.PASTA;
+  if (s.includes('riso')) return FOOD_CATEGORIES.RICE;
+  if (s.includes('pane')) return FOOD_CATEGORIES.BREAD;
+
   if (/mela|banana|aranci|fragol|kiwi|pesca|pera|uva|melone|anguria|ciliegi|albicocca|prugna|limone|mango|ananas|frutta|pompelm|mandarin/i.test(s)) {
-    return 'fruit';
+    return FOOD_CATEGORIES.FRUIT;
   }
-  return 'generic';
+
+  if (/spaghetti|penne|fusilli|rigatoni|tagliatelle|orecchiette|lasagne|gnocch|fettuccine|bucatini|farfalle|tortiglioni|maccheroni|mezze maniche/i.test(s)) {
+    return FOOD_CATEGORIES.PASTA;
+  }
+  if (/risotto|arborio|basmati|jasmine|venere|couscous|\borzo\b|\bfarro\b|fregola/i.test(s)) {
+    return FOOD_CATEGORIES.RICE;
+  }
+  if (/fette biscottate|focaccia|brioche|toast|pagnotta|bagel|grissin|focacc/i.test(s)) {
+    return FOOD_CATEGORIES.BREAD;
+  }
+
+  return FOOD_CATEGORIES.GENERIC;
+}
+
+function resolveCategory(row, desc) {
+  const raw = row?.category != null ? String(row.category).trim().toLowerCase() : '';
+  if (KNOWN_CATEGORIES.has(raw)) return raw;
+  return inferFoodCategoryFromName(desc);
 }
 
 function unit(label, grams) {
@@ -134,36 +169,31 @@ function unit(label, grams) {
   return { label: String(label), grams: g };
 }
 
-/**
- * @param {object} row — riga DB per 100g (desc, kcal, …)
- * @param {string} [foodDbKey] — per statistiche uso locale
- * @returns {{ units: Array<{ label: string, grams: number }>, defaultUnit: { label: string, grams: number } }}
- */
-export function buildFoodUnits(row, foodDbKey = '') {
-  const desc = String(row?.desc ?? row?.name ?? '').trim();
-  const kind = detectFoodSemanticKind(desc);
+function unitsForCategory(category, desc) {
   const list = [];
-
   const u100 = unit('100 g', 100);
   if (u100) list.push(u100);
 
-  switch (kind) {
-    case 'bread':
+  switch (category) {
+    case FOOD_CATEGORIES.BREAD:
       list.push(unit('1 fetta (~25 g)', 25));
       break;
-    case 'pasta_rice':
+    case FOOD_CATEGORIES.PASTA:
       list.push(unit('1 porzione (~70 g)', 70));
       break;
-    case 'oil':
+    case FOOD_CATEGORIES.RICE:
+      list.push(unit('1 porzione di riso (~70 g)', 70));
+      break;
+    case FOOD_CATEGORIES.OIL:
       list.push(unit('1 cucchiaio (~10 g)', 10));
       break;
-    case 'yogurt':
+    case FOOD_CATEGORIES.DAIRY:
       list.push(unit('1 vasetto (~125 g)', 125));
       break;
-    case 'tuna':
+    case FOOD_CATEGORIES.CANNED:
       list.push(unit('1 scatoletta (~56 g)', 56));
       break;
-    case 'fruit': {
+    case FOOD_CATEGORIES.FRUIT: {
       const fg = estimateFruitUnitGrams(desc);
       list.push(unit(`1 unità (~${fg} g)`, fg));
       break;
@@ -177,13 +207,24 @@ export function buildFoodUnits(row, foodDbKey = '') {
     if (!u) return;
     if (!byGrams.has(u.grams)) byGrams.set(u.grams, u);
   });
-  const units = [...byGrams.values()].sort((a, b) => a.grams - b.grams);
+  return [...byGrams.values()].sort((a, b) => a.grams - b.grams);
+}
+
+/**
+ * @param {object} row — riga DB per 100g (desc, kcal, …)
+ * @param {string} [foodDbKey] — per statistiche uso locale
+ * @returns {{ units: Array<{ label: string, grams: number }>, defaultUnit: { label: string, grams: number }, category: string }}
+ */
+export function buildFoodUnits(row, foodDbKey = '') {
+  const desc = String(row?.desc ?? row?.name ?? '').trim();
+  const category = resolveCategory(row, desc);
+  const list = unitsForCategory(category, desc);
 
   const usage = foodDbKey ? getUsageCountsForFood(foodDbKey) : {};
-  let defaultUnit = pickDefaultFromUsage(units, usage) || pickHeuristicDefault(units, kind);
-  if (!defaultUnit) defaultUnit = units.find((u) => u.grams === 100) || units[0];
+  let defaultUnit = pickDefaultFromUsage(list, usage) || pickHeuristicDefault(list, category);
+  if (!defaultUnit) defaultUnit = list.find((u) => u.grams === 100) || list[0];
 
-  return { units, defaultUnit };
+  return { units: list, defaultUnit, category };
 }
 
 function pickDefaultFromUsage(units, usage) {
@@ -213,20 +254,21 @@ function pickDefaultFromUsage(units, usage) {
   return best ? { ...best } : null;
 }
 
-function pickHeuristicDefault(units, kind) {
+function pickHeuristicDefault(units, category) {
   const pick = (g) => units.find((u) => u.grams === g);
-  switch (kind) {
-    case 'yogurt':
+  switch (category) {
+    case FOOD_CATEGORIES.DAIRY:
       return pick(125) || pick(100);
-    case 'oil':
+    case FOOD_CATEGORIES.OIL:
       return pick(10) || pick(100);
-    case 'tuna':
+    case FOOD_CATEGORIES.CANNED:
       return pick(56) || pick(100);
-    case 'bread':
+    case FOOD_CATEGORIES.BREAD:
       return pick(25) || pick(100);
-    case 'pasta_rice':
+    case FOOD_CATEGORIES.PASTA:
+    case FOOD_CATEGORIES.RICE:
       return pick(70) || pick(100);
-    case 'fruit':
+    case FOOD_CATEGORIES.FRUIT:
       return units.find((u) => /1 unità/i.test(u.label)) || pick(100);
     default:
       return pick(100) || units[0];
@@ -234,23 +276,23 @@ function pickHeuristicDefault(units, kind) {
 }
 
 /**
- * Aggiunge `units` e `defaultUnit` a una riga DB (per 100g) prima del salvataggio Firebase.
+ * Aggiunge `category`, `units` e `defaultUnit` a una riga DB (per 100g) prima del salvataggio Firebase.
  */
 export function enrichDbRowWithFoodUnits(row, foodDbKey) {
   if (!row || typeof row !== 'object') return row;
   if (row.isRecipe === true || row.type === 'recipe') return row;
-  const { units, defaultUnit } = buildFoodUnits(row, foodDbKey);
-  return { ...row, units, defaultUnit };
+  const { units, defaultUnit, category } = buildFoodUnits(row, foodDbKey);
+  return { ...row, category, units, defaultUnit };
 }
 
 /**
- * Arricchisce voce in coda (porzione) con unità da riga DB.
+ * Arricchisce voce in coda (porzione) con categoria + unità da riga DB.
  */
 export function enrichPortionItemWithDbUnits(foodItem, dbRowPer100, foodDbKey) {
   if (!foodItem || typeof foodItem !== 'object') return foodItem;
   if (!dbRowPer100 || typeof dbRowPer100 !== 'object') return foodItem;
   if (dbRowPer100.isRecipe === true || dbRowPer100.type === 'recipe') return foodItem;
   const key = String(foodDbKey || '').trim();
-  const { units, defaultUnit } = buildFoodUnits(dbRowPer100, key);
-  return { ...foodItem, units, defaultUnit, foodDbKey: foodItem.foodDbKey || key };
+  const { units, defaultUnit, category } = buildFoodUnits(dbRowPer100, key);
+  return { ...foodItem, category, units, defaultUnit, foodDbKey: foodItem.foodDbKey || key };
 }

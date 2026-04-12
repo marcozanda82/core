@@ -1070,9 +1070,9 @@ export default function MealBuilder({
   const selectedFoodUnitHint = useMemo(() => {
     if (!selectedFoodMatch?.row || typeof selectedFoodMatch.row !== 'object') return null;
     const id = selectedFoodMatch.id != null ? String(selectedFoodMatch.id).trim() : '';
-    const { units, defaultUnit } = buildFoodUnits(selectedFoodMatch.row, id);
+    const { units, defaultUnit, category } = buildFoodUnits(selectedFoodMatch.row, id);
     if (!defaultUnit?.label) return null;
-    return { units, defaultUnit };
+    return { units, defaultUnit, category };
   }, [selectedFoodMatch]);
 
   const enrichAddedFoodItem = useCallback((item, selection, weightInputValue) => {
@@ -2775,6 +2775,9 @@ export default function MealBuilder({
                           lineHeight: 1.45,
                         }}
                       >
+                        <span style={{ color: '#cbd5e1' }}>Categoria: </span>
+                        {selectedFoodUnitHint.category}
+                        <span style={{ color: '#64748b' }}> · </span>
                         <span style={{ color: '#cbd5e1' }}>Unità: </span>
                         {selectedFoodUnitHint.units.map((u) => u.label).join(' · ')}
                         <span style={{ display: 'block', marginTop: 4, color: '#a5b4fc' }}>
