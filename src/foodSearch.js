@@ -6,6 +6,66 @@ function normalizeSearchText(value) {
     .trim();
 }
 
+const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
+const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
+const RECENT_FOOD_MEDIUM_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+function loadRecentFoodEntries() {
+  if (typeof localStorage === 'undefined') return [];
+
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENT_FOODS_STORAGE_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null;
+
+        const name = String(entry.name || '').trim();
+        const id = String(entry.id ?? name).trim();
+        const timestamp = Number(entry.timestamp);
+
+        if (!id || !name || !Number.isFinite(timestamp)) return null;
+        return { id, name, timestamp };
+      })
+      .filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
+function getRecencyBonus(timestamp, now) {
+  const ageMs = now - Number(timestamp);
+  if (!Number.isFinite(ageMs) || ageMs < 0) return 0;
+  if (ageMs <= RECENT_FOOD_HIGH_WINDOW_MS) return 5;
+  if (ageMs <= RECENT_FOOD_MEDIUM_WINDOW_MS) return 3;
+  return 1;
+}
+
+function buildRecentFoodBonusMap() {
+  const now = Date.now();
+  const recentEntries = loadRecentFoodEntries();
+  const bonuses = new Map();
+
+  for (let i = 0; i < recentEntries.length; i += 1) {
+    const entry = recentEntries[i];
+    const bonus = getRecencyBonus(entry.timestamp, now);
+    if (bonus <= 0) continue;
+
+    const idKey = String(entry.id || '').trim();
+    const nameKey = normalizeSearchText(entry.name);
+
+    if (idKey) {
+      bonuses.set(idKey, Math.max(bonus, bonuses.get(idKey) || 0));
+    }
+    if (nameKey) {
+      bonuses.set(nameKey, Math.max(bonus, bonuses.get(nameKey) || 0));
+    }
+  }
+
+  return bonuses;
+}
+
 function levenshteinDistance(a, b) {
   if (a === b) return 0;
   if (!a.length) return b.length;
@@ -68,6 +128,7 @@ export function searchFoods(foodDb, query) {
 
   const results = [];
   const entries = Object.entries(foodDb);
+  const recentFoodBonuses = buildRecentFoodBonusMap();
 
   for (let i = 0; i < entries.length; i += 1) {
     const [id, food] = entries[i];
@@ -86,10 +147,20 @@ export function searchFoods(foodDb, query) {
     }
 
     if (score === 0) continue;
-    results.push({ id, name, score });
+
+    const recencyBonus = Math.max(
+      recentFoodBonuses.get(String(id).trim()) || 0,
+      recentFoodBonuses.get(normalizedName) || 0
+    );
+    const finalScore = score + recencyBonus;
+
+    results.push({ id, name, score, finalScore });
   }
 
-  results.sort((a, b) => b.score - a.score);
+  results.sort((a, b) => {
+    if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore;
+    return b.score - a.score;
+  });
 
   return results.slice(0, 50).map(({ id, name }) => ({ id, name }));
 }
