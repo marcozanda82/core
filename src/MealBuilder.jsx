@@ -24,6 +24,10 @@ const MEAL_FOOD_PATTERNS_STORAGE_KEY = 'meal_food_patterns';
 const MAX_RECENT_FOODS = 30;
 const PERSONAL_RESULTS_THRESHOLD = 3;
 const SMART_SUGGESTIONS_LIMIT = 5;
+const AUTO_MEAL_MIN_ITEMS = 2;
+const AUTO_MEAL_MAX_ITEMS = 4;
+/** Min co-occurrence count between top-1 and top-2 foods to treat both as "main" anchors. */
+const AUTO_MEAL_STRONG_PAIR_THRESHOLD = 2;
 const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const RECENT_FOOD_MEDIUM_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 const FOOD_PAIR_SUGGESTIONS = {
@@ -80,6 +84,150 @@ function buildMealPatternKey(mealType, firstId, secondId) {
   const b = String(secondId || '').trim();
   if (!mealType || !a || !b || a === b) return '';
   return [mealType, a, b].join('::');
+}
+
+const MEAL_CONTEXT_TO_TRACKED = {
+  morning: 'colazione',
+  lunch: 'pranzo',
+  dinner: 'cena',
+};
+
+function sortMealEntriesByUsageAndRecency(entries) {
+  return [...entries].sort((a, b) => {
+    const ca = Number(a.usageCount ?? a.count) || 1;
+    const cb = Number(b.usageCount ?? b.count) || 1;
+    if (cb !== ca) return cb - ca;
+    const la = Number(a.lastUsedAt ?? a.lastUsed) || 0;
+    const lb = Number(b.lastUsedAt ?? b.lastUsed) || 0;
+    return lb - la;
+  });
+}
+
+function getPairCooccurrenceCount(mealType, idA, idB, patterns) {
+  const a = String(idA || '').trim();
+  const b = String(idB || '').trim();
+  if (!mealType || !a || !b || a === b) return 0;
+  let sum = 0;
+  patterns.forEach((p) => {
+    if (p.mealType !== mealType) return;
+    const f = String(p.firstFood?.id ?? '').trim();
+    const s = String(p.secondFood?.id ?? '').trim();
+    if ((f === a && s === b) || (f === b && s === a)) sum += Number(p.count) || 0;
+  });
+  return sum;
+}
+
+function collectMealComplementsForAnchors(anchorIdSet, mealType, patterns) {
+  const agg = new Map();
+
+  const merge = (companion, c, lu) => {
+    if (!companion || typeof companion !== 'object') return;
+    const cid = String(companion.id ?? '').trim();
+    if (!cid) return;
+    const prev = agg.get(cid);
+    if (!prev) {
+      agg.set(cid, {
+        id: companion.id,
+        name: String(companion.name ?? '').trim(),
+        count: c,
+        lastUsedAt: lu,
+      });
+      return;
+    }
+    prev.count += c;
+    prev.lastUsedAt = Math.max(prev.lastUsedAt, lu);
+  };
+
+  patterns.forEach((p) => {
+    if (p.mealType !== mealType) return;
+    const firstId = String(p.firstFood?.id ?? '').trim();
+    const secondId = String(p.secondFood?.id ?? '').trim();
+    const c = Number(p.count) || 0;
+    const lu = Number(p.lastUsedAt) || 0;
+
+    if (anchorIdSet.has(firstId) && !anchorIdSet.has(secondId) && secondId) {
+      merge(p.secondFood, c, lu);
+    }
+    if (anchorIdSet.has(secondId) && !anchorIdSet.has(firstId) && firstId) {
+      merge(p.firstFood, c, lu);
+    }
+  });
+
+  return [...agg.values()]
+    .filter((item) => item.name)
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.lastUsedAt - a.lastUsedAt;
+    });
+}
+
+/**
+ * Builds 2–4 foods: 1–2 "main" items from habit ranking, then co-occurring companions.
+ */
+function buildAutomaticSuggestedMeal({
+  effectiveMealType,
+  recentFoodEntries,
+  mealFoodPatterns,
+}) {
+  if (!effectiveMealType || !Array.isArray(recentFoodEntries) || recentFoodEntries.length === 0) {
+    return [];
+  }
+
+  const mealScoped = recentFoodEntries.filter((e) => e.mealType === effectiveMealType);
+  const mealPool = sortMealEntriesByUsageAndRecency(mealScoped);
+  const seen = new Set(mealPool.map((e) => String(e.id ?? '').trim()));
+  const globalSorted = sortMealEntriesByUsageAndRecency(recentFoodEntries);
+  globalSorted.forEach((e) => {
+    const id = String(e.id ?? '').trim();
+    if (!id || seen.has(id) || mealPool.length >= 16) return;
+    seen.add(id);
+    mealPool.push(e);
+  });
+
+  const pool = sortMealEntriesByUsageAndRecency(mealPool);
+  if (pool.length === 0) return [];
+
+  const toRef = (entry) => ({
+    id: entry.id,
+    name: String(entry.name ?? '').trim(),
+  });
+
+  const id0 = String(pool[0].id ?? '').trim();
+  const id1 = pool[1] ? String(pool[1].id ?? '').trim() : '';
+  const strongPair = Boolean(
+    id1
+      && getPairCooccurrenceCount(effectiveMealType, id0, id1, mealFoodPatterns) >= AUTO_MEAL_STRONG_PAIR_THRESHOLD
+  );
+
+  let mains = strongPair && pool[1] ? [pool[0], pool[1]] : [pool[0]];
+  let anchors = new Set(mains.map((m) => String(m.id ?? '').trim()).filter(Boolean));
+  let comps = collectMealComplementsForAnchors(anchors, effectiveMealType, mealFoodPatterns);
+
+  if (comps.length === 0 && mains.length === 1 && pool[1]) {
+    mains = [pool[0], pool[1]];
+    anchors = new Set([String(pool[0].id ?? '').trim(), String(pool[1].id ?? '').trim()].filter(Boolean));
+    comps = collectMealComplementsForAnchors(anchors, effectiveMealType, mealFoodPatterns);
+  }
+
+  const result = [];
+  const add = (ref) => {
+    if (result.length >= AUTO_MEAL_MAX_ITEMS) return;
+    const rid = String(ref.id ?? '').trim();
+    if (!rid || !ref.name) return;
+    if (result.some((r) => String(r.id) === rid)) return;
+    result.push({ id: ref.id, name: ref.name });
+  };
+
+  mains.forEach((m) => add(toRef(m)));
+  comps.forEach((c) => add({ id: c.id, name: c.name }));
+
+  let pi = 0;
+  while (result.length < AUTO_MEAL_MIN_ITEMS && pi < pool.length) {
+    add(toRef(pool[pi]));
+    pi += 1;
+  }
+
+  return result.slice(0, AUTO_MEAL_MAX_ITEMS);
 }
 
 function loadMealFoodPatterns() {
@@ -743,6 +891,10 @@ export default function MealBuilder({
     () => getMealSuggestionLabel(mealType, drawerMealTime),
     [drawerMealTime, mealType]
   );
+  const effectiveMealTypeForHabits = useMemo(() => {
+    if (normalizedTrackedMealType) return normalizedTrackedMealType;
+    return MEAL_CONTEXT_TO_TRACKED[getMealContextKey(mealType, drawerMealTime)] || '';
+  }, [drawerMealTime, mealType, normalizedTrackedMealType]);
   const normalizedFoodSearchQuery = useMemo(
     () => normalizeSearchQuery(foodNameInput),
     [foodNameInput]
@@ -922,6 +1074,14 @@ export default function MealBuilder({
     visibleFrequentFoodEntries,
     visibleRecentFoodEntries,
   ]);
+  const suggestedMeal = useMemo(
+    () => buildAutomaticSuggestedMeal({
+      effectiveMealType: effectiveMealTypeForHabits,
+      recentFoodEntries,
+      mealFoodPatterns,
+    }),
+    [effectiveMealTypeForHabits, mealFoodPatterns, recentFoodEntries]
+  );
   const personalResultsCount = useMemo(
     () => (foodDropdownSuggestions || []).length,
     [foodDropdownSuggestions]
@@ -1127,6 +1287,50 @@ export default function MealBuilder({
     setShowFoodDropdown(false);
     setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
   }, [foodDb, getLastQuantityForFood, localFoodDb, setFoodNameInput, setFoodWeightInput, setShowFoodDropdown, trackRecentFood]);
+
+  const handleApplySuggestedMeal = useCallback(() => {
+    if (!suggestedMeal.length || typeof estraiDatiFoodDb !== 'function' || typeof setAddedFoods !== 'function') {
+      return;
+    }
+    const newItems = [];
+    let acc = [];
+    const ts = Date.now();
+    suggestedMeal.forEach((entry, idx) => {
+      const name = String(entry.name || '').trim();
+      const id = String(entry.id ?? name).trim();
+      if (!name) return;
+      const matchedRow = foodDb?.[id] || localFoodDb?.[id] || null;
+      const parsedWeight = parseFloat(getLastQuantityForFood(name)) || 100;
+      const preferredDbKey = foodDb?.[id] != null ? id : undefined;
+      const baseItem = estraiDatiFoodDb(name, parsedWeight, mealType, preferredDbKey);
+      const enrichedItem = enrichAddedFoodItem(
+        baseItem,
+        { id, desc: name, row: matchedRow },
+        parsedWeight
+      );
+      trackMealFoodPatterns({ id, name, mealType }, acc);
+      trackRecentFood({ id, name });
+      acc.push({ id, name });
+      newItems.push({
+        ...enrichedItem,
+        id: `auto_${ts}_${idx}_${String(id).slice(0, 48)}`,
+        mealType,
+      });
+    });
+    if (newItems.length === 0) return;
+    setAddedFoods((prev) => [...newItems, ...prev]);
+  }, [
+    enrichAddedFoodItem,
+    estraiDatiFoodDb,
+    foodDb,
+    getLastQuantityForFood,
+    localFoodDb,
+    mealType,
+    setAddedFoods,
+    suggestedMeal,
+    trackMealFoodPatterns,
+    trackRecentFood,
+  ]);
 
   useEffect(() => {
     if (typeof registerAddFoodCallback !== 'function') return;
