@@ -665,6 +665,35 @@ export default function MealBuilder({
       })
       .slice(0, 5);
   }, [foodNameInput, recentFoodEntries]);
+  const visibleFrequentFoodEntries = useMemo(() => {
+    const normalizedQuery = normalizeSearchQuery(foodNameInput);
+    const recentIds = new Set(
+      visibleRecentFoodEntries.map((entry) => String(entry?.id ?? '').trim()).filter(Boolean)
+    );
+
+    const filteredEntries = recentFoodEntries.filter((entry) => {
+      const entryId = String(entry?.id ?? '').trim();
+      if (recentIds.has(entryId)) return false;
+
+      if (!normalizedQuery) return true;
+
+      const normalizedName = normalizeSearchQuery(entry?.name);
+      if (!normalizedName) return false;
+
+      const queryWords = normalizedQuery.split(' ').filter(Boolean);
+      return queryWords.every((word) => normalizedName.includes(word));
+    });
+
+    return [...filteredEntries]
+      .sort((a, b) => {
+        const frequencyScoreA = getRecentFoodFrequencyScore(a?.count);
+        const frequencyScoreB = getRecentFoodFrequencyScore(b?.count);
+        if (frequencyScoreB !== frequencyScoreA) return frequencyScoreB - frequencyScoreA;
+        if ((Number(b?.count) || 0) !== (Number(a?.count) || 0)) return (Number(b?.count) || 0) - (Number(a?.count) || 0);
+        return (Number(b?.lastUsed) || 0) - (Number(a?.lastUsed) || 0);
+      })
+      .slice(0, 5);
+  }, [foodNameInput, recentFoodEntries, visibleRecentFoodEntries]);
   const isRecentFood = useCallback((foodId, foodName) => {
     const id = String(foodId ?? '').trim();
     const name = normalizeSearchQuery(foodName);
@@ -1633,6 +1662,7 @@ export default function MealBuilder({
                       foodNameInput.trim()
                       || (foodDropdownSuggestions && foodDropdownSuggestions.length > 0)
                       || visibleRecentFoodEntries.length > 0
+                      || visibleFrequentFoodEntries.length > 0
                     ) && (
                       <div
                         style={{
@@ -1667,6 +1697,43 @@ export default function MealBuilder({
                             {visibleRecentFoodEntries.map((entry) => (
                               <button
                                 key={`recent-${entry.id}-${entry.lastUsed}`}
+                                type="button"
+                                style={{
+                                  width: '100%',
+                                  padding: '12px 16px',
+                                  textAlign: 'left',
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#fff',
+                                  cursor: 'pointer',
+                                  fontSize: '0.9rem',
+                                  borderBottom: '1px solid #2a2a2a',
+                                }}
+                                onClick={() => handleSelectRecentFood(entry)}
+                              >
+                                {renderFoodOptionLabel(entry.name, foodNameInput, entry.id)}
+                              </button>
+                            ))}
+                          </>
+                        ) : null}
+                        {visibleFrequentFoodEntries.length > 0 ? (
+                          <>
+                            <div
+                              style={{
+                                padding: '10px 16px 8px',
+                                color: '#94a3b8',
+                                fontSize: '0.68rem',
+                                fontWeight: '600',
+                                letterSpacing: '0.08em',
+                                textTransform: 'uppercase',
+                                borderBottom: '1px solid #2a2a2a',
+                              }}
+                            >
+                              Usati spesso
+                            </div>
+                            {visibleFrequentFoodEntries.map((entry) => (
+                              <button
+                                key={`frequent-${entry.id}-${entry.count}-${entry.lastUsed}`}
                                 type="button"
                                 style={{
                                   width: '100%',
