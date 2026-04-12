@@ -21,6 +21,7 @@ const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
 
 const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
 const MAX_RECENT_FOODS = 30;
+const PERSONAL_RESULTS_THRESHOLD = 3;
 const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const RECENT_FOOD_MEDIUM_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -702,25 +703,10 @@ export default function MealBuilder({
     () => normalizeSearchQuery(foodNameInput),
     [foodNameInput]
   );
-  const hasStrongCreaMatches = useMemo(() => {
-    if (!normalizedFoodSearchQuery) return false;
-
-    const queryTokens = normalizedFoodSearchQuery.split(' ').filter(Boolean);
-    if (queryTokens.length === 0) return false;
-
-    return creaResults.some((result) => {
-      const desc = String(
-        result?.name_it || result?.desc || result?.name || result?.product_name || ''
-      ).trim();
-      if (!desc) return false;
-
-      const normalizedDesc = normalizeSearchQuery(desc);
-      if (!normalizedDesc) return false;
-
-      if (normalizedDesc === normalizedFoodSearchQuery) return true;
-      return queryTokens.every((token) => normalizedDesc.includes(token));
-    });
-  }, [creaResults, normalizedFoodSearchQuery]);
+  const personalResultsCount = useMemo(
+    () => (foodDropdownSuggestions || []).length,
+    [foodDropdownSuggestions]
+  );
   const getFoodUsageMeta = useCallback((foodId, foodName) => {
     const id = String(foodId ?? '').trim();
     const normalizedName = normalizeSearchQuery(foodName);
@@ -908,10 +894,13 @@ export default function MealBuilder({
       return;
     }
 
-    if (visibleFrequentFoodEntries.length === 0 || hasStrongCreaMatches) {
+    if (personalResultsCount < PERSONAL_RESULTS_THRESHOLD) {
       setIsCreaExpanded(true);
+      return;
     }
-  }, [hasStrongCreaMatches, normalizedFoodSearchQuery, visibleFrequentFoodEntries.length]);
+
+    setIsCreaExpanded(false);
+  }, [normalizedFoodSearchQuery, personalResultsCount]);
 
   useEffect(() => {
     if (!isComplexMode) {
@@ -1938,7 +1927,7 @@ export default function MealBuilder({
                                     }
                                   }}
                                 >
-                                  {`${source.label} (${results.length} results)`}
+                                  {`${source.label} (${results.length} risultati)`}
                                   <span style={{ marginLeft: 8, color: '#94a3b8', fontWeight: 500 }}>
                                     {isVisible ? '▾' : '▸'}
                                   </span>
