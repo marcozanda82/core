@@ -27,6 +27,12 @@ import { useFoodDb } from './useFoodDb';
 import { searchFoods } from './foodSearch';
 import { recordMealFoodCooccurrence } from './foodCooccurrence';
 import { recordMealSuggestionHabits } from './mealSuggestionHabits';
+import {
+  buildFoodUnits,
+  enrichDbRowWithFoodUnits,
+  enrichPortionItemWithDbUnits,
+  recordMealFoodUnitUsageFromItems,
+} from './foodUnits';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
@@ -3485,7 +3491,21 @@ export default function SalaComandi() {
       }
     });
 
-    get(ref(db, `${basePath}/trackerFoodDatabase`)).then(s => { if (s.exists()) setFoodDb(s.val()); });
+    get(ref(db, `${basePath}/trackerFoodDatabase`)).then((s) => {
+      if (!s.exists()) return;
+      const val = s.val();
+      if (!val || typeof val !== 'object') {
+        setFoodDb({});
+        return;
+      }
+      const enriched = {};
+      Object.keys(val).forEach((k) => {
+        const row = val[k];
+        if (!row || typeof row !== 'object') return;
+        enriched[k] = row.isRecipe === true || row.type === 'recipe' ? row : enrichDbRowWithFoodUnits(row, k);
+      });
+      setFoodDb(enriched);
+    });
 
     return () => {
       unsubBodyMetrics();
@@ -4948,8 +4968,9 @@ export default function SalaComandi() {
         if (entryPer100.kcal == null) entryPer100.kcal = getDefaultNutrientValue('kcal', fullHistory);
         const newKey = `food_${Date.now()}_${String(name).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
         const basePath = `users/${userUid}/tracker_data`;
-        await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
-        setFoodDb(prev => ({ ...prev, [newKey]: entryPer100 }));
+        const entrySaved = enrichDbRowWithFoodUnits(entryPer100, newKey);
+        await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entrySaved);
+        setFoodDb(prev => ({ ...prev, [newKey]: entrySaved }));
       }
       setFoodNameInput(name);
       setFoodWeightInput(getLastQuantityForFood(name) || '100');
@@ -5088,6 +5109,7 @@ export default function SalaComandi() {
         recipeItem.cal = recipeItem.cal ?? recipeItem.kcal;
         return recipeItem;
       }
+      foodItem.foodDbKey = dbKey;
       Object.keys(dbF || {}).forEach(k => {
         if (typeof dbF[k] === 'number' && k !== 'id') foodItem[k] = (dbF[k] / 100) * qta;
       });
@@ -5102,6 +5124,7 @@ export default function SalaComandi() {
         }
       }));
       if (!foodItem.kcal || foodItem.kcal === 0) foodItem.kcal = (getAverageEstimate('kcal', nome) / 100) * qta || getDefaultNutrientValue('kcal', fullHistory);
+      return enrichPortionItemWithDbUnits(foodItem, dbF, dbKey);
     } else {
       const macroKeys = ['kcal', 'cal', 'prot', 'carb', 'fatTotal', 'fibre'];
       foodItem.kcal = (getAverageEstimate('kcal', nome) / 100) * qta || getDefaultNutrientValue('kcal', fullHistory);
@@ -5114,7 +5137,8 @@ export default function SalaComandi() {
           foodItem[k] = macroKeys.includes(k) ? (getAverageEstimate(k, nome) / 100) * qta || getDefaultNutrientValue(k, fullHistory) : getDefaultNutrientValue(k, fullHistory);
       }));
     }
-    return foodItem;
+    const { units, defaultUnit } = buildFoodUnits({ desc: nome }, '');
+    return { ...foodItem, units, defaultUnit };
   }, [foodDb, getAverageEstimate, fullHistory]);
 
   /**
@@ -5365,8 +5389,9 @@ Ottimo! Diario aggiornato. 🥗`;
       payload.kcal = getDefaultNutrientValue('kcal', fullHistory);
     }
     if (payload.fatTotal == null && payload.fat != null) payload.fatTotal = Number(payload.fat);
-    await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), payload);
-    setFoodDb(prev => ({ ...(prev || {}), [newKey]: payload }));
+    const payloadWithUnits = enrichDbRowWithFoodUnits(payload, newKey);
+    await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), payloadWithUnits);
+    setFoodDb(prev => ({ ...(prev || {}), [newKey]: payloadWithUnits }));
   }, [userUid, db, fullHistory]);
 
   const deleteRecipeFromFoodDb = useCallback(async (recipeKey) => {
@@ -5427,6 +5452,7 @@ Ottimo! Diario aggiornato. 🥗`;
             recordMealFoodCooccurrence(mealItems, ourSlot);
           }
           recordMealSuggestionHabits(mealItems, ourSlot, foodDb || {});
+          recordMealFoodUnitUsageFromItems(mealItems, foodDb || {}, findBestFoodMatch);
         } catch (_) {}
       }
 
@@ -5533,6 +5559,7 @@ Ottimo! Diario aggiornato. 🥗`;
             recordMealFoodCooccurrence(mealItems, ourSlot);
           }
           recordMealSuggestionHabits(mealItems, ourSlot, foodDb || {});
+          recordMealFoodUnitUsageFromItems(mealItems, foodDb || {}, findBestFoodMatch);
         } catch (_) {}
       }
       setDailyLog(nextLog);
@@ -6125,8 +6152,9 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       entryPer100.cal = entryPer100.cal ?? entryPer100.kcal;
       const newKey = `food_${Date.now()}_${String(desc).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
       const basePath = `users/${userUid}/tracker_data`;
-      await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entryPer100);
-      setFoodDb((prev) => ({ ...prev, [newKey]: entryPer100 }));
+      const entrySaved = enrichDbRowWithFoodUnits(entryPer100, newKey);
+      await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entrySaved);
+      setFoodDb((prev) => ({ ...prev, [newKey]: entrySaved }));
       const weight = parseFloat(foodWeightInput) || 100;
       const ratio = weight / 100;
       const newItem = {
@@ -6137,9 +6165,12 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         qta: weight,
         weight
       };
-      Object.keys(entryPer100).forEach((k) => {
-        if (typeof entryPer100[k] === 'number' && k !== 'id') newItem[k] = entryPer100[k] * ratio;
+      Object.keys(entrySaved).forEach((k) => {
+        if (typeof entrySaved[k] === 'number' && k !== 'id') newItem[k] = entrySaved[k] * ratio;
       });
+      newItem.units = entrySaved.units;
+      newItem.defaultUnit = entrySaved.defaultUnit;
+      newItem.foodDbKey = newKey;
       Object.keys(TARGETS).forEach((g) => Object.keys(TARGETS[g]).forEach((k) => {
         if (newItem[k] == null || newItem[k] === 0) newItem[k] = (getAverageEstimate(k, desc) / 100) * weight;
       }));

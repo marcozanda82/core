@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { enrichDbRowWithFoodUnits } from './foodUnits';
 
 function toNumber(value) {
   if (typeof value === 'number') {
@@ -65,7 +66,7 @@ export async function loadFoodDbFromCSV(url = '/crea_food_composition_tables.csv
     rows.forEach((row) => {
       const mapped = mapRowToFood(row);
       if (!mapped) return;
-      foodDb[mapped.id] = mapped.value;
+      foodDb[mapped.id] = enrichDbRowWithFoodUnits(mapped.value, mapped.id);
     });
 
     console.log('[foodLoader] loaded foods', Object.keys(foodDb).length);

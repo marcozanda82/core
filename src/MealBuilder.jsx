@@ -26,6 +26,7 @@ import {
   getMealTypeCategoryTotals,
   getMealTypeFoodPreferenceCount,
 } from './mealSuggestionHabits';
+import { buildFoodUnits } from './foodUnits';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -1065,6 +1066,14 @@ export default function MealBuilder({
   const mealBuilderScrollAnchorRef = useRef(null);
   const foodDropdownContainerRef = useRef(null);
   const { foodDb: localFoodDb } = useFoodDb();
+
+  const selectedFoodUnitHint = useMemo(() => {
+    if (!selectedFoodMatch?.row || typeof selectedFoodMatch.row !== 'object') return null;
+    const id = selectedFoodMatch.id != null ? String(selectedFoodMatch.id).trim() : '';
+    const { units, defaultUnit } = buildFoodUnits(selectedFoodMatch.row, id);
+    if (!defaultUnit?.label) return null;
+    return { units, defaultUnit };
+  }, [selectedFoodMatch]);
 
   const enrichAddedFoodItem = useCallback((item, selection, weightInputValue) => {
     if (!item || !selection?.id) return item;
@@ -2757,6 +2766,22 @@ export default function MealBuilder({
                         +
                       </button>
                     </div>
+                    {selectedFoodUnitHint ? (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          fontSize: '0.7rem',
+                          color: '#94a3b8',
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        <span style={{ color: '#cbd5e1' }}>Unità: </span>
+                        {selectedFoodUnitHint.units.map((u) => u.label).join(' · ')}
+                        <span style={{ display: 'block', marginTop: 4, color: '#a5b4fc' }}>
+                          {`Predefinito (uso più frequente): ${selectedFoodUnitHint.defaultUnit.label}`}
+                        </span>
+                      </div>
+                    ) : null}
                     {showFoodDropdown && (
                       foodNameInput.trim()
                       || (foodDropdownSuggestions && foodDropdownSuggestions.length > 0)
