@@ -22,8 +22,19 @@ const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
 const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
 const MAX_RECENT_FOODS = 30;
 const PERSONAL_RESULTS_THRESHOLD = 3;
+const SMART_SUGGESTIONS_LIMIT = 4;
 const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const RECENT_FOOD_MEDIUM_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+const FOOD_PAIR_SUGGESTIONS = {
+  pasta: ['parmigiano', 'olio'],
+  riso: ['olio', 'tonno'],
+  pollo: ['olio', 'limone'],
+};
+const CONTEXT_SUGGESTION_KEYWORDS = {
+  morning: ['yogurt', 'latte', 'caffe', 'pane', 'fette biscottate', 'marmellata', 'uova', 'banana'],
+  lunch: ['riso', 'pasta', 'pollo', 'tacchino', 'tonno', 'pane'],
+  dinner: ['zucchine', 'verdure', 'insalata', 'pesce', 'salmone', 'uova', 'ricotta'],
+};
 
 function normalizeRecentFoodEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
@@ -83,6 +94,20 @@ function sortRecentFoodEntries(entries) {
     if (b.lastUsed !== a.lastUsed) return b.lastUsed - a.lastUsed;
     return (Number(b.count) || 0) - (Number(a.count) || 0);
   });
+}
+
+function getMealContextKey(mealType, drawerMealTime) {
+  const normalizedMealType = String(mealType || '').toLowerCase();
+  if (normalizedMealType.includes('colazione')) return 'morning';
+  if (normalizedMealType.includes('pranzo')) return 'lunch';
+  if (normalizedMealType.includes('cena')) return 'dinner';
+
+  const hour = Number(drawerMealTime);
+  if (Number.isFinite(hour)) {
+    if (hour < 11) return 'morning';
+    if (hour < 17) return 'lunch';
+  }
+  return 'dinner';
 }
 
 function loadRecentFoodEntries() {
@@ -642,9 +667,17 @@ export default function MealBuilder({
     () => recentFoodEntries.map((entry) => entry.id).filter(Boolean),
     [recentFoodEntries]
   );
+  const normalizedFoodSearchQuery = useMemo(
+    () => normalizeSearchQuery(foodNameInput),
+    [foodNameInput]
+  );
+  const isShortFoodQuery = useMemo(
+    () => normalizedFoodSearchQuery.length <= 2,
+    [normalizedFoodSearchQuery]
+  );
   const visibleRecentFoodEntries = useMemo(() => {
     const normalizedQuery = normalizeSearchQuery(foodNameInput);
-    if (!normalizedQuery) {
+    if (normalizedQuery.length <= 2) {
       return [...recentFoodEntries]
         .sort((a, b) => {
           const smartScoreA = getRecentFoodSmartScore(a);
@@ -653,7 +686,8 @@ export default function MealBuilder({
           if ((Number(b?.lastUsed) || 0) !== (Number(a?.lastUsed) || 0)) return (Number(b?.lastUsed) || 0) - (Number(a?.lastUsed) || 0);
           return (Number(b?.count) || 0) - (Number(a?.count) || 0);
         })
-        .slice(0, 5);
+        .sort((a, b) => (Number(b?.lastUsedAt ?? b?.lastUsed) || 0) - (Number(a?.lastUsedAt ?? a?.lastUsed) || 0))
+        .slice(0, SMART_SUGGESTIONS_LIMIT);
     }
 
     const queryWords = normalizedQuery.split(' ').filter(Boolean);
@@ -663,7 +697,7 @@ export default function MealBuilder({
         if (!normalizedName) return false;
         return queryWords.every((word) => normalizedName.includes(word));
       })
-      .slice(0, 5);
+      .slice(0, SMART_SUGGESTIONS_LIMIT);
   }, [foodNameInput, recentFoodEntries]);
   const visibleFrequentFoodEntries = useMemo(() => {
     const normalizedQuery = normalizeSearchQuery(foodNameInput);
@@ -701,12 +735,49 @@ export default function MealBuilder({
         if ((Number(b?.count) || 0) !== (Number(a?.count) || 0)) return (Number(b?.count) || 0) - (Number(a?.count) || 0);
         return (Number(b?.lastUsed) || 0) - (Number(a?.lastUsed) || 0);
       })
-      .slice(0, 5);
+      .slice(0, SMART_SUGGESTIONS_LIMIT);
   }, [foodNameInput, recentFoodEntries, visibleRecentFoodEntries]);
-  const normalizedFoodSearchQuery = useMemo(
-    () => normalizeSearchQuery(foodNameInput),
-    [foodNameInput]
-  );
+  const smartSuggestedFoods = useMemo(() => {
+    if (!isShortFoodQuery || !foodDb || typeof foodDb !== 'object') return [];
+
+    const usedIds = new Set([
+      ...visibleFrequentFoodEntries.map((entry) => String(entry?.id ?? '').trim()),
+      ...visibleRecentFoodEntries.map((entry) => String(entry?.id ?? '').trim()),
+    ]);
+    const contextKey = getMealContextKey(mealType, drawerMealTime);
+    const contextKeywords = CONTEXT_SUGGESTION_KEYWORDS[contextKey] || [];
+    const pairKeywords = FOOD_PAIR_SUGGESTIONS[normalizedFoodSearchQuery] || [];
+    const keywords = [...new Set([...contextKeywords, ...pairKeywords].map((item) => normalizeSearchQuery(item)).filter(Boolean))];
+
+    if (keywords.length === 0) return [];
+
+    return Object.entries(foodDb)
+      .filter(([key, entry]) => {
+        if (!entry || typeof entry !== 'object') return false;
+        if (usedIds.has(String(key).trim())) return false;
+
+        const desc = String(entry.desc ?? entry.name ?? '').trim();
+        const normalizedDesc = normalizeSearchQuery(desc);
+        if (!normalizedDesc) return false;
+
+        return keywords.some((keyword) => normalizedDesc.includes(keyword));
+      })
+      .slice(0, 30)
+      .map(([key, entry]) => ({
+        id: key,
+        name: String(entry?.desc ?? entry?.name ?? key).trim(),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'it'))
+      .slice(0, SMART_SUGGESTIONS_LIMIT);
+  }, [
+    drawerMealTime,
+    foodDb,
+    isShortFoodQuery,
+    mealType,
+    normalizedFoodSearchQuery,
+    visibleFrequentFoodEntries,
+    visibleRecentFoodEntries,
+  ]);
   const personalResultsCount = useMemo(
     () => (foodDropdownSuggestions || []).length,
     [foodDropdownSuggestions]
@@ -1763,6 +1834,7 @@ export default function MealBuilder({
                       || (foodDropdownSuggestions && foodDropdownSuggestions.length > 0)
                       || visibleRecentFoodEntries.length > 0
                       || visibleFrequentFoodEntries.length > 0
+                      || smartSuggestedFoods.length > 0
                     ) && (
                       <div
                         onMouseDown={(e) => e.preventDefault()}
@@ -1780,7 +1852,7 @@ export default function MealBuilder({
                           boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                         }}
                       >
-                        {visibleFrequentFoodEntries.length > 0 ? (
+                        {isShortFoodQuery && visibleFrequentFoodEntries.length > 0 ? (
                           <>
                             <div
                               style={{
@@ -1793,7 +1865,7 @@ export default function MealBuilder({
                                 borderBottom: '1px solid #2a2a2a',
                               }}
                             >
-                              Usati spesso
+                              ⭐ Frequenti
                             </div>
                             {visibleFrequentFoodEntries.map((entry) => (
                               <button
@@ -1817,7 +1889,7 @@ export default function MealBuilder({
                             ))}
                           </>
                         ) : null}
-                        {visibleRecentFoodEntries.length > 0 ? (
+                        {isShortFoodQuery && visibleRecentFoodEntries.length > 0 ? (
                           <>
                             <div
                               style={{
@@ -1830,11 +1902,48 @@ export default function MealBuilder({
                                 borderBottom: '1px solid #2a2a2a',
                               }}
                             >
-                              Usati di recente
+                              🕒 Recenti
                             </div>
                             {visibleRecentFoodEntries.map((entry) => (
                               <button
                                 key={`recent-${entry.id}-${entry.lastUsed}`}
+                                type="button"
+                                style={{
+                                  width: '100%',
+                                  padding: '12px 16px',
+                                  textAlign: 'left',
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#fff',
+                                  cursor: 'pointer',
+                                  fontSize: '0.9rem',
+                                  borderBottom: '1px solid #2a2a2a',
+                                }}
+                                onMouseDown={() => handleSelectRecentFood(entry)}
+                              >
+                                {renderFoodOptionLabel(entry.name, foodNameInput, entry.id)}
+                              </button>
+                            ))}
+                          </>
+                        ) : null}
+                        {isShortFoodQuery && smartSuggestedFoods.length > 0 ? (
+                          <>
+                            <div
+                              style={{
+                                padding: '10px 16px 8px',
+                                color: '#94a3b8',
+                                fontSize: '0.68rem',
+                                fontWeight: '600',
+                                letterSpacing: '0.08em',
+                                textTransform: 'uppercase',
+                                borderBottom: '1px solid #2a2a2a',
+                              }}
+                            >
+                              🍽 Suggeriti
+                            </div>
+                            {smartSuggestedFoods.map((entry) => (
+                              <button
+                                key={`suggested-${entry.id}`}
                                 type="button"
                                 style={{
                                   width: '100%',
