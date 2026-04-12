@@ -2311,20 +2311,21 @@ export default function SalaComandi() {
   }, []);
 
   useEffect(() => {
-    const q = (foodNameInput || '').trim().toLowerCase();
+    const q = (foodNameInput || '').trim();
     if (!q) {
       setFoodDropdownSuggestions([]);
       return;
     }
-    const keys = Object.keys(foodDb || {});
-    const matches = keys
-      .filter((k) => {
-        const d = foodDb[k];
-        const desc = (d?.desc || d?.name || '').toLowerCase();
-        return desc.includes(q);
-      })
-      .slice(0, 10)
-      .map((k) => ({ key: k, desc: foodDb[k]?.desc || foodDb[k]?.name || k }));
+
+    const matches = searchFoods(foodDb, q, {
+      mode: 'autocomplete',
+      limit: 5,
+      includeUserHistory: true,
+    }).map((item) => ({
+      key: item.id,
+      desc: item.name || item.id,
+    }));
+
     setFoodDropdownSuggestions(matches);
   }, [foodNameInput, foodDb]);
 

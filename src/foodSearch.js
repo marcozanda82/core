@@ -18,6 +18,7 @@ const SEARCH_SYNONYMS = {
 const MATCH_SCORE_WEIGHT = 0.5;
 const RECENCY_SCORE_WEIGHT = 0.3;
 const FREQUENCY_SCORE_WEIGHT = 0.2;
+const PREFIX_MATCH_BOOST = 0.3;
 
 function loadRecentFoodEntries() {
   if (typeof localStorage === 'undefined') return [];
@@ -221,12 +222,20 @@ function getMatchScore(matchSummary, queryWords) {
   );
 }
 
+function isPrefixMatch(normalizedName, itemWords, normalizedQuery) {
+  if (!normalizedQuery) return false;
+  if (normalizedName.startsWith(normalizedQuery)) return true;
+  return itemWords.some((itemWord) => itemWord.startsWith(normalizedQuery));
+}
+
 export function searchFoods(foodDb, query, options = {}) {
   if (!foodDb || typeof foodDb !== 'object') return [];
 
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return [];
   const includeUserHistory = options.includeUserHistory !== false;
+  const mode = options.mode || 'search';
+  const limit = Number.isFinite(options.limit) && options.limit > 0 ? Math.floor(options.limit) : 50;
 
   const queryWords = normalizedQuery.split(' ').filter(Boolean);
   if (queryWords.length === 0) return [];
@@ -245,8 +254,12 @@ export function searchFoods(foodDb, query, options = {}) {
 
     const itemWords = normalizedName.split(' ').filter(Boolean);
     if (itemWords.length === 0) continue;
+    const prefixMatch = isPrefixMatch(normalizedName, itemWords, normalizedQuery);
+
+    if (mode === 'autocomplete' && !prefixMatch) continue;
+
     const matchSummary = getTokenMatchSummary(queryWords, itemWords);
-    if (matchSummary.matchedTokens === 0) continue;
+    if (matchSummary.matchedTokens === 0 && !prefixMatch) continue;
 
     const matchScore = getMatchScore(matchSummary, queryWords);
     const historyScores = includeUserHistory ? (
@@ -254,22 +267,26 @@ export function searchFoods(foodDb, query, options = {}) {
     ) : null;
     const recencyScore = historyScores?.recencyScore ?? 0;
     const frequencyScore = historyScores?.frequencyScore ?? 0;
-    const score = (matchScore * MATCH_SCORE_WEIGHT) + (
+    let score = (matchScore * MATCH_SCORE_WEIGHT) + (
       includeUserHistory
         ? ((recencyScore * RECENCY_SCORE_WEIGHT) + (frequencyScore * FREQUENCY_SCORE_WEIGHT))
         : 0
     );
+    if (prefixMatch) {
+      score = Math.min(1.3, score + PREFIX_MATCH_BOOST);
+    }
 
-    results.push({ id, name, matchScore, recencyScore, frequencyScore, score, matchSummary });
+    results.push({ id, name, matchScore, recencyScore, frequencyScore, score, matchSummary, prefixMatch });
   }
 
   results.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
+    if (b.prefixMatch !== a.prefixMatch) return Number(b.prefixMatch) - Number(a.prefixMatch);
     if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
     return b.matchSummary.matchedTokens - a.matchSummary.matchedTokens;
   });
 
-  return results.slice(0, 50).map(({ id, name }) => ({ id, name }));
+  return results.slice(0, limit).map(({ id, name }) => ({ id, name }));
 }
 
 export default searchFoods;
