@@ -461,6 +461,7 @@ export default function MealBuilder({
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
 
   const mealBuilderScrollAnchorRef = useRef(null);
+  const foodDropdownContainerRef = useRef(null);
   const { foodDb: localFoodDb } = useFoodDb();
 
   const enrichAddedFoodItem = useCallback((item, selection, weightInputValue) => {
@@ -514,18 +515,11 @@ export default function MealBuilder({
     {
       key: 'crea',
       label: 'CREA',
-      searchButtonLabel: '🔍 Cerca su CREA',
       results: creaResults,
       isLoading: isCreaLoading,
-      onSearch: triggerCreaSearch,
+      autoExpand: String(foodNameInput || '').trim().length > 2,
     },
-  ]), [creaResults, isCreaLoading, triggerCreaSearch]);
-
-  const handleFoodSourceSearch = useCallback((sourceKey, query, onSearch) => {
-    if (!query || typeof onSearch !== 'function') return;
-    setVisibleFoodSourceResults((prev) => ({ ...prev, [sourceKey]: false }));
-    onSearch(query);
-  }, []);
+  ]), [creaResults, foodNameInput, isCreaLoading]);
 
   const toggleFoodSourceResults = useCallback((sourceKey) => {
     setVisibleFoodSourceResults((prev) => ({ ...prev, [sourceKey]: !prev[sourceKey] }));
@@ -614,16 +608,6 @@ export default function MealBuilder({
     () => recentFoodEntries.map((entry) => entry.id).filter(Boolean),
     [recentFoodEntries]
   );
-  const recentFoodLookup = useMemo(() => {
-    const lookup = new Set();
-    recentFoodEntries.forEach((entry) => {
-      const id = String(entry?.id ?? '').trim();
-      const name = normalizeSearchQuery(entry?.name);
-      if (id) lookup.add(`id:${id}`);
-      if (name) lookup.add(`name:${name}`);
-    });
-    return lookup;
-  }, [recentFoodEntries]);
   const visibleRecentFoodEntries = useMemo(() => {
     const normalizedQuery = normalizeSearchQuery(foodNameInput);
     if (!normalizedQuery) {
@@ -837,11 +821,46 @@ export default function MealBuilder({
   }, [foodDb, registerAddFoodCallback, trackRecentFood]);
 
   useEffect(() => {
+    if (!showFoodDropdown) return undefined;
+
+    const handlePointerDownOutside = (event) => {
+      if (foodDropdownContainerRef.current?.contains(event.target)) return;
+      setShowFoodDropdown(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDownOutside);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDownOutside);
+    };
+  }, [setShowFoodDropdown, showFoodDropdown]);
+
+  useEffect(() => {
+    const query = String(foodNameInput || '').trim();
+    if (!query) {
+      setVisibleFoodSourceResults((prev) => ({ ...prev, crea: false }));
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      triggerCreaSearch(query);
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [foodNameInput, triggerCreaSearch]);
+
+  useEffect(() => {
     setVisibleFoodSourceResults((prev) => {
       let hasChanges = false;
       const next = { ...prev };
 
       foodSearchSources.forEach((source) => {
+        if (source.autoExpand && !next[source.key]) {
+          next[source.key] = true;
+          hasChanges = true;
+          return;
+        }
         if ((source.results || []).length > 0 || !next[source.key]) return;
         next[source.key] = false;
         hasChanges = true;
@@ -1650,7 +1669,7 @@ export default function MealBuilder({
             <div style={{ position: 'sticky', top: '-20px', zIndex: 50, background: '#111', paddingTop: '20px', paddingBottom: '10px', borderBottom: '1px solid #333', margin: '0 -15px 20px -15px', paddingLeft: '15px', paddingRight: '15px' }}>
               {!isComplexMode ? (
                 <>
-                  <div style={{ position: 'relative', marginBottom: 12, maxWidth: 520 }}>
+                  <div ref={foodDropdownContainerRef} style={{ position: 'relative', marginBottom: 12, maxWidth: 520 }}>
                     <div className="quick-add-bar">
                       <input
                         ref={foodInputRef}
@@ -1661,9 +1680,9 @@ export default function MealBuilder({
                         onChange={(e) => {
                           setFoodNameInput(e.target.value);
                           setSelectedFoodMatch(null);
+                          setShowFoodDropdown(true);
                         }}
                         onFocus={() => setShowFoodDropdown(true)}
-                        onBlur={() => setTimeout(() => setShowFoodDropdown(false), 200)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') document.getElementById('weight-input')?.focus();
                         }}
@@ -1708,6 +1727,7 @@ export default function MealBuilder({
                       || visibleFrequentFoodEntries.length > 0
                     ) && (
                       <div
+                        onMouseDown={(e) => e.preventDefault()}
                         style={{
                           position: 'absolute',
                           top: '100%',
@@ -1752,7 +1772,7 @@ export default function MealBuilder({
                                   fontSize: '0.9rem',
                                   borderBottom: '1px solid #2a2a2a',
                                 }}
-                                onClick={() => handleSelectRecentFood(entry)}
+                                onMouseDown={() => handleSelectRecentFood(entry)}
                               >
                                 {renderFoodOptionLabel(entry.name, foodNameInput, entry.id)}
                               </button>
@@ -1789,7 +1809,7 @@ export default function MealBuilder({
                                   fontSize: '0.9rem',
                                   borderBottom: '1px solid #2a2a2a',
                                 }}
-                                onClick={() => handleSelectRecentFood(entry)}
+                                onMouseDown={() => handleSelectRecentFood(entry)}
                               >
                                 {renderFoodOptionLabel(entry.name, foodNameInput, entry.id)}
                               </button>
@@ -1811,7 +1831,7 @@ export default function MealBuilder({
                               fontSize: '0.9rem',
                               borderBottom: '1px solid #2a2a2a',
                             }}
-                            onClick={() => {
+                            onMouseDown={() => {
                               setFoodNameInput(s.desc);
                               setFoodWeightInput(getLastQuantityForFood(s.desc) || '');
                               setSelectedFoodMatch({
@@ -1841,7 +1861,7 @@ export default function MealBuilder({
                               fontSize: '0.9rem',
                               fontWeight: '600',
                             }}
-                            onClick={() => generateFoodWithAI(foodNameInput.trim())}
+                            onMouseDown={() => generateFoodWithAI(foodNameInput.trim())}
                             disabled={isGeneratingFood}
                           >
                             {isGeneratingFood ? '⏳ Generazione in corso...' : `✨ Genera con AI: "${foodNameInput.trim()}"`}
@@ -1869,30 +1889,12 @@ export default function MealBuilder({
                                     fontSize: '0.9rem',
                                     fontWeight: '600',
                                   }}
-                                  onClick={() => handleFoodSourceSearch(source.key, foodNameInput.trim(), source.onSearch)}
+                                  onMouseDown={() => toggleFoodSourceResults(source.key)}
                                 >
-                                  {source.searchButtonLabel}
-                                </button>
-                              ) : null}
-                              {foodNameInput.trim() && results.length > 0 ? (
-                                <button
-                                  type="button"
-                                  className="dropdown-action-button"
-                                  style={{
-                                    width: '100%',
-                                    padding: '12px 16px',
-                                    textAlign: 'left',
-                                    background: 'rgba(56, 189, 248, 0.12)',
-                                    border: 'none',
-                                    borderTop: '1px solid #2a2a2a',
-                                    color: '#67e8f9',
-                                    cursor: 'pointer',
-                                    fontSize: '0.9rem',
-                                    fontWeight: '600',
-                                  }}
-                                  onClick={() => toggleFoodSourceResults(source.key)}
-                                >
-                                  {isVisible ? `Nascondi ${source.label} (${results.length})` : `Mostra ${source.label} (${results.length})`}
+                                  {`${source.label} (${results.length} results)`}
+                                  <span style={{ marginLeft: 8, color: '#94a3b8', fontWeight: 500 }}>
+                                    {isVisible ? '▾' : '▸'}
+                                  </span>
                                 </button>
                               ) : null}
                               {foodNameInput.trim() && source.isLoading ? (
@@ -1940,7 +1942,7 @@ export default function MealBuilder({
                                           cursor: 'pointer',
                                           fontSize: '0.9rem',
                                         }}
-                                        onClick={() => {
+                                        onMouseDown={() => {
                                           setFoodNameInput(desc);
                                           setFoodWeightInput(getLastQuantityForFood(desc) || '');
                                           setSelectedFoodMatch({
