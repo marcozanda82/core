@@ -491,7 +491,7 @@ export default function MealBuilder({
   const [aiConstraintFixed, setAiConstraintFixed] = useState('');
   const [aiConstraintExcluded, setAiConstraintExcluded] = useState('');
   const [aiConstraintPreferred, setAiConstraintPreferred] = useState('');
-  const [visibleFoodSourceResults, setVisibleFoodSourceResults] = useState({ crea: false });
+  const [isCreaExpanded, setIsCreaExpanded] = useState(false);
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
 
   const mealBuilderScrollAnchorRef = useRef(null);
@@ -551,13 +551,8 @@ export default function MealBuilder({
       label: 'CREA',
       results: creaResults,
       isLoading: isCreaLoading,
-      autoExpand: String(foodNameInput || '').trim().length > 2,
     },
-  ]), [creaResults, foodNameInput, isCreaLoading]);
-
-  const toggleFoodSourceResults = useCallback((sourceKey) => {
-    setVisibleFoodSourceResults((prev) => ({ ...prev, [sourceKey]: !prev[sourceKey] }));
-  }, []);
+  ]), [creaResults, isCreaLoading]);
 
   const toggleAddedFood = (id) => {
     const k = id != null ? String(id) : '';
@@ -703,6 +698,29 @@ export default function MealBuilder({
       })
       .slice(0, 5);
   }, [foodNameInput, recentFoodEntries, visibleRecentFoodEntries]);
+  const normalizedFoodSearchQuery = useMemo(
+    () => normalizeSearchQuery(foodNameInput),
+    [foodNameInput]
+  );
+  const hasStrongCreaMatches = useMemo(() => {
+    if (!normalizedFoodSearchQuery) return false;
+
+    const queryTokens = normalizedFoodSearchQuery.split(' ').filter(Boolean);
+    if (queryTokens.length === 0) return false;
+
+    return creaResults.some((result) => {
+      const desc = String(
+        result?.name_it || result?.desc || result?.name || result?.product_name || ''
+      ).trim();
+      if (!desc) return false;
+
+      const normalizedDesc = normalizeSearchQuery(desc);
+      if (!normalizedDesc) return false;
+
+      if (normalizedDesc === normalizedFoodSearchQuery) return true;
+      return queryTokens.every((token) => normalizedDesc.includes(token));
+    });
+  }, [creaResults, normalizedFoodSearchQuery]);
   const getFoodUsageMeta = useCallback((foodId, foodName) => {
     const id = String(foodId ?? '').trim();
     const normalizedName = normalizeSearchQuery(foodName);
@@ -871,7 +889,7 @@ export default function MealBuilder({
   useEffect(() => {
     const query = String(foodNameInput || '').trim();
     if (!query) {
-      setVisibleFoodSourceResults((prev) => ({ ...prev, crea: false }));
+      setIsCreaExpanded(false);
       return;
     }
 
@@ -885,24 +903,15 @@ export default function MealBuilder({
   }, [foodNameInput, triggerCreaSearch]);
 
   useEffect(() => {
-    setVisibleFoodSourceResults((prev) => {
-      let hasChanges = false;
-      const next = { ...prev };
+    if (!normalizedFoodSearchQuery || normalizedFoodSearchQuery.length <= 2) {
+      setIsCreaExpanded(false);
+      return;
+    }
 
-      foodSearchSources.forEach((source) => {
-        if (source.autoExpand && !next[source.key]) {
-          next[source.key] = true;
-          hasChanges = true;
-          return;
-        }
-        if ((source.results || []).length > 0 || !next[source.key]) return;
-        next[source.key] = false;
-        hasChanges = true;
-      });
-
-      return hasChanges ? next : prev;
-    });
-  }, [foodSearchSources]);
+    if (visibleFrequentFoodEntries.length === 0 || hasStrongCreaMatches) {
+      setIsCreaExpanded(true);
+    }
+  }, [hasStrongCreaMatches, normalizedFoodSearchQuery, visibleFrequentFoodEntries.length]);
 
   useEffect(() => {
     if (!isComplexMode) {
@@ -1903,7 +1912,7 @@ export default function MealBuilder({
                         ) : null}
                         {(foodSearchSources || []).map((source) => {
                           const results = source.results || [];
-                          const isVisible = Boolean(visibleFoodSourceResults[source.key]);
+                          const isVisible = source.key === 'crea' ? isCreaExpanded : false;
 
                           return (
                             <React.Fragment key={source.key}>
@@ -1923,7 +1932,11 @@ export default function MealBuilder({
                                     fontSize: '0.9rem',
                                     fontWeight: '600',
                                   }}
-                                  onMouseDown={() => toggleFoodSourceResults(source.key)}
+                                  onMouseDown={() => {
+                                    if (source.key === 'crea') {
+                                      setIsCreaExpanded((prev) => !prev);
+                                    }
+                                  }}
                                 >
                                   {`${source.label} (${results.length} results)`}
                                   <span style={{ marginLeft: 8, color: '#94a3b8', fontWeight: 500 }}>
