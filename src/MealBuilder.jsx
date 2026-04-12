@@ -19,6 +19,48 @@ const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   ...Object.values(TARGETS).flatMap(g => Object.keys(g || {}))
 ]);
 
+const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
+
+function normalizeRecentFoodEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+
+  const name = String(entry.name || '').trim();
+  const id = String(entry.id ?? name).trim();
+  const timestamp = Number(entry.timestamp);
+
+  if (!id || !name || !Number.isFinite(timestamp)) return null;
+  return { id, name, timestamp };
+}
+
+function loadRecentFoodEntries() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENT_FOODS_STORAGE_KEY) || '[]');
+    if (Array.isArray(parsed)) {
+      return parsed.map(normalizeRecentFoodEntry).filter(Boolean).slice(0, 20);
+    }
+  } catch (_) {}
+
+  try {
+    const legacy = JSON.parse(localStorage.getItem('recentFoods') || '[]');
+    if (Array.isArray(legacy)) {
+      return legacy
+        .map((item, index) => {
+          const name = String(item || '').trim();
+          if (!name) return null;
+          return {
+            id: name,
+            name,
+            timestamp: Date.now() - index,
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 20);
+    }
+  } catch (_) {}
+
+  return [];
+}
+
 function mergeDraftNutrientExtras(base, row) {
   const out = { ...base };
   DRAFT_NUTRIENT_EXTRA_KEYS.forEach((k) => {
@@ -386,6 +428,10 @@ export default function MealBuilder({
 
   const handleAddSelectedFood = useCallback(() => {
     if (!foodNameInput || !foodWeightInput) return;
+    const trackedName = String(foodNameInput || '').trim();
+    const trackedId = selectedFoodMatch?.id != null && String(selectedFoodMatch.id).trim() !== ''
+      ? String(selectedFoodMatch.id).trim()
+      : trackedName;
 
     if (selectedFoodMatch?.id && typeof estraiDatiFoodDb === 'function' && typeof setAddedFoods === 'function') {
       const trimmedName = foodNameInput.trim();
@@ -394,6 +440,7 @@ export default function MealBuilder({
       const baseItem = estraiDatiFoodDb(trimmedName, parsedWeight, mealType, preferredDbKey);
       const enrichedItem = enrichAddedFoodItem(baseItem, selectedFoodMatch, parsedWeight);
       setAddedFoods((prev) => [enrichedItem, ...prev]);
+      trackRecentFood({ id: trackedId, name: trimmedName });
       setFoodNameInput('');
       setFoodWeightInput('');
       setSelectedFoodMatch(null);
@@ -401,10 +448,11 @@ export default function MealBuilder({
     }
 
     if (typeof handleAddFoodManual === 'function') {
+      trackRecentFood({ id: trackedId, name: trackedName });
       handleAddFoodManual();
     }
     setSelectedFoodMatch(null);
-  }, [selectedFoodMatch, estraiDatiFoodDb, setAddedFoods, foodNameInput, foodWeightInput, foodDb, mealType, enrichAddedFoodItem, setFoodNameInput, setFoodWeightInput, handleAddFoodManual]);
+  }, [selectedFoodMatch, estraiDatiFoodDb, setAddedFoods, foodNameInput, foodWeightInput, foodDb, mealType, enrichAddedFoodItem, setFoodNameInput, setFoodWeightInput, handleAddFoodManual, trackRecentFood]);
 
   const buildAiMealConstraintsPayload = useCallback(() => {
     const split = (s) =>
@@ -519,23 +567,41 @@ export default function MealBuilder({
     };
   }, [draftTotalsPer100g, complexPortionWeight]);
 
-  const [recentFoods, setRecentFoods] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('recentFoods') || '[]'); }
-    catch { return []; }
-  });
+  const [recentFoodEntries, setRecentFoodEntries] = useState(() => loadRecentFoodEntries());
+  const recentFoods = useMemo(
+    () => recentFoodEntries.map((entry) => entry.id).filter(Boolean),
+    [recentFoodEntries]
+  );
 
-  const recentFoodsRef = useRef(recentFoods);
-  recentFoodsRef.current = recentFoods;
+  const trackRecentFood = useCallback((food) => {
+    const name = String(food?.name || '').trim();
+    const id = String(food?.id ?? name).trim();
+    if (!id || !name) return;
+
+    setRecentFoodEntries((prev) => {
+      const timestamp = Date.now();
+      const next = [
+        { id, name, timestamp },
+        ...prev.filter((entry) => String(entry?.id ?? '').trim() !== id),
+      ].slice(0, 20);
+
+      try {
+        localStorage.setItem(RECENT_FOODS_STORAGE_KEY, JSON.stringify(next));
+      } catch (_) {}
+
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (typeof registerAddFoodCallback !== 'function') return;
     registerAddFoodCallback((foodId) => {
       if (!foodId) return;
-      const updateRecents = [foodId, ...recentFoodsRef.current.filter(id => id !== foodId)].slice(0, 20);
-      setRecentFoods(updateRecents);
-      try { localStorage.setItem('recentFoods', JSON.stringify(updateRecents)); } catch (_) {}
+      const fallbackName = String(foodDb?.[foodId]?.desc ?? foodDb?.[foodId]?.name ?? foodId).trim();
+      trackRecentFood({ id: foodId, name: fallbackName });
     });
     return () => registerAddFoodCallback(null);
-  }, [registerAddFoodCallback]);
+  }, [foodDb, registerAddFoodCallback, trackRecentFood]);
 
   useEffect(() => {
     setVisibleFoodSourceResults((prev) => {
@@ -1441,6 +1507,7 @@ export default function MealBuilder({
                                 desc: s.desc,
                                 row: foodDb?.[s.key] || localFoodDb?.[s.key] || null,
                               });
+                              trackRecentFood({ id: s.key, name: s.desc });
                               setShowFoodDropdown(false);
                               setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                             }}
@@ -1569,6 +1636,7 @@ export default function MealBuilder({
                                             desc,
                                             row: localFoodDb?.[result?.id] || foodDb?.[result?.id] || null,
                                           });
+                                          trackRecentFood({ id: result?.id || desc, name: desc });
                                           setShowFoodDropdown(false);
                                           setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                                         }}
