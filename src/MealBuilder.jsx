@@ -21,6 +21,8 @@ const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
 
 const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
 const MAX_RECENT_FOODS = 30;
+const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
+const RECENT_FOOD_MEDIUM_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
 function normalizeRecentFoodEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
@@ -49,8 +51,35 @@ function dedupeRecentFoodEntries(entries) {
   });
 }
 
+function getRecentFoodRecencyScore(lastUsed, now = Date.now()) {
+  const ageMs = now - Number(lastUsed);
+  if (!Number.isFinite(ageMs) || ageMs < 0) return 0;
+  if (ageMs < RECENT_FOOD_HIGH_WINDOW_MS) return 5;
+  if (ageMs < RECENT_FOOD_MEDIUM_WINDOW_MS) return 3;
+  return 1;
+}
+
+function getRecentFoodFrequencyScore(count) {
+  const normalizedCount = Math.max(1, Number(count) || 1);
+  return Math.min(4, Math.floor(Math.log2(normalizedCount)) + 1);
+}
+
+function getRecentFoodSmartScore(entry, now = Date.now()) {
+  const recencyScore = getRecentFoodRecencyScore(entry?.lastUsed, now);
+  const frequencyScore = getRecentFoodFrequencyScore(entry?.count);
+  return recencyScore + frequencyScore;
+}
+
 function sortRecentFoodEntries(entries) {
-  return [...entries].sort((a, b) => b.lastUsed - a.lastUsed);
+  const now = Date.now();
+  return [...entries].sort((a, b) => {
+    const smartScoreA = getRecentFoodSmartScore(a, now);
+    const smartScoreB = getRecentFoodSmartScore(b, now);
+
+    if (smartScoreB !== smartScoreA) return smartScoreB - smartScoreA;
+    if (b.lastUsed !== a.lastUsed) return b.lastUsed - a.lastUsed;
+    return (Number(b.count) || 0) - (Number(a.count) || 0);
+  });
 }
 
 function loadRecentFoodEntries() {
@@ -688,7 +717,7 @@ export default function MealBuilder({
     setRecentFoodEntries((prev) => {
       const lastUsed = Date.now();
       const existingEntry = prev.find((entry) => String(entry?.id ?? '').trim() === id);
-      const next = [
+      const next = sortRecentFoodEntries([
         {
           id,
           name,
@@ -696,7 +725,7 @@ export default function MealBuilder({
           count: existingEntry ? existingEntry.count + 1 : 1,
         },
         ...prev.filter((entry) => String(entry?.id ?? '').trim() !== id),
-      ].slice(0, MAX_RECENT_FOODS);
+      ]).slice(0, MAX_RECENT_FOODS);
 
       try {
         localStorage.setItem(RECENT_FOODS_STORAGE_KEY, JSON.stringify(next));
