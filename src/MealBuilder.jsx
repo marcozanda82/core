@@ -42,6 +42,7 @@ import {
   smartQuantityStep,
   UNIT_TYPES,
 } from './smartFoodUnits';
+import { generatePracticalMeal } from './autoMealGenerator';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -1130,6 +1131,10 @@ export default function MealBuilder({
   const [portionOverrideSetDefault, setPortionOverrideSetDefault] = useState(false);
   const [unsavedGramsEditCount, setUnsavedGramsEditCount] = useState(0);
   const [showOverrideSavePrompt, setShowOverrideSavePrompt] = useState(false);
+  /** Pasto 1 tap (motore deterministico). */
+  const [practicalMealDraft, setPracticalMealDraft] = useState(null);
+  const [practicalMealError, setPracticalMealError] = useState('');
+  const practicalVarietyRef = useRef(0);
 
   const mealBuilderScrollAnchorRef = useRef(null);
   const foodDropdownContainerRef = useRef(null);
@@ -1712,6 +1717,16 @@ export default function MealBuilder({
     () => getAdaptiveMealBounds(effectiveMealTypeForHabits, mealSuggestionHabits),
     [effectiveMealTypeForHabits, mealSuggestionHabits]
   );
+  const practicalTargetKcal = useMemo(() => {
+    const k = Number(targetMacrosPasto?.kcal);
+    if (Number.isFinite(k) && k > 0) return Math.round(k);
+    const mt = effectiveMealTypeForHabits || normalizedTrackedMealType;
+    if (mt === 'colazione') return 380;
+    if (mt === 'pranzo') return 650;
+    if (mt === 'cena') return 520;
+    if (mt === 'snack') return 200;
+    return 450;
+  }, [targetMacrosPasto?.kcal, effectiveMealTypeForHabits, normalizedTrackedMealType]);
   const suggestedMeal = scoredSuggestedMeals[0]?.foods ?? [];
   const personalResultsCount = useMemo(
     () => (foodDropdownSuggestions || []).length,
@@ -1988,6 +2003,122 @@ export default function MealBuilder({
     trackMealFoodPatterns,
     trackRecentFood,
   ]);
+
+  const runPracticalMealGenerate = useCallback(
+    (excludeFoodIds) => {
+      setPracticalMealError('');
+      if (!foodDb || typeof foodDb !== 'object' || Object.keys(foodDb).length === 0) {
+        setPracticalMealError('Database alimenti non disponibile.');
+        setPracticalMealDraft(null);
+        return;
+      }
+      practicalVarietyRef.current += 1;
+      const mt = effectiveMealTypeForHabits || normalizedTrackedMealType || mealType;
+      const baseOpts = {
+        mealType: mt,
+        targetCalories: practicalTargetKcal,
+        userHistory: [],
+        recentFoodEntries,
+        foodDb,
+        varietyOffset: practicalVarietyRef.current,
+        minItems: adaptiveMealBounds.min,
+        maxItems: adaptiveMealBounds.max,
+      };
+      let draft = generatePracticalMeal({
+        ...baseOpts,
+        excludeFoodIds: excludeFoodIds || [],
+      });
+      if (!draft.foods.length && Array.isArray(excludeFoodIds) && excludeFoodIds.length > 0) {
+        practicalVarietyRef.current += 1;
+        draft = generatePracticalMeal({
+          ...baseOpts,
+          excludeFoodIds: [],
+          varietyOffset: practicalVarietyRef.current,
+        });
+      }
+      if (!draft.foods.length) {
+        setPracticalMealDraft(null);
+        setPracticalMealError('Nessun alimento adatto trovato. Usa «Pasti suggeriti» o aggiungi alimenti recenti.');
+        return;
+      }
+      setPracticalMealDraft(draft);
+    },
+    [
+      foodDb,
+      recentFoodEntries,
+      effectiveMealTypeForHabits,
+      normalizedTrackedMealType,
+      mealType,
+      practicalTargetKcal,
+      adaptiveMealBounds.min,
+      adaptiveMealBounds.max,
+    ]
+  );
+
+  const handleCreatePracticalMeal = useCallback(() => {
+    runPracticalMealGenerate([]);
+  }, [runPracticalMealGenerate]);
+
+  const handleRegeneratePracticalMeal = useCallback(() => {
+    const lastIds = (practicalMealDraft?.foods || []).map((f) => f.id).filter(Boolean);
+    runPracticalMealGenerate(lastIds);
+  }, [practicalMealDraft, runPracticalMealGenerate]);
+
+  const handleApplyPracticalMeal = useCallback(() => {
+    const mealFoods = practicalMealDraft?.foods;
+    if (!mealFoods?.length || typeof estraiDatiFoodDb !== 'function' || typeof setAddedFoods !== 'function') return;
+    const newItems = [];
+    let acc = [];
+    const ts = Date.now();
+    mealFoods.forEach((entry, idx) => {
+      const name = String(entry.name || '').trim();
+      const id = String(entry.id || '').trim();
+      if (!name || !id) return;
+      const grams = Math.max(1, Math.round(Number(entry.grams) || 0));
+      const matchedRow = foodDb?.[id] || localFoodDb?.[id] || null;
+      const preferredDbKey = foodDb?.[id] != null ? id : undefined;
+      const baseItem = estraiDatiFoodDb(name, grams, mealType, preferredDbKey);
+      const enrichedItem = enrichAddedFoodItem(
+        baseItem,
+        { id, desc: name, row: matchedRow },
+        grams
+      );
+      trackMealFoodPatterns({ id, name, mealType }, acc);
+      trackRecentFood({ id, name });
+      acc.push({ id, name });
+      newItems.push({
+        ...enrichedItem,
+        id: `tapmeal_${ts}_${idx}_${String(id).slice(0, 40)}`,
+        mealType,
+      });
+    });
+    if (!newItems.length) return;
+    setAddedFoods((prev) => [...newItems, ...prev]);
+    setPracticalMealDraft(null);
+    setPracticalMealError('');
+  }, [
+    practicalMealDraft,
+    enrichAddedFoodItem,
+    estraiDatiFoodDb,
+    foodDb,
+    localFoodDb,
+    mealType,
+    setAddedFoods,
+    trackMealFoodPatterns,
+    trackRecentFood,
+  ]);
+
+  useEffect(() => {
+    if (addedFoods.length > 0) {
+      setPracticalMealDraft(null);
+      setPracticalMealError('');
+    }
+  }, [addedFoods.length]);
+
+  useEffect(() => {
+    setPracticalMealDraft(null);
+    setPracticalMealError('');
+  }, [mealType]);
 
   useEffect(() => {
     if (typeof registerAddFoodCallback !== 'function') return;
@@ -2888,6 +3019,117 @@ export default function MealBuilder({
               </button>
             </div>
           )}
+          {!isComplexMode && addedFoods.length === 0 ? (
+            <div
+              style={{
+                marginBottom: 14,
+                padding: '12px 14px',
+                borderRadius: 12,
+                border: '1px solid rgba(34, 197, 94, 0.35)',
+                background: 'rgba(34, 197, 94, 0.07)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '0.65rem',
+                  color: '#86efac',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  marginBottom: 8,
+                  fontWeight: 700,
+                }}
+              >
+                Pasto realistico (1 tap)
+              </div>
+              <p style={{ margin: '0 0 10px', fontSize: '0.72rem', color: '#94a3b8', lineHeight: 1.45 }}>
+                Da cronologia, preferenze per questo pasto e porzioni (fette, porzioni, override grammi). Nessun input obbligatorio.
+              </p>
+              <button
+                type="button"
+                onClick={handleCreatePracticalMeal}
+                disabled={!foodDb || typeof foodDb !== 'object' || Object.keys(foodDb).length === 0}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(34, 197, 94, 0.5)',
+                  background: 'rgba(34, 197, 94, 0.18)',
+                  color: '#bbf7d0',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  marginBottom: 10,
+                }}
+              >
+                ✨ Crea pasto
+              </button>
+              {practicalMealError ? (
+                <div style={{ fontSize: '0.72rem', color: '#fca5a5', marginBottom: 8 }}>{practicalMealError}</div>
+              ) : null}
+              {practicalMealDraft?.foods?.length ? (
+                <>
+                  <div style={{ fontSize: '0.78rem', color: '#e2e8f0', fontWeight: 600, marginBottom: 8 }}>
+                    {(() => {
+                      const k = effectiveMealTypeForHabits || normalizedTrackedMealType;
+                      if (k === 'colazione') return 'Colazione suggerita:';
+                      if (k === 'pranzo') return 'Pranzo suggerito:';
+                      if (k === 'cena') return 'Cena suggerita:';
+                      if (k === 'snack') return 'Spuntino suggerito:';
+                      return 'Pasto suggerito:';
+                    })()}
+                  </div>
+                  <ul style={{ margin: '0 0 10px', paddingLeft: 18, color: '#cbd5e1', fontSize: '0.8rem', lineHeight: 1.55 }}>
+                    {practicalMealDraft.displayLines.map((line, idx) => (
+                      <li key={`${idx}-${line.slice(0, 48)}`}>{line}</li>
+                    ))}
+                  </ul>
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: 10 }}>
+                    {`≈ ${Math.round(practicalMealDraft.totalCalories)} kcal (target ~${practicalTargetKcal})`}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={handleApplyPracticalMeal}
+                      disabled={typeof estraiDatiFoodDb !== 'function'}
+                      style={{
+                        flex: 1,
+                        minWidth: 120,
+                        padding: '8px 12px',
+                        borderRadius: 10,
+                        border: 'none',
+                        background: '#22c55e',
+                        color: '#052e16',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        cursor: typeof estraiDatiFoodDb !== 'function' ? 'not-allowed' : 'pointer',
+                        opacity: typeof estraiDatiFoodDb !== 'function' ? 0.5 : 1,
+                      }}
+                    >
+                      ✔ Inserisci
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRegeneratePracticalMeal}
+                      style={{
+                        flex: 1,
+                        minWidth: 120,
+                        padding: '8px 12px',
+                        borderRadius: 10,
+                        border: '1px solid #444',
+                        background: 'rgba(255,255,255,0.06)',
+                        color: '#e2e8f0',
+                        fontWeight: 600,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      🔁 Rigenera
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : null}
           <div style={{ position: 'relative', marginBottom: '20px' }}>
             {isBarcodeScannerOpen && (
               <div style={{ marginBottom: '12px', borderRadius: '12px', overflow: 'hidden', background: '#000', border: '1px solid #333' }}>
