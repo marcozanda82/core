@@ -298,6 +298,22 @@ export function searchUSDAFoods(query, opts = {}) {
           }),
           signal,
         });
+        
+        const text = await res.text();
+        console.log("STATUS:", res.status);
+        console.log("RAW TEXT:", text);
+        
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          console.error("JSON ERROR:", e);
+          return [];
+        }
+        
+        console.log("DATA:", data);
+        
+        return data.foods || [];
 
         if (usdaPendingResolve !== resolve) return;
 
