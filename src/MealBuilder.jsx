@@ -713,14 +713,38 @@ export default function MealBuilder({
       })
       .slice(0, 5);
   }, [foodNameInput, recentFoodEntries, visibleRecentFoodEntries]);
-  const isRecentFood = useCallback((foodId, foodName) => {
+  const getFoodUsageMeta = useCallback((foodId, foodName) => {
     const id = String(foodId ?? '').trim();
-    const name = normalizeSearchQuery(foodName);
-    return recentFoodLookup.has(`id:${id}`) || recentFoodLookup.has(`name:${name}`);
-  }, [recentFoodLookup]);
+    const normalizedName = normalizeSearchQuery(foodName);
+    const entry = recentFoodEntries.find((item) => {
+      const entryId = String(item?.id ?? '').trim();
+      const entryName = normalizeSearchQuery(item?.name);
+      return (id && entryId === id) || (normalizedName && entryName === normalizedName);
+    });
+
+    if (!entry) {
+      return {
+        isRecent: false,
+        isFrequent: false,
+      };
+    }
+
+    const recencyScore = getRecentFoodRecencyScore(entry.lastUsed);
+    const frequencyScore = getRecentFoodFrequencyScore(entry.count);
+
+    return {
+      isRecent: recencyScore >= 3,
+      isFrequent: frequencyScore >= 2,
+    };
+  }, [recentFoodEntries]);
 
   const renderFoodOptionLabel = useCallback((foodName, query, foodId) => {
-    const isRecent = isRecentFood(foodId, foodName);
+    const { isRecent, isFrequent } = getFoodUsageMeta(foodId, foodName);
+    let badgeLabel = '';
+
+    if (isRecent && isFrequent) badgeLabel = 'Preferito';
+    else if (isFrequent) badgeLabel = 'Frequente';
+    else if (isRecent) badgeLabel = 'Recente';
 
     return (
       <span
@@ -736,26 +760,26 @@ export default function MealBuilder({
             __html: highlightSearchMatches(foodName, query),
           }}
         />
-        {isRecent ? (
+        {badgeLabel ? (
           <span
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               padding: '2px 6px',
               borderRadius: 999,
-              background: 'rgba(103, 232, 249, 0.12)',
-              color: '#67e8f9',
+              background: isRecent && isFrequent ? 'rgba(179, 136, 255, 0.16)' : 'rgba(103, 232, 249, 0.12)',
+              color: isRecent && isFrequent ? '#b388ff' : '#67e8f9',
               fontSize: '0.68rem',
               fontWeight: 600,
               lineHeight: 1.2,
             }}
           >
-            Recente
+            {badgeLabel}
           </span>
         ) : null}
       </span>
     );
-  }, [isRecentFood]);
+  }, [getFoodUsageMeta]);
 
   const trackRecentFood = useCallback((food) => {
     const name = String(food?.name || '').trim();
