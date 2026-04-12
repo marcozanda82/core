@@ -34,6 +34,14 @@ import {
   getGramsPerUnitOverride,
   USER_FOOD_OVERRIDES_EVENT,
 } from './userFoodOverrides';
+import {
+  resolveFoodWithUnits,
+  computeGrams,
+  formatSmartPortionLabel,
+  naturalUnitMenuLabel,
+  smartQuantityStep,
+  UNIT_TYPES,
+} from './smartFoodUnits';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -1114,6 +1122,8 @@ export default function MealBuilder({
   const [portionUnitGrams, setPortionUnitGrams] = useState(null);
   /** Moltiplicatore unità (es. 2 fette). */
   const [portionQuantityInput, setPortionQuantityInput] = useState('1');
+  /** Con porzioni "umane": natural = stepper + unità; gram = peso manuale nel campo g. */
+  const [portionSmartMode, setPortionSmartMode] = useState('gram');
   const [overrideVersion, setOverrideVersion] = useState(0);
   const [portionOverrideEditorOpen, setPortionOverrideEditorOpen] = useState(false);
   const [portionOverrideDraft, setPortionOverrideDraft] = useState('');
@@ -1138,6 +1148,27 @@ export default function MealBuilder({
     return built;
   }, [selectedFoodMatch, foodNameInput, overrideVersion]);
 
+  const smartFoodPortion = useMemo(() => {
+    if (!selectedFoodMatch || !selectedFoodUnitHint) return null;
+    const id = selectedFoodMatch.id != null ? String(selectedFoodMatch.id).trim() : '';
+    const desc = String(selectedFoodMatch.desc || foodNameInput || '').trim();
+    const row =
+      selectedFoodMatch.row && typeof selectedFoodMatch.row === 'object'
+        ? selectedFoodMatch.row
+        : { desc };
+    return resolveFoodWithUnits({
+      ...row,
+      id: id || undefined,
+      desc,
+      name: desc,
+      defaultUnit: selectedFoodUnitHint.defaultUnit,
+    });
+  }, [selectedFoodMatch, selectedFoodUnitHint, foodNameInput, overrideVersion]);
+
+  const useSmartHumanUnits = Boolean(
+    selectedFoodUnitHint && smartFoodPortion && smartFoodPortion.unit !== UNIT_TYPES.GRAM
+  );
+
   useEffect(() => {
     setUnsavedGramsEditCount(0);
     setPortionOverrideEditorOpen(false);
@@ -1149,6 +1180,7 @@ export default function MealBuilder({
     if (!selectedFoodMatch) {
       setPortionQuantityInput('1');
       setPortionUnitGrams(null);
+      setPortionSmartMode('gram');
       return;
     }
     const desc = String(selectedFoodMatch.desc || '').trim();
@@ -1158,16 +1190,50 @@ export default function MealBuilder({
     const habitStr = typeof getLastQuantityForFood === 'function' ? getLastQuantityForFood(desc) || '' : '';
     const habitG = parseFloat(String(habitStr).replace(',', '.'));
     if (Number.isFinite(habitG) && habitG > 0) {
+      setPortionSmartMode('gram');
       setPortionUnitGrams(null);
       setPortionQuantityInput('1');
       setFoodWeightInput(String(Math.round(habitG)));
       return;
     }
 
+    const id = selectedFoodMatch.id != null ? String(selectedFoodMatch.id).trim() : '';
+    const row =
+      selectedFoodMatch.row && typeof selectedFoodMatch.row === 'object'
+        ? selectedFoodMatch.row
+        : { desc };
+    const smart = resolveFoodWithUnits({
+      ...row,
+      id: id || undefined,
+      desc,
+      name: desc,
+      defaultUnit: built.defaultUnit,
+    });
+
+    if (smart.unit === UNIT_TYPES.GRAM) {
+      setPortionSmartMode('gram');
+      setPortionQuantityInput('1');
+      setPortionUnitGrams(null);
+      setFoodWeightInput(
+        String(Math.max(1, Math.round(Number(built.defaultUnit.grams) || smart.gramsPerUnit || 100)))
+      );
+      return;
+    }
+
+    setPortionSmartMode('natural');
     setPortionQuantityInput('1');
-    setPortionUnitGrams(Number(built.defaultUnit.grams));
-    setFoodWeightInput(String(Math.max(1, Math.round(Number(built.defaultUnit.grams)))));
+    const gpu = Number(smart.gramsPerUnit);
+    setPortionUnitGrams(Number.isFinite(gpu) && gpu > 0 ? gpu : Number(built.defaultUnit.grams));
+    const per = Number.isFinite(gpu) && gpu > 0 ? gpu : Number(built.defaultUnit.grams);
+    setFoodWeightInput(String(Math.max(1, Math.round(computeGrams(1, per)))));
   }, [selectedFoodMatch, getLastQuantityForFood]);
+
+  /** Override utente: allinea g per unità in modalità porzione rapida. */
+  useEffect(() => {
+    if (portionSmartMode !== 'natural' || !smartFoodPortion || smartFoodPortion.unit === UNIT_TYPES.GRAM) return;
+    const g = Number(smartFoodPortion.gramsPerUnit);
+    if (Number.isFinite(g) && g > 0) setPortionUnitGrams(g);
+  }, [portionSmartMode, smartFoodPortion?.gramsPerUnit, smartFoodPortion?.unit, overrideVersion]);
 
   /** In modalità unità+quantità, aggiorna il campo totale g (nutrienti). */
   useEffect(() => {
@@ -1232,6 +1298,47 @@ export default function MealBuilder({
     setUnsavedGramsEditCount(0);
     setShowOverrideSavePrompt(false);
   }, [selectedFoodIdStr, portionUnitGrams, selectedFoodUnitHint]);
+
+  const bumpPortionQuantity = useCallback(
+    (delta) => {
+      if (!smartFoodPortion || smartFoodPortion.unit === UNIT_TYPES.GRAM) return;
+      const step = smartQuantityStep(smartFoodPortion.unit);
+      const q = parsePortionQuantity(portionQuantityInput);
+      const raw = q + delta * step;
+      const next = Math.max(step, Math.round(raw / step) * step);
+      setPortionQuantityInput(String(next));
+    },
+    [portionQuantityInput, smartFoodPortion]
+  );
+
+  const handlePortionSmartModeChange = useCallback(
+    (e) => {
+      const v = e?.target?.value;
+      if (v === 'g') {
+        const total = computePortionGramsForNutrition(
+          foodWeightInput,
+          portionUnitGrams,
+          portionQuantityInput
+        );
+        if (!Number.isFinite(total) || total <= 0) return;
+        setPortionSmartMode('gram');
+        setPortionUnitGrams(null);
+        setFoodWeightInput(String(Math.max(1, Math.round(total))));
+        return;
+      }
+      if (v === 'natural' && smartFoodPortion && smartFoodPortion.unit !== UNIT_TYPES.GRAM) {
+        const gpu = Number(smartFoodPortion.gramsPerUnit);
+        const g = parseFloat(String(foodWeightInput ?? '').replace(',', '.'));
+        if (!Number.isFinite(gpu) || gpu <= 0 || !Number.isFinite(g) || g <= 0) return;
+        setPortionSmartMode('natural');
+        setPortionUnitGrams(gpu);
+        const step = smartQuantityStep(smartFoodPortion.unit);
+        const q = Math.max(step, Math.round(g / gpu / step) * step);
+        setPortionQuantityInput(String(q));
+      }
+    },
+    [foodWeightInput, portionUnitGrams, portionQuantityInput, smartFoodPortion]
+  );
 
   const enrichAddedFoodItem = useCallback((item, selection, weightInputValue) => {
     if (!item || !selection?.id) return item;
@@ -2911,27 +3018,70 @@ export default function MealBuilder({
                         }}
                         onFocus={() => setShowFoodDropdown(true)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') document.getElementById('weight-input')?.focus();
+                          if (e.key === 'Enter') {
+                            if (
+                              useSmartHumanUnits &&
+                              portionSmartMode === 'natural' &&
+                              smartFoodPortion &&
+                              portionUnitGrams != null &&
+                              Number.isFinite(portionUnitGrams)
+                            ) {
+                              document.getElementById('portion-qty-plus')?.focus();
+                            } else {
+                              document.getElementById('weight-input')?.focus();
+                            }
+                          }
                         }}
                       />
-                      <input
-                        id="weight-input"
-                        type="number"
-                        inputMode="decimal"
-                        className="quick-input input-weight"
-                        placeholder="g"
-                        title="Peso in grammi (usato per i nutrienti). Scegli un’unità qui sotto oppure inserisci i g a mano."
-                        value={foodWeightInput}
-                        onChange={(e) => {
-                          setPortionUnitGrams(null);
-                          setFoodWeightInput(e.target.value);
-                        }}
-                        onFocus={(e) => {
-                          if (numpadFoodId) e.target.blur();
-                        }}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddSelectedFood()}
-                        style={{ textAlign: 'center', boxSizing: 'border-box' }}
-                      />
+                      {useSmartHumanUnits &&
+                      portionSmartMode === 'natural' &&
+                      smartFoodPortion &&
+                      portionUnitGrams != null &&
+                      Number.isFinite(portionUnitGrams) ? (
+                        <div
+                          id="weight-input"
+                          role="status"
+                          tabIndex={0}
+                          className="quick-input input-weight"
+                          title="Grammi calcolati dalla porzione. Nel menu «Porzione» scegli Grammi per modificarli a mano."
+                          style={{
+                            textAlign: 'center',
+                            boxSizing: 'border-box',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#e2e8f0',
+                            fontSize: '0.85rem',
+                            fontVariantNumeric: 'tabular-nums',
+                            cursor: 'default',
+                          }}
+                        >
+                          {formatSmartPortionLabel(
+                            parsePortionQuantity(portionQuantityInput),
+                            smartFoodPortion.unit,
+                            portionUnitGrams
+                          )}
+                        </div>
+                      ) : (
+                        <input
+                          id="weight-input"
+                          type="number"
+                          inputMode="decimal"
+                          className="quick-input input-weight"
+                          placeholder="g"
+                          title="Peso in grammi (nutrienti). Con porzione rapida i g si calcolano da soli; qui inserimento manuale."
+                          value={foodWeightInput}
+                          onChange={(e) => {
+                            setPortionUnitGrams(null);
+                            setFoodWeightInput(e.target.value);
+                          }}
+                          onFocus={(e) => {
+                            if (numpadFoodId) e.target.blur();
+                          }}
+                          onKeyDown={(e) => e.key === 'Enter' && handleAddSelectedFood()}
+                          style={{ textAlign: 'center', boxSizing: 'border-box' }}
+                        />
+                      )}
                       <button
                         type="button"
                         title="Scansiona barcode"
@@ -2961,90 +3111,215 @@ export default function MealBuilder({
                             gap: '10px 12px',
                           }}
                         >
-                          <label
-                            htmlFor="portion-unit-select"
-                            style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap' }}
-                          >
-                            Unità
-                          </label>
-                          <select
-                            id="portion-unit-select"
-                            value={portionTemplateSelectValue(portionUnitGrams, selectedFoodUnitHint.units)}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              if (v === PORTION_UNIT_CUSTOM) {
-                                setPortionUnitGrams(null);
-                                return;
-                              }
-                              setPortionUnitGrams(Number(v));
-                            }}
-                            style={{
-                              flex: 1,
-                              minWidth: 0,
-                              maxWidth: '100%',
-                              padding: '8px 10px',
-                              borderRadius: 10,
-                              border: '1px solid #444',
-                              background: '#1a1a22',
-                              color: '#e2e8f0',
-                              fontSize: '0.8rem',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {selectedFoodUnitHint.units.map((u) => (
-                              <option key={`${u.grams}-${u.label}`} value={String(u.grams)}>
-                                {`${u.label} → ${u.grams} g`}
-                              </option>
-                            ))}
-                            <option value={PORTION_UNIT_CUSTOM}>
-                              Altro — modifica i grammi nel campo sopra
-                            </option>
-                          </select>
-                          <label
-                            htmlFor="portion-qty-input"
-                            style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap' }}
-                          >
-                            Quantità
-                          </label>
-                          <input
-                            id="portion-qty-input"
-                            type="number"
-                            inputMode="decimal"
-                            min={0.25}
-                            step={0.25}
-                            title="Numero di unità (es. 2 = doppia porzione). Usato solo con un’unità selezionata."
-                            disabled={portionUnitGrams == null}
-                            value={portionQuantityInput}
-                            onChange={(e) => setPortionQuantityInput(e.target.value)}
-                            style={{
-                              width: 72,
-                              padding: '8px 6px',
-                              borderRadius: 10,
-                              border: '1px solid #444',
-                              background: portionUnitGrams == null ? '#25252d' : '#1a1a22',
-                              color: portionUnitGrams == null ? '#64748b' : '#e2e8f0',
-                              fontSize: '0.8rem',
-                              textAlign: 'center',
-                              boxSizing: 'border-box',
-                            }}
-                          />
-                          <span
-                            style={{
-                              fontSize: '0.78rem',
-                              color: '#a5b4fc',
-                              fontVariantNumeric: 'tabular-nums',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {(() => {
-                              const g = computePortionGramsForNutrition(
-                                foodWeightInput,
-                                portionUnitGrams,
-                                portionQuantityInput
-                              );
-                              return Number.isFinite(g) ? `= ${g} g (nutrienti)` : '';
-                            })()}
-                          </span>
+                          {useSmartHumanUnits && portionSmartMode === 'natural' && smartFoodPortion ? (
+                            <>
+                              <span
+                                style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap' }}
+                              >
+                                Porzione
+                              </span>
+                              <button
+                                id="portion-qty-minus"
+                                type="button"
+                                aria-label="Meno una porzione"
+                                onClick={() => bumpPortionQuantity(-1)}
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 10,
+                                  border: '1px solid #444',
+                                  background: '#1a1a22',
+                                  color: '#e2e8f0',
+                                  fontSize: '1.1rem',
+                                  lineHeight: 1,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                −
+                              </button>
+                              <span
+                                style={{
+                                  minWidth: 32,
+                                  textAlign: 'center',
+                                  fontSize: '0.95rem',
+                                  fontWeight: 700,
+                                  color: '#e2e8f0',
+                                  fontVariantNumeric: 'tabular-nums',
+                                }}
+                              >
+                                {parsePortionQuantity(portionQuantityInput)}
+                              </span>
+                              <button
+                                id="portion-qty-plus"
+                                type="button"
+                                aria-label="Più una porzione"
+                                onClick={() => bumpPortionQuantity(1)}
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 10,
+                                  border: '1px solid #444',
+                                  background: '#1a1a22',
+                                  color: '#e2e8f0',
+                                  fontSize: '1.1rem',
+                                  lineHeight: 1,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                +
+                              </button>
+                              <select
+                                id="portion-smart-unit-select"
+                                value="natural"
+                                onChange={handlePortionSmartModeChange}
+                                style={{
+                                  padding: '8px 10px',
+                                  borderRadius: 10,
+                                  border: '1px solid #444',
+                                  background: '#1a1a22',
+                                  color: '#e2e8f0',
+                                  fontSize: '0.8rem',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <option value="natural">
+                                  {naturalUnitMenuLabel(smartFoodPortion.unit)}
+                                </option>
+                                <option value="g">Grammi</option>
+                              </select>
+                            </>
+                          ) : useSmartHumanUnits && portionSmartMode === 'gram' && smartFoodPortion ? (
+                            <>
+                              <span
+                                style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap' }}
+                              >
+                                Modifica
+                              </span>
+                              <select
+                                id="portion-smart-unit-select"
+                                value="g"
+                                onChange={handlePortionSmartModeChange}
+                                style={{
+                                  padding: '8px 10px',
+                                  borderRadius: 10,
+                                  border: '1px solid #444',
+                                  background: '#1a1a22',
+                                  color: '#e2e8f0',
+                                  fontSize: '0.8rem',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <option value="natural">
+                                  {naturalUnitMenuLabel(smartFoodPortion.unit)}
+                                </option>
+                                <option value="g">Grammi</option>
+                              </select>
+                              <span
+                                style={{
+                                  fontSize: '0.78rem',
+                                  color: '#a5b4fc',
+                                  fontVariantNumeric: 'tabular-nums',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {(() => {
+                                  const g = computePortionGramsForNutrition(
+                                    foodWeightInput,
+                                    portionUnitGrams,
+                                    portionQuantityInput
+                                  );
+                                  return Number.isFinite(g) ? `${g} g (nutrienti)` : '';
+                                })()}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <label
+                                htmlFor="portion-unit-select"
+                                style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap' }}
+                              >
+                                Unità
+                              </label>
+                              <select
+                                id="portion-unit-select"
+                                value={portionTemplateSelectValue(portionUnitGrams, selectedFoodUnitHint.units)}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (v === PORTION_UNIT_CUSTOM) {
+                                    setPortionUnitGrams(null);
+                                    return;
+                                  }
+                                  setPortionUnitGrams(Number(v));
+                                }}
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  maxWidth: '100%',
+                                  padding: '8px 10px',
+                                  borderRadius: 10,
+                                  border: '1px solid #444',
+                                  background: '#1a1a22',
+                                  color: '#e2e8f0',
+                                  fontSize: '0.8rem',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {selectedFoodUnitHint.units.map((u) => (
+                                  <option key={`${u.grams}-${u.label}`} value={String(u.grams)}>
+                                    {`${u.label} → ${u.grams} g`}
+                                  </option>
+                                ))}
+                                <option value={PORTION_UNIT_CUSTOM}>
+                                  Altro — modifica i grammi nel campo sopra
+                                </option>
+                              </select>
+                              <label
+                                htmlFor="portion-qty-input"
+                                style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap' }}
+                              >
+                                Quantità
+                              </label>
+                              <input
+                                id="portion-qty-input"
+                                type="number"
+                                inputMode="decimal"
+                                min={0.25}
+                                step={0.25}
+                                title="Numero di unità (es. 2 = doppia porzione). Usato solo con un’unità selezionata."
+                                disabled={portionUnitGrams == null}
+                                value={portionQuantityInput}
+                                onChange={(e) => setPortionQuantityInput(e.target.value)}
+                                style={{
+                                  width: 72,
+                                  padding: '8px 6px',
+                                  borderRadius: 10,
+                                  border: '1px solid #444',
+                                  background: portionUnitGrams == null ? '#25252d' : '#1a1a22',
+                                  color: portionUnitGrams == null ? '#64748b' : '#e2e8f0',
+                                  fontSize: '0.8rem',
+                                  textAlign: 'center',
+                                  boxSizing: 'border-box',
+                                }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: '0.78rem',
+                                  color: '#a5b4fc',
+                                  fontVariantNumeric: 'tabular-nums',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {(() => {
+                                  const g = computePortionGramsForNutrition(
+                                    foodWeightInput,
+                                    portionUnitGrams,
+                                    portionQuantityInput
+                                  );
+                                  return Number.isFinite(g) ? `= ${g} g (nutrienti)` : '';
+                                })()}
+                              </span>
+                            </>
+                          )}
                         </div>
                         <div
                           style={{
