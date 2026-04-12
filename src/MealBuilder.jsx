@@ -4101,7 +4101,7 @@ export default function MealBuilder({
                                     const el = e.currentTarget;
                                     if (el.scrollHeight - el.scrollTop - el.clientHeight > 72) return;
                                     const q = String(foodNameInput || '').trim();
-                                    if (q.length >= 2 && typeof triggerCreaSearch === 'function') {
+                                    if (q.length >= 3 && typeof triggerCreaSearch === 'function') {
                                       triggerCreaSearch(q, { onlyUsda: true });
                                     }
                                   }}

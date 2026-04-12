@@ -6217,7 +6217,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       try {
         const merged = await fuseUsdaIntoCrea(lastCreaNormalizedRef.current, q, {
           signal: ac.signal,
-          minQueryLengthForUsda: 2,
+          minQueryLengthForUsda: 3,
         });
         if (!ac.signal.aborted) {
           setCreaResults(merged);
@@ -6253,13 +6253,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       setShowFoodDropdown(true);
       setIsCreaLoading(false);
 
-      const loadUsda = opts.loadUsda !== false && q.length >= 2;
+      const loadUsda = opts.loadUsda !== false && q.length >= 3;
       if (!loadUsda) return;
 
       try {
         const merged = await fuseUsdaIntoCrea(creaNormalized, q, {
           signal: ac.signal,
-          minQueryLengthForUsda: 2,
+          minQueryLengthForUsda: 3,
         });
         if (!ac.signal.aborted) {
           setCreaResults(merged);
