@@ -223,6 +223,66 @@ function mealFoodsKey(foods) {
     .join('|');
 }
 
+function mergeCooccurrencePairStrength(byKey, idA, idB, count, lastUsedAt) {
+  const a = String(idA ?? '').trim();
+  const b = String(idB ?? '').trim();
+  if (!a || !b || a === b) return;
+  const [x, y] = a < b ? [a, b] : [b, a];
+  const key = `${x}|${y}`;
+  const c = Number(count) || 0;
+  const lu = Number(lastUsedAt) || 0;
+  const prev = byKey.get(key);
+  if (!prev) {
+    byKey.set(key, { idA: x, idB: y, count: c, lastUsedAt: lu });
+    return;
+  }
+  prev.count = Math.max(prev.count, c);
+  prev.lastUsedAt = Math.max(prev.lastUsedAt, lu);
+}
+
+/** Strongest food pairs for this meal (saved diary + in-session patterns), for anchor-based suggestions. */
+function collectTopCooccurrencePairsForMealType(mealType, patterns, savedMap, limit = 10) {
+  const mt = normalizeTrackedMealType(mealType);
+  if (!mt) return [];
+  const lim = Math.max(1, Math.min(24, Number(limit) || 10));
+  const byKey = new Map();
+
+  (patterns || []).forEach((p) => {
+    if (normalizeTrackedMealType(p.mealType) !== mt) return;
+    mergeCooccurrencePairStrength(
+      byKey,
+      p.firstFood?.id,
+      p.secondFood?.id,
+      p.count,
+      p.lastUsedAt
+    );
+  });
+
+  const bucket = savedMap?.[mt];
+  if (bucket?.adj && typeof bucket.adj === 'object') {
+    Object.entries(bucket.adj).forEach(([fromId, row]) => {
+      if (!row || typeof row !== 'object') return;
+      Object.entries(row).forEach(([toId, meta]) => {
+        if (fromId >= toId) return;
+        mergeCooccurrencePairStrength(byKey, fromId, toId, meta?.count, meta?.lastUsedAt);
+      });
+    });
+  }
+
+  return [...byKey.values()]
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.lastUsedAt - a.lastUsedAt;
+    })
+    .slice(0, lim);
+}
+
+function poolEntryById(pool, id) {
+  const sid = String(id ?? '').trim();
+  if (!sid) return null;
+  return pool.find((e) => String(e?.id ?? '').trim() === sid) || null;
+}
+
 function sumPairCooccurrenceForMeal(mealType, ids, patterns, savedMap) {
   const list = [...new Set((ids || []).map((x) => String(x ?? '').trim()).filter(Boolean))];
   let sum = 0;
@@ -309,7 +369,11 @@ function reorderComplementsForMealType(comps, mealType, habits, foodDb, mainIds)
     const shareB = catB ? (Number(catTotals[catB]) || 0) / total : 0;
     const bonusA = catA && mainsCats.has(catA) ? shareA * 0.55 : shareA;
     const bonusB = catB && mainsCats.has(catB) ? shareB * 0.55 : shareB;
-    if (bonusB !== bonusA) return bonusB - bonusA;
+    const prefA = Math.log1p(getMealTypeFoodPreferenceCount(mealType, a.id, habits)) * 0.35;
+    const prefB = Math.log1p(getMealTypeFoodPreferenceCount(mealType, b.id, habits)) * 0.35;
+    const scoreA = bonusA + prefA;
+    const scoreB = bonusB + prefB;
+    if (scoreB !== scoreA) return scoreB - scoreA;
     return (Number(b.count) || 0) - (Number(a.count) || 0);
   });
 }
@@ -449,6 +513,15 @@ function buildScoredSuggestedMeals({
       assembleMealFromAnchors(pool, [pool[0], pool[1]], effectiveMealType, patterns, savedMap, assemblyOptions)
     );
   }
+
+  collectTopCooccurrencePairsForMealType(effectiveMealType, patterns, savedMap, 10).forEach(({ idA, idB }) => {
+    const a = poolEntryById(pool, idA);
+    const b = poolEntryById(pool, idB);
+    if (!a || !b) return;
+    pushUniqueFoods(
+      assembleMealFromAnchors(pool, [a, b], effectiveMealType, patterns, savedMap, assemblyOptions)
+    );
+  });
 
   const topHabitOnly = pool
     .slice(0, Math.min(maxItems, pool.length))
@@ -2044,6 +2117,52 @@ export default function MealBuilder({
     };
   }, [addedFoods]);
 
+  /** vs pasto attuale: stima con stessa pipeline di “Applica” (porzioni da ultimo peso). */
+  const scoredSuggestedMealsWithMacroExplain = useMemo(() => {
+    if (!Array.isArray(scoredSuggestedMeals) || scoredSuggestedMeals.length === 0) return [];
+    if (typeof estraiDatiFoodDb !== 'function') {
+      return scoredSuggestedMeals.map((row) => ({ ...row, macroExplain: null }));
+    }
+    const baseK = Math.round(toNum(currentMealMacros.kcal));
+    const baseP = toNum(currentMealMacros.prot);
+    return scoredSuggestedMeals.map((row) => {
+      let sumK = 0;
+      let sumP = 0;
+      (row.foods || []).forEach((entry) => {
+        const name = String(entry.name || '').trim();
+        const id = String(entry.id ?? name).trim();
+        if (!name) return;
+        const matchedRow = foodDb?.[id] || localFoodDb?.[id] || null;
+        const parsedWeight = parseFloat(getLastQuantityForFood(name)) || 100;
+        const preferredDbKey = foodDb?.[id] != null ? id : undefined;
+        const baseItem = estraiDatiFoodDb(name, parsedWeight, mealType, preferredDbKey);
+        const enrichedItem = enrichAddedFoodItem(
+          baseItem,
+          { id, desc: name, row: matchedRow },
+          parsedWeight
+        );
+        sumK += toNum(enrichedItem.kcal ?? enrichedItem.cal);
+        sumP += toNum(enrichedItem.prot ?? enrichedItem.proteine);
+      });
+      const dk = Math.round(sumK) - baseK;
+      const dProt = Math.round((sumP - baseP) * 10) / 10;
+      const protStr = Number.isInteger(dProt) || Math.abs(dProt % 1) < 1e-9
+        ? String(Math.round(dProt))
+        : dProt.toFixed(1);
+      const macroExplain = `${dk > 0 ? '+' : ''}${dk} kcal · ${dProt > 0 ? '+' : ''}${protStr}g proteine`;
+      return { ...row, macroExplain };
+    });
+  }, [
+    scoredSuggestedMeals,
+    currentMealMacros,
+    estraiDatiFoodDb,
+    enrichAddedFoodItem,
+    getLastQuantityForFood,
+    foodDb,
+    localFoodDb,
+    mealType,
+  ]);
+
   const dailyGoals = useMemo(() => ({
     kcal: (dynamicDailyKcal ?? userTargets?.kcal ?? 2000) || 2000,
     prot: (userTargets?.prot ?? 150) || 150,
@@ -2507,7 +2626,7 @@ export default function MealBuilder({
                   {`Adattato nel tempo: di solito ~${adaptiveMealBounds.target} alimenti per questo pasto · range suggerito ${adaptiveMealBounds.min}–${adaptiveMealBounds.max}.`}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {scoredSuggestedMeals.map((row, idx) => (
+                  {scoredSuggestedMealsWithMacroExplain.map((row, idx) => (
                     <div
                       key={mealFoodsKey(row.foods)}
                       style={{
@@ -2533,6 +2652,18 @@ export default function MealBuilder({
                           </span>
                         ))}
                       </div>
+                      {row.macroExplain ? (
+                        <div
+                          style={{
+                            fontSize: '0.72rem',
+                            color: '#c4b5fd',
+                            marginBottom: '8px',
+                            letterSpacing: '0.02em',
+                          }}
+                        >
+                          {row.macroExplain}
+                        </div>
+                      ) : null}
                       <div
                         style={{
                           display: 'flex',

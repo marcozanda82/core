@@ -10,6 +10,24 @@ export const MEAL_SUGGESTION_HABITS_EVENT = 'meal-suggestion-habits-updated';
 
 const MAX_FOOD_IDS_PER_BUCKET = 100;
 const MIN_SAMPLES_FOR_ADAPTIVE = 3;
+const MAX_ITEM_COUNT_BUCKET = 16;
+
+/** Median meal size from histogram (typical count), or null if empty. */
+function medianItemCountFromHistogram(itemCounts) {
+  const entries = Object.entries(itemCounts || {})
+    .map(([k, v]) => ({ k: Number(k), c: Number(v) || 0 }))
+    .filter((x) => x.k >= 1 && x.k <= MAX_ITEM_COUNT_BUCKET && x.c > 0)
+    .sort((a, b) => a.k - b.k);
+  const total = entries.reduce((s, e) => s + e.c, 0);
+  if (total <= 0) return null;
+  const mid = (total + 1) / 2;
+  let acc = 0;
+  for (let i = 0; i < entries.length; i += 1) {
+    acc += entries[i].c;
+    if (acc >= mid) return entries[i].k;
+  }
+  return entries[entries.length - 1].k;
+}
 
 function normalizeMealType(value) {
   const meal = String(value || '').trim().toLowerCase();
@@ -102,16 +120,20 @@ export function recordMealSuggestionHabits(foods, mealTypeSlot, foodDb = {}) {
       itemCountSum: Number(raw.byMealType[mealType].itemCountSum) || 0,
       foodIds: { ...(raw.byMealType[mealType].foodIds || {}) },
       categoryTotals: { ...(raw.byMealType[mealType].categoryTotals || {}) },
+      itemCounts: { ...(raw.byMealType[mealType].itemCounts || {}) },
     }
     : {
       mealCountSamples: 0,
       itemCountSum: 0,
       foodIds: {},
       categoryTotals: {},
+      itemCounts: {},
     };
 
   bucket.mealCountSamples += 1;
   bucket.itemCountSum += itemCount;
+  const icKey = String(Math.min(MAX_ITEM_COUNT_BUCKET, Math.max(1, itemCount)));
+  bucket.itemCounts[icKey] = (Number(bucket.itemCounts[icKey]) || 0) + 1;
   bucket.lastUpdated = Date.now();
 
   refs.forEach(({ id, name, raw: row }) => {
@@ -147,8 +169,14 @@ export function getAdaptiveMealBounds(mealType, habits) {
     return { min: defaultMin, max: defaultMax, target: defaultTarget };
   }
 
+  const hist = b.itemCounts && typeof b.itemCounts === 'object' ? b.itemCounts : {};
+  const histTotal = Object.values(hist).reduce((s, v) => s + (Number(v) || 0), 0);
+  const median = medianItemCountFromHistogram(hist);
   const avg = Number(b.itemCountSum) / n;
-  let target = Math.round(avg);
+  // Prefer median from histogram once enough bucketed saves (stable “typical” size); else mean for older data.
+  let target = histTotal >= MIN_SAMPLES_FOR_ADAPTIVE && median != null
+    ? median
+    : Math.round(avg);
   target = Math.max(defaultMin, Math.min(6, target));
   const min = Math.max(1, target - 1);
   const max = Math.min(8, target + 1);
