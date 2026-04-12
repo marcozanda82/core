@@ -11,6 +11,10 @@ function normalizeSearchText(value) {
 const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
 const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const RECENT_FOOD_MEDIUM_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+const SEARCH_SYNONYMS = {
+  arrosto: ['cotto'],
+  pollo: ['chicken'],
+};
 
 function loadRecentFoodEntries() {
   if (typeof localStorage === 'undefined') return [];
@@ -121,13 +125,22 @@ function levenshteinDistance(a, b) {
 }
 
 function scoreQueryWord(queryWord, itemWords) {
+  const expandedQueryWords = [queryWord, ...(SEARCH_SYNONYMS[queryWord] || [])];
   let bestScore = 0;
 
-  for (let i = 0; i < itemWords.length; i += 1) {
-    const itemWord = itemWords[i];
-    if (itemWord === queryWord) return 2;
-    if (bestScore === 0 && levenshteinDistance(queryWord, itemWord) <= 1) {
-      bestScore = 1;
+  for (let q = 0; q < expandedQueryWords.length; q += 1) {
+    const candidateQueryWord = expandedQueryWords[q];
+
+    for (let i = 0; i < itemWords.length; i += 1) {
+      const itemWord = itemWords[i];
+      if (itemWord === candidateQueryWord) return 3;
+      if (itemWord.includes(candidateQueryWord) || candidateQueryWord.includes(itemWord)) {
+        bestScore = Math.max(bestScore, 2);
+        continue;
+      }
+      if (levenshteinDistance(candidateQueryWord, itemWord) <= 1) {
+        bestScore = Math.max(bestScore, 1);
+      }
     }
   }
 
@@ -143,18 +156,19 @@ function getTokenMatchSummary(queryWords, itemWords) {
     const queryWord = queryWords[i];
     const wordScore = scoreQueryWord(queryWord, itemWords);
 
-    if (wordScore === 2) {
+    if (wordScore === 3) {
       exactMatches += 1;
+      continue;
+    }
+
+    if (wordScore === 2) {
+      partialMatches += 1;
       continue;
     }
 
     if (wordScore === 1) {
       fuzzyMatches += 1;
       continue;
-    }
-
-    if (itemWords.some((itemWord) => itemWord.includes(queryWord))) {
-      partialMatches += 1;
     }
   }
 
@@ -203,15 +217,15 @@ export function searchFoods(foodDb, query) {
       searchScore = 1000 + (queryWords.length * 20);
     } else if (matchSummary.allTokensMatch) {
       searchScore = 700
-        + (matchSummary.exactMatches * 20)
-        + (matchSummary.fuzzyMatches * 10)
-        + (matchSummary.partialMatches * 5);
+        + (matchSummary.exactMatches * 24)
+        + (matchSummary.partialMatches * 12)
+        + (matchSummary.fuzzyMatches * 6);
     } else {
       searchScore = 300
         + (matchSummary.matchedTokens * 15)
-        + (matchSummary.exactMatches * 10)
-        + (matchSummary.fuzzyMatches * 5)
-        + matchSummary.partialMatches;
+        + (matchSummary.exactMatches * 12)
+        + (matchSummary.partialMatches * 6)
+        + (matchSummary.fuzzyMatches * 3);
     }
 
     const smartScore = Math.max(
