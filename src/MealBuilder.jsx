@@ -654,7 +654,17 @@ export default function MealBuilder({
   }, [recentFoodEntries]);
   const visibleRecentFoodEntries = useMemo(() => {
     const normalizedQuery = normalizeSearchQuery(foodNameInput);
-    if (!normalizedQuery) return recentFoodEntries.slice(0, 5);
+    if (!normalizedQuery) {
+      return [...recentFoodEntries]
+        .sort((a, b) => {
+          const smartScoreA = getRecentFoodSmartScore(a);
+          const smartScoreB = getRecentFoodSmartScore(b);
+          if (smartScoreB !== smartScoreA) return smartScoreB - smartScoreA;
+          if ((Number(b?.lastUsed) || 0) !== (Number(a?.lastUsed) || 0)) return (Number(b?.lastUsed) || 0) - (Number(a?.lastUsed) || 0);
+          return (Number(b?.count) || 0) - (Number(a?.count) || 0);
+        })
+        .slice(0, 5);
+    }
 
     const queryWords = normalizedQuery.split(' ').filter(Boolean);
     return recentFoodEntries
@@ -667,11 +677,20 @@ export default function MealBuilder({
   }, [foodNameInput, recentFoodEntries]);
   const visibleFrequentFoodEntries = useMemo(() => {
     const normalizedQuery = normalizeSearchQuery(foodNameInput);
+    const sortedBySmartScore = [...recentFoodEntries].sort((a, b) => {
+      const smartScoreA = getRecentFoodSmartScore(a);
+      const smartScoreB = getRecentFoodSmartScore(b);
+      if (smartScoreB !== smartScoreA) return smartScoreB - smartScoreA;
+      if ((Number(b?.count) || 0) !== (Number(a?.count) || 0)) return (Number(b?.count) || 0) - (Number(a?.count) || 0);
+      return (Number(b?.lastUsed) || 0) - (Number(a?.lastUsed) || 0);
+    });
     const recentIds = new Set(
-      visibleRecentFoodEntries.map((entry) => String(entry?.id ?? '').trim()).filter(Boolean)
+      (!normalizedQuery ? [] : visibleRecentFoodEntries)
+        .map((entry) => String(entry?.id ?? '').trim())
+        .filter(Boolean)
     );
 
-    const filteredEntries = recentFoodEntries.filter((entry) => {
+    const filteredEntries = sortedBySmartScore.filter((entry) => {
       const entryId = String(entry?.id ?? '').trim();
       if (recentIds.has(entryId)) return false;
 
@@ -1679,7 +1698,7 @@ export default function MealBuilder({
                           boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                         }}
                       >
-                        {visibleRecentFoodEntries.length > 0 ? (
+                        {visibleFrequentFoodEntries.length > 0 ? (
                           <>
                             <div
                               style={{
@@ -1692,11 +1711,11 @@ export default function MealBuilder({
                                 borderBottom: '1px solid #2a2a2a',
                               }}
                             >
-                              Usati di recente
+                              Usati spesso
                             </div>
-                            {visibleRecentFoodEntries.map((entry) => (
+                            {visibleFrequentFoodEntries.map((entry) => (
                               <button
-                                key={`recent-${entry.id}-${entry.lastUsed}`}
+                                key={`frequent-${entry.id}-${entry.count}-${entry.lastUsed}`}
                                 type="button"
                                 style={{
                                   width: '100%',
@@ -1716,7 +1735,7 @@ export default function MealBuilder({
                             ))}
                           </>
                         ) : null}
-                        {visibleFrequentFoodEntries.length > 0 ? (
+                        {visibleRecentFoodEntries.length > 0 ? (
                           <>
                             <div
                               style={{
@@ -1729,11 +1748,11 @@ export default function MealBuilder({
                                 borderBottom: '1px solid #2a2a2a',
                               }}
                             >
-                              Usati spesso
+                              Usati di recente
                             </div>
-                            {visibleFrequentFoodEntries.map((entry) => (
+                            {visibleRecentFoodEntries.map((entry) => (
                               <button
-                                key={`frequent-${entry.id}-${entry.count}-${entry.lastUsed}`}
+                                key={`recent-${entry.id}-${entry.lastUsed}`}
                                 type="button"
                                 style={{
                                   width: '100%',
