@@ -6117,7 +6117,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         return;
       }
 
-      const results = searchFoods(csvFoodDb, query);
+      const results = searchFoods(csvFoodDb, query, { includeUserHistory: false });
       setCreaResults(results || []);
       setShowFoodDropdown(true);
     } catch (err) {

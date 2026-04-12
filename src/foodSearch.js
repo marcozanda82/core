@@ -15,6 +15,9 @@ const SEARCH_SYNONYMS = {
   arrosto: ['cotto'],
   pollo: ['chicken'],
 };
+const MATCH_SCORE_WEIGHT = 0.5;
+const RECENCY_SCORE_WEIGHT = 0.3;
+const FREQUENCY_SCORE_WEIGHT = 0.2;
 
 function loadRecentFoodEntries() {
   if (typeof localStorage === 'undefined') return [];
@@ -49,42 +52,57 @@ function loadRecentFoodEntries() {
 function getRecencyScore(lastUsed, now) {
   const ageMs = now - Number(lastUsed);
   if (!Number.isFinite(ageMs) || ageMs < 0) return 0;
-  if (ageMs <= RECENT_FOOD_HIGH_WINDOW_MS) return 5;
-  if (ageMs <= RECENT_FOOD_MEDIUM_WINDOW_MS) return 3;
-  return 1;
+  if (ageMs <= RECENT_FOOD_HIGH_WINDOW_MS) return 1;
+  if (ageMs <= 2 * RECENT_FOOD_HIGH_WINDOW_MS) return 0.8;
+  if (ageMs <= 7 * RECENT_FOOD_HIGH_WINDOW_MS) return 0.6;
+  return 0.3;
 }
 
-function getFrequencyScore(count) {
+function getFrequencyScore(count, maxCount) {
   const normalizedCount = Math.max(1, Number(count) || 1);
-  return Math.min(4, Math.floor(Math.log2(normalizedCount)) + 1);
+  const normalizedMaxCount = Math.max(1, Number(maxCount) || 1);
+  const rawScore = normalizedCount / normalizedMaxCount;
+  return Math.max(0.2, Math.min(1, rawScore));
 }
 
-function getSmartScore(entry, now) {
-  return getRecencyScore(entry?.lastUsed, now) + getFrequencyScore(entry?.count);
+function getSmartScore(entry, now, maxCount) {
+  return (
+    (getRecencyScore(entry?.lastUsed, now) * RECENCY_SCORE_WEIGHT) +
+    (getFrequencyScore(entry?.count, maxCount) * FREQUENCY_SCORE_WEIGHT)
+  );
 }
 
-function buildRecentFoodSmartScoreMap() {
+function buildRecentFoodScoreMap() {
   const now = Date.now();
   const recentEntries = loadRecentFoodEntries();
-  const smartScores = new Map();
+  const scores = new Map();
+  const maxCount = recentEntries.reduce((max, entry) => (
+    Math.max(max, Math.max(1, Number(entry?.count) || 1))
+  ), 1);
 
   for (let i = 0; i < recentEntries.length; i += 1) {
     const entry = recentEntries[i];
-    const smartScore = getSmartScore(entry, now);
-    if (smartScore <= 0) continue;
+    const recencyScore = getRecencyScore(entry.lastUsed, now);
+    const frequencyScore = getFrequencyScore(entry.count, maxCount);
+    const weightedHistoryScore = getSmartScore(entry, now, maxCount);
 
     const idKey = String(entry.id || '').trim();
     const nameKey = normalizeSearchText(entry.name);
+    const scorePayload = {
+      recencyScore,
+      frequencyScore,
+      weightedHistoryScore,
+    };
 
     if (idKey) {
-      smartScores.set(idKey, Math.max(smartScore, smartScores.get(idKey) || 0));
+      scores.set(idKey, scorePayload);
     }
     if (nameKey) {
-      smartScores.set(nameKey, Math.max(smartScore, smartScores.get(nameKey) || 0));
+      scores.set(nameKey, scorePayload);
     }
   }
 
-  return smartScores;
+  return scores;
 }
 
 function levenshteinDistance(a, b) {
@@ -186,18 +204,34 @@ function getTokenMatchSummary(queryWords, itemWords) {
   };
 }
 
-export function searchFoods(foodDb, query) {
+function getMatchScore(matchSummary, queryWords) {
+  const tokenCount = Math.max(1, queryWords.length);
+  if (matchSummary.exactPhraseMatch) return 1;
+  if (matchSummary.allTokensMatch) {
+    return Math.min(
+      0.98,
+      ((matchSummary.exactMatches * 1) + (matchSummary.partialMatches * 0.7) + (matchSummary.fuzzyMatches * 0.45)) / tokenCount
+    );
+  }
+  return Math.min(
+    0.79,
+    ((matchSummary.exactMatches * 1) + (matchSummary.partialMatches * 0.6) + (matchSummary.fuzzyMatches * 0.35)) / tokenCount
+  );
+}
+
+export function searchFoods(foodDb, query, options = {}) {
   if (!foodDb || typeof foodDb !== 'object') return [];
 
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return [];
+  const includeUserHistory = options.includeUserHistory !== false;
 
   const queryWords = normalizedQuery.split(' ').filter(Boolean);
   if (queryWords.length === 0) return [];
 
   const results = [];
   const entries = Object.entries(foodDb);
-  const recentFoodSmartScores = buildRecentFoodSmartScoreMap();
+  const recentFoodScores = includeUserHistory ? buildRecentFoodScoreMap() : new Map();
 
   for (let i = 0; i < entries.length; i += 1) {
     const [id, food] = entries[i];
@@ -212,34 +246,24 @@ export function searchFoods(foodDb, query) {
     const matchSummary = getTokenMatchSummary(queryWords, itemWords);
     if (matchSummary.matchedTokens === 0) continue;
 
-    let searchScore = 0;
-    if (matchSummary.exactPhraseMatch) {
-      searchScore = 1000 + (queryWords.length * 20);
-    } else if (matchSummary.allTokensMatch) {
-      searchScore = 700
-        + (matchSummary.exactMatches * 24)
-        + (matchSummary.partialMatches * 12)
-        + (matchSummary.fuzzyMatches * 6);
-    } else {
-      searchScore = 300
-        + (matchSummary.matchedTokens * 15)
-        + (matchSummary.exactMatches * 12)
-        + (matchSummary.partialMatches * 6)
-        + (matchSummary.fuzzyMatches * 3);
-    }
-
-    const smartScore = Math.max(
-      recentFoodSmartScores.get(String(id).trim()) || 0,
-      recentFoodSmartScores.get(normalizedName) || 0
+    const matchScore = getMatchScore(matchSummary, queryWords);
+    const historyScores = includeUserHistory ? (
+      recentFoodScores.get(String(id).trim()) || recentFoodScores.get(normalizedName) || null
+    ) : null;
+    const recencyScore = historyScores?.recencyScore ?? 0;
+    const frequencyScore = historyScores?.frequencyScore ?? 0;
+    const score = (matchScore * MATCH_SCORE_WEIGHT) + (
+      includeUserHistory
+        ? ((recencyScore * RECENCY_SCORE_WEIGHT) + (frequencyScore * FREQUENCY_SCORE_WEIGHT))
+        : 0
     );
-    const finalScore = searchScore + smartScore;
 
-    results.push({ id, name, searchScore, smartScore, finalScore, matchSummary });
+    results.push({ id, name, matchScore, recencyScore, frequencyScore, score, matchSummary });
   }
 
   results.sort((a, b) => {
-    if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore;
-    if (b.searchScore !== a.searchScore) return b.searchScore - a.searchScore;
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
     return b.matchSummary.matchedTokens - a.matchSummary.matchedTokens;
   });
 
