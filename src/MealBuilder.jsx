@@ -345,7 +345,7 @@ export default function MealBuilder({
   const [aiConstraintFixed, setAiConstraintFixed] = useState('');
   const [aiConstraintExcluded, setAiConstraintExcluded] = useState('');
   const [aiConstraintPreferred, setAiConstraintPreferred] = useState('');
-  const [showCreaResults, setShowCreaResults] = useState(false);
+  const [visibleFoodSourceResults, setVisibleFoodSourceResults] = useState({ crea: false });
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
 
   const mealBuilderScrollAnchorRef = useRef(null);
@@ -419,6 +419,27 @@ export default function MealBuilder({
       preferredFoods: split(aiConstraintPreferred),
     };
   }, [aiConstraintFixed, aiConstraintExcluded, aiConstraintPreferred]);
+
+  const foodSearchSources = useMemo(() => ([
+    {
+      key: 'crea',
+      label: 'CREA',
+      searchButtonLabel: '🔍 Cerca su CREA',
+      results: creaResults,
+      isLoading: isCreaLoading,
+      onSearch: triggerCreaSearch,
+    },
+  ]), [creaResults, isCreaLoading, triggerCreaSearch]);
+
+  const handleFoodSourceSearch = useCallback((sourceKey, query, onSearch) => {
+    if (!query || typeof onSearch !== 'function') return;
+    setVisibleFoodSourceResults((prev) => ({ ...prev, [sourceKey]: false }));
+    onSearch(query);
+  }, []);
+
+  const toggleFoodSourceResults = useCallback((sourceKey) => {
+    setVisibleFoodSourceResults((prev) => ({ ...prev, [sourceKey]: !prev[sourceKey] }));
+  }, []);
 
   const toggleAddedFood = (id) => {
     const k = id != null ? String(id) : '';
@@ -517,10 +538,19 @@ export default function MealBuilder({
   }, [registerAddFoodCallback]);
 
   useEffect(() => {
-    if (!creaResults.length) {
-      setShowCreaResults(false);
-    }
-  }, [creaResults]);
+    setVisibleFoodSourceResults((prev) => {
+      let hasChanges = false;
+      const next = { ...prev };
+
+      foodSearchSources.forEach((source) => {
+        if ((source.results || []).length > 0 || !next[source.key]) return;
+        next[source.key] = false;
+        hasChanges = true;
+      });
+
+      return hasChanges ? next : prev;
+    });
+  }, [foodSearchSources]);
 
   useEffect(() => {
     if (!isComplexMode) {
@@ -1438,117 +1468,124 @@ export default function MealBuilder({
                             {isGeneratingFood ? '⏳ Generazione in corso...' : `✨ Genera con AI: "${foodNameInput.trim()}"`}
                           </button>
                         ) : null}
-                        {foodNameInput.trim() ? (
-                          <button
-                            type="button"
-                            className="dropdown-action-button"
-                            style={{
-                              width: '100%',
-                              padding: '12px 16px',
-                              textAlign: 'left',
-                              background: 'rgba(56, 189, 248, 0.12)',
-                              border: 'none',
-                              borderTop: '1px solid #2a2a2a',
-                              color: '#67e8f9',
-                              cursor: 'pointer',
-                              fontSize: '0.9rem',
-                              fontWeight: '600',
-                            }}
-                            onClick={() => {
-                              setShowCreaResults(false);
-                              triggerCreaSearch(foodNameInput.trim());
-                            }}
-                          >
-                            🔍 Cerca su CREA
-                          </button>
-                        ) : null}
-                        {foodNameInput.trim() && creaResults.length > 0 ? (
-                          <button
-                            type="button"
-                            className="dropdown-action-button"
-                            style={{
-                              width: '100%',
-                              padding: '12px 16px',
-                              textAlign: 'left',
-                              background: 'rgba(56, 189, 248, 0.12)',
-                              border: 'none',
-                              borderTop: '1px solid #2a2a2a',
-                              color: '#67e8f9',
-                              cursor: 'pointer',
-                              fontSize: '0.9rem',
-                              fontWeight: '600',
-                            }}
-                            onClick={() => setShowCreaResults((prev) => !prev)}
-                          >
-                            {showCreaResults ? `Nascondi CREA (${creaResults.length})` : `Mostra CREA (${creaResults.length})`}
-                          </button>
-                        ) : null}
-                        {foodNameInput.trim() && isCreaLoading ? (
-                          <div
-                            style={{
-                              borderTop: '1px solid #2a2a2a',
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: '100%',
-                                padding: '12px 16px',
-                                color: '#94a3b8',
-                                fontSize: '0.88rem',
-                              }}
-                            >
-                              Caricamento...
-                            </div>
-                          </div>
-                        ) : null}
-                        {foodNameInput.trim() && showCreaResults ? (
-                          <div
-                            style={{
-                              borderTop: '1px solid #2a2a2a',
-                            }}
-                          >
-                            {(creaResults || []).map((result, index) => {
-                              const desc = String(
-                                result?.name_it || result?.desc || result?.name || result?.product_name || ''
-                              ).trim();
-                              if (!desc) return null;
-                              return (
+                        {(foodSearchSources || []).map((source) => {
+                          const results = source.results || [];
+                          const isVisible = Boolean(visibleFoodSourceResults[source.key]);
+
+                          return (
+                            <React.Fragment key={source.key}>
+                              {foodNameInput.trim() ? (
                                 <button
-                                  key={result?.id || `${desc}-${index}`}
                                   type="button"
+                                  className="dropdown-action-button"
                                   style={{
                                     width: '100%',
                                     padding: '12px 16px',
                                     textAlign: 'left',
-                                    background: 'rgba(103, 232, 249, 0.06)',
+                                    background: 'rgba(56, 189, 248, 0.12)',
                                     border: 'none',
-                                    borderBottom: '1px solid #2a2a2a',
-                                    color: '#e2e8f0',
+                                    borderTop: '1px solid #2a2a2a',
+                                    color: '#67e8f9',
                                     cursor: 'pointer',
                                     fontSize: '0.9rem',
+                                    fontWeight: '600',
                                   }}
-                                  onClick={() => {
-                                    setFoodNameInput(desc);
-                                    setFoodWeightInput(getLastQuantityForFood(desc) || '');
-                                    setSelectedFoodMatch({
-                                      id: result?.id || null,
-                                      desc,
-                                      row: localFoodDb?.[result?.id] || foodDb?.[result?.id] || null,
-                                    });
-                                    setShowFoodDropdown(false);
-                                    setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
+                                  onClick={() => handleFoodSourceSearch(source.key, foodNameInput.trim(), source.onSearch)}
+                                >
+                                  {source.searchButtonLabel}
+                                </button>
+                              ) : null}
+                              {foodNameInput.trim() && results.length > 0 ? (
+                                <button
+                                  type="button"
+                                  className="dropdown-action-button"
+                                  style={{
+                                    width: '100%',
+                                    padding: '12px 16px',
+                                    textAlign: 'left',
+                                    background: 'rgba(56, 189, 248, 0.12)',
+                                    border: 'none',
+                                    borderTop: '1px solid #2a2a2a',
+                                    color: '#67e8f9',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem',
+                                    fontWeight: '600',
+                                  }}
+                                  onClick={() => toggleFoodSourceResults(source.key)}
+                                >
+                                  {isVisible ? `Nascondi ${source.label} (${results.length})` : `Mostra ${source.label} (${results.length})`}
+                                </button>
+                              ) : null}
+                              {foodNameInput.trim() && source.isLoading ? (
+                                <div
+                                  style={{
+                                    borderTop: '1px solid #2a2a2a',
                                   }}
                                 >
-                                  <span
-                                    dangerouslySetInnerHTML={{
-                                      __html: highlightSearchMatches(desc, foodNameInput),
+                                  <div
+                                    style={{
+                                      width: '100%',
+                                      padding: '12px 16px',
+                                      color: '#94a3b8',
+                                      fontSize: '0.88rem',
                                     }}
-                                  />
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : null}
+                                  >
+                                    Caricamento...
+                                  </div>
+                                </div>
+                              ) : null}
+                              {foodNameInput.trim() && isVisible ? (
+                                <div
+                                  style={{
+                                    borderTop: '1px solid #2a2a2a',
+                                  }}
+                                >
+                                  {results.map((result, index) => {
+                                    const desc = String(
+                                      result?.name_it || result?.desc || result?.name || result?.product_name || ''
+                                    ).trim();
+                                    if (!desc) return null;
+
+                                    return (
+                                      <button
+                                        key={`${source.key}-${result?.id || `${desc}-${index}`}`}
+                                        type="button"
+                                        style={{
+                                          width: '100%',
+                                          padding: '12px 16px',
+                                          textAlign: 'left',
+                                          background: 'rgba(103, 232, 249, 0.06)',
+                                          border: 'none',
+                                          borderBottom: '1px solid #2a2a2a',
+                                          color: '#e2e8f0',
+                                          cursor: 'pointer',
+                                          fontSize: '0.9rem',
+                                        }}
+                                        onClick={() => {
+                                          setFoodNameInput(desc);
+                                          setFoodWeightInput(getLastQuantityForFood(desc) || '');
+                                          setSelectedFoodMatch({
+                                            id: result?.id || null,
+                                            desc,
+                                            row: localFoodDb?.[result?.id] || foodDb?.[result?.id] || null,
+                                          });
+                                          setShowFoodDropdown(false);
+                                          setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
+                                        }}
+                                      >
+                                        <span
+                                          dangerouslySetInnerHTML={{
+                                            __html: highlightSearchMatches(desc, foodNameInput),
+                                          }}
+                                        />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </React.Fragment>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
