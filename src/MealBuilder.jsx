@@ -3274,12 +3274,19 @@ export default function MealBuilder({
             <div style={{ position: 'sticky', top: '-20px', zIndex: 50, background: '#111', paddingTop: '20px', paddingBottom: '10px', borderBottom: '1px solid #333', margin: '0 -15px 20px -15px', paddingLeft: '15px', paddingRight: '15px' }}>
               {!isComplexMode ? (
                 <>
-                  <div ref={foodDropdownContainerRef} style={{ position: 'relative', marginBottom: 12, maxWidth: 520 }}>
-                    <div className="quick-add-bar">
+                  <div
+                    ref={foodDropdownContainerRef}
+                    translate="no"
+                    className="notranslate"
+                    style={{ position: 'relative', marginBottom: 12, maxWidth: 520 }}
+                  >
+                    <div className="quick-add-bar notranslate" translate="no">
                       <input
                         ref={foodInputRef}
                         type="text"
-                        className="quick-input input-name"
+                        className="quick-input input-name notranslate"
+                        translate="no"
+                        lang="it"
                         placeholder="Es. Pollo"
                         value={foodNameInput}
                         onChange={(e) => {

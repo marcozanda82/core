@@ -1,12 +1,18 @@
 /**
  * USDA FoodData Central — ricerca secondaria (non sostituisce CREA).
- * Debounce 400ms, GET /foods/search, errori → [].
+ * Usa POST /foods/search (formato ufficiale; GET può restituire risultati vuoti in alcuni contesti).
+ * Debounce 400ms. `translationService` in console di solito è Chrome Traduci, non questo modulo.
  */
 
 const FDC_SEARCH_URL = 'https://api.nal.usda.gov/fdc/v1/foods/search';
 
-/** Fallback se `VITE_USDA_API_KEY` non è impostata (preferire .env in produzione). */
+/** Fallback se `VITE_USDA_API_KEY` non è impostata. */
 const DEFAULT_USDA_API_KEY = 'KarVR2zdIgjvNPWbw7c2JO1Jux0UKEhZjrmDnkbT';
+
+const USDA_DEBUG = Boolean(
+  import.meta.env?.DEV
+  || String(import.meta.env?.VITE_USDA_DEBUG || '').toLowerCase() === 'true'
+);
 
 let usdaDebounceTimer = null;
 let usdaSearchSeq = 0;
@@ -21,40 +27,163 @@ function getApiKey() {
   }
 }
 
-function nutrientValue(foodNutrients, nutrientId) {
+function logUsdaDebug(label, payload) {
+  if (!USDA_DEBUG) return;
+  // eslint-disable-next-line no-console
+  console.log(`[USDA:debug] ${label}`, payload);
+}
+
+/** Rimuove accenti (NFD) per query più stabile verso l’API. */
+function stripAccents(s) {
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '');
+}
+
+/**
+ * Suggerimenti IT→EN per termini comuni (USDA è orientato all’inglese).
+ * Sostituisce parole intere, case-insensitive.
+ */
+const IT_EN_FOOD_TERMS = {
+  pomodoro: 'tomato',
+  pomodori: 'tomato',
+  riso: 'rice',
+  pane: 'bread',
+  pollo: 'chicken',
+  manzo: 'beef',
+  maiale: 'pork',
+  pesce: 'fish',
+  tonno: 'tuna',
+  salmone: 'salmon',
+  latte: 'milk',
+  uova: 'egg',
+  uovo: 'egg',
+  olio: 'oil',
+  mela: 'apple',
+  mele: 'apple',
+  banana: 'banana',
+  pasta: 'pasta',
+  spaghetti: 'spaghetti',
+  formaggio: 'cheese',
+  mozzarella: 'mozzarella',
+  parmigiano: 'parmesan cheese',
+  yogurt: 'yogurt',
+  zucchina: 'zucchini',
+  zucchine: 'zucchini',
+  patata: 'potato',
+  patate: 'potato',
+  farina: 'flour',
+  sale: 'salt',
+  zucchero: 'sugar',
+  acqua: 'water',
+  vino: 'wine',
+  birra: 'beer',
+  insalata: 'salad',
+  spinaci: 'spinach',
+  carota: 'carrot',
+  carote: 'carrot',
+  melanzana: 'eggplant',
+  peperone: 'bell pepper',
+  cipolla: 'onion',
+  aglio: 'garlic',
+  legumi: 'legumes',
+  fagioli: 'beans',
+  lenticchie: 'lentils',
+  ceci: 'chickpeas',
+  mandorle: 'almonds',
+  noci: 'walnuts',
+  burro: 'butter',
+  miele: 'honey',
+};
+
+export function normalizeQueryForUsda(raw) {
+  const base = stripAccents(String(raw || '').trim()).replace(/\s+/g, ' ');
+  if (!base) return '';
+
+  const parts = base.split(' ').map((w) => {
+    const key = w.toLowerCase();
+    return IT_EN_FOOD_TERMS[key] || w;
+  });
+  const joined = parts.join(' ').trim();
+  logUsdaDebug('query', { raw: String(raw || '').trim(), normalized: joined });
+  return joined;
+}
+
+function nutrientMatches(n, nutrientId, nutrientNumberStr) {
+  if (nutrientId != null && nutrientId !== '') {
+    const nid = n?.nutrientId ?? n?.nutrient?.id;
+    if (Number(nid) === Number(nutrientId)) return true;
+  }
+  if (nutrientNumberStr != null && String(nutrientNumberStr) !== '') {
+    const nbr = String(n?.nutrientNumber ?? n?.nutrient?.number ?? '').trim();
+    if (nbr === String(nutrientNumberStr)) return true;
+  }
+  return false;
+}
+
+function readNutrientAmount(n) {
+  const v = Number(n?.value ?? n?.amount);
+  return Number.isFinite(v) ? v : 0;
+}
+
+/**
+ * Estrae valore per nutrientId FDC (es. 1008) o nutrientNumber SR (es. "208" = Energy kcal).
+ */
+function nutrientByIdOrNumber(foodNutrients, nutrientId, nutrientNumberStr) {
   const list = Array.isArray(foodNutrients) ? foodNutrients : [];
   for (let i = 0; i < list.length; i += 1) {
     const n = list[i];
-    const id = n?.nutrientId ?? n?.nutrient?.id
-      ?? (n?.nutrientNumber != null ? Number(n.nutrientNumber) : undefined);
-    if (Number(id) === Number(nutrientId)) {
-      const v = Number(n?.value ?? n?.amount);
-      return Number.isFinite(v) ? v : 0;
+    if (nutrientMatches(n, nutrientId, nutrientNumberStr)) {
+      return readNutrientAmount(n);
     }
   }
   return 0;
 }
 
-/** Nutrient IDs FDC: Energy 1008, Protein 1003, Carbs 1005, Fat 1004 */
+function energyKcalFromNutrients(nutrients) {
+  let kcal = nutrientByIdOrNumber(nutrients, 1008, '208');
+  if (kcal) return kcal;
+
+  const list = Array.isArray(nutrients) ? nutrients : [];
+  for (let i = 0; i < list.length; i += 1) {
+    const n = list[i];
+    const name = String(n?.nutrientName || '').toLowerCase();
+    const unit = String(n?.unitName || '').toUpperCase();
+    if (unit === 'KCAL' && (name.includes('energy') || n?.nutrientNumber === '208')) {
+      const v = readNutrientAmount(n);
+      if (v) return v;
+    }
+  }
+
+  const kj = nutrientByIdOrNumber(nutrients, 1062);
+  if (kj) return kj / 4.184;
+  return 0;
+}
+
 function mapUsdaFoodToRow(food) {
   const fdcId = food?.fdcId ?? food?.id;
-  const desc = String(food?.description || food?.lowercaseDescription || '').trim();
-  if (!fdcId || !desc) return null;
+  if (fdcId == null || fdcId === '') return null;
+
+  const desc = String(
+    food?.description
+    || food?.lowercaseDescription
+    || [food?.brandName, food?.description].filter(Boolean).join(' ')
+    || food?.ingredients
+    || ''
+  ).trim();
+
+  const label = desc || `USDA food ${fdcId}`;
 
   const nutrients = food?.foodNutrients || [];
-  let kcal = nutrientValue(nutrients, 1008);
-  if (!kcal) {
-    const kj = nutrientValue(nutrients, 1062);
-    if (kj) kcal = kj / 4.184;
-  }
-  const prot = nutrientValue(nutrients, 1003);
-  const carb = nutrientValue(nutrients, 1005);
-  const fat = nutrientValue(nutrients, 1004);
+  const kcal = energyKcalFromNutrients(nutrients);
+  const prot = nutrientByIdOrNumber(nutrients, 1003, '203');
+  const carb = nutrientByIdOrNumber(nutrients, 1005, '205');
+  const fat = nutrientByIdOrNumber(nutrients, 1004, '204');
 
   return {
     id: `USDA_${fdcId}`,
-    desc,
-    name: desc,
+    desc: label,
+    name: label,
     kcal: Math.round(kcal * 10) / 10,
     prot: Math.round(prot * 10) / 10,
     carb: Math.round(carb * 10) / 10,
@@ -80,20 +209,33 @@ function settlePreviousUsdaWaiter() {
   }
 }
 
+function summarizeUsdaResponse(data) {
+  if (!data || typeof data !== 'object') return { shape: 'non-object' };
+  const foods = data.foods;
+  const first = Array.isArray(foods) && foods[0] ? foods[0] : null;
+  return {
+    keys: Object.keys(data),
+    totalHits: data.totalHits,
+    currentPage: data.currentPage,
+    foodsLength: Array.isArray(foods) ? foods.length : `not-array:${typeof foods}`,
+    error: data.error || data.errors || null,
+    firstFoodKeys: first ? Object.keys(first).slice(0, 12) : null,
+    firstFdcId: first?.fdcId ?? first?.id ?? null,
+  };
+}
+
 /**
  * Ricerca USDA debounced (400ms). Query sotto 3 caratteri → [] immediato.
  * Nuove chiamate invalidano la Promise precedente (resolve([])).
- *
- * @param {string} query
- * @param {{ signal?: AbortSignal, pageSize?: number }} [opts]
- * @returns {Promise<Array<{ id: string, name: string, row: object }>>}
  */
 export function searchUSDAFoods(query, opts = {}) {
-  const q = String(query || '').trim();
+  const qRaw = String(query || '').trim();
+  const q = normalizeQueryForUsda(qRaw);
 
   if (!q || q.length < 3) {
     clearUsdaDebounceTimer();
     settlePreviousUsdaWaiter();
+    logUsdaDebug('skip', { reason: 'short-query', qRaw, qLen: q.length });
     // eslint-disable-next-line no-console
     console.log('[USDA] results:', 0);
     return Promise.resolve([]);
@@ -139,11 +281,44 @@ export function searchUSDAFoods(query, opts = {}) {
 
       const pageSize = Math.min(25, Math.max(5, Number(opts.pageSize) || 10));
       const key = getApiKey();
-      const url = `${FDC_SEARCH_URL}?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(q)}&pageSize=${pageSize}`;
+      const url = `${FDC_SEARCH_URL}?api_key=${encodeURIComponent(key)}`;
+
+      logUsdaDebug('request', { method: 'POST', pageSize, query: q });
 
       try {
-        const res = await fetch(url, { method: 'GET', signal });
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            query: q,
+            pageSize,
+          }),
+          signal,
+        });
+
         if (usdaPendingResolve !== resolve) return;
+
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (parseErr) {
+          logUsdaDebug('json-parse-error', { status: res.status, textPreview: text.slice(0, 200) });
+          usdaPendingResolve = null;
+          // eslint-disable-next-line no-console
+          console.log('[USDA] results:', 0);
+          resolve([]);
+          return;
+        }
+
+        logUsdaDebug('response', {
+          httpOk: res.ok,
+          status: res.status,
+          summary: summarizeUsdaResponse(data),
+        });
 
         if (!res.ok) {
           usdaPendingResolve = null;
@@ -153,20 +328,29 @@ export function searchUSDAFoods(query, opts = {}) {
           return;
         }
 
-        const data = await res.json();
         if (usdaPendingResolve !== resolve) return;
 
-        const foods = Array.isArray(data?.foods) ? data.foods : [];
-        const out = [];
+        let foods = Array.isArray(data?.foods) ? data.foods : [];
+        if (foods.length === 0 && data?.foods != null && !Array.isArray(data.foods)) {
+          logUsdaDebug('foods-not-array', { type: typeof data.foods });
+        }
 
+        const out = [];
         for (let i = 0; i < foods.length; i += 1) {
           const row = mapUsdaFoodToRow(foods[i]);
-          if (!row) continue;
+          if (!row) {
+            logUsdaDebug('row-skip', { index: i, keys: foods[i] ? Object.keys(foods[i]).slice(0, 8) : null });
+            continue;
+          }
           out.push({
             id: row.id,
             name: row.desc,
             row,
           });
+        }
+
+        if (USDA_DEBUG && foods.length > 0 && out.length === 0) {
+          logUsdaDebug('all-rows-filtered', { foodsIn: foods.length });
         }
 
         // eslint-disable-next-line no-console
