@@ -26,6 +26,7 @@ import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
 import { searchFoods } from './foodSearch';
 import { recordMealFoodCooccurrence } from './foodCooccurrence';
+import { recordMealSuggestionHabits } from './mealSuggestionHabits';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
@@ -5389,9 +5390,12 @@ Ottimo! Diario aggiornato. 🥗`;
         id: f.id || `f_${uniqueBatchId}_${index}`
       }));
 
-      if (!isSimulationMode && mealItems.length >= 2) {
+      if (!isSimulationMode && mealItems.length >= 1) {
         try {
-          recordMealFoodCooccurrence(mealItems, ourSlot);
+          if (mealItems.length >= 2) {
+            recordMealFoodCooccurrence(mealItems, ourSlot);
+          }
+          recordMealSuggestionHabits(mealItems, ourSlot, foodDb || {});
         } catch (_) {}
       }
 
@@ -5492,16 +5496,19 @@ Ottimo! Diario aggiornato. 🥗`;
         setEditingMealId(null);
         return;
       }
-      if (mealItems.length >= 2) {
+      if (mealItems.length >= 1) {
         try {
-          recordMealFoodCooccurrence(mealItems, ourSlot);
+          if (mealItems.length >= 2) {
+            recordMealFoodCooccurrence(mealItems, ourSlot);
+          }
+          recordMealSuggestionHabits(mealItems, ourSlot, foodDb || {});
         } catch (_) {}
       }
       setDailyLog(nextLog);
       syncDatiFirebase(nextLog, manualNodes);
       setEditingMealId(null);
     }
-  }, [dailyLog, simulatedLog, isSimulationMode, manualNodes, mealType, drawerMealTime, syncDatiFirebase, editingMealId, getFoodItemsForMealSlot]);
+  }, [dailyLog, simulatedLog, isSimulationMode, manualNodes, mealType, drawerMealTime, syncDatiFirebase, editingMealId, getFoodItemsForMealSlot, foodDb]);
 
   const startNodeDrag = useCallback((node, edge) => (e, activationOpts) => {
     e.stopPropagation();

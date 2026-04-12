@@ -19,6 +19,13 @@ import {
   getSavedPairCooccurrenceCount,
   FOOD_COOCCURRENCE_EVENT,
 } from './foodCooccurrence';
+import {
+  loadMealSuggestionHabits,
+  MEAL_SUGGESTION_HABITS_EVENT,
+  getAdaptiveMealBounds,
+  getMealTypeCategoryTotals,
+  getMealTypeFoodPreferenceCount,
+} from './mealSuggestionHabits';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -250,30 +257,86 @@ function normalizeAverageFoodRankScore(foods, recentFoodEntries, now = Date.now(
   return Math.min(1, (sum / n) / MAX_SMART_SCORE);
 }
 
-function scoreMealCandidate(foods, mealType, recentFoodEntries, patterns, savedMap, now = Date.now()) {
+function scoreMealCandidate(foods, mealType, recentFoodEntries, patterns, savedMap, now = Date.now(), habits) {
   const ids = (foods || []).map((f) => String(f?.id ?? '').trim()).filter(Boolean);
   const foodScore = normalizeAverageFoodRankScore(foods, recentFoodEntries, now);
   const rawCooc = sumPairCooccurrenceForMeal(mealType, ids, patterns, savedMap);
   const coOccurrenceScore = normalizeMealCooccurrenceStrength(rawCooc, ids.length);
-  const score = (SUGGESTED_MEAL_FOOD_SCORE_WEIGHT * foodScore)
+  let score = (SUGGESTED_MEAL_FOOD_SCORE_WEIGHT * foodScore)
     + (SUGGESTED_MEAL_COOCC_SCORE_WEIGHT * coOccurrenceScore);
+  if (habits) {
+    const { target } = getAdaptiveMealBounds(mealType, habits);
+    if (target && foods.length === target) score += 0.038;
+  }
   return { foodScore, coOccurrenceScore, score };
 }
 
-function assembleMealFromAnchors(pool, mains, effectiveMealType, patterns, savedMap) {
+function orderPoolWithMealHabits(pool, mealType, habits, now = Date.now()) {
+  if (!pool?.length) return [];
+  return [...pool].sort((a, b) => {
+    const ida = String(a.id ?? '').trim();
+    const idb = String(b.id ?? '').trim();
+    const pa = Math.log1p(getMealTypeFoodPreferenceCount(mealType, ida, habits));
+    const pb = Math.log1p(getMealTypeFoodPreferenceCount(mealType, idb, habits));
+    const scoreA = getRecentFoodSmartScore(a, now) + pa * 2.2;
+    const scoreB = getRecentFoodSmartScore(b, now) + pb * 2.2;
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    const ca = Number(a.usageCount ?? a.count) || 1;
+    const cb = Number(b.usageCount ?? b.count) || 1;
+    if (cb !== ca) return cb - ca;
+    return (Number(b.lastUsedAt ?? b.lastUsed) || 0) - (Number(a.lastUsedAt ?? a.lastUsed) || 0);
+  });
+}
+
+function reorderComplementsForMealType(comps, mealType, habits, foodDb, mainIds) {
+  if (!comps?.length || !habits) return comps || [];
+  const catTotals = getMealTypeCategoryTotals(mealType, habits);
+  const total = Object.values(catTotals).reduce((a, b) => a + Number(b || 0), 0);
+  if (total <= 0) return comps;
+
+  const mainsCats = new Set();
+  (mainIds || []).forEach((id) => {
+    const row = foodDb?.[id];
+    if (row && typeof row === 'object') mainsCats.add(categorizeFood(row));
+  });
+
+  return [...comps].sort((a, b) => {
+    const rowA = foodDb?.[a.id];
+    const rowB = foodDb?.[b.id];
+    const catA = rowA && typeof rowA === 'object' ? categorizeFood(rowA) : '';
+    const catB = rowB && typeof rowB === 'object' ? categorizeFood(rowB) : '';
+    const shareA = catA ? (Number(catTotals[catA]) || 0) / total : 0;
+    const shareB = catB ? (Number(catTotals[catB]) || 0) / total : 0;
+    const bonusA = catA && mainsCats.has(catA) ? shareA * 0.55 : shareA;
+    const bonusB = catB && mainsCats.has(catB) ? shareB * 0.55 : shareB;
+    if (bonusB !== bonusA) return bonusB - bonusA;
+    return (Number(b.count) || 0) - (Number(a.count) || 0);
+  });
+}
+
+function assembleMealFromAnchors(pool, mains, effectiveMealType, patterns, savedMap, assemblyOptions = {}) {
+  const minItems = Number(assemblyOptions.minItems) > 0 ? Math.floor(assemblyOptions.minItems) : AUTO_MEAL_MIN_ITEMS;
+  const maxItems = Number(assemblyOptions.maxItems) > 0 ? Math.floor(assemblyOptions.maxItems) : AUTO_MEAL_MAX_ITEMS;
+  const habits = assemblyOptions.habits || null;
+  const foodDb = assemblyOptions.foodDb || null;
+
   if (!pool?.length || !mains?.length) return [];
   const anchors = new Set(mains.map((m) => String(m.id ?? '').trim()).filter(Boolean));
-  const comps = mergeCompanionSuggestionLists(
+  let comps = mergeCompanionSuggestionLists(
     collectMealComplementsForAnchors(anchors, effectiveMealType, patterns),
     getCooccurrenceCompanions(anchors, effectiveMealType, savedMap)
   );
+  const mainIds = mains.map((m) => String(m.id ?? '').trim()).filter(Boolean);
+  if (habits && foodDb && comps.length) {
+    comps = reorderComplementsForMealType(comps, effectiveMealType, habits, foodDb, mainIds);
+  }
   const toRef = (entry) => ({
     id: entry.id,
     name: String(entry.name ?? '').trim(),
   });
   const result = [];
   const add = (ref) => {
-    if (result.length >= AUTO_MEAL_MAX_ITEMS) return;
+    if (result.length >= maxItems) return;
     const rid = String(ref.id ?? '').trim();
     if (!rid || !ref.name) return;
     if (result.some((r) => String(r.id) === rid)) return;
@@ -284,15 +347,15 @@ function assembleMealFromAnchors(pool, mains, effectiveMealType, patterns, saved
   comps.forEach((c) => add({ id: c.id, name: c.name }));
 
   let pi = 0;
-  while (result.length < AUTO_MEAL_MIN_ITEMS && pi < pool.length) {
+  while (result.length < minItems && pi < pool.length) {
     add(toRef(pool[pi]));
     pi += 1;
   }
 
-  return result.slice(0, AUTO_MEAL_MAX_ITEMS);
+  return result.slice(0, maxItems);
 }
 
-function buildPrimaryAutomaticMeal(pool, effectiveMealType, patterns, savedMap) {
+function buildPrimaryAutomaticMeal(pool, effectiveMealType, patterns, savedMap, assemblyOptions) {
   if (pool.length === 0) return [];
 
   const id0 = String(pool[0].id ?? '').trim();
@@ -309,8 +372,8 @@ function buildPrimaryAutomaticMeal(pool, effectiveMealType, patterns, savedMap) 
   );
 
   let mains = strongPair && pool[1] ? [pool[0], pool[1]] : [pool[0]];
-  let anchors = new Set(mains.map((m) => String(m.id ?? '').trim()).filter(Boolean));
-  let comps = mergeCompanionSuggestionLists(
+  const anchors = new Set(mains.map((m) => String(m.id ?? '').trim()).filter(Boolean));
+  const comps = mergeCompanionSuggestionLists(
     collectMealComplementsForAnchors(anchors, effectiveMealType, patterns),
     getCooccurrenceCompanions(anchors, effectiveMealType, savedMap)
   );
@@ -319,7 +382,7 @@ function buildPrimaryAutomaticMeal(pool, effectiveMealType, patterns, savedMap) 
     mains = [pool[0], pool[1]];
   }
 
-  return assembleMealFromAnchors(pool, mains, effectiveMealType, patterns, savedMap);
+  return assembleMealFromAnchors(pool, mains, effectiveMealType, patterns, savedMap, assemblyOptions);
 }
 
 /**
@@ -330,10 +393,23 @@ function buildScoredSuggestedMeals({
   recentFoodEntries,
   mealFoodPatterns,
   savedCooccurrenceMap,
+  habits,
+  foodDb,
 }) {
   if (!effectiveMealType || !Array.isArray(recentFoodEntries) || recentFoodEntries.length === 0) {
     return [];
   }
+
+  const bounds = getAdaptiveMealBounds(effectiveMealType, habits);
+  const minItems = bounds.min;
+  const maxItems = bounds.max;
+
+  const assemblyOptions = {
+    minItems,
+    maxItems,
+    habits,
+    foodDb,
+  };
 
   const mealScoped = recentFoodEntries.filter((e) => e.mealType === effectiveMealType);
   const mealPool = sortMealEntriesByUsageAndRecency(mealScoped);
@@ -346,7 +422,8 @@ function buildScoredSuggestedMeals({
     mealPool.push(e);
   });
 
-  const pool = sortMealEntriesByUsageAndRecency(mealPool);
+  const poolSorted = sortMealEntriesByUsageAndRecency(mealPool);
+  const pool = orderPoolWithMealHabits(poolSorted, effectiveMealType, habits);
   if (pool.length === 0) return [];
 
   const patterns = mealFoodPatterns;
@@ -355,26 +432,26 @@ function buildScoredSuggestedMeals({
   const seenKeys = new Set();
 
   const pushUniqueFoods = (foods) => {
-    if (!foods || foods.length < AUTO_MEAL_MIN_ITEMS) return;
+    if (!foods || foods.length < minItems) return;
     const key = mealFoodsKey(foods);
     if (!key || seenKeys.has(key)) return;
     seenKeys.add(key);
     candidates.push(foods);
   };
 
-  pushUniqueFoods(buildPrimaryAutomaticMeal(pool, effectiveMealType, patterns, savedMap));
+  pushUniqueFoods(buildPrimaryAutomaticMeal(pool, effectiveMealType, patterns, savedMap, assemblyOptions));
 
   if (pool.length >= 2) {
     pushUniqueFoods(
-      assembleMealFromAnchors(pool, [pool[1]], effectiveMealType, patterns, savedMap)
+      assembleMealFromAnchors(pool, [pool[1]], effectiveMealType, patterns, savedMap, assemblyOptions)
     );
     pushUniqueFoods(
-      assembleMealFromAnchors(pool, [pool[0], pool[1]], effectiveMealType, patterns, savedMap)
+      assembleMealFromAnchors(pool, [pool[0], pool[1]], effectiveMealType, patterns, savedMap, assemblyOptions)
     );
   }
 
   const topHabitOnly = pool
-    .slice(0, Math.min(AUTO_MEAL_MAX_ITEMS, pool.length))
+    .slice(0, Math.min(maxItems, pool.length))
     .map((e) => ({
       id: e.id,
       name: String(e.name ?? '').trim(),
@@ -391,11 +468,12 @@ function buildScoredSuggestedMeals({
         recentFoodEntries,
         patterns,
         savedMap,
-        now
+        now,
+        habits
       );
       return { foods, foodScore, coOccurrenceScore, score };
     })
-    .filter((row) => row.foods.length >= AUTO_MEAL_MIN_ITEMS)
+    .filter((row) => row.foods.length >= minItems)
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       if (b.coOccurrenceScore !== a.coOccurrenceScore) return b.coOccurrenceScore - a.coOccurrenceScore;
@@ -1054,6 +1132,8 @@ export default function MealBuilder({
   const [mealFoodPatterns, setMealFoodPatterns] = useState(() => loadMealFoodPatterns());
   const [cooccurrenceVersion, setCooccurrenceVersion] = useState(0);
   const savedCooccurrenceMap = useMemo(() => loadFoodCooccurrenceMap(), [cooccurrenceVersion]);
+  const [habitsVersion, setHabitsVersion] = useState(0);
+  const mealSuggestionHabits = useMemo(() => loadMealSuggestionHabits(), [habitsVersion]);
   const recentFoods = useMemo(
     () => recentFoodEntries.map((entry) => entry.id).filter(Boolean),
     [recentFoodEntries]
@@ -1277,8 +1357,14 @@ export default function MealBuilder({
       recentFoodEntries,
       mealFoodPatterns,
       savedCooccurrenceMap,
+      habits: mealSuggestionHabits,
+      foodDb,
     }),
-    [effectiveMealTypeForHabits, mealFoodPatterns, recentFoodEntries, savedCooccurrenceMap]
+    [effectiveMealTypeForHabits, foodDb, mealFoodPatterns, mealSuggestionHabits, recentFoodEntries, savedCooccurrenceMap]
+  );
+  const adaptiveMealBounds = useMemo(
+    () => getAdaptiveMealBounds(effectiveMealTypeForHabits, mealSuggestionHabits),
+    [effectiveMealTypeForHabits, mealSuggestionHabits]
   );
   const suggestedMeal = scoredSuggestedMeals[0]?.foods ?? [];
   const personalResultsCount = useMemo(
@@ -1549,6 +1635,12 @@ export default function MealBuilder({
     const onCooc = () => setCooccurrenceVersion((v) => v + 1);
     window.addEventListener(FOOD_COOCCURRENCE_EVENT, onCooc);
     return () => window.removeEventListener(FOOD_COOCCURRENCE_EVENT, onCooc);
+  }, []);
+
+  useEffect(() => {
+    const onHabits = () => setHabitsVersion((v) => v + 1);
+    window.addEventListener(MEAL_SUGGESTION_HABITS_EVENT, onHabits);
+    return () => window.removeEventListener(MEAL_SUGGESTION_HABITS_EVENT, onHabits);
   }, []);
 
   useEffect(() => {
@@ -2411,6 +2503,9 @@ export default function MealBuilder({
                   }}
                 >
                   {`Pasti suggeriti ${mealSuggestionLabel}`}
+                </div>
+                <div style={{ fontSize: '0.65rem', color: '#64748b', marginBottom: '10px', lineHeight: 1.4 }}>
+                  {`Adattato nel tempo: di solito ~${adaptiveMealBounds.target} alimenti per questo pasto · range suggerito ${adaptiveMealBounds.min}–${adaptiveMealBounds.max}.`}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {scoredSuggestedMeals.map((row, idx) => (
