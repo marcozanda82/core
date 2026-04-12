@@ -230,7 +230,7 @@ function summarizeUsdaResponse(data) {
  */
 export function searchUSDAFoods(query, opts = {}) {
   const qRaw = String(query || '').trim();
-  const q = normalizeQueryForUsda(qRaw);
+  const q = qRaw;
 
   if (!q || q.length < 3) {
     clearUsdaDebounceTimer();
