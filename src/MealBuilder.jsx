@@ -496,34 +496,6 @@ export default function MealBuilder({
     };
   }, [foodDb, localFoodDb]);
 
-  const handleAddSelectedFood = useCallback(() => {
-    if (!foodNameInput || !foodWeightInput) return;
-    const trackedName = String(foodNameInput || '').trim();
-    const trackedId = selectedFoodMatch?.id != null && String(selectedFoodMatch.id).trim() !== ''
-      ? String(selectedFoodMatch.id).trim()
-      : trackedName;
-
-    if (selectedFoodMatch?.id && typeof estraiDatiFoodDb === 'function' && typeof setAddedFoods === 'function') {
-      const trimmedName = foodNameInput.trim();
-      const parsedWeight = parseFloat(foodWeightInput);
-      const preferredDbKey = foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : undefined;
-      const baseItem = estraiDatiFoodDb(trimmedName, parsedWeight, mealType, preferredDbKey);
-      const enrichedItem = enrichAddedFoodItem(baseItem, selectedFoodMatch, parsedWeight);
-      setAddedFoods((prev) => [enrichedItem, ...prev]);
-      trackRecentFood({ id: trackedId, name: trimmedName });
-      setFoodNameInput('');
-      setFoodWeightInput('');
-      setSelectedFoodMatch(null);
-      return;
-    }
-
-    if (typeof handleAddFoodManual === 'function') {
-      trackRecentFood({ id: trackedId, name: trackedName });
-      handleAddFoodManual();
-    }
-    setSelectedFoodMatch(null);
-  }, [selectedFoodMatch, estraiDatiFoodDb, setAddedFoods, foodNameInput, foodWeightInput, foodDb, mealType, enrichAddedFoodItem, setFoodNameInput, setFoodWeightInput, handleAddFoodManual, trackRecentFood]);
-
   const buildAiMealConstraintsPayload = useCallback(() => {
     const split = (s) =>
       String(s || '')
@@ -806,6 +778,34 @@ export default function MealBuilder({
       return next;
     });
   }, []);
+
+  const handleAddSelectedFood = useCallback(() => {
+    if (!foodNameInput || !foodWeightInput) return;
+    const trackedName = String(foodNameInput || '').trim();
+    const trackedId = selectedFoodMatch?.id != null && String(selectedFoodMatch.id).trim() !== ''
+      ? String(selectedFoodMatch.id).trim()
+      : trackedName;
+
+    if (selectedFoodMatch?.id && typeof estraiDatiFoodDb === 'function' && typeof setAddedFoods === 'function') {
+      const trimmedName = foodNameInput.trim();
+      const parsedWeight = parseFloat(foodWeightInput);
+      const preferredDbKey = foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : undefined;
+      const baseItem = estraiDatiFoodDb(trimmedName, parsedWeight, mealType, preferredDbKey);
+      const enrichedItem = enrichAddedFoodItem(baseItem, selectedFoodMatch, parsedWeight);
+      setAddedFoods((prev) => [enrichedItem, ...prev]);
+      trackRecentFood({ id: trackedId, name: trimmedName });
+      setFoodNameInput('');
+      setFoodWeightInput('');
+      setSelectedFoodMatch(null);
+      return;
+    }
+
+    if (typeof handleAddFoodManual === 'function') {
+      trackRecentFood({ id: trackedId, name: trackedName });
+      handleAddFoodManual();
+    }
+    setSelectedFoodMatch(null);
+  }, [selectedFoodMatch, estraiDatiFoodDb, setAddedFoods, foodNameInput, foodWeightInput, foodDb, mealType, enrichAddedFoodItem, setFoodNameInput, setFoodWeightInput, handleAddFoodManual, trackRecentFood]);
 
   const handleSelectRecentFood = useCallback((entry) => {
     const desc = String(entry?.name || '').trim();
