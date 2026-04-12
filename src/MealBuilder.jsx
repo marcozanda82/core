@@ -257,17 +257,17 @@ function normalizeAverageFoodRankScore(foods, recentFoodEntries, now = Date.now(
   return Math.min(1, (sum / n) / MAX_SMART_SCORE);
 }
 
-function scoreMealCandidate(foods, mealType, recentFoodEntries, patterns, savedMap, now = Date.now(), habits) {
+/**
+ * Ranks a candidate meal: habit strength (foodScore) + how often items appear together (coOccurrenceScore).
+ * Meals eaten together more often get a higher coOccurrenceScore and rise in the list.
+ */
+function scoreMealCandidate(foods, mealType, recentFoodEntries, patterns, savedMap, now = Date.now()) {
   const ids = (foods || []).map((f) => String(f?.id ?? '').trim()).filter(Boolean);
   const foodScore = normalizeAverageFoodRankScore(foods, recentFoodEntries, now);
   const rawCooc = sumPairCooccurrenceForMeal(mealType, ids, patterns, savedMap);
   const coOccurrenceScore = normalizeMealCooccurrenceStrength(rawCooc, ids.length);
-  let score = (SUGGESTED_MEAL_FOOD_SCORE_WEIGHT * foodScore)
+  const score = (SUGGESTED_MEAL_FOOD_SCORE_WEIGHT * foodScore)
     + (SUGGESTED_MEAL_COOCC_SCORE_WEIGHT * coOccurrenceScore);
-  if (habits) {
-    const { target } = getAdaptiveMealBounds(mealType, habits);
-    if (target && foods.length === target) score += 0.038;
-  }
   return { foodScore, coOccurrenceScore, score };
 }
 
@@ -468,8 +468,7 @@ function buildScoredSuggestedMeals({
         recentFoodEntries,
         patterns,
         savedMap,
-        now,
-        habits
+        now
       );
       return { foods, foodScore, coOccurrenceScore, score };
     })
