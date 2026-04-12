@@ -177,13 +177,17 @@ function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function highlightSearchMatches(text, query) {
-  const sourceText = String(text || '');
-  const normalizedQuery = String(query || '')
+function normalizeSearchQuery(value) {
+  return String(value || '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function highlightSearchMatches(text, query) {
+  const sourceText = String(text || '');
+  const normalizedQuery = normalizeSearchQuery(query);
 
   if (!sourceText || !normalizedQuery) return escapeHtml(sourceText);
 
@@ -578,6 +582,19 @@ export default function MealBuilder({
     () => recentFoodEntries.map((entry) => entry.id).filter(Boolean),
     [recentFoodEntries]
   );
+  const visibleRecentFoodEntries = useMemo(() => {
+    const normalizedQuery = normalizeSearchQuery(foodNameInput);
+    if (!normalizedQuery) return recentFoodEntries.slice(0, 5);
+
+    const queryWords = normalizedQuery.split(' ').filter(Boolean);
+    return recentFoodEntries
+      .filter((entry) => {
+        const normalizedName = normalizeSearchQuery(entry?.name);
+        if (!normalizedName) return false;
+        return queryWords.every((word) => normalizedName.includes(word));
+      })
+      .slice(0, 5);
+  }, [foodNameInput, recentFoodEntries]);
 
   const trackRecentFood = useCallback((food) => {
     const name = String(food?.name || '').trim();
@@ -598,6 +615,25 @@ export default function MealBuilder({
       return next;
     });
   }, []);
+
+  const handleSelectRecentFood = useCallback((entry) => {
+    const desc = String(entry?.name || '').trim();
+    if (!desc) return;
+
+    const entryId = String(entry?.id ?? desc).trim();
+    const matchedRow = foodDb?.[entryId] || localFoodDb?.[entryId] || null;
+
+    setFoodNameInput(desc);
+    setFoodWeightInput(getLastQuantityForFood(desc) || '');
+    setSelectedFoodMatch({
+      id: entryId || null,
+      desc,
+      row: matchedRow,
+    });
+    trackRecentFood({ id: entryId || desc, name: desc });
+    setShowFoodDropdown(false);
+    setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
+  }, [foodDb, getLastQuantityForFood, localFoodDb, setFoodNameInput, setFoodWeightInput, setShowFoodDropdown, trackRecentFood]);
 
   useEffect(() => {
     if (typeof registerAddFoodCallback !== 'function') return;
@@ -1474,7 +1510,11 @@ export default function MealBuilder({
                         +
                       </button>
                     </div>
-                    {showFoodDropdown && (foodNameInput.trim() || (foodDropdownSuggestions && foodDropdownSuggestions.length > 0)) && (
+                    {showFoodDropdown && (
+                      foodNameInput.trim()
+                      || (foodDropdownSuggestions && foodDropdownSuggestions.length > 0)
+                      || visibleRecentFoodEntries.length > 0
+                    ) && (
                       <div
                         style={{
                           position: 'absolute',
@@ -1490,6 +1530,47 @@ export default function MealBuilder({
                           boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                         }}
                       >
+                        {visibleRecentFoodEntries.length > 0 ? (
+                          <>
+                            <div
+                              style={{
+                                padding: '10px 16px 8px',
+                                color: '#94a3b8',
+                                fontSize: '0.68rem',
+                                fontWeight: '600',
+                                letterSpacing: '0.08em',
+                                textTransform: 'uppercase',
+                                borderBottom: '1px solid #2a2a2a',
+                              }}
+                            >
+                              Usati di recente
+                            </div>
+                            {visibleRecentFoodEntries.map((entry) => (
+                              <button
+                                key={`recent-${entry.id}-${entry.timestamp}`}
+                                type="button"
+                                style={{
+                                  width: '100%',
+                                  padding: '12px 16px',
+                                  textAlign: 'left',
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#fff',
+                                  cursor: 'pointer',
+                                  fontSize: '0.9rem',
+                                  borderBottom: '1px solid #2a2a2a',
+                                }}
+                                onClick={() => handleSelectRecentFood(entry)}
+                              >
+                                <span
+                                  dangerouslySetInnerHTML={{
+                                    __html: highlightSearchMatches(entry.name, foodNameInput),
+                                  }}
+                                />
+                              </button>
+                            ))}
+                          </>
+                        ) : null}
                         {(foodDropdownSuggestions || []).map((s) => (
                           <button
                             key={s.key}
