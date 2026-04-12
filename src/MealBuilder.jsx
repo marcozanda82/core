@@ -32,19 +32,25 @@ function normalizeRecentFoodEntry(entry) {
   return { id, name, timestamp };
 }
 
+function sortRecentFoodEntries(entries) {
+  return [...entries].sort((a, b) => b.timestamp - a.timestamp);
+}
+
 function loadRecentFoodEntries() {
   try {
     const parsed = JSON.parse(localStorage.getItem(RECENT_FOODS_STORAGE_KEY) || '[]');
     if (Array.isArray(parsed)) {
-      return parsed.map(normalizeRecentFoodEntry).filter(Boolean).slice(0, 20);
+      return sortRecentFoodEntries(
+        parsed.map(normalizeRecentFoodEntry).filter(Boolean)
+      ).slice(0, 20);
     }
   } catch (_) {}
 
   try {
     const legacy = JSON.parse(localStorage.getItem('recentFoods') || '[]');
     if (Array.isArray(legacy)) {
-      return legacy
-        .map((item, index) => {
+      return sortRecentFoodEntries(
+        legacy.map((item, index) => {
           const name = String(item || '').trim();
           if (!name) return null;
           return {
@@ -54,7 +60,7 @@ function loadRecentFoodEntries() {
           };
         })
         .filter(Boolean)
-        .slice(0, 20);
+      ).slice(0, 20);
     }
   } catch (_) {}
 
