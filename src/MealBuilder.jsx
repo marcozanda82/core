@@ -20,6 +20,7 @@ const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
 ]);
 
 const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
+const MEAL_FOOD_PATTERNS_STORAGE_KEY = 'meal_food_patterns';
 const MAX_RECENT_FOODS = 30;
 const PERSONAL_RESULTS_THRESHOLD = 3;
 const SMART_SUGGESTIONS_LIMIT = 5;
@@ -64,6 +65,45 @@ function normalizeTrackedMealType(value) {
   if (meal.includes('cena')) return 'cena';
   if (meal.includes('snack') || meal.includes('spuntino')) return 'snack';
   return '';
+}
+
+function normalizeMealPatternFoodRef(food) {
+  if (!food || typeof food !== 'object') return null;
+  const name = String(food.name ?? food.desc ?? '').trim();
+  const id = String(food.foodDbKey ?? food.id ?? name).trim();
+  if (!id || !name) return null;
+  return { id, name };
+}
+
+function buildMealPatternKey(mealType, firstId, secondId) {
+  const a = String(firstId || '').trim();
+  const b = String(secondId || '').trim();
+  if (!mealType || !a || !b || a === b) return '';
+  return [mealType, a, b].join('::');
+}
+
+function loadMealFoodPatterns() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MEAL_FOOD_PATTERNS_STORAGE_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry) => {
+      if (!entry || typeof entry !== 'object') return false;
+      const mealType = normalizeTrackedMealType(entry.mealType);
+      const first = normalizeMealPatternFoodRef(entry.firstFood);
+      const second = normalizeMealPatternFoodRef(entry.secondFood);
+      const count = Number(entry.count);
+      const lastUsedAt = Number(entry.lastUsedAt);
+      return Boolean(mealType && first && second && Number.isFinite(count) && count > 0 && Number.isFinite(lastUsedAt));
+    }).map((entry) => ({
+      mealType: normalizeTrackedMealType(entry.mealType),
+      firstFood: normalizeMealPatternFoodRef(entry.firstFood),
+      secondFood: normalizeMealPatternFoodRef(entry.secondFood),
+      count: Math.floor(Number(entry.count) || 1),
+      lastUsedAt: Number(entry.lastUsedAt),
+    }));
+  } catch (_) {
+    return [];
+  }
 }
 
 function dedupeRecentFoodEntries(entries) {
@@ -688,10 +728,13 @@ export default function MealBuilder({
   }, [draftTotalsPer100g, complexPortionWeight]);
 
   const [recentFoodEntries, setRecentFoodEntries] = useState(() => loadRecentFoodEntries());
+  const [mealFoodPatterns, setMealFoodPatterns] = useState(() => loadMealFoodPatterns());
   const recentFoods = useMemo(
     () => recentFoodEntries.map((entry) => entry.id).filter(Boolean),
     [recentFoodEntries]
   );
+  const addedFoodsRef = useRef(addedFoods);
+  addedFoodsRef.current = addedFoods;
   const normalizedTrackedMealType = useMemo(
     () => normalizeTrackedMealType(mealType),
     [mealType]
@@ -819,6 +862,66 @@ export default function MealBuilder({
     visibleFrequentFoodEntries,
     visibleRecentFoodEntries,
   ]);
+  const pairedFoodSuggestions = useMemo(() => {
+    if (!isShortFoodQuery || !normalizedTrackedMealType) return [];
+
+    const anchorFoods = (addedFoods || [])
+      .map((food) => normalizeMealPatternFoodRef(food))
+      .filter(Boolean);
+    if (anchorFoods.length === 0) return [];
+
+    const anchorIds = new Set(anchorFoods.map((food) => food.id));
+    const excludedIds = new Set([
+      ...anchorIds,
+      ...visibleFrequentFoodEntries.map((entry) => String(entry?.id ?? '').trim()),
+      ...visibleRecentFoodEntries.map((entry) => String(entry?.id ?? '').trim()),
+      ...smartSuggestedFoods.map((entry) => String(entry?.id ?? '').trim()),
+    ]);
+
+    const suggestions = new Map();
+    mealFoodPatterns.forEach((pattern) => {
+      if (pattern.mealType !== normalizedTrackedMealType) return;
+
+      const firstId = String(pattern.firstFood?.id ?? '').trim();
+      const secondId = String(pattern.secondFood?.id ?? '').trim();
+      const hasFirst = anchorIds.has(firstId);
+      const hasSecond = anchorIds.has(secondId);
+      if (!hasFirst && !hasSecond) return;
+
+      const companion = hasFirst ? pattern.secondFood : pattern.firstFood;
+      if (!companion || excludedIds.has(String(companion.id ?? '').trim())) return;
+
+      const key = String(companion.id ?? '').trim();
+      const existing = suggestions.get(key);
+      if (!existing) {
+        suggestions.set(key, {
+          id: companion.id,
+          name: companion.name,
+          count: Number(pattern.count) || 1,
+          lastUsedAt: Number(pattern.lastUsedAt) || 0,
+        });
+        return;
+      }
+
+      existing.count += Number(pattern.count) || 1;
+      existing.lastUsedAt = Math.max(existing.lastUsedAt, Number(pattern.lastUsedAt) || 0);
+    });
+
+    return [...suggestions.values()]
+      .sort((a, b) => {
+        if ((b.count || 0) !== (a.count || 0)) return (b.count || 0) - (a.count || 0);
+        return (b.lastUsedAt || 0) - (a.lastUsedAt || 0);
+      })
+      .slice(0, SMART_SUGGESTIONS_LIMIT);
+  }, [
+    addedFoods,
+    isShortFoodQuery,
+    mealFoodPatterns,
+    normalizedTrackedMealType,
+    smartSuggestedFoods,
+    visibleFrequentFoodEntries,
+    visibleRecentFoodEntries,
+  ]);
   const personalResultsCount = useMemo(
     () => (foodDropdownSuggestions || []).length,
     [foodDropdownSuggestions]
@@ -921,6 +1024,61 @@ export default function MealBuilder({
     });
   }, [mealType]);
 
+  const trackMealFoodPatterns = useCallback((food, existingFoods = []) => {
+    const trackedMealType = normalizeTrackedMealType(food?.mealType ?? mealType);
+    const newFood = normalizeMealPatternFoodRef(food);
+    if (!trackedMealType || !newFood) return;
+
+    const companionFoods = existingFoods
+      .map((item) => normalizeMealPatternFoodRef(item))
+      .filter((item) => item && item.id !== newFood.id);
+    if (companionFoods.length === 0) return;
+
+    setMealFoodPatterns((prev) => {
+      const next = [...prev];
+      const now = Date.now();
+
+      companionFoods.forEach((companion) => {
+        const [firstFood, secondFood] = [newFood, companion].sort((a, b) => a.id.localeCompare(b.id));
+        const patternKey = buildMealPatternKey(trackedMealType, firstFood.id, secondFood.id);
+        if (!patternKey) return;
+
+        const existingIndex = next.findIndex((pattern) => (
+          buildMealPatternKey(pattern.mealType, pattern.firstFood?.id, pattern.secondFood?.id) === patternKey
+        ));
+
+        if (existingIndex === -1) {
+          next.push({
+            mealType: trackedMealType,
+            firstFood,
+            secondFood,
+            count: 1,
+            lastUsedAt: now,
+          });
+          return;
+        }
+
+        next[existingIndex] = {
+          ...next[existingIndex],
+          count: (Number(next[existingIndex].count) || 0) + 1,
+          lastUsedAt: now,
+          firstFood,
+          secondFood,
+        };
+      });
+
+      const normalizedNext = next
+        .sort((a, b) => (Number(b.lastUsedAt) || 0) - (Number(a.lastUsedAt) || 0))
+        .slice(0, 200);
+
+      try {
+        localStorage.setItem(MEAL_FOOD_PATTERNS_STORAGE_KEY, JSON.stringify(normalizedNext));
+      } catch (_) {}
+
+      return normalizedNext;
+    });
+  }, [mealType]);
+
   const handleAddSelectedFood = useCallback(() => {
     if (!foodNameInput || !foodWeightInput) return;
     const trackedName = String(foodNameInput || '').trim();
@@ -934,6 +1092,7 @@ export default function MealBuilder({
       const preferredDbKey = foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : undefined;
       const baseItem = estraiDatiFoodDb(trimmedName, parsedWeight, mealType, preferredDbKey);
       const enrichedItem = enrichAddedFoodItem(baseItem, selectedFoodMatch, parsedWeight);
+      trackMealFoodPatterns({ id: trackedId, name: trimmedName, mealType }, addedFoods || []);
       setAddedFoods((prev) => [enrichedItem, ...prev]);
       trackRecentFood({ id: trackedId, name: trimmedName });
       setFoodNameInput('');
@@ -943,11 +1102,12 @@ export default function MealBuilder({
     }
 
     if (typeof handleAddFoodManual === 'function') {
+      trackMealFoodPatterns({ id: trackedId, name: trackedName, mealType }, addedFoods || []);
       trackRecentFood({ id: trackedId, name: trackedName });
       handleAddFoodManual();
     }
     setSelectedFoodMatch(null);
-  }, [selectedFoodMatch, estraiDatiFoodDb, setAddedFoods, foodNameInput, foodWeightInput, foodDb, mealType, enrichAddedFoodItem, setFoodNameInput, setFoodWeightInput, handleAddFoodManual, trackRecentFood]);
+  }, [selectedFoodMatch, estraiDatiFoodDb, setAddedFoods, foodNameInput, foodWeightInput, foodDb, mealType, enrichAddedFoodItem, setFoodNameInput, setFoodWeightInput, handleAddFoodManual, trackMealFoodPatterns, addedFoods, trackRecentFood]);
 
   const handleSelectRecentFood = useCallback((entry) => {
     const desc = String(entry?.name || '').trim();
@@ -973,10 +1133,11 @@ export default function MealBuilder({
     registerAddFoodCallback((foodId) => {
       if (!foodId) return;
       const fallbackName = String(foodDb?.[foodId]?.desc ?? foodDb?.[foodId]?.name ?? foodId).trim();
+      trackMealFoodPatterns({ id: foodId, name: fallbackName, mealType }, addedFoodsRef.current || []);
       trackRecentFood({ id: foodId, name: fallbackName });
     });
     return () => registerAddFoodCallback(null);
-  }, [foodDb, registerAddFoodCallback, trackRecentFood]);
+  }, [foodDb, mealType, registerAddFoodCallback, trackMealFoodPatterns, trackRecentFood]);
 
   useEffect(() => {
     if (!showFoodDropdown) return undefined;
@@ -1877,6 +2038,7 @@ export default function MealBuilder({
                       || (foodDropdownSuggestions && foodDropdownSuggestions.length > 0)
                       || visibleRecentFoodEntries.length > 0
                       || visibleFrequentFoodEntries.length > 0
+                      || pairedFoodSuggestions.length > 0
                       || smartSuggestedFoods.length > 0
                     ) && (
                       <div
@@ -1950,6 +2112,43 @@ export default function MealBuilder({
                             {visibleRecentFoodEntries.map((entry) => (
                               <button
                                 key={`recent-${entry.id}-${entry.lastUsed}`}
+                                type="button"
+                                style={{
+                                  width: '100%',
+                                  padding: '12px 16px',
+                                  textAlign: 'left',
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#fff',
+                                  cursor: 'pointer',
+                                  fontSize: '0.9rem',
+                                  borderBottom: '1px solid #2a2a2a',
+                                }}
+                                onMouseDown={() => handleSelectRecentFood(entry)}
+                              >
+                                {renderFoodOptionLabel(entry.name, foodNameInput, entry.id)}
+                              </button>
+                            ))}
+                          </>
+                        ) : null}
+                        {isShortFoodQuery && pairedFoodSuggestions.length > 0 ? (
+                          <>
+                            <div
+                              style={{
+                                padding: '10px 16px 8px',
+                                color: '#94a3b8',
+                                fontSize: '0.68rem',
+                                fontWeight: '600',
+                                letterSpacing: '0.08em',
+                                textTransform: 'uppercase',
+                                borderBottom: '1px solid #2a2a2a',
+                              }}
+                            >
+                              Spesso mangi insieme
+                            </div>
+                            {pairedFoodSuggestions.map((entry) => (
+                              <button
+                                key={`pair-${entry.id}`}
                                 type="button"
                                 style={{
                                   width: '100%',
