@@ -25,6 +25,7 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
 import { searchFoods } from './foodSearch';
+import { recordMealFoodCooccurrence } from './foodCooccurrence';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
@@ -5388,6 +5389,12 @@ Ottimo! Diario aggiornato. 🥗`;
         id: f.id || `f_${uniqueBatchId}_${index}`
       }));
 
+      if (!isSimulationMode && mealItems.length >= 2) {
+        try {
+          recordMealFoodCooccurrence(mealItems, ourSlot);
+        } catch (_) {}
+      }
+
       const foodsToRemove = getFoodItemsForMealSlot(safeDailyLog, String(slotToReplace));
       const removeSet = new Set(foodsToRemove);
       const editingGhostMealId = editingMealId != null ? String(editingMealId) : '';
@@ -5484,6 +5491,11 @@ Ottimo! Diario aggiornato. 🥗`;
         setSimulatedLog(nextLog);
         setEditingMealId(null);
         return;
+      }
+      if (mealItems.length >= 2) {
+        try {
+          recordMealFoodCooccurrence(mealItems, ourSlot);
+        } catch (_) {}
       }
       setDailyLog(nextLog);
       syncDatiFirebase(nextLog, manualNodes);

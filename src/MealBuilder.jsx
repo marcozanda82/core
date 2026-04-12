@@ -13,6 +13,12 @@ import {
 } from './coreEngine';
 import { getTimePositionPercent } from './timeLayout';
 import { useFoodDb } from './useFoodDb';
+import {
+  loadFoodCooccurrenceMap,
+  getCooccurrenceCompanions,
+  getSavedPairCooccurrenceCount,
+  FOOD_COOCCURRENCE_EVENT,
+} from './foodCooccurrence';
 
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
@@ -161,6 +167,40 @@ function collectMealComplementsForAnchors(anchorIdSet, mealType, patterns) {
     });
 }
 
+function mergeCompanionSuggestionLists(a, b) {
+  const m = new Map();
+  [...(a || []), ...(b || [])].forEach((item) => {
+    const id = String(item?.id ?? '').trim();
+    if (!id) return;
+    const c = Number(item.count) || 0;
+    const lu = Number(item.lastUsedAt) || 0;
+    const prev = m.get(id);
+    if (!prev) {
+      m.set(id, {
+        id: item.id,
+        name: String(item.name ?? '').trim(),
+        count: c,
+        lastUsedAt: lu,
+      });
+      return;
+    }
+    prev.count += c;
+    prev.lastUsedAt = Math.max(prev.lastUsedAt, lu);
+    if (!prev.name && item.name) prev.name = String(item.name).trim();
+  });
+  return [...m.values()]
+    .filter((item) => item.name)
+    .sort((x, y) => {
+      if (y.count !== x.count) return y.count - x.count;
+      return y.lastUsedAt - x.lastUsedAt;
+    });
+}
+
+function getTotalPairCooccurrence(mealType, idA, idB, patterns, savedMap) {
+  return getPairCooccurrenceCount(mealType, idA, idB, patterns)
+    + getSavedPairCooccurrenceCount(mealType, idA, idB, savedMap);
+}
+
 /**
  * Builds 2–4 foods: 1–2 "main" items from habit ranking, then co-occurring companions.
  */
@@ -168,6 +208,7 @@ function buildAutomaticSuggestedMeal({
   effectiveMealType,
   recentFoodEntries,
   mealFoodPatterns,
+  savedCooccurrenceMap,
 }) {
   if (!effectiveMealType || !Array.isArray(recentFoodEntries) || recentFoodEntries.length === 0) {
     return [];
@@ -196,17 +237,29 @@ function buildAutomaticSuggestedMeal({
   const id1 = pool[1] ? String(pool[1].id ?? '').trim() : '';
   const strongPair = Boolean(
     id1
-      && getPairCooccurrenceCount(effectiveMealType, id0, id1, mealFoodPatterns) >= AUTO_MEAL_STRONG_PAIR_THRESHOLD
+      && getTotalPairCooccurrence(
+        effectiveMealType,
+        id0,
+        id1,
+        mealFoodPatterns,
+        savedCooccurrenceMap
+      ) >= AUTO_MEAL_STRONG_PAIR_THRESHOLD
   );
 
   let mains = strongPair && pool[1] ? [pool[0], pool[1]] : [pool[0]];
   let anchors = new Set(mains.map((m) => String(m.id ?? '').trim()).filter(Boolean));
-  let comps = collectMealComplementsForAnchors(anchors, effectiveMealType, mealFoodPatterns);
+  let comps = mergeCompanionSuggestionLists(
+    collectMealComplementsForAnchors(anchors, effectiveMealType, mealFoodPatterns),
+    getCooccurrenceCompanions(anchors, effectiveMealType, savedCooccurrenceMap)
+  );
 
   if (comps.length === 0 && mains.length === 1 && pool[1]) {
     mains = [pool[0], pool[1]];
     anchors = new Set([String(pool[0].id ?? '').trim(), String(pool[1].id ?? '').trim()].filter(Boolean));
-    comps = collectMealComplementsForAnchors(anchors, effectiveMealType, mealFoodPatterns);
+    comps = mergeCompanionSuggestionLists(
+      collectMealComplementsForAnchors(anchors, effectiveMealType, mealFoodPatterns),
+      getCooccurrenceCompanions(anchors, effectiveMealType, savedCooccurrenceMap)
+    );
   }
 
   const result = [];
@@ -877,6 +930,8 @@ export default function MealBuilder({
 
   const [recentFoodEntries, setRecentFoodEntries] = useState(() => loadRecentFoodEntries());
   const [mealFoodPatterns, setMealFoodPatterns] = useState(() => loadMealFoodPatterns());
+  const [cooccurrenceVersion, setCooccurrenceVersion] = useState(0);
+  const savedCooccurrenceMap = useMemo(() => loadFoodCooccurrenceMap(), [cooccurrenceVersion]);
   const recentFoods = useMemo(
     () => recentFoodEntries.map((entry) => entry.id).filter(Boolean),
     [recentFoodEntries]
@@ -1059,6 +1114,25 @@ export default function MealBuilder({
       existing.lastUsedAt = Math.max(existing.lastUsedAt, Number(pattern.lastUsedAt) || 0);
     });
 
+    getCooccurrenceCompanions(anchorIds, normalizedTrackedMealType, savedCooccurrenceMap).forEach((c) => {
+      const cid = String(c.id ?? '').trim();
+      if (!cid || excludedIds.has(cid)) return;
+      const existing = suggestions.get(cid);
+      const addCount = Number(c.count) || 0;
+      const addLu = Number(c.lastUsedAt) || 0;
+      if (!existing) {
+        suggestions.set(cid, {
+          id: c.id,
+          name: c.name,
+          count: addCount,
+          lastUsedAt: addLu,
+        });
+        return;
+      }
+      existing.count += addCount;
+      existing.lastUsedAt = Math.max(existing.lastUsedAt, addLu);
+    });
+
     return [...suggestions.values()]
       .sort((a, b) => {
         if ((b.count || 0) !== (a.count || 0)) return (b.count || 0) - (a.count || 0);
@@ -1070,6 +1144,7 @@ export default function MealBuilder({
     isShortFoodQuery,
     mealFoodPatterns,
     normalizedTrackedMealType,
+    savedCooccurrenceMap,
     smartSuggestedFoods,
     visibleFrequentFoodEntries,
     visibleRecentFoodEntries,
@@ -1079,8 +1154,9 @@ export default function MealBuilder({
       effectiveMealType: effectiveMealTypeForHabits,
       recentFoodEntries,
       mealFoodPatterns,
+      savedCooccurrenceMap,
     }),
-    [effectiveMealTypeForHabits, mealFoodPatterns, recentFoodEntries]
+    [effectiveMealTypeForHabits, mealFoodPatterns, recentFoodEntries, savedCooccurrenceMap]
   );
   const personalResultsCount = useMemo(
     () => (foodDropdownSuggestions || []).length,
@@ -1342,6 +1418,12 @@ export default function MealBuilder({
     });
     return () => registerAddFoodCallback(null);
   }, [foodDb, mealType, registerAddFoodCallback, trackMealFoodPatterns, trackRecentFood]);
+
+  useEffect(() => {
+    const onCooc = () => setCooccurrenceVersion((v) => v + 1);
+    window.addEventListener(FOOD_COOCCURRENCE_EVENT, onCooc);
+    return () => window.removeEventListener(FOOD_COOCCURRENCE_EVENT, onCooc);
+  }, []);
 
   useEffect(() => {
     if (!showFoodDropdown) return undefined;
