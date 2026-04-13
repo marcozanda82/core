@@ -300,13 +300,13 @@ export function searchUSDAFoods(query, opts = {}) {
           signal,
         });
         
-        const text = await res.text();
+        const responseText = await res.text();
         console.log("STATUS:", res.status);
-        console.log("RAW TEXT:", text);
+        console.log("RAW TEXT:", responseText);
         
         let data;
         try {
-          data = JSON.parse(text);
+          data = JSON.parse(responseText);
         } catch (e) {
           console.error("JSON ERROR:", e);
           return [];
@@ -318,9 +318,9 @@ export function searchUSDAFoods(query, opts = {}) {
 
         let responseData;
         try {
-          responseData = JSON.parse(text);
+          responseData = JSON.parse(responseText);
         } catch (parseErr) {
-          logUsdaDebug('json-parse-error', { status: res.status, textPreview: text.slice(0, 200) });
+          logUsdaDebug('json-parse-error', { status: res.status, textPreview: responseText.slice(0, 200) });
           usdaPendingResolve = null;
           // eslint-disable-next-line no-console
           console.log('[USDA] results:', 0);
