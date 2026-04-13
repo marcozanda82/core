@@ -5447,34 +5447,36 @@ export default function MealBuilder({
             position: 'fixed',
             top: 0,
             left: 0,
+            right: 0,
+            bottom: 0,
             width: '100vw',
             height: '100vh',
+            maxHeight: '-webkit-fill-available',
             zIndex: 999999,
-            backgroundColor: 'rgba(0, 0, 0, 0.94)',
+            backgroundColor: 'rgba(0, 0, 0, 0.96)',
             overflow: 'hidden',
             overscrollBehavior: 'none',
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 'max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))',
+            alignItems: 'stretch',
             boxSizing: 'border-box',
           }}
         >
           <div
             style={{
-              width: '100%',
-              maxWidth: 440,
-              maxHeight: '100%',
+              flex: 1,
+              minHeight: 0,
               overflowY: 'auto',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
-              background: '#141418',
-              padding: '20px',
-              borderRadius: 18,
-              border: '1px solid #333',
-              boxShadow: '0 24px 80px rgba(0,0,0,0.65)',
+              width: '100%',
+              maxWidth: 480,
+              margin: '0 auto',
+              alignSelf: 'center',
+              padding: 'max(12px, env(safe-area-inset-top)) 16px 12px',
               boxSizing: 'border-box',
+              opacity: 0.88,
+              filter: 'saturate(0.92)',
             }}
           >
             {numpad.isMainBar ? (
@@ -5505,6 +5507,8 @@ export default function MealBuilder({
                               readOnly
                               tabIndex={-1}
                               autoComplete="off"
+                              enterKeyHint="done"
+                              onFocus={(e) => e.target.blur()}
                               defaultValue={Math.round(numpad.unitG)}
                               onBlur={(e) => dispatchNumpad({ type: 'setUnitFromInput', value: e.target.value })}
                               style={{
@@ -5534,6 +5538,8 @@ export default function MealBuilder({
                               readOnly
                               tabIndex={-1}
                               autoComplete="off"
+                              enterKeyHint="done"
+                              onFocus={(e) => e.target.blur()}
                               defaultValue={formatPortionQty(numpad.qty)}
                               onBlur={(e) => dispatchNumpad({ type: 'setQtyFromInput', value: e.target.value })}
                               style={{
@@ -5606,21 +5612,39 @@ export default function MealBuilder({
                 <div style={{ fontSize: '0.68rem', color: '#64748b', marginBottom: '14px' }}>Usa il tastierino per impostare il peso totale del piatto.</div>
               </>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-                <button key={num} type="button" onClick={() => dispatchNumpad({ type: 'digit', n: num })} style={{ padding: '15px', fontSize: '1.5rem', fontWeight: 'bold', background: '#2c2c2e', color: '#fff', border: 'none', borderRadius: '12px' }}>
-                  {num}
-                </button>
-              ))}
-              <button type="button" onClick={() => dispatchNumpad({ type: 'clear' })} style={{ padding: '15px', fontSize: '1.5rem', fontWeight: 'bold', background: '#333', color: '#ff4444', border: 'none', borderRadius: '12px' }}>C</button>
-              <button type="button" onClick={() => dispatchNumpad({ type: 'zero' })} style={{ padding: '15px', fontSize: '1.5rem', fontWeight: 'bold', background: '#2c2c2e', color: '#fff', border: 'none', borderRadius: '12px' }}>0</button>
-              <button type="button" onClick={() => dispatchNumpad({ type: 'back' })} style={{ padding: '15px', fontSize: '1.5rem', fontWeight: 'bold', background: '#333', color: '#fff', border: 'none', borderRadius: '12px' }}>⌫</button>
-            </div>
-            <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-              <button type="button" onClick={() => dispatchNumpad({ type: 'close' })} style={{ flex: 1, padding: '15px', background: '#333', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '1.1rem', fontWeight: 'bold' }}>Annulla</button>
-              <button
-                type="button"
-                onClick={() => {
+          </div>
+
+          <div
+            style={{
+              flexShrink: 0,
+              width: '100%',
+              marginBottom: 4,
+              paddingTop: 14,
+              paddingLeft: 12,
+              paddingRight: 12,
+              paddingBottom: 'max(4px, env(safe-area-inset-bottom))',
+              background: 'linear-gradient(180deg, #1c2430 0%, #0e1014 55%)',
+              borderTop: '1px solid rgba(0, 229, 255, 0.28)',
+              boxShadow: '0 -12px 40px rgba(0, 0, 0, 0.65)',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div style={{ maxWidth: 440, margin: '0 auto', width: '100%' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                  <button key={num} type="button" onClick={() => dispatchNumpad({ type: 'digit', n: num })} style={{ padding: '18px', fontSize: '1.65rem', fontWeight: 'bold', background: '#2a2f38', color: '#fff', border: '1px solid #3d4654', borderRadius: '14px', boxShadow: '0 2px 0 rgba(0,0,0,0.35)' }}>
+                    {num}
+                  </button>
+                ))}
+                <button type="button" onClick={() => dispatchNumpad({ type: 'clear' })} style={{ padding: '18px', fontSize: '1.5rem', fontWeight: 'bold', background: '#3d2a2a', color: '#ff6b6b', border: '1px solid #553333', borderRadius: '14px' }}>C</button>
+                <button type="button" onClick={() => dispatchNumpad({ type: 'zero' })} style={{ padding: '18px', fontSize: '1.65rem', fontWeight: 'bold', background: '#2a2f38', color: '#fff', border: '1px solid #3d4654', borderRadius: '14px' }}>0</button>
+                <button type="button" onClick={() => dispatchNumpad({ type: 'back' })} style={{ padding: '18px', fontSize: '1.5rem', fontWeight: 'bold', background: '#333a44', color: '#e2e8f0', border: '1px solid #454e5e', borderRadius: '14px' }}>⌫</button>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                <button type="button" onClick={() => dispatchNumpad({ type: 'close' })} style={{ flex: 1, padding: '16px', background: '#374151', color: '#fff', border: 'none', borderRadius: '14px', fontSize: '1.1rem', fontWeight: 'bold' }}>Annulla</button>
+                <button
+                  type="button"
+                  onClick={() => {
                   const newWeight = Math.max(5, Math.min(5000, Number(numpad.totalStr) || 0));
                   if (numpad.isMainBar || numpad.foodId === NUMPAD_MAIN_WEIGHT_ID) {
                     if (newWeight >= 5) {
@@ -5649,10 +5673,11 @@ export default function MealBuilder({
                   }
                   dispatchNumpad({ type: 'close' });
                 }}
-                style={{ flex: 1, padding: '15px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '12px', fontSize: '1.1rem', fontWeight: 'bold' }}
+                style={{ flex: 1, padding: '16px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '14px', fontSize: '1.12rem', fontWeight: 'bold', boxShadow: '0 4px 14px rgba(0, 229, 255, 0.35)' }}
               >
                 OK
               </button>
+              </div>
             </div>
           </div>
         </div>
