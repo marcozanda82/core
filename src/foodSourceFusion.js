@@ -160,16 +160,10 @@ export async function fuseUsdaIntoCrea(creaNormalized, query, options = {}) {
     ? Math.floor(options.minQueryLengthForUsda)
     : 3;
   const q = String(query || '').trim();
-  if (!Array.isArray(creaNormalized) || creaNormalized.length === 0) {
-    return [];
-  }
+  if (!Array.isArray(creaNormalized)) creaNormalized = [];
 
   let usdaHits = [];
-  const creaEnough = creaNormalized.length >= 5;
-  if (creaEnough) {
-    // eslint-disable-next-line no-console
-    console.log('[USDA] results:', 0);
-  } else if (q.length >= minUsda) {
+  if (q.length >= minUsda) {
     usdaHits = await searchUSDAFoods(q, {
       signal: options.signal,
       pageSize: options.usdaPageSize ?? 10,
