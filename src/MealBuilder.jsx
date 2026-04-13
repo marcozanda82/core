@@ -3,6 +3,7 @@
  * Estratto da SalaComandi.jsx. La logica saveMealToDiary resta nel genitore; qui solo rendering e onClick.
  */
 import React, { useState, useRef, useMemo, useEffect, useCallback, useReducer } from 'react';
+import { flushSync } from 'react-dom';
 import { TARGETS } from './useBiochimico';
 import {
   MEAL_TYPES,
@@ -1057,11 +1058,15 @@ function getFoodCalibrationStepG(food, isRecipeItem) {
 function mealNumpadReducer(state, action) {
   if (action.type === 'close' || action.type === 'reset') return null;
   if (action.type === 'open') {
-    return { ...action.payload };
+    return { ...action.payload, isEditingTotal: action.payload.isEditingTotal ?? false };
   }
   if (!state) return null;
 
   switch (action.type) {
+    case 'tapTotal': {
+      if (state.isRecipe) return state;
+      return { ...state, isEditingTotal: !state.isEditingTotal };
+    }
     case 'digit': {
       const nextStr = state.totalStr === '0' ? String(action.n) : state.totalStr + String(action.n);
       if (state.isRecipe) {
@@ -1097,35 +1102,39 @@ function mealNumpadReducer(state, action) {
     }
     case 'bumpQty': {
       if (state.isRecipe) return state;
+      if (state.isEditingTotal) return state;
       const nextQty = Math.max(0.5, Math.round((state.qty + action.delta) * 2) / 2);
       const total = clampMealGrams(nextQty * state.unitG);
       const qty = state.unitG > 0 ? total / state.unitG : nextQty;
-      return { ...state, totalStr: String(Math.round(total)), qty };
+      return { ...state, totalStr: String(Math.round(total)), qty, isEditingTotal: false };
     }
     case 'bumpUnit': {
       if (state.isRecipe) return state;
+      if (state.isEditingTotal) return state;
       const step = state.stepUnit || 5;
       const nextU = Math.max(1, Math.min(1000, state.unitG + action.sign * step));
       const total = clampMealGrams(state.qty * nextU);
       const qty = nextU > 0 ? total / nextU : state.qty;
-      return { ...state, unitG: nextU, totalStr: String(Math.round(total)), qty };
+      return { ...state, unitG: nextU, totalStr: String(Math.round(total)), qty, isEditingTotal: false };
     }
     case 'setQtyFromInput': {
       if (state.isRecipe) return state;
+      if (state.isEditingTotal) return state;
       const parsed = Number(String(action.value).replace(',', '.'));
       if (!Number.isFinite(parsed) || parsed < 0.5) return state;
       const total = clampMealGrams(parsed * state.unitG);
       const qty = state.unitG > 0 ? total / state.unitG : parsed;
-      return { ...state, totalStr: String(Math.round(total)), qty };
+      return { ...state, totalStr: String(Math.round(total)), qty, isEditingTotal: false };
     }
     case 'setUnitFromInput': {
       if (state.isRecipe) return state;
+      if (state.isEditingTotal) return state;
       const parsed = Number(String(action.value).replace(',', '.'));
       if (!Number.isFinite(parsed) || parsed < 1) return state;
       const nextU = Math.min(1000, parsed);
       const total = clampMealGrams(state.qty * nextU);
       const qty = nextU > 0 ? total / nextU : state.qty;
-      return { ...state, unitG: nextU, totalStr: String(Math.round(total)), qty };
+      return { ...state, unitG: nextU, totalStr: String(Math.round(total)), qty, isEditingTotal: false };
     }
     default:
       return state;
@@ -1309,6 +1318,7 @@ export default function MealBuilder({
         payload: {
           foodId: NUMPAD_MAIN_WEIGHT_ID,
           isMainBar: true,
+          isEditingTotal: false,
           totalStr: String(clampedTotal),
           qty: clampedTotal / 10,
           unitG: 10,
@@ -1334,6 +1344,7 @@ export default function MealBuilder({
       payload: {
         foodId: NUMPAD_MAIN_WEIGHT_ID,
         isMainBar: true,
+        isEditingTotal: false,
         totalStr: String(clampedTotal),
         qty,
         unitG,
@@ -2073,20 +2084,30 @@ export default function MealBuilder({
     });
   }, [mealType]);
 
-  const handleAddSelectedFood = useCallback(() => {
-    if (!foodNameInput || !foodWeightInput) return;
-    const trackedName = String(foodNameInput || '').trim();
+  const handleAddSelectedFood = useCallback((opts) => {
+    const o = typeof opts?.preventDefault === 'function' ? {} : (opts || {});
+    const gramsOverride = o?.gramsOverride != null ? Number(o.gramsOverride) : null;
+    const nameTrim = String(foodNameInput || '').trim();
+    if (!nameTrim) return false;
+
+    let parsedWeight;
+    if (gramsOverride != null && Number.isFinite(gramsOverride) && gramsOverride > 0) {
+      parsedWeight = Math.round(gramsOverride);
+    } else {
+      if (!foodWeightInput) return false;
+      parsedWeight = computePortionGramsForNutrition(foodWeightInput, portionUnitGrams, portionQuantityInput);
+    }
+    if (!Number.isFinite(parsedWeight) || parsedWeight <= 0) return false;
+
+    const trackedName = nameTrim;
     const trackedId = selectedFoodMatch?.id != null && String(selectedFoodMatch.id).trim() !== ''
       ? String(selectedFoodMatch.id).trim()
       : trackedName;
 
-    const parsedWeight = computePortionGramsForNutrition(foodWeightInput, portionUnitGrams, portionQuantityInput);
-    if (!Number.isFinite(parsedWeight) || parsedWeight <= 0) return;
-
     setShowFoodDropdown(false);
 
     if (selectedFoodMatch?.id && typeof estraiDatiFoodDb === 'function' && typeof setAddedFoods === 'function') {
-      const trimmedName = foodNameInput.trim();
+      const trimmedName = nameTrim;
       const preferredDbKey = foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : undefined;
       const baseItem = estraiDatiFoodDb(trimmedName, parsedWeight, mealType, preferredDbKey);
       const enrichedItem = enrichAddedFoodItem(baseItem, selectedFoodMatch, parsedWeight);
@@ -2098,17 +2119,31 @@ export default function MealBuilder({
       setPortionQuantityInput('1');
       setPortionUnitGrams(null);
       setSelectedFoodMatch(null);
-      return;
+      return true;
     }
 
     if (typeof handleAddFoodManual === 'function') {
+      if (gramsOverride != null && Number.isFinite(gramsOverride) && gramsOverride > 0) {
+        flushSync(() => {
+          setPortionUnitGrams(null);
+          setFoodWeightInput(String(Math.round(gramsOverride)));
+        });
+      }
       trackMealFoodPatterns({ id: trackedId, name: trackedName, mealType }, addedFoods || []);
       trackRecentFood({ id: trackedId, name: trackedName });
       handleAddFoodManual();
+      setPortionQuantityInput('1');
+      setPortionUnitGrams(null);
+      setSelectedFoodMatch(null);
+      setFoodNameInput('');
+      setFoodWeightInput('');
+      return true;
     }
+
     setPortionQuantityInput('1');
     setPortionUnitGrams(null);
     setSelectedFoodMatch(null);
+    return false;
   }, [
     selectedFoodMatch,
     estraiDatiFoodDb,
@@ -5117,6 +5152,7 @@ export default function MealBuilder({
                                   type: 'open',
                                   payload: {
                                     foodId: food.id,
+                                    isEditingTotal: false,
                                     totalStr: String(Math.round(total)),
                                     qty: 1,
                                     unitG: total,
@@ -5142,6 +5178,7 @@ export default function MealBuilder({
                                 type: 'open',
                                 payload: {
                                   foodId: food.id,
+                                  isEditingTotal: false,
                                   totalStr: String(Math.round(total)),
                                   qty,
                                   unitG,
@@ -5442,88 +5479,108 @@ export default function MealBuilder({
           >
             {numpad.isMainBar ? (
               <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '14px', textAlign: 'center', lineHeight: 1.4 }}>
-                Barra inserimento — conferma per applicare i grammi al campo principale
+                Barra inserimento — OK aggiunge l&apos;alimento alla coda e azzera la ricerca
               </div>
             ) : null}
             {!numpad.isRecipe ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '18px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                  <span style={{ color: '#94a3b8', fontSize: '0.78rem', minWidth: '130px', fontWeight: 600 }}>Peso unitario (g)</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
-                    <button type="button" onClick={() => dispatchNumpad({ type: 'bumpUnit', sign: -1 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer' }}>−</button>
-                    <input
-                      key={`np-unit-${numpad.foodId}-${numpad.totalStr}-${numpad.qty}`}
-                      type="text"
-                      inputMode="none"
-                      readOnly
-                      tabIndex={-1}
-                      autoComplete="off"
-                      defaultValue={Math.round(numpad.unitG)}
-                      onBlur={(e) => dispatchNumpad({ type: 'setUnitFromInput', value: e.target.value })}
-                      style={{
-                        width: 80,
-                        textAlign: 'center',
-                        padding: '8px 6px',
-                        borderRadius: 10,
-                        border: '1px solid #444',
-                        background: '#111',
-                        color: '#e2e8f0',
-                        fontSize: '0.95rem',
-                        fontWeight: 600,
-                        cursor: 'default',
-                      }}
-                    />
-                    <button type="button" onClick={() => dispatchNumpad({ type: 'bumpUnit', sign: 1 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer' }}>+</button>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                  <span style={{ color: '#94a3b8', fontSize: '0.78rem', minWidth: '130px', fontWeight: 600 }}>Quantità (porzioni)</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
-                    <button type="button" onClick={() => dispatchNumpad({ type: 'bumpQty', delta: -0.5 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer' }}>−</button>
-                    <input
-                      key={`np-qty-${numpad.foodId}-${numpad.totalStr}-${numpad.unitG}`}
-                      type="text"
-                      inputMode="none"
-                      readOnly
-                      tabIndex={-1}
-                      autoComplete="off"
-                      defaultValue={formatPortionQty(numpad.qty)}
-                      onBlur={(e) => dispatchNumpad({ type: 'setQtyFromInput', value: e.target.value })}
-                      style={{
-                        width: 80,
-                        textAlign: 'center',
-                        padding: '8px 6px',
-                        borderRadius: 10,
-                        border: '1px solid #444',
-                        background: '#111',
-                        color: '#e2e8f0',
-                        fontSize: '0.95rem',
-                        fontWeight: 600,
-                        cursor: 'default',
-                      }}
-                    />
-                    <button type="button" onClick={() => dispatchNumpad({ type: 'bumpQty', delta: 0.5 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer' }}>+</button>
-                  </div>
-                </div>
-                <div
-                  style={{
-                    padding: '16px 14px',
-                    borderRadius: 14,
-                    border: '2px solid rgba(0, 229, 255, 0.55)',
-                    background: 'rgba(0, 229, 255, 0.08)',
-                    boxShadow: 'inset 0 0 0 1px rgba(0, 229, 255, 0.12)',
-                  }}
-                >
-                  <div style={{ fontSize: '0.65rem', color: '#7dd3fc', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 700 }}>
-                    Peso totale (g) — modifica con il tastierino
-                  </div>
-                  <div style={{ color: '#fff', fontSize: '2.5rem', fontWeight: 'bold', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
-                    {numpad.totalStr || '0'}
-                    <span style={{ fontSize: '1.05rem', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>g</span>
-                  </div>
-                </div>
+                {(() => {
+                  const frozen = Boolean(numpad.isEditingTotal);
+                  const freezeStyle = {
+                    opacity: frozen ? 0.42 : 1,
+                    pointerEvents: frozen ? 'none' : 'auto',
+                    transition: 'opacity 0.2s ease',
+                  };
+                  return (
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', ...freezeStyle }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                          <span style={{ color: '#94a3b8', fontSize: '0.78rem', minWidth: '130px', fontWeight: 600 }}>Peso unitario (g)</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
+                            <button type="button" disabled={frozen} onClick={() => dispatchNumpad({ type: 'bumpUnit', sign: -1 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: frozen ? 'not-allowed' : 'pointer', opacity: frozen ? 0.5 : 1 }}>−</button>
+                            <input
+                              key={`np-unit-${numpad.foodId}-${numpad.totalStr}-${numpad.qty}`}
+                              type="text"
+                              inputMode="none"
+                              readOnly
+                              tabIndex={-1}
+                              autoComplete="off"
+                              defaultValue={Math.round(numpad.unitG)}
+                              onBlur={(e) => dispatchNumpad({ type: 'setUnitFromInput', value: e.target.value })}
+                              style={{
+                                width: 80,
+                                textAlign: 'center',
+                                padding: '8px 6px',
+                                borderRadius: 10,
+                                border: '1px solid #444',
+                                background: '#111',
+                                color: '#e2e8f0',
+                                fontSize: '0.95rem',
+                                fontWeight: 600,
+                                cursor: 'default',
+                              }}
+                            />
+                            <button type="button" disabled={frozen} onClick={() => dispatchNumpad({ type: 'bumpUnit', sign: 1 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: frozen ? 'not-allowed' : 'pointer', opacity: frozen ? 0.5 : 1 }}>+</button>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                          <span style={{ color: '#94a3b8', fontSize: '0.78rem', minWidth: '130px', fontWeight: 600 }}>Quantità (porzioni)</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
+                            <button type="button" disabled={frozen} onClick={() => dispatchNumpad({ type: 'bumpQty', delta: -0.5 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: frozen ? 'not-allowed' : 'pointer', opacity: frozen ? 0.5 : 1 }}>−</button>
+                            <input
+                              key={`np-qty-${numpad.foodId}-${numpad.totalStr}-${numpad.unitG}`}
+                              type="text"
+                              inputMode="none"
+                              readOnly
+                              tabIndex={-1}
+                              autoComplete="off"
+                              defaultValue={formatPortionQty(numpad.qty)}
+                              onBlur={(e) => dispatchNumpad({ type: 'setQtyFromInput', value: e.target.value })}
+                              style={{
+                                width: 80,
+                                textAlign: 'center',
+                                padding: '8px 6px',
+                                borderRadius: 10,
+                                border: '1px solid #444',
+                                background: '#111',
+                                color: '#e2e8f0',
+                                fontSize: '0.95rem',
+                                fontWeight: 600,
+                                cursor: 'default',
+                              }}
+                            />
+                            <button type="button" disabled={frozen} onClick={() => dispatchNumpad({ type: 'bumpQty', delta: 0.5 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: frozen ? 'not-allowed' : 'pointer', opacity: frozen ? 0.5 : 1 }}>+</button>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => dispatchNumpad({ type: 'tapTotal' })}
+                        style={{
+                          width: '100%',
+                          padding: '16px 14px',
+                          borderRadius: 14,
+                          border: frozen ? '3px solid rgba(0, 229, 255, 0.85)' : '2px solid rgba(0, 229, 255, 0.55)',
+                          background: frozen ? 'rgba(0, 229, 255, 0.14)' : 'rgba(0, 229, 255, 0.08)',
+                          boxShadow: 'inset 0 0 0 1px rgba(0, 229, 255, 0.12)',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          WebkitTapHighlightColor: 'transparent',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.65rem', color: '#7dd3fc', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 700 }}>
+                          Peso totale (g) — tocca per {frozen ? 'sbloccare' : 'bloccare'} unità e porzioni; tastierino = totale
+                        </div>
+                        <div style={{ color: '#fff', fontSize: '2.5rem', fontWeight: 'bold', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
+                          {numpad.totalStr || '0'}
+                          <span style={{ fontSize: '1.05rem', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>g</span>
+                        </div>
+                      </button>
+                    </>
+                  );
+                })()}
                 <div style={{ fontSize: '0.65rem', color: '#64748b', lineHeight: 1.35 }}>
-                  Quantità × peso unitario = totale. Il tastierino modifica il peso totale; la quantità si aggiorna di conseguenza. ± sulla quantità usa passi da 0,5 porzione.
+                  Con «totale bloccato», solo il tastierino modifica i grammi; altrimenti unità × porzioni aggiornano il totale (±0,5 porzione).
                 </div>
               </div>
             ) : (
@@ -5567,13 +5624,16 @@ export default function MealBuilder({
                   const newWeight = Math.max(5, Math.min(5000, Number(numpad.totalStr) || 0));
                   if (numpad.isMainBar || numpad.foodId === NUMPAD_MAIN_WEIGHT_ID) {
                     if (newWeight >= 5) {
-                      setPortionUnitGrams(null);
-                      setFoodWeightInput(String(Math.round(newWeight)));
                       const selId = selectedFoodMatch?.id != null ? String(selectedFoodMatch.id).trim() : '';
                       if (selId && !numpad.isRecipe && Math.abs(numpad.unitG - numpad.initialUnitG) > 0.01) {
                         setFoodOverride(selId, { gramsPerUnit: numpad.unitG });
                         setOverrideVersion((v) => v + 1);
                       }
+                      handleAddSelectedFood({ gramsOverride: newWeight });
+                      setShowFoodDropdown(false);
+                      setFoodNameInput('');
+                      setFoodWeightInput('');
+                      setSelectedFoodMatch(null);
                     }
                     dispatchNumpad({ type: 'close' });
                     return;
