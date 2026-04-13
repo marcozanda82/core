@@ -307,7 +307,7 @@ export function searchUSDAFoods(query, opts = {}) {
         const responseText = await res.text();
         
         if (usdaPendingResolve !== resolve) return;
-
+ 
         let responseData;
         try {
           responseData = JSON.parse(responseText);
