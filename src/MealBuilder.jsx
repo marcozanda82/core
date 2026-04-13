@@ -1054,6 +1054,10 @@ function getFoodCalibrationStepG(food, isRecipeItem) {
 
 /**
  * Stato tastierino quantità: totalStr (digitazione), qty × unitG → totale quando si usano porzioni/unità.
+ *
+ * `isEditingTotal` = modalità «Totale bloccato» (equivalente al flag locale richiesto): con true,
+ * unità e porzioni sono congelate in UI e solo cifre/C/⌫ modificano il totale; bump unità/porzioni
+ * azzera il flag e ricalcola totale = unitario × porzioni.
  */
 function mealNumpadReducer(state, action) {
   if (action.type === 'close' || action.type === 'reset') return null;
@@ -1215,9 +1219,15 @@ export default function MealBuilder({
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
   const [mealCarouselTab, setMealCarouselTab] = useState('macro');
   const [numpad, dispatchNumpad] = useReducer(mealNumpadReducer, null);
+  /** Stato locale «Totale bloccato»: si attiva al tap su Peso totale (sincronizzato con `numpad.isEditingTotal`). */
+  const [isEditingTotal, setIsEditingTotal] = useState(false);
 
   useEffect(() => {
-    if (!numpad) return undefined;
+    if (!numpad) {
+      setIsEditingTotal(false);
+      return undefined;
+    }
+    setIsEditingTotal(Boolean(numpad.isEditingTotal));
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
@@ -5481,13 +5491,13 @@ export default function MealBuilder({
           >
             {numpad.isMainBar ? (
               <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '14px', textAlign: 'center', lineHeight: 1.4 }}>
-                Barra inserimento — OK aggiunge l&apos;alimento alla coda e azzera la ricerca
+                Barra inserimento — «Aggiungi» inserisce l&apos;alimento nel pasto e azzera la ricerca
               </div>
             ) : null}
             {!numpad.isRecipe ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '18px' }}>
                 {(() => {
-                  const frozen = Boolean(numpad.isEditingTotal);
+                  const frozen = isEditingTotal;
                   const freezeStyle = {
                     opacity: frozen ? 0.42 : 1,
                     pointerEvents: frozen ? 'none' : 'auto',
@@ -5645,38 +5655,38 @@ export default function MealBuilder({
                 <button
                   type="button"
                   onClick={() => {
-                  const newWeight = Math.max(5, Math.min(5000, Number(numpad.totalStr) || 0));
-                  if (numpad.isMainBar || numpad.foodId === NUMPAD_MAIN_WEIGHT_ID) {
-                    if (newWeight >= 5) {
-                      const selId = selectedFoodMatch?.id != null ? String(selectedFoodMatch.id).trim() : '';
-                      if (selId && !numpad.isRecipe && Math.abs(numpad.unitG - numpad.initialUnitG) > 0.01) {
-                        setFoodOverride(selId, { gramsPerUnit: numpad.unitG });
+                    const newWeight = Math.max(5, Math.min(5000, Number(numpad.totalStr) || 0));
+                    if (numpad.isMainBar || numpad.foodId === NUMPAD_MAIN_WEIGHT_ID) {
+                      if (newWeight >= 5) {
+                        const selId = selectedFoodMatch?.id != null ? String(selectedFoodMatch.id).trim() : '';
+                        if (selId && !numpad.isRecipe && Math.abs(numpad.unitG - numpad.initialUnitG) > 0.01) {
+                          setFoodOverride(selId, { gramsPerUnit: numpad.unitG });
+                          setOverrideVersion((v) => v + 1);
+                        }
+                        handleAddSelectedFood({ gramsOverride: newWeight });
+                        setShowFoodDropdown(false);
+                        setFoodNameInput('');
+                        setFoodWeightInput('');
+                        setSelectedFoodMatch(null);
+                      }
+                      dispatchNumpad({ type: 'close' });
+                      return;
+                    }
+                    const food = addedFoods.find((f) => f.id === numpad.foodId);
+                    if (food && newWeight >= 5) {
+                      const currentQta = Number(food.qta ?? food.weight ?? 100) || 100;
+                      handleCalibrateFoodWeight(numpad.foodId, newWeight - currentQta);
+                      if (!numpad.isRecipe && Math.abs(numpad.unitG - numpad.initialUnitG) > 0.01) {
+                        setFoodOverride(String(numpad.foodId), { gramsPerUnit: numpad.unitG });
                         setOverrideVersion((v) => v + 1);
                       }
-                      handleAddSelectedFood({ gramsOverride: newWeight });
-                      setShowFoodDropdown(false);
-                      setFoodNameInput('');
-                      setFoodWeightInput('');
-                      setSelectedFoodMatch(null);
                     }
                     dispatchNumpad({ type: 'close' });
-                    return;
-                  }
-                  const food = addedFoods.find((f) => f.id === numpad.foodId);
-                  if (food && newWeight >= 5) {
-                    const currentQta = Number(food.qta ?? food.weight ?? 100) || 100;
-                    handleCalibrateFoodWeight(numpad.foodId, newWeight - currentQta);
-                    if (!numpad.isRecipe && Math.abs(numpad.unitG - numpad.initialUnitG) > 0.01) {
-                      setFoodOverride(String(numpad.foodId), { gramsPerUnit: numpad.unitG });
-                      setOverrideVersion((v) => v + 1);
-                    }
-                  }
-                  dispatchNumpad({ type: 'close' });
-                }}
-                style={{ flex: 1, padding: '16px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '14px', fontSize: '1.12rem', fontWeight: 'bold', boxShadow: '0 4px 14px rgba(0, 229, 255, 0.35)' }}
-              >
-                OK
-              </button>
+                  }}
+                  style={{ flex: 1, padding: '16px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '14px', fontSize: '1.12rem', fontWeight: 'bold', boxShadow: '0 4px 14px rgba(0, 229, 255, 0.35)' }}
+                >
+                  {numpad.isMainBar ? 'Aggiungi' : 'OK'}
+                </button>
               </div>
             </div>
           </div>
