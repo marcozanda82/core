@@ -314,8 +314,6 @@ export function searchUSDAFoods(query, opts = {}) {
         
         console.log("DATA:", data);
         
-        return data.foods || [];
-
         if (usdaPendingResolve !== resolve) return;
 
         let data;
