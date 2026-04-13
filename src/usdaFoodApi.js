@@ -244,7 +244,11 @@ export function searchUSDAFoods(query, opts = {}) {
 
   return new Promise((resolve) => {
     settlePreviousUsdaWaiter();
+    if (usdaPendingResolve) {
+      usdaPendingResolve([]);
+    }
     usdaPendingResolve = resolve;
+    clearTimeout(usdaDebounceTimer);
 
     const signal = opts.signal;
     const mySeq = (usdaSearchSeq += 1);
