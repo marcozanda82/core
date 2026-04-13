@@ -1066,8 +1066,6 @@ export default function MealBuilder({
   setAddedFoods,
   handleCalibrateFoodWeight,
   setSelectedFoodForInfo,
-  setSelectedFoodForEdit,
-  setEditQuantityValue,
   userProfile,
   checkBilanciamentoPasto,
   TELEMETRY_TABS,
@@ -1916,6 +1914,8 @@ export default function MealBuilder({
     const parsedWeight = computePortionGramsForNutrition(foodWeightInput, portionUnitGrams, portionQuantityInput);
     if (!Number.isFinite(parsedWeight) || parsedWeight <= 0) return;
 
+    setShowFoodDropdown(false);
+
     if (selectedFoodMatch?.id && typeof estraiDatiFoodDb === 'function' && typeof setAddedFoods === 'function') {
       const trimmedName = foodNameInput.trim();
       const preferredDbKey = foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : undefined;
@@ -1957,6 +1957,7 @@ export default function MealBuilder({
     trackMealFoodPatterns,
     addedFoods,
     trackRecentFood,
+    setShowFoodDropdown,
   ]);
 
   const handleSelectRecentFood = useCallback((entry) => {
@@ -3170,7 +3171,7 @@ export default function MealBuilder({
               </div>
             )}
             {!isComplexMode && scoredSuggestedMeals.length > 0 ? (
-              <div
+              <details
                 style={{
                   marginBottom: '12px',
                   padding: '12px 14px',
@@ -3179,18 +3180,10 @@ export default function MealBuilder({
                   background: 'rgba(179, 136, 255, 0.06)',
                 }}
               >
-                <div
-                  style={{
-                    fontSize: '0.65rem',
-                    color: '#94a3b8',
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    marginBottom: '10px',
-                  }}
-                >
+                <summary style={{ cursor: 'pointer', color: '#aaa', fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.04em' }}>
                   {`Pasti suggeriti ${mealSuggestionLabel}`}
-                </div>
-                <div style={{ fontSize: '0.65rem', color: '#64748b', marginBottom: '10px', lineHeight: 1.4 }}>
+                </summary>
+                <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '10px', marginBottom: '10px', lineHeight: 1.4 }}>
                   {`Adattato nel tempo: di solito ~${adaptiveMealBounds.target} alimenti per questo pasto · range suggerito ${adaptiveMealBounds.min}–${adaptiveMealBounds.max}.`}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -3269,7 +3262,7 @@ export default function MealBuilder({
                     </div>
                   ))}
                 </div>
-              </div>
+              </details>
             ) : null}
             <div style={{ position: 'sticky', top: '-20px', zIndex: 50, background: '#111', paddingTop: '20px', paddingBottom: '10px', borderBottom: '1px solid #333', margin: '0 -15px 20px -15px', paddingLeft: '15px', paddingRight: '15px' }}>
               {!isComplexMode ? (
@@ -3374,6 +3367,26 @@ export default function MealBuilder({
                         }}
                       >
                         📷
+                      </button>
+                      <button
+                        type="button"
+                        title={foodNameInput.trim() ? `Genera con AI: "${foodNameInput.trim()}"` : 'Inserisci un nome per generare con AI'}
+                        disabled={isGeneratingFood || !foodNameInput.trim()}
+                        onClick={() => { void generateFoodWithAI(foodNameInput.trim()); }}
+                        style={{
+                          padding: '10px 12px',
+                          background: 'rgba(179, 136, 255, 0.18)',
+                          border: '1px solid rgba(179, 136, 255, 0.45)',
+                          borderRadius: '10px',
+                          cursor: isGeneratingFood || !foodNameInput.trim() ? 'not-allowed' : 'pointer',
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          color: '#e9d5ff',
+                          lineHeight: 1,
+                          opacity: isGeneratingFood || !foodNameInput.trim() ? 0.55 : 1,
+                        }}
+                      >
+                        {isGeneratingFood ? '⏳' : '✨ AI'}
                       </button>
                       <button type="button" className="quick-add-btn" onClick={handleAddSelectedFood}>
                         +
@@ -4025,26 +4038,6 @@ export default function MealBuilder({
                             {renderFoodOptionLabel(s.desc, foodNameInput, s.key)}
                           </button>
                         ))}
-                        {foodNameInput.trim() ? (
-                          <button
-                            type="button"
-                            style={{
-                              width: '100%',
-                              padding: '12px 16px',
-                              textAlign: 'left',
-                              background: 'rgba(179, 136, 255, 0.15)',
-                              border: 'none',
-                              color: '#b388ff',
-                              cursor: isGeneratingFood ? 'wait' : 'pointer',
-                              fontSize: '0.9rem',
-                              fontWeight: '600',
-                            }}
-                            onMouseDown={() => generateFoodWithAI(foodNameInput.trim())}
-                            disabled={isGeneratingFood}
-                          >
-                            {isGeneratingFood ? '⏳ Generazione in corso...' : `✨ Genera con AI: "${foodNameInput.trim()}"`}
-                          </button>
-                        ) : null}
                         {(foodSearchSources || []).map((source) => {
                           const results = source.results || [];
                           const isVisible = source.key === 'crea' ? isCreaExpanded : false;
@@ -4949,9 +4942,7 @@ export default function MealBuilder({
                         <div className="food-pill-actions" style={{ marginLeft: '4px' }}>
                           {isRecipeItem ? (
                             <button type="button" className="food-pill-btn" onClick={() => handleEditAddedRecipe(food.id)} title="Modifica bozza ricetta">✏️</button>
-                          ) : (
-                            <button type="button" className="food-pill-btn" onClick={() => { setSelectedFoodForEdit({ food, source: 'queue' }); setEditQuantityValue(String(qta)); }} title="Modifica quantità">✏️</button>
-                          )}
+                          ) : null}
                           <button type="button" className="food-pill-btn btn-delete" onClick={() => setAddedFoods(prev => prev.filter(f => f.id !== food.id))}>✕</button>
                         </div>
                       </div>
