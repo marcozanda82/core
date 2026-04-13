@@ -1029,6 +1029,28 @@ function formatPortionQty(q) {
   return String(r);
 }
 
+/** Id speciale nello stato tastierino: grammi della barra inserimento (non ancora in coda). */
+const NUMPAD_MAIN_WEIGHT_ID = '__MAIN_WEIGHT__';
+
+/** Step ± in lista: una «unità» = gramsPerUnit (override incluso), altrimenti 10 g. Ricette: 50 g. */
+function getFoodCalibrationStepG(food, isRecipeItem) {
+  if (isRecipeItem) return 50;
+  const idStr = String(food?.id ?? '').trim();
+  const rowBase = food?.row && typeof food.row === 'object' ? { ...food.row } : {};
+  const resolved = idStr ? resolveFood({ ...rowBase, id: rowBase.id ?? idStr }) : resolveFood({ ...rowBase });
+  let gramsPerUnit = Number(food?.gramsPerUnit);
+  if (!Number.isFinite(gramsPerUnit) || gramsPerUnit <= 0) {
+    gramsPerUnit = Number(resolved?.gramsPerUnit);
+  }
+  if (!Number.isFinite(gramsPerUnit) || gramsPerUnit <= 0) {
+    gramsPerUnit = Number(resolved?.defaultUnit?.grams);
+  }
+  const ov = idStr ? getGramsPerUnitOverride(idStr) : null;
+  if (ov != null && ov > 0) gramsPerUnit = ov;
+  if (!Number.isFinite(gramsPerUnit) || gramsPerUnit <= 0) gramsPerUnit = 10;
+  return Math.max(1, Math.round(gramsPerUnit));
+}
+
 /**
  * Stato tastierino quantità: totalStr (digitazione), qty × unitG → totale quando si usano porzioni/unità.
  */
@@ -1265,6 +1287,52 @@ export default function MealBuilder({
   const useSmartHumanUnits = Boolean(
     selectedFoodUnitHint && smartFoodPortion && smartFoodPortion.unit !== UNIT_TYPES.GRAM
   );
+
+  const openMainWeightNumpad = useCallback(() => {
+    const parsed = computePortionGramsForNutrition(foodWeightInput, portionUnitGrams, portionQuantityInput);
+    const totalNum = Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 100;
+    const clampedTotal = Math.max(5, Math.min(5000, totalNum));
+    const idStr = selectedFoodMatch?.id != null ? String(selectedFoodMatch.id).trim() : '';
+    if (!idStr) {
+      dispatchNumpad({
+        type: 'open',
+        payload: {
+          foodId: NUMPAD_MAIN_WEIGHT_ID,
+          isMainBar: true,
+          totalStr: String(clampedTotal),
+          qty: clampedTotal / 10,
+          unitG: 10,
+          initialUnitG: 10,
+          stepUnit: 10,
+          isRecipe: false,
+        },
+      });
+      return;
+    }
+    const rowBase = selectedFoodMatch.row && typeof selectedFoodMatch.row === 'object' ? { ...selectedFoodMatch.row } : {};
+    const resolved = resolveFood({ ...rowBase, id: rowBase.id ?? idStr });
+    let unitG = Number(resolved?.gramsPerUnit);
+    if (!Number.isFinite(unitG) || unitG <= 0) unitG = Number(resolved?.defaultUnit?.grams);
+    if (!Number.isFinite(unitG) || unitG <= 0) unitG = 100;
+    const ov = getGramsPerUnitOverride(idStr);
+    if (ov != null && ov > 0) unitG = ov;
+    const pseudoFood = { id: idStr, row: resolved, gramsPerUnit: resolved?.gramsPerUnit };
+    const stepUnit = getFoodCalibrationStepG(pseudoFood, false);
+    const qty = unitG > 0 ? clampedTotal / unitG : 1;
+    dispatchNumpad({
+      type: 'open',
+      payload: {
+        foodId: NUMPAD_MAIN_WEIGHT_ID,
+        isMainBar: true,
+        totalStr: String(clampedTotal),
+        qty,
+        unitG,
+        initialUnitG: unitG,
+        stepUnit,
+        isRecipe: false,
+      },
+    });
+  }, [foodWeightInput, portionUnitGrams, portionQuantityInput, selectedFoodMatch]);
 
   useEffect(() => {
     setUnsavedGramsEditCount(0);
@@ -3438,7 +3506,14 @@ export default function MealBuilder({
                             setFoodWeightInput(e.target.value);
                           }}
                           onFocus={(e) => {
-                            if (numpad?.foodId) e.target.blur();
+                            if (numpad?.foodId === NUMPAD_MAIN_WEIGHT_ID) return;
+                            if (numpad?.foodId) {
+                              e.target.blur();
+                              return;
+                            }
+                            e.preventDefault();
+                            e.target.blur();
+                            openMainWeightNumpad();
                           }}
                           onKeyDown={(e) => e.key === 'Enter' && handleAddSelectedFood()}
                           style={{ textAlign: 'center', boxSizing: 'border-box' }}
@@ -4881,7 +4956,7 @@ export default function MealBuilder({
                 const mgRich = mgVal >= 30;
                 const qta = Number(food.qta ?? food.weight ?? 100) || 100;
                 const qtyLocked = food.locked === true;
-                const step = isRecipeItem ? 50 : (Number(food.unitStep) || 10);
+                const step = getFoodCalibrationStepG(food, isRecipeItem);
                 const rowKey = String(food.id);
                 const recipeExpanded = !!expandedAddedFoods[rowKey];
                 const recipeIngs = Array.isArray(food.ingredients) ? food.ingredients : [];
@@ -5026,7 +5101,7 @@ export default function MealBuilder({
                             onClick={() => {
                               const isRecipeItem = food.type === 'recipe' || food.isRecipe === true;
                               const total = Math.max(5, Math.min(5000, Number(food.qta ?? food.weight ?? 100) || 100));
-                              const stepUnit = isRecipeItem ? 50 : (Number(food.unitStep) || 10);
+                              const stepUnit = isRecipeItem ? 50 : getFoodCalibrationStepG(food, false);
                               if (isRecipeItem) {
                                 dispatchNumpad({
                                   type: 'open',
@@ -5322,6 +5397,9 @@ export default function MealBuilder({
           <div style={{ marginTop: 'auto', background: '#1a1a1c', padding: '20px', paddingBottom: 'max(20px, env(safe-area-inset-bottom))', borderTopLeftRadius: '20px', borderTopRightRadius: '20px', boxShadow: '0 -10px 40px rgba(0,0,0,0.5)' }}>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '0.65rem', color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '6px' }}>Peso totale (g)</div>
+              {numpad.isMainBar ? (
+                <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginBottom: '8px' }}>Barra inserimento — conferma per applicare i grammi al campo principale</div>
+              ) : null}
               <div style={{ color: '#fff', fontSize: '2.35rem', fontWeight: 'bold', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
                 {numpad.totalStr || '0'}
                 <span style={{ fontSize: '1rem', fontWeight: 600, color: '#94a3b8', marginLeft: 4 }}>g</span>
@@ -5404,6 +5482,19 @@ export default function MealBuilder({
                 type="button"
                 onClick={() => {
                   const newWeight = Math.max(5, Math.min(5000, Number(numpad.totalStr) || 0));
+                  if (numpad.isMainBar || numpad.foodId === NUMPAD_MAIN_WEIGHT_ID) {
+                    if (newWeight >= 5) {
+                      setPortionUnitGrams(null);
+                      setFoodWeightInput(String(Math.round(newWeight)));
+                      const selId = selectedFoodMatch?.id != null ? String(selectedFoodMatch.id).trim() : '';
+                      if (selId && !numpad.isRecipe && Math.abs(numpad.unitG - numpad.initialUnitG) > 0.01) {
+                        setFoodOverride(selId, { gramsPerUnit: numpad.unitG });
+                        setOverrideVersion((v) => v + 1);
+                      }
+                    }
+                    dispatchNumpad({ type: 'close' });
+                    return;
+                  }
                   const food = addedFoods.find((f) => f.id === numpad.foodId);
                   if (food && newWeight >= 5) {
                     const currentQta = Number(food.qta ?? food.weight ?? 100) || 100;
