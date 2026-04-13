@@ -318,7 +318,6 @@ export function searchUSDAFoods(query, opts = {}) {
 
         if (usdaPendingResolve !== resolve) return;
 
-        const text = await res.text();
         let data;
         try {
           data = JSON.parse(text);
