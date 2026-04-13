@@ -1097,7 +1097,7 @@ function mealNumpadReducer(state, action) {
     }
     case 'bumpQty': {
       if (state.isRecipe) return state;
-      const nextQty = Math.max(0.25, Math.round((state.qty + action.delta) * 100) / 100);
+      const nextQty = Math.max(0.5, Math.round((state.qty + action.delta) * 2) / 2);
       const total = clampMealGrams(nextQty * state.unitG);
       const qty = state.unitG > 0 ? total / state.unitG : nextQty;
       return { ...state, totalStr: String(Math.round(total)), qty };
@@ -1113,7 +1113,7 @@ function mealNumpadReducer(state, action) {
     case 'setQtyFromInput': {
       if (state.isRecipe) return state;
       const parsed = Number(String(action.value).replace(',', '.'));
-      if (!Number.isFinite(parsed) || parsed <= 0) return state;
+      if (!Number.isFinite(parsed) || parsed < 0.5) return state;
       const total = clampMealGrams(parsed * state.unitG);
       const qty = state.unitG > 0 ? total / state.unitG : parsed;
       return { ...state, totalStr: String(Math.round(total)), qty };
@@ -1206,6 +1206,16 @@ export default function MealBuilder({
   const [isAdvancedPastoMode, setIsAdvancedPastoMode] = useState(false);
   const [mealCarouselTab, setMealCarouselTab] = useState('macro');
   const [numpad, dispatchNumpad] = useReducer(mealNumpadReducer, null);
+
+  useEffect(() => {
+    if (!numpad) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [numpad]);
+
   const mealCarouselRef = useRef(null);
 
   const [isComplexMode, setIsComplexMode] = useState(false);
@@ -5393,55 +5403,61 @@ export default function MealBuilder({
         </div>
       </div>
       {numpad && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 999999, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'stretch' }}>
-          <div style={{ marginTop: 'auto', background: '#1a1a1c', padding: '20px', paddingBottom: 'max(20px, env(safe-area-inset-bottom))', borderTopLeftRadius: '20px', borderTopRightRadius: '20px', boxShadow: '0 -10px 40px rgba(0,0,0,0.5)' }}>
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '0.65rem', color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '6px' }}>Peso totale (g)</div>
-              {numpad.isMainBar ? (
-                <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginBottom: '8px' }}>Barra inserimento — conferma per applicare i grammi al campo principale</div>
-              ) : null}
-              <div style={{ color: '#fff', fontSize: '2.35rem', fontWeight: 'bold', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
-                {numpad.totalStr || '0'}
-                <span style={{ fontSize: '1rem', fontWeight: 600, color: '#94a3b8', marginLeft: 4 }}>g</span>
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            zIndex: 999999,
+            backgroundColor: 'rgba(0, 0, 0, 0.94)',
+            overflow: 'hidden',
+            overscrollBehavior: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 440,
+              maxHeight: '100%',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              WebkitOverflowScrolling: 'touch',
+              background: '#141418',
+              padding: '20px',
+              borderRadius: 18,
+              border: '1px solid #333',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.65)',
+              boxSizing: 'border-box',
+            }}
+          >
+            {numpad.isMainBar ? (
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '14px', textAlign: 'center', lineHeight: 1.4 }}>
+                Barra inserimento — conferma per applicare i grammi al campo principale
               </div>
-            </div>
+            ) : null}
             {!numpad.isRecipe ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '18px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '18px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                  <span style={{ color: '#94a3b8', fontSize: '0.78rem', minWidth: '120px' }}>Quantità / porzioni</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
-                    <button type="button" onClick={() => dispatchNumpad({ type: 'bumpQty', delta: -0.25 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer' }}>−</button>
-                    <input
-                      key={`np-qty-${numpad.foodId}-${numpad.totalStr}-${numpad.unitG}`}
-                      type="number"
-                      min={0.25}
-                      step={0.25}
-                      defaultValue={formatPortionQty(numpad.qty)}
-                      onBlur={(e) => dispatchNumpad({ type: 'setQtyFromInput', value: e.target.value })}
-                      style={{
-                        width: 80,
-                        textAlign: 'center',
-                        padding: '8px 6px',
-                        borderRadius: 10,
-                        border: '1px solid #444',
-                        background: '#111',
-                        color: '#e2e8f0',
-                        fontSize: '0.95rem',
-                        fontWeight: 600,
-                      }}
-                    />
-                    <button type="button" onClick={() => dispatchNumpad({ type: 'bumpQty', delta: 0.25 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer' }}>+</button>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                  <span style={{ color: '#94a3b8', fontSize: '0.78rem', minWidth: '120px' }}>Peso unitario (g)</span>
+                  <span style={{ color: '#94a3b8', fontSize: '0.78rem', minWidth: '130px', fontWeight: 600 }}>Peso unitario (g)</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
                     <button type="button" onClick={() => dispatchNumpad({ type: 'bumpUnit', sign: -1 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer' }}>−</button>
                     <input
                       key={`np-unit-${numpad.foodId}-${numpad.totalStr}-${numpad.qty}`}
-                      type="number"
-                      min={1}
-                      step={1}
+                      type="text"
+                      inputMode="none"
+                      readOnly
+                      tabIndex={-1}
+                      autoComplete="off"
                       defaultValue={Math.round(numpad.unitG)}
                       onBlur={(e) => dispatchNumpad({ type: 'setUnitFromInput', value: e.target.value })}
                       style={{
@@ -5454,17 +5470,84 @@ export default function MealBuilder({
                         color: '#e2e8f0',
                         fontSize: '0.95rem',
                         fontWeight: 600,
+                        cursor: 'default',
                       }}
                     />
                     <button type="button" onClick={() => dispatchNumpad({ type: 'bumpUnit', sign: 1 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer' }}>+</button>
                   </div>
                 </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                  <span style={{ color: '#94a3b8', fontSize: '0.78rem', minWidth: '130px', fontWeight: 600 }}>Quantità (porzioni)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
+                    <button type="button" onClick={() => dispatchNumpad({ type: 'bumpQty', delta: -0.5 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer' }}>−</button>
+                    <input
+                      key={`np-qty-${numpad.foodId}-${numpad.totalStr}-${numpad.unitG}`}
+                      type="text"
+                      inputMode="none"
+                      readOnly
+                      tabIndex={-1}
+                      autoComplete="off"
+                      defaultValue={formatPortionQty(numpad.qty)}
+                      onBlur={(e) => dispatchNumpad({ type: 'setQtyFromInput', value: e.target.value })}
+                      style={{
+                        width: 80,
+                        textAlign: 'center',
+                        padding: '8px 6px',
+                        borderRadius: 10,
+                        border: '1px solid #444',
+                        background: '#111',
+                        color: '#e2e8f0',
+                        fontSize: '0.95rem',
+                        fontWeight: 600,
+                        cursor: 'default',
+                      }}
+                    />
+                    <button type="button" onClick={() => dispatchNumpad({ type: 'bumpQty', delta: 0.5 })} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #444', background: '#2c2c2e', color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer' }}>+</button>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    padding: '16px 14px',
+                    borderRadius: 14,
+                    border: '2px solid rgba(0, 229, 255, 0.55)',
+                    background: 'rgba(0, 229, 255, 0.08)',
+                    boxShadow: 'inset 0 0 0 1px rgba(0, 229, 255, 0.12)',
+                  }}
+                >
+                  <div style={{ fontSize: '0.65rem', color: '#7dd3fc', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 700 }}>
+                    Peso totale (g) — modifica con il tastierino
+                  </div>
+                  <div style={{ color: '#fff', fontSize: '2.5rem', fontWeight: 'bold', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
+                    {numpad.totalStr || '0'}
+                    <span style={{ fontSize: '1.05rem', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>g</span>
+                  </div>
+                </div>
                 <div style={{ fontSize: '0.65rem', color: '#64748b', lineHeight: 1.35 }}>
-                  Tastierino: modifica il peso totale (grammi). Quantità × peso unitario = totale. Se cambi quantità o unità, il totale si aggiorna; digitando sul tastierino ha priorità il totale e la quantità si ricalcola.
+                  Quantità × peso unitario = totale. Il tastierino modifica il peso totale; la quantità si aggiorna di conseguenza. ± sulla quantità usa passi da 0,5 porzione.
                 </div>
               </div>
             ) : (
-              <div style={{ fontSize: '0.68rem', color: '#64748b', marginBottom: '14px' }}>Ricetta: imposta solo il peso totale del piatto (g).</div>
+              <>
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    padding: '16px 14px',
+                    borderRadius: 14,
+                    border: '2px solid rgba(0, 229, 255, 0.55)',
+                    background: 'rgba(0, 229, 255, 0.08)',
+                    boxShadow: 'inset 0 0 0 1px rgba(0, 229, 255, 0.12)',
+                  }}
+                >
+                  <div style={{ fontSize: '0.65rem', color: '#7dd3fc', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 700 }}>
+                    Peso totale ricetta (g)
+                  </div>
+                  <div style={{ color: '#fff', fontSize: '2.5rem', fontWeight: 'bold', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
+                    {numpad.totalStr || '0'}
+                    <span style={{ fontSize: '1.05rem', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>g</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.68rem', color: '#64748b', marginBottom: '14px' }}>Usa il tastierino per impostare il peso totale del piatto.</div>
+              </>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
               {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
