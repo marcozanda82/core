@@ -287,6 +287,26 @@ export function searchUSDAFoods(query, opts = {}) {
       const pageSize = Math.min(25, Math.max(5, Number(opts.pageSize) || 10));
       const key = getApiKey();
       const url = `${FDC_SEARCH_URL}?api_key=${encodeURIComponent(key)}`;
+      const DICTIONARY = {
+        pollo: 'chicken',
+        riso: 'rice',
+        mela: 'apple',
+        pane: 'bread',
+        latte: 'milk',
+        uovo: 'egg',
+        uova: 'eggs',
+        carne: 'beef',
+        pesce: 'fish',
+        patata: 'potato',
+        patate: 'potatoes',
+        formaggio: 'cheese',
+        burro: 'butter',
+        maiale: 'pork',
+        salmone: 'salmon',
+      };
+      const queryWords = q.split(' ');
+      const translatedWords = queryWords.map((w) => DICTIONARY[w.toLowerCase()] || w);
+      const translatedQuery = translatedWords.join(' ');
 
       logUsdaDebug('request', { method: 'POST', pageSize, query: q });
 
@@ -298,7 +318,7 @@ export function searchUSDAFoods(query, opts = {}) {
             Accept: 'application/json',
           },
           body: JSON.stringify({
-            query: q,
+            query: translatedQuery,
             pageSize,
           }),
           signal,
@@ -363,11 +383,17 @@ export function searchUSDAFoods(query, opts = {}) {
         usdaPendingResolve = null;
         resolve(out);
       } catch (e) {
+        if (e.name === 'AbortError' || e.message.includes('aborted')) {
+          // Utente digita veloce, ignora silenziosamente
+          if (usdaPendingResolve === resolve) {
+            usdaPendingResolve = null;
+            resolve([]);
+          }
+          return;
+        }
         console.error('USDA error', e);
         if (usdaPendingResolve === resolve) {
           usdaPendingResolve = null;
-          // eslint-disable-next-line no-console
-          console.log('[USDA] results:', 0);
           resolve([]);
         }
       }
