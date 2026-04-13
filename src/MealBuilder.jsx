@@ -1126,6 +1126,8 @@ export default function MealBuilder({
   const [showExtraDropdown, setShowExtraDropdown] = useState(false);
   const [deepCompileLoadingIndex, setDeepCompileLoadingIndex] = useState(null);
   const [expandedAddedFoods, setExpandedAddedFoods] = useState({});
+  const [editingFoodId, setEditingFoodId] = useState(null);
+  const [editingQtyDraft, setEditingQtyDraft] = useState('');
   const [editingRecipeKey, setEditingRecipeKey] = useState(null);
   const [magicFillToast, setMagicFillToast] = useState(false);
   const [swapPanelFoodId, setSwapPanelFoodId] = useState(null);
@@ -1528,6 +1530,34 @@ export default function MealBuilder({
   );
   const addedFoodsRef = useRef(addedFoods);
   addedFoodsRef.current = addedFoods;
+
+  const finalizeAddedFoodWeightEdit = useCallback(
+    (foodId, draftStr, extraGramDelta = 0) => {
+      const list = addedFoods || [];
+      const food = list.find((f) => f.id === foodId);
+      if (!food) {
+        setEditingFoodId(null);
+        return;
+      }
+      const currentQta = Number(food.qta ?? food.weight ?? 100) || 100;
+      const parsed = parseFloat(String(draftStr ?? '').trim().replace(',', '.'));
+      const fromDraft = Number.isFinite(parsed)
+        ? Math.max(5, Math.min(5000, Math.round(parsed)))
+        : currentQta;
+      const adjusted = Math.max(5, Math.min(5000, fromDraft + extraGramDelta));
+      const delta = adjusted - currentQta;
+      if (delta !== 0) handleCalibrateFoodWeight(foodId, delta);
+      setEditingFoodId(null);
+    },
+    [addedFoods, handleCalibrateFoodWeight]
+  );
+
+  useEffect(() => {
+    if (editingFoodId == null) return;
+    const exists = (addedFoods || []).some((f) => f.id === editingFoodId);
+    if (!exists) setEditingFoodId(null);
+  }, [addedFoods, editingFoodId]);
+
   const normalizedTrackedMealType = useMemo(
     () => normalizeTrackedMealType(mealType),
     [mealType]
@@ -4944,7 +4974,33 @@ export default function MealBuilder({
                           {isRecipeItem && (
                             <span style={{ fontSize: '0.58rem', padding: '2px 8px', borderRadius: '8px', background: 'rgba(179, 136, 255, 0.25)', color: '#c4b5fd', fontWeight: 700, letterSpacing: '0.04em' }}>RICETTA</span>
                           )}
-                          <span className="food-pill-weight">{qta}g</span>
+                          {editingFoodId === food.id ? (
+                            <span className="food-pill-weight" style={{ opacity: 0.9 }}>
+                              {editingQtyDraft}
+                              g
+                            </span>
+                          ) : (
+                            <span
+                              className="food-pill-weight"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setEditingFoodId(food.id);
+                                setEditingQtyDraft(String(qta));
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setEditingFoodId(food.id);
+                                  setEditingQtyDraft(String(qta));
+                                }
+                              }}
+                              style={{ cursor: 'pointer' }}
+                            >
+                              {qta}
+                              g
+                            </span>
+                          )}
                           {(omega3Rich || mgRich) && (
                             <span style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap' }}>
                               {omega3Rich && <span style={{ fontSize: '0.6rem', padding: '2px 6px', borderRadius: '10px', background: 'rgba(0, 150, 255, 0.25)', color: '#5eb3f6', fontWeight: '600' }}>Ω3</span>}
@@ -4955,13 +5011,103 @@ export default function MealBuilder({
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <>
-                          <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, -step)} title={`-${step}g`} aria-label={`-${step}g`}>−</button>
-                          <span
-                            style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#00e5ff', minWidth: '60px', textAlign: 'center', cursor: 'default', background: '#222', padding: '5px 10px', borderRadius: '8px', border: '1px solid #333', display: 'inline-block' }}
+                          <button
+                            type="button"
+                            className="calibration-btn"
+                            onClick={() => {
+                              if (editingFoodId === food.id) {
+                                finalizeAddedFoodWeightEdit(food.id, editingQtyDraft, -step);
+                              } else {
+                                handleCalibrateFoodWeight(food.id, -step);
+                              }
+                            }}
+                            title={`-${step}g`}
+                            aria-label={`-${step}g`}
                           >
-                            {qta}g
-                          </span>
-                          <button type="button" className="calibration-btn" onClick={() => handleCalibrateFoodWeight(food.id, step)} title={`+${step}g`} aria-label={`+${step}g`}>+</button>
+                            −
+                          </button>
+                          {editingFoodId === food.id ? (
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={editingQtyDraft}
+                              onChange={(e) => setEditingQtyDraft(e.target.value)}
+                              onBlur={(e) => finalizeAddedFoodWeightEdit(food.id, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  e.currentTarget.blur();
+                                }
+                              }}
+                              autoFocus
+                              aria-label="Quantità in grammi"
+                              style={{
+                                fontSize: '1.2rem',
+                                fontWeight: 'bold',
+                                color: '#00e5ff',
+                                minWidth: '52px',
+                                maxWidth: '96px',
+                                textAlign: 'center',
+                                background: 'transparent',
+                                border: 'none',
+                                borderBottom: '1px solid rgba(0, 229, 255, 0.45)',
+                                borderRadius: 0,
+                                outline: 'none',
+                                padding: '4px 6px',
+                                margin: '0 2px',
+                                WebkitAppearance: 'none',
+                                MozAppearance: 'textfield',
+                              }}
+                            />
+                          ) : (
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setEditingFoodId(food.id);
+                                setEditingQtyDraft(String(qta));
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setEditingFoodId(food.id);
+                                  setEditingQtyDraft(String(qta));
+                                }
+                              }}
+                              style={{
+                                fontSize: '1.2rem',
+                                fontWeight: 'bold',
+                                color: '#00e5ff',
+                                minWidth: '60px',
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                background: 'transparent',
+                                padding: '5px 10px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                display: 'inline-block',
+                              }}
+                            >
+                              {qta}
+                              g
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            className="calibration-btn"
+                            onClick={() => {
+                              if (editingFoodId === food.id) {
+                                finalizeAddedFoodWeightEdit(food.id, editingQtyDraft, step);
+                              } else {
+                                handleCalibrateFoodWeight(food.id, step);
+                              }
+                            }}
+                            title={`+${step}g`}
+                            aria-label={`+${step}g`}
+                          >
+                            +
+                          </button>
                         </>
                         <div className="food-pill-actions" style={{ marginLeft: '4px' }}>
                           {isRecipeItem ? (
