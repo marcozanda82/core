@@ -869,6 +869,8 @@ function normalizeSearchQuery(value) {
     .trim();
 }
 
+const SEARCH_HIGHLIGHT_COLORS = ['#00e5ff', '#ff4081', '#00e676', '#ff9100'];
+
 function highlightSearchMatches(text, query) {
   const sourceText = String(text || '');
   const normalizedQuery = normalizeSearchQuery(query);
@@ -894,9 +896,11 @@ function highlightSearchMatches(text, query) {
   }
 
   const normalizedText = normalizedChars.join('');
+  const colorMap = new Map(words.map((word, index) => [word, SEARCH_HIGHLIGHT_COLORS[index % SEARCH_HIGHLIGHT_COLORS.length]]));
   const ranges = [];
 
   words.forEach((word) => {
+    const highlightColor = colorMap.get(word) || SEARCH_HIGHLIGHT_COLORS[0];
     let searchFrom = 0;
     while (searchFrom < normalizedText.length) {
       const matchIndex = normalizedText.indexOf(word, searchFrom);
@@ -904,29 +908,27 @@ function highlightSearchMatches(text, query) {
 
       const start = normalizedIndexMap[matchIndex];
       const end = normalizedIndexMap[matchIndex + word.length - 1] + 1;
-      ranges.push([start, end]);
+      ranges.push({ start, end, color: highlightColor });
       searchFrom = matchIndex + word.length;
     }
   });
 
   if (ranges.length === 0) return escapeHtml(sourceText);
 
-  ranges.sort((a, b) => a[0] - b[0]);
-  const mergedRanges = [];
-  ranges.forEach(([start, end]) => {
-    const previousRange = mergedRanges[mergedRanges.length - 1];
-    if (!previousRange || start > previousRange[1]) {
-      mergedRanges.push([start, end]);
-      return;
-    }
-    previousRange[1] = Math.max(previousRange[1], end);
+  ranges.sort((a, b) => (a.start - b.start) || (b.end - a.end));
+  const visibleRanges = [];
+  let lastEnd = 0;
+  ranges.forEach((range) => {
+    if (range.start < lastEnd) return;
+    visibleRanges.push(range);
+    lastEnd = range.end;
   });
 
   let html = '';
   let lastIndex = 0;
-  mergedRanges.forEach(([start, end]) => {
+  visibleRanges.forEach(({ start, end, color }) => {
     html += escapeHtml(sourceText.slice(lastIndex, start));
-    html += `<mark>${escapeHtml(sourceText.slice(start, end))}</mark>`;
+    html += `<span style="color:${color};font-weight:700;">${escapeHtml(sourceText.slice(start, end))}</span>`;
     lastIndex = end;
   });
   html += escapeHtml(sourceText.slice(lastIndex));
