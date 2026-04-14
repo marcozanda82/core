@@ -4991,8 +4991,9 @@ export default function MealBuilder({
                           )}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                           <button
                             type="button"
                             className="calibration-btn"
@@ -5072,29 +5073,6 @@ export default function MealBuilder({
                               g
                             </span>
                           )}
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => openStepSelector(food.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                openStepSelector(food.id);
-                              }
-                            }}
-                            style={{
-                              fontSize: '0.68rem',
-                              color: '#94a3b8',
-                              textDecoration: 'underline',
-                              cursor: 'pointer',
-                              userSelect: 'none',
-                              minWidth: '34px',
-                              textAlign: 'center',
-                            }}
-                            title="Configura step +/- in grammi"
-                          >
-                            {step}g
-                          </span>
                           <button
                             type="button"
                             className="calibration-btn"
@@ -5107,7 +5085,32 @@ export default function MealBuilder({
                           >
                             +
                           </button>
-                        </>
+                          </div>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => openStepSelector(food.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                openStepSelector(food.id);
+                              }
+                            }}
+                            style={{
+                              fontSize: '0.66rem',
+                              color: '#94a3b8',
+                              opacity: 0.7,
+                              textDecoration: 'underline',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              textAlign: 'center',
+                              lineHeight: 1,
+                            }}
+                            title="Configura step +/- in grammi"
+                          >
+                            ± {step}g
+                          </span>
+                        </div>
                         <div className="food-pill-actions" style={{ marginLeft: '4px' }}>
                           {isRecipeItem ? (
                             <button type="button" className="food-pill-btn" onClick={() => handleEditAddedRecipe(food.id)} title="Modifica bozza ricetta">✏️</button>
