@@ -1957,9 +1957,10 @@ export default function MealBuilder({
   const handleAddSelectedFood = useCallback(() => {
     const nameTrim = String(foodNameInput || '').trim();
     if (!nameTrim) return false;
-    if (!foodWeightInput) return false;
-    const parsedWeight = computePortionGramsForNutrition(foodWeightInput, portionUnitGrams, portionQuantityInput);
-    if (!Number.isFinite(parsedWeight) || parsedWeight <= 0) return false;
+    const rawTypedWeight = Math.round(Number(String(foodWeightInput ?? '').trim().replace(',', '.')));
+    const safeTypedWeight = Number.isFinite(rawTypedWeight) && rawTypedWeight > 0 ? rawTypedWeight : 100;
+    const computedWeight = computePortionGramsForNutrition(foodWeightInput, portionUnitGrams, portionQuantityInput);
+    const parsedWeight = Number.isFinite(computedWeight) && computedWeight > 0 ? computedWeight : safeTypedWeight;
 
     const trackedName = nameTrim;
     const trackedId = selectedFoodMatch?.id != null && String(selectedFoodMatch.id).trim() !== ''
@@ -3402,19 +3403,17 @@ export default function MealBuilder({
                           placeholder="g"
                           title="Peso in grammi (nutrienti). Con porzione rapida i g si calcolano da soli; qui inserimento manuale."
                           value={foodWeightInput}
-                          onChange={(e) => {
-                            setPortionUnitGrams(null);
-                            setFoodWeightInput(e.target.value);
-                          }}
+                          onChange={(e) => setFoodWeightInput(e.target.value)}
                           onBlur={(e) => {
                             const raw = String(e.target.value ?? '').trim().replace(',', '.');
-                            if (!raw) return;
                             const parsed = Math.round(Number(raw));
-                            if (!Number.isFinite(parsed)) {
-                              setFoodWeightInput('');
+                            const unitDefault = Math.round(Number(selectedFoodUnitHint?.defaultUnit?.grams));
+                            const fallback = Number.isFinite(unitDefault) && unitDefault > 0 ? unitDefault : 100;
+                            if (!raw || !Number.isFinite(parsed) || parsed <= 0) {
+                              setFoodWeightInput(String(fallback));
                               return;
                             }
-                            setFoodWeightInput(String(Math.max(1, parsed)));
+                            setFoodWeightInput(String(parsed));
                           }}
                           onKeyDown={(e) => e.key === 'Enter' && handleAddSelectedFood()}
                           style={{ textAlign: 'center', boxSizing: 'border-box' }}
