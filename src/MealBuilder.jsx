@@ -1141,6 +1141,7 @@ export default function MealBuilder({
   const [aiConstraintPreferred, setAiConstraintPreferred] = useState('');
   const [isCreaExpanded, setIsCreaExpanded] = useState(false);
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
+  const [userEditedWeight, setUserEditedWeight] = useState(false);
   /** Grammi per 1× unità template (null = totale g solo dal campo peso / abitudine). */
   const [portionUnitGrams, setPortionUnitGrams] = useState(null);
   /** Moltiplicatore unità (es. 2 fette). */
@@ -1201,6 +1202,7 @@ export default function MealBuilder({
     setUnsavedGramsEditCount(0);
     setPortionOverrideEditorOpen(false);
     setShowOverrideSavePrompt(false);
+    setUserEditedWeight(false);
   }, [selectedFoodMatch?.id]);
 
   /** Alla selezione alimento: abitudine → g manuali; altrimenti unità predefinita × 1. */
@@ -1211,6 +1213,7 @@ export default function MealBuilder({
       setPortionSmartMode('gram');
       return;
     }
+    if (userEditedWeight) return;
     const desc = String(selectedFoodMatch.desc || '').trim();
     const built = buildFoodUnitsForSelection(selectedFoodMatch, desc);
     if (!built?.defaultUnit) return;
@@ -1254,7 +1257,7 @@ export default function MealBuilder({
     setPortionUnitGrams(Number.isFinite(gpu) && gpu > 0 ? gpu : Number(built.defaultUnit.grams));
     const per = Number.isFinite(gpu) && gpu > 0 ? gpu : Number(built.defaultUnit.grams);
     setFoodWeightInput(String(Math.max(1, Math.round(computeGrams(1, per)))));
-  }, [selectedFoodMatch, getLastQuantityForFood]);
+  }, [selectedFoodMatch, getLastQuantityForFood, userEditedWeight]);
 
   /** Override utente: allinea g per unità in modalità porzione rapida. */
   useEffect(() => {
@@ -1265,11 +1268,12 @@ export default function MealBuilder({
 
   /** In modalità unità+quantità, aggiorna il campo totale g (nutrienti). */
   useEffect(() => {
+    if (userEditedWeight) return;
     if (portionUnitGrams == null || !Number.isFinite(portionUnitGrams)) return;
     const qty = parsePortionQuantity(portionQuantityInput);
     const total = Math.max(1, Math.round(portionUnitGrams * qty));
     setFoodWeightInput(String(total));
-  }, [portionUnitGrams, portionQuantityInput]);
+  }, [portionUnitGrams, portionQuantityInput, userEditedWeight]);
 
   const selectedFoodIdStr =
     selectedFoodMatch?.id != null ? String(selectedFoodMatch.id).trim() : '';
@@ -3380,7 +3384,10 @@ export default function MealBuilder({
                           placeholder="g"
                           title="Peso in grammi (nutrienti). Con porzione rapida i g si calcolano da soli; qui inserimento manuale."
                           value={foodWeightInput}
-                          onChange={(e) => setFoodWeightInput(e.target.value)}
+                          onChange={(e) => {
+                            setUserEditedWeight(true);
+                            setFoodWeightInput(e.target.value);
+                          }}
                           onBlur={(e) => {
                             const raw = String(e.target.value ?? '').trim().replace(',', '.');
                             const parsed = Math.round(Number(raw));
