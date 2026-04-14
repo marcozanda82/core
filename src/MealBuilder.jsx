@@ -3404,6 +3404,16 @@ export default function MealBuilder({
                             setPortionUnitGrams(null);
                             setFoodWeightInput(e.target.value);
                           }}
+                          onBlur={(e) => {
+                            const raw = String(e.target.value ?? '').trim().replace(',', '.');
+                            if (!raw) return;
+                            const parsed = Math.round(Number(raw));
+                            if (!Number.isFinite(parsed)) {
+                              setFoodWeightInput('');
+                              return;
+                            }
+                            setFoodWeightInput(String(Math.max(1, parsed)));
+                          }}
                           onKeyDown={(e) => e.key === 'Enter' && handleAddSelectedFood()}
                           style={{ textAlign: 'center', boxSizing: 'border-box' }}
                         />
@@ -3422,26 +3432,6 @@ export default function MealBuilder({
                         }}
                       >
                         📷
-                      </button>
-                      <button
-                        type="button"
-                        title={foodNameInput.trim() ? `Genera con AI: "${foodNameInput.trim()}"` : 'Inserisci un nome per generare con AI'}
-                        disabled={isGeneratingFood || !foodNameInput.trim()}
-                        onClick={() => { void generateFoodWithAI(foodNameInput.trim()); }}
-                        style={{
-                          padding: '10px 12px',
-                          background: 'rgba(179, 136, 255, 0.18)',
-                          border: '1px solid rgba(179, 136, 255, 0.45)',
-                          borderRadius: '10px',
-                          cursor: isGeneratingFood || !foodNameInput.trim() ? 'not-allowed' : 'pointer',
-                          fontSize: '0.85rem',
-                          fontWeight: 700,
-                          color: '#e9d5ff',
-                          lineHeight: 1,
-                          opacity: isGeneratingFood || !foodNameInput.trim() ? 0.55 : 1,
-                        }}
-                      >
-                        {isGeneratingFood ? '⏳' : '✨ AI'}
                       </button>
                       <button type="button" className="quick-add-btn" onClick={handleAddSelectedFood}>
                         +
@@ -4222,6 +4212,29 @@ export default function MealBuilder({
                             </React.Fragment>
                           );
                         })}
+                        <button
+                          type="button"
+                          title={foodNameInput.trim() ? `Genera con AI: "${foodNameInput.trim()}"` : 'Inserisci un nome per generare con AI'}
+                          disabled={isGeneratingFood || !foodNameInput.trim()}
+                          onMouseDown={() => {
+                            if (!isGeneratingFood && foodNameInput.trim()) void generateFoodWithAI(foodNameInput.trim());
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '12px 16px',
+                            textAlign: 'left',
+                            background: 'rgba(179, 136, 255, 0.14)',
+                            border: 'none',
+                            borderTop: '1px solid #2a2a2a',
+                            color: '#e9d5ff',
+                            cursor: isGeneratingFood || !foodNameInput.trim() ? 'not-allowed' : 'pointer',
+                            fontSize: '0.9rem',
+                            fontWeight: 600,
+                            opacity: isGeneratingFood || !foodNameInput.trim() ? 0.55 : 1,
+                          }}
+                        >
+                          {isGeneratingFood ? '⏳ Generazione AI in corso...' : '✨ Genera con AI'}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -4747,9 +4760,20 @@ export default function MealBuilder({
                       step={5}
                       value={complexPortionWeight}
                       onChange={(e) => {
-                        const n = Math.round(Number(e.target.value));
+                        const raw = String(e.target.value ?? '').trim();
+                        if (raw === '') {
+                          setComplexPortionWeight('');
+                          return;
+                        }
+                        const n = Math.round(Number(raw));
                         if (!Number.isFinite(n)) return;
                         setComplexPortionWeight(Math.max(50, Math.min(5000, n)));
+                      }}
+                      onBlur={(e) => {
+                        const raw = String(e.target.value ?? '').trim();
+                        const n = Math.round(Number(raw));
+                        const normalized = Number.isFinite(n) ? Math.max(50, Math.min(5000, n)) : 100;
+                        setComplexPortionWeight(normalized);
                       }}
                       style={{
                         flex: '1 1 100px',
