@@ -2142,11 +2142,6 @@ export default function MealBuilder({
     runPracticalMealGenerate([]);
   }, [runPracticalMealGenerate]);
 
-  const handleRegeneratePracticalMeal = useCallback(() => {
-    const lastIds = (practicalMealDraft?.foods || []).map((f) => f.id).filter(Boolean);
-    runPracticalMealGenerate(lastIds);
-  }, [practicalMealDraft, runPracticalMealGenerate]);
-
   const handleApplyPracticalMeal = useCallback(() => {
     const mealFoods = practicalMealDraft?.foods;
     if (!mealFoods?.length || typeof estraiDatiFoodDb !== 'function' || typeof setAddedFoods !== 'function') return;
@@ -3197,24 +3192,6 @@ export default function MealBuilder({
                       }}
                     >
                       ✔ Inserisci
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleRegeneratePracticalMeal}
-                      style={{
-                        flex: 1,
-                        minWidth: 120,
-                        padding: '8px 12px',
-                        borderRadius: 10,
-                        border: '1px solid #444',
-                        background: 'rgba(255,255,255,0.06)',
-                        color: '#e2e8f0',
-                        fontWeight: 600,
-                        fontSize: '0.78rem',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      🔁 Rigenera
                     </button>
                   </div>
                 </>
