@@ -1142,8 +1142,6 @@ export default function MealBuilder({
   const [isCreaExpanded, setIsCreaExpanded] = useState(false);
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
   const [userEditedWeight, setUserEditedWeight] = useState(false);
-  const ENABLE_ADD_MODE_CARDS = true;
-  const [isAddModeOpen, setIsAddModeOpen] = useState(false);
   const SHOW_ADVANCED_FOOD_UI = false;
   /** Grammi per 1× unità template (null = totale g solo dal campo peso / abitudine). */
   const [portionUnitGrams, setPortionUnitGrams] = useState(null);
@@ -2044,7 +2042,6 @@ export default function MealBuilder({
     });
     trackRecentFood({ id: entryId || desc, name: desc });
     setShowFoodDropdown(false);
-    setIsAddModeOpen(false);
     setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
   }, [foodDb, getLastQuantityForFood, localFoodDb, setFoodNameInput, setFoodWeightInput, setShowFoodDropdown, trackRecentFood]);
 
@@ -2238,19 +2235,18 @@ export default function MealBuilder({
   }, []);
 
   useEffect(() => {
-    if (!showFoodDropdown && !isAddModeOpen) return undefined;
+    if (!showFoodDropdown) return undefined;
 
     const handlePointerDownOutside = (event) => {
       if (foodDropdownContainerRef.current?.contains(event.target)) return;
       setShowFoodDropdown(false);
-      setIsAddModeOpen(false);
     };
 
     document.addEventListener('mousedown', handlePointerDownOutside);
     return () => {
       document.removeEventListener('mousedown', handlePointerDownOutside);
     };
-  }, [setShowFoodDropdown, showFoodDropdown, isAddModeOpen]);
+  }, [setShowFoodDropdown, showFoodDropdown]);
 
   useEffect(() => {
     const query = String(foodNameInput || '').trim();
@@ -3237,40 +3233,12 @@ export default function MealBuilder({
             <div style={{ position: 'sticky', top: '-20px', zIndex: 50, background: '#111', paddingTop: '20px', paddingBottom: '10px', borderBottom: '1px solid #333', margin: '0 -15px 20px -15px', paddingLeft: '15px', paddingRight: '15px' }}>
               {!isComplexMode ? (
                 <>
-                  {!isAddModeOpen ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAddModeOpen(true);
-                        setShowFoodDropdown(true);
-                        window.setTimeout(() => foodInputRef.current?.focus(), 30);
-                      }}
-                      style={{
-                        width: '100%',
-                        maxWidth: 320,
-                        padding: '11px 14px',
-                        borderRadius: 12,
-                        border: '1px solid rgba(0, 229, 255, 0.35)',
-                        background: 'rgba(0, 229, 255, 0.08)',
-                        color: '#b3f5ff',
-                        fontSize: '0.85rem',
-                        fontWeight: 700,
-                        letterSpacing: '0.04em',
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                        boxSizing: 'border-box',
-                      }}
-                    >
-                      + aggiungi alimento
-                    </button>
-                  ) : (
-                    <>
-                      <div
-                        ref={foodDropdownContainerRef}
-                        translate="no"
-                        className="notranslate"
-                        style={{ position: 'relative', marginBottom: 12, maxWidth: 520 }}
-                      >
+                  <div
+                    ref={foodDropdownContainerRef}
+                    translate="no"
+                    className="notranslate"
+                    style={{ position: 'relative', marginBottom: 12, maxWidth: 520 }}
+                  >
                     <div className="quick-add-bar notranslate" translate="no">
                       <input
                         ref={foodInputRef}
@@ -4018,7 +3986,6 @@ export default function MealBuilder({
                               });
                               trackRecentFood({ id: s.key, name: s.desc });
                               setShowFoodDropdown(false);
-                              setIsAddModeOpen(false);
                               setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                             }}
                           >
@@ -4124,7 +4091,6 @@ export default function MealBuilder({
                                           });
                                           trackRecentFood({ id: result?.id || desc, name: desc });
                                           setShowFoodDropdown(false);
-                                          setIsAddModeOpen(false);
                                           setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
                                         }}
                                       >
@@ -4180,40 +4146,7 @@ export default function MealBuilder({
                         </button>
                       </div>
                     )}
-                      </div>
-                      {ENABLE_ADD_MODE_CARDS && scoredSuggestedMeals.length > 0 ? (
-                        <div
-                          className="suggestions"
-                          style={{
-                            marginBottom: 10,
-                            padding: '10px 12px',
-                            borderRadius: 12,
-                            border: '1px solid rgba(179, 136, 255, 0.28)',
-                            background: 'rgba(179, 136, 255, 0.06)',
-                            maxWidth: 520,
-                          }}
-                        >
-                          <div style={{ fontSize: '0.66rem', color: '#c4b5fd', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-                            Suggerimenti rapidi
-                          </div>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            {(scoredSuggestedMeals[0]?.foods || []).slice(0, 5).map((f) => (
-                              <span
-                                key={`add-suggest-${f.id}-${f.name}`}
-                                style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '999px',
-                                  border: '1px solid #4c1d95',
-                                  color: '#e9d5ff',
-                                  fontSize: '0.72rem',
-                                }}
-                              >
-                                {f.name}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
+                  </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '0.68rem', color: '#64748b' }}>Open Food Facts (📷) → compila grammi e +</span>
                       </div>
@@ -4226,7 +4159,6 @@ export default function MealBuilder({
                           setShowRecipeDropdown(false);
                           setExtraSearchResults([]);
                           setShowExtraDropdown(false);
-                          setIsAddModeOpen(false);
                         }}
                         style={{
                           width: '100%',
@@ -4246,8 +4178,6 @@ export default function MealBuilder({
                       >
                         Crea da Ricetta / Piatto Complesso
                       </button>
-                    </>
-                  )}
                 </>
               ) : (
                 <div
