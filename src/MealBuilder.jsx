@@ -1559,6 +1559,55 @@ export default function MealBuilder({
     [addedFoods, handleCalibrateFoodWeight]
   );
 
+  const applyFoodWeightStep = useCallback((foodId, direction) => {
+    const dir = direction < 0 ? -1 : 1;
+    const scaleKeys = new Set([
+      'kcal', 'cal', 'prot', 'carb', 'fat', 'fatTotal',
+      ...Object.values(TARGETS || {}).flatMap((group) => Object.keys(group || {})),
+    ]);
+
+    setAddedFoods((prev) => (
+      (prev || []).map((food) => {
+        if (String(food.id) !== String(foodId)) return food;
+        const isRecipeItem = food.type === 'recipe' || food.isRecipe === true;
+        const step = getFoodCalibrationStepG(food, isRecipeItem);
+        const currentWeight = Math.max(0, Math.round(Number(food.qta ?? food.weight ?? 0) || 0));
+        const nextWeight = Math.max(0, Math.round(currentWeight + (dir * step)));
+        if (nextWeight === currentWeight) return food;
+
+        const next = { ...food, qta: nextWeight, weight: nextWeight };
+        if (currentWeight <= 0) return next;
+
+        const ratioWeight = nextWeight / currentWeight;
+        scaleKeys.forEach((k) => {
+          if (typeof food[k] === 'number' && Number.isFinite(food[k])) {
+            const scaled = food[k] * ratioWeight;
+            next[k] = k === 'kcal' || k === 'cal'
+              ? Math.max(0, Math.round(scaled))
+              : Math.max(0, Math.round(scaled * 10) / 10);
+          }
+        });
+        return next;
+      })
+    ));
+  }, [TARGETS, setAddedFoods]);
+
+  const openStepSelector = useCallback((foodId) => {
+    const id = String(foodId ?? '').trim();
+    if (!id) return;
+    const targetFood = (addedFoods || []).find((f) => String(f.id) === id);
+    if (!targetFood) return;
+    const currentStep = getFoodCalibrationStepG(
+      targetFood,
+      targetFood.type === 'recipe' || targetFood.isRecipe === true
+    );
+    const raw = window.prompt('Imposta step in grammi per +/-', String(currentStep));
+    if (raw == null) return;
+    const nextValue = Math.round(Number(String(raw).trim().replace(',', '.')));
+    if (!Number.isFinite(nextValue) || nextValue <= 0) return;
+    setFoodOverride(id, { gramsPerUnit: nextValue });
+  }, [addedFoods]);
+
   useEffect(() => {
     if (editingFoodId == null) return;
     const exists = (addedFoods || []).some((f) => f.id === editingFoodId);
@@ -4948,11 +4997,8 @@ export default function MealBuilder({
                             type="button"
                             className="calibration-btn"
                             onClick={() => {
-                              if (editingFoodId === food.id) {
-                                finalizeAddedFoodWeightEdit(food.id, editingQtyDraft, -step);
-                              } else {
-                                handleCalibrateFoodWeight(food.id, -step);
-                              }
+                              if (editingFoodId === food.id) setEditingFoodId(null);
+                              applyFoodWeightStep(food.id, -1);
                             }}
                             title={`-${step}g`}
                             aria-label={`-${step}g`}
@@ -5026,15 +5072,35 @@ export default function MealBuilder({
                               g
                             </span>
                           )}
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => openStepSelector(food.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                openStepSelector(food.id);
+                              }
+                            }}
+                            style={{
+                              fontSize: '0.68rem',
+                              color: '#94a3b8',
+                              textDecoration: 'underline',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              minWidth: '34px',
+                              textAlign: 'center',
+                            }}
+                            title="Configura step +/- in grammi"
+                          >
+                            {step}g
+                          </span>
                           <button
                             type="button"
                             className="calibration-btn"
                             onClick={() => {
-                              if (editingFoodId === food.id) {
-                                finalizeAddedFoodWeightEdit(food.id, editingQtyDraft, step);
-                              } else {
-                                handleCalibrateFoodWeight(food.id, step);
-                              }
+                              if (editingFoodId === food.id) setEditingFoodId(null);
+                              applyFoodWeightStep(food.id, 1);
                             }}
                             title={`+${step}g`}
                             aria-label={`+${step}g`}
