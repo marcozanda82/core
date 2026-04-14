@@ -1142,6 +1142,7 @@ export default function MealBuilder({
   const [isCreaExpanded, setIsCreaExpanded] = useState(false);
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
   const [userEditedWeight, setUserEditedWeight] = useState(false);
+  const SHOW_ADVANCED_FOOD_UI = false;
   /** Grammi per 1× unità template (null = totale g solo dal campo peso / abitudine). */
   const [portionUnitGrams, setPortionUnitGrams] = useState(null);
   /** Moltiplicatore unità (es. 2 fette). */
@@ -3422,7 +3423,7 @@ export default function MealBuilder({
                         +
                       </button>
                     </div>
-                    {selectedFoodUnitHint ? (
+                    {SHOW_ADVANCED_FOOD_UI && selectedFoodUnitHint ? (
                       <div style={{ marginTop: 10 }}>
                         <div
                           style={{
