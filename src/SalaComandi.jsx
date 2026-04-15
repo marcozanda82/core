@@ -53,6 +53,7 @@ import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
+import MetabolicPhaseCompact from './components/MetabolicPhaseCompact';
 import PlanningWizard from './PlanningWizard';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
@@ -11076,11 +11077,13 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               })()}
             </div>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', marginTop: '6px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: `1px solid ${metabolicState.color}40` }}>
-            <span style={{ fontSize: '0.7rem', color: '#888' }}>Radar metabolico:</span>
-            <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: metabolicState.color }}>{metabolicState.label}</span>
-            <span style={{ fontSize: '0.65rem', color: '#666' }}>🩸 {Math.round(gl)} · ⚙️ {Math.round(dig)}%</span>
-          </div>
+          <MetabolicPhaseCompact
+            stateLabel={metabolicState.label}
+            stateColor={metabolicState.color}
+            glycemiaValue={gl}
+            digestionValue={dig}
+            style={{ marginTop: '6px' }}
+          />
           <div
             role="button"
             tabIndex={0}
@@ -11508,11 +11511,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '8px', padding: '4px 14px 0', marginBottom: 0, overflowX: 'hidden', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {/* --- CRUSCOTTO BIOLOGICO: Anello Calorie + Box Macro Neon + Fase Metabolica --- */}
           {(() => {
-            const lastMealHours = Math.floor(fastingData.hoursFasted);
-            const lastMealMinutes = Math.round((fastingData.hoursFasted % 1) * 60);
-            const isAssorbimento = fastingData.hoursFasted < 3;
-            const faseLabel = isAssorbimento ? 'ASSORBIMENTO' : (fastingData.phaseName || 'DIGIUNO');
-            const faseColor = isAssorbimento ? '#00ff88' : (fastingData.hoursFasted >= 12 ? '#00e5ff' : '#ff9800');
             const targetProt = userTargets?.prot ?? 150;
             const targetCarb = userTargets?.carb ?? 200;
             const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
@@ -11521,10 +11519,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             );
             const dialConsumedKcal = Math.round(Number(totali?.kcal) || 0);
             const dialKcalRemaining = Math.max(0, dialDailyTargetKcal - dialConsumedKcal);
-            const winStart = trainingWaveResult?.windowStartStr || '';
-            const winEnd = trainingWaveResult?.windowEndStr || '';
-            const finestraAllenamento =
-              winStart && winEnd ? `${winStart} - ${winEnd}` : 'Domani';
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
@@ -11808,41 +11802,13 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                       </div>
                     </div>
                   </div>
-                  {/* Widget Fase Metabolica */}
-                  <div
-                    style={{
-                      width: '100%',
-                      flexShrink: 0,
-                      background: '#1a1a1c',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '16px',
-                      padding: '14px 16px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      gap: '10px',
-                      boxSizing: 'border-box',
-                      height: 'auto',
-                      minHeight: 'min-content',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>⏳</span>
-                        <div>
-                          <div style={{ color: '#888', fontSize: '0.7rem', textTransform: 'uppercase' }}>Fase Metabolica</div>
-                          <div style={{ color: faseColor, fontSize: '1rem', fontWeight: 'bold', letterSpacing: '1px' }}>{faseLabel}</div>
-                        </div>
-                      </div>
-                      <div style={{ color: '#aaa', fontSize: '0.85rem' }}>⏱ Da {lastMealHours}h {lastMealMinutes}m</div>
-                    </div>
-                    <div style={{ fontSize: '0.7rem', color: '#737373', lineHeight: 1.4 }}>
-                      Finestra allenamento: <span style={{ color: '#a3a3a3' }}>{finestraAllenamento}</span>
-                    </div>
-                    <div style={{ height: '4px', background: '#333', borderRadius: '2px', overflow: 'hidden' }}>
-                      <div style={{ width: `${isAssorbimento ? 40 : Math.min(100, (fastingData.hoursFasted / 16) * 100)}%`, height: '100%', background: faseColor, boxShadow: `0 0 8px ${faseColor}` }}></div>
-                    </div>
-                  </div>
+                  {/* Widget Fase Metabolica (versione compatta Analisi) */}
+                  <MetabolicPhaseCompact
+                    stateLabel={metabolicState.label}
+                    stateColor={metabolicState.color}
+                    glycemiaValue={gl}
+                    digestionValue={dig}
+                  />
                 </div>
               </div>
             );
