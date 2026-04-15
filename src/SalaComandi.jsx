@@ -12041,7 +12041,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             userAge={userAge}
             bodyMetricsHistory={bodyMetricsHistory}
             scoreHistory={longevityScoreHistory}
-            todayScore={longevityTodayScore}
             periodAnchorDate={currentTrackerDate}
             fullHistory={fullHistory}
             userTargets={userTargets}
@@ -15454,7 +15453,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 userAge={userAge}
                 bodyMetricsHistory={bodyMetricsHistory}
                 scoreHistory={longevityScoreHistory}
-                todayScore={longevityTodayScore}
                 periodAnchorDate={currentTrackerDate}
                 fullHistory={fullHistory}
                 userTargets={userTargets}

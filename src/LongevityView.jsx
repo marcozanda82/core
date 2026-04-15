@@ -28,7 +28,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { KentuDisciplineTrendChart, AlcoholRecoveryComposedChart } from './LifestyleTelemetryCharts';
+import { AlcoholRecoveryComposedChart } from './LifestyleTelemetryCharts';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -845,8 +845,6 @@ export default function LongevityView({
   tdeeHistory = [],
   /** Errori predizione vs pesate reali (`predictive_body_calibration.errors` su Firebase) */
   predictionCalibration = null,
-  /** Punteggio longevità del giorno tracker (live) per il trend Kentu */
-  todayScore = null,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const [telemetryTab, setTelemetryTab] = useState('fisiologia');
@@ -861,17 +859,15 @@ export default function LongevityView({
   /** Fine comune del periodo statistiche: giorno prima dell’anchor (mai il giorno “live” del tracker). */
   const statsPeriodEnd = useMemo(() => addDays(anchorDate, -1), [anchorDate]);
 
-  const averageScore = useMemo(
-    () => calculateAverageScore(timeWindow, anchorDate, scoreHistory),
-    [timeWindow, anchorDate, scoreHistory]
+  const periodAverageRows = useMemo(
+    () => ([
+      { label: 'Ieri', value: calculateAverageScore(1, anchorDate, scoreHistory) },
+      { label: '7 giorni', value: calculateAverageScore(7, anchorDate, scoreHistory) },
+      { label: '14 giorni', value: calculateAverageScore(14, anchorDate, scoreHistory) },
+      { label: '30 giorni', value: calculateAverageScore(30, anchorDate, scoreHistory) },
+    ]),
+    [anchorDate, scoreHistory]
   );
-
-  const bioScore =
-    data && typeof data.score === 'number'
-      ? data.score
-      : data && typeof data.masterScore === 'number'
-        ? data.masterScore
-        : null;
 
   /** Pilastri: media sui giorni [statsPeriodEnd …], allineata al selettore e a longevityStats (offset 1 sull’anchor). */
   const pillarBreakdownEntries = useMemo(() => {
@@ -1132,7 +1128,43 @@ export default function LongevityView({
 
       {telemetryTab === 'fisiologia' && (
       <>
-      {/* 1. Indice di ottimizzazione (giorno del tracker) + didascalia periodo */}
+      {/* 1. Medie periodo (ieri / 7 / 14 / 30) */}
+      <div style={SECTION_CARD}>
+        <div style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: 6, color: '#e5e5e5' }}>
+          Medie periodo
+        </div>
+        <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: 14, lineHeight: 1.45 }}>
+          Riepilogo dei periodi principali per confronto rapido.
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))',
+            gap: 10,
+          }}
+        >
+          {periodAverageRows.map((row) => (
+            <div
+              key={row.label}
+              style={{
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'rgba(255,255,255,0.03)',
+                padding: '10px 12px',
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {row.label}
+              </div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#e5e7eb' }}>
+                {row.value != null ? `${row.value}` : '—'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 2. Indice di ottimizzazione (giorno del tracker) */}
       <div
         style={{
           ...SECTION_CARD,
@@ -1143,13 +1175,9 @@ export default function LongevityView({
         }}
       >
         <OptimizationCard dailyData={optimizationDailyData} targets={userTargets} />
-        <div style={{ fontSize: '0.72rem', opacity: 0.55, marginTop: 8, color: '#94a3b8', lineHeight: 1.4 }}>
-          Punteggio longevità medio (fine {statsPeriodEndLabel}): {averageScore != null ? `${averageScore} / 100` : '—'}
-          {bioScore != null ? ` · Score vista tracker: ${bioScore}` : ''}
-        </div>
       </div>
 
-      {/* 2. Dettaglio parametri (pilastri) */}
+      {/* 3. Dettaglio parametri (pilastri) */}
       {breakdownEntries.length > 0 && (
         <div style={SECTION_CARD}>
           <div style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: 6, color: '#e5e5e5' }}>
@@ -1159,11 +1187,6 @@ export default function LongevityView({
             {pillarBreakdownEntries
               ? `Media dei pilastri su ${timeWindow === 1 ? '1 giorno' : `${timeWindow} giorni`} con dati; fine periodo: ${statsPeriodEndLabel}.`
               : 'Snapshot dal punteggio longevità della vista tracker.'}
-            {averageScore != null ? (
-              <span style={{ display: 'block', marginTop: 6, color: '#94a3b8' }}>
-                Punteggio longevità medio stesso periodo (selettore): {averageScore}/100.
-              </span>
-            ) : null}
           </div>
           {breakdownEntries.map(([key, value]) => (
             <div key={key} style={{ marginBottom: 10 }}>
@@ -1543,25 +1566,9 @@ export default function LongevityView({
             Telemetria avanzata · Stile di vita
           </div>
           <p style={{ margin: '0 0 18px', fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.5 }}>
-            Trend comportamentali separati dal cruscotto quotidiano: disciplina (Kentu Score da storico rischi) e impatto
-            dell&apos;alcol sul recupero (Body Battery / ricarica notturna del giorno dopo).
+            Trend comportamentali separati dal cruscotto quotidiano: impatto dell&apos;alcol sul recupero
+            (Body Battery / ricarica notturna del giorno dopo).
           </p>
-
-          <div style={{ marginBottom: 28 }}>
-            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#c4b5fd', marginBottom: 10 }}>
-              Kentu Score — trend disciplina
-            </div>
-            <p style={{ margin: '0 0 10px', fontSize: '0.72rem', color: '#888', lineHeight: 1.45 }}>
-              Media mobile a 5 giorni sul punteggio longevità (matrice rischi giornaliera, 0–100). Valori più alti =
-              minore rischio aggregato nel periodo.
-            </p>
-            <KentuDisciplineTrendChart
-              scoreHistory={scoreHistory}
-              anchorDate={anchorDate}
-              timeWindow={timeWindow}
-              todayScore={todayScore}
-            />
-          </div>
 
           <div>
             <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#a78bfa', marginBottom: 10 }}>
