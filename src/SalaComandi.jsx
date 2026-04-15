@@ -10885,9 +10885,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             {energyAt20Percent < 40 ? '🟠 Rischio Serali' : '🟢 Serali OK'}
           </span>
         </div>
-        <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#333' : '#ff4d4d'}`, padding: '8px 12px', borderRadius: '20px', color: (dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? '#aaa' : '#ff4d4d', boxShadow: (dynamicDailyKcal - (totali?.kcal || 0)) < 0 ? '0 0 10px rgba(255,77,77,0.3)' : 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
-          {(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? `🎯 Rimangono ${Math.round(dynamicDailyKcal - (totali?.kcal || 0))} kcal` : `🔥 Surplus calorico +${Math.abs(Math.round(dynamicDailyKcal - (totali?.kcal || 0)))} kcal`}
-        </span>
       </div>
       )}
 
