@@ -1792,7 +1792,7 @@ export function normalizeMealFoodsArray(raw) {
 /**
  * Target macro: colazione con proteine fisse 15 g (fuori dal pool degli slot proteici).
  * Altri pasti: 4 «gettoni» proteici al giorno; slot rimanenti = max(1, 4 − pasti già loggati non-colazione).
- * Proteine = (Tprot − assunto totale inclusa colazione) / slotRimanenti. Kcal/carb/grassi/fibre sui residui con blend.
+ * Proteine = (Tprot − assunto totale inclusa colazione) / slotRimanenti. Kcal pranzo/snack: residuo / slot; **cena: kcal = max(0, Tkcal − kcal già assunte)**. Carb/grassi/fibre sui residui con blend.
  *
  * Default intelligenti (mealType):
  * — Pranzo: fibre ≥12g, tetto zuccheri semplici consigliato, blend meno grasso (verdure/proteine magre).
@@ -1861,8 +1861,11 @@ export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, op
   const kcalSurplus = consumedKcal - Tkcal;
   const dailyInCalorieSurplus = kcalSurplus > MEAL_PHYSIO_SURPLUS_KCAL_THRESHOLD;
 
-  let targetKcal = Math.round(remKcal / remainingSlots);
-  targetKcal = Math.max(150, targetKcal);
+  /** Cena: tutto il residuo giornaliero (reale dopo ogni pasto), senza split su slot. Altri pasti: quota su slot rimanenti. */
+  let targetKcal =
+    canon === 'cena'
+      ? Math.max(0, Math.round(remKcal))
+      : Math.max(150, Math.round(remKcal / remainingSlots));
 
   const rawProtTarget = remProt / remainingSlots;
   let targetProt = Math.round(rawProtTarget * 10) / 10;

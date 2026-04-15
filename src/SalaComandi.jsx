@@ -9670,9 +9670,16 @@ ${dbKeys || 'n/d'}`;
   const targetMacrosPastoWithPlanning = useMemo(() => {
     const base =
       targetMacrosPasto && typeof targetMacrosPasto === 'object' ? { ...targetMacrosPasto } : {};
-    const sk = getStrategyKey(toCanonicalMealType(String(mealType || 'pranzo').split('_')[0]));
+    const canon = toCanonicalMealType(String(mealType || 'pranzo').split('_')[0]);
+    const sk = getStrategyKey(canon);
     const planK = idealStrategy?.[sk];
-    if (planK != null && Number.isFinite(Number(planK)) && Number(planK) > 0) {
+    // Cena: niente quota fissa da idealStrategy — resta il residuo da getDynamicMealTargets (Tkcal − consumate).
+    if (
+      canon !== 'cena' &&
+      planK != null &&
+      Number.isFinite(Number(planK)) &&
+      Number(planK) > 0
+    ) {
       base.kcal = Math.round(Number(planK));
     }
     return base;
