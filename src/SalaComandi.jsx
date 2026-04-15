@@ -2267,6 +2267,7 @@ export default function SalaComandi() {
   const [coachPrefsTick, setCoachPrefsTick] = useState(0);
   const [hasNewInsight, setHasNewInsight] = useState(false);
   const [aiCoachBulbPulseCycles, setAiCoachBulbPulseCycles] = useState(0);
+  const [isAiCoachBulbHovered, setIsAiCoachBulbHovered] = useState(false);
   const [isAiCoachInsightArmed, setIsAiCoachInsightArmed] = useState(false);
   const [dismissedAiCoachInsights, setDismissedAiCoachInsights] = useState(() => readDismissedAiCoachInsights());
   const [isAiCoachSuggestionModalOpen, setIsAiCoachSuggestionModalOpen] = useState(false);
@@ -11686,6 +11687,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                         e.stopPropagation();
                         handleOpenAiCoachSuggestionModal();
                       }}
+                      onMouseEnter={() => setIsAiCoachBulbHovered(true)}
+                      onMouseLeave={() => setIsAiCoachBulbHovered(false)}
                       disabled={!isAiCoachSuggestionActive || !isAiCoachInsightArmed}
                       aria-label={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Apri suggerimento metabolico' : 'Nessun suggerimento metabolico attivo'}
                       title={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Suggerimento attivo' : 'Nessun suggerimento attivo'}
@@ -11697,21 +11700,23 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                         background: 'transparent',
                         border: '1px solid rgba(255,255,255,0.12)',
                         borderRadius: 999,
-                        width: 18,
-                        height: 18,
+                        width: 32,
+                        height: 32,
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '0.62rem',
+                        fontSize: '1rem',
                         lineHeight: 1,
                         padding: 0,
                         cursor: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'pointer' : 'default',
                         color: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '#facc15' : '#64748b',
-                        opacity: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 0.95 : 0.55,
+                        opacity: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 0.85 : 0.55,
+                        transform: isAiCoachBulbHovered && isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'scale(1.1)' : 'scale(1)',
+                        transition: 'transform 140ms ease, opacity 180ms ease, box-shadow 180ms ease',
                         animation: isAiCoachSuggestionActive && isAiCoachInsightArmed && aiCoachBulbPulseCycles > 0
-                          ? `pulseDot 380ms ease-in-out ${aiCoachBulbPulseCycles}`
+                          ? `pulseDot 460ms ease-in-out ${aiCoachBulbPulseCycles}`
                           : 'none',
-                        boxShadow: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '0 0 8px rgba(250,204,21,0.18)' : 'none',
+                        boxShadow: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '0 0 5px rgba(250,204,21,0.12)' : 'none',
                       }}
                     >
                       💡
