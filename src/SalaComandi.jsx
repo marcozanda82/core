@@ -9287,6 +9287,17 @@ ${dbKeys || 'n/d'}`;
     return 'Suggerimento metabolico';
   }, [aiCoachSuggestion?.ruleId]);
 
+  const isAiCoachSuggestionActive = !!(
+    aiCoachSuggestion
+    && aiCoachSuggestionDismissKey
+    && !dismissedAiCoachInsights[aiCoachSuggestionDismissKey]
+  );
+
+  const handleOpenAiCoachSuggestionModal = useCallback(() => {
+    if (!isAiCoachSuggestionActive) return;
+    setIsAiCoachSuggestionModalOpen(true);
+  }, [isAiCoachSuggestionActive]);
+
   useEffect(() => {
     if (!aiCoachSuggestion || !aiCoachSuggestionDismissKey) {
       setIsAiCoachSuggestionModalOpen(false);
@@ -10870,6 +10881,34 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 {sncStressLevel >= 85 ? '⚠️' : '⚡'}
               </button>
             )}
+            <button
+              type="button"
+              onClick={handleOpenAiCoachSuggestionModal}
+              disabled={!isAiCoachSuggestionActive}
+              aria-label={isAiCoachSuggestionActive ? 'Apri suggerimento metabolico' : 'Nessun suggerimento metabolico attivo'}
+              title={isAiCoachSuggestionActive ? 'Suggerimento attivo' : 'Nessun suggerimento attivo'}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 999,
+                width: 28,
+                height: 28,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.9rem',
+                lineHeight: 1,
+                padding: 0,
+                cursor: isAiCoachSuggestionActive ? 'pointer' : 'default',
+                color: isAiCoachSuggestionActive ? '#facc15' : '#64748b',
+                opacity: isAiCoachSuggestionActive ? 0.95 : 0.55,
+                animation: isAiCoachSuggestionActive ? 'pulseDot 1.9s infinite ease-in-out' : 'none',
+                boxShadow: isAiCoachSuggestionActive ? '0 0 10px rgba(250,204,21,0.18)' : 'none',
+                flexShrink: 0,
+              }}
+            >
+              💡
+            </button>
             <div
               role="button"
               tabIndex={0}
