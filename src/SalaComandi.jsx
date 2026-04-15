@@ -11519,6 +11519,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             const targetProt = userTargets?.prot ?? 150;
             const targetCarb = userTargets?.carb ?? 200;
             const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
+            const dialDailyTargetKcal = Math.round(
+              Number(dynamicDailyKcal) || Number(baseKcal) || Number(userTargets?.kcal ?? 2500)
+            );
+            const dialConsumedKcal = Math.round(Number(totali?.kcal) || 0);
+            const dialKcalRemaining = Math.max(0, dialDailyTargetKcal - dialConsumedKcal);
             const winStart = trainingWaveResult?.windowStartStr || '';
             const winEnd = trainingWaveResult?.windowEndStr || '';
             const finestraAllenamento =
@@ -11620,20 +11625,19 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                               textShadow: '0 0 15px rgba(255, 107, 0, 0.35)',
                             }}
                           >
-                            {activeDialMode === 'kcal' && Math.round(totalCaloriesTimeline || 0)}
+                            {activeDialMode === 'kcal' && dialKcalRemaining}
                             {activeDialMode === 'pro' && Math.round(totali?.prot || 0)}
                             {activeDialMode === 'cho' && Math.round(totali?.carb || 0)}
                             {activeDialMode === 'fat' && Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}
                           </div>
                           <div style={{ color: '#888', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '2px' }}>
-                            {activeDialMode === 'kcal' && 'kcal'}
+                            {activeDialMode === 'kcal' && 'restanti'}
                             {activeDialMode === 'pro' && 'g Proteine'}
                             {activeDialMode === 'cho' && 'g Carboidrati'}
                             {activeDialMode === 'fat' && 'g Grassi'}
                           </div>
                           <div style={{ color: '#555', fontSize: '0.8rem', marginTop: '4px' }}>
-                            {activeDialMode === 'kcal' &&
-                              `obiettivo ${Math.round(dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2500))} kcal`}
+                            {activeDialMode === 'kcal' && `obiettivo ${dialDailyTargetKcal} kcal`}
                             {activeDialMode === 'pro' && `obiettivo ${Math.round(targetProt)} g`}
                             {activeDialMode === 'cho' && `obiettivo ${Math.round(targetCarb)} g`}
                             {activeDialMode === 'fat' && `obiettivo ${Math.round(targetFat)} g`}
