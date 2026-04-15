@@ -1054,42 +1054,97 @@ export default function LongevityView({
     return (
       <div
         style={{
-          minHeight: '100%',
+          height: '100%',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 20,
+          flexDirection: 'column',
+          padding: '14px 16px 16px',
           overflow: 'hidden',
         }}
       >
         <div
+          role="tablist"
+          aria-label="Periodo statistiche"
           style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+            marginBottom: 14,
+            flexShrink: 0,
+          }}
+        >
+          {timeOptions.map((opt) => {
+            const active = timeWindow === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTimeWindow(opt.value)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 999,
+                  border: active ? '1px solid rgba(255,255,255,0.36)' : '1px solid rgba(255,255,255,0.14)',
+                  background: active ? 'rgba(255,255,255,0.2)' : 'transparent',
+                  color: active ? '#fff' : 'rgba(255,255,255,0.76)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {opt.label === '7g' ? '7 gg' : opt.label === '14g' ? '14 gg' : opt.label === '30g' ? '30 gg' : opt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          style={{
+            margin: '0 auto',
             width: '100%',
-            maxWidth: 360,
+            maxWidth: 430,
             borderRadius: 14,
             border: '1px solid rgba(255,255,255,0.16)',
             background: 'rgba(17,17,17,0.92)',
-            padding: '18px 16px',
-            textAlign: 'center',
+            padding: '16px 16px 12px',
+            overflow: 'hidden',
           }}
         >
-          <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginBottom: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginBottom: 10, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'center' }}>
             Media periodo ({timeWindow === 1 ? 'ieri' : `${timeWindow} giorni`})
           </div>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginBottom: 4 }}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <span
-                key={n}
-                aria-hidden
-                style={{ color: periodStarScore != null && n <= periodStarScore ? '#ffc107' : '#333', fontSize: '1.45rem', lineHeight: 1 }}
-              >
-                ★
-              </span>
-            ))}
-          </div>
-          <div style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>
-            {periodStarScore != null ? `${periodStarScore}/5` : 'Nessun dato'}
-          </div>
+          {dayStarReportDisplay ? (
+            DAY_STAR_EVAL_ROWS.map(({ key, label, emoji }) => {
+              const item = dayStarReportDisplay[key];
+              const score =
+                typeof item === 'object' && item != null && 'score' in item
+                  ? item.score
+                  : (Number(item) || 0);
+              return (
+                <div key={key} style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: '0.76rem', color: '#b4b4b4', marginBottom: 4 }}>
+                    {emoji} {label}
+                  </div>
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <span
+                        key={n}
+                        aria-hidden
+                        style={{ color: n <= score ? '#ffc107' : '#333', fontSize: '1.1rem', lineHeight: 1 }}
+                      >
+                        ★
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div style={{ fontSize: '0.9rem', color: '#888', textAlign: 'center' }}>
+              Nessun dato sufficiente nel periodo selezionato.
+            </div>
+          )}
         </div>
       </div>
     );
