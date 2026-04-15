@@ -2265,8 +2265,14 @@ export default function SalaComandi() {
   const [mealBuilderSmartLaunchKey, setMealBuilderSmartLaunchKey] = useState(0);
   const [mealBuilderCoachPracticalKey, setMealBuilderCoachPracticalKey] = useState(0);
   const [coachPrefsTick, setCoachPrefsTick] = useState(0);
+  const [hasNewInsight, setHasNewInsight] = useState(false);
+  const [aiCoachBulbPulseCycles, setAiCoachBulbPulseCycles] = useState(0);
   const [dismissedAiCoachInsights, setDismissedAiCoachInsights] = useState(() => readDismissedAiCoachInsights());
   const [isAiCoachSuggestionModalOpen, setIsAiCoachSuggestionModalOpen] = useState(false);
+  const hasNewInsightRef = useRef(false);
+  const isAiCoachSuggestionActiveRef = useRef(false);
+  const aiCoachInsightReminderTimeoutRef = useRef(null);
+  const aiCoachLastInsightKeyRef = useRef(null);
   const [drawerMealTime, setDrawerMealTime] = useState(12);
   const [drawerMealTimeStr, setDrawerMealTimeStr] = useState('12:00');
   const [foodNameInput, setFoodNameInput] = useState('');
@@ -9293,8 +9299,54 @@ ${dbKeys || 'n/d'}`;
     && !dismissedAiCoachInsights[aiCoachSuggestionDismissKey]
   );
 
+  useEffect(() => {
+    hasNewInsightRef.current = hasNewInsight;
+  }, [hasNewInsight]);
+
+  useEffect(() => {
+    isAiCoachSuggestionActiveRef.current = isAiCoachSuggestionActive;
+  }, [isAiCoachSuggestionActive]);
+
+  useEffect(() => {
+    if (aiCoachInsightReminderTimeoutRef.current) {
+      clearTimeout(aiCoachInsightReminderTimeoutRef.current);
+      aiCoachInsightReminderTimeoutRef.current = null;
+    }
+
+    if (!isAiCoachSuggestionActive || !aiCoachSuggestionDismissKey) {
+      setHasNewInsight(false);
+      setAiCoachBulbPulseCycles(0);
+      aiCoachLastInsightKeyRef.current = null;
+      return;
+    }
+
+    if (aiCoachLastInsightKeyRef.current !== aiCoachSuggestionDismissKey) {
+      aiCoachLastInsightKeyRef.current = aiCoachSuggestionDismissKey;
+      setHasNewInsight(true);
+      setAiCoachBulbPulseCycles(3);
+      aiCoachInsightReminderTimeoutRef.current = setTimeout(() => {
+        if (isAiCoachSuggestionActiveRef.current && hasNewInsightRef.current) {
+          setAiCoachBulbPulseCycles(1);
+        }
+      }, 25000);
+    }
+
+    return () => {
+      if (aiCoachInsightReminderTimeoutRef.current) {
+        clearTimeout(aiCoachInsightReminderTimeoutRef.current);
+        aiCoachInsightReminderTimeoutRef.current = null;
+      }
+    };
+  }, [isAiCoachSuggestionActive, aiCoachSuggestionDismissKey]);
+
   const handleOpenAiCoachSuggestionModal = useCallback(() => {
     if (!isAiCoachSuggestionActive) return;
+    setHasNewInsight(false);
+    setAiCoachBulbPulseCycles(0);
+    if (aiCoachInsightReminderTimeoutRef.current) {
+      clearTimeout(aiCoachInsightReminderTimeoutRef.current);
+      aiCoachInsightReminderTimeoutRef.current = null;
+    }
     setIsAiCoachSuggestionModalOpen(true);
   }, [isAiCoachSuggestionActive]);
 
@@ -9330,6 +9382,12 @@ ${dbKeys || 'n/d'}`;
     recordCoachIgnore(s.ruleId);
     consumeCoachPeriod(getTodayString(), period);
     setCoachPrefsTick((x) => x + 1);
+    setHasNewInsight(false);
+    setAiCoachBulbPulseCycles(0);
+    if (aiCoachInsightReminderTimeoutRef.current) {
+      clearTimeout(aiCoachInsightReminderTimeoutRef.current);
+      aiCoachInsightReminderTimeoutRef.current = null;
+    }
     setIsAiCoachSuggestionModalOpen(false);
   }, [aiCoachEval, aiCoachSuggestionDismissKey]);
 
@@ -10922,7 +10980,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   cursor: isAiCoachSuggestionActive ? 'pointer' : 'default',
                   color: isAiCoachSuggestionActive ? '#facc15' : '#64748b',
                   opacity: isAiCoachSuggestionActive ? 0.95 : 0.55,
-                  animation: isAiCoachSuggestionActive ? 'pulseDot 1.9s infinite ease-in-out' : 'none',
+                  animation: isAiCoachSuggestionActive && aiCoachBulbPulseCycles > 0
+                    ? `pulseDot 380ms ease-in-out ${aiCoachBulbPulseCycles}`
+                    : 'none',
                   boxShadow: isAiCoachSuggestionActive ? '0 0 8px rgba(250,204,21,0.18)' : 'none',
                   zIndex: 1,
                 }}
