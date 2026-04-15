@@ -2267,11 +2267,15 @@ export default function SalaComandi() {
   const [coachPrefsTick, setCoachPrefsTick] = useState(0);
   const [hasNewInsight, setHasNewInsight] = useState(false);
   const [aiCoachBulbPulseCycles, setAiCoachBulbPulseCycles] = useState(0);
+  const [isAiCoachInsightArmed, setIsAiCoachInsightArmed] = useState(false);
   const [dismissedAiCoachInsights, setDismissedAiCoachInsights] = useState(() => readDismissedAiCoachInsights());
   const [isAiCoachSuggestionModalOpen, setIsAiCoachSuggestionModalOpen] = useState(false);
   const hasNewInsightRef = useRef(false);
   const isAiCoachSuggestionActiveRef = useRef(false);
+  const isUserActivelyEditingRef = useRef(false);
   const aiCoachInsightReminderTimeoutRef = useRef(null);
+  const aiCoachInsightActivateTimeoutRef = useRef(null);
+  const aiCoachCooldownUntilRef = useRef(0);
   const aiCoachLastInsightKeyRef = useRef(null);
   const [drawerMealTime, setDrawerMealTime] = useState(12);
   const [drawerMealTimeStr, setDrawerMealTimeStr] = useState('12:00');
@@ -9274,9 +9278,7 @@ ${dbKeys || 'n/d'}`;
   const isAiCoachSuggestionEligible =
     activeBottomTab === 'oggi'
     && currentTrackerDate === getTodayString()
-    && !isSimulationMode
-    && !isMealBuilderOpen
-    && (!isDrawerOpen || activeAction === 'home' || activeAction == null);
+    && !isSimulationMode;
 
   const aiCoachSuggestion = isAiCoachSuggestionEligible ? aiCoachEval?.suggestion ?? null : null;
   const aiCoachSuggestionDismissKey = useMemo(() => {
@@ -9298,6 +9300,16 @@ ${dbKeys || 'n/d'}`;
     && aiCoachSuggestionDismissKey
     && !dismissedAiCoachInsights[aiCoachSuggestionDismissKey]
   );
+  const isAiCoachInsightCritical = (Number(aiCoachSuggestion?.priority) || 0) >= 80;
+  const isUserActivelyEditing = !!(
+    activeAction === 'pasto'
+    || isMealBuilderOpen
+    || (isDrawerOpen && activeAction === 'pasto')
+    || editingMealId != null
+    || String(foodNameInput || '').trim().length > 0
+    || String(foodWeightInput || '').trim().length > 0
+  );
+  const shouldDelayAiCoachInsight = isUserActivelyEditing && !isAiCoachInsightCritical;
 
   useEffect(() => {
     hasNewInsightRef.current = hasNewInsight;
@@ -9308,27 +9320,85 @@ ${dbKeys || 'n/d'}`;
   }, [isAiCoachSuggestionActive]);
 
   useEffect(() => {
+    isUserActivelyEditingRef.current = isUserActivelyEditing;
+  }, [isUserActivelyEditing]);
+
+  const beginAiCoachCooldown = useCallback((ms = 180000) => {
+    aiCoachCooldownUntilRef.current = Date.now() + ms;
+    setHasNewInsight(false);
+    setAiCoachBulbPulseCycles(0);
+    setIsAiCoachSuggestionModalOpen(false);
+    setIsAiCoachInsightArmed(false);
     if (aiCoachInsightReminderTimeoutRef.current) {
       clearTimeout(aiCoachInsightReminderTimeoutRef.current);
       aiCoachInsightReminderTimeoutRef.current = null;
+    }
+    if (aiCoachInsightActivateTimeoutRef.current) {
+      clearTimeout(aiCoachInsightActivateTimeoutRef.current);
+      aiCoachInsightActivateTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (aiCoachInsightReminderTimeoutRef.current) {
+      clearTimeout(aiCoachInsightReminderTimeoutRef.current);
+      aiCoachInsightReminderTimeoutRef.current = null;
+    }
+    if (aiCoachInsightActivateTimeoutRef.current) {
+      clearTimeout(aiCoachInsightActivateTimeoutRef.current);
+      aiCoachInsightActivateTimeoutRef.current = null;
     }
 
     if (!isAiCoachSuggestionActive || !aiCoachSuggestionDismissKey) {
       setHasNewInsight(false);
       setAiCoachBulbPulseCycles(0);
+      setIsAiCoachInsightArmed(false);
       aiCoachLastInsightKeyRef.current = null;
       return;
     }
 
-    if (aiCoachLastInsightKeyRef.current !== aiCoachSuggestionDismissKey) {
-      aiCoachLastInsightKeyRef.current = aiCoachSuggestionDismissKey;
+    const inCooldown = Date.now() < aiCoachCooldownUntilRef.current;
+    if (inCooldown) {
+      setHasNewInsight(false);
+      setAiCoachBulbPulseCycles(0);
+      setIsAiCoachInsightArmed(false);
+      return;
+    }
+
+    const activateInsight = () => {
+      setIsAiCoachInsightArmed(true);
       setHasNewInsight(true);
-      setAiCoachBulbPulseCycles(3);
+      if (!isUserActivelyEditing) {
+        setAiCoachBulbPulseCycles(3);
+      } else {
+        setAiCoachBulbPulseCycles(0);
+      }
+      if (!shouldDelayAiCoachInsight) {
+        setIsAiCoachSuggestionModalOpen(true);
+      }
       aiCoachInsightReminderTimeoutRef.current = setTimeout(() => {
-        if (isAiCoachSuggestionActiveRef.current && hasNewInsightRef.current) {
+        if (isAiCoachSuggestionActiveRef.current && hasNewInsightRef.current && !isUserActivelyEditingRef.current) {
           setAiCoachBulbPulseCycles(1);
         }
       }, 25000);
+    };
+
+    if (aiCoachLastInsightKeyRef.current !== aiCoachSuggestionDismissKey) {
+      aiCoachLastInsightKeyRef.current = aiCoachSuggestionDismissKey;
+      if (shouldDelayAiCoachInsight) {
+        setIsAiCoachInsightArmed(false);
+        aiCoachInsightActivateTimeoutRef.current = setTimeout(() => {
+          if (isAiCoachSuggestionActiveRef.current && Date.now() >= aiCoachCooldownUntilRef.current) {
+            activateInsight();
+          }
+        }, 7000);
+      } else {
+        activateInsight();
+      }
+    } else if (!isAiCoachInsightArmed && !shouldDelayAiCoachInsight) {
+      activateInsight();
+    } else if (isAiCoachInsightArmed && isUserActivelyEditing) {
+      setAiCoachBulbPulseCycles(0);
     }
 
     return () => {
@@ -9336,11 +9406,21 @@ ${dbKeys || 'n/d'}`;
         clearTimeout(aiCoachInsightReminderTimeoutRef.current);
         aiCoachInsightReminderTimeoutRef.current = null;
       }
+      if (aiCoachInsightActivateTimeoutRef.current) {
+        clearTimeout(aiCoachInsightActivateTimeoutRef.current);
+        aiCoachInsightActivateTimeoutRef.current = null;
+      }
     };
-  }, [isAiCoachSuggestionActive, aiCoachSuggestionDismissKey]);
+  }, [
+    isAiCoachSuggestionActive,
+    aiCoachSuggestionDismissKey,
+    isAiCoachInsightArmed,
+    isUserActivelyEditing,
+    shouldDelayAiCoachInsight,
+  ]);
 
   const handleOpenAiCoachSuggestionModal = useCallback(() => {
-    if (!isAiCoachSuggestionActive) return;
+    if (!isAiCoachSuggestionActive || !isAiCoachInsightArmed) return;
     setHasNewInsight(false);
     setAiCoachBulbPulseCycles(0);
     if (aiCoachInsightReminderTimeoutRef.current) {
@@ -9348,10 +9428,14 @@ ${dbKeys || 'n/d'}`;
       aiCoachInsightReminderTimeoutRef.current = null;
     }
     setIsAiCoachSuggestionModalOpen(true);
-  }, [isAiCoachSuggestionActive]);
+  }, [isAiCoachSuggestionActive, isAiCoachInsightArmed]);
+
+  const handleAiCoachClose = useCallback(() => {
+    beginAiCoachCooldown(180000);
+  }, [beginAiCoachCooldown]);
 
   useEffect(() => {
-    if (!aiCoachSuggestion || !aiCoachSuggestionDismissKey) {
+    if (!aiCoachSuggestion || !aiCoachSuggestionDismissKey || !isAiCoachInsightArmed) {
       setIsAiCoachSuggestionModalOpen(false);
       return;
     }
@@ -9359,8 +9443,7 @@ ${dbKeys || 'n/d'}`;
       setIsAiCoachSuggestionModalOpen(false);
       return;
     }
-    setIsAiCoachSuggestionModalOpen(true);
-  }, [aiCoachSuggestion, aiCoachSuggestionDismissKey, dismissedAiCoachInsights]);
+  }, [aiCoachSuggestion, aiCoachSuggestionDismissKey, dismissedAiCoachInsights, isAiCoachInsightArmed]);
 
   const handleAiCoachIgnore = useCallback(() => {
     const s = aiCoachEval?.suggestion;
@@ -9382,14 +9465,8 @@ ${dbKeys || 'n/d'}`;
     recordCoachIgnore(s.ruleId);
     consumeCoachPeriod(getTodayString(), period);
     setCoachPrefsTick((x) => x + 1);
-    setHasNewInsight(false);
-    setAiCoachBulbPulseCycles(0);
-    if (aiCoachInsightReminderTimeoutRef.current) {
-      clearTimeout(aiCoachInsightReminderTimeoutRef.current);
-      aiCoachInsightReminderTimeoutRef.current = null;
-    }
-    setIsAiCoachSuggestionModalOpen(false);
-  }, [aiCoachEval, aiCoachSuggestionDismissKey]);
+    beginAiCoachCooldown(180000);
+  }, [aiCoachEval, aiCoachSuggestionDismissKey, beginAiCoachCooldown]);
 
   const handleAiCoachCreateMeal = useCallback(() => {
     const s = aiCoachEval?.suggestion;
@@ -9413,6 +9490,16 @@ ${dbKeys || 'n/d'}`;
     setIsDrawerOpen(true);
     setIsMealBuilderOpen(true);
     setMealBuilderCoachPracticalKey((k) => k + 1);
+    setHasNewInsight(false);
+    setAiCoachBulbPulseCycles(0);
+    if (aiCoachInsightReminderTimeoutRef.current) {
+      clearTimeout(aiCoachInsightReminderTimeoutRef.current);
+      aiCoachInsightReminderTimeoutRef.current = null;
+    }
+    if (aiCoachInsightActivateTimeoutRef.current) {
+      clearTimeout(aiCoachInsightActivateTimeoutRef.current);
+      aiCoachInsightActivateTimeoutRef.current = null;
+    }
     setIsAiCoachSuggestionModalOpen(false);
   }, [aiCoachEval, decimalToTimeStr, getDefaultMealTime, mealIdFromCanonical]);
 
@@ -10959,9 +11046,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   e.stopPropagation();
                   handleOpenAiCoachSuggestionModal();
                 }}
-                disabled={!isAiCoachSuggestionActive}
-                aria-label={isAiCoachSuggestionActive ? 'Apri suggerimento metabolico' : 'Nessun suggerimento metabolico attivo'}
-                title={isAiCoachSuggestionActive ? 'Suggerimento attivo' : 'Nessun suggerimento attivo'}
+                disabled={!isAiCoachSuggestionActive || !isAiCoachInsightArmed}
+                aria-label={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Apri suggerimento metabolico' : 'Nessun suggerimento metabolico attivo'}
+                title={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Suggerimento attivo' : 'Nessun suggerimento attivo'}
                 style={{
                   position: 'absolute',
                   top: 8,
@@ -10977,13 +11064,13 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   fontSize: '0.62rem',
                   lineHeight: 1,
                   padding: 0,
-                  cursor: isAiCoachSuggestionActive ? 'pointer' : 'default',
-                  color: isAiCoachSuggestionActive ? '#facc15' : '#64748b',
-                  opacity: isAiCoachSuggestionActive ? 0.95 : 0.55,
-                  animation: isAiCoachSuggestionActive && aiCoachBulbPulseCycles > 0
+                  cursor: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'pointer' : 'default',
+                  color: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '#facc15' : '#64748b',
+                  opacity: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 0.95 : 0.55,
+                  animation: isAiCoachSuggestionActive && isAiCoachInsightArmed && aiCoachBulbPulseCycles > 0
                     ? `pulseDot 380ms ease-in-out ${aiCoachBulbPulseCycles}`
                     : 'none',
-                  boxShadow: isAiCoachSuggestionActive ? '0 0 8px rgba(250,204,21,0.18)' : 'none',
+                  boxShadow: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '0 0 8px rgba(250,204,21,0.18)' : 'none',
                   zIndex: 1,
                 }}
               >
@@ -13635,7 +13722,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         ? createPortal(
           <div
             role="presentation"
-            onClick={() => setIsAiCoachSuggestionModalOpen(false)}
+            onClick={handleAiCoachClose}
             style={{
               position: 'fixed',
               inset: 0,
@@ -13707,7 +13794,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsAiCoachSuggestionModalOpen(false)}
+                  onClick={handleAiCoachClose}
                   style={{
                     padding: '8px 12px',
                     borderRadius: 10,
