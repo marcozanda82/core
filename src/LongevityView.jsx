@@ -898,16 +898,46 @@ export default function LongevityView({
     return buildMediatedVirtualLog(logs);
   }, [fullHistory, userTargets, statsPeriodEnd, timeWindow]);
 
+  /** Log giornalieri reali nel periodo selezionato (ieri/7/14/30), senza mediazione artificiale. */
+  const periodDayLogs = useMemo(() => {
+    if (!fullHistory || !userTargets) return [];
+    return collectDayLogsInWindow(fullHistory, statsPeriodEnd, timeWindow);
+  }, [fullHistory, userTargets, statsPeriodEnd, timeWindow]);
+
   const optimizationDailyData = useMemo(
     () => buildOptimizationDailyDataFromLog(mediatedStarLog || []),
     [mediatedStarLog]
   );
 
   const dayStarReportDisplay = useMemo(() => {
-    if (!mediatedStarLog || mediatedStarLog.length === 0) return null;
-    const dailyReport = computeDayEvaluations(mediatedStarLog, userTargets);
-    return dailyReport?.ready ? dailyReport : null;
-  }, [mediatedStarLog, userTargets]);
+    if (!periodDayLogs || periodDayLogs.length === 0) return null;
+    const dailyReports = periodDayLogs
+      .map((log) => computeDayEvaluations(log, userTargets))
+      .filter((r) => r?.ready);
+    if (dailyReports.length === 0) return null;
+
+    const aggregated = {};
+    DAY_STAR_EVAL_ROWS.forEach(({ key }) => {
+      const scores = dailyReports
+        .map((rep) => {
+          const item = rep[key];
+          const score =
+            typeof item === 'object' && item != null && 'score' in item
+              ? Number(item.score)
+              : Number(item);
+          return Number.isFinite(score) ? score : null;
+        })
+        .filter((v) => v != null);
+      if (!scores.length) return;
+      const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+      aggregated[key] = {
+        score: Math.max(0, Math.min(5, Math.round(avgScore))),
+        reason: `Media su ${scores.length} giorni`,
+      };
+    });
+
+    return Object.keys(aggregated).length > 0 ? aggregated : null;
+  }, [periodDayLogs, userTargets]);
 
   const statsPeriodEndLabel = useMemo(
     () =>
