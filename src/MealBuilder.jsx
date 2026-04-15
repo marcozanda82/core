@@ -1020,23 +1020,60 @@ function mealFoodMacrosAtPortion(f) {
   };
 }
 
+/**
+ * Step ± (g per click): override > riga DB (grammi per unità, non scalati sul peso) > defaultUnit > gramsPerUnit voce > 10.
+ * Indipendente da `qta` / campo peso in ricerca (`foodWeightInput`).
+ */
+function resolveCalibrationStepGrams(food, isRecipeItem) {
+  if (isRecipeItem) return 50;
+  const idStr = String(food?.id ?? food?.foodDbKey ?? '').trim();
+  const ov = idStr ? getGramsPerUnitOverride(idStr) : null;
+  if (ov != null && ov > 0) return Math.max(1, Math.round(ov));
+
+  const rowBase = food?.row && typeof food.row === 'object' ? { ...food.row } : null;
+  if (rowBase && Object.keys(rowBase).length > 0) {
+    const idForRow = idStr || String(rowBase.id ?? '').trim();
+    const forResolve = idForRow ? resolveFood({ ...rowBase, id: idForRow }) : resolveFood({ ...rowBase });
+    const wu = resolveFoodWithUnits(forResolve);
+    const g = Number(wu?.gramsPerUnit);
+    if (Number.isFinite(g) && g > 0) return Math.max(1, Math.round(g));
+  }
+
+  const du = Number(food?.defaultUnit?.grams);
+  if (Number.isFinite(du) && du > 0) return Math.max(1, Math.round(du));
+
+  const gItem = Number(food?.gramsPerUnit);
+  if (Number.isFinite(gItem) && gItem > 0) return Math.max(1, Math.round(gItem));
+  return 10;
+}
+
 /** Step ± in lista: una «unità» = gramsPerUnit (override incluso), altrimenti 10 g. Ricette: 50 g. */
 function getFoodCalibrationStepG(food, isRecipeItem) {
-  if (isRecipeItem) return 50;
-  const idStr = String(food?.id ?? '').trim();
-  const rowBase = food?.row && typeof food.row === 'object' ? { ...food.row } : {};
-  const resolved = idStr ? resolveFood({ ...rowBase, id: rowBase.id ?? idStr }) : resolveFood({ ...rowBase });
-  let gramsPerUnit = Number(food?.gramsPerUnit);
-  if (!Number.isFinite(gramsPerUnit) || gramsPerUnit <= 0) {
-    gramsPerUnit = Number(resolved?.gramsPerUnit);
-  }
-  if (!Number.isFinite(gramsPerUnit) || gramsPerUnit <= 0) {
-    gramsPerUnit = Number(resolved?.defaultUnit?.grams);
-  }
-  const ov = idStr ? getGramsPerUnitOverride(idStr) : null;
-  if (ov != null && ov > 0) gramsPerUnit = ov;
-  if (!Number.isFinite(gramsPerUnit) || gramsPerUnit <= 0) gramsPerUnit = 10;
-  return Math.max(1, Math.round(gramsPerUnit));
+  return resolveCalibrationStepGrams(food, isRecipeItem);
+}
+
+/** Ripristina `gramsPerUnit` dopo `estraiDatiFoodDb` (che scala erroneamente anche lo step sul peso). */
+function applyCanonicalGramsPerUnitToEnrichedItem(enrichedItem, selection, foodDb, localFoodDb) {
+  if (!enrichedItem || typeof enrichedItem !== 'object') return enrichedItem;
+  if (enrichedItem.type === 'recipe' || enrichedItem.isRecipe === true) return enrichedItem;
+  const idStr = selection?.id != null ? String(selection.id).trim() : '';
+  const row =
+    selection?.row && typeof selection.row === 'object'
+      ? selection.row
+      : idStr
+        ? foodDb?.[selection.id] ?? foodDb?.[idStr] ?? localFoodDb?.[selection.id] ?? localFoodDb?.[idStr] ?? null
+        : null;
+  const step = resolveCalibrationStepGrams(
+    {
+      id: idStr || String(enrichedItem.id ?? enrichedItem.foodDbKey ?? '').trim(),
+      foodDbKey: idStr || String(enrichedItem.foodDbKey ?? '').trim(),
+      row: row || undefined,
+      defaultUnit: enrichedItem.defaultUnit,
+      gramsPerUnit: enrichedItem.gramsPerUnit,
+    },
+    false
+  );
+  return { ...enrichedItem, gramsPerUnit: step };
 }
 
 export default function MealBuilder({
@@ -2028,8 +2065,14 @@ export default function MealBuilder({
       const preferredDbKey = foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : undefined;
       const baseItem = estraiDatiFoodDb(trimmedName, parsedWeight, mealType, preferredDbKey);
       const enrichedItem = enrichAddedFoodItem(baseItem, selectedFoodMatch, parsedWeight);
+      const itemToAdd = applyCanonicalGramsPerUnitToEnrichedItem(
+        enrichedItem,
+        selectedFoodMatch,
+        foodDb,
+        localFoodDb
+      );
       trackMealFoodPatterns({ id: trackedId, name: trimmedName, mealType }, addedFoods || []);
-      setAddedFoods((prev) => [enrichedItem, ...prev]);
+      setAddedFoods((prev) => [itemToAdd, ...prev]);
       trackRecentFood({ id: trackedId, name: trimmedName });
       setFoodNameInput('');
       setFoodWeightInput('');
@@ -2073,6 +2116,7 @@ export default function MealBuilder({
     addedFoods,
     trackRecentFood,
     setShowFoodDropdown,
+    localFoodDb,
   ]);
 
   const handleSelectRecentFood = useCallback((entry) => {
@@ -2117,11 +2161,17 @@ export default function MealBuilder({
         { id, desc: name, row: matchedRow },
         parsedWeight
       );
+      const patched = applyCanonicalGramsPerUnitToEnrichedItem(
+        enrichedItem,
+        { id, desc: name, row: matchedRow },
+        foodDb,
+        localFoodDb
+      );
       trackMealFoodPatterns({ id, name, mealType }, acc);
       trackRecentFood({ id, name });
       acc.push({ id, name });
       newItems.push({
-        ...enrichedItem,
+        ...patched,
         id: `auto_${ts}_${idx}_${String(id).slice(0, 48)}`,
         mealType,
       });
@@ -2215,11 +2265,17 @@ export default function MealBuilder({
         { id, desc: name, row: matchedRow },
         grams
       );
+      const patched = applyCanonicalGramsPerUnitToEnrichedItem(
+        enrichedItem,
+        { id, desc: name, row: matchedRow },
+        foodDb,
+        localFoodDb
+      );
       trackMealFoodPatterns({ id, name, mealType }, acc);
       trackRecentFood({ id, name });
       acc.push({ id, name });
       newItems.push({
-        ...enrichedItem,
+        ...patched,
         id: `tapmeal_${ts}_${idx}_${String(id).slice(0, 40)}`,
         mealType,
       });
@@ -2877,15 +2933,21 @@ export default function MealBuilder({
       const nome = String(sub.desc || '').trim();
       if (!nome) return;
       const newItem = estraiDatiFoodDb(nome, newW, mealType, sub.dbKey);
+      const patched = applyCanonicalGramsPerUnitToEnrichedItem(
+        newItem,
+        { id: sub.dbKey, desc: nome, row: sub.row },
+        foodDb,
+        localFoodDb
+      );
       const keepId = queueFood.id;
       setAddedFoods((prev) =>
-        prev.map((f) => (String(f.id) === String(keepId) ? { ...newItem, id: keepId, mealType: newItem.mealType || mealType } : f))
+        prev.map((f) => (String(f.id) === String(keepId) ? { ...patched, id: keepId, mealType: patched.mealType || mealType } : f))
       );
       setSwapPanelFoodId(null);
       setSwapToast(true);
       window.setTimeout(() => setSwapToast(false), 2000);
     },
-    [estraiDatiFoodDb, mealType]
+    [estraiDatiFoodDb, mealType, foodDb, localFoodDb]
   );
 
   const baseMealTypeKey = String(mealType || '').split('_')[0].toLowerCase();
