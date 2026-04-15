@@ -830,6 +830,7 @@ function TdeeHistoryLineChart({ history }) {
 export default function LongevityView({
   data,
   showPriorityFocus = true,
+  minimalOnly = true,
   userAge,
   bodyMetricsHistory = [],
   scoreHistory = [],
@@ -1035,6 +1036,64 @@ export default function LongevityView({
     (showPriorityFocus && priorityFocus) ||
     (drivers && drivers.length > 0) ||
     (suggestions && suggestions.length > 0);
+
+  const periodStarScore = useMemo(() => {
+    if (!dayStarReportDisplay) return null;
+    const values = DAY_STAR_EVAL_ROWS.map(({ key }) => {
+      const item = dayStarReportDisplay[key];
+      const score = typeof item === 'object' && item != null && 'score' in item
+        ? Number(item.score)
+        : Number(item);
+      return Number.isFinite(score) ? Math.max(0, Math.min(5, score)) : null;
+    }).filter((v) => v != null);
+    if (!values.length) return null;
+    return Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
+  }, [dayStarReportDisplay]);
+
+  if (minimalOnly) {
+    return (
+      <div
+        style={{
+          minHeight: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            width: '100%',
+            maxWidth: 360,
+            borderRadius: 14,
+            border: '1px solid rgba(255,255,255,0.16)',
+            background: 'rgba(17,17,17,0.92)',
+            padding: '18px 16px',
+            textAlign: 'center',
+          }}
+        >
+          <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginBottom: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+            Media periodo ({timeWindow === 1 ? 'ieri' : `${timeWindow} giorni`})
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginBottom: 4 }}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <span
+                key={n}
+                aria-hidden
+                style={{ color: periodStarScore != null && n <= periodStarScore ? '#ffc107' : '#333', fontSize: '1.45rem', lineHeight: 1 }}
+              >
+                ★
+              </span>
+            ))}
+          </div>
+          <div style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>
+            {periodStarScore != null ? `${periodStarScore}/5` : 'Nessun dato'}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: 20, maxWidth: 600, margin: '0 auto' }}>
