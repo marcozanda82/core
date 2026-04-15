@@ -207,6 +207,7 @@ const BOTTOM_NAV_ITEMS = [
 ];
 
 const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
+const AI_COACH_DISMISSED_INSIGHTS_LS_KEY = 'kentu_ai_coach_dismissed_insights_v1';
 
 /** Movimento prima del long-press su nodo timeline: oltre soglia → annulla drag e lascia swipe/scroll (allineato a `MOVE_THRESHOLD_PX` in TimelineNodi). */
 const NODE_DRAG_ARM_CANCEL_MOVE_PX = 6;
@@ -220,6 +221,18 @@ function readPersistedActiveBottomTab() {
     /* ignore */
   }
   return 'oggi';
+}
+
+function readDismissedAiCoachInsights() {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(AI_COACH_DISMISSED_INSIGHTS_LS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -2252,6 +2265,8 @@ export default function SalaComandi() {
   const [mealBuilderSmartLaunchKey, setMealBuilderSmartLaunchKey] = useState(0);
   const [mealBuilderCoachPracticalKey, setMealBuilderCoachPracticalKey] = useState(0);
   const [coachPrefsTick, setCoachPrefsTick] = useState(0);
+  const [dismissedAiCoachInsights, setDismissedAiCoachInsights] = useState(() => readDismissedAiCoachInsights());
+  const [isAiCoachSuggestionModalOpen, setIsAiCoachSuggestionModalOpen] = useState(false);
   const [drawerMealTime, setDrawerMealTime] = useState(12);
   const [drawerMealTimeStr, setDrawerMealTimeStr] = useState('12:00');
   const [foodNameInput, setFoodNameInput] = useState('');
@@ -9250,14 +9265,62 @@ ${dbKeys || 'n/d'}`;
     toCanonicalMealType,
   ]);
 
+  const isAiCoachSuggestionEligible =
+    activeBottomTab === 'oggi'
+    && currentTrackerDate === getTodayString()
+    && !isSimulationMode
+    && !isMealBuilderOpen
+    && (!isDrawerOpen || activeAction === 'home' || activeAction == null);
+
+  const aiCoachSuggestion = isAiCoachSuggestionEligible ? aiCoachEval?.suggestion ?? null : null;
+  const aiCoachSuggestionDismissKey = useMemo(() => {
+    if (!aiCoachSuggestion?.ruleId || !aiCoachEval?.period) return null;
+    return `${getTodayString()}::${aiCoachEval.period}::${aiCoachSuggestion.ruleId}`;
+  }, [aiCoachEval?.period, aiCoachSuggestion?.ruleId]);
+
+  const aiCoachSuggestionTitle = useMemo(() => {
+    if (!aiCoachSuggestion?.ruleId) return 'Suggerimento metabolico';
+    if (aiCoachSuggestion.ruleId === 'cal_low') return 'Catabolismo in corso';
+    if (aiCoachSuggestion.ruleId === 'low_prot') return 'Sintesi proteica da supportare';
+    if (aiCoachSuggestion.ruleId === 'no_food') return 'Finestra energetica vuota';
+    if (aiCoachSuggestion.ruleId === 'light_breakfast') return 'Energia da consolidare';
+    return 'Suggerimento metabolico';
+  }, [aiCoachSuggestion?.ruleId]);
+
+  useEffect(() => {
+    if (!aiCoachSuggestion || !aiCoachSuggestionDismissKey) {
+      setIsAiCoachSuggestionModalOpen(false);
+      return;
+    }
+    if (dismissedAiCoachInsights[aiCoachSuggestionDismissKey]) {
+      setIsAiCoachSuggestionModalOpen(false);
+      return;
+    }
+    setIsAiCoachSuggestionModalOpen(true);
+  }, [aiCoachSuggestion, aiCoachSuggestionDismissKey, dismissedAiCoachInsights]);
+
   const handleAiCoachIgnore = useCallback(() => {
     const s = aiCoachEval?.suggestion;
     const period = aiCoachEval?.period;
     if (!s?.ruleId || !period) return;
+    if (aiCoachSuggestionDismissKey) {
+      setDismissedAiCoachInsights((prev) => {
+        const next = { ...(prev || {}), [aiCoachSuggestionDismissKey]: true };
+        try {
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem(AI_COACH_DISMISSED_INSIGHTS_LS_KEY, JSON.stringify(next));
+          }
+        } catch {
+          // ignore localStorage quota/availability issues
+        }
+        return next;
+      });
+    }
     recordCoachIgnore(s.ruleId);
     consumeCoachPeriod(getTodayString(), period);
     setCoachPrefsTick((x) => x + 1);
-  }, [aiCoachEval]);
+    setIsAiCoachSuggestionModalOpen(false);
+  }, [aiCoachEval, aiCoachSuggestionDismissKey]);
 
   const handleAiCoachCreateMeal = useCallback(() => {
     const s = aiCoachEval?.suggestion;
@@ -9281,6 +9344,7 @@ ${dbKeys || 'n/d'}`;
     setIsDrawerOpen(true);
     setIsMealBuilderOpen(true);
     setMealBuilderCoachPracticalKey((k) => k + 1);
+    setIsAiCoachSuggestionModalOpen(false);
   }, [aiCoachEval, decimalToTimeStr, getDefaultMealTime, mealIdFromCanonical]);
 
   useEffect(() => {
@@ -10888,76 +10952,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         </div>
       </div>
       )}
-
-      {activeBottomTab === 'oggi'
-        && currentTrackerDate === getTodayString()
-        && !isSimulationMode
-        && !isMealBuilderOpen
-        && (!isDrawerOpen || activeAction === 'home' || activeAction == null)
-        && aiCoachEval?.suggestion ? (
-          <div
-            style={{
-              marginBottom: 12,
-              marginLeft: 12,
-              marginRight: 12,
-              padding: '12px 14px',
-              borderRadius: 14,
-              border: '1px solid rgba(250, 204, 21, 0.35)',
-              background: 'rgba(250, 204, 21, 0.08)',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '0.65rem',
-                color: '#fde68a',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                marginBottom: 8,
-                fontWeight: 700,
-              }}
-            >
-              💡 Suggerimento
-            </div>
-            <p style={{ margin: '0 0 12px', fontSize: '0.88rem', color: '#fef9c3', lineHeight: 1.45 }}>
-              {aiCoachEval.suggestion.message}
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-              {aiCoachEval.suggestion.action ? (
-                <button
-                  type="button"
-                  onClick={handleAiCoachCreateMeal}
-                  style={{
-                    padding: '8px 14px',
-                    borderRadius: 10,
-                    border: 'none',
-                    background: '#facc15',
-                    color: '#422006',
-                    fontWeight: 800,
-                    fontSize: '0.78rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {aiCoachEval.suggestion.action.label || '✨ Crea pasto'}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={handleAiCoachIgnore}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  background: 'transparent',
-                  color: '#94a3b8',
-                  fontSize: '0.75rem',
-                  cursor: 'pointer',
-                }}
-              >
-                ✖ Ignora
-              </button>
-            </div>
-          </div>
-        ) : null}
 
       {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
         <div style={{ fontSize: '13px', opacity: 0.7, color: '#94a3b8', marginBottom: '6px' }}>
@@ -13532,6 +13526,102 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         )}
 
       </div>
+
+      {isAiCoachSuggestionModalOpen && aiCoachSuggestion
+        ? createPortal(
+          <div
+            role="presentation"
+            onClick={() => setIsAiCoachSuggestionModalOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(2, 6, 23, 0.72)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '18px',
+              zIndex: 100070,
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Suggerimento metabolico"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: 380,
+                borderRadius: 16,
+                border: '1px solid rgba(250, 204, 21, 0.35)',
+                background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98))',
+                boxShadow: '0 24px 52px rgba(0,0,0,0.5)',
+                padding: '16px 16px 14px',
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', color: '#fde68a', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>
+                Suggerimento metabolico
+              </div>
+              <h3 style={{ margin: '0 0 8px', fontSize: '1rem', color: '#fef9c3' }}>
+                {aiCoachSuggestionTitle}
+              </h3>
+              <p style={{ margin: '0 0 14px', fontSize: '0.9rem', color: '#fefce8', lineHeight: 1.45 }}>
+                {aiCoachSuggestion.message}
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleAiCoachCreateMeal}
+                  disabled={!aiCoachSuggestion.action}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: aiCoachSuggestion.action ? '#facc15' : 'rgba(148,163,184,0.35)',
+                    color: aiCoachSuggestion.action ? '#422006' : '#cbd5e1',
+                    fontWeight: 800,
+                    fontSize: '0.78rem',
+                    cursor: aiCoachSuggestion.action ? 'pointer' : 'not-allowed',
+                    opacity: aiCoachSuggestion.action ? 1 : 0.8,
+                  }}
+                >
+                  Crea pasto
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAiCoachIgnore}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.22)',
+                    background: 'transparent',
+                    color: '#cbd5e1',
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Ignora
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAiCoachSuggestionModalOpen(false)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(148,163,184,0.35)',
+                    background: 'rgba(15,23,42,0.65)',
+                    color: '#94a3b8',
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Chiudi
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+        : null}
 
       {createPortal(
         <>
