@@ -11833,59 +11833,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               </div>
             </div>
 
-          {/* Widget Orologio Metabolico (Digiuno) - nascosto, sostituito da Fase nel Cruscotto Biologico */}
-          {false && (() => {
-            let faseText = fastingData.phaseName || 'Assorbimento';
-            let faseColor = '#00e5ff';
-            if (faseText.toLowerCase().includes('catabolismo')) {
-              const svegliaTime = userTargets?.sveglia || 7;
-              let oreDallaSveglia = displayTime - svegliaTime;
-              if (oreDallaSveglia < 0) oreDallaSveglia += 24;
-              if (oreDallaSveglia < 5) {
-                faseText = 'Lipolisi Basale (Digiuno Notturno)';
-                faseColor = '#00e5ff';
-              } else {
-                faseText = '⚠️ Rischio Catabolismo Attivo';
-                faseColor = '#ef4444';
-              }
-            } else if (faseText.toLowerCase().includes('lipolisi')) {
-              faseText = 'Bruciagrassi (Lipolisi)';
-              faseColor = '#00e5ff';
-            } else if (faseText.toLowerCase().includes('anaboli')) {
-              faseText = 'Sintesi Proteica (Anabolismo)';
-              faseColor = '#00e676';
-            } else {
-              faseText = 'Assorbimento / Neutra';
-              faseColor = '#ffea00';
-            }
-            return (
-          <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto', background: 'linear-gradient(145deg, #111, #0a0a0a)', border: '1px solid #222', borderRadius: '10px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.3)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '1.1rem', filter: `drop-shadow(0 0 5px ${faseColor})` }}>⏳</span>
-                <div>
-                  <div style={{ fontSize: '0.55rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1px' }}>Fase Metabolica</div>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: faseColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{faseText}</div>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ fontSize: '0.65rem', color: '#888' }}>🕒 Digiuno</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff' }}>
-                  {fastingData.hoursFasted >= 1 ? `${Math.floor(fastingData.hoursFasted)}h ${Math.round((fastingData.hoursFasted % 1) * 60)}m` : `${Math.round(fastingData.hoursFasted * 60)} min`}
-                </span>
-              </div>
-            </div>
-            <div style={{ height: '3px', background: '#222', borderRadius: '2px', overflow: 'hidden' }}>
-              <div style={{ width: `${fastingData.progress}%`, height: '100%', background: faseColor, transition: 'width 1s ease-in-out', boxShadow: `0 0 10px ${faseColor}` }}></div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: '#aaa', padding: '0 2px' }}>
-              {fastingData.phaseDesc.split('•').map((pt, i) => (
-                <span key={i}>• {pt.trim()}</span>
-              ))}
-            </div>
-          </div>
-            );
-          })()}
         </div>
       )}
 
