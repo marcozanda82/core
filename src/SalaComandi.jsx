@@ -11040,42 +11040,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               }}
               style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, position: 'relative' }}
             >
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenAiCoachSuggestionModal();
-                }}
-                disabled={!isAiCoachSuggestionActive || !isAiCoachInsightArmed}
-                aria-label={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Apri suggerimento metabolico' : 'Nessun suggerimento metabolico attivo'}
-                title={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Suggerimento attivo' : 'Nessun suggerimento attivo'}
-                style={{
-                  position: 'absolute',
-                  top: 8,
-                  right: 8,
-                  background: 'transparent',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: 999,
-                  width: 18,
-                  height: 18,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.62rem',
-                  lineHeight: 1,
-                  padding: 0,
-                  cursor: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'pointer' : 'default',
-                  color: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '#facc15' : '#64748b',
-                  opacity: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 0.95 : 0.55,
-                  animation: isAiCoachSuggestionActive && isAiCoachInsightArmed && aiCoachBulbPulseCycles > 0
-                    ? `pulseDot 380ms ease-in-out ${aiCoachBulbPulseCycles}`
-                    : 'none',
-                  boxShadow: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '0 0 8px rgba(250,204,21,0.18)' : 'none',
-                  zIndex: 1,
-                }}
-              >
-                💡
-              </button>
               <EnergyArc
                 percentage={bodyBattery?.currentEnergy ?? 0}
                 size="small"
@@ -11716,6 +11680,42 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   }}
                 >
                   <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'visible' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenAiCoachSuggestionModal();
+                      }}
+                      disabled={!isAiCoachSuggestionActive || !isAiCoachInsightArmed}
+                      aria-label={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Apri suggerimento metabolico' : 'Nessun suggerimento metabolico attivo'}
+                      title={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Suggerimento attivo' : 'Nessun suggerimento attivo'}
+                      style={{
+                        position: 'absolute',
+                        top: 6,
+                        right: 6,
+                        zIndex: 2,
+                        background: 'transparent',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        borderRadius: 999,
+                        width: 18,
+                        height: 18,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.62rem',
+                        lineHeight: 1,
+                        padding: 0,
+                        cursor: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'pointer' : 'default',
+                        color: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '#facc15' : '#64748b',
+                        opacity: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 0.95 : 0.55,
+                        animation: isAiCoachSuggestionActive && isAiCoachInsightArmed && aiCoachBulbPulseCycles > 0
+                          ? `pulseDot 380ms ease-in-out ${aiCoachBulbPulseCycles}`
+                          : 'none',
+                        boxShadow: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '0 0 8px rgba(250,204,21,0.18)' : 'none',
+                      }}
+                    >
+                      💡
+                    </button>
                     {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
                     <div
                       className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
