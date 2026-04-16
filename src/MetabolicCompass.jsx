@@ -8,6 +8,8 @@ import {
 } from './metabolicDirection';
 import { getTodayString } from './coreEngine';
 import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
+import MetabolicMap from './MetabolicMap';
+import { computeMetabolicMapInputsFromDailyHistory } from './metabolicMapPeriodInputs';
 
 const FINAL_ANGLE_MIN = -135;
 const FINAL_ANGLE_MAX = 135;
@@ -311,6 +313,12 @@ export default function MetabolicCompass({
   const compassHistoryKey = useMemo(
     () => historyFingerprint(dailyHistory, selectedTimeframe),
     [dailyHistory, selectedTimeframe]
+  );
+
+  /** Medie periodo + instabilità glicemica teorica per la mappa (stessa finestra della bussola). */
+  const metabolicMapInputs = useMemo(
+    () => computeMetabolicMapInputsFromDailyHistory(dailyHistory, selectedTimeframe),
+    [compassHistoryKey]
   );
 
   useEffect(() => {
@@ -753,6 +761,38 @@ export default function MetabolicCompass({
         }}
       >
         {displaySuggestion}
+      </div>
+
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 400,
+          marginTop: 8,
+          paddingTop: 20,
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          boxSizing: 'border-box',
+        }}
+      >
+        <h3
+          style={{
+            margin: '0 0 10px',
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.42)',
+            textAlign: 'center',
+            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+          }}
+        >
+          Analisi Stato Metabolico
+        </h3>
+        <MetabolicMap
+          energyBalance={metabolicMapInputs.energyBalance}
+          trainingLoad={metabolicMapInputs.trainingLoad}
+          sleepHours={metabolicMapInputs.sleepHours}
+          glycemicInstability={metabolicMapInputs.glycemicInstability}
+        />
       </div>
       </div>
     </div>

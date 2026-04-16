@@ -91,7 +91,15 @@ export function computeMetabolicEngineTargetVec(days, timeframe = '7d') {
 export function historyFingerprint(days, timeframe = '7d') {
   const safeDays = compassHistoryForEngine(days);
   if (!safeDays.length) return `|${timeframe}`;
-  return `${safeDays.length}:${safeDays.map((d) => `${d.date ?? ''}:${d.kcalBalance},${d.trainingLoad}`).join(';')}|${timeframe}`;
+  return `${safeDays.length}:${safeDays
+    .map((d) => {
+      const sh =
+        d.sleepHours != null && Number.isFinite(Number(d.sleepHours))
+          ? Number(d.sleepHours)
+          : '';
+      return `${d.date ?? ''}:${d.kcalBalance},${d.trainingLoad},${sh}`;
+    })
+    .join(';')}|${timeframe}`;
 }
 
 /**
