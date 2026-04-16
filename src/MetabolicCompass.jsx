@@ -792,6 +792,8 @@ export default function MetabolicCompass({
           trainingLoad={metabolicMapInputs.trainingLoad}
           sleepHours={metabolicMapInputs.sleepHours}
           glycemicInstability={metabolicMapInputs.glycemicInstability}
+          realSleepDays={metabolicMapInputs.realSleepDays}
+          totalWindowDays={metabolicMapInputs.totalWindowDays}
         />
       </div>
       </div>

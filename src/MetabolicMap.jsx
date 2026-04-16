@@ -43,6 +43,22 @@ function buildGridPosition() {
 }
 
 /**
+ * Testo opzionale sotto il pannello rischio: solo se mancano dati sonno nel periodo.
+ *
+ * @param {number} realSleepDays
+ * @param {number} totalWindowDays
+ * @returns {string | null}
+ */
+function sleepDataReliabilityText(realSleepDays, totalWindowDays) {
+  if (totalWindowDays <= 0) return null;
+  if (realSleepDays >= totalWindowDays) return null;
+  if (realSleepDays <= 0) {
+    return 'Dati sonno non rilevati (utilizzata stima 8h)';
+  }
+  return `Affidabilità dati sonno: ${realSleepDays}/${totalWindowDays} giorni registrati`;
+}
+
+/**
  * Mappa metabolica: coordinate da `metabolicMapEngine`, zone radiali e aura glicemica.
  */
 export default function MetabolicMap({
@@ -50,6 +66,8 @@ export default function MetabolicMap({
   trainingLoad = 0,
   sleepHours = 8,
   glycemicInstability = 0,
+  realSleepDays = 0,
+  totalWindowDays = 0,
 }) {
   const { x, y, finalAura, distance, zone, quadrant } = useMemo(
     () =>
@@ -108,6 +126,8 @@ export default function MetabolicMap({
     pointerEvents: 'none',
     userSelect: 'none',
   };
+
+  const sleepReliabilityLine = sleepDataReliabilityText(realSleepDays, totalWindowDays);
 
   return (
     <div
@@ -238,6 +258,24 @@ export default function MetabolicMap({
           </div>
         )}
       </div>
+
+      {sleepReliabilityLine && (
+        <p
+          style={{
+            margin: '8px 0 0',
+            padding: '0 2px',
+            fontSize: 10,
+            lineHeight: 1.35,
+            fontWeight: 500,
+            letterSpacing: '0.02em',
+            color: 'rgba(230, 235, 242, 0.45)',
+            textAlign: 'center',
+            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+          }}
+        >
+          {sleepReliabilityLine}
+        </p>
+      )}
     </div>
   );
 }

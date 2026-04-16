@@ -76,7 +76,7 @@ function trainingLoadAxisFromMean(mean01to100) {
  *
  * @param {Array<{ kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null }>} dailyHistory
  * @param {'1d' | '7d' | '14d' | '30d'} timeframe
- * @returns {{ energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number }}
+ * @returns {{ energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number }}
  */
 export function computeMetabolicMapInputsFromDailyHistory(dailyHistory, timeframe = '7d') {
   const slice = getWindowSlice(dailyHistory, timeframe);
@@ -86,6 +86,8 @@ export function computeMetabolicMapInputsFromDailyHistory(dailyHistory, timefram
       trainingLoad: 0,
       sleepHours: 8,
       glycemicInstability: 0,
+      realSleepDays: 0,
+      totalWindowDays: 0,
     };
   }
 
@@ -104,6 +106,9 @@ export function computeMetabolicMapInputsFromDailyHistory(dailyHistory, timefram
     if (!Number.isFinite(h) || h <= 0) return null;
     return clamp(h, 0, 12);
   });
+  const realSleepDays = rawSleep.filter((h) => h != null).length;
+  const totalWindowDays = slice.length;
+
   const filledSleep = imputeSleepHoursSeries(rawSleep);
   const sleepHours = clamp(arithmeticMean(filledSleep), 0, 12);
 
@@ -121,5 +126,7 @@ export function computeMetabolicMapInputsFromDailyHistory(dailyHistory, timefram
     trainingLoad,
     sleepHours,
     glycemicInstability,
+    realSleepDays,
+    totalWindowDays,
   };
 }
