@@ -6,6 +6,13 @@ function mapPointToSvgCoords(x, y) {
   return { cx: 50 + x / 2, cy: 50 - y / 2 };
 }
 
+function visibleMacroPointCount(selectedTimeframe) {
+  if (selectedTimeframe === '30d') return 1;
+  if (selectedTimeframe === '14d') return 2;
+  if (selectedTimeframe === '7d') return 3;
+  return 4; // '1d' => tutta la traiettoria
+}
+
 /**
  * Scia "impronte": punti giornalieri senza linee di collegamento.
  * Il passato è più tenue e più piccolo, il presente più visibile.
@@ -126,12 +133,12 @@ export default function MetabolicMap({
   realSleepDays = 0,
   totalWindowDays = 0,
   selectedTimeframe = '7d',
-  historyPath = null,
+  macroTrajectory = null,
   currentCompassAngle = null,
 }) {
   const gradientId = useId().replace(/:/g, '');
-  const safeHistory =
-    Array.isArray(historyPath) && historyPath.length > 0 ? historyPath : null;
+  const safeMacroTrajectory =
+    Array.isArray(macroTrajectory) && macroTrajectory.length > 0 ? macroTrajectory : null;
 
   const { x, y, finalAura, distance, zone, quadrant } = useMemo(
     () =>
@@ -143,7 +150,14 @@ export default function MetabolicMap({
       }),
     [energyBalance, trainingLoad, sleepHours, glycemicInstability],
   );
-  const finalPoint = safeHistory ? safeHistory[safeHistory.length - 1] : null;
+  const visibleMacroPoints = useMemo(() => {
+    if (!safeMacroTrajectory) return [];
+    const count = visibleMacroPointCount(selectedTimeframe);
+    return safeMacroTrajectory.slice(0, Math.min(count, safeMacroTrajectory.length));
+  }, [safeMacroTrajectory, selectedTimeframe]);
+  const finalPoint = visibleMacroPoints.length
+    ? visibleMacroPoints[visibleMacroPoints.length - 1]
+    : null;
   const effectiveX = finalPoint?.x ?? x;
   const effectiveY = finalPoint?.y ?? y;
   const effectiveZone = finalPoint?.zone ?? zone;
@@ -160,14 +174,14 @@ export default function MetabolicMap({
   const topPct = 50 - displayY / 2;
 
   const historyHeadingDeg = useMemo(() => {
-    if (!safeHistory || safeHistory.length < 2) return null;
-    const prev = safeHistory[safeHistory.length - 2];
-    const curr = safeHistory[safeHistory.length - 1];
+    if (visibleMacroPoints.length < 2) return null;
+    const prev = visibleMacroPoints[visibleMacroPoints.length - 2];
+    const curr = visibleMacroPoints[visibleMacroPoints.length - 1];
     const dx = curr.x - prev.x;
     const dy = curr.y - prev.y;
     if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return null;
     return (Math.atan2(dx, dy) * 180) / Math.PI;
-  }, [safeHistory]);
+  }, [visibleMacroPoints]);
 
   const showCompassArrow =
     (currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle))) ||
@@ -178,7 +192,7 @@ export default function MetabolicMap({
       : historyHeadingDeg ?? 0;
   const highAuraPulse = displayAura >= 45;
 
-  const showSvgLayer = Boolean(safeHistory || showCompassArrow);
+  const showSvgLayer = Boolean(visibleMacroPoints.length || showCompassArrow);
 
   const t = effectiveAura / 100;
   const showAura = effectiveAura > 0.5;
@@ -337,7 +351,9 @@ export default function MetabolicMap({
                 <stop offset="100%" stopColor="rgba(70, 170, 210, 0.75)" />
               </linearGradient>
             </defs>
-            {safeHistory ? <MetabolicMapTrajectory points={safeHistory} /> : null}
+            {visibleMacroPoints.length > 1 ? (
+              <MetabolicMapTrajectory points={visibleMacroPoints.slice(0, -1)} />
+            ) : null}
             {showCompassArrow ? (
               <MetabolicMapCompassMarker
                 {...mapPointToSvgCoords(displayX, displayY)}

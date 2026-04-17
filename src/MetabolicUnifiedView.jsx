@@ -5,7 +5,7 @@ import {
   METABOLIC_GOAL,
 } from './metabolicDirection';
 import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
-import { calculateMetabolicMapPosition, computeMetabolicMapHistory } from './metabolicMapEngine';
+import { calculateMetabolicMapPosition, computeMacroTrajectory } from './metabolicMapEngine';
 import { computeMetabolicMapInputsAndAudit } from './metabolicMapPeriodInputs';
 import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
@@ -18,6 +18,13 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '14d', label: '14G' },
   { value: '30d', label: '30G' },
 ];
+
+function visibleMacroPointCount(selectedTimeframe) {
+  if (selectedTimeframe === '30d') return 1;
+  if (selectedTimeframe === '14d') return 2;
+  if (selectedTimeframe === '7d') return 3;
+  return 4;
+}
 
 const RAD_TO_DEG = 180 / Math.PI;
 
@@ -86,11 +93,10 @@ export default function MetabolicUnifiedView({
     [compassHistoryKey]
   );
 
-  const historyPath = useMemo(
-    () => computeMetabolicMapHistory(dailyHistory, selectedTimeframe),
-    [compassHistoryKey]
+  const macroTrajectory = useMemo(
+    () => computeMacroTrajectory(dailyHistory),
+    [dailyHistory]
   );
-  const finalHistoryPoint = historyPath.length ? historyPath[historyPath.length - 1] : null;
 
   // Bussola: resta ancorata al vettore originale del motore su dailyHistory grezza.
   const { angleDeg } = useMemo(() => {
@@ -104,7 +110,9 @@ export default function MetabolicUnifiedView({
   const arrowRotationDeg = metabolicAngleDegToCompassBearingDeg(angleDeg) + compassRotation;
 
   const mapZoneColor = useMemo(() => {
-    const last = historyPath[historyPath.length - 1];
+    const visibleCount = visibleMacroPointCount(selectedTimeframe);
+    const visible = macroTrajectory.slice(0, Math.min(visibleCount, macroTrajectory.length));
+    const last = visible[visible.length - 1];
     if (last?.zone) return mapZoneToGlowRgba(last.zone);
     const { zone } = calculateMetabolicMapPosition({
       energyBalance: metabolicMapInputs.energyBalance,
@@ -113,7 +121,7 @@ export default function MetabolicUnifiedView({
       glycemicInstability: metabolicMapInputs.glycemicInstability,
     });
     return mapZoneToGlowRgba(zone);
-  }, [historyPath, metabolicMapInputs]);
+  }, [macroTrajectory, selectedTimeframe, metabolicMapInputs]);
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -295,13 +303,12 @@ export default function MetabolicUnifiedView({
               realSleepDays={metabolicMapInputs.realSleepDays}
               totalWindowDays={metabolicMapInputs.totalWindowDays}
               selectedTimeframe={selectedTimeframe}
-              historyPath={historyPath}
+              macroTrajectory={macroTrajectory}
               currentCompassAngle={arrowRotationDeg}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}
               mapInputs={metabolicMapInputs}
-              historyPoint={finalHistoryPoint}
             />
           </div>
         </div>

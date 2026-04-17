@@ -1,76 +1,9 @@
-import { getTodayString } from './coreEngine';
+import { computeMetabolicMapInputsFromDailyHistory } from './metabolicMapPeriodInputs';
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-/** Allineato alla finestra giorni in `metabolicMapPeriodInputs.js`. */
-const TIMEFRAME_DAY_WINDOW = {
-  '1d': 1,
-  '7d': 7,
-  '14d': 14,
-  '30d': 30,
-};
-
-function compassHistoryForEngine(days) {
-  const today = getTodayString();
-  return (days || []).filter((e) => e?.date !== today);
-}
-
-function getWindowSlice(days, timeframe) {
-  const windowDays = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
-  const safe = compassHistoryForEngine(days);
-  if (!safe.length) return [];
-  return safe.length <= windowDays ? safe : safe.slice(-windowDays);
-}
-
-function arithmeticMean(arr) {
-  if (!arr.length) return 0;
-  let s = 0;
-  for (let i = 0; i < arr.length; i += 1) s += arr[i];
-  return s / arr.length;
-}
-
-/**
- * Serie tracker 0–100 → asse mappa −100…+100 (sedentarietà ↔ sovrallenamento).
- * Stessa scala usata per gli input periodo in `metabolicMapPeriodInputs.js`.
- */
-function trainingLoadAxisFromMean(mean01to100) {
-  const m = clamp(Number(mean01to100) || 0, 0, 100);
-  return clamp(m * 2 - 100, -100, 100);
-}
-
-/**
- * Giorni senza sonno: imputazione con media degli altri giorni della finestra; se nessun dato, 8 h.
- * Stessa logica di `imputeSleepHoursSeries` in metabolicMapPeriodInputs.
- */
-function imputeSleepHoursSeries(rawHours) {
-  const known = rawHours
-    .map((x) => (x == null ? null : Number(x)))
-    .filter((h) => h != null && Number.isFinite(h) && h > 0);
-  const fallback = known.length ? arithmeticMean(known) : 8;
-  return rawHours.map((x) => {
-    if (x == null || !Number.isFinite(Number(x)) || Number(x) <= 0) return fallback;
-    return clamp(Number(x), 0, 12);
-  });
-}
-
-/**
- * Instabilità glicemica teorica per un singolo giorno, coerente con la formula aggregata in
- * computeMetabolicMapInputsFromDailyHistory (stress sonno, surplus calorico, scostamento dal bilancio medio della finestra).
- *
- * @param {number} dayKcal
- * @param {number} sleepHoursImputed
- * @param {number} windowMeanKcal
- */
-function computeTheoreticalGlycemicInstabilityForDay(dayKcal, sleepHoursImputed, windowMeanKcal) {
-  const varianceFactor = clamp(Math.abs(dayKcal - windowMeanKcal) / 400, 0, 1);
-  const sleepStress =
-    sleepHoursImputed < 7.5 ? clamp((7.5 - sleepHoursImputed) / 7.5, 0, 1) : 0;
-  const surplusFactor = clamp(Math.max(0, dayKcal) / 500, 0, 1);
-  const glycemicRaw = 0.45 * sleepStress + 0.38 * surplusFactor + 0.22 * varianceFactor;
-  return clamp(glycemicRaw * 100, 0, 100);
-}
 
 /**
  * Calcolo unificato del punto sulla mappa (coordinate, zona, aura, quadrante).
@@ -141,44 +74,6 @@ function computeMetabolicMapPoint(params = {}) {
 }
 
 /**
- * Metadati geometrici su coordinate già definite (utile dopo smoothing EMA).
- *
- * @param {number} x
- * @param {number} y
- * @param {number} finalAura
- */
-function computePointMetaFromCoords(x, y, finalAura) {
-  const sx = clamp(x, -100, 100);
-  const sy = clamp(y, -100, 100);
-  const distance = Math.hypot(sx, sy);
-
-  let zone = 'green';
-  if (distance > 70) {
-    zone = 'red';
-  } else if (distance > 35) {
-    zone = 'orange';
-  }
-
-  let quadrant = 'NE';
-  if (sx < 0 && sy >= 0) {
-    quadrant = 'NW';
-  } else if (sx >= 0 && sy < 0) {
-    quadrant = 'SE';
-  } else if (sx < 0 && sy < 0) {
-    quadrant = 'SW';
-  }
-
-  return {
-    x: sx,
-    y: sy,
-    finalAura: clamp(finalAura, 0, 100),
-    distance,
-    zone,
-    quadrant,
-  };
-}
-
-/**
  * Calcola la posizione dell'utente sulla Mappa Metabolica.
  * Restituisce coordinate corrette, intensita' dell'aura e metadati di lettura.
  */
@@ -186,87 +81,40 @@ export function calculateMetabolicMapPosition(params = {}) {
   return computeMetabolicMapPoint(params);
 }
 
+function macroPointForTimeframe(dailyHistory, timeframe) {
+  const inputs = computeMetabolicMapInputsFromDailyHistory(dailyHistory, timeframe);
+  return computeMetabolicMapPoint(inputs);
+}
+
 /**
- * Traiettoria storica sulla mappa metabolica: una posizione per ogni giorno della finestra (escluso oggi).
- * Ogni punto applica la stessa fisica di {@link calculateMetabolicMapPosition} ai dati di quel giorno.
- *
- * La polilinea che collega i punti in ordine cronologico mostra come il profilo si sia spostato tra i quadranti
- * di rischio (NW/NE/SW/SE): spostamenti lungo l'asse orizzontale riflettono surplus vs deficit energetico nel tempo,
- * mentre l'asse verticale segue carico/stress da allenamento (e debito sonno); così si vede se si tende verso
- * zone più periferiche (rosso) o verso il centro (verde).
+ * Macro-traiettoria per i 4 periodi UI: 30g → 14g → 7g → ieri.
+ * Se periodi adiacenti producono coordinate identiche, i duplicati vengono rimossi.
  *
  * @param {Array<{ date?: string, kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null }>} dailyHistory
- * @param {'1d' | '7d' | '14d' | '30d'} [timeframe='7d']
- * @returns {Array<{ x: number, y: number, date?: string, zone: string, finalAura: number }>}
- *   Ordinato dal giorno più vecchio al più recente (ieri) all'interno della finestra.
+ * @returns {Array<{ x: number, y: number, zone: string, quadrant: string, finalAura: number, distance: number, timeframe: '30d' | '14d' | '7d' | '1d' }>}
  */
-export function computeMetabolicMapHistory(dailyHistory, timeframe = '7d') {
-  const slice = getWindowSlice(dailyHistory, timeframe);
-  if (!slice.length) return [];
-  const EMA_ALPHA = 0.25;
-  const EMA_PREV_WEIGHT = 0.75;
-
-  const kcalBalances = slice.map((d) => Number(d.kcalBalance) || 0);
-  const meanKcal = arithmeticMean(kcalBalances);
-
-  const rawSleep = slice.map((d) => {
-    if (d.sleepHours == null) return null;
-    const h = Number(d.sleepHours);
-    if (!Number.isFinite(h) || h <= 0) return null;
-    return clamp(h, 0, 12);
-  });
-  const filledSleep = imputeSleepHoursSeries(rawSleep);
+export function computeMacroTrajectory(dailyHistory) {
+  const macros = [
+    { timeframe: '30d', point: macroPointForTimeframe(dailyHistory, '30d') },
+    { timeframe: '14d', point: macroPointForTimeframe(dailyHistory, '14d') },
+    { timeframe: '7d', point: macroPointForTimeframe(dailyHistory, '7d') },
+    { timeframe: '1d', point: macroPointForTimeframe(dailyHistory, '1d') },
+  ];
 
   const out = [];
-  let prevFilteredX = null;
-  let prevFilteredY = null;
-  let prevFilteredSleepHours = null;
-  for (let i = 0; i < slice.length; i += 1) {
-    const day = slice[i];
-    const kcal = kcalBalances[i];
-    const energyBalance = clamp(kcal / 5, -100, 100);
-    const trainingLoad = trainingLoadAxisFromMean(Number(day.trainingLoad) || 0);
-    const sleepHours = filledSleep[i];
-
-    const glycemicInstability = computeTheoreticalGlycemicInstabilityForDay(
-      kcal,
-      sleepHours,
-      meanKcal
-    );
-
-    const point = computeMetabolicMapPoint({
-      energyBalance,
-      trainingLoad,
-      sleepHours,
-      glycemicInstability,
-    });
-
-    const filteredX = prevFilteredX == null
-      ? point.x
-      : (point.x * EMA_ALPHA) + (prevFilteredX * EMA_PREV_WEIGHT);
-    const filteredY = prevFilteredY == null
-      ? point.y
-      : (point.y * EMA_ALPHA) + (prevFilteredY * EMA_PREV_WEIGHT);
-    const filteredSleepHours = prevFilteredSleepHours == null
-      ? sleepHours
-      : (sleepHours * EMA_ALPHA) + (prevFilteredSleepHours * EMA_PREV_WEIGHT);
-    const smoothed = computePointMetaFromCoords(filteredX, filteredY, point.finalAura);
-
-    prevFilteredX = filteredX;
-    prevFilteredY = filteredY;
-    prevFilteredSleepHours = filteredSleepHours;
-
+  for (let i = 0; i < macros.length; i += 1) {
+    const { timeframe, point } = macros[i];
+    const prev = out[out.length - 1];
+    if (prev && prev.x === point.x && prev.y === point.y) continue;
     out.push({
-      x: smoothed.x,
-      y: smoothed.y,
-      date: day.date,
-      zone: smoothed.zone,
-      finalAura: smoothed.finalAura,
-      distance: smoothed.distance,
-      quadrant: smoothed.quadrant,
-      sleepHours: clamp(filteredSleepHours, 0, 12),
+      timeframe,
+      x: point.x,
+      y: point.y,
+      zone: point.zone,
+      quadrant: point.quadrant,
+      finalAura: point.finalAura,
+      distance: point.distance,
     });
   }
-
   return out;
 }
