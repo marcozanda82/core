@@ -61,14 +61,14 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
 
     const kcalReg = hasWindow && rd.meanKcal != null ? `${Math.round(rd.meanKcal)} kcal/d` : 'N/D';
     const kcalUsed = `${Number(mi.energyBalance ?? 0).toFixed(1)}`;
-    const kcalNote = hasWindow ? 'Normalizzato' : '—';
+    const kcalNote = hasWindow ? 'Normalizzato (kcal/5)' : '—';
 
     const trainReg =
       hasWindow && rd.meanTraining01 != null
         ? `${Number(rd.meanTraining01).toFixed(1)} /100`
         : 'N/D';
     const trainUsed = `${Number(mi.trainingLoad ?? 0).toFixed(1)}`;
-    const trainNote = hasWindow ? 'Normalizzato' : '—';
+    const trainNote = hasWindow ? 'Normalizzato (0 = -54)' : '—';
 
     return [
       { key: 'sleep', metric: 'Sonno', registered: sleepReg, used: sleepUsed, note: sleepNote },
@@ -158,8 +158,8 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
               letterSpacing: '0.02em',
             }}
           >
-            Asse bilancio e allenamento: scala −100…+100. Bilancio: media kcal/d ÷ 5. Allenamento: scala
-            0–100 → asse.
+            Asse bilancio e allenamento: scala −100…+100. Bilancio: media kcal/d ÷ 5 (con clamp).
+            Allenamento: ((media−35)/65)×100, quindi 0 ≈ −54 e 100 = +100.
           </p>
         </div>
       )}

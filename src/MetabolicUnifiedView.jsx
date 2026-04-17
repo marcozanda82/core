@@ -85,12 +85,13 @@ export default function MetabolicUnifiedView({
     [compassHistoryKey]
   );
 
+  // Bussola: resta ancorata al vettore originale del motore su dailyHistory grezza.
   const { angleDeg } = useMemo(() => {
     const { x, y } = computeMetabolicEngineTargetVec(dailyHistory, selectedTimeframe);
     const angleRad = Math.atan2(y, x);
     const ad = Number.isFinite(angleRad) ? angleRad * RAD_TO_DEG : 0;
     return { angleDeg: ad };
-  }, [compassHistoryKey]);
+  }, [dailyHistory, selectedTimeframe]);
 
   const compassRotation = -getMetabolicTargetAngle(goal);
   const arrowRotationDeg = metabolicAngleDegToCompassBearingDeg(angleDeg) + compassRotation;

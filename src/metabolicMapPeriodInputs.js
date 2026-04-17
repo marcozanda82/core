@@ -78,13 +78,14 @@ function imputeSleepHoursSeries(rawHours) {
 }
 
 /**
- * Serie tracker 0–100 → asse mappa −100…+100 (sedentarietà ↔ sovrallenamento).
+ * Serie tracker 0–100 → asse mappa −100…+100 con baseline mantenimento ~35.
+ * 0 ≈ -53.8 (sedentario ma non estremo), 35 = 0, 100 = +100.
  *
  * @param {number} mean01to100
  */
 function trainingLoadAxisFromMean(mean01to100) {
   const m = clamp(Number(mean01to100) || 0, 0, 100);
-  return clamp(m * 2 - 100, -100, 100);
+  return clamp(((m - 35) / 65) * 100, -100, 100);
 }
 
 /**
