@@ -29,6 +29,12 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function timeframeImpactMultiplier(timeframe) {
+  if (timeframe === '30d' || timeframe === '14d') return 1.0;
+  if (timeframe === '7d') return 0.75;
+  return 0.4; // '1d' (ieri) e fallback conservativo
+}
+
 function compassHistoryForEngine(days) {
   const today = getTodayString();
   return (days || []).filter((e) => e?.date !== today);
@@ -78,14 +84,14 @@ function imputeSleepHoursSeries(rawHours) {
 }
 
 /**
- * Serie tracker 0–100 → asse mappa −100…+100 con baseline mantenimento ~35.
+ * Serie tracker 0–100 → asse mappa non clampato con baseline mantenimento ~35.
  * 0 ≈ -53.8 (sedentario ma non estremo), 35 = 0, 100 = +100.
  *
  * @param {number} mean01to100
  */
-function trainingLoadAxisFromMean(mean01to100) {
+function trainingLoadAxisRawFromMean(mean01to100) {
   const m = clamp(Number(mean01to100) || 0, 0, 100);
-  return clamp(((m - 35) / 65) * 100, -100, 100);
+  return ((m - 35) / 65) * 100;
 }
 
 /**
@@ -99,6 +105,7 @@ function trainingLoadAxisFromMean(mean01to100) {
  * }}
  */
 export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d') {
+  const impact = timeframeImpactMultiplier(timeframe);
   const slice = getWindowSlice(dailyHistory, timeframe);
   if (slice.length === 0) {
     return {
@@ -111,10 +118,10 @@ export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d'
   const trainingLoads = slice.map((d) => clamp(Number(d.trainingLoad) || 0, 0, 100));
 
   const meanKcal = arithmeticMean(kcalBalances);
-  const energyBalance = clamp(meanKcal / 5, -100, 100);
+  const energyBalance = clamp((meanKcal / 5) * impact, -100, 100);
 
   const meanTraining = arithmeticMean(trainingLoads);
-  const trainingLoad = trainingLoadAxisFromMean(meanTraining);
+  const trainingLoad = clamp(trainingLoadAxisRawFromMean(meanTraining) * impact, -100, 100);
 
   const rawSleep = slice.map((d) => {
     if (d.sleepHours == null) return null;

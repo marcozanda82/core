@@ -9,7 +9,14 @@ function clamp(value, min, max) {
  * Calcolo unificato del punto sulla mappa (coordinate, zona, aura, quadrante).
  * Usato sia per lo snapshot corrente sia per ogni giorno della cronologia.
  *
- * @param {{ energyBalance?: number, trainingLoad?: number, sleepHours?: number, glycemicInstability?: number }} params
+ * @param {{
+ *   energyBalance?: number,
+ *   trainingLoad?: number,
+ *   sleepHours?: number,
+ *   glycemicInstability?: number,
+ *   baselineOffsetX?: number,
+ *   baselineOffsetY?: number
+ * }} params
  */
 function computeMetabolicMapPoint(params = {}) {
   const {
@@ -17,6 +24,8 @@ function computeMetabolicMapPoint(params = {}) {
     trainingLoad = 0,
     sleepHours = 8,
     glycemicInstability = 0,
+    baselineOffsetX = 0,
+    baselineOffsetY = 0,
   } = params;
 
   let x = energyBalance;
@@ -28,6 +37,10 @@ function computeMetabolicMapPoint(params = {}) {
     y += sleepDebt * 12;
     x += sleepDebt * 6;
   }
+
+  // Baseline strutturale (futuro): offset da composizione corporea (es. body fat / muscle mass).
+  x += Number(baselineOffsetX) || 0;
+  y += Number(baselineOffsetY) || 0;
 
   // Le coordinate restano sempre entro i limiti della mappa.
   x = clamp(x, -100, 100);
@@ -76,6 +89,8 @@ function computeMetabolicMapPoint(params = {}) {
 /**
  * Calcola la posizione dell'utente sulla Mappa Metabolica.
  * Restituisce coordinate corrette, intensita' dell'aura e metadati di lettura.
+ * `baselineOffsetX/Y` sono opzionali e ora defaultano a 0; serviranno per iniettare
+ * la baseline strutturale derivata dalla bilancia (Body Fat % e Muscle Mass).
  */
 export function calculateMetabolicMapPosition(params = {}) {
   return computeMetabolicMapPoint(params);
