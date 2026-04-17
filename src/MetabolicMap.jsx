@@ -6,6 +6,19 @@ function mapPointToSvgCoords(x, y) {
   return { cx: 50 + x / 2, cy: 50 - y / 2 };
 }
 
+function classifyMapPoint(x, y) {
+  const distance = Math.hypot(x, y);
+  let zone = 'green';
+  if (distance > 70) zone = 'red';
+  else if (distance > 35) zone = 'orange';
+
+  let quadrant = 'NE';
+  if (x < 0 && y >= 0) quadrant = 'NW';
+  else if (x >= 0 && y < 0) quadrant = 'SE';
+  else if (x < 0 && y < 0) quadrant = 'SW';
+  return { zone, quadrant, distance };
+}
+
 function visibleMacroPointCount(selectedTimeframe) {
   if (selectedTimeframe === '30d') return 1;
   if (selectedTimeframe === '14d') return 2;
@@ -134,6 +147,7 @@ export default function MetabolicMap({
   totalWindowDays = 0,
   selectedTimeframe = '7d',
   macroTrajectory = null,
+  baselineOffset = null,
   currentCompassAngle = null,
 }) {
   const gradientId = useId().replace(/:/g, '');
@@ -155,14 +169,29 @@ export default function MetabolicMap({
     const count = visibleMacroPointCount(selectedTimeframe);
     return safeMacroTrajectory.slice(0, Math.min(count, safeMacroTrajectory.length));
   }, [safeMacroTrajectory, selectedTimeframe]);
-  const finalPoint = visibleMacroPoints.length
-    ? visibleMacroPoints[visibleMacroPoints.length - 1]
+  const baselineX = Number(baselineOffset?.x) || 0;
+  const baselineY = Number(baselineOffset?.y) || 0;
+  const shiftedMacroPoints = useMemo(
+    () =>
+      visibleMacroPoints.map((p) => {
+        const sx = Math.max(-100, Math.min(100, p.x + baselineX));
+        const sy = Math.max(-100, Math.min(100, p.y + baselineY));
+        const meta = classifyMapPoint(sx, sy);
+        return { ...p, x: sx, y: sy, zone: meta.zone, quadrant: meta.quadrant, distance: meta.distance };
+      }),
+    [visibleMacroPoints, baselineX, baselineY]
+  );
+  const finalPoint = shiftedMacroPoints.length
+    ? shiftedMacroPoints[shiftedMacroPoints.length - 1]
     : null;
-  const effectiveX = finalPoint?.x ?? x;
-  const effectiveY = finalPoint?.y ?? y;
-  const effectiveZone = finalPoint?.zone ?? zone;
-  const effectiveQuadrant = finalPoint?.quadrant ?? quadrant;
-  const effectiveDistance = finalPoint?.distance ?? distance;
+  const fallbackShiftedX = Math.max(-100, Math.min(100, x + baselineX));
+  const fallbackShiftedY = Math.max(-100, Math.min(100, y + baselineY));
+  const fallbackMeta = classifyMapPoint(fallbackShiftedX, fallbackShiftedY);
+  const effectiveX = finalPoint?.x ?? fallbackShiftedX;
+  const effectiveY = finalPoint?.y ?? fallbackShiftedY;
+  const effectiveZone = finalPoint?.zone ?? fallbackMeta.zone ?? zone;
+  const effectiveQuadrant = finalPoint?.quadrant ?? fallbackMeta.quadrant ?? quadrant;
+  const effectiveDistance = finalPoint?.distance ?? fallbackMeta.distance ?? distance;
   const effectiveAura = finalPoint?.finalAura ?? finalAura;
 
   // Marker e pannello leggono la stessa sorgente finale per evitare disallineamenti visivi/testuali.
@@ -173,26 +202,25 @@ export default function MetabolicMap({
   const leftPct = 50 + displayX / 2;
   const topPct = 50 - displayY / 2;
 
-  const historyHeadingDeg = useMemo(() => {
-    if (visibleMacroPoints.length < 2) return null;
-    const prev = visibleMacroPoints[visibleMacroPoints.length - 2];
-    const curr = visibleMacroPoints[visibleMacroPoints.length - 1];
-    const dx = curr.x - prev.x;
-    const dy = curr.y - prev.y;
+  const baselineHeadingDeg = useMemo(() => {
+    const dx = effectiveX - baselineX;
+    const dy = effectiveY - baselineY;
     if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return null;
     return (Math.atan2(dx, dy) * 180) / Math.PI;
-  }, [visibleMacroPoints]);
+  }, [effectiveX, effectiveY, baselineX, baselineY]);
 
   const showCompassArrow =
     (currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle))) ||
-    historyHeadingDeg != null;
+    baselineHeadingDeg != null;
   const arrowAngleDeg =
-    currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle))
-      ? Number(currentCompassAngle)
-      : historyHeadingDeg ?? 0;
+    baselineHeadingDeg != null
+      ? baselineHeadingDeg
+      : currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle))
+        ? Number(currentCompassAngle)
+        : 0;
   const highAuraPulse = displayAura >= 45;
 
-  const showSvgLayer = Boolean(visibleMacroPoints.length || showCompassArrow);
+  const showSvgLayer = Boolean(shiftedMacroPoints.length || showCompassArrow);
 
   const t = effectiveAura / 100;
   const showAura = effectiveAura > 0.5;
@@ -351,9 +379,19 @@ export default function MetabolicMap({
                 <stop offset="100%" stopColor="rgba(70, 170, 210, 0.75)" />
               </linearGradient>
             </defs>
-            {visibleMacroPoints.length > 1 ? (
-              <MetabolicMapTrajectory points={visibleMacroPoints.slice(0, -1)} />
+            {shiftedMacroPoints.length > 1 ? (
+              <MetabolicMapTrajectory points={shiftedMacroPoints.slice(0, -1)} />
             ) : null}
+            <circle
+              cx={mapPointToSvgCoords(baselineX, baselineY).cx}
+              cy={mapPointToSvgCoords(baselineX, baselineY).cy}
+              r={3.8}
+              fill="none"
+              stroke="rgba(220,235,245,0.24)"
+              strokeDasharray="2 2"
+              strokeWidth={0.4}
+              vectorEffect="nonScalingStroke"
+            />
             {showCompassArrow ? (
               <MetabolicMapCompassMarker
                 {...mapPointToSvgCoords(displayX, displayY)}

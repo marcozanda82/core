@@ -5,7 +5,12 @@ import {
   METABOLIC_GOAL,
 } from './metabolicDirection';
 import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
-import { calculateMetabolicMapPosition, computeMacroTrajectory } from './metabolicMapEngine';
+import {
+  calculateBaselineOffset,
+  calculateMetabolicMapPosition,
+  computeMacroTrajectory,
+  getLastBiometricData,
+} from './metabolicMapEngine';
 import { computeMetabolicMapInputsAndAudit } from './metabolicMapPeriodInputs';
 import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
@@ -97,6 +102,10 @@ export default function MetabolicUnifiedView({
     () => computeMacroTrajectory(dailyHistory),
     [dailyHistory]
   );
+  const baselineOffset = useMemo(() => {
+    const biometrics = getLastBiometricData(dailyHistory);
+    return calculateBaselineOffset(biometrics);
+  }, [dailyHistory]);
 
   // Bussola: resta ancorata al vettore originale del motore su dailyHistory grezza.
   const { angleDeg } = useMemo(() => {
@@ -304,6 +313,7 @@ export default function MetabolicUnifiedView({
               totalWindowDays={metabolicMapInputs.totalWindowDays}
               selectedTimeframe={selectedTimeframe}
               macroTrajectory={macroTrajectory}
+              baselineOffset={baselineOffset}
               currentCompassAngle={arrowRotationDeg}
             />
             <MetabolicDataAudit
