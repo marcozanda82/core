@@ -7,32 +7,51 @@ function mapPointToSvgCoords(x, y) {
 }
 
 /**
- * Traiettoria: segmenti con opacità crescente verso il presente (il passato è più tenue).
+ * Traiettoria giornaliera + collegamento finale alla media aggregata del periodo.
+ * I segmenti storici restano più tenui per evidenziare che il punto principale è la media.
  */
-function MetabolicMapTrajectory({ points }) {
-  if (points.length < 2) return null;
+function MetabolicMapTrajectory({ points, aggregateX, aggregateY }) {
+  if (!points.length) return null;
   const n = points.length;
   const lines = [];
-  for (let i = 0; i < n - 1; i += 1) {
-    const t = (i + 1) / (n - 1);
-    const opacity = 0.14 + t * 0.46;
-    const { cx: x1, cy: y1 } = mapPointToSvgCoords(points[i].x, points[i].y);
-    const { cx: x2, cy: y2 } = mapPointToSvgCoords(points[i + 1].x, points[i + 1].y);
-    lines.push(
-      <line
-        key={`tr-${i}`}
-        x1={x1}
-        y1={y1}
-        x2={x2}
-        y2={y2}
-        stroke={`rgba(255,255,255,${opacity})`}
-        strokeWidth={0.55}
-        strokeLinecap="round"
-        strokeDasharray="3.2 2.4"
-        vectorEffect="nonScalingStroke"
-      />
-    );
+  if (n >= 2) {
+    for (let i = 0; i < n - 1; i += 1) {
+      const t = (i + 1) / (n - 1);
+      const opacity = (0.12 + t * 0.23) * 0.35;
+      const { cx: x1, cy: y1 } = mapPointToSvgCoords(points[i].x, points[i].y);
+      const { cx: x2, cy: y2 } = mapPointToSvgCoords(points[i + 1].x, points[i + 1].y);
+      lines.push(
+        <line
+          key={`tr-${i}`}
+          x1={x1}
+          y1={y1}
+          x2={x2}
+          y2={y2}
+          stroke={`rgba(255,255,255,${opacity})`}
+          strokeWidth={0.55}
+          strokeLinecap="round"
+          strokeDasharray="3.2 2.4"
+          vectorEffect="nonScalingStroke"
+        />
+      );
+    }
   }
+  const { cx: hx, cy: hy } = mapPointToSvgCoords(points[n - 1].x, points[n - 1].y);
+  const { cx: ax, cy: ay } = mapPointToSvgCoords(aggregateX, aggregateY);
+  lines.push(
+    <line
+      key="tr-aggregate-link"
+      x1={hx}
+      y1={hy}
+      x2={ax}
+      y2={ay}
+      stroke="rgba(180,230,255,0.55)"
+      strokeWidth={0.7}
+      strokeLinecap="round"
+      strokeDasharray="2.2 2.2"
+      vectorEffect="nonScalingStroke"
+    />
+  );
   return <g aria-hidden>{lines}</g>;
 }
 
@@ -144,11 +163,10 @@ export default function MetabolicMap({
     [energyBalance, trainingLoad, sleepHours, glycemicInstability],
   );
 
-  const displayX = safeHistory ? safeHistory[safeHistory.length - 1].x : x;
-  const displayY = safeHistory ? safeHistory[safeHistory.length - 1].y : y;
-  const displayAura = safeHistory
-    ? safeHistory[safeHistory.length - 1].finalAura
-    : finalAura;
+  // Marker principale sempre ancorato al punto aggregato del periodo.
+  const displayX = x;
+  const displayY = y;
+  const displayAura = finalAura;
 
   const leftPct = 50 + displayX / 2;
   const topPct = 50 - displayY / 2;
@@ -317,7 +335,13 @@ export default function MetabolicMap({
                 <stop offset="100%" stopColor="rgba(70, 170, 210, 0.75)" />
               </linearGradient>
             </defs>
-            {safeHistory ? <MetabolicMapTrajectory points={safeHistory} /> : null}
+            {safeHistory ? (
+              <MetabolicMapTrajectory
+                points={safeHistory}
+                aggregateX={displayX}
+                aggregateY={displayY}
+              />
+            ) : null}
             {showCompassArrow ? (
               <MetabolicMapCompassMarker
                 {...mapPointToSvgCoords(displayX, displayY)}
