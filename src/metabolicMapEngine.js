@@ -165,6 +165,8 @@ export function calculateMetabolicMapPosition(params = {}) {
 export function computeMetabolicMapHistory(dailyHistory, timeframe = '7d') {
   const slice = getWindowSlice(dailyHistory, timeframe);
   if (!slice.length) return [];
+  const EMA_ALPHA = 0.6;
+  const EMA_PREV_WEIGHT = 0.4;
 
   const kcalBalances = slice.map((d) => Number(d.kcalBalance) || 0);
   const meanKcal = arithmeticMean(kcalBalances);
@@ -178,6 +180,8 @@ export function computeMetabolicMapHistory(dailyHistory, timeframe = '7d') {
   const filledSleep = imputeSleepHoursSeries(rawSleep);
 
   const out = [];
+  let prevFilteredX = null;
+  let prevFilteredY = null;
   for (let i = 0; i < slice.length; i += 1) {
     const day = slice[i];
     const kcal = kcalBalances[i];
@@ -198,11 +202,29 @@ export function computeMetabolicMapHistory(dailyHistory, timeframe = '7d') {
       glycemicInstability,
     });
 
+    const filteredX = prevFilteredX == null
+      ? point.x
+      : (point.x * EMA_ALPHA) + (prevFilteredX * EMA_PREV_WEIGHT);
+    const filteredY = prevFilteredY == null
+      ? point.y
+      : (point.y * EMA_ALPHA) + (prevFilteredY * EMA_PREV_WEIGHT);
+
+    const distance = Math.hypot(filteredX, filteredY);
+    let zone = 'green';
+    if (distance > 70) {
+      zone = 'red';
+    } else if (distance > 35) {
+      zone = 'orange';
+    }
+
+    prevFilteredX = filteredX;
+    prevFilteredY = filteredY;
+
     out.push({
-      x: point.x,
-      y: point.y,
+      x: filteredX,
+      y: filteredY,
       date: day.date,
-      zone: point.zone,
+      zone,
       finalAura: point.finalAura,
     });
   }
