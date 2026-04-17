@@ -284,19 +284,37 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
 }
 
 /**
- * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance: number, trainingLoad: number }>, compassScreenActive?: boolean }} props
+ * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance: number, trainingLoad: number }>, compassScreenActive?: boolean, mapZoneColor?: string, hideMetabolicMapSection?: boolean, goal?: string, onGoalChange?: (g: string) => void, selectedTimeframe?: string, onTimeframeChange?: (t: string) => void }} props
  * `dailyHistory`: serie dal tracker (ultimo = ieri; oggi escluso dal motore). Passare `[]` se assente.
  * `compassScreenActive`: quando passa da false a true, ripristina il periodo al default (es. rientro tab bussola).
+ * `goal` / `onGoalChange` e `selectedTimeframe` / `onTimeframeChange`: modalità controllata (es. vista unificata).
  */
 export default function MetabolicCompass({
   dailyHistory: dailyHistoryProp = [],
   compassScreenActive = true,
+  mapZoneColor = '',
+  hideMetabolicMapSection = false,
+  goal: goalControlled,
+  onGoalChange,
+  selectedTimeframe: timeframeControlled,
+  onTimeframeChange,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
   const prevCompassScreenActiveRef = useRef(false);
-  const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
-  const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_COMPASS_TIMEFRAME);
+  const [goalInternal, setGoalInternal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
+  const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_COMPASS_TIMEFRAME);
+
+  const isGoalControlled =
+    goalControlled !== undefined && typeof onGoalChange === 'function';
+  const goal = isGoalControlled ? goalControlled : goalInternal;
+  const setGoal = isGoalControlled ? onGoalChange : setGoalInternal;
+
+  const isTfControlled =
+    timeframeControlled !== undefined && typeof onTimeframeChange === 'function';
+  const selectedTimeframe = isTfControlled ? timeframeControlled : timeframeInternal;
+  const setSelectedTimeframe = isTfControlled ? onTimeframeChange : setTimeframeInternal;
+
   const [snapshot, setSnapshot] = useState(null);
 
   useEffect(() => {
@@ -305,10 +323,14 @@ export default function MetabolicCompass({
       return;
     }
     if (!prevCompassScreenActiveRef.current) {
-      setSelectedTimeframe(DEFAULT_COMPASS_TIMEFRAME);
+      if (isTfControlled && onTimeframeChange) {
+        onTimeframeChange(DEFAULT_COMPASS_TIMEFRAME);
+      } else if (!isTfControlled) {
+        setTimeframeInternal(DEFAULT_COMPASS_TIMEFRAME);
+      }
     }
     prevCompassScreenActiveRef.current = true;
-  }, [compassScreenActive]);
+  }, [compassScreenActive, isTfControlled, onTimeframeChange]);
 
   const compassHistoryKey = useMemo(
     () => historyFingerprint(dailyHistory, selectedTimeframe),
@@ -362,6 +384,18 @@ export default function MetabolicCompass({
     () => metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngle),
     [angleDeg, targetMetabolicAngle]
   );
+
+  const bezelBoxShadow = useMemo(() => {
+    const base = `
+            inset 0 1px 0 rgba(255,255,255,0.1),
+            inset 0 -1px 0 rgba(0,0,0,0.55),
+            0 20px 50px rgba(0,0,0,0.5),
+            0 4px 16px rgba(0,0,0,0.35)
+          `;
+    const z = typeof mapZoneColor === 'string' ? mapZoneColor.trim() : '';
+    if (!z) return base;
+    return `${base}, 0 0 26px ${z}, 0 0 48px ${z}`;
+  }, [mapZoneColor]);
 
   const suggestionMountedRef = useRef(false);
   const [displaySuggestion, setDisplaySuggestion] = useState(microSuggestionText);
@@ -577,12 +611,8 @@ export default function MetabolicCompass({
           borderRadius: '50%',
           background:
             'linear-gradient(155deg, rgba(58,64,76,0.5) 0%, rgba(22,24,32,0.92) 38%, rgba(10,11,16,1) 100%)',
-          boxShadow: `
-            inset 0 1px 0 rgba(255,255,255,0.1),
-            inset 0 -1px 0 rgba(0,0,0,0.55),
-            0 20px 50px rgba(0,0,0,0.5),
-            0 4px 16px rgba(0,0,0,0.35)
-          `,
+          boxShadow: bezelBoxShadow,
+          transition: 'box-shadow 0.55s ease',
         }}
       >
         <div
@@ -763,6 +793,7 @@ export default function MetabolicCompass({
         {displaySuggestion}
       </div>
 
+      {!hideMetabolicMapSection && (
       <div
         style={{
           width: '100%',
@@ -796,6 +827,7 @@ export default function MetabolicCompass({
           totalWindowDays={metabolicMapInputs.totalWindowDays}
         />
       </div>
+      )}
       </div>
     </div>
   );

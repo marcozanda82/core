@@ -1,5 +1,63 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { calculateMetabolicMapPosition } from './metabolicMapEngine';
+
+/** viewBox 0–100: stesso sistema di posizionamento del marker (50 ± x/2, 50 ∓ y/2). */
+function mapPointToSvgCoords(x, y) {
+  return { cx: 50 + x / 2, cy: 50 - y / 2 };
+}
+
+/**
+ * Traiettoria: segmenti con opacità crescente verso il presente (il passato è più tenue).
+ */
+function MetabolicMapTrajectory({ points }) {
+  if (points.length < 2) return null;
+  const n = points.length;
+  const lines = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    const t = (i + 1) / (n - 1);
+    const opacity = 0.14 + t * 0.46;
+    const { cx: x1, cy: y1 } = mapPointToSvgCoords(points[i].x, points[i].y);
+    const { cx: x2, cy: y2 } = mapPointToSvgCoords(points[i + 1].x, points[i + 1].y);
+    lines.push(
+      <line
+        key={`tr-${i}`}
+        x1={x1}
+        y1={y1}
+        x2={x2}
+        y2={y2}
+        stroke={`rgba(255,255,255,${opacity})`}
+        strokeWidth={0.55}
+        strokeLinecap="round"
+        strokeDasharray="3.2 2.4"
+        vectorEffect="nonScalingStroke"
+      />
+    );
+  }
+  return <g aria-hidden>{lines}</g>;
+}
+
+/** Freccia mini-bussola: 0° = Nord (verso −y SVG), coerente con la freccia principale. */
+function MetabolicMapCompassMarker({ cx, cy, angleDeg, gradientId, highAura }) {
+  return (
+    <g
+      transform={`translate(${cx},${cy}) rotate(${angleDeg})`}
+      className={highAura ? 'metabolic-map-arrow-pulse' : undefined}
+      style={
+        highAura
+          ? undefined
+          : { filter: 'drop-shadow(0 0 4px rgba(120, 210, 255, 0.35))' }
+      }
+    >
+      <polygon
+        points="0,-7.5 6.2,6.5 -6.2,6.5"
+        fill={`url(#${gradientId})`}
+        stroke="rgba(255,255,255,0.35)"
+        strokeWidth={0.35}
+        vectorEffect="nonScalingStroke"
+      />
+    </g>
+  );
+}
 
 const ZONE_LABELS = {
   green: 'Verde (Omeostasi)',
@@ -68,7 +126,13 @@ export default function MetabolicMap({
   glycemicInstability = 0,
   realSleepDays = 0,
   totalWindowDays = 0,
+  historyPath = null,
+  currentCompassAngle = null,
 }) {
+  const gradientId = useId().replace(/:/g, '');
+  const safeHistory =
+    Array.isArray(historyPath) && historyPath.length > 0 ? historyPath : null;
+
   const { x, y, finalAura, distance, zone, quadrant } = useMemo(
     () =>
       calculateMetabolicMapPosition({
@@ -80,8 +144,21 @@ export default function MetabolicMap({
     [energyBalance, trainingLoad, sleepHours, glycemicInstability],
   );
 
-  const leftPct = 50 + x / 2;
-  const topPct = 50 - y / 2;
+  const displayX = safeHistory ? safeHistory[safeHistory.length - 1].x : x;
+  const displayY = safeHistory ? safeHistory[safeHistory.length - 1].y : y;
+  const displayAura = safeHistory
+    ? safeHistory[safeHistory.length - 1].finalAura
+    : finalAura;
+
+  const leftPct = 50 + displayX / 2;
+  const topPct = 50 - displayY / 2;
+
+  const showCompassArrow =
+    currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle));
+  const arrowAngleDeg = showCompassArrow ? Number(currentCompassAngle) : 0;
+  const highAuraPulse = displayAura >= 45;
+
+  const showSvgLayer = Boolean(safeHistory || showCompassArrow);
 
   const t = finalAura / 100;
   const showAura = finalAura > 0.5;
@@ -93,7 +170,7 @@ export default function MetabolicMap({
   const gGlow = Math.round(120 * (1 - t * 0.85));
   const bGlow = Math.round(90 * (1 - t * 0.5));
 
-  const dotWrapperStyle = {
+  const markerWrapperStyle = {
     position: 'absolute',
     left: `${leftPct}%`,
     top: `${topPct}%`,
@@ -149,6 +226,17 @@ export default function MetabolicMap({
               filter: brightness(1.25);
             }
           }
+          @keyframes metabolicMapArrowGlowPulse {
+            0%, 100% {
+              filter: drop-shadow(0 0 5px rgba(255, 140, 110, 0.45)) drop-shadow(0 0 14px rgba(220, 70, 50, 0.25));
+            }
+            50% {
+              filter: drop-shadow(0 0 10px rgba(255, 160, 130, 0.75)) drop-shadow(0 0 22px rgba(240, 90, 60, 0.4));
+            }
+          }
+          .metabolic-map-arrow-pulse {
+            animation: metabolicMapArrowGlowPulse 2.1s ease-in-out infinite;
+          }
         `}
       </style>
 
@@ -176,6 +264,7 @@ export default function MetabolicMap({
             backgroundPosition: buildGridPosition(),
             opacity: 0.35,
             pointerEvents: 'none',
+            zIndex: 0,
           }}
         />
         <div
@@ -189,6 +278,7 @@ export default function MetabolicMap({
             marginLeft: -0.5,
             background: 'rgba(255,255,255,0.1)',
             pointerEvents: 'none',
+            zIndex: 0,
           }}
         />
         <div
@@ -202,25 +292,66 @@ export default function MetabolicMap({
             marginTop: -0.5,
             background: 'rgba(255,255,255,0.1)',
             pointerEvents: 'none',
+            zIndex: 0,
           }}
         />
 
-        <span style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left' }}>
+        {showSvgLayer && (
+          <svg
+            viewBox="0 0 100 100"
+            preserveAspectRatio="xMidYMid meet"
+            aria-hidden
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              zIndex: 4,
+              pointerEvents: 'none',
+            }}
+          >
+            <defs>
+              <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="rgba(255,255,255,0.98)" />
+                <stop offset="45%" stopColor="rgba(140, 220, 255, 0.88)" />
+                <stop offset="100%" stopColor="rgba(70, 170, 210, 0.75)" />
+              </linearGradient>
+            </defs>
+            {safeHistory ? <MetabolicMapTrajectory points={safeHistory} /> : null}
+            {showCompassArrow ? (
+              <MetabolicMapCompassMarker
+                {...mapPointToSvgCoords(displayX, displayY)}
+                angleDeg={arrowAngleDeg}
+                gradientId={gradientId}
+                highAura={highAuraPulse}
+              />
+            ) : null}
+          </svg>
+        )}
+
+        <span style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
           BURNOUT / CORTISOLO
         </span>
-        <span style={{ ...labelStyle, top: 8, right: 8, textAlign: 'right' }}>
+        <span style={{ ...labelStyle, top: 8, right: 8, textAlign: 'right', zIndex: 5 }}>
           INFIAMMAZIONE / BULK
         </span>
-        <span style={{ ...labelStyle, bottom: 8, left: 8, textAlign: 'left' }}>
+        <span style={{ ...labelStyle, bottom: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
           DEPERIMENTO / CATABOLISMO
         </span>
-        <span style={{ ...labelStyle, bottom: 8, right: 8, textAlign: 'right' }}>
+        <span style={{ ...labelStyle, bottom: 8, right: 8, textAlign: 'right', zIndex: 5 }}>
           FEGATO GRASSO / INSULINA
         </span>
 
-        <div style={dotWrapperStyle}>
-          <div style={dotInnerStyle} />
-        </div>
+        {!showSvgLayer && (
+          <div style={markerWrapperStyle}>
+            <div style={dotInnerStyle} />
+          </div>
+        )}
+        {showSvgLayer && !showCompassArrow && (
+          <div style={{ ...markerWrapperStyle, zIndex: 6 }}>
+            <div style={dotInnerStyle} />
+          </div>
+        )}
       </div>
 
       <div

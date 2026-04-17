@@ -74,7 +74,7 @@ import {
 } from './weeklyPlanning';
 import AddEventMenuGrid from './components/AddEventMenuGrid';
 import WeeklyPlanning from './components/WeeklyPlanning';
-import MetabolicCompass from './MetabolicCompass';
+import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import {
   evaluateAiDayCoach,
@@ -12225,7 +12225,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             boxSizing: 'border-box',
           }}
         >
-          <MetabolicCompass
+          <MetabolicUnifiedView
             dailyHistory={metabolicCompassDailyHistory}
             compassScreenActive={activeBottomTab === 'bussola'}
           />
