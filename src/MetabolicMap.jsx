@@ -7,52 +7,32 @@ function mapPointToSvgCoords(x, y) {
 }
 
 /**
- * Traiettoria giornaliera + collegamento finale alla media aggregata del periodo.
- * I segmenti storici restano più tenui per evidenziare che il punto principale è la media.
+ * Scia "impronte": punti giornalieri senza linee di collegamento.
+ * Il passato è più tenue e più piccolo, il presente più visibile.
  */
-function MetabolicMapTrajectory({ points, aggregateX, aggregateY }) {
+function MetabolicMapTrajectory({ points }) {
   if (!points.length) return null;
   const n = points.length;
-  const lines = [];
-  if (n >= 2) {
-    for (let i = 0; i < n - 1; i += 1) {
-      const t = (i + 1) / (n - 1);
-      const opacity = (0.12 + t * 0.23) * 0.35;
-      const { cx: x1, cy: y1 } = mapPointToSvgCoords(points[i].x, points[i].y);
-      const { cx: x2, cy: y2 } = mapPointToSvgCoords(points[i + 1].x, points[i + 1].y);
-      lines.push(
-        <line
-          key={`tr-${i}`}
-          x1={x1}
-          y1={y1}
-          x2={x2}
-          y2={y2}
-          stroke={`rgba(255,255,255,${opacity})`}
-          strokeWidth={0.55}
-          strokeLinecap="round"
-          strokeDasharray="3.2 2.4"
-          vectorEffect="nonScalingStroke"
-        />
-      );
-    }
+  const circles = [];
+  for (let i = 0; i < n; i += 1) {
+    const p = points[i];
+    const { cx, cy } = mapPointToSvgCoords(p.x, p.y);
+    const opacity = ((i + 1) / n) * 0.8;
+    const radius = 1 + (i / n) * 2;
+    circles.push(
+      <circle
+        key={`fp-${i}`}
+        cx={cx}
+        cy={cy}
+        r={radius}
+        fill={`rgba(220,245,255,${opacity})`}
+        stroke={`rgba(160,220,245,${Math.min(0.45, opacity)})`}
+        strokeWidth={0.2}
+        vectorEffect="nonScalingStroke"
+      />
+    );
   }
-  const { cx: hx, cy: hy } = mapPointToSvgCoords(points[n - 1].x, points[n - 1].y);
-  const { cx: ax, cy: ay } = mapPointToSvgCoords(aggregateX, aggregateY);
-  lines.push(
-    <line
-      key="tr-aggregate-link"
-      x1={hx}
-      y1={hy}
-      x2={ax}
-      y2={ay}
-      stroke="rgba(180,230,255,0.55)"
-      strokeWidth={0.7}
-      strokeLinecap="round"
-      strokeDasharray="2.2 2.2"
-      vectorEffect="nonScalingStroke"
-    />
-  );
-  return <g aria-hidden>{lines}</g>;
+  return <g aria-hidden>{circles}</g>;
 }
 
 /** Freccia mini-bussola: 0° = Nord (verso −y SVG), coerente con la freccia principale. */
@@ -163,17 +143,31 @@ export default function MetabolicMap({
     [energyBalance, trainingLoad, sleepHours, glycemicInstability],
   );
 
-  // Marker principale sempre ancorato al punto aggregato del periodo.
-  const displayX = x;
-  const displayY = y;
+  // Se presente la cronologia, il marker attuale è l'ultimo punto della scia ("testa" delle impronte).
+  const displayX = safeHistory ? safeHistory[safeHistory.length - 1].x : x;
+  const displayY = safeHistory ? safeHistory[safeHistory.length - 1].y : y;
   const displayAura = finalAura;
 
   const leftPct = 50 + displayX / 2;
   const topPct = 50 - displayY / 2;
 
+  const historyHeadingDeg = useMemo(() => {
+    if (!safeHistory || safeHistory.length < 2) return null;
+    const prev = safeHistory[safeHistory.length - 2];
+    const curr = safeHistory[safeHistory.length - 1];
+    const dx = curr.x - prev.x;
+    const dy = curr.y - prev.y;
+    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return null;
+    return (Math.atan2(dx, dy) * 180) / Math.PI;
+  }, [safeHistory]);
+
   const showCompassArrow =
-    currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle));
-  const arrowAngleDeg = showCompassArrow ? Number(currentCompassAngle) : 0;
+    (currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle))) ||
+    historyHeadingDeg != null;
+  const arrowAngleDeg =
+    currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle))
+      ? Number(currentCompassAngle)
+      : historyHeadingDeg ?? 0;
   const highAuraPulse = displayAura >= 45;
 
   const showSvgLayer = Boolean(safeHistory || showCompassArrow);
@@ -335,13 +329,7 @@ export default function MetabolicMap({
                 <stop offset="100%" stopColor="rgba(70, 170, 210, 0.75)" />
               </linearGradient>
             </defs>
-            {safeHistory ? (
-              <MetabolicMapTrajectory
-                points={safeHistory}
-                aggregateX={displayX}
-                aggregateY={displayY}
-              />
-            ) : null}
+            {safeHistory ? <MetabolicMapTrajectory points={safeHistory} /> : null}
             {showCompassArrow ? (
               <MetabolicMapCompassMarker
                 {...mapPointToSvgCoords(displayX, displayY)}
