@@ -12,6 +12,12 @@ import MetabolicCompass from './MetabolicCompass';
 import MetabolicMap from './MetabolicMap';
 
 const DEFAULT_TIMEFRAME = '7d';
+const METABOLIC_COMPASS_TIMEFRAMES = [
+  { value: '1d', label: 'IERI' },
+  { value: '7d', label: '7G' },
+  { value: '14d', label: '14G' },
+  { value: '30d', label: '30G' },
+];
 
 const RAD_TO_DEG = 180 / Math.PI;
 
@@ -154,6 +160,60 @@ export default function MetabolicUnifiedView({
       </button>
 
       <div
+        role="tablist"
+        aria-label="Periodo analisi"
+        className="metabolic-compass-timeframe"
+        style={{
+          position: 'relative',
+          zIndex: 25,
+          display: 'flex',
+          width: '100%',
+          maxWidth: 340,
+          padding: 3,
+          gap: 2,
+          margin: '52px auto 8px',
+          borderRadius: 12,
+          boxSizing: 'border-box',
+          background: 'rgba(255,255,255,0.04)',
+        }}
+      >
+        {METABOLIC_COMPASS_TIMEFRAMES.map(({ value, label }) => {
+          const active = selectedTimeframe === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSelectedTimeframe(value)}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: '8px 5px',
+                borderRadius: 9,
+                border: 'none',
+                margin: 0,
+                cursor: 'pointer',
+                fontSize: 10,
+                fontWeight: 650,
+                letterSpacing: '0.11em',
+                textTransform: 'uppercase',
+                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+                color: active ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.36)',
+                background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+                boxShadow: active ? '0 0 18px rgba(255,255,255,0.05)' : 'none',
+                transition:
+                  'background 0.35s ease, color 0.35s ease, box-shadow 0.35s ease',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div
         style={{
           position: 'relative',
           width: '100%',
@@ -234,6 +294,7 @@ export default function MetabolicUnifiedView({
               glycemicInstability={metabolicMapInputs.glycemicInstability}
               realSleepDays={metabolicMapInputs.realSleepDays}
               totalWindowDays={metabolicMapInputs.totalWindowDays}
+              selectedTimeframe={selectedTimeframe}
               historyPath={historyPath}
               currentCompassAngle={arrowRotationDeg}
             />

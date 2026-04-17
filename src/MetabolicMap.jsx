@@ -125,6 +125,7 @@ export default function MetabolicMap({
   glycemicInstability = 0,
   realSleepDays = 0,
   totalWindowDays = 0,
+  selectedTimeframe = '7d',
   historyPath = null,
   currentCompassAngle = null,
 }) {
@@ -261,7 +262,7 @@ export default function MetabolicMap({
 
       <div
         role="img"
-        aria-label={`Mappa metabolica: zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(effectiveDistance)}`}
+        aria-label={`Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(effectiveDistance)}`}
         style={{
           position: 'relative',
           width: '100%',
