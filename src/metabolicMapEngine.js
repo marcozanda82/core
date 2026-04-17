@@ -141,6 +141,44 @@ function computeMetabolicMapPoint(params = {}) {
 }
 
 /**
+ * Metadati geometrici su coordinate già definite (utile dopo smoothing EMA).
+ *
+ * @param {number} x
+ * @param {number} y
+ * @param {number} finalAura
+ */
+function computePointMetaFromCoords(x, y, finalAura) {
+  const sx = clamp(x, -100, 100);
+  const sy = clamp(y, -100, 100);
+  const distance = Math.hypot(sx, sy);
+
+  let zone = 'green';
+  if (distance > 70) {
+    zone = 'red';
+  } else if (distance > 35) {
+    zone = 'orange';
+  }
+
+  let quadrant = 'NE';
+  if (sx < 0 && sy >= 0) {
+    quadrant = 'NW';
+  } else if (sx >= 0 && sy < 0) {
+    quadrant = 'SE';
+  } else if (sx < 0 && sy < 0) {
+    quadrant = 'SW';
+  }
+
+  return {
+    x: sx,
+    y: sy,
+    finalAura: clamp(finalAura, 0, 100),
+    distance,
+    zone,
+    quadrant,
+  };
+}
+
+/**
  * Calcola la posizione dell'utente sulla Mappa Metabolica.
  * Restituisce coordinate corrette, intensita' dell'aura e metadati di lettura.
  */
@@ -165,8 +203,8 @@ export function calculateMetabolicMapPosition(params = {}) {
 export function computeMetabolicMapHistory(dailyHistory, timeframe = '7d') {
   const slice = getWindowSlice(dailyHistory, timeframe);
   if (!slice.length) return [];
-  const EMA_ALPHA = 0.6;
-  const EMA_PREV_WEIGHT = 0.4;
+  const EMA_ALPHA = 0.25;
+  const EMA_PREV_WEIGHT = 0.75;
 
   const kcalBalances = slice.map((d) => Number(d.kcalBalance) || 0);
   const meanKcal = arithmeticMean(kcalBalances);
@@ -208,24 +246,19 @@ export function computeMetabolicMapHistory(dailyHistory, timeframe = '7d') {
     const filteredY = prevFilteredY == null
       ? point.y
       : (point.y * EMA_ALPHA) + (prevFilteredY * EMA_PREV_WEIGHT);
-
-    const distance = Math.hypot(filteredX, filteredY);
-    let zone = 'green';
-    if (distance > 70) {
-      zone = 'red';
-    } else if (distance > 35) {
-      zone = 'orange';
-    }
+    const smoothed = computePointMetaFromCoords(filteredX, filteredY, point.finalAura);
 
     prevFilteredX = filteredX;
     prevFilteredY = filteredY;
 
     out.push({
-      x: filteredX,
-      y: filteredY,
+      x: smoothed.x,
+      y: smoothed.y,
       date: day.date,
-      zone,
-      finalAura: point.finalAura,
+      zone: smoothed.zone,
+      finalAura: smoothed.finalAura,
+      distance: smoothed.distance,
+      quadrant: smoothed.quadrant,
     });
   }
 

@@ -142,11 +142,18 @@ export default function MetabolicMap({
       }),
     [energyBalance, trainingLoad, sleepHours, glycemicInstability],
   );
+  const finalPoint = safeHistory ? safeHistory[safeHistory.length - 1] : null;
+  const effectiveX = finalPoint?.x ?? x;
+  const effectiveY = finalPoint?.y ?? y;
+  const effectiveZone = finalPoint?.zone ?? zone;
+  const effectiveQuadrant = finalPoint?.quadrant ?? quadrant;
+  const effectiveDistance = finalPoint?.distance ?? distance;
+  const effectiveAura = finalPoint?.finalAura ?? finalAura;
 
-  // Se presente la cronologia, il marker attuale è l'ultimo punto della scia ("testa" delle impronte).
-  const displayX = safeHistory ? safeHistory[safeHistory.length - 1].x : x;
-  const displayY = safeHistory ? safeHistory[safeHistory.length - 1].y : y;
-  const displayAura = finalAura;
+  // Marker e pannello leggono la stessa sorgente finale per evitare disallineamenti visivi/testuali.
+  const displayX = effectiveX;
+  const displayY = effectiveY;
+  const displayAura = effectiveAura;
 
   const leftPct = 50 + displayX / 2;
   const topPct = 50 - displayY / 2;
@@ -172,8 +179,8 @@ export default function MetabolicMap({
 
   const showSvgLayer = Boolean(safeHistory || showCompassArrow);
 
-  const t = finalAura / 100;
-  const showAura = finalAura > 0.5;
+  const t = effectiveAura / 100;
+  const showAura = effectiveAura > 0.5;
   const auraR0 = 6 + t * 28;
   const auraR1 = 10 + t * 48;
   const o0 = 0.15 + t * 0.55;
@@ -254,7 +261,7 @@ export default function MetabolicMap({
 
       <div
         role="img"
-        aria-label={`Mappa metabolica: zona ${ZONE_LABELS[zone]}, quadrante ${QUADRANT_RISK_LABELS[quadrant]}, distanza ${Math.round(distance)}`}
+        aria-label={`Mappa metabolica: zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(effectiveDistance)}`}
         style={{
           position: 'relative',
           width: '100%',
@@ -379,12 +386,12 @@ export default function MetabolicMap({
         }}
       >
         <div style={{ fontWeight: 600, marginBottom: 4 }}>
-          Zona attuale: {ZONE_LABELS[zone]} — Rischio: {QUADRANT_RISK_LABELS[quadrant]}
+          Zona attuale: {ZONE_LABELS[effectiveZone]} — Rischio: {QUADRANT_RISK_LABELS[effectiveQuadrant]}
         </div>
         <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
-          Distanza dal centro: {distance.toFixed(1)} · Aura glicemica: {Math.round(finalAura)}
+          Distanza dal centro: {effectiveDistance.toFixed(1)} · Aura glicemica: {Math.round(effectiveAura)}
         </div>
-        {finalAura > 50 && (
+        {effectiveAura > 50 && (
           <div
             style={{
               marginTop: 10,
