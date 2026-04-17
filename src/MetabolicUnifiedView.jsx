@@ -6,7 +6,8 @@ import {
 } from './metabolicDirection';
 import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
 import { calculateMetabolicMapPosition, computeMetabolicMapHistory } from './metabolicMapEngine';
-import { computeMetabolicMapInputsFromDailyHistory } from './metabolicMapPeriodInputs';
+import { computeMetabolicMapInputsAndAudit } from './metabolicMapPeriodInputs';
+import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
 import MetabolicMap from './MetabolicMap';
 
@@ -74,8 +75,8 @@ export default function MetabolicUnifiedView({
     [dailyHistory, selectedTimeframe]
   );
 
-  const metabolicMapInputs = useMemo(
-    () => computeMetabolicMapInputsFromDailyHistory(dailyHistory, selectedTimeframe),
+  const { mapInputs: metabolicMapInputs, rawDetails: metabolicMapRawDetails } = useMemo(
+    () => computeMetabolicMapInputsAndAudit(dailyHistory, selectedTimeframe),
     [compassHistoryKey]
   );
 
@@ -233,6 +234,10 @@ export default function MetabolicUnifiedView({
               totalWindowDays={metabolicMapInputs.totalWindowDays}
               historyPath={historyPath}
               currentCompassAngle={arrowRotationDeg}
+            />
+            <MetabolicDataAudit
+              rawDetails={metabolicMapRawDetails}
+              mapInputs={metabolicMapInputs}
             />
           </div>
         </div>

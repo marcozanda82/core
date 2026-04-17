@@ -8,6 +8,23 @@ const TIMEFRAME_DAY_WINDOW = {
   '30d': 30,
 };
 
+const EMPTY_MAP_INPUTS = {
+  energyBalance: 0,
+  trainingLoad: 0,
+  sleepHours: 8,
+  glycemicInstability: 0,
+  realSleepDays: 0,
+  totalWindowDays: 0,
+};
+
+const EMPTY_RAW_DETAILS = {
+  meanKcal: null,
+  meanTraining01: null,
+  sleepRegisteredMean: null,
+  realSleepDays: 0,
+  totalWindowDays: 0,
+};
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -71,23 +88,21 @@ function trainingLoadAxisFromMean(mean01to100) {
 }
 
 /**
- * Input per {@link calculateMetabolicMapPosition}: medie sul periodo bussola + instabilità glicemica teorica.
- * L’instabilità cresce con sonno basso, surplus calorico medio e variabilità del bilancio giornaliero.
+ * Stesso slice e stessa matematica di {@link computeMetabolicMapInputsFromDailyHistory}, con medie diario esposte per audit.
  *
  * @param {Array<{ kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null }>} dailyHistory
  * @param {'1d' | '7d' | '14d' | '30d'} timeframe
- * @returns {{ energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number }}
+ * @returns {{
+ *   mapInputs: { energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number },
+ *   rawDetails: { meanKcal: number | null, meanTraining01: number | null, sleepRegisteredMean: number | null, realSleepDays: number, totalWindowDays: number }
+ * }}
  */
-export function computeMetabolicMapInputsFromDailyHistory(dailyHistory, timeframe = '7d') {
+export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d') {
   const slice = getWindowSlice(dailyHistory, timeframe);
   if (slice.length === 0) {
     return {
-      energyBalance: 0,
-      trainingLoad: 0,
-      sleepHours: 8,
-      glycemicInstability: 0,
-      realSleepDays: 0,
-      totalWindowDays: 0,
+      mapInputs: { ...EMPTY_MAP_INPUTS },
+      rawDetails: { ...EMPTY_RAW_DETAILS },
     };
   }
 
@@ -109,6 +124,10 @@ export function computeMetabolicMapInputsFromDailyHistory(dailyHistory, timefram
   const realSleepDays = rawSleep.filter((h) => h != null).length;
   const totalWindowDays = slice.length;
 
+  const knownSleepHours = rawSleep.filter((h) => h != null);
+  const sleepRegisteredMean =
+    knownSleepHours.length > 0 ? arithmeticMean(knownSleepHours) : null;
+
   const filledSleep = imputeSleepHoursSeries(rawSleep);
   const sleepHours = clamp(arithmeticMean(filledSleep), 0, 12);
 
@@ -122,11 +141,32 @@ export function computeMetabolicMapInputsFromDailyHistory(dailyHistory, timefram
   const glycemicInstability = clamp(glycemicRaw * 100, 0, 100);
 
   return {
-    energyBalance,
-    trainingLoad,
-    sleepHours,
-    glycemicInstability,
-    realSleepDays,
-    totalWindowDays,
+    mapInputs: {
+      energyBalance,
+      trainingLoad,
+      sleepHours,
+      glycemicInstability,
+      realSleepDays,
+      totalWindowDays,
+    },
+    rawDetails: {
+      meanKcal,
+      meanTraining01: meanTraining,
+      sleepRegisteredMean,
+      realSleepDays,
+      totalWindowDays,
+    },
   };
+}
+
+/**
+ * Input per {@link calculateMetabolicMapPosition}: medie sul periodo bussola + instabilità glicemica teorica.
+ * L’instabilità cresce con sonno basso, surplus calorico medio e variabilità del bilancio giornaliero.
+ *
+ * @param {Array<{ kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null }>} dailyHistory
+ * @param {'1d' | '7d' | '14d' | '30d'} timeframe
+ * @returns {{ energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number }}
+ */
+export function computeMetabolicMapInputsFromDailyHistory(dailyHistory, timeframe = '7d') {
+  return computeMetabolicMapInputsAndAudit(dailyHistory, timeframe).mapInputs;
 }
