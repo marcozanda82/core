@@ -220,6 +220,7 @@ export function computeMetabolicMapHistory(dailyHistory, timeframe = '7d') {
   const out = [];
   let prevFilteredX = null;
   let prevFilteredY = null;
+  let prevFilteredSleepHours = null;
   for (let i = 0; i < slice.length; i += 1) {
     const day = slice[i];
     const kcal = kcalBalances[i];
@@ -246,10 +247,14 @@ export function computeMetabolicMapHistory(dailyHistory, timeframe = '7d') {
     const filteredY = prevFilteredY == null
       ? point.y
       : (point.y * EMA_ALPHA) + (prevFilteredY * EMA_PREV_WEIGHT);
+    const filteredSleepHours = prevFilteredSleepHours == null
+      ? sleepHours
+      : (sleepHours * EMA_ALPHA) + (prevFilteredSleepHours * EMA_PREV_WEIGHT);
     const smoothed = computePointMetaFromCoords(filteredX, filteredY, point.finalAura);
 
     prevFilteredX = filteredX;
     prevFilteredY = filteredY;
+    prevFilteredSleepHours = filteredSleepHours;
 
     out.push({
       x: smoothed.x,
@@ -259,6 +264,7 @@ export function computeMetabolicMapHistory(dailyHistory, timeframe = '7d') {
       finalAura: smoothed.finalAura,
       distance: smoothed.distance,
       quadrant: smoothed.quadrant,
+      sleepHours: clamp(filteredSleepHours, 0, 12),
     });
   }
 

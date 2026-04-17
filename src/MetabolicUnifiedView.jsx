@@ -84,6 +84,7 @@ export default function MetabolicUnifiedView({
     () => computeMetabolicMapHistory(dailyHistory, selectedTimeframe),
     [compassHistoryKey]
   );
+  const finalHistoryPoint = historyPath.length ? historyPath[historyPath.length - 1] : null;
 
   // Bussola: resta ancorata al vettore originale del motore su dailyHistory grezza.
   const { angleDeg } = useMemo(() => {
@@ -239,6 +240,7 @@ export default function MetabolicUnifiedView({
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}
               mapInputs={metabolicMapInputs}
+              historyPoint={finalHistoryPoint}
             />
           </div>
         </div>

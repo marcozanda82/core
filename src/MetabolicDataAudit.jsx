@@ -36,14 +36,16 @@ const tdMuted = {
  * @param {{
  *   rawDetails: { meanKcal: number | null, meanTraining01: number | null, sleepRegisteredMean: number | null, realSleepDays: number, totalWindowDays: number } | null | undefined,
  *   mapInputs: { energyBalance: number, trainingLoad: number, sleepHours: number, realSleepDays?: number, totalWindowDays?: number } | null | undefined,
+ *   historyPoint?: { x?: number, y?: number, sleepHours?: number } | null | undefined,
  * }} props
  */
-export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
+export default function MetabolicDataAudit({ rawDetails, mapInputs, historyPoint }) {
   const [expanded, setExpanded] = useState(false);
 
   const rows = useMemo(() => {
     const rd = rawDetails || {};
     const mi = mapInputs || {};
+    const hp = historyPoint || {};
     const tw = rd.totalWindowDays ?? 0;
     const rs = rd.realSleepDays ?? 0;
 
@@ -53,22 +55,46 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
       rd.sleepRegisteredMean != null && Number.isFinite(rd.sleepRegisteredMean)
         ? `${Number(rd.sleepRegisteredMean).toFixed(1)} h`
         : 'N/D';
-    const sleepUsed = `${Number(mi.sleepHours ?? 8).toFixed(1)} h`;
+    const sleepUsedVal =
+      hp.sleepHours != null && Number.isFinite(Number(hp.sleepHours))
+        ? Number(hp.sleepHours)
+        : Number(mi.sleepHours ?? 8);
+    const sleepUsed = `${sleepUsedVal.toFixed(1)} h`;
     let sleepNote = '—';
     if (!hasWindow || rs === 0 || rs < tw) {
       sleepNote = 'Stima Default';
     }
+    if (hp.sleepHours != null && Number.isFinite(Number(hp.sleepHours))) {
+      sleepNote = "Valore d'inerzia (EMA)";
+    }
 
     const kcalReg = hasWindow && rd.meanKcal != null ? `${Math.round(rd.meanKcal)} kcal/d` : 'N/D';
-    const kcalUsed = `${Number(mi.energyBalance ?? 0).toFixed(1)}`;
-    const kcalNote = hasWindow ? 'Normalizzato (kcal/5)' : '—';
+    const kcalUsedVal =
+      hp.x != null && Number.isFinite(Number(hp.x)) ? Number(hp.x) : Number(mi.energyBalance ?? 0);
+    const kcalUsed = `${kcalUsedVal.toFixed(1)}`;
+    const kcalNote =
+      hp.x != null && Number.isFinite(Number(hp.x))
+        ? "Valore d'inerzia (EMA)"
+        : hasWindow
+          ? 'Normalizzato (kcal/5)'
+          : '—';
 
     const trainReg =
       hasWindow && rd.meanTraining01 != null
         ? `${Number(rd.meanTraining01).toFixed(1)} /100`
         : 'N/D';
-    const trainUsed = `${Number(mi.trainingLoad ?? 0).toFixed(1)}`;
-    const trainNote = hasWindow ? 'Normalizzato (0 = -54)' : '—';
+    // y in cronologia è già nel sistema metabolico (non in coordinate CSS top), quindi è allineato al marker.
+    const trainUsedVal =
+      hp.y != null && Number.isFinite(Number(hp.y))
+        ? Number(hp.y)
+        : Number(mi.trainingLoad ?? 0);
+    const trainUsed = `${trainUsedVal.toFixed(1)}`;
+    const trainNote =
+      hp.y != null && Number.isFinite(Number(hp.y))
+        ? "Valore d'inerzia (EMA)"
+        : hasWindow
+          ? 'Normalizzato (0 = -54)'
+          : '—';
 
     return [
       { key: 'sleep', metric: 'Sonno', registered: sleepReg, used: sleepUsed, note: sleepNote },
@@ -81,7 +107,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
         note: trainNote,
       },
     ];
-  }, [rawDetails, mapInputs]);
+  }, [rawDetails, mapInputs, historyPoint]);
 
   return (
     <div style={{ marginTop: 14, width: '100%', maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
