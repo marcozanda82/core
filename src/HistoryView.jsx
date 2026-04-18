@@ -72,7 +72,12 @@ export default function HistoryView({
   /** Stessa logica dell’import CSV: una riga per data, campi BIA uniti se erano su righe duplicate. */
   const mergedForDisplay = useMemo(() => {
     const slim = bodyMetricsHistory
-      .filter((r) => r && typeof r.date === 'string')
+      .filter((r) => {
+        if (!r || typeof r !== 'object') return false;
+        const w = Number(r.weight);
+        if (!Number.isFinite(w) || w <= 0) return false;
+        return Number(r.timestamp) > 0 || typeof r.date === 'string';
+      })
       .map((r) => {
         const muscle =
           r.muscle != null && r.muscle !== ''

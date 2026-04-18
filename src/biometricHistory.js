@@ -33,45 +33,85 @@ function hasNumericValue(v) {
 }
 
 /**
- * Unisce righe CSV con la stessa data (YYYY-MM-DD): compone un solo record per giorno,
- * riempiendo i campi mancanti dalle altre righe (es. una riga solo peso + una riga BIA).
- * Ordine di merge: righe ordinate per `timestamp` crescente; per ogni campo si mantiene il primo valore valido,
- * poi si integrano i null con le righe successive.
+ * Chiave giorno assoluta YYYY-MM-DD: da `timestamp` (UTC calendar day) oppure parsing della stringa `date`
+ * (es. "03-01-2026 09:26:41" o ISO).
  *
- * @param {Array<Record<string, unknown>>} parsedRows righe tipo `{ date, timestamp, weight, bodyFat?, muscle?, water?, visceral? }`
- * @returns {Array<Record<string, unknown>>}
+ * @param {Record<string, unknown>} row
+ * @returns {string | null}
+ */
+export function calendarDayKeyFromRow(row) {
+  const ts = Number(row?.timestamp);
+  if (Number.isFinite(ts) && ts > 0) {
+    const d = new Date(ts);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toISOString().split('T')[0];
+    }
+  }
+  const raw = row?.date;
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  const isoStart = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoStart) return isoStart[1];
+  const dm = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})/);
+  if (dm) {
+    const dd = dm[1].padStart(2, '0');
+    const mm = dm[2].padStart(2, '0');
+    return `${dm[3]}-${mm}-${dd}`;
+  }
+  return null;
+}
+
+function pickFirstNumeric(row, keys) {
+  for (let k = 0; k < keys.length; k += 1) {
+    const key = keys[k];
+    if (hasNumericValue(row[key])) return Number(row[key]);
+  }
+  return null;
+}
+
+function mergeMetricPair(base, r, outKey, sourceKeys) {
+  if (pickFirstNumeric(base, sourceKeys) != null) return;
+  const v = pickFirstNumeric(r, sourceKeys);
+  if (v != null) base[outKey] = v;
+}
+
+/**
+ * Unisce righe con lo stesso giorno di calendario: la chiave è {@link calendarDayKeyFromRow} (ignora ora nel campo testuale `date`).
+ * Riempie i null con valori validi dalle altre righe dello stesso giorno.
+ *
+ * @param {Array<Record<string, unknown>>} parsedRows righe tipo `{ date, timestamp, weight, bodyFat?, muscle?, ... }`
+ * @returns {Array<Record<string, unknown>>} una riga per dayKey; `date` sempre `YYYY-MM-DD`.
  */
 export function mergeDuplicateBiometrics(parsedRows) {
   if (!Array.isArray(parsedRows) || parsedRows.length === 0) return [];
 
-  const byDate = new Map();
+  const byDay = new Map();
   for (const row of parsedRows) {
-    const d = row?.date;
-    if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-    if (!byDate.has(d)) byDate.set(d, []);
-    byDate.get(d).push(row);
+    const dayKey = calendarDayKeyFromRow(row);
+    if (!dayKey) continue;
+    if (!byDay.has(dayKey)) byDay.set(dayKey, []);
+    byDay.get(dayKey).push(row);
   }
 
   const out = [];
-  for (const [, rows] of byDate) {
+  for (const [dayKey, rows] of byDay) {
     if (rows.length === 1) {
-      out.push(rows[0]);
+      out.push({ ...rows[0], date: dayKey });
       continue;
     }
     const sorted = [...rows].sort(
       (a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0),
     );
-    const base = { ...sorted[0] };
+    const base = { ...sorted[0], date: dayKey };
     for (let i = 1; i < sorted.length; i += 1) {
       const r = sorted[i];
-      if (!hasNumericValue(base.weight) && hasNumericValue(r.weight)) {
+      if (pickFirstNumeric(base, ['weight']) == null && pickFirstNumeric(r, ['weight']) != null) {
         base.weight = Number(r.weight);
       }
-      for (const key of ['bodyFat', 'muscle', 'water', 'visceral']) {
-        if (!hasNumericValue(base[key]) && hasNumericValue(r[key])) {
-          base[key] = Number(r[key]);
-        }
-      }
+      mergeMetricPair(base, r, 'bodyFat', ['bodyFat']);
+      mergeMetricPair(base, r, 'muscle', ['muscle', 'muscleMass']);
+      mergeMetricPair(base, r, 'water', ['water', 'waterPercentage']);
+      mergeMetricPair(base, r, 'visceral', ['visceral', 'visceralFat']);
       base.timestamp = Math.max(Number(base.timestamp) || 0, Number(r.timestamp) || 0);
     }
     out.push(base);
