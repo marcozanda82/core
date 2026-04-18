@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { METABOLIC_GOAL } from './metabolicDirection';
 import { historyFingerprint } from './metabolicDirectionEngine';
+import { getStructuralBaselineOffsetFromHistory } from './biometricHistory';
 import {
   calculateBaselineOffset,
   calculateMetabolicMapPosition,
@@ -63,13 +64,15 @@ function IconCompassSwitch() {
  * Bussola + mappa metabolica in un unico flusso: traiettoria storica, mini-freccia allineata alla bussola,
  * alone bezel dalla zona dell’ultimo giorno della finestra.
  *
- * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null }>, compassScreenActive?: boolean }} props
+ * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null }>, bodyMetricsHistory?: Array<Record<string, unknown>>, compassScreenActive?: boolean }} props
  */
 export default function MetabolicUnifiedView({
   dailyHistory: dailyHistoryProp = [],
+  bodyMetricsHistory: bodyMetricsHistoryProp = [],
   compassScreenActive = true,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
+  const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
   const [viewMode, setViewMode] = useState('compass');
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_TIMEFRAME);
@@ -85,9 +88,11 @@ export default function MetabolicUnifiedView({
   );
 
   const baselineOffset = useMemo(() => {
+    const fromScale = getStructuralBaselineOffsetFromHistory(bodyMetricsHistory);
+    if (fromScale) return fromScale;
     const biometrics = getLastBiometricData(dailyHistory);
     return calculateBaselineOffset(biometrics);
-  }, [dailyHistory]);
+  }, [bodyMetricsHistory, dailyHistory]);
 
   const mapZoneColor = useMemo(() => {
     const { zone } = calculateMetabolicMapPosition({

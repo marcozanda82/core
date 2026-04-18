@@ -76,6 +76,7 @@ import AddEventMenuGrid from './components/AddEventMenuGrid';
 import WeeklyPlanning from './components/WeeklyPlanning';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
+import { recalculateUserTargets } from './targetsEngine';
 import {
   evaluateAiDayCoach,
   consumeCoachPeriod,
@@ -3754,6 +3755,49 @@ export default function SalaComandi() {
     [auth, db, userTargets]
   );
 
+  /**
+   * TDEE + macro da ultima pesata (Mifflin o Katch) e propagazione su Firebase / stato locale.
+   * @returns {Promise<{ kcal: number, prot: number, carb: number, fat: number } | null>}
+   */
+  const applyAutomaticTargetRecalibration = useCallback(
+    async (latestRecord) => {
+      if (!latestRecord || typeof latestRecord !== 'object') return null;
+      const w = Number(latestRecord.weight);
+      if (!Number.isFinite(w) || w <= 0) return null;
+      const uid = auth.currentUser?.uid;
+      if (!uid) return null;
+      try {
+        const targets = recalculateUserTargets(latestRecord, userProfile);
+        await update(ref(db, `users/${uid}/profile_targets`), {
+          'targets/kcal': targets.kcal,
+          'targets/prot': targets.prot,
+          'targets/carb': targets.carb,
+          'targets/fat': targets.fat,
+          'targets/fatTotal': targets.fat,
+        });
+        setUserTargets((prev) => ({
+          ...prev,
+          kcal: targets.kcal,
+          prot: targets.prot,
+          carb: targets.carb,
+          fat: targets.fat,
+          fatTotal: targets.fat,
+          water: targets.water,
+        }));
+        return {
+          kcal: targets.kcal,
+          prot: targets.prot,
+          carb: targets.carb,
+          fat: targets.fat,
+        };
+      } catch (err) {
+        console.warn('Ricalibrazione automatica TDEE:', err);
+        return null;
+      }
+    },
+    [auth, db, userProfile]
+  );
+
   const handleSaveBodyMetrics = useCallback(async () => {
     const w = parseFloat(String(inputWeight).replace(',', '.'));
     if (!Number.isFinite(w) || w <= 0) {
@@ -3788,8 +3832,10 @@ export default function SalaComandi() {
       setBodyMetricsSaveToast(true);
       setTimeout(() => setBodyMetricsSaveToast(false), 3500);
 
+      const recalTargets = await applyAutomaticTargetRecalibration(payload);
+
       try {
-        const baseK = userTargets?.kcal ?? 2000;
+        const baseK = recalTargets?.kcal ?? userTargets?.kcal ?? 2000;
         const historyForPred = (bodyMetricsHistory || []).filter(
           (e) => metricEntryToIsoDay(e) !== weighDate
         );
@@ -3833,7 +3879,87 @@ export default function SalaComandi() {
     fullHistory,
     userTargets?.kcal,
     handleUpdateTDEE,
+    applyAutomaticTargetRecalibration,
   ]);
+
+  const handleQuickWeighInFromHistory = useCallback(
+    async ({ weight, bodyFat, muscle, water, visceral }) => {
+      const w = Number(weight);
+      if (!Number.isFinite(w) || w <= 0) return;
+      const currentUser = auth.currentUser;
+      if (!currentUser?.uid) {
+        alert('Accedi per registrare la pesata.');
+        return;
+      }
+      const uid = currentUser.uid;
+      const weighDate = getTodayString();
+      const payload = {
+        weight: w,
+        timestamp: Date.now(),
+        date: weighDate,
+      };
+      if (bodyFat != null) payload.bodyFat = bodyFat;
+      if (muscle != null) payload.muscle = muscle;
+      if (water != null) payload.water = water;
+      if (visceral != null) payload.visceral = visceral;
+      const profileUpdates = { 'profile/weight': w };
+      if (bodyFat != null) profileUpdates['profile/bodyFat'] = bodyFat;
+      try {
+        await update(ref(db, `users/${uid}/profile_targets`), profileUpdates);
+        await push(ref(db, `users/${uid}/body_metrics`), payload);
+        setUserProfile((prev) => ({ ...prev, weight: w, ...(bodyFat != null ? { bodyFat } : {}) }));
+        setBodyMetricsSaveToast(true);
+        setTimeout(() => setBodyMetricsSaveToast(false), 3500);
+
+        const recalTargets = await applyAutomaticTargetRecalibration(payload);
+
+        try {
+          const baseK = recalTargets?.kcal ?? userTargets?.kcal ?? 2000;
+          const historyForPred = (bodyMetricsHistory || []).filter(
+            (e) => metricEntryToIsoDay(e) !== weighDate
+          );
+          const predicted = getEndOfDayPredictedWeightForCalibration({
+            fullHistory,
+            bodyMetricsHistory: historyForPred,
+            baseTdeeKcal: baseK,
+            targetIsoDate: weighDate,
+          });
+          if (predicted != null && Number.isFinite(predicted)) {
+            const errorKg = w - predicted;
+            const calRef = ref(db, `users/${uid}/predictive_body_calibration`);
+            const calSnap = await get(calRef);
+            const prev = calSnap.exists() ? calSnap.val() : {};
+            let errs = Array.isArray(prev.errors) ? [...prev.errors] : [];
+            errs = errs.filter((e) => e && e.date !== weighDate);
+            errs.push({ date: weighDate, errorKg, actual: w, predicted, ts: Date.now() });
+            errs = errs.slice(-12);
+            await set(calRef, { errors: errs, updatedAt: Date.now() });
+            const ev = evaluatePersistentTdeeCalibration(errs);
+            if (ev.shouldAdjust) {
+              const newK = Math.round(baseK + ev.suggestedDeltaKcal);
+              if (newK >= 800 && newK <= 12000) {
+                await handleUpdateTDEE(newK);
+              }
+            }
+          }
+        } catch (calErr) {
+          console.warn('Motore predittivo / calibrazione TDEE:', calErr);
+        }
+      } catch (err) {
+        console.error('Salvataggio pesata rapida:', err);
+        alert('Errore durante il salvataggio. Riprova.');
+      }
+    },
+    [
+      auth,
+      db,
+      bodyMetricsHistory,
+      fullHistory,
+      userTargets?.kcal,
+      handleUpdateTDEE,
+      applyAutomaticTargetRecalibration,
+    ]
+  );
 
   useEffect(() => {
     if (!showWeightModal) return;
@@ -3917,6 +4043,28 @@ export default function SalaComandi() {
           batch[push(metricsRef).key] = entry;
         }
         await update(metricsRef, batch);
+
+        let latest = payloads[0];
+        for (let i = 1; i < payloads.length; i += 1) {
+          if (payloads[i].timestamp > latest.timestamp) latest = payloads[i];
+        }
+        await applyAutomaticTargetRecalibration({
+          weight: latest.weight,
+          bodyFat: latest.bodyFat,
+          muscle: latest.muscle,
+          water: latest.water,
+          visceral: latest.visceral,
+          date: latest.date,
+          timestamp: latest.timestamp,
+        });
+        setUserProfile((prev) => ({
+          ...prev,
+          weight: latest.weight,
+          ...(latest.bodyFat != null && Number.isFinite(Number(latest.bodyFat))
+            ? { bodyFat: latest.bodyFat }
+            : {}),
+        }));
+
         alert(`✅ Importazione completata! ${payloads.length} misurazioni salvate nel database.`);
       } catch (err) {
         console.error('Errore importazione CSV body metrics:', err);
@@ -12195,6 +12343,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}>
           <LongevityView
             data={longevityData}
+            minimalOnly={false}
             showPriorityFocus
             userAge={userAge}
             bodyMetricsHistory={bodyMetricsHistory}
@@ -12205,6 +12354,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             onUpdateTDEE={handleUpdateTDEE}
             tdeeHistory={tdeeHistory}
             predictionCalibration={predictiveCalibration}
+            onBalanceCsvImport={() => csvInputRef.current?.click()}
+            onQuickWeighInSubmit={handleQuickWeighInFromHistory}
           />
         </div>
       )}
@@ -12227,6 +12378,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         >
           <MetabolicUnifiedView
             dailyHistory={metabolicCompassDailyHistory}
+            bodyMetricsHistory={bodyMetricsHistory}
             compassScreenActive={activeBottomTab === 'bussola'}
           />
         </div>
@@ -15607,6 +15759,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             <div style={{ marginBottom: '32px', color: '#e8e8e8' }}>
               <LongevityView
                 data={longevityEngineScore}
+                minimalOnly={false}
                 showPriorityFocus={false}
                 userAge={userAge}
                 bodyMetricsHistory={bodyMetricsHistory}
@@ -15617,6 +15770,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 onUpdateTDEE={handleUpdateTDEE}
                 tdeeHistory={tdeeHistory}
                 predictionCalibration={predictiveCalibration}
+                onBalanceCsvImport={() => csvInputRef.current?.click()}
+                onQuickWeighInSubmit={handleQuickWeighInFromHistory}
               />
             </div>
 

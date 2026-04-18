@@ -29,6 +29,7 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { AlcoholRecoveryComposedChart } from './LifestyleTelemetryCharts';
+import HistoryView from './HistoryView';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -846,6 +847,10 @@ export default function LongevityView({
   tdeeHistory = [],
   /** Errori predizione vs pesate reali (`predictive_body_calibration.errors` su Firebase) */
   predictionCalibration = null,
+  /** Apre file picker CSV bilancia (stesso handler del profilo) */
+  onBalanceCsvImport = null,
+  /** Salva pesata rapida da HistoryView (Firebase + ricalibrazione) */
+  onQuickWeighInSubmit = null,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const [telemetryTab, setTelemetryTab] = useState('fisiologia');
@@ -1243,6 +1248,7 @@ export default function LongevityView({
         {[
           { id: 'fisiologia', label: 'Fisiologia' },
           { id: 'stile', label: 'Stile di vita' },
+          { id: 'bilancia', label: 'Bilancia' },
         ].map(({ id, label }) => {
           const active = telemetryTab === id;
           return (
@@ -1726,6 +1732,14 @@ export default function LongevityView({
             />
           </div>
         </div>
+      )}
+
+      {telemetryTab === 'bilancia' && (
+        <HistoryView
+          bodyMetricsHistory={bodyMetricsHistory}
+          onImportCsvClick={onBalanceCsvImport || undefined}
+          onSubmitQuickWeighIn={onQuickWeighInSubmit || undefined}
+        />
       )}
 
     </div>
