@@ -12354,7 +12354,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             onUpdateTDEE={handleUpdateTDEE}
             tdeeHistory={tdeeHistory}
             predictionCalibration={predictiveCalibration}
-            onBalanceCsvImport={() => csvInputRef.current?.click()}
+            onBalanceCsvImport={handleCSVUpload}
             onQuickWeighInSubmit={handleQuickWeighInFromHistory}
           />
         </div>
@@ -15770,7 +15770,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 onUpdateTDEE={handleUpdateTDEE}
                 tdeeHistory={tdeeHistory}
                 predictionCalibration={predictiveCalibration}
-                onBalanceCsvImport={() => csvInputRef.current?.click()}
+                onBalanceCsvImport={handleCSVUpload}
                 onQuickWeighInSubmit={handleQuickWeighInFromHistory}
               />
             </div>

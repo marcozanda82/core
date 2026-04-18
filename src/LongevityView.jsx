@@ -1737,7 +1737,7 @@ export default function LongevityView({
       {telemetryTab === 'bilancia' && (
         <HistoryView
           bodyMetricsHistory={bodyMetricsHistory}
-          onImportCsvClick={onBalanceCsvImport || undefined}
+          onBalanceCsvImport={onBalanceCsvImport || undefined}
           onSubmitQuickWeighIn={onQuickWeighInSubmit || undefined}
         />
       )}

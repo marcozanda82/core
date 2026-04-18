@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { getLatestBiometricRecord, sortBiometricsByTimeAsc } from './biometricHistory';
 
 const card = {
@@ -38,7 +38,7 @@ function fmt(v) {
  *
  * @param {{
  *   bodyMetricsHistory?: Array<Record<string, unknown>>,
- *   onImportCsvClick?: () => void,
+ *   onBalanceCsvImport?: (event: React.ChangeEvent<HTMLInputElement>) => void,
  *   onSubmitQuickWeighIn?: (payload: {
  *     weight: number,
  *     bodyFat: number | null,
@@ -50,9 +50,18 @@ function fmt(v) {
  */
 export default function HistoryView({
   bodyMetricsHistory = [],
-  onImportCsvClick,
+  onBalanceCsvImport,
   onSubmitQuickWeighIn,
 }) {
+  const localCsvRef = useRef(null);
+
+  const handleLocalFileChange = (event) => {
+    if (onBalanceCsvImport) {
+      onBalanceCsvImport(event);
+    }
+    event.target.value = '';
+  };
+
   const [w, setW] = useState('');
   const [bf, setBf] = useState('');
   const [muscle, setMuscle] = useState('');
@@ -106,27 +115,36 @@ export default function HistoryView({
         <p style={{ margin: '0 0 14px', fontSize: '0.8rem', lineHeight: 1.45, color: '#94a3b8' }}>
           Storico delle pesate importate o inserite. Il peso aggiorna TDEE e baseline sulla mappa metabolica.
         </p>
-        {onImportCsvClick && (
-          <button
-            type="button"
-            onClick={onImportCsvClick}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 16px',
-              borderRadius: 10,
-              border: '1px solid rgba(56, 189, 248, 0.45)',
-              background: 'rgba(14, 165, 233, 0.12)',
-              color: '#e0f2fe',
-              fontWeight: 650,
-              fontSize: '0.82rem',
-              cursor: 'pointer',
-              marginBottom: 14,
-            }}
-          >
-            <span aria-hidden>📊</span> Carica CSV bilancia
-          </button>
+        {onBalanceCsvImport && (
+          <>
+            <input
+              type="file"
+              accept=".csv"
+              style={{ display: 'none' }}
+              ref={localCsvRef}
+              onChange={handleLocalFileChange}
+            />
+            <button
+              type="button"
+              onClick={() => localCsvRef.current?.click()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 16px',
+                borderRadius: 10,
+                border: '1px solid rgba(56, 189, 248, 0.45)',
+                background: 'rgba(14, 165, 233, 0.12)',
+                color: '#e0f2fe',
+                fontWeight: 650,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                marginBottom: 14,
+              }}
+            >
+              <span aria-hidden>📊</span> Carica CSV bilancia
+            </button>
+          </>
         )}
         {latest && (
           <div
