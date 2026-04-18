@@ -183,7 +183,47 @@ export function getLatestBiometricRecord(records) {
 }
 
 /**
- * Input per {@link calculateBaselineOffset}: richiede % massa grassa e punteggio massa muscolare (come nel diario).
+ * Record composito per la baseline mappa: parte dall’ultima pesata e applica forward-fill
+ * sui campi BIA mancanti (muscolo, acqua, viscerale) usando le righe più vecchie.
+ * Opzionale: se manca anche il % grasso sull’ultima riga, viene preso dal più recente storico che lo abbia.
+ *
+ * @param {Array<Record<string, unknown>>} history
+ * @returns {BiometricHistoryEntry | null}
+ */
+export function getCompositeLatestBiometrics(history) {
+  if (!Array.isArray(history) || history.length === 0) return null;
+  const normalized = history.map(normalizeBiometricEntry).filter(Boolean);
+  if (normalized.length === 0) return null;
+
+  normalized.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+  const composite = { ...normalized[0] };
+
+  for (let i = 1; i < normalized.length; i += 1) {
+    const row = normalized[i];
+    if (!hasNumericValue(composite.bodyFat) && hasNumericValue(row.bodyFat)) {
+      composite.bodyFat = Number(row.bodyFat);
+    }
+    if (!hasNumericValue(composite.muscleMass) && hasNumericValue(row.muscleMass)) {
+      composite.muscleMass = Number(row.muscleMass);
+    }
+    if (!hasNumericValue(composite.waterPercentage) && hasNumericValue(row.waterPercentage)) {
+      composite.waterPercentage = Number(row.waterPercentage);
+    }
+    if (!hasNumericValue(composite.visceralFat) && hasNumericValue(row.visceralFat)) {
+      composite.visceralFat = Number(row.visceralFat);
+    }
+  }
+
+  return composite;
+}
+
+/** Fallback asse Y (massa muscolare %) sulla mappa se nessuno storico ha un valore BIA muscolo. */
+const MAP_BASELINE_MUSCLE_MASS_FALLBACK = 50;
+
+/**
+ * Input per {@link calculateBaselineOffset}: % grasso e massa muscolare (score).
+ * Se `muscleMass` manca ancora dopo il composite, si usa solo per Y un fallback neutro (50).
  *
  * @param {BiometricHistoryEntry | null} entry
  * @returns {{ weight: number, bodyFat: number, muscleMass: number } | null}
@@ -191,8 +231,9 @@ export function getLatestBiometricRecord(records) {
 export function biometricsToMapBaselineInput(entry) {
   if (!entry) return null;
   const bf = entry.bodyFat;
-  const mm = entry.muscleMass;
-  if (!Number.isFinite(bf) || !Number.isFinite(mm)) return null;
+  if (!Number.isFinite(bf)) return null;
+  let mm = entry.muscleMass;
+  if (!Number.isFinite(mm)) mm = MAP_BASELINE_MUSCLE_MASS_FALLBACK;
   return {
     weight: entry.weight,
     bodyFat: bf,
@@ -207,8 +248,8 @@ export function biometricsToMapBaselineInput(entry) {
  * @returns {{ x: number, y: number } | null}
  */
 export function getStructuralBaselineOffsetFromHistory(bodyMetricsHistory) {
-  const latest = getLatestBiometricRecord(bodyMetricsHistory);
-  const input = biometricsToMapBaselineInput(latest);
+  const composite = getCompositeLatestBiometrics(bodyMetricsHistory);
+  const input = biometricsToMapBaselineInput(composite);
   if (!input) return null;
   return calculateBaselineOffset(input);
 }
