@@ -23,8 +23,20 @@ function classifyMapPoint(x, y) {
 /** Soglie zona radiale: distanza ≤35 Blue Zone, ≤70 arancione, oltre rosso (coerente con classifyMapPoint). */
 const BLUE_ZONE_SVG_R = 17.5;
 
-/** Lunghezza minima del segmento in unità SVG (viewBox 0–100) sotto cui il vettore è nascosto (~2px sul rendering tipico). */
+/** Centro mappa / “Blue Zone” in unità SVG (viewBox). */
+const MAP_CENTER_SVG = { cx: 50, cy: 50 };
+
+/** Sotto questa lunghezza (spazio mappa −100…100) il vettore stile di vita si considera “quasi nullo”: ago verso il centro, più tenue. */
+const LIFESTYLE_VECTOR_IDLE_THRESHOLD = 4;
+
+/** Lunghezza minima del segmento in unità SVG sotto cui la linea laser è nascosta. */
 const VECTOR_HIDE_LEN_SVG = 2;
+
+/** Punta ago: distanza dal centro ancora lungo la direzione (unità viewBox). */
+const NEEDLE_LENGTH = 5.4;
+
+/** Lunghezza dalla punta ago dove inizia il segmento “laser” (evita sovrapposizione col rombo). */
+const LINE_START_BACK_OFFSET = 1.1;
 
 const VECTOR_MOTION_TRANSITION = { duration: 0.5, ease: [0.4, 0, 0.2, 1] };
 
@@ -69,13 +81,6 @@ function buildGridPosition() {
   return '0 0, 0 0, 50% 50%, 50% 50%';
 }
 
-/**
- * Testo opzionale sotto il pannello rischio: solo se mancano dati sonno nel periodo.
- *
- * @param {number} realSleepDays
- * @param {number} totalWindowDays
- * @returns {string | null}
- */
 function sleepDataReliabilityText(realSleepDays, totalWindowDays) {
   if (totalWindowDays <= 0) return null;
   if (realSleepDays >= totalWindowDays) return null;
@@ -86,8 +91,40 @@ function sleepDataReliabilityText(realSleepDays, totalWindowDays) {
 }
 
 /**
- * Mappa metabolica: coordinate da `metabolicMapEngine`, zone radiali e aura glicemica.
- * Vettore: ancora strutturale + raggio con punta SVG (marker), orientamento automatico.
+ * Angolo (gradi) tra Ancora e punto finale nello spazio mappa (asse Y metabolico verso l’alto).
+ * Equivale a atan2(dy_svg, dx_svg) dopo mapPointToSvgCoords.
+ */
+function compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY) {
+  return (
+    Math.atan2(shiftedY - baselineY, shiftedX - baselineX) * (180 / Math.PI)
+  );
+}
+
+/**
+ * Rotazione (gradi) per un ago che in stato base punta verso −Y (nord schermo).
+ * Allinea la punta alla direzione anchor → target nello spazio SVG.
+ */
+function needleRotationDegSvg(targetSvg, anchorSvg) {
+  const baseDeg =
+    (Math.atan2(
+      targetSvg.cy - anchorSvg.cy,
+      targetSvg.cx - anchorSvg.cx,
+    ) *
+      180) /
+    Math.PI;
+  return baseDeg + 90;
+}
+
+function unitToward(from, to) {
+  const dx = to.cx - from.cx;
+  const dy = to.cy - from.cy;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return { ux: 1, uy: 0 };
+  return { ux: dx / len, uy: dy / len };
+}
+
+/**
+ * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
  */
 export default function MetabolicMap({
   energyBalance = 0,
@@ -104,9 +141,6 @@ export default function MetabolicMap({
   const markerArrowId = `kentu-arrowhead-${uid}`;
   const reduceMotion = useReducedMotion();
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
-  const vectorCssTransition = reduceMotion
-    ? 'none'
-    : 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
 
   const { x, y, finalAura } = useMemo(
     () =>
@@ -143,8 +177,32 @@ export default function MetabolicMap({
   const anchorSvg = mapPointToSvgCoords(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
 
+  const lifestyleDx = shiftedX - baselineX;
+  const lifestyleDy = shiftedY - baselineY;
+  const lifestyleLen = Math.hypot(lifestyleDx, lifestyleDy);
+  const lifestyleNearlyIdle = lifestyleLen < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
+
+  /** Angolo (gradi) tra Ancora e punto finale nello spazio mappa — Fase 1 richiesta. */
+  const angleMapDeg = compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY);
+
+  const needleRotateDeg = lifestyleNearlyIdle
+    ? needleRotationDegSvg(MAP_CENTER_SVG, anchorSvg)
+    : needleRotationDegSvg(tipSvg, anchorSvg);
+  const needleBladeOpacity = lifestyleNearlyIdle ? 0.38 : 0.96;
+
   const svgVecLen = Math.hypot(tipSvg.cx - anchorSvg.cx, tipSvg.cy - anchorSvg.cy);
   const showVector = svgVecLen >= VECTOR_HIDE_LEN_SVG;
+
+  const lineGeometry = useMemo(() => {
+    const tip = tipSvg;
+    const anchor = anchorSvg;
+    const u = unitToward(anchor, tip);
+    const start = {
+      cx: anchor.cx + u.ux * (NEEDLE_LENGTH - LINE_START_BACK_OFFSET),
+      cy: anchor.cy + u.uy * (NEEDLE_LENGTH - LINE_START_BACK_OFFSET),
+    };
+    return { x1: start.cx, y1: start.cy, x2: tip.cx, y2: tip.cy };
+  }, [anchorSvg, tipSvg]);
 
   const labelStyle = {
     position: 'absolute',
@@ -247,18 +305,18 @@ export default function MetabolicMap({
             </filter>
             <marker
               id={markerArrowId}
-              markerWidth={6}
-              markerHeight={6}
-              refX={5}
-              refY={3}
+              markerWidth={5}
+              markerHeight={5}
+              refX={4.8}
+              refY={2.5}
               orient="auto"
               markerUnits="userSpaceOnUse"
             >
-              <polygon points="0 0, 6 3, 0 6" fill="rgba(255,255,255,0.9)" />
+              <polygon points="0 0, 5 2.5, 0 5" fill="rgba(255,255,255,0.92)" />
             </marker>
           </defs>
 
-          {/* Blue Zone + fasce allarme (stroke coerenti con classifyMapPoint) */}
+          {/* Blue Zone + fasce allarme */}
           <g aria-hidden>
             <circle
               cx={50}
@@ -291,33 +349,49 @@ export default function MetabolicMap({
 
           {showVector ? (
             <motion.line
-              stroke="rgba(255, 255, 255, 0.5)"
-              strokeWidth={2}
+              stroke="rgba(255, 255, 255, 0.55)"
+              strokeWidth={1.15}
               strokeLinecap="round"
               markerEnd={`url(#${markerArrowId})`}
               vectorEffect="nonScalingStroke"
-              style={{ transition: vectorCssTransition }}
               animate={{
-                x1: anchorSvg.cx,
-                y1: anchorSvg.cy,
-                x2: tipSvg.cx,
-                y2: tipSvg.cy,
+                x1: lineGeometry.x1,
+                y1: lineGeometry.y1,
+                x2: lineGeometry.x2,
+                y2: lineGeometry.y2,
               }}
               transition={vectorTransition}
             />
           ) : null}
 
-          <motion.circle
-            r={3.6}
-            fill="#0ea5e9"
-            stroke="rgba(224, 242, 254, 0.95)"
-            strokeWidth={0.35}
-            filter={`url(#${glowFilterId})`}
-            vectorEffect="nonScalingStroke"
-            style={{ transition: vectorCssTransition }}
-            animate={{ cx: anchorSvg.cx, cy: anchorSvg.cy }}
+          <motion.g
+            animate={{ x: anchorSvg.cx, y: anchorSvg.cy }}
             transition={vectorTransition}
-          />
+            style={{ transformOrigin: '0px 0px' }}
+            data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
+          >
+            <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
+              <circle
+                r={3.6}
+                cx={0}
+                cy={0}
+                fill="#0ea5e9"
+                stroke="rgba(224, 242, 254, 0.95)"
+                strokeWidth={0.35}
+                filter={`url(#${glowFilterId})`}
+                vectorEffect="nonScalingStroke"
+              />
+              <motion.polygon
+                points="0,-5.8 0.42,0.55 -0.42,0.55"
+                fill="rgba(255,255,255,0.92)"
+                stroke="rgba(255,255,255,0.35)"
+                strokeWidth={0.12}
+                vectorEffect="nonScalingStroke"
+                animate={{ opacity: needleBladeOpacity }}
+                transition={vectorTransition}
+              />
+            </motion.g>
+          </motion.g>
         </svg>
 
         <span style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
