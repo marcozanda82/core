@@ -1,4 +1,5 @@
 import React, { useId, useMemo } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { calculateMetabolicMapPosition } from './metabolicMapEngine';
 
 /** viewBox 0–100: stesso sistema di posizionamento del marker (50 ± x/2, 50 ∓ y/2). */
@@ -22,28 +23,10 @@ function classifyMapPoint(x, y) {
 /** Soglie zona radiale: distanza ≤35 Blue Zone, ≤70 arancione, oltre rosso (coerente con classifyMapPoint). */
 const BLUE_ZONE_SVG_R = 17.5;
 
-/** Freccia mini-bussola: 0° = Nord (verso −y SVG), coerente con la freccia principale. */
-function MetabolicMapCompassMarker({ cx, cy, angleDeg, gradientId, highAura }) {
-  return (
-    <g
-      transform={`translate(${cx},${cy}) rotate(${angleDeg})`}
-      className={highAura ? 'metabolic-map-arrow-pulse' : undefined}
-      style={
-        highAura
-          ? undefined
-          : { filter: 'drop-shadow(0 0 4px rgba(120, 210, 255, 0.35))' }
-      }
-    >
-      <polygon
-        points="0,-7.5 6.2,6.5 -6.2,6.5"
-        fill={`url(#${gradientId})`}
-        stroke="rgba(255,255,255,0.35)"
-        strokeWidth={0.35}
-        vectorEffect="nonScalingStroke"
-      />
-    </g>
-  );
-}
+/** Lunghezza minima del segmento in unità SVG (viewBox 0–100) sotto cui il vettore è nascosto (~2px sul rendering tipico). */
+const VECTOR_HIDE_LEN_SVG = 2;
+
+const VECTOR_MOTION_TRANSITION = { duration: 0.5, ease: [0.4, 0, 0.2, 1] };
 
 const ZONE_LABELS = {
   green: 'Blue Zone (Longevità)',
@@ -104,7 +87,7 @@ function sleepDataReliabilityText(realSleepDays, totalWindowDays) {
 
 /**
  * Mappa metabolica: coordinate da `metabolicMapEngine`, zone radiali e aura glicemica.
- * Rendering vettoriale: Ancora strutturale (baseline bilancia) + vettore stile di vita + bussola sulla punta.
+ * Vettore: ancora strutturale + raggio con punta SVG (marker), orientamento automatico.
  */
 export default function MetabolicMap({
   energyBalance = 0,
@@ -115,10 +98,15 @@ export default function MetabolicMap({
   totalWindowDays = 0,
   selectedTimeframe = '7d',
   baselineOffset = null,
-  currentCompassAngle = null,
 }) {
-  const gradientId = useId().replace(/:/g, '');
-  const glowFilterId = `${gradientId}-anchor-glow`;
+  const uid = useId().replace(/:/g, '');
+  const glowFilterId = `${uid}-anchor-glow`;
+  const markerArrowId = `kentu-arrowhead-${uid}`;
+  const reduceMotion = useReducedMotion();
+  const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
+  const vectorCssTransition = reduceMotion
+    ? 'none'
+    : 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
 
   const { x, y, finalAura } = useMemo(
     () =>
@@ -155,24 +143,8 @@ export default function MetabolicMap({
   const anchorSvg = mapPointToSvgCoords(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
 
-  const vectorDx = displayX - baselineX;
-  const vectorDy = displayY - baselineY;
-  const vectorLen = Math.hypot(vectorDx, vectorDy);
-  const VECTOR_EPS = 0.02;
-
-  const baselineHeadingDeg = useMemo(() => {
-    if (vectorLen < VECTOR_EPS) return null;
-    return (Math.atan2(vectorDx, vectorDy) * 180) / Math.PI;
-  }, [vectorDx, vectorDy, vectorLen]);
-
-  const arrowAngleDeg =
-    baselineHeadingDeg != null
-      ? baselineHeadingDeg
-      : currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle))
-        ? Number(currentCompassAngle)
-        : 0;
-
-  const highAuraPulse = displayAura >= 45;
+  const svgVecLen = Math.hypot(tipSvg.cx - anchorSvg.cx, tipSvg.cy - anchorSvg.cy);
+  const showVector = svgVecLen >= VECTOR_HIDE_LEN_SVG;
 
   const labelStyle = {
     position: 'absolute',
@@ -196,22 +168,6 @@ export default function MetabolicMap({
         margin: '0 auto',
       }}
     >
-      <style>
-        {`
-          @keyframes metabolicMapArrowGlowPulse {
-            0%, 100% {
-              filter: drop-shadow(0 0 5px rgba(255, 140, 110, 0.45)) drop-shadow(0 0 14px rgba(220, 70, 50, 0.25));
-            }
-            50% {
-              filter: drop-shadow(0 0 10px rgba(255, 160, 130, 0.75)) drop-shadow(0 0 22px rgba(240, 90, 60, 0.4));
-            }
-          }
-          .metabolic-map-arrow-pulse {
-            animation: metabolicMapArrowGlowPulse 2.1s ease-in-out infinite;
-          }
-        `}
-      </style>
-
       <div
         role="img"
         aria-label={`Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(effectiveDistance)}`}
@@ -282,11 +238,6 @@ export default function MetabolicMap({
           }}
         >
           <defs>
-            <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.98)" />
-              <stop offset="45%" stopColor="rgba(140, 220, 255, 0.88)" />
-              <stop offset="100%" stopColor="rgba(70, 170, 210, 0.75)" />
-            </linearGradient>
             <filter id={glowFilterId} x="-60%" y="-60%" width="220%" height="220%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="1.4" result="blur" />
               <feMerge>
@@ -294,6 +245,17 @@ export default function MetabolicMap({
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
+            <marker
+              id={markerArrowId}
+              markerWidth={6}
+              markerHeight={6}
+              refX={5}
+              refY={3}
+              orient="auto"
+              markerUnits="userSpaceOnUse"
+            >
+              <polygon points="0 0, 6 3, 0 6" fill="rgba(255,255,255,0.9)" />
+            </marker>
           </defs>
 
           {/* Blue Zone + fasce allarme (stroke coerenti con classifyMapPoint) */}
@@ -327,36 +289,34 @@ export default function MetabolicMap({
             />
           </g>
 
-          {vectorLen >= VECTOR_EPS ? (
-            <line
-              x1={anchorSvg.cx}
-              y1={anchorSvg.cy}
-              x2={tipSvg.cx}
-              y2={tipSvg.cy}
-              stroke="rgba(14, 165, 233, 0.45)"
-              strokeWidth={0.55}
-              strokeDasharray="2.8 2.2"
+          {showVector ? (
+            <motion.line
+              stroke="rgba(255, 255, 255, 0.5)"
+              strokeWidth={2}
               strokeLinecap="round"
+              markerEnd={`url(#${markerArrowId})`}
               vectorEffect="nonScalingStroke"
+              style={{ transition: vectorCssTransition }}
+              animate={{
+                x1: anchorSvg.cx,
+                y1: anchorSvg.cy,
+                x2: tipSvg.cx,
+                y2: tipSvg.cy,
+              }}
+              transition={vectorTransition}
             />
           ) : null}
 
-          <circle
-            cx={anchorSvg.cx}
-            cy={anchorSvg.cy}
+          <motion.circle
             r={3.6}
             fill="#0ea5e9"
             stroke="rgba(224, 242, 254, 0.95)"
             strokeWidth={0.35}
             filter={`url(#${glowFilterId})`}
             vectorEffect="nonScalingStroke"
-          />
-
-          <MetabolicMapCompassMarker
-            {...tipSvg}
-            angleDeg={arrowAngleDeg}
-            gradientId={gradientId}
-            highAura={highAuraPulse}
+            style={{ transition: vectorCssTransition }}
+            animate={{ cx: anchorSvg.cx, cy: anchorSvg.cy }}
+            transition={vectorTransition}
           />
         </svg>
 

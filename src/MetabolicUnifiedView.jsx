@@ -1,10 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import {
-  getMetabolicTargetAngle,
-  metabolicAngleDegToCompassBearingDeg,
-  METABOLIC_GOAL,
-} from './metabolicDirection';
-import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
+import { METABOLIC_GOAL } from './metabolicDirection';
+import { historyFingerprint } from './metabolicDirectionEngine';
 import {
   calculateBaselineOffset,
   calculateMetabolicMapPosition,
@@ -22,8 +18,6 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '14d', label: '14G' },
   { value: '30d', label: '30G' },
 ];
-
-const RAD_TO_DEG = 180 / Math.PI;
 
 function mapZoneToGlowRgba(zone) {
   if (zone === 'red') return 'rgba(239, 68, 68, 0.4)';
@@ -94,17 +88,6 @@ export default function MetabolicUnifiedView({
     const biometrics = getLastBiometricData(dailyHistory);
     return calculateBaselineOffset(biometrics);
   }, [dailyHistory]);
-
-  // Bussola: resta ancorata al vettore originale del motore su dailyHistory grezza.
-  const { angleDeg } = useMemo(() => {
-    const { x, y } = computeMetabolicEngineTargetVec(dailyHistory, selectedTimeframe);
-    const angleRad = Math.atan2(y, x);
-    const ad = Number.isFinite(angleRad) ? angleRad * RAD_TO_DEG : 0;
-    return { angleDeg: ad };
-  }, [dailyHistory, selectedTimeframe]);
-
-  const compassRotation = -getMetabolicTargetAngle(goal);
-  const arrowRotationDeg = metabolicAngleDegToCompassBearingDeg(angleDeg) + compassRotation;
 
   const mapZoneColor = useMemo(() => {
     const { zone } = calculateMetabolicMapPosition({
@@ -299,7 +282,6 @@ export default function MetabolicUnifiedView({
               totalWindowDays={metabolicMapInputs.totalWindowDays}
               selectedTimeframe={selectedTimeframe}
               baselineOffset={baselineOffset}
-              currentCompassAngle={arrowRotationDeg}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}
