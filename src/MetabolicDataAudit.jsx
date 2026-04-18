@@ -164,6 +164,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
           >
             Asse bilancio e allenamento: scala −100…+100. Bilancio: media kcal/d ÷ 5 (con clamp).
             Allenamento: ((media−35)/65)×100, quindi 0 ≈ −54 e 100 = +100.
+            Zone radiali: centro Blue Zone (Longevità); arancione e rosso = allarme.
           </p>
         </div>
       )}

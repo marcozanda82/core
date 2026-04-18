@@ -8,7 +8,6 @@ import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolic
 import {
   calculateBaselineOffset,
   calculateMetabolicMapPosition,
-  computeMacroTrajectory,
   getLastBiometricData,
 } from './metabolicMapEngine';
 import { computeMetabolicMapInputsAndAudit } from './metabolicMapPeriodInputs';
@@ -24,19 +23,12 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '30d', label: '30G' },
 ];
 
-function visibleMacroPointCount(selectedTimeframe) {
-  if (selectedTimeframe === '30d') return 1;
-  if (selectedTimeframe === '14d') return 2;
-  if (selectedTimeframe === '7d') return 3;
-  return 4;
-}
-
 const RAD_TO_DEG = 180 / Math.PI;
 
 function mapZoneToGlowRgba(zone) {
   if (zone === 'red') return 'rgba(239, 68, 68, 0.4)';
   if (zone === 'orange') return 'rgba(249, 115, 22, 0.4)';
-  if (zone === 'green') return 'rgba(34, 197, 94, 0.4)';
+  if (zone === 'green') return 'rgba(14, 165, 233, 0.4)';
   return '';
 }
 
@@ -98,10 +90,6 @@ export default function MetabolicUnifiedView({
     [compassHistoryKey]
   );
 
-  const macroTrajectory = useMemo(
-    () => computeMacroTrajectory(dailyHistory),
-    [dailyHistory]
-  );
   const baselineOffset = useMemo(() => {
     const biometrics = getLastBiometricData(dailyHistory);
     return calculateBaselineOffset(biometrics);
@@ -119,18 +107,16 @@ export default function MetabolicUnifiedView({
   const arrowRotationDeg = metabolicAngleDegToCompassBearingDeg(angleDeg) + compassRotation;
 
   const mapZoneColor = useMemo(() => {
-    const visibleCount = visibleMacroPointCount(selectedTimeframe);
-    const visible = macroTrajectory.slice(0, Math.min(visibleCount, macroTrajectory.length));
-    const last = visible[visible.length - 1];
-    if (last?.zone) return mapZoneToGlowRgba(last.zone);
     const { zone } = calculateMetabolicMapPosition({
       energyBalance: metabolicMapInputs.energyBalance,
       trainingLoad: metabolicMapInputs.trainingLoad,
       sleepHours: metabolicMapInputs.sleepHours,
       glycemicInstability: metabolicMapInputs.glycemicInstability,
+      baselineOffsetX: baselineOffset.x,
+      baselineOffsetY: baselineOffset.y,
     });
     return mapZoneToGlowRgba(zone);
-  }, [macroTrajectory, selectedTimeframe, metabolicMapInputs]);
+  }, [metabolicMapInputs, baselineOffset]);
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -312,7 +298,6 @@ export default function MetabolicUnifiedView({
               realSleepDays={metabolicMapInputs.realSleepDays}
               totalWindowDays={metabolicMapInputs.totalWindowDays}
               selectedTimeframe={selectedTimeframe}
-              macroTrajectory={macroTrajectory}
               baselineOffset={baselineOffset}
               currentCompassAngle={arrowRotationDeg}
             />

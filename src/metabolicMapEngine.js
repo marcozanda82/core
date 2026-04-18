@@ -1,5 +1,3 @@
-import { computeMetabolicMapInputsFromDailyHistory } from './metabolicMapPeriodInputs';
-
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -134,42 +132,4 @@ function computeMetabolicMapPoint(params = {}) {
  */
 export function calculateMetabolicMapPosition(params = {}) {
   return computeMetabolicMapPoint(params);
-}
-
-function macroPointForTimeframe(dailyHistory, timeframe) {
-  const inputs = computeMetabolicMapInputsFromDailyHistory(dailyHistory, timeframe);
-  return computeMetabolicMapPoint(inputs);
-}
-
-/**
- * Macro-traiettoria per i 4 periodi UI: 30g → 14g → 7g → ieri.
- * Se periodi adiacenti producono coordinate identiche, i duplicati vengono rimossi.
- *
- * @param {Array<{ date?: string, kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null }>} dailyHistory
- * @returns {Array<{ x: number, y: number, zone: string, quadrant: string, finalAura: number, distance: number, timeframe: '30d' | '14d' | '7d' | '1d' }>}
- */
-export function computeMacroTrajectory(dailyHistory) {
-  const macros = [
-    { timeframe: '30d', point: macroPointForTimeframe(dailyHistory, '30d') },
-    { timeframe: '14d', point: macroPointForTimeframe(dailyHistory, '14d') },
-    { timeframe: '7d', point: macroPointForTimeframe(dailyHistory, '7d') },
-    { timeframe: '1d', point: macroPointForTimeframe(dailyHistory, '1d') },
-  ];
-
-  const out = [];
-  for (let i = 0; i < macros.length; i += 1) {
-    const { timeframe, point } = macros[i];
-    const prev = out[out.length - 1];
-    if (prev && prev.x === point.x && prev.y === point.y) continue;
-    out.push({
-      timeframe,
-      x: point.x,
-      y: point.y,
-      zone: point.zone,
-      quadrant: point.quadrant,
-      finalAura: point.finalAura,
-      distance: point.distance,
-    });
-  }
-  return out;
 }

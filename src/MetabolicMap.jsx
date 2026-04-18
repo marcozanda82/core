@@ -19,41 +19,8 @@ function classifyMapPoint(x, y) {
   return { zone, quadrant, distance };
 }
 
-function visibleMacroPointCount(selectedTimeframe) {
-  if (selectedTimeframe === '30d') return 1;
-  if (selectedTimeframe === '14d') return 2;
-  if (selectedTimeframe === '7d') return 3;
-  return 4; // '1d' => tutta la traiettoria
-}
-
-/**
- * Scia "impronte": punti giornalieri senza linee di collegamento.
- * Il passato è più tenue e più piccolo, il presente più visibile.
- */
-function MetabolicMapTrajectory({ points }) {
-  if (!points.length) return null;
-  const n = points.length;
-  const circles = [];
-  for (let i = 0; i < n; i += 1) {
-    const p = points[i];
-    const { cx, cy } = mapPointToSvgCoords(p.x, p.y);
-    const opacity = ((i + 1) / n) * 0.8;
-    const radius = 1 + (i / n) * 2;
-    circles.push(
-      <circle
-        key={`fp-${i}`}
-        cx={cx}
-        cy={cy}
-        r={radius}
-        fill={`rgba(220,245,255,${opacity})`}
-        stroke={`rgba(160,220,245,${Math.min(0.45, opacity)})`}
-        strokeWidth={0.2}
-        vectorEffect="nonScalingStroke"
-      />
-    );
-  }
-  return <g aria-hidden>{circles}</g>;
-}
+/** Soglie zona radiale: distanza ≤35 Blue Zone, ≤70 arancione, oltre rosso (coerente con classifyMapPoint). */
+const BLUE_ZONE_SVG_R = 17.5;
 
 /** Freccia mini-bussola: 0° = Nord (verso −y SVG), coerente con la freccia principale. */
 function MetabolicMapCompassMarker({ cx, cy, angleDeg, gradientId, highAura }) {
@@ -79,7 +46,7 @@ function MetabolicMapCompassMarker({ cx, cy, angleDeg, gradientId, highAura }) {
 }
 
 const ZONE_LABELS = {
-  green: 'Verde (Omeostasi)',
+  green: 'Blue Zone (Longevità)',
   orange: 'Arancione (Adattamento)',
   red: 'Rossa (Pericolo)',
 };
@@ -93,8 +60,8 @@ const QUADRANT_RISK_LABELS = {
 
 function buildMapBackground() {
   return `radial-gradient(circle at 50% 50%,
-    rgba(6, 78, 62, 0.94) 0%,
-    rgba(8, 92, 76, 0.9) 35%,
+    rgba(14, 165, 233, 0.38) 0%,
+    rgba(8, 105, 155, 0.48) 32%,
     rgba(110, 52, 14, 0.88) 35%,
     rgba(130, 62, 18, 0.82) 70%,
     rgba(92, 10, 24, 0.9) 70%,
@@ -137,6 +104,7 @@ function sleepDataReliabilityText(realSleepDays, totalWindowDays) {
 
 /**
  * Mappa metabolica: coordinate da `metabolicMapEngine`, zone radiali e aura glicemica.
+ * Rendering vettoriale: Ancora strutturale (baseline bilancia) + vettore stile di vita + bussola sulla punta.
  */
 export default function MetabolicMap({
   energyBalance = 0,
@@ -146,15 +114,13 @@ export default function MetabolicMap({
   realSleepDays = 0,
   totalWindowDays = 0,
   selectedTimeframe = '7d',
-  macroTrajectory = null,
   baselineOffset = null,
   currentCompassAngle = null,
 }) {
   const gradientId = useId().replace(/:/g, '');
-  const safeMacroTrajectory =
-    Array.isArray(macroTrajectory) && macroTrajectory.length > 0 ? macroTrajectory : null;
+  const glowFilterId = `${gradientId}-anchor-glow`;
 
-  const { x, y, finalAura, distance, zone, quadrant } = useMemo(
+  const { x, y, finalAura } = useMemo(
     () =>
       calculateMetabolicMapPosition({
         energyBalance,
@@ -164,95 +130,49 @@ export default function MetabolicMap({
       }),
     [energyBalance, trainingLoad, sleepHours, glycemicInstability],
   );
-  const visibleMacroPoints = useMemo(() => {
-    if (!safeMacroTrajectory) return [];
-    const count = visibleMacroPointCount(selectedTimeframe);
-    return safeMacroTrajectory.slice(0, Math.min(count, safeMacroTrajectory.length));
-  }, [safeMacroTrajectory, selectedTimeframe]);
+
   const baselineX = Number(baselineOffset?.x) || 0;
   const baselineY = Number(baselineOffset?.y) || 0;
-  const shiftedMacroPoints = useMemo(
-    () =>
-      visibleMacroPoints.map((p) => {
-        const sx = Math.max(-100, Math.min(100, p.x + baselineX));
-        const sy = Math.max(-100, Math.min(100, p.y + baselineY));
-        const meta = classifyMapPoint(sx, sy);
-        return { ...p, x: sx, y: sy, zone: meta.zone, quadrant: meta.quadrant, distance: meta.distance };
-      }),
-    [visibleMacroPoints, baselineX, baselineY]
+
+  const shiftedX = useMemo(
+    () => Math.max(-100, Math.min(100, x + baselineX)),
+    [x, baselineX],
   );
-  const finalPoint = shiftedMacroPoints.length
-    ? shiftedMacroPoints[shiftedMacroPoints.length - 1]
-    : null;
-  const fallbackShiftedX = Math.max(-100, Math.min(100, x + baselineX));
-  const fallbackShiftedY = Math.max(-100, Math.min(100, y + baselineY));
-  const fallbackMeta = classifyMapPoint(fallbackShiftedX, fallbackShiftedY);
-  const effectiveX = finalPoint?.x ?? fallbackShiftedX;
-  const effectiveY = finalPoint?.y ?? fallbackShiftedY;
-  const effectiveZone = finalPoint?.zone ?? fallbackMeta.zone ?? zone;
-  const effectiveQuadrant = finalPoint?.quadrant ?? fallbackMeta.quadrant ?? quadrant;
-  const effectiveDistance = finalPoint?.distance ?? fallbackMeta.distance ?? distance;
-  const effectiveAura = finalPoint?.finalAura ?? finalAura;
+  const shiftedY = useMemo(
+    () => Math.max(-100, Math.min(100, y + baselineY)),
+    [y, baselineY],
+  );
 
-  // Marker e pannello leggono la stessa sorgente finale per evitare disallineamenti visivi/testuali.
-  const displayX = effectiveX;
-  const displayY = effectiveY;
-  const displayAura = effectiveAura;
+  const { zone: effectiveZone, quadrant: effectiveQuadrant, distance: effectiveDistance } = useMemo(
+    () => classifyMapPoint(shiftedX, shiftedY),
+    [shiftedX, shiftedY],
+  );
 
-  const leftPct = 50 + displayX / 2;
-  const topPct = 50 - displayY / 2;
+  const displayAura = finalAura;
+  const displayX = shiftedX;
+  const displayY = shiftedY;
+
+  const anchorSvg = mapPointToSvgCoords(baselineX, baselineY);
+  const tipSvg = mapPointToSvgCoords(displayX, displayY);
+
+  const vectorDx = displayX - baselineX;
+  const vectorDy = displayY - baselineY;
+  const vectorLen = Math.hypot(vectorDx, vectorDy);
+  const VECTOR_EPS = 0.02;
 
   const baselineHeadingDeg = useMemo(() => {
-    const dx = effectiveX - baselineX;
-    const dy = effectiveY - baselineY;
-    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return null;
-    return (Math.atan2(dx, dy) * 180) / Math.PI;
-  }, [effectiveX, effectiveY, baselineX, baselineY]);
+    if (vectorLen < VECTOR_EPS) return null;
+    return (Math.atan2(vectorDx, vectorDy) * 180) / Math.PI;
+  }, [vectorDx, vectorDy, vectorLen]);
 
-  const showCompassArrow =
-    (currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle))) ||
-    baselineHeadingDeg != null;
   const arrowAngleDeg =
     baselineHeadingDeg != null
       ? baselineHeadingDeg
       : currentCompassAngle != null && Number.isFinite(Number(currentCompassAngle))
         ? Number(currentCompassAngle)
         : 0;
+
   const highAuraPulse = displayAura >= 45;
-
-  const showSvgLayer = Boolean(shiftedMacroPoints.length || showCompassArrow);
-
-  const t = effectiveAura / 100;
-  const showAura = effectiveAura > 0.5;
-  const auraR0 = 6 + t * 28;
-  const auraR1 = 10 + t * 48;
-  const o0 = 0.15 + t * 0.55;
-  const o1 = 0.35 + t * 0.5;
-  const rGlow = Math.round(255 * (0.55 + t * 0.45));
-  const gGlow = Math.round(120 * (1 - t * 0.85));
-  const bGlow = Math.round(90 * (1 - t * 0.5));
-
-  const markerWrapperStyle = {
-    position: 'absolute',
-    left: `${leftPct}%`,
-    top: `${topPct}%`,
-    transform: 'translate(-50%, -50%)',
-    zIndex: 2,
-    pointerEvents: 'none',
-  };
-
-  const dotInnerStyle = {
-    width: 12,
-    height: 12,
-    borderRadius: '50%',
-    background:
-      'radial-gradient(circle at 35% 30%, rgba(255,255,255,0.95) 0%, rgba(120, 230, 255, 0.85) 45%, rgba(60, 180, 220, 0.75) 100%)',
-    boxShadow: showAura
-      ? `0 0 ${auraR0}px rgba(${rGlow},${gGlow},${bGlow},${o0}), 0 0 ${auraR1}px rgba(220, 60, 30, ${o1 * 0.6})`
-      : '0 0 4px rgba(255,255,255,0.35)',
-    animation: showAura ? 'metabolicMapAuraPulse 2.2s ease-in-out infinite' : 'none',
-    transition: 'box-shadow 0.35s ease',
-  };
 
   const labelStyle = {
     position: 'absolute',
@@ -278,16 +198,6 @@ export default function MetabolicMap({
     >
       <style>
         {`
-          @keyframes metabolicMapAuraPulse {
-            0%, 100% {
-              transform: scale(1);
-              filter: brightness(1);
-            }
-            50% {
-              transform: scale(1.15);
-              filter: brightness(1.25);
-            }
-          }
           @keyframes metabolicMapArrowGlowPulse {
             0%, 100% {
               filter: drop-shadow(0 0 5px rgba(255, 140, 110, 0.45)) drop-shadow(0 0 14px rgba(220, 70, 50, 0.25));
@@ -358,50 +268,97 @@ export default function MetabolicMap({
           }}
         />
 
-        {showSvgLayer && (
-          <svg
-            viewBox="0 0 100 100"
-            preserveAspectRatio="xMidYMid meet"
-            aria-hidden
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              zIndex: 4,
-              pointerEvents: 'none',
-            }}
-          >
-            <defs>
-              <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="rgba(255,255,255,0.98)" />
-                <stop offset="45%" stopColor="rgba(140, 220, 255, 0.88)" />
-                <stop offset="100%" stopColor="rgba(70, 170, 210, 0.75)" />
-              </linearGradient>
-            </defs>
-            {shiftedMacroPoints.length > 1 ? (
-              <MetabolicMapTrajectory points={shiftedMacroPoints.slice(0, -1)} />
-            ) : null}
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="xMidYMid meet"
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            zIndex: 4,
+            pointerEvents: 'none',
+          }}
+        >
+          <defs>
+            <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.98)" />
+              <stop offset="45%" stopColor="rgba(140, 220, 255, 0.88)" />
+              <stop offset="100%" stopColor="rgba(70, 170, 210, 0.75)" />
+            </linearGradient>
+            <filter id={glowFilterId} x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="1.4" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Blue Zone + fasce allarme (stroke coerenti con classifyMapPoint) */}
+          <g aria-hidden>
             <circle
-              cx={mapPointToSvgCoords(baselineX, baselineY).cx}
-              cy={mapPointToSvgCoords(baselineX, baselineY).cy}
-              r={3.8}
-              fill="none"
-              stroke="rgba(220,235,245,0.24)"
-              strokeDasharray="2 2"
-              strokeWidth={0.4}
+              cx={50}
+              cy={50}
+              r={BLUE_ZONE_SVG_R}
+              fill="rgba(14, 165, 233, 0.15)"
+              stroke="#0ea5e9"
+              strokeWidth={0.45}
               vectorEffect="nonScalingStroke"
             />
-            {showCompassArrow ? (
-              <MetabolicMapCompassMarker
-                {...mapPointToSvgCoords(displayX, displayY)}
-                angleDeg={arrowAngleDeg}
-                gradientId={gradientId}
-                highAura={highAuraPulse}
-              />
-            ) : null}
-          </svg>
-        )}
+            <circle
+              cx={50}
+              cy={50}
+              r={35}
+              fill="none"
+              stroke="rgba(249, 115, 22, 0.42)"
+              strokeWidth={0.35}
+              vectorEffect="nonScalingStroke"
+            />
+            <circle
+              cx={50}
+              cy={50}
+              r={50}
+              fill="none"
+              stroke="rgba(239, 68, 68, 0.38)"
+              strokeWidth={0.3}
+              vectorEffect="nonScalingStroke"
+            />
+          </g>
+
+          {vectorLen >= VECTOR_EPS ? (
+            <line
+              x1={anchorSvg.cx}
+              y1={anchorSvg.cy}
+              x2={tipSvg.cx}
+              y2={tipSvg.cy}
+              stroke="rgba(14, 165, 233, 0.45)"
+              strokeWidth={0.55}
+              strokeDasharray="2.8 2.2"
+              strokeLinecap="round"
+              vectorEffect="nonScalingStroke"
+            />
+          ) : null}
+
+          <circle
+            cx={anchorSvg.cx}
+            cy={anchorSvg.cy}
+            r={3.6}
+            fill="#0ea5e9"
+            stroke="rgba(224, 242, 254, 0.95)"
+            strokeWidth={0.35}
+            filter={`url(#${glowFilterId})`}
+            vectorEffect="nonScalingStroke"
+          />
+
+          <MetabolicMapCompassMarker
+            {...tipSvg}
+            angleDeg={arrowAngleDeg}
+            gradientId={gradientId}
+            highAura={highAuraPulse}
+          />
+        </svg>
 
         <span style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
           BURNOUT / CORTISOLO
@@ -415,17 +372,6 @@ export default function MetabolicMap({
         <span style={{ ...labelStyle, bottom: 8, right: 8, textAlign: 'right', zIndex: 5 }}>
           FEGATO GRASSO / INSULINA
         </span>
-
-        {!showSvgLayer && (
-          <div style={markerWrapperStyle}>
-            <div style={dotInnerStyle} />
-          </div>
-        )}
-        {showSvgLayer && !showCompassArrow && (
-          <div style={{ ...markerWrapperStyle, zIndex: 6 }}>
-            <div style={dotInnerStyle} />
-          </div>
-        )}
       </div>
 
       <div
@@ -444,9 +390,9 @@ export default function MetabolicMap({
           Zona attuale: {ZONE_LABELS[effectiveZone]} — Rischio: {QUADRANT_RISK_LABELS[effectiveQuadrant]}
         </div>
         <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
-          Distanza dal centro: {effectiveDistance.toFixed(1)} · Aura glicemica: {Math.round(effectiveAura)}
+          Distanza dal centro: {effectiveDistance.toFixed(1)} · Aura glicemica: {Math.round(displayAura)}
         </div>
-        {effectiveAura > 50 && (
+        {displayAura > 50 && (
           <div
             style={{
               marginTop: 10,
