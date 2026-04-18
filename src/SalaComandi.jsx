@@ -77,6 +77,7 @@ import WeeklyPlanning from './components/WeeklyPlanning';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { recalculateUserTargets } from './targetsEngine';
+import { mergeDuplicateBiometrics } from './biometricHistory';
 import {
   evaluateAiDayCoach,
   consumeCoachPeriod,
@@ -4023,14 +4024,16 @@ export default function SalaComandi() {
           payloads.push(payload);
         }
 
-        if (payloads.length === 0) {
+        const mergedPayloads = mergeDuplicateBiometrics(payloads);
+
+        if (mergedPayloads.length === 0) {
           alert('Nessuna riga valida trovata nel CSV.');
           return;
         }
 
         const metricsRef = ref(db, `users/${uid}/body_metrics`);
         const batch = {};
-        for (const p of payloads) {
+        for (const p of mergedPayloads) {
           const entry = {
             date: p.date,
             timestamp: p.timestamp,
@@ -4044,9 +4047,9 @@ export default function SalaComandi() {
         }
         await update(metricsRef, batch);
 
-        let latest = payloads[0];
-        for (let i = 1; i < payloads.length; i += 1) {
-          if (payloads[i].timestamp > latest.timestamp) latest = payloads[i];
+        let latest = mergedPayloads[0];
+        for (let i = 1; i < mergedPayloads.length; i += 1) {
+          if (mergedPayloads[i].timestamp > latest.timestamp) latest = mergedPayloads[i];
         }
         await applyAutomaticTargetRecalibration({
           weight: latest.weight,
@@ -4065,7 +4068,11 @@ export default function SalaComandi() {
             : {}),
         }));
 
-        alert(`✅ Importazione completata! ${payloads.length} misurazioni salvate nel database.`);
+        const dupNote =
+          payloads.length > mergedPayloads.length
+            ? ` (${payloads.length} righe CSV → ${mergedPayloads.length} giorni dopo unione duplicati)`
+            : '';
+        alert(`✅ Importazione completata! ${mergedPayloads.length} misurazioni salvate nel database.${dupNote}`);
       } catch (err) {
         console.error('Errore importazione CSV body metrics:', err);
         alert(

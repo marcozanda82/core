@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef } from 'react';
-import { getLatestBiometricRecord, sortBiometricsByTimeAsc } from './biometricHistory';
+import { mergeDuplicateBiometrics } from './biometricHistory';
 
 const card = {
   background: 'rgba(17,17,17,0.92)',
@@ -69,12 +69,50 @@ export default function HistoryView({
   const [visceral, setVisceral] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const rowsDesc = useMemo(() => {
-    const asc = sortBiometricsByTimeAsc(bodyMetricsHistory);
-    return [...asc].reverse();
+  /** Stessa logica dell’import CSV: una riga per data, campi BIA uniti se erano su righe duplicate. */
+  const mergedForDisplay = useMemo(() => {
+    const slim = bodyMetricsHistory
+      .filter((r) => r && typeof r.date === 'string')
+      .map((r) => {
+        const muscle =
+          r.muscle != null && r.muscle !== ''
+            ? Number(r.muscle)
+            : r.muscleMass != null && r.muscleMass !== ''
+              ? Number(r.muscleMass)
+              : null;
+        const water =
+          r.water != null && r.water !== ''
+            ? Number(r.water)
+            : r.waterPercentage != null && r.waterPercentage !== ''
+              ? Number(r.waterPercentage)
+              : null;
+        const visceral =
+          r.visceral != null && r.visceral !== ''
+            ? Number(r.visceral)
+            : r.visceralFat != null && r.visceralFat !== ''
+              ? Number(r.visceralFat)
+              : null;
+        return {
+          date: r.date,
+          timestamp: Number(r.timestamp) || 0,
+          weight: Number(r.weight),
+          bodyFat:
+            r.bodyFat != null && r.bodyFat !== '' ? Number(r.bodyFat) : null,
+          muscle: muscle != null && Number.isFinite(muscle) ? muscle : null,
+          water: water != null && Number.isFinite(water) ? water : null,
+          visceral: visceral != null && Number.isFinite(visceral) ? visceral : null,
+        };
+      })
+      .filter((r) => Number.isFinite(r.weight) && r.weight > 0);
+    return mergeDuplicateBiometrics(slim);
   }, [bodyMetricsHistory]);
 
-  const latest = useMemo(() => getLatestBiometricRecord(bodyMetricsHistory), [bodyMetricsHistory]);
+  const rowsDesc = useMemo(
+    () => [...mergedForDisplay].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
+    [mergedForDisplay],
+  );
+
+  const latest = rowsDesc.length ? rowsDesc[0] : null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -184,13 +222,13 @@ export default function HistoryView({
                 </tr>
               ) : (
                 rowsDesc.map((r) => (
-                  <tr key={r.id || `${r.date}-${r.timestamp}`}>
+                  <tr key={`${r.date}-${r.timestamp}`}>
                     <td style={td}>{r.date || '—'}</td>
                     <td style={td}>{fmt(r.weight)}</td>
                     <td style={td}>{fmt(r.bodyFat)}</td>
-                    <td style={td}>{fmt(r.muscleMass)}</td>
-                    <td style={td}>{fmt(r.waterPercentage)}</td>
-                    <td style={td}>{fmt(r.visceralFat)}</td>
+                    <td style={td}>{fmt(r.muscle ?? r.muscleMass)}</td>
+                    <td style={td}>{fmt(r.water ?? r.waterPercentage)}</td>
+                    <td style={td}>{fmt(r.visceral ?? r.visceralFat)}</td>
                   </tr>
                 ))
               )}

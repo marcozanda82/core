@@ -21,6 +21,66 @@ import { calculateBaselineOffset } from './metabolicMapEngine';
  * @param {Record<string, unknown>} raw
  * @returns {BiometricHistoryEntry | null}
  */
+/**
+ * Valore numerico usabile (non null / finito).
+ * @param {unknown} v
+ * @returns {boolean}
+ */
+function hasNumericValue(v) {
+  if (v == null || v === '') return false;
+  const n = Number(v);
+  return Number.isFinite(n);
+}
+
+/**
+ * Unisce righe CSV con la stessa data (YYYY-MM-DD): compone un solo record per giorno,
+ * riempiendo i campi mancanti dalle altre righe (es. una riga solo peso + una riga BIA).
+ * Ordine di merge: righe ordinate per `timestamp` crescente; per ogni campo si mantiene il primo valore valido,
+ * poi si integrano i null con le righe successive.
+ *
+ * @param {Array<Record<string, unknown>>} parsedRows righe tipo `{ date, timestamp, weight, bodyFat?, muscle?, water?, visceral? }`
+ * @returns {Array<Record<string, unknown>>}
+ */
+export function mergeDuplicateBiometrics(parsedRows) {
+  if (!Array.isArray(parsedRows) || parsedRows.length === 0) return [];
+
+  const byDate = new Map();
+  for (const row of parsedRows) {
+    const d = row?.date;
+    if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d).push(row);
+  }
+
+  const out = [];
+  for (const [, rows] of byDate) {
+    if (rows.length === 1) {
+      out.push(rows[0]);
+      continue;
+    }
+    const sorted = [...rows].sort(
+      (a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0),
+    );
+    const base = { ...sorted[0] };
+    for (let i = 1; i < sorted.length; i += 1) {
+      const r = sorted[i];
+      if (!hasNumericValue(base.weight) && hasNumericValue(r.weight)) {
+        base.weight = Number(r.weight);
+      }
+      for (const key of ['bodyFat', 'muscle', 'water', 'visceral']) {
+        if (!hasNumericValue(base[key]) && hasNumericValue(r[key])) {
+          base[key] = Number(r[key]);
+        }
+      }
+      base.timestamp = Math.max(Number(base.timestamp) || 0, Number(r.timestamp) || 0);
+    }
+    out.push(base);
+  }
+
+  out.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  return out;
+}
+
 export function normalizeBiometricEntry(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const w = Number(raw.weight);
