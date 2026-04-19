@@ -30,6 +30,7 @@ import {
 import { Line } from 'react-chartjs-2';
 import { AlcoholRecoveryComposedChart } from './LifestyleTelemetryCharts';
 import HistoryView from './HistoryView';
+import StatisticsView from './StatisticsView';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -851,6 +852,11 @@ export default function LongevityView({
   onBalanceCsvImport = null,
   /** Salva pesata rapida da HistoryView (Firebase + ricalibrazione) */
   onQuickWeighInSubmit = null,
+  /** Dati settimanali kcal/micros (da SalaComandi) per blocco in cima alle Statistiche */
+  pastDaysStorico = [],
+  weeklyTrendData = [],
+  weeklyMicrosTotals = null,
+  weeklyKcalChartReference = 2300,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const [telemetryTab, setTelemetryTab] = useState('fisiologia');
@@ -1187,6 +1193,13 @@ export default function LongevityView({
 
   return (
     <div style={{ padding: 20, maxWidth: 600, margin: '0 auto' }}>
+      <StatisticsView
+        pastDaysStorico={pastDaysStorico}
+        weeklyTrendData={weeklyTrendData}
+        weeklyMicrosTotals={weeklyMicrosTotals}
+        userTargets={userTargets}
+        kcalReferenceLine={weeklyKcalChartReference}
+      />
 
       <div
         role="tablist"

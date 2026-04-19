@@ -287,6 +287,7 @@ export default function MetabolicUnifiedView({
               totalWindowDays={metabolicMapInputs.totalWindowDays}
               selectedTimeframe={selectedTimeframe}
               baselineOffset={baselineOffset}
+              bodyMetricsHistory={bodyMetricsHistory}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}

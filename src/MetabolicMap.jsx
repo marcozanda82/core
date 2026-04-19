@@ -1,10 +1,49 @@
-import React, { useId, useMemo } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { calculateMetabolicMapPosition } from './metabolicMapEngine';
+import { calculateMetabolicMapPosition, calculateBaselineOffset } from './metabolicMapEngine';
+import { biometricsToMapBaselineInput } from './biometricHistory';
 
 /** viewBox 0–100: stesso sistema di posizionamento del marker (50 ± x/2, 50 ∓ y/2). */
 function mapPointToSvgCoords(x, y) {
   return { cx: 50 + x / 2, cy: 50 - y / 2 };
+}
+
+function bodyMetricEntrySortTime(entry) {
+  if (entry?.date && typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
+    return new Date(`${entry.date}T12:00:00`).getTime();
+  }
+  const ts = Number(entry?.timestamp);
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+/**
+ * Percorso baseline (x,y mappa) dalle pesate → fino all’ancora corrente, in coordinate SVG viewBox.
+ */
+function buildHistoricBaselineTrailSvg(bodyMetricsHistory, baselineX, baselineY) {
+  const arr = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
+  if (arr.length === 0) {
+    return { polylinePoints: '', historicDots: [], canToggle: false };
+  }
+  const sorted = [...arr].sort((a, b) => bodyMetricEntrySortTime(a) - bodyMetricEntrySortTime(b));
+  const historicDots = [];
+  for (let i = 0; i < sorted.length; i += 1) {
+    const inp = biometricsToMapBaselineInput(sorted[i]);
+    if (!inp) continue;
+    const { x, y } = calculateBaselineOffset(inp);
+    const cx = Math.max(-100, Math.min(100, x));
+    const cy = Math.max(-100, Math.min(100, y));
+    historicDots.push(mapPointToSvgCoords(cx, cy));
+  }
+  if (historicDots.length === 0) {
+    return { polylinePoints: '', historicDots: [], canToggle: false };
+  }
+  const anchor = mapPointToSvgCoords(baselineX, baselineY);
+  const linePts = [...historicDots, anchor];
+  return {
+    polylinePoints: linePts.map((p) => `${p.cx},${p.cy}`).join(' '),
+    historicDots,
+    canToggle: true,
+  };
 }
 
 function classifyMapPoint(x, y) {
@@ -128,11 +167,13 @@ export default function MetabolicMap({
   totalWindowDays = 0,
   selectedTimeframe = '7d',
   baselineOffset = null,
+  bodyMetricsHistory = null,
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
   const reduceMotion = useReducedMotion();
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
+  const [showHistoricTrail, setShowHistoricTrail] = useState(false);
 
   const { x, y, finalAura } = useMemo(
     () =>
@@ -168,6 +209,11 @@ export default function MetabolicMap({
 
   const anchorSvg = mapPointToSvgCoords(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
+
+  const historicTrail = useMemo(
+    () => buildHistoricBaselineTrailSvg(bodyMetricsHistory, baselineX, baselineY),
+    [bodyMetricsHistory, baselineX, baselineY],
+  );
 
   const lifestyleDx = shiftedX - baselineX;
   const lifestyleDy = shiftedY - baselineY;
@@ -227,6 +273,28 @@ export default function MetabolicMap({
         margin: '0 auto',
       }}
     >
+      {historicTrail.canToggle && (
+        <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center' }}>
+          <button
+            type="button"
+            onClick={() => setShowHistoricTrail((v) => !v)}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 999,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: showHistoricTrail ? 'rgba(255,255,255,0.12)' : 'transparent',
+              color: 'rgba(230,235,242,0.88)',
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+            }}
+          >
+            {showHistoricTrail ? 'Nascondi rotta storica' : 'Mostra rotta storica'}
+          </button>
+        </div>
+      )}
       <div
         role="img"
         aria-label={`Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(effectiveDistance)}`}
@@ -336,6 +404,22 @@ export default function MetabolicMap({
               vectorEffect="nonScalingStroke"
             />
           </g>
+
+          {showHistoricTrail && historicTrail.polylinePoints ? (
+            <g aria-hidden>
+              <polyline
+                fill="none"
+                stroke="rgba(255,255,255,0.2)"
+                strokeWidth={0.5}
+                strokeDasharray="1.4 2.4"
+                vectorEffect="nonScalingStroke"
+                points={historicTrail.polylinePoints}
+              />
+              {historicTrail.historicDots.map((p, i) => (
+                <circle key={i} cx={p.cx} cy={p.cy} r={0.55} fill="rgba(160, 164, 175, 0.85)" />
+              ))}
+            </g>
+          ) : null}
 
           <motion.g
             animate={{ x: anchorSvg.cx, y: anchorSvg.cy }}

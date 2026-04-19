@@ -8861,6 +8861,12 @@ ${dbKeys || 'n/d'}`;
     return totals;
   }, [pastDaysStorico]);
 
+  const weeklyKcalChartReference = useMemo(() => {
+    const k = Number(userTargets?.kcal);
+    if (Number.isFinite(k) && k > 0) return k;
+    return STRATEGY_PROFILES[dayProfile]?.kcal ?? 2300;
+  }, [userTargets?.kcal, dayProfile]);
+
   const getNutrientSources = (nutrientKey, target, isWeekly = false) => {
     const sources = {};
     const processEntry = (entry) => {
@@ -12436,6 +12442,10 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             predictionCalibration={predictiveCalibration}
             onBalanceCsvImport={handleCSVUpload}
             onQuickWeighInSubmit={handleQuickWeighInFromHistory}
+            pastDaysStorico={pastDaysStorico}
+            weeklyTrendData={weeklyTrendData}
+            weeklyMicrosTotals={weeklyMicrosTotals}
+            weeklyKcalChartReference={weeklyKcalChartReference}
           />
         </div>
       )}
@@ -13487,60 +13497,13 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         )}
 
         {/* VISTA ARCHIVIO STORICO */}
-        {activeAction === 'storico' && (() => {
-          // Calcolo Bilancio Settimanale (ultimi 7 giorni utili)
-          const historyArray = pastDaysStorico || [];
-          const last7Days = historyArray.slice(0, 7);
-          let sumKcalIn = 0;
-          let sumKcalTarget = 0;
-          last7Days.forEach(day => {
-            const assunte = day.calorie ?? day.totali?.kcal ?? day.kcalAssunte ?? 0;
-            const target = (day.calorie != null && day.deficit != null) ? (day.calorie - day.deficit) : (day.userTargets?.kcal ?? day.targetKcal ?? 2500);
-            sumKcalIn += assunte;
-            sumKcalTarget += target;
-          });
-          const diffKcal = Math.round(sumKcalIn - sumKcalTarget);
-          const isSurplus = diffKcal > 0;
-          const avgDiffKcal = last7Days.length > 0 ? Math.round(diffKcal / last7Days.length) : 0;
-
-          return (
+        {activeAction === 'storico' && (
           <div className="view-animate">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
               <h2 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '2px', margin: 0 }}>📚 ARCHIVIO STORICO</h2>
               <div style={{ width: '70px' }}></div>
             </div>
-            {last7Days.length > 0 && (
-              <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '15px', padding: '20px', marginBottom: '25px', border: `1px solid ${isSurplus ? 'rgba(239, 68, 68, 0.4)' : 'rgba(0, 230, 118, 0.4)'}` }}>
-                <h3 style={{ color: '#fff', margin: '0 0 15px 0', fontSize: '1.1rem', textAlign: 'center' }}>
-                  ⚖️ Bilancio Ultimi 7 Giorni
-                </h3>
-                <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#aaa' }}>Totale Assunto</div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(sumKcalIn)}</div>
-                  </div>
-                  <div style={{ textAlign: 'center', padding: '0 15px', borderLeft: '1px solid #333', borderRight: '1px solid #333' }}>
-                    <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Esito Settimanale</div>
-                    <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: isSurplus ? '#ef4444' : '#00e676' }}>
-                      {isSurplus ? '+' : ''}{diffKcal} <span style={{ fontSize: '0.9rem' }}>kcal</span>
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: isSurplus ? '#ef4444' : '#00e676', marginTop: '5px' }}>
-                      Media: {isSurplus ? '+' : ''}{avgDiffKcal} kcal / giorno
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#aaa' }}>Totale Target</div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>{Math.round(sumKcalTarget)}</div>
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '0.8rem', color: '#888' }}>
-                  {isSurplus
-                    ? 'Sei in Surplus calorico. Ideale per la costruzione muscolare, attenzione all\'accumulo di grasso se eccessivo.'
-                    : 'Sei in Deficit calorico. Ideale per la definizione o perdita di peso.'}
-                </div>
-              </div>
-            )}
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', fontSize: '0.7rem', color: '#888', letterSpacing: '1px', marginBottom: '8px' }}>Cerca per data</label>
               <input
@@ -13550,51 +13513,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 style={{ width: '100%', padding: '12px 14px', background: '#111', border: '1px solid #2a2a2a', borderRadius: '10px', color: '#fff', fontSize: '0.9rem', outline: 'none' }}
               />
             </div>
-            {weeklyTrendData.length > 0 && (() => {
-              const totalDeepFastingHours = weeklyTrendData.reduce((acc, d) => acc + (d.maxFastingHours != null && d.maxFastingHours > 12 ? d.maxFastingHours - 12 : 0), 0);
-              return (
-                <div style={{ marginBottom: '16px', padding: '12px 15px', borderRadius: '12px', border: '1px solid rgba(156, 39, 176, 0.4)', background: 'rgba(156, 39, 176, 0.08)' }}>
-                  <h4 style={{ fontSize: '0.7rem', color: '#ce93d8', letterSpacing: '1px', marginBottom: '8px' }}>Digiuno Settimanale</h4>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#e1bee7' }}>
-                    Negli ultimi 7 giorni: <strong style={{ color: '#ffea00' }}>{totalDeepFastingHours.toFixed(1)} h</strong> in digiuno profondo (Chetosi/Autofagia, &gt;12 h consecutive).
-                  </p>
-                </div>
-              );
-            })()}
-            <div style={{ marginBottom: '24px', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '12px', border: '1px solid #2a2a2a' }}>
-              <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px' }}>TREND CALORICO ULTIMI 7 GIORNI</h4>
-              {weeklyTrendData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart data={weeklyTrendData} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
-                    <XAxis dataKey="shortDate" tick={{ fill: '#666', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis domain={[0, (min, max) => (max ?? 0) + 200]} tick={{ fill: '#666', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px', fontSize: '0.8rem' }} />
-                    <ReferenceLine y={userTargets.kcal ?? STRATEGY_PROFILES[dayProfile]?.kcal ?? 2300} stroke="rgba(0, 229, 255, 0.4)" strokeDasharray="3 3" />
-                    <Bar dataKey="calorie" fill="#b0bec5" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <p style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', textAlign: 'center' }}>Dati insufficienti per il trend settimanale.</p>
-              )}
-            </div>
-            {weeklyTrendData.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '24px' }}>
-                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '12px', border: '1px solid #2a2a2a' }}>
-                  <h4 style={{ fontSize: '0.65rem', color: '#ffea00', letterSpacing: '1px', marginBottom: '15px' }}>GRASSI (7 GIORNI)</h4>
-                  {renderWeeklyBar('Grassi Totali', weeklyMicrosTotals.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')}
-                  {renderWeeklyBar('Omega 3', weeklyMicrosTotals.omega3, userTargets.omega3 ?? TARGETS.fat.omega3, 'g', 'omega3')}
-                  {renderWeeklyBar('Omega 6', weeklyMicrosTotals.omega6, TARGETS.fat.omega6, 'g', 'omega6')}
-                </div>
-                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '12px', border: '1px solid #2a2a2a' }}>
-                  <h4 style={{ fontSize: '0.65rem', color: '#00e676', letterSpacing: '1px', marginBottom: '15px' }}>ACCUMULABILI (LIPO + B12)</h4>
-                  {renderWeeklyBar('Vitamina A', weeklyMicrosTotals.vitA, TARGETS.vit.vitA, 'µg', 'vitA')}
-                  {renderWeeklyBar('Vitamina D', weeklyMicrosTotals.vitD, userTargets.vitD ?? TARGETS.vit.vitD, 'µg', 'vitD')}
-                  {renderWeeklyBar('Vitamina E', weeklyMicrosTotals.vitE, TARGETS.vit.vitE, 'mg', 'vitE')}
-                  {renderWeeklyBar('Vitamina K', weeklyMicrosTotals.vitK, TARGETS.vit.vitK, 'µg', 'vitK')}
-                  {renderWeeklyBar('Vitamina B12', weeklyMicrosTotals.vitB12, TARGETS.vit.vitB12, 'µg', 'vitB12')}
-                </div>
-              </div>
-            )}
             {selectedHistoryDate && (
               <div style={{ marginBottom: '24px', padding: '16px', background: 'rgba(176, 190, 197, 0.06)', border: '1px solid rgba(176, 190, 197, 0.2)', borderRadius: '12px' }}>
                 {selectedDayData ? (
@@ -13704,8 +13622,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               </div>
             )}
           </div>
-          );
-        })()}
+        )}
 
         {/* VISTA ZEN — Neural Reset fullscreen (portal su document.body) */}
         {activeAction === 'focus' && createPortal(
@@ -15990,6 +15907,10 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 predictionCalibration={predictiveCalibration}
                 onBalanceCsvImport={handleCSVUpload}
                 onQuickWeighInSubmit={handleQuickWeighInFromHistory}
+                pastDaysStorico={pastDaysStorico}
+                weeklyTrendData={weeklyTrendData}
+                weeklyMicrosTotals={weeklyMicrosTotals}
+                weeklyKcalChartReference={weeklyKcalChartReference}
               />
             </div>
 
