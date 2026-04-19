@@ -8,6 +8,16 @@ function mapPointToSvgCoords(x, y) {
   return { cx: 50 + x / 2, cy: 50 - y / 2 };
 }
 
+/** Stesso range della mappa (−100…100) usato per i punti storici e per l’Ancora. */
+function clampMapAxis(value) {
+  return Math.max(-100, Math.min(100, value));
+}
+
+/** Coordinate SVG dell’Ancora da baselineOffset (allineate allo storico). */
+function baselineOffsetToAnchorSvg(baselineX, baselineY) {
+  return mapPointToSvgCoords(clampMapAxis(baselineX), clampMapAxis(baselineY));
+}
+
 function bodyMetricEntrySortTime(entry) {
   if (entry?.date && typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
     return new Date(`${entry.date}T12:00:00`).getTime();
@@ -22,7 +32,7 @@ function bodyMetricEntrySortTime(entry) {
 function buildHistoricBaselineTrailSvg(bodyMetricsHistory, baselineX, baselineY) {
   const arr = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
   if (arr.length === 0) {
-    return { polylinePoints: '', historicDots: [], canToggle: false };
+    return { polylinePoints: '', historicDots: [], lastSolidConnector: null, canToggle: false };
   }
   const sorted = [...arr].sort((a, b) => bodyMetricEntrySortTime(a) - bodyMetricEntrySortTime(b));
   const historicDots = [];
@@ -30,18 +40,23 @@ function buildHistoricBaselineTrailSvg(bodyMetricsHistory, baselineX, baselineY)
     const inp = biometricsToMapBaselineInput(sorted[i]);
     if (!inp) continue;
     const { x, y } = calculateBaselineOffset(inp);
-    const cx = Math.max(-100, Math.min(100, x));
-    const cy = Math.max(-100, Math.min(100, y));
-    historicDots.push(mapPointToSvgCoords(cx, cy));
+    historicDots.push(mapPointToSvgCoords(clampMapAxis(x), clampMapAxis(y)));
   }
   if (historicDots.length === 0) {
-    return { polylinePoints: '', historicDots: [], canToggle: false };
+    return { polylinePoints: '', historicDots: [], lastSolidConnector: null, canToggle: false };
   }
-  const anchor = mapPointToSvgCoords(baselineX, baselineY);
-  const linePts = [...historicDots, anchor];
+  const anchor = baselineOffsetToAnchorSvg(baselineX, baselineY);
+  const trailSvgPoints = [...historicDots];
+  trailSvgPoints.push(anchor);
+  const lastHistoric = historicDots[historicDots.length - 1];
+  const lastSolidConnector =
+    lastHistoric.cx === anchor.cx && lastHistoric.cy === anchor.cy
+      ? null
+      : { x1: lastHistoric.cx, y1: lastHistoric.cy, x2: anchor.cx, y2: anchor.cy };
   return {
-    polylinePoints: linePts.map((p) => `${p.cx},${p.cy}`).join(' '),
+    polylinePoints: trailSvgPoints.map((p) => `${p.cx},${p.cy}`).join(' '),
     historicDots,
+    lastSolidConnector,
     canToggle: true,
   };
 }
@@ -207,7 +222,7 @@ export default function MetabolicMap({
   const displayX = shiftedX;
   const displayY = shiftedY;
 
-  const anchorSvg = mapPointToSvgCoords(baselineX, baselineY);
+  const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
 
   const historicTrail = useMemo(
@@ -415,6 +430,17 @@ export default function MetabolicMap({
                 vectorEffect="nonScalingStroke"
                 points={historicTrail.polylinePoints}
               />
+              {historicTrail.lastSolidConnector ? (
+                <line
+                  x1={historicTrail.lastSolidConnector.x1}
+                  y1={historicTrail.lastSolidConnector.y1}
+                  x2={historicTrail.lastSolidConnector.x2}
+                  y2={historicTrail.lastSolidConnector.y2}
+                  stroke="rgba(255,255,255,0.2)"
+                  strokeWidth={0.5}
+                  vectorEffect="nonScalingStroke"
+                />
+              ) : null}
               {historicTrail.historicDots.map((p, i) => (
                 <circle key={i} cx={p.cx} cy={p.cy} r={0.55} fill="rgba(160, 164, 175, 0.85)" />
               ))}
@@ -422,6 +448,7 @@ export default function MetabolicMap({
           ) : null}
 
           <motion.g
+            initial={{ x: anchorSvg.cx, y: anchorSvg.cy }}
             animate={{ x: anchorSvg.cx, y: anchorSvg.cy }}
             transition={vectorTransition}
             style={{ transformOrigin: '0px 0px' }}
