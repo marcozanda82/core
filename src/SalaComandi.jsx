@@ -176,6 +176,15 @@ import {
   generateLocalHabitScanner,
 } from './coreEngine';
 
+/** Pesi / strength: richiede nota testuale obbligatoria in vista Attività. */
+function workoutActivityRequiresStrengthDetailNote(typeId) {
+  const def = getWorkoutActivityTypeDef(typeId);
+  if (typeId === 'pesi') return true;
+  if (def?.category === 'strength') return true;
+  const raw = String(typeId || '').toLowerCase();
+  return raw.includes('strength') || raw.includes('bodybuilding');
+}
+
 function migrateIdealStrategy(raw) {
   const defaults = {
     colazione: 400,
@@ -458,7 +467,10 @@ function getInvisibleContext({
   const bb = Math.round(Number(bodyBatteryPercent) || 0);
   const dynK = Number(dynamicDailyKcal) || 0;
   const eatenK = Number(totali?.kcal) || 0;
+  const kcalSurplus = eatenK > dynK ? Math.round(eatenK - dynK) : 0;
   const resKcal = Math.round(Math.max(0, dynK - eatenK));
+  const kcalBalanceSnippet =
+    kcalSurplus > 0 ? `SURPLUS +${kcalSurplus} kcal` : `Residuo: ${resKcal}kcal`;
   const tProt = Number(userTargets?.prot ?? 150);
   const tCarb = Number(userTargets?.carb ?? 200);
   const tFat = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 65);
@@ -481,7 +493,7 @@ function getInvisibleContext({
     kentuCalorieStrategy != null && String(kentuCalorieStrategy).trim() !== ''
       ? ` Strategia kcal oggi: ${calorieStrategyShortLabelIt(kentuCalorieStrategy)}.`
       : '';
-  return `[CONTEXT_LIVE: BB: ${bb}%, Residuo: ${resKcal}kcal, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}.${smartPart}${stratPart}${wave}]`;
+  return `[CONTEXT_LIVE: BB: ${bb}%, ${kcalBalanceSnippet}, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}.${smartPart}${stratPart}${wave}]`;
 }
 
 /** Totali kcal/P/C/F solo da voci food/recipe nel log giornaliero. */
@@ -514,7 +526,10 @@ function buildQuickBriefingSecretPrompt({
   const bb = Math.round(Number(bodyBatteryPercent) || 0);
   const dynK = Math.round(Number(dynamicDailyKcal) || 0);
   const eatenK = Math.round(Number(totali?.kcal) || 0);
+  const kcalSurplus = eatenK > dynK ? Math.round(eatenK - dynK) : 0;
   const resKcal = Math.max(0, dynK - eatenK);
+  const kcalBalanceSnippet =
+    kcalSurplus > 0 ? `SURPLUS +${kcalSurplus} kcal` : `residuo ~${resKcal}kcal`;
   const tProt = Number(userTargets?.prot ?? 150);
   const tCarb = Number(userTargets?.carb ?? 200);
   const tFat = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 65);
@@ -526,7 +541,7 @@ function buildQuickBriefingSecretPrompt({
   const rFat = Math.max(0, Math.round((tFat - eFat) * 10) / 10);
   return (
     `QUICK_ACTION=BRIEFING. Sintesi operativa solo da questi dati (non chiedere altri dati): ` +
-    `BB ${bb}% · budget kcal giornaliero ~${dynK} · assunte ${eatenK}kcal · residuo ~${resKcal}kcal · ` +
+    `BB ${bb}% · budget kcal giornaliero ~${dynK} · assunte ${eatenK}kcal · ${kcalBalanceSnippet} · ` +
     `macro residui ${rProt}g P / ${rCarb}g C / ${rFat}g F. ` +
     `Applica REGOLE DI STILE Quick Action (Lavagna, max 3 elenchi, zero intro/outro).`
   );
@@ -2482,11 +2497,20 @@ export default function SalaComandi() {
 
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(300);
-  const [workoutStartTime, setWorkoutStartTime] = useState(18);
   const [workoutEndTime, setWorkoutEndTime] = useState(19);
+  const [workoutDurationMin, setWorkoutDurationMin] = useState(30);
+  const [workoutStrengthDetail, setWorkoutStrengthDetail] = useState('');
   const [workoutMuscles, setWorkoutMuscles] = useState([]);
   const [editingWorkoutId, setEditingWorkoutId] = useState(null);
   const [editingMealId, setEditingMealId] = useState(null);
+
+  const workoutDurationHours = Math.max(0.25, Math.min(24, Number(workoutDurationMin) || 30) / 60);
+  const workoutStartTime = (() => {
+    let s = Number(workoutEndTime) - workoutDurationHours;
+    if (s < 0) s += 24;
+    if (s >= 24) s -= 24;
+    return s;
+  })();
 
   const dailyWaterGoal = userTargets.water ?? 2500; 
   const [isZenActive, setIsZenActive] = useState(false);
@@ -4969,7 +4993,8 @@ export default function SalaComandi() {
       case 'workout': {
         const nowT = getCurrentTimeRoundedTo15Min();
         setWorkoutEndTime(nowT);
-        setWorkoutStartTime(Math.max(0, nowT - 0.5));
+        setWorkoutDurationMin(30);
+        setWorkoutStrengthDetail('');
         if (fromModal) setShowChoiceModal(false);
         setActiveAction('allenamento');
         setIsDrawerOpen(true);
@@ -6072,26 +6097,37 @@ Ottimo! Diario aggiornato. 🥗`;
   };
 
   const handleSaveWorkout = () => {
+    if (workoutActivityRequiresStrengthDetailNote(workoutType) && !String(workoutStrengthDetail).trim()) {
+      window.alert('Compila «Dettaglio workout / gruppi muscolari» per salvare un allenamento Pesi / strength.');
+      return;
+    }
     const def = getWorkoutActivityTypeDef(workoutType);
     const nodeKind = def?.nodeKind ?? 'workout';
     const isWork = nodeKind === 'work';
     const isCognitive = nodeKind === 'cognitive';
-    const duration = Math.max(0.25, Number(workoutEndTime) - Number(workoutStartTime));
+    const duration = workoutDurationHours;
+    const startDec = workoutStartTime;
     const finalId = editingWorkoutId || (isWork ? 'work_' : isCognitive ? 'cognitive_' : 'workout_') + Date.now();
 
     const musclesCanon = normalizeMuscleGroupArray(workoutMuscles);
-    const desc = getWorkoutActivityLogDescription(workoutType, musclesCanon);
+    const detailTrim = String(workoutStrengthDetail).trim();
+    const baseDesc = getWorkoutActivityLogDescription(workoutType, musclesCanon);
+    const desc =
+      detailTrim && workoutActivityRequiresStrengthDetailNote(workoutType)
+        ? `${baseDesc} — ${detailTrim}`
+        : baseDesc;
     const cognitiveKcal = isCognitive ? Math.round(getCognitiveMetForActivity(workoutType) * 70 * duration) : workoutKcal;
     const iconNode = isCognitive ? (def?.icon || '📚') : isWork ? '💼' : def?.icon || '🏋️';
     const nodeData = {
       id: finalId,
       type: isCognitive ? 'cognitive' : isWork ? 'work' : 'workout',
-      time: Number(workoutStartTime),
+      time: Number(startDec),
       duration,
       kcal: isCognitive ? cognitiveKcal : workoutKcal,
       icon: iconNode,
       subType: workoutType,
       muscles: musclesCanon,
+      ...(detailTrim ? { workoutDetailNote: detailTrim } : {}),
     };
     const logData = {
       id: finalId,
@@ -6102,6 +6138,7 @@ Ottimo! Diario aggiornato. 🥗`;
       kcal: isCognitive ? cognitiveKcal : workoutKcal,
       cal: isCognitive ? cognitiveKcal : workoutKcal,
       duration,
+      ...(detailTrim ? { workoutDetailNote: detailTrim } : {}),
     };
 
     if (isSimulationMode) {
@@ -6111,6 +6148,7 @@ Ottimo! Diario aggiornato. 🥗`;
       });
       setEditingWorkoutId(null);
       setWorkoutMuscles([]);
+      setWorkoutStrengthDetail('');
       closeDrawer();
       return;
     }
@@ -6124,6 +6162,7 @@ Ottimo! Diario aggiornato. 🥗`;
 
     setEditingWorkoutId(null);
     setWorkoutMuscles([]);
+    setWorkoutStrengthDetail('');
     closeDrawer();
   };
 
@@ -6201,7 +6240,16 @@ Ottimo! Diario aggiornato. 🥗`;
     syncDatiFirebase(newLog, newNodes);
   };
 
-  const handleMiniTimelineDrag = (e, containerRef, type, currentStart, currentEnd, setterStart, setterEnd) => {
+  const handleMiniTimelineDrag = (
+    e,
+    containerRef,
+    type,
+    currentStart,
+    currentEnd,
+    setterStart,
+    setterEnd,
+    dragOpts = null,
+  ) => {
     if (!containerRef?.current) return;
     e.preventDefault();
     const target = e.currentTarget;
@@ -6209,6 +6257,10 @@ Ottimo! Diario aggiornato. 🥗`;
     const container = containerRef.current;
     const rect = container.getBoundingClientRect();
     target.setPointerCapture(pointerId);
+    const fixedD =
+      dragOpts && typeof dragOpts.fixedDurationHours === 'number' && dragOpts.fixedDurationHours > 0
+        ? dragOpts.fixedDurationHours
+        : null;
 
     const onMove = (moveEvent) => {
       moveEvent.preventDefault();
@@ -6218,8 +6270,13 @@ Ottimo! Diario aggiornato. 🥗`;
         setterStart(newTime);
       } else if (type === 'bar-start') {
         setterStart(Math.min(newTime, currentEnd - 0.25));
+      } else if (type === 'bar-end' && fixedD != null) {
+        setterEnd(Math.max(newTime, currentStart + fixedD));
       } else if (type === 'bar-end') {
         setterEnd(Math.max(newTime, currentStart + 0.25));
+      } else if (type === 'bar-all' && fixedD != null) {
+        const clampedStart = Math.min(24 - fixedD, newTime);
+        setterEnd(clampedStart + fixedD);
       } else if (type === 'bar-all') {
         const duration = currentEnd - currentStart;
         const clampedStart = Math.min(24 - duration, newTime);
@@ -11824,6 +11881,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               Number(dynamicDailyKcal) || Number(baseKcal) || Number(userTargets?.kcal ?? 2500)
             );
             const dialConsumedKcal = Math.round(Number(totali?.kcal) || 0);
+            const dialKcalSurplus =
+              dialConsumedKcal > dialDailyTargetKcal ? dialConsumedKcal - dialDailyTargetKcal : 0;
             const dialKcalRemaining = Math.max(0, dialDailyTargetKcal - dialConsumedKcal);
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
@@ -11952,29 +12011,43 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                               fontSize: '3rem',
                               fontWeight: 'bold',
                               color:
-                                activeDialMode === 'pro'
-                                  ? '#b666d2'
-                                  : activeDialMode === 'cho'
-                                    ? '#00ff88'
-                                    : activeDialMode === 'fat'
-                                      ? '#ffd700'
-                                      : '#ff6b00',
-                              textShadow: '0 0 15px rgba(255, 107, 0, 0.35)',
+                                activeDialMode === 'kcal' && dialKcalSurplus > 0
+                                  ? '#ef4444'
+                                  : activeDialMode === 'pro'
+                                    ? '#b666d2'
+                                    : activeDialMode === 'cho'
+                                      ? '#00ff88'
+                                      : activeDialMode === 'fat'
+                                        ? '#ffd700'
+                                        : '#ff6b00',
+                              textShadow:
+                                activeDialMode === 'kcal' && dialKcalSurplus > 0
+                                  ? '0 0 18px rgba(239, 68, 68, 0.45)'
+                                  : '0 0 15px rgba(255, 107, 0, 0.35)',
                             }}
                           >
-                            {activeDialMode === 'kcal' && dialKcalRemaining}
+                            {activeDialMode === 'kcal' && dialKcalSurplus > 0 && (
+                              <span style={{ fontSize: '2.35rem', letterSpacing: '0.02em' }}>
+                                + {dialKcalSurplus}{' '}
+                                <span style={{ fontSize: '0.42em', fontWeight: 700 }}>kcal</span>
+                              </span>
+                            )}
+                            {activeDialMode === 'kcal' && dialKcalSurplus <= 0 && dialKcalRemaining}
                             {activeDialMode === 'pro' && Math.round(totali?.prot || 0)}
                             {activeDialMode === 'cho' && Math.round(totali?.carb || 0)}
                             {activeDialMode === 'fat' && Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}
                           </div>
                           <div style={{ color: '#888', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '2px' }}>
-                            {activeDialMode === 'kcal' && 'restanti'}
+                            {activeDialMode === 'kcal' && (dialKcalSurplus > 0 ? 'SURPLUS' : 'restanti')}
                             {activeDialMode === 'pro' && 'g Proteine'}
                             {activeDialMode === 'cho' && 'g Carboidrati'}
                             {activeDialMode === 'fat' && 'g Grassi'}
                           </div>
                           <div style={{ color: '#555', fontSize: '0.8rem', marginTop: '4px' }}>
-                            {activeDialMode === 'kcal' && `obiettivo ${dialDailyTargetKcal} kcal`}
+                            {activeDialMode === 'kcal' &&
+                              (dialKcalSurplus > 0
+                                ? `obiettivo ${dialDailyTargetKcal} kcal · assunte ${dialConsumedKcal}`
+                                : `obiettivo ${dialDailyTargetKcal} kcal`)}
                             {activeDialMode === 'pro' && `obiettivo ${Math.round(targetProt)} g`}
                             {activeDialMode === 'cho' && `obiettivo ${Math.round(targetCarb)} g`}
                             {activeDialMode === 'fat' && `obiettivo ${Math.round(targetFat)} g`}
@@ -12816,13 +12889,64 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               })}
             </div>
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px', gap: '8px' }}>
-                <span>0:00</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input type="time" value={decimalToTimeStr(workoutStartTime)} onChange={(e) => setWorkoutStartTime(Math.min(workoutEndTime - 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '130px', minWidth: '110px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
-                  <span style={{ color: '#666' }}>–</span>
-                  <input type="time" value={decimalToTimeStr(workoutEndTime)} onChange={(e) => setWorkoutEndTime(Math.max(workoutStartTime + 0.25, parseTimeStrToDecimal(e.target.value)))} style={{ width: '130px', minWidth: '110px', padding: '6px 8px', background: '#1a1a1a', border: '1px solid #ff6d00', borderRadius: '8px', color: '#ff6d00', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center' }} />
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '14px', marginBottom: '10px' }}>
+                <div style={{ flex: '1 1 140px' }}>
+                  <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                    Ora di fine
+                  </div>
+                  <input
+                    type="time"
+                    value={decimalToTimeStr(workoutEndTime)}
+                    onChange={(e) =>
+                      setWorkoutEndTime(Math.min(24, Math.max(0, parseTimeStrToDecimal(e.target.value))))
+                    }
+                    style={{
+                      width: '100%',
+                      maxWidth: '160px',
+                      padding: '8px 10px',
+                      background: '#1a1a1a',
+                      border: '1px solid #ff6d00',
+                      borderRadius: '8px',
+                      color: '#ff6d00',
+                      fontSize: '1.05rem',
+                      fontWeight: 'bold',
+                      textAlign: 'center',
+                    }}
+                  />
                 </div>
+                <div style={{ flex: '0 0 120px' }}>
+                  <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                    Durata (min)
+                  </div>
+                  <input
+                    type="number"
+                    min={15}
+                    max={600}
+                    step={5}
+                    value={workoutDurationMin}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      setWorkoutDurationMin(
+                        Number.isFinite(n) ? Math.max(15, Math.min(600, Math.round(n))) : 30,
+                      );
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      background: '#1a1a1a',
+                      border: '1px solid #ff6d00',
+                      borderRadius: '8px',
+                      color: '#ff6d00',
+                      fontSize: '1.05rem',
+                      fontWeight: 'bold',
+                      textAlign: 'center',
+                    }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#666', fontSize: '0.65rem', marginBottom: '8px' }}>
+                <span>0:00</span>
+                <span>Inizio calcolato: {decimalToTimeStr(workoutStartTime)}</span>
                 <span>24:00</span>
               </div>
               <div ref={miniTimelineActivityRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
@@ -12849,11 +12973,67 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     </div>
                   );
                 })}
-                <div className="mini-timeline-bar-wrap" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-all', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime)} style={{ position: 'absolute', left: `${getTimePositionPercent(workoutStartTime)}%`, width: `${getTimePositionPercent(workoutEndTime - workoutStartTime)}%`, top: '50%', transform: 'translateY(-50%)', height: '24px', background: 'rgba(255, 109, 0, 0.4)', border: '1px solid #ff6d00', borderRadius: '4px', cursor: 'grab', zIndex: 10, touchAction: 'none' }}>
-                  <div className="mini-timeline-hitbox" role="slider" aria-label="Inizio attività" onPointerDown={(e) => { e.stopPropagation(); handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-start', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime); }} style={{ position: 'absolute', left: '-22px', top: '50%', transform: 'translateY(-50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11 }}>
-                    <div style={{ width: '12px', height: '24px', background: '#ff6d00', borderRadius: '4px', pointerEvents: 'none' }}></div>
-                  </div>
-                  <div className="mini-timeline-hitbox" role="slider" aria-label="Fine attività" onPointerDown={(e) => { e.stopPropagation(); handleMiniTimelineDrag(e, miniTimelineActivityRef, 'bar-end', workoutStartTime, workoutEndTime, setWorkoutStartTime, setWorkoutEndTime); }} style={{ position: 'absolute', right: '-22px', top: '50%', transform: 'translateY(-50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11 }}>
+                <div
+                  className="mini-timeline-bar-wrap"
+                  onPointerDown={(e) =>
+                    handleMiniTimelineDrag(
+                      e,
+                      miniTimelineActivityRef,
+                      'bar-all',
+                      workoutStartTime,
+                      workoutEndTime,
+                      () => {},
+                      setWorkoutEndTime,
+                      { fixedDurationHours: workoutDurationHours },
+                    )
+                  }
+                  style={{
+                    position: 'absolute',
+                    left: `${getTimePositionPercent(workoutStartTime)}%`,
+                    width: `${getTimePositionPercent(workoutDurationHours)}%`,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    height: '24px',
+                    background: 'rgba(255, 109, 0, 0.4)',
+                    border: '1px solid #ff6d00',
+                    borderRadius: '4px',
+                    cursor: 'grab',
+                    zIndex: 10,
+                    touchAction: 'none',
+                  }}
+                >
+                  <div
+                    className="mini-timeline-hitbox"
+                    role="slider"
+                    aria-label="Fine attività"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      handleMiniTimelineDrag(
+                        e,
+                        miniTimelineActivityRef,
+                        'bar-end',
+                        workoutStartTime,
+                        workoutEndTime,
+                        () => {},
+                        setWorkoutEndTime,
+                        { fixedDurationHours: workoutDurationHours },
+                      );
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: '-22px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: '44px',
+                      height: '44px',
+                      minWidth: 44,
+                      minHeight: 44,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      zIndex: 11,
+                    }}
+                  >
                     <div style={{ width: '12px', height: '24px', background: '#ff6d00', borderRadius: '4px', pointerEvents: 'none' }}></div>
                   </div>
                 </div>
@@ -12898,6 +13078,31 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 </div>
               );
             })()}
+            {workoutActivityRequiresStrengthDetailNote(workoutType) && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
+                  Dettaglio workout / gruppi muscolari <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <textarea
+                  value={workoutStrengthDetail}
+                  onChange={(e) => setWorkoutStrengthDetail(e.target.value)}
+                  rows={3}
+                  placeholder="Es. Push day — petto + tricipiti, esercizi e volumi…"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '10px 12px',
+                    background: '#1a1a1a',
+                    border: `1px solid ${String(workoutStrengthDetail).trim() ? '#444' : 'rgba(239,68,68,0.55)'}`,
+                    borderRadius: '10px',
+                    color: '#e8e8e8',
+                    fontSize: '0.85rem',
+                    resize: 'vertical',
+                    minHeight: '72px',
+                  }}
+                />
+              </div>
+            )}
             <div className="burn-slider-container">
               <span className="burn-label" style={{color: '#ff6d00'}}>OUTPUT ENERGETICO STIMATO</span>
               <div className="burn-value workout">{Math.min(750, workoutKcal)}</div>
@@ -14709,7 +14914,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     setTimelineInsertUI(null);
                     setEditingWorkoutId(null);
                     setWorkoutEndTime(Math.min(24, hour + 0.5));
-                    setWorkoutStartTime(Math.max(0, hour - 0.25));
+                    setWorkoutDurationMin(45);
+                    setWorkoutStrengthDetail('');
                     setActiveAction('allenamento');
                     setIsDrawerOpen(true);
                   }}
@@ -15203,9 +15409,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   setEditingWorkoutId(node.id);
                   const ghostSt = node.subType || 'pesi';
                   setWorkoutType(resolveWorkoutActivityTypeId(ghostSt) ?? ghostSt);
-                  setWorkoutStartTime(t);
-                  setWorkoutEndTime(Math.min(24, t + (node.duration ?? 1)));
+                  const durH = Math.max(0.25, Number(node.duration) || 1);
+                  setWorkoutEndTime(Math.min(24, t + durH));
+                  setWorkoutDurationMin(Math.max(15, Math.min(600, Math.round(durH * 60))));
                   setWorkoutKcal(node.kcal || node.cal || 300);
+                  setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
                   setWorkoutMuscles(
                     normalizeMuscleGroupArray(
                       Array.isArray(node.muscles)
@@ -15222,9 +15430,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 setEditingWorkoutId(node.id);
                 const editSt = node.subType || (node.type === 'work' ? 'lavoro' : 'pesi');
                 setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
-                setWorkoutStartTime(node.time ?? 12);
-                setWorkoutEndTime((node.time ?? 12) + (node.duration ?? 1));
+                const startT = node.time ?? 12;
+                const durH = Math.max(0.25, Number(node.duration) || 1);
+                setWorkoutEndTime(Math.min(24, startT + durH));
+                setWorkoutDurationMin(Math.max(15, Math.min(600, Math.round(durH * 60))));
                 setWorkoutKcal(node.kcal || node.cal || 300);
+                setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
                 setWorkoutMuscles(
                   normalizeMuscleGroupArray(
                     Array.isArray(node.muscles)
