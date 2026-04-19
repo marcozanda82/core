@@ -29,14 +29,15 @@ const MAP_CENTER_SVG = { cx: 50, cy: 50 };
 /** Sotto questa lunghezza (spazio mappa −100…100) il vettore stile di vita si considera “quasi nullo”: ago verso il centro, più tenue. */
 const LIFESTYLE_VECTOR_IDLE_THRESHOLD = 4;
 
-/** Lunghezza minima del segmento in unità SVG sotto cui la linea laser è nascosta. */
-const VECTOR_HIDE_LEN_SVG = 2;
+/** Lunghezza lama ago (viewBox) quando il vettore stile di vita è quasi nullo. */
+const NEEDLE_BLADE_LEN_IDLE = 3.2;
 
-/** Punta ago: distanza dal centro ancora lungo la direzione (unità viewBox). */
-const NEEDLE_LENGTH = 5.4;
+/** Estremi lama ago (viewBox) in funzione della magnitudo anchor → target (spazio mappa). */
+const NEEDLE_BLADE_LEN_MIN = 4;
+const NEEDLE_BLADE_LEN_MAX = 12.5;
 
-/** Lunghezza dalla punta ago dove inizia il segmento “laser” (evita sovrapposizione col rombo). */
-const LINE_START_BACK_OFFSET = 1.1;
+/** Valore di riferimento magnitudo (spazio mappa −100…100) per allungare l’ago al massimo. */
+const LIFESTYLE_LEN_FOR_FULL_NEEDLE = 95;
 
 const VECTOR_MOTION_TRANSITION = { duration: 0.5, ease: [0.4, 0, 0.2, 1] };
 
@@ -115,14 +116,6 @@ function needleRotationDegSvg(targetSvg, anchorSvg) {
   return baseDeg + 90;
 }
 
-function unitToward(from, to) {
-  const dx = to.cx - from.cx;
-  const dy = to.cy - from.cy;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) return { ux: 1, uy: 0 };
-  return { ux: dx / len, uy: dy / len };
-}
-
 /**
  * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
  */
@@ -138,7 +131,6 @@ export default function MetabolicMap({
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
-  const markerArrowId = `kentu-arrowhead-${uid}`;
   const reduceMotion = useReducedMotion();
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
 
@@ -190,19 +182,28 @@ export default function MetabolicMap({
     : needleRotationDegSvg(tipSvg, anchorSvg);
   const needleBladeOpacity = lifestyleNearlyIdle ? 0.38 : 0.96;
 
-  const svgVecLen = Math.hypot(tipSvg.cx - anchorSvg.cx, tipSvg.cy - anchorSvg.cy);
-  const showVector = svgVecLen >= VECTOR_HIDE_LEN_SVG;
+  const distAnchor = Math.hypot(
+    anchorSvg.cx - MAP_CENTER_SVG.cx,
+    anchorSvg.cy - MAP_CENTER_SVG.cy,
+  );
+  const distTarget = Math.hypot(
+    tipSvg.cx - MAP_CENTER_SVG.cx,
+    tipSvg.cy - MAP_CENTER_SVG.cy,
+  );
+  const needleFill =
+    distTarget > distAnchor ? 'rgba(255, 60, 60, 0.9)' : 'rgba(0, 200, 255, 0.9)';
 
-  const lineGeometry = useMemo(() => {
-    const tip = tipSvg;
-    const anchor = anchorSvg;
-    const u = unitToward(anchor, tip);
-    const start = {
-      cx: anchor.cx + u.ux * (NEEDLE_LENGTH - LINE_START_BACK_OFFSET),
-      cy: anchor.cy + u.uy * (NEEDLE_LENGTH - LINE_START_BACK_OFFSET),
-    };
-    return { x1: start.cx, y1: start.cy, x2: tip.cx, y2: tip.cy };
-  }, [anchorSvg, tipSvg]);
+  const needleBladeLen = useMemo(() => {
+    if (lifestyleNearlyIdle) return NEEDLE_BLADE_LEN_IDLE;
+    const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
+    return NEEDLE_BLADE_LEN_MIN + t * (NEEDLE_BLADE_LEN_MAX - NEEDLE_BLADE_LEN_MIN);
+  }, [lifestyleNearlyIdle, lifestyleLen]);
+
+  const needlePolygonPoints = useMemo(() => {
+    const halfW = Math.min(0.62, 0.28 + needleBladeLen * 0.035);
+    const baseY = 0.55;
+    return `0,-${needleBladeLen} ${halfW},${baseY} -${halfW},${baseY}`;
+  }, [needleBladeLen]);
 
   const labelStyle = {
     position: 'absolute',
@@ -303,17 +304,6 @@ export default function MetabolicMap({
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
-            <marker
-              id={markerArrowId}
-              markerWidth={5}
-              markerHeight={5}
-              refX={4.8}
-              refY={2.5}
-              orient="auto"
-              markerUnits="userSpaceOnUse"
-            >
-              <polygon points="0 0, 5 2.5, 0 5" fill="rgba(255,255,255,0.92)" />
-            </marker>
           </defs>
 
           {/* Blue Zone + fasce allarme */}
@@ -347,23 +337,6 @@ export default function MetabolicMap({
             />
           </g>
 
-          {showVector ? (
-            <motion.line
-              stroke="rgba(255, 255, 255, 0.55)"
-              strokeWidth={1.15}
-              strokeLinecap="round"
-              markerEnd={`url(#${markerArrowId})`}
-              vectorEffect="nonScalingStroke"
-              animate={{
-                x1: lineGeometry.x1,
-                y1: lineGeometry.y1,
-                x2: lineGeometry.x2,
-                y2: lineGeometry.y2,
-              }}
-              transition={vectorTransition}
-            />
-          ) : null}
-
           <motion.g
             animate={{ x: anchorSvg.cx, y: anchorSvg.cy }}
             transition={vectorTransition}
@@ -382,12 +355,11 @@ export default function MetabolicMap({
                 vectorEffect="nonScalingStroke"
               />
               <motion.polygon
-                points="0,-5.8 0.42,0.55 -0.42,0.55"
-                fill="rgba(255,255,255,0.92)"
+                points={needlePolygonPoints}
                 stroke="rgba(255,255,255,0.35)"
                 strokeWidth={0.12}
                 vectorEffect="nonScalingStroke"
-                animate={{ opacity: needleBladeOpacity }}
+                animate={{ fill: needleFill, opacity: needleBladeOpacity }}
                 transition={vectorTransition}
               />
             </motion.g>
