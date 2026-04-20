@@ -2066,6 +2066,10 @@ export default function SalaComandi() {
     }
   }, [useNewHome]);
 
+  useEffect(() => {
+    console.log(`[HomeToggle] useNewHome updated -> ${useNewHome}`);
+  }, [useNewHome]);
+
   const [mainTabTouchStartX, setMainTabTouchStartX] = useState(null);
   const [mainTabTouchEndX, setMainTabTouchEndX] = useState(null);
   const mainTabTouchStartXRef = useRef(null);
@@ -3329,6 +3333,9 @@ export default function SalaComandi() {
 
   const handleCoreOsClick = () => {
     coreOsClickCount.current += 1;
+    console.log(
+      `[HomeToggle] logo tap count=${coreOsClickCount.current}, useNewHome(current)=${useNewHome}`,
+    );
     if (coreOsClickCount.current === 3) {
       setUseNewHome((prev) => {
         const next = !prev;

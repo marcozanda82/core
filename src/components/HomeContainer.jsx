@@ -7,6 +7,7 @@ import HomeViewV2 from './HomeViewV2';
  * Keeps data/business logic in the caller unchanged.
  */
 export default function HomeContainer({ useNewHome = false, ...homeProps }) {
+  console.log(`[HomeContainer] rendering ${useNewHome ? 'HomeViewV2' : 'HomeView'}`);
   if (useNewHome) {
     return <HomeViewV2 {...homeProps} />;
   }
