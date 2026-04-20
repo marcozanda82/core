@@ -176,10 +176,10 @@ import {
   generateLocalHabitScanner,
 } from './coreEngine';
 
-/** Pesi / strength: richiede nota testuale obbligatoria in vista Attività. */
+/** Pesi: gruppi muscolari via chip (nessun campo testuale obbligatorio). Altri strength: nota opzionale legacy. */
 function workoutActivityRequiresStrengthDetailNote(typeId) {
   const def = getWorkoutActivityTypeDef(typeId);
-  if (typeId === 'pesi') return true;
+  if (typeId === 'pesi') return false;
   if (def?.category === 'strength') return true;
   const raw = String(typeId || '').toLowerCase();
   return raw.includes('strength') || raw.includes('bodybuilding');
@@ -6098,7 +6098,7 @@ Ottimo! Diario aggiornato. 🥗`;
 
   const handleSaveWorkout = () => {
     if (workoutActivityRequiresStrengthDetailNote(workoutType) && !String(workoutStrengthDetail).trim()) {
-      window.alert('Compila «Dettaglio workout / gruppi muscolari» per salvare un allenamento Pesi / strength.');
+      window.alert('Compila «Dettaglio workout» per salvare questo tipo di attività.');
       return;
     }
     const def = getWorkoutActivityTypeDef(workoutType);
@@ -6271,7 +6271,8 @@ Ottimo! Diario aggiornato. 🥗`;
       } else if (type === 'bar-start') {
         setterStart(Math.min(newTime, currentEnd - 0.25));
       } else if (type === 'bar-end' && fixedD != null) {
-        setterEnd(Math.max(newTime, currentStart + fixedD));
+        /* Durata fissa: l'inizio è derivato da fine − durata (anche con wrap 0–24h). Non vincolare la fine al vecchio inizio+durata, altrimenti non si può spostare la fine a un'ora precedente (es. log serale di una sessione pomeridiana). */
+        setterEnd(Math.min(24, Math.max(0, newTime)));
       } else if (type === 'bar-end') {
         setterEnd(Math.max(newTime, currentStart + 0.25));
       } else if (type === 'bar-all' && fixedD != null) {
@@ -13053,8 +13054,16 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               const pesiMuscleSet = new Set(normalizeMuscleGroupArray(workoutMuscles));
               return (
                 <div style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>Gruppi Muscolari (Max 2)</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
+                    Gruppi muscolari
+                  </label>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
+                      gap: '8px',
+                    }}
+                  >
                     {WORKOUT_MUSCLE_GROUP_DEFS.map(({ id: mId, label: mLabel }) => {
                       const isActive = pesiMuscleSet.has(mId);
                       return (
@@ -13065,19 +13074,19 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                             setWorkoutMuscles((prev) => {
                               const p = normalizeMuscleGroupArray(prev);
                               if (p.includes(mId)) return p.filter((x) => x !== mId);
-                              if (p.length >= 2) return [p[1], mId];
                               return [...p, mId];
                             });
                           }}
                           style={{
-                            padding: '8px 12px',
+                            padding: '10px 12px',
                             fontSize: '0.75rem',
                             borderRadius: '20px',
-                            border: '1px solid #444',
+                            border: `1px solid ${isActive ? '#ff6d00' : '#444'}`,
                             background: isActive ? '#ff6d00' : '#222',
                             color: isActive ? '#000' : '#aaa',
                             fontWeight: isActive ? 'bold' : 'normal',
                             cursor: 'pointer',
+                            textAlign: 'center',
                           }}
                         >
                           {mLabel}
@@ -13091,7 +13100,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             {workoutActivityRequiresStrengthDetailNote(workoutType) && (
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
-                  Dettaglio workout / gruppi muscolari <span style={{ color: '#ef4444' }}>*</span>
+                  Dettaglio workout <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <textarea
                   value={workoutStrengthDetail}

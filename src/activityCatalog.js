@@ -20,15 +20,13 @@ export const PLANNING_DAY_MACRO_OPTIONS = [
 
 /** Gruppi muscolari: unica lista per PlanningWizard e vista Attività / pesi. */
 export const WORKOUT_MUSCLE_GROUP_DEFS = [
-  { id: 'Gambe', label: 'Gambe' },
   { id: 'Petto', label: 'Petto' },
-  { id: 'Schiena', label: 'Schiena', aliases: ['Dorso'] },
+  { id: 'Dorso', label: 'Dorso', aliases: ['Schiena', 'schiena'] },
+  { id: 'Gambe', label: 'Gambe' },
   { id: 'Spalle', label: 'Spalle' },
   { id: 'Braccia', label: 'Braccia' },
-  { id: 'Bicipiti', label: 'Bicipiti' },
-  { id: 'Tricipiti', label: 'Tricipiti' },
-  { id: 'Addominali', label: 'Addominali', aliases: ['ABS'] },
-  { id: 'Cardio', label: 'Cardio' },
+  { id: 'Core', label: 'Core', aliases: ['Addominali', 'addominali', 'ABS', 'abs'] },
+  { id: 'Total Body', label: 'Total Body', aliases: ['Full Body', 'full body', 'totalbody'] },
 ];
 
 /** Ordine display selettori muscolo (stesso ordine dei def). */
@@ -86,13 +84,13 @@ export function inferMuscleGroupsFromWorkoutText(workout) {
     const canon = normalizeMuscleGroupLabel(id) || id;
     if (WORKOUT_MUSCLE_GROUP_IDS.includes(canon) && !found.includes(canon)) found.push(canon);
   };
+  if (/total\s*body|full\s*body|fullbody/.test(text)) push('Total Body');
   if (/petto|torace|pectoral|bench|panca/.test(text)) push('Petto');
-  if (/dorso|schiena|lat\b|pull|remator|rowing|remata/.test(text)) push('Schiena');
+  if (/dorso|schiena|lat\b|pull|remator|rowing|remata/.test(text)) push('Dorso');
   if (/gambe|quadricip|femorali|leg day|squat|stacco/.test(text)) push('Gambe');
   if (/bracci|bicipit|tricipit|curl|dip\b/.test(text)) push('Braccia');
   if (/spalle|deltoid|shoulder|lateral/.test(text)) push('Spalle');
-  if (/addominal|abs\b|core/.test(text)) push('Addominali');
-  if (/cardio|corr|run|corsa|tapis|cyclette|bike|hiit|ellittic|nuot|swim|rowing machine/.test(text)) push('Cardio');
+  if (/addominal|abs\b|core/.test(text)) push('Core');
   return found;
 }
 
