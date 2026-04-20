@@ -26,6 +26,7 @@ const COUNT_UP_MS = 800;
  * `timelineProps`: spread su TimelineNodi (stessi props di SalaComandi).
  * `onFocusClick`: opzionale — click / Invio / Spazio sulla card Priority Focus.
  * `explanation`: testo da buildLongevityExplanation; sotto la card Focus (o solo blocco leggibile se senza longevity).
+ * `dailyKcalConsumed` / `dailyKcalTarget`: opzionali — bilancio kcal giornaliero (surplus in rosso se assunte > target).
  */
 export default function HomeView({
   longevity,
@@ -33,7 +34,9 @@ export default function HomeView({
   timelineProps,
   onAddEvent,
   onFocusClick,
-  explanation
+  explanation,
+  dailyKcalConsumed,
+  dailyKcalTarget,
 }) {
   const explanationText =
     typeof explanation === 'string' && explanation.trim() ? explanation.trim() : '';
@@ -89,6 +92,14 @@ export default function HomeView({
   const { priorityFocus } = longevity;
   const scoreGlow = getScoreGlow(score);
   const focusInteractive = typeof onFocusClick === 'function';
+
+  const kcalTarget =
+    typeof dailyKcalTarget === 'number' && !Number.isNaN(dailyKcalTarget) ? dailyKcalTarget : null;
+  const kcalConsumed =
+    typeof dailyKcalConsumed === 'number' && !Number.isNaN(dailyKcalConsumed) ? dailyKcalConsumed : null;
+  const showKcalDayLine = kcalTarget != null && kcalConsumed != null && kcalTarget > 0;
+  const kcalSurplus = showKcalDayLine && kcalConsumed > kcalTarget ? Math.round(kcalConsumed - kcalTarget) : 0;
+  const kcalRemaining = showKcalDayLine ? Math.max(0, Math.round(kcalTarget - kcalConsumed)) : 0;
 
   const handleFocusKeyDown = (e) => {
     if (!focusInteractive) return;
@@ -180,6 +191,108 @@ export default function HomeView({
           </div>
         </motion.div>
       )}
+
+      <div
+        style={{
+          marginBottom: SECTION_GAP,
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 10,
+          padding: '10px 12px',
+          background: 'rgba(15, 23, 42, 0.55)',
+          borderRadius: 12,
+          border: '1px solid rgba(148, 163, 184, 0.28)',
+          boxSizing: 'border-box',
+        }}
+      >
+        <span
+          style={{
+            fontSize: '1.35rem',
+            lineHeight: 1,
+            flexShrink: 0,
+            filter: 'drop-shadow(0 0 8px rgba(251, 191, 36, 0.35))',
+          }}
+          aria-hidden
+        >
+          ⚡
+        </span>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 800,
+              letterSpacing: '0.12em',
+              color: 'rgba(226, 232, 240, 0.95)',
+              textTransform: 'uppercase',
+              lineHeight: 1.35,
+            }}
+          >
+            CATABOLISMO / DIGIUNO
+          </div>
+          <div
+            style={{
+              marginTop: 6,
+              fontSize: '0.78rem',
+              lineHeight: 1.45,
+              color: 'rgba(203, 213, 225, 0.92)',
+              fontWeight: 500,
+            }}
+          >
+            Assumi proteine o amminoacidi prima di allenarti.
+          </div>
+        </div>
+      </div>
+
+      {showKcalDayLine ? (
+        <div
+          style={{
+            marginBottom: SECTION_GAP,
+            padding: '12px 14px',
+            borderRadius: 12,
+            background: 'rgba(15,23,42,0.65)',
+            border: '1px solid rgba(255,255,255,0.07)',
+            textAlign: 'center',
+          }}
+        >
+          {kcalSurplus > 0 ? (
+            <>
+              <div
+                style={{
+                  fontSize: 28,
+                  fontWeight: 700,
+                  color: '#f87171',
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                +{kcalSurplus} kcal
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.14em',
+                  color: 'rgba(248, 113, 113, 0.95)',
+                }}
+              >
+                SURPLUS
+              </div>
+            </>
+          ) : kcalRemaining === 0 ? (
+            <>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#86efac' }}>Obiettivo raggiunto</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75, color: '#94a3b8' }}>
+                {kcalConsumed} / {kcalTarget} kcal
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#e8e8e8' }}>{kcalRemaining} kcal</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.7, color: '#94a3b8' }}>rimanenti</div>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {explanationText ? (
         <div style={{

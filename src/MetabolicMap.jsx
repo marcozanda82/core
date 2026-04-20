@@ -18,6 +18,28 @@ function baselineOffsetToAnchorSvg(baselineX, baselineY) {
   return mapPointToSvgCoords(clampMapAxis(baselineX), clampMapAxis(baselineY));
 }
 
+/**
+ * Longevity Score (1–100) da coordinate mappa (−100…100): r = distanza SVG dal centro (50,50).
+ */
+export function calculateMetabolicScore(mapX, mapY) {
+  const { cx, cy } = mapPointToSvgCoords(clampMapAxis(mapX), clampMapAxis(mapY));
+  const r = Math.hypot(cx - 50, cy - 50);
+  let raw;
+  if (r <= 40) {
+    raw = 100 - (r / 40) * 90;
+  } else {
+    raw = 10 - ((r - 40) / 10) * 9;
+  }
+  const rounded = Math.round(raw);
+  return Math.min(100, Math.max(1, rounded));
+}
+
+/** Raggio SVG (centro 50,50) per un dato Longevity Score (solo ramo r ≤ 40, score ≥ 10). */
+function svgRadiusForMetabolicScore(score) {
+  const s = Math.min(100, Math.max(10, score));
+  return ((100 - s) / 90) * 40;
+}
+
 function bodyMetricEntrySortTime(entry) {
   if (entry?.date && typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
     return new Date(`${entry.date}T12:00:00`).getTime();
@@ -76,6 +98,9 @@ function classifyMapPoint(x, y) {
 
 /** Soglie zona radiale: distanza ≤35 Blue Zone, ≤70 arancione, oltre rosso (coerente con classifyMapPoint). */
 const BLUE_ZONE_SVG_R = 17.5;
+
+/** Anelli di riferimento Longevity Score (solo etichette su archi con score ≥ 10 → r ≤ 40). */
+const LONGEVITY_SCORE_RING_LEVELS = [80, 60, 40, 20];
 
 /** Centro mappa / “Blue Zone” in unità SVG (viewBox). */
 const MAP_CENTER_SVG = { cx: 50, cy: 50 };
@@ -257,6 +282,11 @@ export default function MetabolicMap({
     tipSvg.cx - MAP_CENTER_SVG.cx,
     tipSvg.cy - MAP_CENTER_SVG.cy,
   );
+
+  const longevityScoreAnchor = calculateMetabolicScore(baselineX, baselineY);
+  const longevityScoreFinal = calculateMetabolicScore(displayX, displayY);
+  const surplusCaloricMap =
+    distTarget > distAnchor + 1e-6 ? longevityScoreAnchor - longevityScoreFinal : 0;
   const needleFill =
     distTarget > distAnchor ? 'rgba(255, 60, 60, 0.9)' : 'rgba(0, 200, 255, 0.9)';
 
@@ -442,6 +472,35 @@ export default function MetabolicMap({
               strokeWidth={0.3}
               vectorEffect="nonScalingStroke"
             />
+            {LONGEVITY_SCORE_RING_LEVELS.map((level) => {
+              const ringR = svgRadiusForMetabolicScore(level);
+              return (
+                <g key={`longevity-ring-${level}`}>
+                  <circle
+                    cx={50}
+                    cy={50}
+                    r={ringR}
+                    fill="none"
+                    stroke="rgba(148, 163, 184, 0.22)"
+                    strokeWidth={0.28}
+                    strokeDasharray="0.9 2.2"
+                    strokeOpacity={0.85}
+                    vectorEffect="nonScalingStroke"
+                  />
+                  <text
+                    x={50}
+                    y={50 - ringR - 0.5}
+                    textAnchor="middle"
+                    fill="rgba(226, 232, 240, 0.42)"
+                    fontSize={8}
+                    fontWeight={500}
+                    style={{ fontFamily: 'system-ui, sans-serif', pointerEvents: 'none' }}
+                  >
+                    {level}
+                  </text>
+                </g>
+              );
+            })}
           </g>
 
           {showHistoricTrail && historicTrail.polylinePoints ? (
@@ -468,7 +527,7 @@ export default function MetabolicMap({
               {historicTrail.historicDots.map((p, index) => {
                 const n = historicTrail.historicDots.length;
                 const denom = Math.max(1, n - 1);
-                const opacity = 0.1 + 0.5 * (index / denom);
+                const opacity = 0.1 + 0.4 * (index / denom);
                 return (
                   <circle
                     key={`historic-${index}-${p.cx}-${p.cy}`}
@@ -544,9 +603,45 @@ export default function MetabolicMap({
         <div style={{ fontWeight: 600, marginBottom: 4 }}>
           Zona attuale: {ZONE_LABELS[effectiveZone]} — Rischio: {QUADRANT_RISK_LABELS[effectiveQuadrant]}
         </div>
+        <div
+          style={{
+            fontSize: '0.78rem',
+            color: 'rgba(200, 208, 216, 0.88)',
+            marginBottom: 6,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '6px 14px',
+          }}
+        >
+          <span>
+            Longevity Score (Ancora):{' '}
+            <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
+          </span>
+          <span>
+            Longevity Score (Posizione finale):{' '}
+            <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
+          </span>
+        </div>
         <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
           Distanza dal centro: {effectiveDistance.toFixed(1)} · Aura glicemica: {Math.round(displayAura)}
         </div>
+        {surplusCaloricMap > 0 && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: '8px 10px',
+              borderRadius: 8,
+              background: 'rgba(120, 45, 25, 0.35)',
+              border: '1px solid rgba(248, 113, 113, 0.45)',
+              color: 'rgba(254, 202, 165, 0.98)',
+              fontWeight: 600,
+              fontSize: '0.78rem',
+            }}
+          >
+            Surplus calorico (mappa): la posizione finale è più lontana dal centro dell’Ancora — calo di
+            Longevity Score potenziale fino a ~{surplusCaloricMap} punti rispetto all’Ancora.
+          </div>
+        )}
         {displayAura > 50 && (
           <div
             style={{

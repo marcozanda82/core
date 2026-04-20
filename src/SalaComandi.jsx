@@ -16022,7 +16022,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               </div>
             </div>
 
-            <HomeView longevity={longevityEngineScore} explanation={longevityExplanation} />
+            <HomeView
+              longevity={longevityEngineScore}
+              explanation={longevityExplanation}
+              dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
+              dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
+            />
 
             <div style={{ marginBottom: '32px', color: '#e8e8e8' }}>
               <LongevityView

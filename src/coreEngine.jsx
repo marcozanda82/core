@@ -3474,11 +3474,28 @@ function CustomChartTooltip({ active, payload, label }) {
 function MealPieTooltip({ active, payload }) {
   if (!active || !payload || !payload.length) return null;
   const data = payload[0].payload;
+  if (data.id === 'surplus' || data.name === 'SURPLUS') {
+    return (
+      <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: '1px solid rgba(248, 113, 113, 0.55)', padding: '10px', borderRadius: '12px', textAlign: 'center', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+        <p style={{ margin: 0, color: '#f87171', fontSize: '0.85rem', fontWeight: 600 }}>SURPLUS</p>
+        <p style={{ margin: 0, color: '#f87171', fontWeight: 'bold', fontSize: '1.2rem' }}>+{Math.round(data.value)} kcal</p>
+      </div>
+    );
+  }
   if (data.name === 'Rimanenti') {
+    const v = Math.round(data.value);
+    if (v <= 0) {
+      return (
+        <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: '1px dashed #555', padding: '10px', borderRadius: '12px', textAlign: 'center', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+          <p style={{ margin: 0, color: '#aaa', fontSize: '0.85rem' }}>Fabbisogno giornaliero</p>
+          <p style={{ margin: 0, color: '#e5e5e5', fontWeight: 'bold', fontSize: '1.05rem' }}>Obiettivo raggiunto o superato</p>
+        </div>
+      );
+    }
     return (
       <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: '1px dashed #555', padding: '10px', borderRadius: '12px', textAlign: 'center', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
         <p style={{ margin: 0, color: '#aaa', fontSize: '0.85rem' }}>Calorie Rimanenti</p>
-        <p style={{ margin: 0, color: '#fff', fontWeight: 'bold', fontSize: '1.2rem' }}>{Math.round(data.value)} kcal</p>
+        <p style={{ margin: 0, color: '#fff', fontWeight: 'bold', fontSize: '1.2rem' }}>{v} kcal</p>
       </div>
     );
   }
