@@ -16050,6 +16050,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   explanation={longevityExplanation}
                   dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
                   dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
+                  hoursFasted={typeof fastingData?.hoursFasted === 'number' ? fastingData.hoursFasted : undefined}
+                  dailyProtConsumed={Math.round(Number(totali?.prot) || 0)}
+                  dailyProtTarget={Math.round(Number(userTargets?.prot) || 0)}
                 />
               );
             })()}

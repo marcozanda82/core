@@ -1,7 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import TimelineNodi from '../TimelineNodi';
-import { CHART_AXIS_GUTTER_LEFT_PX, CHART_AXIS_GUTTER_RIGHT_PX } from '../timeLayout';
+import { CHART_AXIS_GUTTER_LEFT_PX, CHART_AXIS_GUTTER_RIGHT_PX, getWallClockDecimalHour } from '../timeLayout';
+
+/** 'CATABOLISM' | 'ANABOLISM' | 'STABLE' */
+function deriveStatusMetabolico({
+  kcalConsumed,
+  kcalTarget,
+  protConsumed,
+  protTarget,
+  hoursFasted,
+  decimalHour,
+}) {
+  const t = typeof kcalTarget === 'number' && kcalTarget > 0 ? kcalTarget : null;
+  const k = typeof kcalConsumed === 'number' && !Number.isNaN(kcalConsumed) ? kcalConsumed : null;
+  const pT = typeof protTarget === 'number' && protTarget > 0 ? protTarget : null;
+  const pC = typeof protConsumed === 'number' && !Number.isNaN(protConsumed) ? protConsumed : 0;
+  const hf = typeof hoursFasted === 'number' && Number.isFinite(hoursFasted) ? Math.max(0, hoursFasted) : null;
+  const h = typeof decimalHour === 'number' && Number.isFinite(decimalHour) ? decimalHour : 12;
+  const dayFrac = Math.min(1, Math.max(0, h / 24));
+
+  // Anabolismo: surplus calorico o apporto proteico già elevato (sintesi / recupero)
+  if (t != null && k != null && k > t * 1.02) return 'ANABOLISM';
+  if (pT != null && pC >= pT * 0.85) return 'ANABOLISM';
+
+  // Catabolismo: digiuno prolungato o forte ritardo rispetto al fabbisogno atteso per l’ora
+  if (hf != null && hf >= 14) return 'CATABOLISM';
+  if (t != null && k != null && dayFrac > 0.12) {
+    const expectedSoFar = t * dayFrac;
+    if (k < expectedSoFar * 0.5) return 'CATABOLISM';
+  }
+
+  return 'STABLE';
+}
 
 const SECTION_GAP = 22; // vertical rhythm between main blocks (18–24px)
 
@@ -27,6 +58,8 @@ const COUNT_UP_MS = 800;
  * `onFocusClick`: opzionale — click / Invio / Spazio sulla card Priority Focus.
  * `explanation`: testo da buildLongevityExplanation; sotto la card Focus (o solo blocco leggibile se senza longevity).
  * `dailyKcalConsumed` / `dailyKcalTarget`: opzionali — bilancio kcal giornaliero (surplus in rosso se assunte > target).
+ * `hoursFasted`: ore dall’ultimo pasto (se note).
+ * `dailyProtConsumed` / `dailyProtTarget`: opzionali — per dedurre fase anabolica.
  */
 export default function HomeView({
   longevity,
@@ -37,6 +70,9 @@ export default function HomeView({
   explanation,
   dailyKcalConsumed,
   dailyKcalTarget,
+  hoursFasted,
+  dailyProtConsumed,
+  dailyProtTarget,
 }) {
   const explanationText =
     typeof explanation === 'string' && explanation.trim() ? explanation.trim() : '';
@@ -47,6 +83,12 @@ export default function HomeView({
       : 0;
 
   const [displayScore, setDisplayScore] = useState(0);
+  const [nowTick, setNowTick] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(new Date()), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (longevity == null) {
@@ -100,6 +142,21 @@ export default function HomeView({
   const showKcalDayLine = kcalTarget != null && kcalConsumed != null && kcalTarget > 0;
   const kcalSurplus = showKcalDayLine && kcalConsumed > kcalTarget ? Math.round(kcalConsumed - kcalTarget) : 0;
   const kcalRemaining = showKcalDayLine ? Math.max(0, Math.round(kcalTarget - kcalConsumed)) : 0;
+
+  const protTarget =
+    typeof dailyProtTarget === 'number' && !Number.isNaN(dailyProtTarget) ? dailyProtTarget : null;
+  const protConsumed =
+    typeof dailyProtConsumed === 'number' && !Number.isNaN(dailyProtConsumed) ? dailyProtConsumed : null;
+  const fastHours = typeof hoursFasted === 'number' && !Number.isNaN(hoursFasted) ? hoursFasted : null;
+
+  const statusMetabolico = deriveStatusMetabolico({
+    kcalConsumed: showKcalDayLine ? kcalConsumed : null,
+    kcalTarget: showKcalDayLine ? kcalTarget : null,
+    protConsumed: protConsumed ?? 0,
+    protTarget: protTarget ?? 0,
+    hoursFasted: fastHours,
+    decimalHour: getWallClockDecimalHour(nowTick),
+  });
 
   const handleFocusKeyDown = (e) => {
     if (!focusInteractive) return;
@@ -192,56 +249,137 @@ export default function HomeView({
         </motion.div>
       )}
 
-      <div
-        style={{
-          marginBottom: SECTION_GAP,
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: 10,
-          padding: '10px 12px',
-          background: 'rgba(15, 23, 42, 0.55)',
-          borderRadius: 12,
-          border: '1px solid rgba(148, 163, 184, 0.28)',
-          boxSizing: 'border-box',
-        }}
-      >
-        <span
+      {statusMetabolico === 'CATABOLISM' ? (
+        <div
           style={{
-            fontSize: '1.35rem',
-            lineHeight: 1,
-            flexShrink: 0,
-            filter: 'drop-shadow(0 0 8px rgba(251, 191, 36, 0.35))',
+            marginBottom: SECTION_GAP,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            padding: '10px 12px',
+            background: 'rgba(127, 29, 29, 0.12)',
+            borderRadius: 12,
+            border: '2px solid rgba(239, 68, 68, 0.82)',
+            boxSizing: 'border-box',
+            boxShadow: '0 0 0 1px rgba(239, 68, 68, 0.15)',
           }}
-          aria-hidden
         >
-          ⚡
-        </span>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 800,
-              letterSpacing: '0.12em',
-              color: 'rgba(226, 232, 240, 0.95)',
-              textTransform: 'uppercase',
-              lineHeight: 1.35,
-            }}
-          >
-            CATABOLISMO / DIGIUNO
-          </div>
-          <div
-            style={{
-              marginTop: 6,
-              fontSize: '0.78rem',
-              lineHeight: 1.45,
-              color: 'rgba(203, 213, 225, 0.92)',
-              fontWeight: 500,
-            }}
-          >
-            Assumi proteine o amminoacidi prima di allenarti.
+          <span style={{ fontSize: '1.35rem', lineHeight: 1, flexShrink: 0 }} aria-hidden>
+            🚨
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: '0.12em',
+                color: '#f97316',
+                textTransform: 'uppercase',
+                lineHeight: 1.35,
+              }}
+            >
+              CATABOLISMO / DIGIUNO
+            </div>
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: '0.78rem',
+                lineHeight: 1.45,
+                color: 'rgba(254, 226, 226, 0.95)',
+                fontWeight: 500,
+              }}
+            >
+              Assumi proteine o amminoacidi prima di allenarti.
+            </div>
           </div>
         </div>
-      </div>
+      ) : statusMetabolico === 'ANABOLISM' ? (
+        <div
+          style={{
+            marginBottom: SECTION_GAP,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            padding: '10px 12px',
+            background: 'rgba(6, 78, 59, 0.12)',
+            borderRadius: 12,
+            border: '1px solid rgba(34, 211, 238, 0.55)',
+            boxSizing: 'border-box',
+          }}
+        >
+          <span style={{ fontSize: '1.35rem', lineHeight: 1, flexShrink: 0 }} aria-hidden>
+            🧬
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: '0.12em',
+                color: 'rgba(34, 211, 238, 0.98)',
+                textTransform: 'uppercase',
+                lineHeight: 1.35,
+              }}
+            >
+              ANABOLISMO / COSTRUZIONE
+            </div>
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: '0.78rem',
+                lineHeight: 1.45,
+                color: 'rgba(203, 213, 225, 0.92)',
+                fontWeight: 500,
+              }}
+            >
+              Nutrienti attivi per la sintesi proteica e il recupero.
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            marginBottom: SECTION_GAP,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            padding: '10px 12px',
+            background: 'rgba(15, 23, 42, 0.55)',
+            borderRadius: 12,
+            border: '1px solid rgba(148, 163, 184, 0.28)',
+            boxSizing: 'border-box',
+          }}
+        >
+          <span style={{ fontSize: '1.35rem', lineHeight: 1, flexShrink: 0 }} aria-hidden>
+            ⚖️
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: '0.12em',
+                color: 'rgba(226, 232, 240, 0.95)',
+                textTransform: 'uppercase',
+                lineHeight: 1.35,
+              }}
+            >
+              METABOLISMO STABILE
+            </div>
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: '0.78rem',
+                lineHeight: 1.45,
+                color: 'rgba(203, 213, 225, 0.92)',
+                fontWeight: 500,
+              }}
+            >
+              Riserve energetiche in equilibrio.
+            </div>
+          </div>
+        </div>
+      )}
 
       {showKcalDayLine ? (
         <div
