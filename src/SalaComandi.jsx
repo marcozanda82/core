@@ -56,6 +56,7 @@ import HomeContainer from './components/HomeContainer';
 import MetabolicPhaseCompact from './components/MetabolicPhaseCompact';
 import PlanningWizard from './PlanningWizard';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
+import { getUseNewHome, toggleUseNewHome, useUseNewHome } from './homeUiFlagStore';
 import {
   WORKOUT_ACTIVITY_SELECTOR_IDS,
   getWorkoutActivityTypeDef,
@@ -220,7 +221,6 @@ const BOTTOM_NAV_ITEMS = [
 
 const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
 const AI_COACH_DISMISSED_INSIGHTS_LS_KEY = 'kentu_ai_coach_dismissed_insights_v1';
-const USE_NEW_HOME_LS_KEY = 'kentu_use_new_home_v1';
 
 /** Movimento prima del long-press su nodo timeline: oltre soglia → annulla drag e lascia swipe/scroll (allineato a `MOVE_THRESHOLD_PX` in TimelineNodi). */
 const NODE_DRAG_ARM_CANCEL_MOVE_PX = 6;
@@ -245,15 +245,6 @@ function readDismissedAiCoachInsights() {
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
     return {};
-  }
-}
-
-function readPersistedUseNewHome() {
-  if (typeof localStorage === 'undefined') return false;
-  try {
-    return localStorage.getItem(USE_NEW_HOME_LS_KEY) === '1';
-  } catch {
-    return false;
   }
 }
 
@@ -2040,7 +2031,7 @@ export default function SalaComandi() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
-  const [useNewHome, setUseNewHome] = useState(readPersistedUseNewHome);
+  const useNewHome = useUseNewHome();
   const [slideDirection, setSlideDirection] = useState('slide-none');
 
   useEffect(() => {
@@ -2057,14 +2048,6 @@ export default function SalaComandi() {
       setActiveBottomTab('oggi');
     }
   }, [activeBottomTab]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(USE_NEW_HOME_LS_KEY, useNewHome ? '1' : '0');
-    } catch {
-      /* ignore */
-    }
-  }, [useNewHome]);
 
   useEffect(() => {
     console.log(`[HomeToggle] useNewHome updated -> ${useNewHome}`);
@@ -3334,14 +3317,11 @@ export default function SalaComandi() {
   const handleCoreOsClick = () => {
     coreOsClickCount.current += 1;
     console.log(
-      `[HomeToggle] logo tap count=${coreOsClickCount.current}, useNewHome(current)=${useNewHome}`,
+      `[HomeToggle] logo tap count=${coreOsClickCount.current}, useNewHome(current)=${getUseNewHome()}`,
     );
     if (coreOsClickCount.current === 3) {
-      setUseNewHome((prev) => {
-        const next = !prev;
-        console.log(next ? 'Home V2 enabled' : 'Home V1 enabled');
-        return next;
-      });
+      const next = toggleUseNewHome();
+      console.log(next ? 'Home V2 enabled' : 'Home V1 enabled');
       coreOsClickCount.current = 0;
     }
     if (coreOsClickTimer.current) clearTimeout(coreOsClickTimer.current);
@@ -16052,7 +16032,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             </div>
 
             <HomeContainer
-              useNewHome={useNewHome}
               longevity={longevityEngineScore}
               explanation={longevityExplanation}
               dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
