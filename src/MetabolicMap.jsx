@@ -294,28 +294,6 @@ export default function MetabolicMap({
         margin: '0 auto',
       }}
     >
-      {historicTrail.canToggle && (
-        <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center' }}>
-          <button
-            type="button"
-            onClick={() => setShowHistoricTrail((v) => !v)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 999,
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: showHistoricTrail ? 'rgba(255,255,255,0.12)' : 'transparent',
-              color: 'rgba(230,235,242,0.88)',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-            }}
-          >
-            {showHistoricTrail ? 'Nascondi rotta storica' : 'Mostra rotta storica'}
-          </button>
-        </div>
-      )}
       <div
         role="img"
         aria-label={`Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(effectiveDistance)}`}
@@ -330,6 +308,46 @@ export default function MetabolicMap({
           boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.45)',
         }}
       >
+        {historicTrail.canToggle ? (
+          <button
+            type="button"
+            aria-pressed={showHistoricTrail}
+            title={showHistoricTrail ? 'Nascondi rotta storica' : 'Mostra rotta storica'}
+            onClick={() => setShowHistoricTrail((v) => !v)}
+            style={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              zIndex: 10,
+              pointerEvents: 'auto',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 10px 4px 8px',
+              borderRadius: 999,
+              border: '1px solid rgba(255,255,255,0.22)',
+              background: showHistoricTrail
+                ? 'rgba(14, 165, 233, 0.28)'
+                : 'rgba(0, 0, 0, 0.5)',
+              color: 'rgba(241, 245, 249, 0.95)',
+              fontSize: '0.62rem',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              cursor: 'pointer',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
+              maxWidth: 'calc(50% - 16px)',
+            }}
+          >
+            <span style={{ fontSize: '0.75rem', lineHeight: 1 }} aria-hidden>
+              🧭
+            </span>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {showHistoricTrail ? 'Rotta on' : 'Rotta'}
+            </span>
+          </button>
+        ) : null}
         <div
           aria-hidden
           style={{
