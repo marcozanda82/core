@@ -2042,8 +2042,6 @@ export default function SalaComandi() {
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
   const [useNewHome, setUseNewHome] = useState(readPersistedUseNewHome);
   const [slideDirection, setSlideDirection] = useState('slide-none');
-  const kentuLogoLongPressTimerRef = useRef(null);
-  const kentuLogoLongPressHandledRef = useRef(false);
 
   useEffect(() => {
     if (!MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)) return;
@@ -2067,30 +2065,6 @@ export default function SalaComandi() {
       /* ignore */
     }
   }, [useNewHome]);
-
-  const clearKentuLogoLongPress = useCallback(() => {
-    if (kentuLogoLongPressTimerRef.current) {
-      clearTimeout(kentuLogoLongPressTimerRef.current);
-      kentuLogoLongPressTimerRef.current = null;
-    }
-  }, []);
-
-  const startKentuLogoLongPress = useCallback(() => {
-    clearKentuLogoLongPress();
-    kentuLogoLongPressHandledRef.current = false;
-    kentuLogoLongPressTimerRef.current = setTimeout(() => {
-      kentuLogoLongPressHandledRef.current = true;
-      setUseNewHome((prev) => {
-        const next = !prev;
-        console.log(`[HomeFlag] useNewHome=${next}`);
-        return next;
-      });
-    }, 700);
-  }, [clearKentuLogoLongPress]);
-
-  const endKentuLogoLongPress = useCallback(() => {
-    clearKentuLogoLongPress();
-  }, [clearKentuLogoLongPress]);
 
   const [mainTabTouchStartX, setMainTabTouchStartX] = useState(null);
   const [mainTabTouchEndX, setMainTabTouchEndX] = useState(null);
@@ -3356,8 +3330,11 @@ export default function SalaComandi() {
   const handleCoreOsClick = () => {
     coreOsClickCount.current += 1;
     if (coreOsClickCount.current === 3) {
-      setIsSimulationMode(true);
-      setSimulatedLog(JSON.parse(JSON.stringify(dailyLog || [])));
+      setUseNewHome((prev) => {
+        const next = !prev;
+        console.log(next ? 'Home V2 enabled' : 'Home V1 enabled');
+        return next;
+      });
       coreOsClickCount.current = 0;
     }
     if (coreOsClickTimer.current) clearTimeout(coreOsClickTimer.current);
@@ -11337,19 +11314,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
             <button
               type="button"
-              onMouseDown={startKentuLogoLongPress}
-              onMouseUp={endKentuLogoLongPress}
-              onMouseLeave={endKentuLogoLongPress}
-              onTouchStart={startKentuLogoLongPress}
-              onTouchEnd={endKentuLogoLongPress}
-              onTouchCancel={endKentuLogoLongPress}
-              onClick={() => {
-                if (kentuLogoLongPressHandledRef.current) {
-                  kentuLogoLongPressHandledRef.current = false;
-                  return;
-                }
-                handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false);
-              }}
+              onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }}
               style={{
                 background: 'none',
                 border: 'none',
