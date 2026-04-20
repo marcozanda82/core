@@ -52,7 +52,7 @@ import TimeAlignmentChartDebugOverlay from './TimeAlignmentDebugOverlay';
 import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
-import HomeView from './components/HomeView';
+import HomeContainer from './components/HomeContainer';
 import MetabolicPhaseCompact from './components/MetabolicPhaseCompact';
 import PlanningWizard from './PlanningWizard';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
@@ -220,6 +220,7 @@ const BOTTOM_NAV_ITEMS = [
 
 const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
 const AI_COACH_DISMISSED_INSIGHTS_LS_KEY = 'kentu_ai_coach_dismissed_insights_v1';
+const USE_NEW_HOME_LS_KEY = 'kentu_use_new_home_v1';
 
 /** Movimento prima del long-press su nodo timeline: oltre soglia → annulla drag e lascia swipe/scroll (allineato a `MOVE_THRESHOLD_PX` in TimelineNodi). */
 const NODE_DRAG_ARM_CANCEL_MOVE_PX = 6;
@@ -244,6 +245,15 @@ function readDismissedAiCoachInsights() {
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
     return {};
+  }
+}
+
+function readPersistedUseNewHome() {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(USE_NEW_HOME_LS_KEY) === '1';
+  } catch {
+    return false;
   }
 }
 
@@ -2030,7 +2040,10 @@ export default function SalaComandi() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
+  const [useNewHome, setUseNewHome] = useState(readPersistedUseNewHome);
   const [slideDirection, setSlideDirection] = useState('slide-none');
+  const kentuLogoLongPressTimerRef = useRef(null);
+  const kentuLogoLongPressHandledRef = useRef(false);
 
   useEffect(() => {
     if (!MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)) return;
@@ -2046,6 +2059,38 @@ export default function SalaComandi() {
       setActiveBottomTab('oggi');
     }
   }, [activeBottomTab]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(USE_NEW_HOME_LS_KEY, useNewHome ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, [useNewHome]);
+
+  const clearKentuLogoLongPress = useCallback(() => {
+    if (kentuLogoLongPressTimerRef.current) {
+      clearTimeout(kentuLogoLongPressTimerRef.current);
+      kentuLogoLongPressTimerRef.current = null;
+    }
+  }, []);
+
+  const startKentuLogoLongPress = useCallback(() => {
+    clearKentuLogoLongPress();
+    kentuLogoLongPressHandledRef.current = false;
+    kentuLogoLongPressTimerRef.current = setTimeout(() => {
+      kentuLogoLongPressHandledRef.current = true;
+      setUseNewHome((prev) => {
+        const next = !prev;
+        console.log(`[HomeFlag] useNewHome=${next}`);
+        return next;
+      });
+    }, 700);
+  }, [clearKentuLogoLongPress]);
+
+  const endKentuLogoLongPress = useCallback(() => {
+    clearKentuLogoLongPress();
+  }, [clearKentuLogoLongPress]);
 
   const [mainTabTouchStartX, setMainTabTouchStartX] = useState(null);
   const [mainTabTouchEndX, setMainTabTouchEndX] = useState(null);
@@ -11292,7 +11337,19 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
             <button
               type="button"
-              onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }}
+              onMouseDown={startKentuLogoLongPress}
+              onMouseUp={endKentuLogoLongPress}
+              onMouseLeave={endKentuLogoLongPress}
+              onTouchStart={startKentuLogoLongPress}
+              onTouchEnd={endKentuLogoLongPress}
+              onTouchCancel={endKentuLogoLongPress}
+              onClick={() => {
+                if (kentuLogoLongPressHandledRef.current) {
+                  kentuLogoLongPressHandledRef.current = false;
+                  return;
+                }
+                handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false);
+              }}
               style={{
                 background: 'none',
                 border: 'none',
@@ -16022,7 +16079,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               </div>
             </div>
 
-            <HomeView
+            <HomeContainer
+              useNewHome={useNewHome}
               longevity={longevityEngineScore}
               explanation={longevityExplanation}
               dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
