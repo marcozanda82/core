@@ -45,9 +45,9 @@ function buildHistoricBaselineTrailSvg(bodyMetricsHistory, baselineX, baselineY)
   if (historicDots.length === 0) {
     return { polylinePoints: '', historicDots: [], lastSolidConnector: null, canToggle: false };
   }
+  /** Punto finale = Ancora (baselineOffset): stesse coordinate del cerchio principale, nessun drift. */
   const anchor = baselineOffsetToAnchorSvg(baselineX, baselineY);
-  const trailSvgPoints = [...historicDots];
-  trailSvgPoints.push(anchor);
+  const trailSvgPoints = [...historicDots, { cx: anchor.cx, cy: anchor.cy }];
   const lastHistoric = historicDots[historicDots.length - 1];
   const lastSolidConnector =
     lastHistoric.cx === anchor.cx && lastHistoric.cy === anchor.cy
@@ -79,6 +79,12 @@ const BLUE_ZONE_SVG_R = 17.5;
 
 /** Centro mappa / “Blue Zone” in unità SVG (viewBox). */
 const MAP_CENTER_SVG = { cx: 50, cy: 50 };
+
+/** Raggio Ancora principale (viewBox) — marker storici usano lo stesso raggio, senza glow. */
+const ANCHOR_CIRCLE_R = 3.6;
+
+/** Ciano/grigio spento per i punti storici (l’Ancora resta col brillante). */
+const HISTORIC_TRAIL_DOT_FILL = 'rgb(100, 155, 168)';
 
 /** Sotto questa lunghezza (spazio mappa −100…100) il vettore stile di vita si considera “quasi nullo”: ago verso il centro, più tenue. */
 const LIFESTYLE_VECTOR_IDLE_THRESHOLD = 4;
@@ -441,9 +447,23 @@ export default function MetabolicMap({
                   vectorEffect="nonScalingStroke"
                 />
               ) : null}
-              {historicTrail.historicDots.map((p, i) => (
-                <circle key={i} cx={p.cx} cy={p.cy} r={0.55} fill="rgba(160, 164, 175, 0.85)" />
-              ))}
+              {historicTrail.historicDots.map((p, index) => {
+                const n = historicTrail.historicDots.length;
+                const denom = Math.max(1, n - 1);
+                const opacity = 0.1 + 0.5 * (index / denom);
+                return (
+                  <circle
+                    key={`historic-${index}-${p.cx}-${p.cy}`}
+                    cx={p.cx}
+                    cy={p.cy}
+                    r={ANCHOR_CIRCLE_R}
+                    fill={HISTORIC_TRAIL_DOT_FILL}
+                    opacity={opacity}
+                    stroke="none"
+                    vectorEffect="nonScalingStroke"
+                  />
+                );
+              })}
             </g>
           ) : null}
 
@@ -456,7 +476,7 @@ export default function MetabolicMap({
           >
             <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
               <circle
-                r={3.6}
+                r={ANCHOR_CIRCLE_R}
                 cx={0}
                 cy={0}
                 fill="#0ea5e9"
