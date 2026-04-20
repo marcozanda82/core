@@ -52,7 +52,8 @@ import TimeAlignmentChartDebugOverlay from './TimeAlignmentDebugOverlay';
 import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
-import HomeContainer from './components/HomeContainer';
+import HomeView from './components/HomeView';
+import HomeViewV2 from './components/HomeViewV2';
 import MetabolicPhaseCompact from './components/MetabolicPhaseCompact';
 import PlanningWizard from './PlanningWizard';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
@@ -16031,12 +16032,27 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               </div>
             </div>
 
-            <HomeContainer
-              longevity={longevityEngineScore}
-              explanation={longevityExplanation}
-              dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
-              dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
-            />
+            {(() => {
+              console.log(`Rendering Home: ${useNewHome ? 'V2' : 'V1'}`);
+              if (useNewHome) {
+                return (
+                  <HomeViewV2
+                    longevity={longevityEngineScore}
+                    explanation={longevityExplanation}
+                    dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
+                    dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
+                  />
+                );
+              }
+              return (
+                <HomeView
+                  longevity={longevityEngineScore}
+                  explanation={longevityExplanation}
+                  dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
+                  dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
+                />
+              );
+            })()}
 
             <div style={{ marginBottom: '32px', color: '#e8e8e8' }}>
               <LongevityView
