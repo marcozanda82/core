@@ -1,0 +1,2162 @@
+/**
+ * Wizard pianificazione: Step 1 attività+fasce+muscoli, Step 2 pasti/bio-target, Step 3 timeline e conferma Firebase.
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getDynamicMealTargets, normalizeMealFoodsArray, toCanonicalMealType } from './coreEngine';
+import { resolvePlanningWizardDailyKcal } from './weeklyPlanning';
+import {
+  PLANNING_DAY_MACRO_OPTIONS,
+  WORKOUT_MUSCLE_GROUP_DEFS,
+  inferMuscleGroupsFromWorkoutText,
+  normalizeMuscleGroupArray,
+} from './activityCatalog';
+
+/** Allineato a SalaComandi `planningMealSlotKeyForFirebase` per idratazione bozze pasto da RTDB. */
+function planningMealSlotKeyFromRow(row) {
+  const mt = toCanonicalMealType(String(row?.mealType || '').split('_')[0]) || 'snack';
+  const t = typeof row?.mealTime === 'number' && !Number.isNaN(row.mealTime) ? row.mealTime : 0;
+  return `${mt}_${t.toFixed(3)}`;
+}
+
+/** Ora locale come ore decimali (es. 14.5 = 14:30); definito per primo per uso in merge/snapshot. */
+function getLocalDecimalHourNow() {
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
+
+const TIMING_KEYS = [
+  { id: 'mattina', label: 'Mattina' },
+  { id: 'pomeriggio', label: 'Pomeriggio' },
+  { id: 'sera', label: 'Sera' },
+];
+
+const VALID_TIMING_SLOT_IDS = new Set(TIMING_KEYS.map((k) => k.id));
+
+/** Una o più fasce per macro (RTDB legacy: singola stringa → [stringa]). */
+function normalizeTimingSlotList(val) {
+  if (Array.isArray(val)) {
+    const out = [];
+    for (const x of val) {
+      const s = String(x).trim();
+      if (VALID_TIMING_SLOT_IDS.has(s) && !out.includes(s)) out.push(s);
+    }
+    return out;
+  }
+  if (typeof val === 'string' && VALID_TIMING_SLOT_IDS.has(val)) return [val];
+  return [];
+}
+
+function normalizeTimingByMacroState(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  for (const k of Object.keys(raw)) {
+    out[k] = normalizeTimingSlotList(raw[k]);
+  }
+  return out;
+}
+
+function timingSlotLabel(slotId) {
+  return TIMING_KEYS.find((t) => t.id === slotId)?.label || slotId;
+}
+
+/** Template predefiniti per lo stato `meals` (slot proposti · canon + mealType invariati). */
+const PROPOSED_SLOTS = [
+  { canon: 'colazione', label: 'Colazione', mealType: 'colazione', defaultHour: 8 },
+  { canon: 'pranzo', label: 'Pranzo', mealType: 'pranzo', defaultHour: 13 },
+  { canon: 'snack', label: 'Spuntino', mealType: 'spuntino', defaultHour: 16 },
+  { canon: 'cena', label: 'Cena', mealType: 'cena', defaultHour: 20 },
+];
+
+/** Legge `meal.foods`: sempre array, mai undefined (evita bug silenziosi). */
+function mealFoodsRead(meal) {
+  const f = meal?.foods;
+  return Array.isArray(f) ? f : [];
+}
+
+function normalizeFoodsArray(raw) {
+  return normalizeMealFoodsArray(raw);
+}
+
+/** Voci `foods` su riga wizard / pill UI (stringa o oggetto con name/qty). */
+function foodsArrayToDraftPillEntries(foods) {
+  if (!Array.isArray(foods)) return [];
+  return foods
+    .map((f) => {
+      if (typeof f === 'string') {
+        const t = f.trim();
+        return t || null;
+      }
+      if (f && typeof f === 'object') {
+        const name = String(f.name || f.desc || '').trim();
+        if (!name) return null;
+        const qty = f.qty != null ? f.qty : f.weight;
+        return { name, desc: name, qty, weight: qty };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function draftStringsToFoodsWizard(strings) {
+  if (!Array.isArray(strings)) return [];
+  const partial = strings
+    .map((s) => {
+      const raw = String(s || '').trim();
+      if (!raw) return null;
+      const m = raw.match(/^(\d+(?:[.,]\d+)?)\s*g\s+(.+)$/i);
+      if (m) {
+        const qty = Math.round(Number(String(m[1]).replace(',', '.')) || 100);
+        const name = String(m[2]).trim();
+        return name ? { name, qty: qty > 0 ? qty : 100 } : null;
+      }
+      return { name: raw, qty: 100 };
+    })
+    .filter(Boolean)
+    .slice(0, 14);
+  return normalizeMealFoodsArray(partial);
+}
+
+/**
+ * Converte `initialMeals` (es. `planning/{uid}/{date}.meals` da Firebase / AI) nello shape dello stato `meals`.
+ * Ogni pasto: mealType, time, target, foods (sempre array), defaultHour, label, id, canon.
+ */
+function normalizeWizardInitialMeals(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const row = raw[i];
+    if (!row || typeof row !== 'object') continue;
+    const canon = toCanonicalMealType(String(row.mealType || '').split('_')[0]) || 'snack';
+    let dh =
+      typeof row.defaultHour === 'number' && !Number.isNaN(row.defaultHour)
+        ? row.defaultHour
+        : typeof row.mealTime === 'number' && !Number.isNaN(row.mealTime)
+          ? row.mealTime
+          : 12;
+    if (row.time != null && String(row.time).trim() !== '') {
+      const td = timeStrToDecimal(row.time);
+      if (!Number.isNaN(td)) dh = td;
+    }
+    const mt = row.mealType != null ? String(row.mealType) : canon;
+    const slotKey = planningMealSlotKeyFromRow({ mealType: mt, mealTime: dh });
+    let label = row.label != null ? String(row.label).trim() : '';
+    if (!label && row.title != null) {
+      label = String(row.title)
+        .replace(/\s*\(suggerito motore\)\s*$/i, '')
+        .trim();
+    }
+    if (!label) {
+      const d = PROPOSED_SLOTS.find((x) => x.canon === canon);
+      label = d ? d.label : canon;
+    }
+    const id =
+      row.id != null && String(row.id).trim() !== '' ? String(row.id).trim() : `slot_${slotKey}`;
+    const foods = normalizeFoodsArray(mealFoodsRead(row));
+    const timeStr = decimalHourToHHMM(dh) || '12:00';
+    const target = row.target != null ? row.target : null;
+    const timeLocked = row.timeLocked === true;
+    out.push({ id, canon, mealType: mt, defaultHour: dh, label, foods, time: timeStr, target, timeLocked });
+  }
+  return out.length > 0 ? out : null;
+}
+
+const glassPanel = {
+  borderRadius: 14,
+  border: '1px solid rgba(0, 229, 255, 0.22)',
+  background: 'linear-gradient(165deg, rgba(26, 30, 38, 0.95) 0%, rgba(14, 16, 22, 0.98) 100%)',
+  boxShadow: '0 0 0 1px rgba(0,0,0,0.4), 0 10px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)',
+  backdropFilter: 'blur(14px)',
+};
+
+const bigTileBase = {
+  width: '100%',
+  padding: '14px 16px',
+  borderRadius: 12,
+  border: '1px solid rgba(255,248,220,0.12)',
+  background: 'rgba(255,255,255,0.04)',
+  color: '#fff8e8',
+  fontSize: '0.92rem',
+  fontWeight: 700,
+  textAlign: 'left',
+  cursor: 'pointer',
+  lineHeight: 1.35,
+  transition: 'border-color 0.15s, background 0.15s, box-shadow 0.15s',
+};
+
+const bigTileSelected = {
+  border: '1px solid rgba(0, 229, 255, 0.55)',
+  background: 'rgba(0, 229, 255, 0.12)',
+  boxShadow: '0 0 18px rgba(0, 229, 255, 0.2)',
+};
+
+function toggleInSet(set, id) {
+  const next = new Set(set);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
+function decimalHourToHHMM(dec) {
+  if (typeof dec !== 'number' || Number.isNaN(dec)) return null;
+  const h = Math.floor(dec) % 24;
+  const m = Math.round((dec % 1) * 60) % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** "HH:MM" o simile → ore decimali; numero già decimale resta invariato. */
+function timeStrToDecimal(timeStr) {
+  if (timeStr == null || timeStr === '') return NaN;
+  if (typeof timeStr === 'number' && !Number.isNaN(timeStr)) return timeStr;
+  const s = String(timeStr).trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return NaN;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (Number.isNaN(h) || Number.isNaN(min)) return NaN;
+  return Math.min(23, Math.max(0, h)) + min / 60;
+}
+
+/** Ore decimali 0–24 da un template pasto wizard (`defaultHour` o `time`). */
+function mealTemplateDecimalHour(m) {
+  if (!m || typeof m !== 'object') return 12;
+  if (typeof m.defaultHour === 'number' && !Number.isNaN(m.defaultHour)) return m.defaultHour;
+  const td = timeStrToDecimal(m.time);
+  if (!Number.isNaN(td)) return td;
+  return 12;
+}
+
+function roundMealTimeToQuarterHour(t) {
+  const n = Number(t);
+  if (!Number.isFinite(n)) return 12;
+  return Math.max(0, Math.min(24, Math.round(n * 4) / 4));
+}
+
+/** Ora decimale unificata per confronto con nowDec (pasti / workout reali nel diario). */
+function itemTimeDec(item) {
+  if (!item || item.isGhost === true) return NaN;
+  if (typeof item.mealTime === 'number' && !Number.isNaN(item.mealTime)) return item.mealTime;
+  if (typeof item.time === 'number' && !Number.isNaN(item.time)) return item.time;
+  const fromMealStr = timeStrToDecimal(item.mealTime);
+  if (!Number.isNaN(fromMealStr)) return fromMealStr;
+  return timeStrToDecimal(item.time);
+}
+
+/** Ora decimale per lock: preferisce item.timeDec, altrimenti itemTimeDec (legacy log). */
+function rowDecimalHourForTemporalLock(item) {
+  if (!item) return NaN;
+  if (typeof item.timeDec === 'number' && !Number.isNaN(item.timeDec)) return item.timeDec;
+  return itemTimeDec(item);
+}
+
+/** Lock temporale: solo nodi reali già avvenuti o in corso (stessa regola di wizardRowDisabledByTime). */
+function wizardTemporalLock(item, nowDec) {
+  return wizardRowDisabledByTime(item, nowDec);
+}
+
+/**
+ * SOLA regola: isLocked = !item.isGhost && (timeDec effettivo <= nowDec). Futuro reale → sempre false.
+ */
+function wizardRowDisabledByTime(item, nowDec) {
+  if (!item || item.isGhost === true) return false;
+  const nd = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
+  const td = rowDecimalHourForTemporalLock(item);
+  if (typeof td !== 'number' || Number.isNaN(td)) return false;
+  return td <= nd;
+}
+
+/** Fine fascia giornaliera (decimale): confronto lock tramite wizardRowDisabledByTime. */
+const FASCIA_END_DEC = { mattina: 12, pomeriggio: 18, sera: 22 };
+
+/** Primo allenamento reale nel log (passato o futuro), per pre-selezione wizard. */
+function extractRealWorkout(log) {
+  return (log || []).find((e) => e && !e.isGhost && e.type === 'workout');
+}
+
+function hasRealMealsInLog(log, nowDec) {
+  const t = typeof nowDec === 'number' && !Number.isNaN(nowDec) ? nowDec : getLocalDecimalHourNow();
+  return (log || []).some((e) => {
+    if (!e || e.isGhost || (e.type !== 'food' && e.type !== 'recipe')) return false;
+    const td = itemTimeDec(e);
+    if (Number.isNaN(td)) return false;
+    return td <= t;
+  });
+}
+
+function computeOpenSnapshot(dailyLog) {
+  const log = dailyLog || [];
+  const nowDec = getLocalDecimalHourNow();
+  const w = extractRealWorkout(log);
+  const macros = new Set();
+  const muscles = new Set();
+  const lockedMuscles = new Set();
+  let trainingLockedFromLog = false;
+  const mealsPresentInLog = hasRealMealsInLog(log, nowDec);
+  if (w) {
+    macros.add('training');
+    inferMuscleGroupsFromWorkoutText(w).forEach((m) => muscles.add(m));
+    if (wizardTemporalLock(w, nowDec)) {
+      trainingLockedFromLog = true;
+      inferMuscleGroupsFromWorkoutText(w).forEach((m) => lockedMuscles.add(m));
+    }
+  }
+  return { macros, muscles, lockedMuscles, trainingLockedFromLog, mealsPresentInLog };
+}
+
+function logHasGhostMealCanon(log, canon) {
+  return (log || []).some((e) => {
+    if (!e || e.type !== 'ghost_meal') return false;
+    const c = toCanonicalMealType(String(e.mealType || '').split('_')[0]);
+    return c === canon;
+  });
+}
+
+/**
+ * Righe proposte da template utente (`meals`); stesse regole temporali/diario di prima.
+ * Ogni template ha `id` stabile per edit in Step 2 e `stagingDraftById`.
+ */
+function buildProposedRowsFromMeals(log, nowDec, mealTemplates) {
+  const templates = Array.isArray(mealTemplates) && mealTemplates.length > 0 ? mealTemplates : [];
+  const logHas = (c) =>
+    (log || []).some((e) => {
+      if (!e || e.isGhost === true || (e.type !== 'food' && e.type !== 'recipe')) return false;
+      const mt = toCanonicalMealType(String(e.mealType || '').split('_')[0]);
+      return mt === c;
+    });
+
+  const missingSlots = [];
+  for (const s of templates) {
+    if (!s || !s.canon) continue;
+    const canon = s.canon;
+    let include = false;
+    if (canon === 'colazione' && nowDec < 11 && !logHas('colazione') && !logHasGhostMealCanon(log, 'colazione')) {
+      include = true;
+    } else if (canon === 'pranzo' && nowDec < 15 && !logHas('pranzo') && !logHasGhostMealCanon(log, 'pranzo')) {
+      include = true;
+    } else if (canon === 'snack' && nowDec < 19 && !logHas('snack') && !logHasGhostMealCanon(log, 'snack')) {
+      include = true;
+    } else if (canon === 'cena' && !logHas('cena') && !logHasGhostMealCanon(log, 'cena')) {
+      include = true;
+    }
+    if (include) missingSlots.push(s);
+  }
+
+  return missingSlots.map((s) => {
+    const defH = Number(s.defaultHour);
+    const hourBase = Number.isFinite(defH) ? defH : 12;
+    const foods = normalizeFoodsArray(mealFoodsRead(s));
+    const draftFoods = foods.length > 0 ? foodsArrayToDraftPillEntries(foods) : [];
+    return {
+      id: `proposed_${s.id}`,
+      templateId: s.id,
+      source: 'proposed',
+      mealType: s.mealType,
+      mealTime: Math.min(23.9, Math.max(nowDec + 0.5, hourBase)),
+      title: `${s.label} (suggerito motore)`,
+      microDesc: '',
+      draftFoods,
+      foods,
+      time: s.time != null ? String(s.time) : decimalHourToHHMM(hourBase) || '',
+      target: s.target != null ? s.target : null,
+      isGhost: true,
+    };
+  });
+}
+
+function ghostRowsFromLog(log) {
+  return (log || [])
+    .filter((e) => e && e.type === 'ghost_meal')
+    .map((e, i) => {
+      let mtDec = typeof e.mealTime === 'number' && !Number.isNaN(e.mealTime) ? e.mealTime : NaN;
+      if (Number.isNaN(mtDec)) mtDec = timeStrToDecimal(e.mealTime);
+      if (Number.isNaN(mtDec)) mtDec = timeStrToDecimal(e.time);
+      if (Number.isNaN(mtDec)) mtDec = 12;
+      const foods = normalizeFoodsArray(mealFoodsRead(e));
+      let draftFoods = Array.isArray(e.draftFoods)
+        ? e.draftFoods
+            .map((x) => {
+              if (typeof x === 'string') return x.trim();
+              if (x && typeof x === 'object' && (x.name || x.desc)) return x;
+              return null;
+            })
+            .filter(Boolean)
+        : [];
+      if (foods.length > 0 && draftFoods.length === 0) {
+        draftFoods = foodsArrayToDraftPillEntries(foods);
+      }
+      return {
+        id: e.id || `ghost_log_${i}`,
+        source: 'ghost_log',
+        mealType: toCanonicalMealType(String(e.mealType || 'pranzo').split('_')[0]) || 'pranzo',
+        mealTime: mtDec,
+        title: String(e.title || 'Pasto pianificato'),
+        microDesc: String(e.microDesc || ''),
+        draftFoods,
+        foods,
+        isGhost: true,
+      };
+    });
+}
+
+function sumMgFromLog(log) {
+  let s = 0;
+  (log || []).forEach((e) => {
+    if (e && (e.type === 'food' || e.type === 'recipe')) {
+      s += Number(e.mg) || 0;
+    }
+  });
+  return s;
+}
+
+function fasciaToDecimal(slotId) {
+  if (slotId === 'mattina') return 10;
+  if (slotId === 'pomeriggio') return 15;
+  return 19;
+}
+
+function microHintFromTargets(t, userTargets) {
+  if (!t || typeof t !== 'object') return '';
+  const parts = [];
+  const mgTarget = Number(userTargets?.mg ?? userTargets?.min?.mg ?? 400) || 400;
+  parts.push(`Fibre pasto ~${Math.round(Number(t.fibre) || 0)}g`);
+  if (t.minFibreG != null) parts.push(`min fisiologico pranzo ${t.minFibreG}g`);
+  if (t.maxSimpleSugarG != null) parts.push(`zuccheri semplici ≤${t.maxSimpleSugarG}g`);
+  if (t.dinnerFatHardCapG != null) parts.push(`grassi cena ≤${t.dinnerFatHardCapG}g`);
+  parts.push(`Mg giornaliero ref. ~${Math.round(mgTarget)}mg (RDA)`);
+  return parts.join(' · ');
+}
+
+function mealTypeLabelIt(raw) {
+  const c = toCanonicalMealType(String(raw || '').split('_')[0]);
+  const labels = { colazione: 'Colazione', pranzo: 'Pranzo', cena: 'Cena', snack: 'Spuntino' };
+  return labels[c] || c || 'Pasto';
+}
+
+function draftFoodPillText(f) {
+  if (typeof f === 'string') return f;
+  if (f && typeof f === 'object') {
+    const d = f.desc != null ? String(f.desc) : f.name != null ? String(f.name) : '';
+    const w = f.weight != null ? f.weight : f.qty != null ? f.qty : null;
+    return `${d} ${w != null && w !== '' ? `${w}g` : ''}`.trim();
+  }
+  return '';
+}
+
+function foodNameNormKey(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+/** Manual foods first; AI rows that duplicate a manual name (normalized) are dropped. */
+function mergeManualFoodsWithAiCompletion(manualArr, aiArr) {
+  const manual = normalizeMealFoodsArray(manualArr);
+  const ai = normalizeMealFoodsArray(aiArr);
+  const keys = new Set(manual.map((f) => foodNameNormKey(f.name)).filter(Boolean));
+  const aiExtra = ai.filter((f) => {
+    const k = foodNameNormKey(f.name);
+    if (!k) return false;
+    return !keys.has(k);
+  });
+  return normalizeMealFoodsArray([...manual, ...aiExtra]).slice(0, 14);
+}
+
+function DraftFoodPillsMini({ foods, onRemoveIndex }) {
+  if (!Array.isArray(foods) || foods.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 6, alignItems: 'center', gap: 4 }}>
+      {foods.map((f, fIdx) => {
+        const text = draftFoodPillText(f);
+        return (
+          <span
+            key={`${fIdx}_${String(text).slice(0, 40)}`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              background: 'rgba(0, 229, 255, 0.15)',
+              color: '#00e5ff',
+              padding: '4px 8px',
+              borderRadius: '12px',
+              fontSize: '0.75rem',
+              marginRight: '4px',
+              marginBottom: '4px',
+            }}
+          >
+            <span>{text.trim() || 'Alimento'}</span>
+            {typeof onRemoveIndex === 'function' ? (
+              <button
+                type="button"
+                title="Rimuovi"
+                onClick={() => onRemoveIndex(fIdx)}
+                style={{
+                  margin: 0,
+                  padding: '0 4px',
+                  border: 'none',
+                  background: 'rgba(0,0,0,0.25)',
+                  color: '#fda4af',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            ) : null}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+const REGISTERED_MEAL_GROUP_ORDER = ['colazione', 'snack', 'pranzo', 'cena'];
+
+function groupRegisteredMealsByMealType(log) {
+  const list = (log || []).filter(
+    (e) => e && !e.isGhost && (e.type === 'food' || e.type === 'recipe')
+  );
+  const map = new Map();
+  list.forEach((e) => {
+    const mt = toCanonicalMealType(String(e.mealType || '').split('_')[0]) || 'snack';
+    if (!map.has(mt)) map.set(mt, []);
+    map.get(mt).push(e);
+  });
+  const out = [];
+  REGISTERED_MEAL_GROUP_ORDER.forEach((mt) => {
+    const items = map.get(mt);
+    if (!items?.length) return;
+    out.push({ mealType: mt, items });
+    map.delete(mt);
+  });
+  for (const [mt, items] of map) {
+    if (items.length) out.push({ mealType: mt, items });
+  }
+  return out;
+}
+
+function timelineSortKey(entry) {
+  const t = entry.timeDec;
+  return typeof t === 'number' && !Number.isNaN(t) ? t : 99;
+}
+
+/** Pasto reale nel riepilogo: lock = !ghost && timeDec ≤ nowDec. */
+function planDiaryMealSlotIsLocked(entry, nowDec) {
+  if (!entry) return false;
+  if (entry.type !== 'food' && entry.type !== 'recipe') return false;
+  return wizardRowDisabledByTime(entry, nowDec);
+}
+
+export default function PlanningWizard({
+  dailyLog = [],
+  userTargets = {},
+  calorieStrategy,
+  burnedKcalBonus = 0,
+  /** Snapshot `planning/{uid}/{date}` da Firebase (meals, activities, createdAt). */
+  firebasePlanning = null,
+  /** Pasti/slot salvati o generati (tipicamente `remotePlanning.meals`); idrata `meals` se l’utente non ha ancora modificato. */
+  initialMeals = null,
+  /** Incrementato dal parent ad ogni apertura wizard per applicare l’idratazione una volta per sessione. */
+  hydrateNonce = 0,
+  /** Piano settimanale (opzionale): `days[YYYY-MM-DD].kcalTarget` sostituisce il kcal profilo per i target dinamici. */
+  weeklyPlan = null,
+  /** Data tracker del giorno pianificato (`YYYY-MM-DD`). */
+  planningDateKey = null,
+  onClose,
+  onConfirmApply,
+  onGeneratePlanGhostMealDraft,
+}) {
+  const lockSnap = useMemo(() => computeOpenSnapshot(dailyLog), [dailyLog]);
+  const { lockedMuscles, trainingLockedFromLog } = lockSnap;
+
+  const macroMuscleSeededRef = useRef(false);
+  const [step, setStep] = useState(1);
+  const [macros, setMacros] = useState(() => new Set());
+  const [muscles, setMuscles] = useState(() => new Set());
+  const [timingByMacro, setTimingByMacro] = useState({});
+  const [stagingDraftById, setStagingDraftById] = useState({});
+  const [wizardGenLoadingId, setWizardGenLoadingId] = useState(null);
+  /** Vincoli opzionali per «✨ Genera Pasto» nel wizard (stesso schema MealBuilder / SalaComandi). */
+  const [wizardAiConstraintFixed, setWizardAiConstraintFixed] = useState('');
+  const [wizardAiConstraintExcluded, setWizardAiConstraintExcluded] = useState('');
+  const [wizardAiConstraintPreferred, setWizardAiConstraintPreferred] = useState('');
+  /** Dopo modifica manuale ai pasti nello step 2+: non applicare più il kcal del piano settimanale in questa sessione. */
+  const [mealEditsLockProfileKcal, setMealEditsLockProfileKcal] = useState(false);
+  /** Slot proposti (ex PROPOSED_SLOTS): canon, label, mealType, defaultHour, id stabile. */
+  const [meals, setMeals] = useState(() =>
+    PROPOSED_SLOTS.map((s, i) => {
+      const dh = s.defaultHour;
+      return {
+        ...s,
+        id: `slot_${s.canon}_${i}`,
+        foods: [],
+        time: decimalHourToHHMM(dh) || '12:00',
+        target: null,
+      };
+    })
+  );
+
+  const nowDec = getLocalDecimalHourNow();
+
+  const wizardAiMealConstraintsPayload = useMemo(() => {
+    const split = (s) =>
+      String(s || '')
+        .split(/[,;\n]/)
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .slice(0, 20);
+    const fixedFoods = split(wizardAiConstraintFixed);
+    const excludedFoods = split(wizardAiConstraintExcluded);
+    const preferredFoods = split(wizardAiConstraintPreferred);
+    if (fixedFoods.length + excludedFoods.length + preferredFoods.length === 0) return undefined;
+    return { fixedFoods, excludedFoods, preferredFoods };
+  }, [wizardAiConstraintFixed, wizardAiConstraintExcluded, wizardAiConstraintPreferred]);
+
+  const mealsUserTouchedRef = useRef(false);
+  const lastInitialMealsSigRef = useRef(null);
+  const wizardConfirmInFlightRef = useRef(false);
+
+  const updateMeal = useCallback((index, patch) => {
+    if (typeof index !== 'number' || index < 0 || patch == null || typeof patch !== 'object') return;
+    mealsUserTouchedRef.current = true;
+    setMealEditsLockProfileKcal(true);
+    const touchesTime = Object.prototype.hasOwnProperty.call(patch, 'time') || Object.prototype.hasOwnProperty.call(patch, 'defaultHour');
+    setMeals((prev) =>
+      prev.map((m, i) => {
+        if (i !== index) return { ...m, foods: mealFoodsRead(m) };
+        const { foods: patchFoods, ...rest } = patch;
+        const next = { ...m, ...rest };
+        if (touchesTime) next.timeLocked = true;
+        if (patchFoods !== undefined) {
+          next.foods = Array.isArray(patchFoods) ? patchFoods : [];
+        } else {
+          next.foods = mealFoodsRead(m);
+        }
+        return next;
+      })
+    );
+  }, []);
+
+  const updateMealTime = useCallback((id, newTime) => {
+    const t = Number(newTime);
+    if (!Number.isFinite(t)) return;
+    const rounded = roundMealTimeToQuarterHour(t);
+    mealsUserTouchedRef.current = true;
+    setMealEditsLockProfileKcal(true);
+    setMeals((prev) =>
+      prev.map((m) =>
+        m.id === id ? { ...m, time: rounded, defaultHour: rounded, timeLocked: true } : m
+      )
+    );
+  }, []);
+
+  const recalculateMealTimesEvenly = useCallback(() => {
+    setMeals((prev) => {
+      if (!prev.length) return prev;
+      const decs = prev.map((m) => mealTemplateDecimalHour(m));
+      const spanStart = Math.min(...decs);
+      const spanEnd = Math.max(...decs);
+      if (!Number.isFinite(spanStart) || !Number.isFinite(spanEnd)) return prev;
+
+      const unlockedIdx = [];
+      prev.forEach((m, i) => {
+        if (!m.timeLocked) unlockedIdx.push(i);
+      });
+      if (unlockedIdx.length === 0) return prev;
+
+      const next = prev.map((m) => ({ ...m, foods: mealFoodsRead(m) }));
+      const n = unlockedIdx.length;
+      if (n === 1) {
+        const i = unlockedIdx[0];
+        const mid = roundMealTimeToQuarterHour((spanStart + spanEnd) / 2);
+        next[i] = { ...next[i], defaultHour: mid, time: mid };
+        return next;
+      }
+      const span = spanEnd - spanStart;
+      unlockedIdx.forEach((idx, j) => {
+        const raw = spanStart + (j / (n - 1)) * span;
+        const rounded = roundMealTimeToQuarterHour(raw);
+        next[idx] = { ...next[idx], defaultHour: rounded, time: rounded };
+      });
+      return next;
+    });
+    mealsUserTouchedRef.current = true;
+    setMealEditsLockProfileKcal(true);
+  }, []);
+
+  const removeMeal = useCallback((index) => {
+    if (typeof index !== 'number' || index < 0) return;
+    mealsUserTouchedRef.current = true;
+    setMealEditsLockProfileKcal(true);
+    setMeals((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  useEffect(() => {
+    if (hydrateNonce <= 0) return;
+    lastInitialMealsSigRef.current = null;
+    mealsUserTouchedRef.current = false;
+    setMealEditsLockProfileKcal(false);
+  }, [hydrateNonce]);
+
+  useEffect(() => {
+    if (mealsUserTouchedRef.current) return;
+    const normalized = normalizeWizardInitialMeals(initialMeals);
+    if (!normalized?.length) return;
+    const sig = JSON.stringify(
+      normalized.map((m) => ({
+        id: m.id,
+        canon: m.canon,
+        mealType: m.mealType,
+        defaultHour: Math.round(m.defaultHour * 1000) / 1000,
+        label: m.label,
+        time: m.time,
+        target: m.target,
+        timeLocked: !!m.timeLocked,
+        foods: mealFoodsRead(m),
+      }))
+    );
+    if (lastInitialMealsSigRef.current === sig) return;
+    lastInitialMealsSigRef.current = sig;
+    setMeals(normalized.map((m) => ({ ...m, foods: mealFoodsRead(m) })));
+  }, [initialMeals]);
+
+  useEffect(() => {
+    if (macroMuscleSeededRef.current) return;
+    if (!dailyLog || dailyLog.length === 0) return;
+    const s = computeOpenSnapshot(dailyLog);
+    setMacros(new Set(s.macros));
+    setMuscles(new Set(s.muscles));
+    macroMuscleSeededRef.current = true;
+  }, [dailyLog]);
+
+  const planningMetaHydratedForNonce = useRef(-1);
+  const planningDraftHydratedForNonce = useRef(-1);
+
+  useEffect(() => {
+    if (hydrateNonce <= 0 || planningMetaHydratedForNonce.current === hydrateNonce) return;
+    if (!firebasePlanning || typeof firebasePlanning !== 'object') return;
+    const act = firebasePlanning.activities;
+    if (act && typeof act === 'object') {
+      if (Array.isArray(act.macros)) setMacros(new Set(act.macros));
+      if (Array.isArray(act.muscles)) setMuscles(new Set(normalizeMuscleGroupArray(act.muscles)));
+      if (act.timingByMacro && typeof act.timingByMacro === 'object') {
+        setTimingByMacro(normalizeTimingByMacroState(act.timingByMacro));
+      }
+    }
+    planningMetaHydratedForNonce.current = hydrateNonce;
+  }, [hydrateNonce, firebasePlanning]);
+
+  const stagingGhosts = useMemo(() => {
+    const base = [...ghostRowsFromLog(dailyLog), ...buildProposedRowsFromMeals(dailyLog, nowDec, meals)];
+    return base.map((r) => {
+      const ov = stagingDraftById[r.id];
+      const foodsRow = mealFoodsRead(r);
+      let draftFoods = Array.isArray(r.draftFoods) ? r.draftFoods : [];
+      if (Array.isArray(ov) && ov.length > 0) {
+        draftFoods = ov;
+      } else if (foodsRow.length > 0 && draftFoods.length === 0) {
+        draftFoods = foodsArrayToDraftPillEntries(foodsRow);
+      }
+      return { ...r, draftFoods, foods: foodsRow };
+    });
+  }, [dailyLog, stagingDraftById, nowDec, meals]);
+
+  useEffect(() => {
+    if (hydrateNonce <= 0 || planningDraftHydratedForNonce.current === hydrateNonce) return;
+    if (!firebasePlanning || typeof firebasePlanning !== 'object') {
+      planningDraftHydratedForNonce.current = hydrateNonce;
+      return;
+    }
+    const slotMap = firebasePlanning.activities?.stagingDraftBySlot;
+    const planningMealsSnap = firebasePlanning.meals;
+    const hasSlotData =
+      (slotMap && typeof slotMap === 'object' && Object.keys(slotMap).length > 0) ||
+      (Array.isArray(planningMealsSnap) &&
+        planningMealsSnap.some(
+          (m) =>
+            (Array.isArray(m.draftFoods) && m.draftFoods.length > 0) ||
+            mealFoodsRead(m).length > 0
+        ));
+    if (!hasSlotData) {
+      planningDraftHydratedForNonce.current = hydrateNonce;
+      return;
+    }
+    const nextDraft = {};
+    if (slotMap && typeof slotMap === 'object') {
+      stagingGhosts.forEach((g) => {
+        const k = planningMealSlotKeyFromRow(g);
+        if (Array.isArray(slotMap[k]) && slotMap[k].length > 0) {
+          nextDraft[g.id] = slotMap[k];
+        }
+      });
+    }
+    if (Array.isArray(planningMealsSnap)) {
+      const foodsPatches = [];
+      planningMealsSnap.forEach((m) => {
+        const key = planningMealSlotKeyFromRow(m);
+        const match = stagingGhosts.find((g) => planningMealSlotKeyFromRow(g) === key);
+        if (!match) return;
+        if (Array.isArray(m.draftFoods) && m.draftFoods.length > 0) {
+          nextDraft[match.id] = m.draftFoods;
+        } else if (mealFoodsRead(m).length > 0) {
+          const fn = normalizeFoodsArray(mealFoodsRead(m));
+          nextDraft[match.id] = fn.map((f) => `${f.qty}g ${f.name}`);
+          if (match.templateId) foodsPatches.push({ templateId: match.templateId, foods: fn });
+        }
+      });
+      if (foodsPatches.length > 0) {
+        setMeals((prev) =>
+          prev.map((tm) => {
+            const hit = foodsPatches.find((p) => p.templateId === tm.id);
+            if (!hit) return { ...tm, foods: mealFoodsRead(tm) };
+            return { ...tm, foods: normalizeMealFoodsArray(hit.foods) };
+          })
+        );
+      }
+    }
+    if (Object.keys(nextDraft).length > 0) {
+      setStagingDraftById(nextDraft);
+    }
+    planningDraftHydratedForNonce.current = hydrateNonce;
+  }, [hydrateNonce, firebasePlanning, stagingGhosts]);
+
+  const hasTraining = macros.has('training');
+  const hasRealWorkout = useMemo(() => !!extractRealWorkout(dailyLog), [dailyLog]);
+
+  /** Step 1 — Continua: nessuna macro; oppure ogni macro ha fascia (training passato bloccato escluso); muscoli ok se serve. */
+  const canAdvanceFrom1 = useMemo(() => {
+    if (macros.size === 0) return true;
+    const timingSatisfied = [...macros].every((macroId) => {
+      if (macroId === 'training' && trainingLockedFromLog) return true;
+      return normalizeTimingSlotList(timingByMacro[macroId]).length > 0;
+    });
+    const musclesSatisfied =
+      !macros.has('training') || muscles.size > 0 || trainingLockedFromLog;
+    return timingSatisfied && musclesSatisfied;
+  }, [macros, timingByMacro, muscles, trainingLockedFromLog]);
+
+  const { kcal: wizardResolvedKcal, fromWeeklyPlan: wizardKcalFromWeekly } = useMemo(
+    () => resolvePlanningWizardDailyKcal(userTargets, weeklyPlan, planningDateKey),
+    [userTargets, weeklyPlan, planningDateKey]
+  );
+
+  const wizardUserTargets = useMemo(() => {
+    const profileKcal = Number(userTargets?.kcal ?? 2000) || 2000;
+    const kcal = mealEditsLockProfileKcal ? profileKcal : wizardResolvedKcal;
+    return { ...userTargets, kcal };
+  }, [userTargets, mealEditsLockProfileKcal, wizardResolvedKcal]);
+
+  /** Strategia chat (deficit/pari/surplus) sul profilo: disattiva solo se il kcal giornaliero arriva dal piano settimanale e l’utente non ha ancora modificato i pasti. */
+  const applyCalorieStrategyToWizard = mealEditsLockProfileKcal || !wizardKcalFromWeekly;
+
+  const dynOpts = useMemo(
+    () => ({
+      calorieStrategy: applyCalorieStrategyToWizard ? calorieStrategy : null,
+      burnedKcalBonus: Number(burnedKcalBonus) || 0,
+    }),
+    [applyCalorieStrategyToWizard, calorieStrategy, burnedKcalBonus]
+  );
+
+  const registeredMealGroups = useMemo(() => groupRegisteredMealsByMealType(dailyLog), [dailyLog]);
+
+  const ghostLogStagingRows = useMemo(
+    () => stagingGhosts.filter((r) => r.source === 'ghost_log'),
+    [stagingGhosts]
+  );
+
+  const mgConsumed = useMemo(() => sumMgFromLog(dailyLog), [dailyLog]);
+
+  const toggleMacro = (id) => {
+    if (id === 'training' && trainingLockedFromLog && macros.has('training')) return;
+    setMacros((prev) => {
+      if (id === 'training' && trainingLockedFromLog && prev.has('training')) return prev;
+      const wasOn = prev.has(id);
+      const next = toggleInSet(prev, id);
+      if (wasOn) {
+        setTimingByMacro((tim) => {
+          const u = { ...tim };
+          delete u[id];
+          return u;
+        });
+      } else {
+        setTimingByMacro((tim) => ({ ...tim, [id]: [] }));
+      }
+      return next;
+    });
+  };
+
+  const toggleMuscle = (name) => {
+    if (lockedMuscles.has(name) && muscles.has(name)) return;
+    setMuscles((prev) => toggleInSet(prev, name));
+  };
+
+  const addTimingBlock = useCallback(
+    (macroId, slotId) => {
+      const end = FASCIA_END_DEC[slotId];
+      if (end != null && wizardRowDisabledByTime({ isGhost: false, timeDec: end }, nowDec)) return;
+      setTimingByMacro((prev) => {
+        const cur = normalizeTimingSlotList(prev[macroId]);
+        if (cur.includes(slotId)) return { ...prev, [macroId]: cur };
+        return { ...prev, [macroId]: [...cur, slotId] };
+      });
+    },
+    [nowDec]
+  );
+
+  const removeTimingBlock = useCallback((macroId, index) => {
+    setTimingByMacro((prev) => {
+      const cur = normalizeTimingSlotList(prev[macroId]);
+      const next = cur.filter((_, i) => i !== index);
+      return { ...prev, [macroId]: next };
+    });
+  }, []);
+
+  const goNext = useCallback(() => {
+    if (step === 1 && !canAdvanceFrom1) return;
+    if (step === 1 && macros.size === 0) {
+      setTimingByMacro({});
+      setMuscles(new Set());
+    }
+    if (step < 3) setStep((s) => s + 1);
+  }, [step, canAdvanceFrom1, macros.size]);
+
+  const goBack = useCallback(() => {
+    if (step > 1) setStep((s) => s - 1);
+  }, [step]);
+
+  const [mealManualFormByTpl, setMealManualFormByTpl] = useState({});
+
+  const addManualFoodToTemplate = useCallback((templateId, nameRaw, qtyRaw) => {
+    const name = String(nameRaw || '').trim();
+    if (!name || !templateId) return;
+    let qty = Math.round(Number(String(qtyRaw).replace(',', '.')) || 100);
+    if (!Number.isFinite(qty) || qty < 1) qty = 100;
+    qty = Math.max(5, Math.min(2000, qty));
+    mealsUserTouchedRef.current = true;
+    setMeals((prev) =>
+      prev.map((m) => {
+        if (m.id !== templateId) return { ...m, foods: mealFoodsRead(m) };
+        const cur = normalizeMealFoodsArray(mealFoodsRead(m));
+        return { ...m, foods: [...cur, { name, qty }] };
+      })
+    );
+  }, []);
+
+  const removeTemplateFood = useCallback((templateId, removeIdx) => {
+    if (templateId == null || removeIdx < 0) return;
+    mealsUserTouchedRef.current = true;
+    setMeals((prev) =>
+      prev.map((m) => {
+        if (m.id !== templateId) return { ...m, foods: mealFoodsRead(m) };
+        const cur = normalizeMealFoodsArray(mealFoodsRead(m));
+        return { ...m, foods: cur.filter((_, i) => i !== removeIdx) };
+      })
+    );
+  }, []);
+
+  const handleWizardGenerateDraft = useCallback(
+    async (slotRow) => {
+      if (!onGeneratePlanGhostMealDraft || !slotRow?.id) return;
+      const manualBaseline = normalizeMealFoodsArray(mealFoodsRead(slotRow));
+      const mtFull = getDynamicMealTargets(
+        String(slotRow.mealType || 'pranzo').split('_')[0],
+        dailyLog,
+        wizardUserTargets,
+        dynOpts
+      );
+      const sums = manualBaseline.reduce(
+        (acc, f) => ({
+          kcal: acc.kcal + (Number(f.kcal) || 0),
+          prot: acc.prot + (Number(f.prot) || 0),
+          carb: acc.carb + (Number(f.carb) || 0),
+          fat: acc.fat + (Number(f.fat) || 0),
+        }),
+        { kcal: 0, prot: 0, carb: 0, fat: 0 }
+      );
+      const mealMacroResidual =
+        manualBaseline.length > 0
+          ? {
+              kcal: Math.max(0, Math.round(mtFull.kcal - sums.kcal)),
+              prot: Math.max(0, Math.round((mtFull.prot - sums.prot) * 10) / 10),
+              carb: Math.max(0, Math.round((mtFull.carb - sums.carb) * 10) / 10),
+              fat: Math.max(0, Math.round((mtFull.fat - sums.fat) * 10) / 10),
+            }
+          : undefined;
+
+      setWizardGenLoadingId(slotRow.id);
+      try {
+        const res = await onGeneratePlanGhostMealDraft({
+          mealType: slotRow.mealType,
+          time: decimalHourToHHMM(Number(slotRow.mealTime)) || '',
+          title: slotRow.title,
+          microDesc: slotRow.microDesc || '',
+          planTarget: calorieStrategy,
+          aiMealConstraints: wizardAiMealConstraintsPayload,
+          ...(manualBaseline.length > 0
+            ? {
+                manualFoods: manualBaseline,
+                mealMacroResidual,
+                mealMacroTargetTotal: mtFull,
+              }
+            : {}),
+        });
+        let aiFoods = [];
+        let draftFoods = [];
+        if (res && typeof res === 'object' && !Array.isArray(res)) {
+          aiFoods = mealFoodsRead(res);
+          draftFoods = Array.isArray(res.draftFoods) ? res.draftFoods : [];
+        } else if (Array.isArray(res)) {
+          draftFoods = res.map((x) => String(x).trim()).filter(Boolean);
+        }
+        if (aiFoods.length === 0 && draftFoods.length > 0) {
+          aiFoods = draftStringsToFoodsWizard(draftFoods);
+        }
+        const foodsFinal = mergeManualFoodsWithAiCompletion(manualBaseline, aiFoods);
+        const targetVal = calorieStrategy != null ? String(calorieStrategy) : null;
+        if (slotRow.templateId) {
+          mealsUserTouchedRef.current = true;
+          const foodsSafe = normalizeMealFoodsArray(foodsFinal);
+          setMeals((prev) =>
+            prev.map((m) =>
+              m.id === slotRow.templateId
+                ? { ...m, foods: foodsSafe, ...(targetVal != null ? { target: targetVal } : {}) }
+                : { ...m, foods: mealFoodsRead(m) }
+            )
+          );
+          setStagingDraftById((prev) => {
+            const n = { ...prev };
+            delete n[slotRow.id];
+            return n;
+          });
+        } else if (foodsFinal.length > 0) {
+          setStagingDraftById((prev) => ({
+            ...prev,
+            [slotRow.id]: foodsArrayToDraftPillEntries(foodsFinal),
+          }));
+        } else if (draftFoods.length > 0) {
+          setStagingDraftById((prev) => ({ ...prev, [slotRow.id]: draftFoods }));
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setWizardGenLoadingId(null);
+      }
+    },
+    [
+      onGeneratePlanGhostMealDraft,
+      calorieStrategy,
+      wizardAiMealConstraintsPayload,
+      dailyLog,
+      wizardUserTargets,
+      dynOpts,
+    ]
+  );
+
+  /** Orari decimali unici per ghost workout (una fascia = un anchor). */
+  const workoutTimesDecForApply = useMemo(() => {
+    if (!hasTraining || hasRealWorkout) return [];
+    const blocks = normalizeTimingSlotList(timingByMacro.training);
+    const decs = blocks
+      .map((slotId) => fasciaToDecimal(slotId))
+      .filter((x) => typeof x === 'number' && !Number.isNaN(x));
+    return [...new Set(decs)].sort((a, b) => a - b);
+  }, [hasTraining, hasRealWorkout, timingByMacro.training]);
+
+  const handleConfirm = () => {
+    if (wizardConfirmInFlightRef.current) return;
+    wizardConfirmInFlightRef.current = true;
+    try {
+    const finalPlan = {
+      workoutTimeDec: workoutTimesDecForApply[0] ?? null,
+      workoutTimesDec: [...workoutTimesDecForApply],
+      addGhostWorkout: Boolean(hasTraining && !hasRealWorkout && workoutTimesDecForApply.length > 0),
+    };
+    // Merge esplicito: ghostMeals = stato staging (include draftFoods da «Genera Pasto»)
+    finalPlan.ghostMeals = stagingGhosts.map((g) => {
+      const draftArr = Array.isArray(g.draftFoods) ? g.draftFoods : [];
+      let foods = normalizeMealFoodsArray(mealFoodsRead(g));
+      if (foods.length === 0 && draftArr.length > 0) {
+        const objs = draftArr.filter((x) => x && typeof x === 'object' && (x.name || x.desc));
+        if (objs.length > 0) {
+          foods = normalizeMealFoodsArray(objs);
+        } else {
+          const strOnly = draftArr
+            .map((x) => (typeof x === 'string' ? String(x).trim() : ''))
+            .filter(Boolean);
+          if (strOnly.length > 0) {
+            foods = draftStringsToFoodsWizard(strOnly);
+          }
+        }
+      }
+      const meal = {
+        ...g,
+        foods,
+        draftFoods: draftArr,
+      };
+      if (!meal.foods || meal.foods.length === 0) {
+        console.warn('Meal without foods detected', meal);
+      }
+      return meal;
+    });
+    finalPlan.wizardMeta = {
+      macros: [...macros],
+      muscles: [...muscles],
+      timingByMacro: normalizeTimingByMacroState(timingByMacro),
+      stagingDraftById: { ...stagingDraftById },
+    };
+    onConfirmApply?.(finalPlan);
+    } finally {
+      wizardConfirmInFlightRef.current = false;
+    }
+  };
+
+  const timelineEntries = useMemo(() => {
+    const rows = [];
+    const realMealItems = [];
+    (dailyLog || []).forEach((e) => {
+      if (!e) return;
+      if (e.isGhost && e.type !== 'ghost_meal' && e.type !== 'ghost_workout') return;
+      if ((e.type === 'food' || e.type === 'recipe') && !e.isGhost) {
+        realMealItems.push(e);
+      } else if (e.type === 'workout') {
+        const td = itemTimeDec(e);
+        rows.push({
+          kind: 'real_workout',
+          timeDec: Number.isNaN(td) ? 0 : td,
+          label: `[Workout] ${String(e.desc || e.name || 'Allenamento')}`,
+        });
+      } else if (e.type === 'ghost_workout') {
+        let gtd = typeof e.time === 'number' && !Number.isNaN(e.time) ? e.time : timeStrToDecimal(e.time);
+        if (Number.isNaN(gtd)) gtd = 0;
+        rows.push({
+          kind: 'ghost_wo_old',
+          timeDec: gtd,
+          label: `[Ghost] ${String(e.title || 'Allenamento')}`,
+        });
+      }
+    });
+    const byMt = new Map();
+    realMealItems.forEach((e) => {
+      const mt = toCanonicalMealType(String(e.mealType || '').split('_')[0]) || 'snack';
+      if (!byMt.has(mt)) byMt.set(mt, []);
+      byMt.get(mt).push(e);
+    });
+    REGISTERED_MEAL_GROUP_ORDER.forEach((mt) => {
+      const items = byMt.get(mt);
+      if (!items?.length) return;
+      const decs = items.map((x) => itemTimeDec(x)).filter((t) => !Number.isNaN(t));
+      const timeDec = decs.length ? Math.min(...decs) : 0;
+      rows.push({ kind: 'real_meal_group', timeDec, mealType: mt, items });
+      byMt.delete(mt);
+    });
+    for (const [mt, items] of byMt) {
+      if (!items.length) continue;
+      const decs = items.map((x) => itemTimeDec(x)).filter((t) => !Number.isNaN(t));
+      const timeDec = decs.length ? Math.min(...decs) : 0;
+      rows.push({ kind: 'real_meal_group', timeDec, mealType: mt, items });
+    }
+    stagingGhosts.forEach((g) => {
+      rows.push({
+        kind: g.source === 'proposed' ? 'ghost_proposed' : 'ghost_staging',
+        timeDec: g.mealTime,
+        label: `${g.source === 'proposed' ? '🎯 ' : '📋 '}${g.title}`,
+        staging: g,
+      });
+    });
+    if (hasTraining && !hasRealWorkout && workoutTimesDecForApply.length > 0) {
+      workoutTimesDecForApply.forEach((wdec, idx) => {
+        rows.push({
+          kind: 'ghost_wo_new',
+          timeDec: wdec,
+          label:
+            workoutTimesDecForApply.length > 1
+              ? `⚡ Allenamento pianificato (${idx + 1}/${workoutTimesDecForApply.length})`
+              : '⚡ Allenamento pianificato (nuovo)',
+        });
+      });
+    }
+    rows.sort((a, b) => timelineSortKey(a) - timelineSortKey(b));
+    return rows;
+  }, [dailyLog, stagingGhosts, hasTraining, hasRealWorkout, workoutTimesDecForApply]);
+
+  const macroList = PLANNING_DAY_MACRO_OPTIONS.filter((m) => macros.has(m.id));
+  const step1PastWorkoutFrozen = trainingLockedFromLog;
+
+  return (
+    <div style={{ ...glassPanel, padding: '16px 14px 14px', marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10 }}>
+        <div>
+          <div style={{ fontSize: '0.65rem', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(0,229,255,0.55)', fontWeight: 700 }}>
+            Pianificazione guidata
+          </div>
+          <div style={{ fontSize: '1rem', fontWeight: 800, color: '#fff8e8', marginTop: 4 }}>Passo {step} di 3</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onClose?.()}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.15)',
+            background: 'rgba(0,0,0,0.2)',
+            color: 'rgba(255,248,220,0.85)',
+            fontWeight: 700,
+            fontSize: '0.78rem',
+            cursor: 'pointer',
+          }}
+        >
+          Chiudi
+        </button>
+      </div>
+
+      {step === 1 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <p style={{ margin: '0 0 6px 0', fontSize: '0.82rem', color: 'rgba(200,210,220,0.9)' }}>
+            Le attività sono opzionali: puoi lasciare tutto deselezionato e pianificare solo i pasti. Se ne scegli una, aggiungi almeno una fascia oraria (puoi combinarne più di una per attività; rimuovi con ×). Per l’allenamento servono anche i gruppi muscolari. Puoi deselezionare un macro cliccandolo di nuovo, se non è bloccato dal tempo.
+          </p>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              ...(step1PastWorkoutFrozen
+                ? { pointerEvents: 'none', opacity: 0.5, transition: 'opacity 0.2s ease' }
+                : {}),
+            }}
+          >
+            {PLANNING_DAY_MACRO_OPTIONS.map(({ id, label }) => {
+              const on = macros.has(id);
+              const w0 = extractRealWorkout(dailyLog);
+              const trainTimeLocked =
+                id === 'training' && w0 ? wizardRowDisabledByTime({ isGhost: false, timeDec: itemTimeDec(w0) }, nowDec) : false;
+              const lockedTrain = id === 'training' && trainingLockedFromLog && on;
+              const macroDisabled = id === 'training' && trainTimeLocked;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  disabled={macroDisabled}
+                  onClick={() => toggleMacro(id)}
+                  style={{
+                    ...bigTileBase,
+                    ...(on ? bigTileSelected : {}),
+                    ...(lockedTrain ? { opacity: 0.92 } : {}),
+                    ...(macroDisabled ? { cursor: 'not-allowed', opacity: 0.72 } : {}),
+                  }}
+                >
+                  {label}
+                  {lockedTrain ? ' 🔒' : ''}
+                </button>
+              );
+            })}
+
+            {(() => {
+              const w = extractRealWorkout(dailyLog);
+              if (!w) return null;
+              const et = itemTimeDec(w);
+              const hh = !Number.isNaN(et) ? decimalHourToHHMM(et) : '—';
+              const wLocked = wizardTemporalLock(w, nowDec);
+              const line = String(w.desc || w.name || w.title || 'Allenamento').trim() || 'Allenamento';
+              return (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255, 109, 0, 0.35)',
+                    background: 'rgba(255, 109, 0, 0.08)',
+                    fontSize: '0.8rem',
+                    color: '#ffccbc',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: '#ffab91', marginBottom: 4 }}>💪 Allenamento nel diario</div>
+                  <div>
+                    <strong>{hh}</strong>
+                    {' · '}
+                    {line}
+                    {wLocked ? <span title="Orario già passato — tile Allenamento bloccata"> 🔒</span> : null}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {hasTraining ? (
+              <div style={{ marginTop: 6 }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#c4b5fd', marginBottom: 8 }}>Gruppi muscolari / sessione</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {WORKOUT_MUSCLE_GROUP_DEFS.map(({ id: muscleId, label: muscleLabel }) => {
+                    const on = muscles.has(muscleId);
+                    const locked = lockedMuscles.has(muscleId) && on;
+                    return (
+                      <button
+                        key={muscleId}
+                        type="button"
+                        disabled={locked}
+                        onClick={() => toggleMuscle(muscleId)}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 10,
+                          border: on ? '1px solid rgba(179, 136, 255, 0.55)' : '1px solid rgba(255,248,220,0.12)',
+                          background: on ? 'rgba(179, 136, 255, 0.15)' : 'rgba(255,255,255,0.04)',
+                          color: '#fff8e8',
+                          fontWeight: 700,
+                          fontSize: '0.82rem',
+                          cursor: locked ? 'default' : 'pointer',
+                          opacity: locked ? 0.88 : 1,
+                        }}
+                      >
+                        {muscleLabel}
+                        {locked ? ' 🔒' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {macroList.length > 0 ? (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#7dd3fc' }}>
+                  Fasce orarie per attività (aggiungi più blocchi se serve)
+                </div>
+                {macroList.map(({ id, label }) => {
+                  const blocks = normalizeTimingSlotList(timingByMacro[id]);
+                  return (
+                    <div
+                      key={id}
+                      style={{
+                        padding: '12px 12px',
+                        borderRadius: 12,
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,248,220,0.08)',
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, color: '#7dd3fc', fontSize: '0.85rem', marginBottom: 10 }}>
+                        {id === 'training' && muscles.size > 0
+                          ? `${label}: ${WORKOUT_MUSCLE_GROUP_DEFS.filter((d) => muscles.has(d.id)).map((d) => d.label).join(' e ')}`
+                          : label}
+                      </div>
+                      {blocks.length > 0 ? (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: 6,
+                            marginBottom: 10,
+                            alignItems: 'center',
+                          }}
+                        >
+                          {blocks.map((slotId, bIdx) => (
+                            <span
+                              key={`${slotId}_${bIdx}`}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '6px 10px',
+                                borderRadius: 10,
+                                background: 'rgba(0, 229, 255, 0.14)',
+                                border: '1px solid rgba(0, 229, 255, 0.35)',
+                                color: '#a5f3fc',
+                                fontSize: '0.76rem',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {timingSlotLabel(slotId)}
+                              <button
+                                type="button"
+                                title="Rimuovi fascia"
+                                onClick={() => removeTimingBlock(id, bIdx)}
+                                style={{
+                                  margin: 0,
+                                  padding: '0 5px',
+                                  border: 'none',
+                                  background: 'rgba(0,0,0,0.28)',
+                                  color: '#fda4af',
+                                  borderRadius: 6,
+                                  cursor: 'pointer',
+                                  fontSize: '0.9rem',
+                                  lineHeight: 1,
+                                }}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.72rem', color: 'rgba(200,220,235,0.65)', marginBottom: 10 }}>
+                          Nessuna fascia — aggiungi almeno una con i pulsanti sotto.
+                        </div>
+                      )}
+                      <div style={{ fontSize: '0.68rem', color: 'rgba(125,211,252,0.75)', marginBottom: 6 }}>
+                        Aggiungi fascia
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {TIMING_KEYS.map(({ id: slotId, label: slotLabel }) => {
+                          const slotPast = wizardRowDisabledByTime(
+                            { isGhost: false, timeDec: FASCIA_END_DEC[slotId] },
+                            nowDec
+                          );
+                          const already = blocks.includes(slotId);
+                          return (
+                            <button
+                              key={slotId}
+                              type="button"
+                              disabled={slotPast || already}
+                              onClick={() => addTimingBlock(id, slotId)}
+                              style={{
+                                flex: 1,
+                                minWidth: 88,
+                                padding: '10px 8px',
+                                borderRadius: 10,
+                                border: already ? '1px solid rgba(0, 229, 255, 0.45)' : '1px solid rgba(255,255,255,0.12)',
+                                background: already ? 'rgba(0, 229, 255, 0.12)' : 'rgba(0,0,0,0.2)',
+                                color: slotPast || already ? 'rgba(255,248,220,0.45)' : '#fff8e8',
+                                fontWeight: 700,
+                                fontSize: '0.78rem',
+                                cursor: slotPast || already ? 'not-allowed' : 'pointer',
+                                opacity: slotPast ? 0.45 : already ? 0.72 : 1,
+                              }}
+                            >
+                              {slotPast ? `${slotLabel} 🔒` : already ? `${slotLabel} ✓` : `+ ${slotLabel}`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+
+          <div
+            role="status"
+            style={{
+              padding: '8px 10px',
+              borderRadius: 10,
+              border: '1px solid rgba(34, 211, 238, 0.35)',
+              background: 'rgba(34, 211, 238, 0.08)',
+              color: '#a5f3fc',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              lineHeight: 1.4,
+            }}
+          >
+            ✅ Sincronizzato: Gli eventi passati sono protetti. Le attività e i pasti futuri verranno aggiornati con i nuovi target.
+          </div>
+
+          <button
+            type="button"
+            disabled={!canAdvanceFrom1}
+            onClick={goNext}
+            style={{
+              marginTop: 8,
+              padding: '14px 16px',
+              borderRadius: 12,
+              border: 'none',
+              background: canAdvanceFrom1 ? 'rgba(0, 229, 255, 0.25)' : 'rgba(60,60,60,0.5)',
+              color: canAdvanceFrom1 ? '#e0faff' : '#666',
+              fontWeight: 800,
+              fontSize: '0.88rem',
+              cursor: canAdvanceFrom1 ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Continua
+          </button>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(200,210,220,0.9)' }}>
+            Pasti del giorno e target dinamici (motore biochimico). I futuri usano ciò che resta da collimare alla giornata.
+          </p>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              onClick={recalculateMealTimesEvenly}
+              disabled={meals.length < 2}
+              title={
+                meals.length < 2
+                  ? 'Servono almeno due slot pasto'
+                  : 'Riposiziona gli slot sbloccati tra il primo e l’ultimo orario attuale (slot con orario impostato a mano restano fissi)'
+              }
+              style={{
+                padding: '10px 14px',
+                borderRadius: 10,
+                border: '1px solid rgba(34, 211, 238, 0.4)',
+                background: meals.length < 2 ? 'rgba(255,255,255,0.04)' : 'rgba(34, 211, 238, 0.12)',
+                color: meals.length < 2 ? 'rgba(255,248,220,0.35)' : '#a5f3fc',
+                fontWeight: 800,
+                fontSize: '0.78rem',
+                cursor: meals.length < 2 ? 'not-allowed' : 'pointer',
+                letterSpacing: '0.04em',
+              }}
+            >
+              Ricalcola orari
+            </button>
+            <span style={{ fontSize: '0.68rem', color: 'rgba(200,210,220,0.75)', maxWidth: 320, lineHeight: 1.35 }}>
+              Usa il primo e l’ultimo orario tra i pasti e ridistribuisce quelli non bloccati (15 min). Gli orari modificati a mano restano bloccati.
+            </span>
+          </div>
+
+          <details
+            style={{
+              borderRadius: 12,
+              border: '1px solid rgba(167, 139, 250, 0.35)',
+              background: 'rgba(167, 139, 250, 0.06)',
+              padding: '10px 12px',
+            }}
+          >
+            <summary style={{ cursor: 'pointer', fontSize: '0.75rem', fontWeight: 800, color: '#c4b5fd', userSelect: 'none' }}>
+              Vincoli AI per «Genera pasto» (opzionale)
+            </summary>
+            <p style={{ margin: '8px 0 6px', fontSize: '0.68rem', color: '#a1a1aa', lineHeight: 1.4 }}>
+              Valgono per ogni generazione pasto da questo passo. Separare con virgola o a capo.
+            </p>
+            <label style={{ display: 'block', marginBottom: 8, fontSize: '0.68rem', color: '#a5f3fc' }}>
+              Da includere
+              <input
+                type="text"
+                value={wizardAiConstraintFixed}
+                onChange={(e) => setWizardAiConstraintFixed(e.target.value)}
+                placeholder="es. Avena, Yogurt greco"
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  marginTop: 4,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,248,220,0.12)',
+                  background: 'rgba(0,0,0,0.25)',
+                  color: '#fff8e8',
+                  fontSize: '0.78rem',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </label>
+            <label style={{ display: 'block', marginBottom: 8, fontSize: '0.68rem', color: '#fca5a5' }}>
+              Escludi
+              <input
+                type="text"
+                value={wizardAiConstraintExcluded}
+                onChange={(e) => setWizardAiConstraintExcluded(e.target.value)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  marginTop: 4,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,248,220,0.12)',
+                  background: 'rgba(0,0,0,0.25)',
+                  color: '#fff8e8',
+                  fontSize: '0.78rem',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </label>
+            <label style={{ display: 'block', fontSize: '0.68rem', color: '#fde68a' }}>
+              Preferiti
+              <input
+                type="text"
+                value={wizardAiConstraintPreferred}
+                onChange={(e) => setWizardAiConstraintPreferred(e.target.value)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  marginTop: 4,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,248,220,0.12)',
+                  background: 'rgba(0,0,0,0.25)',
+                  color: '#fff8e8',
+                  fontSize: '0.78rem',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </label>
+          </details>
+
+          <div>
+            <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#4ade80', marginBottom: 8, letterSpacing: '0.06em' }}>FATTI (registrati)</div>
+            {registeredMealGroups.length === 0 ? (
+              <div style={{ fontSize: '0.78rem', color: '#888' }}>Nessun pasto reale registrato oggi.</div>
+            ) : (
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', color: '#e5e7eb', fontSize: '0.78rem', lineHeight: 1.45 }}>
+                {registeredMealGroups.map((g, gi) => {
+                  const groupAllLocked =
+                    g.items.length > 0 && g.items.every((it) => wizardRowDisabledByTime(it, nowDec));
+                  return (
+                  <li key={`${g.mealType}_${gi}`} style={{ marginBottom: 8 }}>
+                    <details
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(74, 222, 128, 0.25)',
+                        background: 'rgba(34, 197, 94, 0.06)',
+                        pointerEvents: groupAllLocked ? 'none' : 'auto',
+                        opacity: groupAllLocked ? 0.78 : 1,
+                      }}
+                    >
+                      <summary
+                        style={{
+                          cursor: groupAllLocked ? 'default' : 'pointer',
+                          listStyle: 'none',
+                          fontWeight: 800,
+                          fontSize: '0.78rem',
+                          color: '#bbf7d0',
+                        }}
+                        aria-disabled={groupAllLocked}
+                      >
+                        ▶ {mealTypeLabelIt(g.mealType)} - Fatto
+                      </summary>
+                      <div style={{ fontSize: '0.72rem', color: '#d1fae5', marginTop: 8, lineHeight: 1.45 }}>
+                        {g.items.map((e, j) => {
+                          const td = itemTimeDec(e);
+                          const hh = !Number.isNaN(td) ? decimalHourToHHMM(td) : '—';
+                          const rowLocked = wizardRowDisabledByTime(e, nowDec);
+                          const kcal = Math.round(Number(e.kcal || e.cal) || 0);
+                          const p = Number(e.prot) || 0;
+                          const c = Number(e.carb) || 0;
+                          const f = Number(e.fatTotal ?? e.fat) || 0;
+                          const fib = Number(e.fibre) || 0;
+                          const mg = Number(e.mg) || 0;
+                          const macroLine = `${kcal} kcal, P${p.toFixed(0)}g C${c.toFixed(0)}g F${f.toFixed(0)}g${fib > 0 ? ` · fibre ${fib.toFixed(0)}g` : ''}${mg > 0 ? ` · Mg ${Math.round(mg)}mg` : ''}`;
+                          return (
+                            <div key={e.id || j} style={{ marginTop: j > 0 ? 6 : 0 }}>
+                              {rowLocked ? <span title="Passato o in corso — non sovrascrivibile dal piano">🔒 </span> : null}
+                              <strong>{hh}</strong> · {String(e.desc || e.title || 'Pasto')} — {macroLine}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  </li>
+                );
+                })}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#a78bfa', marginBottom: 8, letterSpacing: '0.06em' }}>PIANIFICATI (ghost in diario)</div>
+            {ghostLogStagingRows.length === 0 ? (
+              <div style={{ fontSize: '0.78rem', color: '#888' }}>Nessun pasto fantasma salvato.</div>
+            ) : (
+              <ul style={{ margin: 0, paddingLeft: 18, color: '#ddd6fe', fontSize: '0.78rem', lineHeight: 1.45 }}>
+                {ghostLogStagingRows.map((r, i) => {
+                  const hh = decimalHourToHHMM(Number(r.mealTime)) || '—';
+                  const t = getDynamicMealTargets(String(r.mealType || 'pranzo').split('_')[0], dailyLog, wizardUserTargets, dynOpts);
+                  const foods = Array.isArray(r.draftFoods) ? r.draftFoods : [];
+                  return (
+                    <li
+                      key={r.id || i}
+                      style={{
+                        marginBottom: 8,
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: '2px dashed rgba(167, 139, 250, 0.45)',
+                        background: 'rgba(167, 139, 250, 0.06)',
+                        listStyle: 'none',
+                        marginLeft: -18,
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+                        <div>
+                          <strong>{hh}</strong> · {String(r.title || 'Pasto pianificato')} ({String(r.mealType || '')})
+                        </div>
+                        {onGeneratePlanGhostMealDraft ? (
+                          <button
+                            type="button"
+                            disabled={wizardGenLoadingId === r.id}
+                            onClick={() => handleWizardGenerateDraft(r)}
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: 8,
+                              border: '1px solid rgba(0, 229, 255, 0.45)',
+                              background: 'rgba(0, 229, 255, 0.12)',
+                              color: '#7dd3fc',
+                              fontWeight: 700,
+                              fontSize: '0.72rem',
+                              cursor: wizardGenLoadingId === r.id ? 'wait' : 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {wizardGenLoadingId === r.id ? '⏳ …' : '✨ Genera Pasto'}
+                          </button>
+                        ) : null}
+                      </div>
+                      <DraftFoodPillsMini foods={foods} />
+                      <div style={{ fontSize: '0.7rem', color: '#c4b5fd', marginTop: 4 }}>
+                        Target residui per questo slot: ~{t.kcal} kcal, P{t.prot}g, C{t.carb}g, F{t.fat}g · {microHintFromTargets(t, wizardUserTargets)}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#22d3ee', marginBottom: 8, letterSpacing: '0.06em' }}>PROPOSTI ORA (slot liberi · motore)</div>
+            {stagingGhosts.filter((r) => r.source === 'proposed').length === 0 ? (
+              <div style={{ fontSize: '0.78rem', color: '#888' }}>Nessuno slot futuro vuoto da proporre.</div>
+            ) : (
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                {stagingGhosts
+                  .filter((r) => r.source === 'proposed')
+                  .map((r) => {
+                    const t = getDynamicMealTargets(r.mealType, dailyLog, wizardUserTargets, dynOpts);
+                    const hh = decimalHourToHHMM(r.mealTime) || '—';
+                    const mealIdx =
+                      r.templateId != null ? meals.findIndex((m) => m.id === r.templateId) : -1;
+                    const template = mealIdx >= 0 ? meals[mealIdx] : null;
+                    const defHour =
+                      template &&
+                      typeof template.defaultHour === 'number' &&
+                      !Number.isNaN(template.defaultHour)
+                        ? template.defaultHour
+                        : typeof r.mealTime === 'number' && !Number.isNaN(r.mealTime)
+                          ? r.mealTime
+                          : 12;
+                    const timeInputVal = decimalHourToHHMM(defHour) || '12:00';
+                    const proposedUnlocked =
+                      typeof r.mealTime === 'number' &&
+                      !Number.isNaN(r.mealTime) &&
+                      !wizardRowDisabledByTime({ isGhost: false, timeDec: r.mealTime }, nowDec);
+                    return (
+                      <li
+                        key={r.id}
+                        style={{
+                          marginBottom: 10,
+                          padding: '10px 12px',
+                          borderRadius: 12,
+                          border: '1px solid rgba(34, 211, 238, 0.35)',
+                          background: 'rgba(34, 211, 238, 0.08)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
+                            gap: 10,
+                            justifyContent: 'space-between',
+                            fontWeight: 800,
+                            color: '#a5f3fc',
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                            {mealIdx >= 0 ? (
+                              <label
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  fontSize: '0.72rem',
+                                  color: '#cffafe',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Ora
+                                <input
+                                  type="time"
+                                  value={timeInputVal}
+                                  onChange={(e) => {
+                                    const d = timeStrToDecimal(e.target.value);
+                                    if (!Number.isNaN(d) && template?.id) updateMealTime(template.id, d);
+                                  }}
+                                  style={{
+                                    padding: '6px 8px',
+                                    borderRadius: 8,
+                                    border: '1px solid rgba(34, 211, 238, 0.45)',
+                                    background: 'rgba(0,0,0,0.28)',
+                                    color: '#e0f2fe',
+                                    fontSize: '0.8rem',
+                                  }}
+                                />
+                              </label>
+                            ) : null}
+                            <span style={{ fontWeight: 800, color: '#a5f3fc' }}>
+                              {mealIdx < 0 ? `${hh} · ` : ''}
+                              {r.title}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'rgba(165,243,252,0.8)' }}>
+                              → {hh} {mealIdx >= 0 ? '(timeline)' : ''}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                            {mealIdx >= 0 ? (
+                              <button
+                                type="button"
+                                title="Rimuovi questo slot dalla proposta"
+                                onClick={() => removeMeal(mealIdx)}
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: 8,
+                                  border: '1px solid rgba(248, 113, 113, 0.45)',
+                                  background: 'rgba(248, 113, 113, 0.12)',
+                                  color: '#fca5a5',
+                                  fontWeight: 700,
+                                  fontSize: '0.72rem',
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                Elimina
+                              </button>
+                            ) : null}
+                            {onGeneratePlanGhostMealDraft && proposedUnlocked ? (
+                              <button
+                                type="button"
+                                disabled={wizardGenLoadingId === r.id}
+                                onClick={() => handleWizardGenerateDraft(r)}
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: 8,
+                                  border: '1px solid rgba(0, 229, 255, 0.45)',
+                                  background: 'rgba(0, 229, 255, 0.12)',
+                                  color: '#7dd3fc',
+                                  fontWeight: 700,
+                                  fontSize: '0.72rem',
+                                  cursor: wizardGenLoadingId === r.id ? 'wait' : 'pointer',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {wizardGenLoadingId === r.id ? '⏳ …' : '✨ Genera Pasto'}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                        {mealIdx >= 0 && template ? (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#a5f3fc', marginBottom: 4 }}>
+                              Alimenti (manuale — non sovrascritti da «Genera pasto»)
+                            </div>
+                            <DraftFoodPillsMini
+                              foods={normalizeMealFoodsArray(mealFoodsRead(template))}
+                              onRemoveIndex={
+                                proposedUnlocked
+                                  ? (idx) => removeTemplateFood(template.id, idx)
+                                  : undefined
+                              }
+                            />
+                            {proposedUnlocked ? (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  flexWrap: 'wrap',
+                                  gap: 8,
+                                  marginTop: 8,
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <input
+                                  type="text"
+                                  placeholder="Nome alimento"
+                                  value={mealManualFormByTpl[template.id]?.name ?? ''}
+                                  onChange={(e) =>
+                                    setMealManualFormByTpl((prev) => ({
+                                      ...prev,
+                                      [template.id]: {
+                                        name: e.target.value,
+                                        qty: prev[template.id]?.qty ?? '100',
+                                      },
+                                    }))
+                                  }
+                                  style={{
+                                    flex: '1 1 140px',
+                                    minWidth: 120,
+                                    padding: '6px 8px',
+                                    borderRadius: 8,
+                                    border: '1px solid rgba(34, 211, 238, 0.4)',
+                                    background: 'rgba(0,0,0,0.28)',
+                                    color: '#e0f2fe',
+                                    fontSize: '0.78rem',
+                                  }}
+                                />
+                                <label
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: '0.7rem',
+                                    color: '#cffafe',
+                                  }}
+                                >
+                                  g
+                                  <input
+                                    type="number"
+                                    min={5}
+                                    max={2000}
+                                    step={5}
+                                    value={mealManualFormByTpl[template.id]?.qty ?? '100'}
+                                    onChange={(e) =>
+                                      setMealManualFormByTpl((prev) => ({
+                                        ...prev,
+                                        [template.id]: {
+                                          name: prev[template.id]?.name ?? '',
+                                          qty: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    style={{
+                                      width: 72,
+                                      padding: '6px 8px',
+                                      borderRadius: 8,
+                                      border: '1px solid rgba(34, 211, 238, 0.4)',
+                                      background: 'rgba(0,0,0,0.28)',
+                                      color: '#e0f2fe',
+                                      fontSize: '0.78rem',
+                                    }}
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const row = mealManualFormByTpl[template.id] || {};
+                                    addManualFoodToTemplate(template.id, row.name, row.qty);
+                                    setMealManualFormByTpl((prev) => ({
+                                      ...prev,
+                                      [template.id]: { name: '', qty: '100' },
+                                    }));
+                                  }}
+                                  style={{
+                                    padding: '6px 12px',
+                                    borderRadius: 8,
+                                    border: '1px solid rgba(52, 211, 153, 0.45)',
+                                    background: 'rgba(52, 211, 153, 0.15)',
+                                    color: '#86efac',
+                                    fontWeight: 700,
+                                    fontSize: '0.72rem',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  Aggiungi
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <DraftFoodPillsMini foods={r.draftFoods} />
+                        )}
+                        <div style={{ fontSize: '0.72rem', color: '#cffafe', marginTop: 6, lineHeight: 1.4 }}>
+                          Target suggeriti: ~{t.kcal} kcal · Prot {t.prot}g · Carb {t.carb}g · Grassi {t.fat}g
+                          <br />
+                          {microHintFromTargets(t, wizardUserTargets)}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: 'rgba(200,230,240,0.85)', marginTop: 6 }}>
+                          Magnesio accumulato oggi (da pasti registrati): ~{Math.round(mgConsumed)} mg
+                        </div>
+                      </li>
+                    );
+                  })}
+              </ul>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={goBack}
+              style={{
+                flex: 1,
+                padding: '12px 14px',
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'transparent',
+                color: 'rgba(255,248,220,0.85)',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Indietro
+            </button>
+            <button
+              type="button"
+              onClick={goNext}
+              style={{
+                flex: 1,
+                padding: '12px 14px',
+                borderRadius: 12,
+                border: 'none',
+                background: 'rgba(0, 229, 255, 0.25)',
+                color: '#e0faff',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Continua
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(200,210,220,0.9)' }}>
+            Riepilogo timeline: eventi passati e nuova pianificazione (ghost). La conferma sostituisce i vecchi nodi fantasma pasto e aggiorna l’allenamento ghost se previsto, senza modificare i pasti reali.
+          </p>
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: '1px solid rgba(125, 211, 252, 0.25)',
+              background: 'rgba(14, 165, 233, 0.08)',
+              maxHeight: 280,
+              overflowY: 'auto',
+            }}
+          >
+            <ul style={{ margin: 0, paddingLeft: 18, color: '#e0f2fe', fontSize: '0.78rem', lineHeight: 1.5 }}>
+              {timelineEntries.map((row, i) => {
+                if (row.kind === 'real_meal_group') {
+                  return (
+                    <li key={`rg_${row.mealType}_${i}`} style={{ marginBottom: 8, listStyle: 'none', marginLeft: -18 }}>
+                      <details
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(125, 211, 252, 0.28)',
+                          background: 'rgba(14, 165, 233, 0.07)',
+                        }}
+                      >
+                        <summary
+                          style={{
+                            cursor: 'pointer',
+                            listStyle: 'none',
+                            fontWeight: 800,
+                            fontSize: '0.78rem',
+                            color: '#bae6fd',
+                          }}
+                        >
+                          ▶ {mealTypeLabelIt(row.mealType)} - Fatto
+                        </summary>
+                        <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: '0.74rem', color: '#e0f2fe' }}>
+                          {row.items.map((e, j) => {
+                            const locked = planDiaryMealSlotIsLocked(e, nowDec);
+                            return (
+                              <li key={e.id || j} style={{ marginBottom: 4 }}>
+                                {locked ? <span title="Passato o attuale — non sovrascrivibile dal piano">🔒 </span> : null}
+                                <strong>{decimalHourToHHMM(Number(e.mealTime)) || '—'}</strong> {String(e.desc || e.title || '—')}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </details>
+                    </li>
+                  );
+                }
+                if (row.kind === 'ghost_proposed' || row.kind === 'ghost_staging') {
+                  const g = row.staging;
+                  const ghostGenUnlocked =
+                    row.kind === 'ghost_staging'
+                      ? !!g
+                      : !!g &&
+                        typeof g.mealTime === 'number' &&
+                        !Number.isNaN(g.mealTime) &&
+                        !wizardRowDisabledByTime({ isGhost: false, timeDec: g.mealTime }, nowDec);
+                  return (
+                    <li
+                      key={g?.id || `${row.kind}_${i}`}
+                      style={{
+                        marginBottom: 10,
+                        listStyle: 'none',
+                        marginLeft: -18,
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(34, 211, 238, 0.28)',
+                        background: 'rgba(14, 165, 233, 0.06)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                          gap: 8,
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <div>
+                          <strong>{decimalHourToHHMM(row.timeDec) || '—'}</strong> {row.label}
+                        </div>
+                        {onGeneratePlanGhostMealDraft && ghostGenUnlocked ? (
+                          <button
+                            type="button"
+                            disabled={wizardGenLoadingId === g.id}
+                            onClick={() => handleWizardGenerateDraft(g)}
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: 8,
+                              border: '1px solid rgba(0, 229, 255, 0.45)',
+                              background: 'rgba(0, 229, 255, 0.12)',
+                              color: '#7dd3fc',
+                              fontWeight: 700,
+                              fontSize: '0.72rem',
+                              cursor: wizardGenLoadingId === g.id ? 'wait' : 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {wizardGenLoadingId === g.id ? '⏳ …' : '✨ Genera Pasto'}
+                          </button>
+                        ) : null}
+                      </div>
+                      {g ? <DraftFoodPillsMini foods={g.draftFoods} /> : null}
+                    </li>
+                  );
+                }
+                return (
+                  <li key={i} style={{ marginBottom: 6 }}>
+                    <strong>{decimalHourToHHMM(row.timeDec) || '—'}</strong> {row.label}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              style={{
+                width: '100%',
+                padding: '16px 18px',
+                borderRadius: 14,
+                border: 'none',
+                background: 'linear-gradient(135deg, #00e5ff 0%, #7c3aed 100%)',
+                color: '#0a0a0a',
+                fontWeight: 900,
+                fontSize: '0.9rem',
+                letterSpacing: '0.03em',
+                cursor: 'pointer',
+                boxShadow: '0 0 24px rgba(0, 229, 255, 0.35)',
+              }}
+            >
+              Conferma e Applica
+            </button>
+            <button
+              type="button"
+              onClick={goBack}
+              style={{
+                padding: '12px 14px',
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'transparent',
+                color: 'rgba(255,248,220,0.8)',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Torna indietro
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
