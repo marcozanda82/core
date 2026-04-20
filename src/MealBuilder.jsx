@@ -44,6 +44,55 @@ import {
 } from './smartFoodUnits';
 import { generatePracticalMeal } from './autoMealGenerator';
 
+/** Icona barcode (stile scan) — nessuna dipendenza esterna. */
+function BarcodeScanIcon({ size = 22 }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+      <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+      <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+      <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+      <path d="M7 8h.01" />
+      <path d="M7 12h3" />
+      <path d="M7 16h.01" />
+      <path d="M11 12h1" />
+      <path d="M13 8h1" />
+      <path d="M13 16h2" />
+      <path d="M16 8h1" />
+      <path d="M16 12h1" />
+      <path d="M19 8h.01" />
+      <path d="M19 12h.01" />
+      <path d="M19 16h.01" />
+    </svg>
+  );
+}
+
+function fmtPer100Input(n) {
+  if (n == null || n === '') return '';
+  const x = Number(n);
+  if (!Number.isFinite(x)) return '';
+  const r = Math.round(x * 10) / 10;
+  return String(r);
+}
+
+function parsePer100Field(raw, fallback) {
+  const s = String(raw ?? '').trim().replace(',', '.');
+  if (s === '') return fallback;
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 const DRAFT_NUTRIENT_EXTRA_KEYS = new Set([
   'fibre',
   ...Object.values(TARGETS).flatMap(g => Object.keys(g || {}))
@@ -1144,6 +1193,9 @@ export default function MealBuilder({
   smartMealLaunchKey = 0,
   /** Coach giornata: apre pasto realistico 1 tap (generatePracticalMeal). */
   coachPracticalLaunchKey = 0,
+  mealBuilderBarcodeBootstrap = null,
+  onMealBuilderBarcodeBootstrapConsumed = () => {},
+  persistBarcodeNutritionCorrection = null,
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
 
@@ -1178,6 +1230,8 @@ export default function MealBuilder({
   const [aiConstraintPreferred, setAiConstraintPreferred] = useState('');
   const [isCreaExpanded, setIsCreaExpanded] = useState(false);
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
+  /** Valori nutrizionali /100g modificabili (scheda prodotto) quando c’è una selezione da DB / CREA / barcode. */
+  const [per100Draft, setPer100Draft] = useState({ kcal: '', prot: '', carb: '', fat: '' });
   const [userEditedWeight, setUserEditedWeight] = useState(false);
   const SHOW_ADVANCED_FOOD_UI = false;
   /** Grammi per 1× unità template (null = totale g solo dal campo peso / abitudine). */
@@ -1241,6 +1295,33 @@ export default function MealBuilder({
     setPortionOverrideEditorOpen(false);
     setShowOverrideSavePrompt(false);
     setUserEditedWeight(false);
+  }, [selectedFoodMatch?.id]);
+
+  useEffect(() => {
+    const b = mealBuilderBarcodeBootstrap;
+    if (!b?.match?.id) return;
+    const m = b.match;
+    setSelectedFoodMatch({
+      id: m.id,
+      desc: m.desc,
+      row: m.row,
+      barcode: m.barcode,
+    });
+    onMealBuilderBarcodeBootstrapConsumed();
+  }, [mealBuilderBarcodeBootstrap?.nonce, onMealBuilderBarcodeBootstrapConsumed, mealBuilderBarcodeBootstrap]);
+
+  useEffect(() => {
+    if (!selectedFoodMatch?.id) {
+      setPer100Draft({ kcal: '', prot: '', carb: '', fat: '' });
+      return;
+    }
+    const r = selectedFoodMatch.row || {};
+    setPer100Draft({
+      kcal: fmtPer100Input(r.kcal ?? r.cal),
+      prot: fmtPer100Input(r.prot),
+      carb: fmtPer100Input(r.carb),
+      fat: fmtPer100Input(r.fatTotal ?? r.fat),
+    });
   }, [selectedFoodMatch?.id]);
 
   /** Alla selezione alimento: abitudine → g manuali; altrimenti unità predefinita × 1. */
@@ -2063,11 +2144,44 @@ export default function MealBuilder({
     if (selectedFoodMatch?.id && typeof estraiDatiFoodDb === 'function' && typeof setAddedFoods === 'function') {
       const trimmedName = nameTrim;
       const preferredDbKey = foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : undefined;
+      const row = selectedFoodMatch.row || {};
+      const k100 = parsePer100Field(
+        per100Draft.kcal,
+        Number(row.kcal ?? row.cal ?? 0) || 0
+      );
+      const p100 = parsePer100Field(per100Draft.prot, Number(row.prot ?? 0) || 0);
+      const c100 = parsePer100Field(per100Draft.carb, Number(row.carb ?? 0) || 0);
+      const f100 = parsePer100Field(per100Draft.fat, Number(row.fatTotal ?? row.fat ?? 0) || 0);
+      const factor = parsedWeight / 100;
+
+      if (typeof persistBarcodeNutritionCorrection === 'function' && selectedFoodMatch.barcode) {
+        void persistBarcodeNutritionCorrection({
+          barcode: selectedFoodMatch.barcode,
+          foodDbKey: foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : null,
+          per100: { kcal: k100, prot: p100, carb: c100, fat: f100 },
+          desc: trimmedName,
+        });
+      }
+
       const baseItem = estraiDatiFoodDb(trimmedName, parsedWeight, mealType, preferredDbKey);
-      const enrichedItem = enrichAddedFoodItem(baseItem, selectedFoodMatch, parsedWeight);
+      const scaled = {
+        ...baseItem,
+        desc: trimmedName,
+        name: trimmedName,
+        kcal: Math.max(0, Math.round(k100 * factor)),
+        cal: Math.max(0, Math.round(k100 * factor)),
+        prot: Math.max(0, Math.round(p100 * factor * 10) / 10),
+        carb: Math.max(0, Math.round(c100 * factor * 10) / 10),
+        fat: Math.max(0, Math.round(f100 * factor * 10) / 10),
+        fatTotal: Math.max(0, Math.round(f100 * factor * 10) / 10),
+      };
       const itemToAdd = applyCanonicalGramsPerUnitToEnrichedItem(
-        enrichedItem,
-        selectedFoodMatch,
+        scaled,
+        {
+          ...selectedFoodMatch,
+          desc: trimmedName,
+          row: { ...row, desc: trimmedName, kcal: k100, prot: p100, carb: c100, fatTotal: f100 },
+        },
         foodDb,
         localFoodDb
       );
@@ -2108,7 +2222,6 @@ export default function MealBuilder({
     portionQuantityInput,
     foodDb,
     mealType,
-    enrichAddedFoodItem,
     setFoodNameInput,
     setFoodWeightInput,
     handleAddFoodManual,
@@ -2117,6 +2230,8 @@ export default function MealBuilder({
     trackRecentFood,
     setShowFoodDropdown,
     localFoodDb,
+    per100Draft,
+    persistBarcodeNutritionCorrection,
   ]);
 
   const handleSelectRecentFood = useCallback((entry) => {
@@ -3360,11 +3475,15 @@ export default function MealBuilder({
                         placeholder="Es. Pollo"
                         value={foodNameInput}
                         onChange={(e) => {
-                          setFoodNameInput(e.target.value);
-                          setSelectedFoodMatch(null);
-                          setShowFoodDropdown(true);
+                          const v = e.target.value;
+                          setFoodNameInput(v);
+                          if (!selectedFoodMatch) {
+                            setShowFoodDropdown(true);
+                          }
                         }}
-                        onFocus={() => setShowFoodDropdown(true)}
+                        onFocus={() => {
+                          if (!selectedFoodMatch) setShowFoodDropdown(true);
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             if (
@@ -3441,6 +3560,7 @@ export default function MealBuilder({
                       <button
                         type="button"
                         title="Scansiona barcode"
+                        aria-label="Scansiona barcode"
                         onClick={() => setIsBarcodeScannerOpen((prev) => !prev)}
                         style={{
                           padding: '10px 12px',
@@ -3449,14 +3569,117 @@ export default function MealBuilder({
                           borderRadius: '10px',
                           cursor: 'pointer',
                           fontSize: '1.1rem',
+                          color: isBarcodeScannerOpen ? '#0f172a' : '#e2e8f0',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         }}
                       >
-                        📷
+                        <BarcodeScanIcon size={22} />
                       </button>
                       <button type="button" className="quick-add-btn" onClick={handleAddSelectedFood}>
                         +
                       </button>
                     </div>
+                    {selectedFoodMatch?.id ? (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: '12px 14px',
+                          borderRadius: 12,
+                          border: '1px solid rgba(148, 163, 184, 0.35)',
+                          background: 'rgba(15, 23, 42, 0.55)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 10,
+                            marginBottom: 10,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: '0.68rem',
+                              color: '#94a3b8',
+                              fontWeight: 600,
+                              letterSpacing: '0.06em',
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            Scheda prodotto (per 100 g) — modificabile prima di aggiungere
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedFoodMatch(null);
+                              setPer100Draft({ kcal: '', prot: '', carb: '', fat: '' });
+                            }}
+                            style={{
+                              fontSize: '0.68rem',
+                              padding: '4px 10px',
+                              borderRadius: 8,
+                              border: '1px solid #475569',
+                              background: 'transparent',
+                              color: '#94a3b8',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Cambia prodotto
+                          </button>
+                        </div>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))',
+                            gap: '10px 12px',
+                          }}
+                        >
+                          {[
+                            { key: 'kcal', label: 'Kcal' },
+                            { key: 'prot', label: 'Prot (g)' },
+                            { key: 'carb', label: 'Carb (g)' },
+                            { key: 'fat', label: 'Grassi (g)' },
+                          ].map(({ key, label }) => (
+                            <label
+                              key={key}
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 4,
+                                fontSize: '0.68rem',
+                                color: '#94a3b8',
+                              }}
+                            >
+                              {label}
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                min={0}
+                                step="any"
+                                value={per100Draft[key]}
+                                onChange={(e) =>
+                                  setPer100Draft((prev) => ({ ...prev, [key]: e.target.value }))
+                                }
+                                style={{
+                                  padding: '8px 10px',
+                                  borderRadius: 8,
+                                  border: '1px solid #444',
+                                  background: '#1a1a22',
+                                  color: '#e2e8f0',
+                                  fontSize: '0.85rem',
+                                  fontVariantNumeric: 'tabular-nums',
+                                  boxSizing: 'border-box',
+                                }}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     {SHOW_ADVANCED_FOOD_UI && selectedFoodUnitHint ? (
                       <div style={{ marginTop: 10 }}>
                         <div
@@ -4259,7 +4482,9 @@ export default function MealBuilder({
                     )}
                   </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.68rem', color: '#64748b' }}>Open Food Facts (📷) → compila grammi e +</span>
+                        <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                          Open Food Facts (icona barcode) → verifica i valori /100g, grammi e +
+                        </span>
                       </div>
                       <button
                         type="button"

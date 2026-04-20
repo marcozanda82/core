@@ -78,6 +78,7 @@ import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { recalculateUserTargets } from './targetsEngine';
 import { mergeDuplicateBiometrics } from './biometricHistory';
+import { getBarcodeNutritionOverride, setBarcodeNutritionOverride as setBarcodeNutritionOverrideStorage } from './barcodeFoodOverrides';
 import {
   evaluateAiDayCoach,
   consumeCoachPeriod,
@@ -2314,6 +2315,8 @@ export default function SalaComandi() {
   const [isAIVerifying, setIsAIVerifying] = useState(false);
 
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+  /** One-shot bootstrap per MealBuilder dopo scansione OFF (nonce + match con row Firebase o bozza locale). */
+  const [mealBuilderBarcodeBootstrap, setMealBuilderBarcodeBootstrap] = useState(null);
   const barcodeVideoRef = useRef(null);
   const barcodeStreamRef = useRef(null);
   const barcodeScanIntervalRef = useRef(null);
@@ -5156,9 +5159,12 @@ export default function SalaComandi() {
     const p = data?.product;
     const nut = p?.nutriments || {};
     const toNum = (v) => (v != null && v !== '' ? parseFloat(v) : undefined);
+    const kcalFromKj = (kj) => (kj != null && Number.isFinite(kj) ? kj / 4.184 : undefined);
+    const energyKcal = toNum(nut['energy-kcal_100g']);
+    const energyKj = toNum(nut['energy_100g']);
     const entryPer100 = {
       desc: p?.product_name || `Barcode ${barcode}`,
-      kcal: toNum(nut['energy-kcal_100g']) ?? toNum(nut['energy_100g']) ? (nut['energy_100g'] / 4.184) : undefined,
+      kcal: energyKcal ?? kcalFromKj(energyKj),
       prot: toNum(nut.proteins_100g),
       carb: toNum(nut.carbohydrates_100g),
       fatTotal: toNum(nut.fat_100g),
@@ -5178,29 +5184,99 @@ export default function SalaComandi() {
       barcodeStreamRef.current = null;
     }
     if (barcodeScanIntervalRef.current) clearInterval(barcodeScanIntervalRef.current);
+    const code = String(barcode ?? '').trim();
+    const slugName = (name) => String(name).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30);
+
+    const applyLocalOverride = (base) => {
+      const ov = getBarcodeNutritionOverride(code);
+      if (!ov) return base;
+      const next = { ...base };
+      if (ov.desc) next.desc = ov.desc;
+      if (ov.kcal != null) next.kcal = ov.kcal;
+      if (ov.prot != null) next.prot = ov.prot;
+      if (ov.carb != null) next.carb = ov.carb;
+      if (ov.fat != null) next.fatTotal = ov.fat;
+      return next;
+    };
+
+    const fillPer100Defaults = (row) => {
+      const r = { ...row };
+      Object.keys(TARGETS).forEach((g) =>
+        Object.keys(TARGETS[g] || {}).forEach((k) => {
+          if (r[k] == null) r[k] = getDefaultNutrientValue(k, fullHistory);
+        })
+      );
+      if (r.kcal == null) r.kcal = getDefaultNutrientValue('kcal', fullHistory);
+      return r;
+    };
+
     try {
-      const entryPer100 = await fetchOpenFoodFactsProduct(barcode);
-      const name = entryPer100?.desc || `Barcode ${barcode}`;
-      if (entryPer100 && userUid) {
-        Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => { 
-          if (entryPer100[k] == null) entryPer100[k] = getDefaultNutrientValue(k, fullHistory); 
-        }));
-        if (entryPer100.kcal == null) entryPer100.kcal = getDefaultNutrientValue('kcal', fullHistory);
-        const newKey = `food_${Date.now()}_${String(name).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
-        const basePath = `users/${userUid}/tracker_data`;
-        const entrySaved = enrichDbRowWithFoodUnits(entryPer100, newKey);
-        await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), entrySaved);
-        setFoodDb(prev => ({ ...prev, [newKey]: entrySaved }));
+      let entryPer100 = await fetchOpenFoodFactsProduct(code);
+      const localOv = getBarcodeNutritionOverride(code);
+
+      if (!entryPer100) {
+        if (localOv && (localOv.desc || localOv.kcal != null)) {
+          entryPer100 = {
+            desc: localOv.desc || `Barcode ${code}`,
+            kcal: localOv.kcal,
+            prot: localOv.prot,
+            carb: localOv.carb,
+            fatTotal: localOv.fat,
+            barcode: code,
+          };
+        } else {
+          entryPer100 = { desc: `Barcode ${code}`, barcode: code };
+        }
+      } else {
+        entryPer100 = { ...entryPer100, barcode: code };
+        entryPer100 = applyLocalOverride(entryPer100);
       }
-      setFoodNameInput(name);
-      setFoodWeightInput(getLastQuantityForFood(name) || '100');
+
+      entryPer100 = fillPer100Defaults(entryPer100);
+      const name = String(entryPer100.desc || '').trim() || `Barcode ${code}`;
+
+      let savedRow = { ...entryPer100, desc: name };
+      let dbKey = `local_${Date.now()}_${code}`;
+
+      if (userUid && db) {
+        const basePath = `users/${userUid}/tracker_data`;
+        const existingKey = Object.keys(foodDb || {}).find(
+          (k) => foodDb[k] && String(foodDb[k].barcode ?? '') === code
+        );
+        dbKey = existingKey || `food_${Date.now()}_${slugName(name)}`;
+        const entrySaved = enrichDbRowWithFoodUnits(savedRow, dbKey);
+        await set(ref(db, `${basePath}/trackerFoodDatabase/${dbKey}`), entrySaved);
+        setFoodDb((prev) => ({ ...(prev || {}), [dbKey]: entrySaved }));
+        savedRow = entrySaved;
+      }
+
+      setFoodNameInput(savedRow.desc || name);
+      setFoodWeightInput(getLastQuantityForFood(savedRow.desc || name) || '100');
+      setMealBuilderBarcodeBootstrap({
+        nonce: Date.now(),
+        match: {
+          id: dbKey,
+          desc: savedRow.desc || name,
+          row: savedRow,
+          barcode: code,
+        },
+      });
       setTimeout(() => document.getElementById('weight-input')?.focus(), 100);
     } catch (e) {
-      setFoodNameInput(`Barcode ${barcode}`);
+      setFoodNameInput(`Barcode ${code}`);
       setFoodWeightInput('100');
+      setMealBuilderBarcodeBootstrap({
+        nonce: Date.now(),
+        match: {
+          id: `err_${Date.now()}`,
+          desc: `Barcode ${code}`,
+          row: { desc: `Barcode ${code}`, barcode: code },
+          barcode: code,
+        },
+      });
       setTimeout(() => document.getElementById('weight-input')?.focus(), 100);
     }
-  }, [foodDb, userUid, fullHistory]);
+  }, [foodDb, userUid, fullHistory, db]);
 
   useEffect(() => {
     if (!isBarcodeScannerOpen || !barcodeVideoRef.current) return;
@@ -5248,6 +5324,10 @@ export default function SalaComandi() {
       barcodeStreamRef.current = null;
     }
     if (barcodeScanIntervalRef.current) clearInterval(barcodeScanIntervalRef.current);
+  }, []);
+
+  const consumeMealBuilderBarcodeBootstrap = useCallback(() => {
+    setMealBuilderBarcodeBootstrap(null);
   }, []);
 
   /** Stima media verosimile per nutriente mancante (mai 0: usa contesto nome o media). */
@@ -5613,6 +5693,47 @@ Ottimo! Diario aggiornato. 🥗`;
     await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), payloadWithUnits);
     setFoodDb(prev => ({ ...(prev || {}), [newKey]: payloadWithUnits }));
   }, [userUid, db, fullHistory]);
+
+  /** Override locale + aggiornamento riga Firebase per stesso barcode (correzioni utente). */
+  const persistBarcodeNutritionCorrection = useCallback(
+    async ({ barcode, foodDbKey, per100, desc }) => {
+      const code = String(barcode ?? '').trim();
+      if (!code || !per100 || typeof per100 !== 'object') return;
+      const name = String(desc ?? '').trim();
+      setBarcodeNutritionOverrideStorage(code, {
+        desc: name || undefined,
+        kcal: per100.kcal,
+        prot: per100.prot,
+        carb: per100.carb,
+        fat: per100.fat,
+      });
+      if (!userUid || !db || !foodDbKey || !foodDb?.[foodDbKey]) return;
+      const basePath = `users/${userUid}/tracker_data`;
+      const prev = foodDb[foodDbKey];
+      const merged = {
+        ...prev,
+        desc: name || prev.desc,
+        barcode: code,
+        kcal: per100.kcal,
+        prot: per100.prot,
+        carb: per100.carb,
+        fatTotal: per100.fat,
+      };
+      Object.keys(TARGETS).forEach((g) =>
+        Object.keys(TARGETS[g] || {}).forEach((k) => {
+          if (merged[k] == null) merged[k] = getDefaultNutrientValue(k, fullHistory);
+        })
+      );
+      if (merged.kcal == null || Number(merged.kcal) === 0) {
+        merged.kcal = getDefaultNutrientValue('kcal', fullHistory);
+      }
+      if (merged.fatTotal == null && merged.fat != null) merged.fatTotal = Number(merged.fat);
+      const payload = enrichDbRowWithFoodUnits(merged, foodDbKey);
+      await set(ref(db, `${basePath}/trackerFoodDatabase/${foodDbKey}`), payload);
+      setFoodDb((p) => ({ ...(p || {}), [foodDbKey]: payload }));
+    },
+    [userUid, db, foodDb, fullHistory]
+  );
 
   const deleteRecipeFromFoodDb = useCallback(async (recipeKey) => {
     if (!userUid || !recipeKey) return;
@@ -13212,6 +13333,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             onSmartComplete={handleSmartMealCompletion}
             smartMealLaunchKey={mealBuilderSmartLaunchKey}
             coachPracticalLaunchKey={mealBuilderCoachPracticalKey}
+            mealBuilderBarcodeBootstrap={mealBuilderBarcodeBootstrap}
+            onMealBuilderBarcodeBootstrapConsumed={consumeMealBuilderBarcodeBootstrap}
+            persistBarcodeNutritionCorrection={persistBarcodeNutritionCorrection}
           />
         )}
 
