@@ -56,7 +56,7 @@ import HomeContainer from './components/HomeContainer';
 import MetabolicPhaseCompact from './components/MetabolicPhaseCompact';
 import PlanningWizard from './PlanningWizard';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
-import { getUseNewHome, toggleUseNewHome, useUseNewHome } from './homeUiFlagStore';
+import { getHomeFlag, toggleHome, useHomeFlag } from './homeStore';
 import {
   WORKOUT_ACTIVITY_SELECTOR_IDS,
   getWorkoutActivityTypeDef,
@@ -2031,7 +2031,7 @@ export default function SalaComandi() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
-  const useNewHome = useUseNewHome();
+  const useNewHome = useHomeFlag();
   const [slideDirection, setSlideDirection] = useState('slide-none');
 
   useEffect(() => {
@@ -3317,10 +3317,10 @@ export default function SalaComandi() {
   const handleCoreOsClick = () => {
     coreOsClickCount.current += 1;
     console.log(
-      `[HomeToggle] logo tap count=${coreOsClickCount.current}, useNewHome(current)=${getUseNewHome()}`,
+      `[HomeToggle] logo tap count=${coreOsClickCount.current}, useNewHome(current)=${getHomeFlag()}`,
     );
     if (coreOsClickCount.current === 3) {
-      const next = toggleUseNewHome();
+      const next = toggleHome();
       console.log(next ? 'Home V2 enabled' : 'Home V1 enabled');
       coreOsClickCount.current = 0;
     }
