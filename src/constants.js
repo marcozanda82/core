@@ -17,7 +17,7 @@ export const COLORS = {
 };
 
 export const MESSAGES = {
-  inSync: ['Sei in scia!', 'Ghost Sync perfetto!', 'In linea con il Ghost!'],
-  moderate: ['Piccolo aggiustamento e sei a posto.', 'Quasi in scia!'],
-  critical: ['Recupera il Ghost!', 'Ricalibra al prossimo pasto.'],
+  inSync: ['Stai andando benissimo!', 'Ottimo ritmo oggi!', 'Sei in forma!'],
+  moderate: ['Piccolo aggiustamento e sei a posto.', 'Quasi perfetto!'],
+  critical: ['Riprendi il ritmo al prossimo pasto.', 'Ricalibra al prossimo pasto.'],
 };

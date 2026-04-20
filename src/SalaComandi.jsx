@@ -53,11 +53,9 @@ import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
-import HomeViewV2 from './components/HomeViewV2';
 import MetabolicPhaseCompact from './components/MetabolicPhaseCompact';
 import PlanningWizard from './PlanningWizard';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
-import { getHomeFlag, toggleHome, useHomeFlag } from './homeStore';
 import {
   WORKOUT_ACTIVITY_SELECTOR_IDS,
   getWorkoutActivityTypeDef,
@@ -213,10 +211,10 @@ const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'planning', 'bussola', 'longev
 /** Voci barra inferiore (sempre tutte visibili; non condizionare al caricamento dati). */
 const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },
-  { id: 'analisi', label: 'Analisi', icon: '📊' },
-  { id: 'planning', label: 'Piano', icon: '📅' },
-  { id: 'bussola', label: 'Bussola', icon: '🧭' },
-  { id: 'longevita', label: 'Statistiche', icon: '🧬' },
+  { id: 'analisi', label: 'Diario', icon: '📋' },
+  { id: 'planning', label: 'Pianifica', icon: '📅' },
+  { id: 'bussola', label: 'Salute', icon: '❤️' },
+  { id: 'longevita', label: 'Progressi', icon: '📈' },
   { id: 'menu', label: 'Menu', icon: '≡' },
 ];
 
@@ -2032,7 +2030,6 @@ export default function SalaComandi() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
-  const useNewHome = useHomeFlag();
   const [slideDirection, setSlideDirection] = useState('slide-none');
 
   useEffect(() => {
@@ -2049,10 +2046,6 @@ export default function SalaComandi() {
       setActiveBottomTab('oggi');
     }
   }, [activeBottomTab]);
-
-  useEffect(() => {
-    console.log(`[HomeToggle] useNewHome updated -> ${useNewHome}`);
-  }, [useNewHome]);
 
   const [mainTabTouchStartX, setMainTabTouchStartX] = useState(null);
   const [mainTabTouchEndX, setMainTabTouchEndX] = useState(null);
@@ -3317,12 +3310,9 @@ export default function SalaComandi() {
 
   const handleCoreOsClick = () => {
     coreOsClickCount.current += 1;
-    console.log(
-      `[HomeToggle] logo tap count=${coreOsClickCount.current}, useNewHome(current)=${getHomeFlag()}`,
-    );
     if (coreOsClickCount.current === 3) {
-      const next = toggleHome();
-      console.log(next ? 'Home V2 enabled' : 'Home V1 enabled');
+      setIsSimulationMode(true);
+      setSimulatedLog(JSON.parse(JSON.stringify(dailyLog || [])));
       coreOsClickCount.current = 0;
     }
     if (coreOsClickTimer.current) clearTimeout(coreOsClickTimer.current);
@@ -16032,30 +16022,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               </div>
             </div>
 
-            {(() => {
-              console.log(`Rendering Home: ${useNewHome ? 'V2' : 'V1'}`);
-              if (useNewHome) {
-                return (
-                  <HomeViewV2
-                    longevity={longevityEngineScore}
-                    explanation={longevityExplanation}
-                    dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
-                    dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
-                  />
-                );
-              }
-              return (
-                <HomeView
-                  longevity={longevityEngineScore}
-                  explanation={longevityExplanation}
-                  dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
-                  dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
-                  hoursFasted={typeof fastingData?.hoursFasted === 'number' ? fastingData.hoursFasted : undefined}
-                  dailyProtConsumed={Math.round(Number(totali?.prot) || 0)}
-                  dailyProtTarget={Math.round(Number(userTargets?.prot) || 0)}
-                />
-              );
-            })()}
+            <HomeView
+              longevity={longevityEngineScore}
+              explanation={longevityExplanation}
+              dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
+              dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
+            />
 
             <div style={{ marginBottom: '32px', color: '#e8e8e8' }}>
               <LongevityView
