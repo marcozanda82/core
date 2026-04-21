@@ -2,7 +2,7 @@
  * Griglia «Aggiungi evento»: long-press / contesto → modalità riordino (jiggle);
  * scambio a due tocchi; salvataggio su localStorage tramite onOrderCommit.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ADD_EVENT_MENU_ITEMS } from '../coreEngine';
 
 const HOLD_MS = 500;
@@ -107,6 +107,30 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
     boxShadow: '0 0 18px rgba(0, 229, 255, 0.35), 0 4px 12px rgba(124, 58, 237, 0.2)',
   };
 
+  const menuCells = useMemo(() => {
+    const items = menuOrder.map((itemId, sourceIndex) => ({ itemId, sourceIndex }));
+    const mealEntry = items.find((entry) => entry.itemId === 'meal') || null;
+    if (!mealEntry) return items.map((entry, displayIndex) => ({ ...entry, displayIndex, isPrimary: false }));
+
+    const totalCells = Math.max(items.length, 9);
+    const rows = Math.max(1, Math.ceil(totalCells / 3));
+    const centerRow = Math.min(rows - 1, Math.floor(rows / 2));
+    const centerIndex = centerRow * 3 + 1;
+    const cells = Array.from({ length: totalCells }, () => null);
+    cells[centerIndex] = { ...mealEntry, isPrimary: true };
+
+    let writeIndex = 0;
+    for (const entry of items) {
+      if (entry.itemId === 'meal') continue;
+      while (writeIndex < cells.length && cells[writeIndex]) writeIndex += 1;
+      if (writeIndex >= cells.length) break;
+      cells[writeIndex] = { ...entry, isPrimary: false };
+      writeIndex += 1;
+    }
+
+    return cells.map((cell, displayIndex) => (cell ? { ...cell, displayIndex } : { itemId: null, sourceIndex: null, displayIndex, isSpacer: true }));
+  }, [menuOrder]);
+
   return (
     <>
       <div
@@ -168,16 +192,26 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
           touchAction: 'manipulation',
         }}
       >
-        {menuOrder.map((itemId, idx) => {
+        {menuCells.map((cell) => {
+          if (cell.isSpacer) {
+            return <div key={`spacer-${cell.displayIndex}`} aria-hidden="true" style={{ minHeight: 0 }} />;
+          }
+
+          const { itemId, sourceIndex, isPrimary } = cell;
           const def = ADD_EVENT_MENU_ITEMS[itemId];
           if (!def) return null;
           const border = def.borderColor || undefined;
           const labelColor = def.labelColor || '#fff';
-          const iconStyle = def.iconFilter ? { fontSize: '1.8rem', filter: def.iconFilter } : { fontSize: '1.8rem' };
-          const isSelected = isEditMode && selectedSwapIndex === idx;
+          const iconStyle = def.iconFilter ? { fontSize: isPrimary ? '2rem' : '1.8rem', filter: def.iconFilter } : { fontSize: isPrimary ? '2rem' : '1.8rem' };
+          const isSelected = isEditMode && selectedSwapIndex === sourceIndex;
+          const primaryLabel = '🍝 Inserisci pasto';
 
           const labelEl =
-            def.labelLines && String(def.label).includes(' ') ? (
+            isPrimary ? (
+              <span className="action-label action-label--primary" style={{ color: '#f8fbff' }}>
+                {primaryLabel}
+              </span>
+            ) : def.labelLines && String(def.label).includes(' ') ? (
               <span
                 className="action-label"
                 style={{
@@ -213,21 +247,25 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
                 minWidth: 0,
                 overflow: 'visible',
                 borderRadius: 12,
+                padding: isPrimary ? '6px' : 0,
               }}
             >
               <button
                 type="button"
-                className={`action-btn${isEditMode ? ' jiggle' : ''}`}
+                className={`action-btn${isEditMode ? ' jiggle' : ''}${isPrimary ? ' action-btn--primary' : ''}`}
                 style={{
                   aspectRatio: '1',
                   borderRadius: '50%',
-                  padding: '12px',
+                  padding: isPrimary ? '16px' : '12px',
                   flexDirection: 'column',
-                  gap: '6px',
+                  gap: isPrimary ? '8px' : '6px',
                   borderColor: border,
-                  width: '100%',
+                  width: isPrimary ? '115%' : '100%',
                   cursor: 'pointer',
                   zIndex: 1,
+                  justifySelf: isPrimary ? 'center' : undefined,
+                  alignSelf: isPrimary ? 'center' : undefined,
+                  transform: isPrimary ? 'translateY(8px)' : undefined,
                   boxShadow: isSelected ? '0 0 0 2px rgba(0, 229, 255, 0.95), 0 0 18px rgba(0, 229, 255, 0.35)' : undefined,
                   background: isSelected ? 'rgba(0, 229, 255, 0.12)' : undefined,
                 }}
@@ -236,7 +274,7 @@ export default function AddEventMenuGrid({ menuOrder, onOrderCommit, onItemActiv
                 onPointerMove={onCellPointerMove}
                 onPointerUp={onCellPointerUp}
                 onPointerCancel={onCellPointerUp}
-                onClick={() => handleCellActivate(itemId, idx)}
+                onClick={() => handleCellActivate(itemId, sourceIndex)}
               >
                 <span className="action-icon" style={iconStyle}>
                   {def.icon}
