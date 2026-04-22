@@ -1,5 +1,6 @@
 import { addDays } from './calendarDateUtils';
 import { getCombinedDayLogAndManualNodes, sumFoodKcalAndProtein, metricEntryToIsoDay } from './coreEngine';
+import { buildCoachOutput } from './coachEngine';
 
 /** Fixed kcal nudge when progress rules fire (spec §6). */
 export const CALORIE_ADJUSTMENT_STEP = 150;
@@ -28,27 +29,6 @@ export function goalFromProfile(profile = {}) {
   if (ng === 'cut' || profile.goal === 'lose') return 'cut';
   if (ng === 'bulk' || profile.goal === 'gain') return 'mass';
   return 'maintain';
-}
-
-export const COACH_MSG_EN = {
-  increase: 'Increase calories slightly',
-  decrease: 'Reduce calories slightly',
-  keep: 'Stay consistent',
-};
-
-export const COACH_MSG_IT = {
-  increase: 'Aumenta leggermente le calorie',
-  decrease: 'Riduci leggermente le calorie',
-  keep: 'Resta coerente',
-};
-
-/**
- * @param {'increase' | 'decrease' | 'keep'} decision
- * @param {'en' | 'it'} [lang]
- */
-export function coachMessageForDecision(decision, lang = 'en') {
-  const m = lang === 'it' ? COACH_MSG_IT : COACH_MSG_EN;
-  return m[decision] || m.keep;
 }
 
 function mean(arr) {
@@ -283,4 +263,23 @@ export function averageFoodKcalOver14d(fullHistory, endIso) {
   }
   if (!cals.some((c) => c > 0)) return null;
   return Math.round(mean(cals));
+}
+
+/**
+ * Runs {@link computeDataDrivenTdee} and attaches a deterministic {@link buildCoachOutput} result.
+ *
+ * @param {object} p — same as {@link computeDataDrivenTdee}
+ * @returns {object}
+ */
+export function computeDataDrivenTdeeWithCoach(p) {
+  const plan = computeDataDrivenTdee(p);
+  const coach = buildCoachOutput({
+    goal: p.goal,
+    tdee: plan.tdee,
+    calorie_target: plan.calorie_target,
+    decision: plan.decision,
+    weight_trend: plan.weight_trend,
+    adherence_score: p.adherenceScore,
+  });
+  return { ...plan, coach };
 }

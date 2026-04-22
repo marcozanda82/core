@@ -77,7 +77,7 @@ import WeeklyPlanning from './components/WeeklyPlanning';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { recalculateUserTargets, buildMacroSplitFromKcal } from './targetsEngine';
-import { computeDataDrivenTdee, goalFromProfile, averageFoodKcalOver14d } from './dataDrivenTdee';
+import { computeDataDrivenTdeeWithCoach, goalFromProfile, averageFoodKcalOver14d } from './dataDrivenTdee';
 import { mergeDuplicateBiometrics } from './biometricHistory';
 import { getBarcodeNutritionOverride, setBarcodeNutritionOverride as setBarcodeNutritionOverrideStorage } from './barcodeFoodOverrides';
 import {
@@ -3877,7 +3877,7 @@ export default function SalaComandi() {
           filtered.push(payload);
           return filtered;
         })();
-        const plan = computeDataDrivenTdee({
+        const plan = computeDataDrivenTdeeWithCoach({
           anchorDateIso: weighDate,
           fullHistory,
           bodyMetricsHistory: historyWithThisWeigh,
@@ -3950,7 +3950,7 @@ export default function SalaComandi() {
             filtered.push(payload);
             return filtered;
           })();
-          const plan = computeDataDrivenTdee({
+          const plan = computeDataDrivenTdeeWithCoach({
             anchorDateIso: weighDate,
             fullHistory,
             bodyMetricsHistory: historyWithThisWeigh,

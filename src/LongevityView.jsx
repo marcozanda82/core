@@ -4,7 +4,7 @@ import OptimizationCard from './OptimizationCard';
 import { buildOptimizationDailyDataFromLog } from './optimizationIndex';
 import { computeTotali } from './useBiochimico';
 import { calculateMetabolicVariance } from './metabolicEngine';
-import { computeDataDrivenTdee, goalFromProfile, coachMessageForDecision } from './dataDrivenTdee';
+import { computeDataDrivenTdeeWithCoach, goalFromProfile } from './dataDrivenTdee';
 import {
   getTodayString,
   computeDayEvaluations,
@@ -1035,7 +1035,7 @@ export default function LongevityView({
 
   const metabolicAutopilot = useMemo(() => {
     if (!fullHistory || !userTargets) return null;
-    const plan = computeDataDrivenTdee({
+    const plan = computeDataDrivenTdeeWithCoach({
       anchorDateIso: anchorDate,
       fullHistory,
       bodyMetricsHistory,
@@ -1043,11 +1043,7 @@ export default function LongevityView({
       adherenceScore: userProfile?.adherenceScore,
       lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
     });
-    return {
-      plan,
-      coachIt: coachMessageForDecision(plan.decision, 'it'),
-      coachEn: coachMessageForDecision(plan.decision, 'en'),
-    };
+    return { plan };
   }, [fullHistory, userTargets, bodyMetricsHistory, anchorDate, userProfile]);
 
   if (!data) {
@@ -1523,51 +1519,60 @@ export default function LongevityView({
                       margin: '12px 0',
                     }}
                   />
-                  {metabolicAutopilot.plan.tdee > 0 ? (
-                    <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: 1.55, marginTop: 4 }}>
-                      <div>
-                        <strong style={{ color: '#e5e5e5' }}>TDEE stimato (da trend):</strong> {metabolicAutopilot.plan.tdee} kcal
-                      </div>
-                      <div style={{ marginTop: 4 }}>
-                        <strong style={{ color: '#e5e5e5' }}>Target kcal (obiettivo):</strong> {metabolicAutopilot.plan.calorie_target} kcal
-                      </div>
-                      <div style={{ marginTop: 4, fontSize: '0.72rem', color: '#94a3b8' }}>
-                        {metabolicAutopilot.coachIt} ({metabolicAutopilot.coachEn})
-                      </div>
-                      {!metabolicAutopilot.plan.canUpdate && metabolicAutopilot.plan.skipReasons.length > 0 && (
-                        <div style={{ marginTop: 6, fontSize: '0.7rem', color: '#a8a29e' }}>
-                          Aggiornamento automatico sospeso: {metabolicAutopilot.plan.skipReasons.join(', ')}.
+                  <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: 1.55, marginTop: 4 }}>
+                    {metabolicAutopilot.plan.tdee > 0 ? (
+                      <>
+                        <div>
+                          <strong style={{ color: '#e5e5e5' }}>TDEE stimato (da trend):</strong> {metabolicAutopilot.plan.tdee}{' '}
+                          kcal
                         </div>
-                      )}
-                      {metabolicAutopilot.plan.canUpdate && typeof onUpdateTDEE === 'function' ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onUpdateTDEE(metabolicAutopilot.plan.calorie_target, { recordTdeeEval: true })
-                          }
-                          style={{
-                            width: '100%',
-                            marginTop: 10,
-                            padding: '10px 14px',
-                            borderRadius: 10,
-                            border: '1px solid rgba(14, 165, 233, 0.5)',
-                            background: 'linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%)',
-                            color: '#fff',
-                            fontWeight: 700,
-                            fontSize: '0.85rem',
-                            cursor: 'pointer',
-                            boxShadow: '0 2px 12px rgba(14, 165, 233, 0.25)',
-                          }}
-                        >
-                          Applica target {metabolicAutopilot.plan.calorie_target} kcal
-                        </button>
+                        <div style={{ marginTop: 4 }}>
+                          <strong style={{ color: '#e5e5e5' }}>Target kcal (obiettivo):</strong> {metabolicAutopilot.plan.calorie_target}{' '}
+                          kcal
+                        </div>
+                      </>
+                    ) : null}
+                    <div style={{ marginTop: metabolicAutopilot.plan.tdee > 0 ? 8 : 0, fontSize: '0.78rem', color: '#e2e8f0' }}>
+                      <div>
+                        <strong>Coach</strong> · {metabolicAutopilot.plan.coach.confidence}
+                      </div>
+                      <div style={{ marginTop: 4 }}>{metabolicAutopilot.plan.coach.primary_action}</div>
+                      {metabolicAutopilot.plan.coach.secondary_action ? (
+                        <div style={{ marginTop: 4, color: '#94a3b8' }}>
+                          {metabolicAutopilot.plan.coach.secondary_action}
+                        </div>
                       ) : null}
+                      <div style={{ marginTop: 4, color: '#94a3b8' }}>{metabolicAutopilot.plan.coach.reason}</div>
                     </div>
-                  ) : (
-                    <div style={{ fontSize: '0.72rem', color: '#64748b', lineHeight: 1.45 }}>
-                      Servono 14 giorni con peso e calorie per stimare il TDEE da trend. Continua a tracciare.
-                    </div>
-                  )}
+                    {metabolicAutopilot.plan.tdee > 0 && !metabolicAutopilot.plan.canUpdate && metabolicAutopilot.plan.skipReasons.length > 0 ? (
+                      <div style={{ marginTop: 6, fontSize: '0.7rem', color: '#a8a29e' }}>
+                        Aggiornamento automatico sospeso: {metabolicAutopilot.plan.skipReasons.join(', ')}.
+                      </div>
+                    ) : null}
+                    {metabolicAutopilot.plan.tdee > 0 && metabolicAutopilot.plan.canUpdate && typeof onUpdateTDEE === 'function' ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdateTDEE(metabolicAutopilot.plan.calorie_target, { recordTdeeEval: true })
+                        }
+                        style={{
+                          width: '100%',
+                          marginTop: 10,
+                          padding: '10px 14px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(14, 165, 233, 0.5)',
+                          background: 'linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%)',
+                          color: '#fff',
+                          fontWeight: 700,
+                          fontSize: '0.85rem',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 12px rgba(14, 165, 233, 0.25)',
+                        }}
+                      >
+                        Applica target {metabolicAutopilot.plan.calorie_target} kcal
+                      </button>
+                    ) : null}
+                  </div>
                 </>
               )}
             </div>
