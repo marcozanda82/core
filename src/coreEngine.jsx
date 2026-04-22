@@ -5066,54 +5066,6 @@ function compareIsoDate(a, b) {
   return a < b ? -1 : 1;
 }
 
-/** Peso stimato a fine giornata (per confronto con pesata reale e calibrazione TDEE). */
-export function getEndOfDayPredictedWeightForCalibration({
-  fullHistory,
-  bodyMetricsHistory,
-  baseTdeeKcal,
-  targetIsoDate,
-}) {
-  if (!targetIsoDate) return null;
-  const rangeStart = addDays(targetIsoDate, -220);
-  const rows = buildPredictiveCompositionDailyRows({
-    fullHistory,
-    bodyMetricsHistory,
-    rangeStartIso: rangeStart,
-    rangeEndIso: targetIsoDate,
-    baseTdeeKcal,
-  });
-  if (!rows.length) return null;
-  const last = rows[rows.length - 1];
-  if (last.isoDate !== targetIsoDate) return null;
-  const w = Number(last.weightKg);
-  return Number.isFinite(w) ? w : null;
-}
-
-/**
- * Ultime 3 pesate con scostamento persistente (stesso segno, |err| > soglia) → suggerisce correzione TDEE (kcal).
- */
-export function evaluatePersistentTdeeCalibration(errorRows, thresholdKg = 0.28) {
-  const last3 = (errorRows || []).slice(-3);
-  if (last3.length < 3) return { shouldAdjust: false, suggestedDeltaKcal: 0, meanErrorKg: 0 };
-  const th = Number(thresholdKg) || 0.28;
-  const signs = last3.map((e) => {
-    const err = Number(e.errorKg);
-    if (!Number.isFinite(err)) return 0;
-    if (err > th) return 1;
-    if (err < -th) return -1;
-    return 0;
-  });
-  if (signs.some((s) => s === 0)) return { shouldAdjust: false, suggestedDeltaKcal: 0, meanErrorKg: 0 };
-  if (!(signs[0] === signs[1] && signs[1] === signs[2])) {
-    return { shouldAdjust: false, suggestedDeltaKcal: 0, meanErrorKg: 0 };
-  }
-  const mean =
-    (Number(last3[0].errorKg) + Number(last3[1].errorKg) + Number(last3[2].errorKg)) / 3;
-  const rawDelta = Math.round((-mean * KCAL_PER_KG_ENERGY_BALANCE) / 14);
-  const suggestedDeltaKcal = Math.max(-280, Math.min(280, rawDelta));
-  return { shouldAdjust: true, suggestedDeltaKcal, meanErrorKg: mean };
-}
-
 const SUGAR_AUDIT_KEYS = ['zuccheri', 'sugars', 'sugar'];
 
 function sumMacrosFromLogSlice(log, mealPredicate) {

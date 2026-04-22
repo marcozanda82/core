@@ -76,7 +76,8 @@ import AddEventMenuGrid from './components/AddEventMenuGrid';
 import WeeklyPlanning from './components/WeeklyPlanning';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
-import { recalculateUserTargets } from './targetsEngine';
+import { recalculateUserTargets, buildMacroSplitFromKcal } from './targetsEngine';
+import { computeDataDrivenTdee, goalFromProfile, averageFoodKcalOver14d } from './dataDrivenTdee';
 import { mergeDuplicateBiometrics } from './biometricHistory';
 import { getBarcodeNutritionOverride, setBarcodeNutritionOverride as setBarcodeNutritionOverrideStorage } from './barcodeFoodOverrides';
 import {
@@ -157,8 +158,6 @@ import {
   computeLongevityScore,
   buildLongevityExplanation,
   calculateBodyBattery,
-  getEndOfDayPredictedWeightForCalibration,
-  evaluatePersistentTdeeCalibration,
   metricEntryToIsoDay,
   getLastMealMacrosForTrainingWave,
   getTrainingWaveCurves,
@@ -3721,7 +3720,7 @@ export default function SalaComandi() {
    * Firebase usa le chiavi `prot` / `carb` / `fat` | `fatTotal` come nel resto dell’app.
    */
   const handleUpdateTDEE = useCallback(
-    async (newKcal) => {
+    async (newKcal, options = {}) => {
       const requested = Math.round(Number(newKcal));
       if (!Number.isFinite(requested) || requested < 800 || requested > 12000) {
         alert('Valore kcal non valido.');
@@ -3735,7 +3734,10 @@ export default function SalaComandi() {
       const oldKcal = userTargets.kcal ?? 2000;
       const deltaKcal = requested - oldKcal;
 
-      const newPro = Math.round(userTargets.prot ?? userTargets.pro ?? 150);
+      const newPro =
+        options.prot != null && Number.isFinite(Number(options.prot))
+          ? Math.round(Number(options.prot))
+          : Math.round(userTargets.prot ?? userTargets.pro ?? 150);
       const deltaChoGrams = (deltaKcal * 0.5) / 4;
       const deltaFatGrams = (deltaKcal * 0.5) / 9;
       const baseCarb = userTargets.carb ?? userTargets.cho ?? 200;
@@ -3745,13 +3747,17 @@ export default function SalaComandi() {
       const finalKcal = Math.round(newPro * 4 + newCho * 4 + newFat * 9);
 
       try {
-        await update(ref(db, `users/${uid}/profile_targets`), {
+        const payload = {
           'targets/kcal': finalKcal,
           'targets/prot': newPro,
           'targets/carb': newCho,
           'targets/fat': newFat,
           'targets/fatTotal': newFat,
-        });
+        };
+        if (options.recordTdeeEval === true) {
+          payload['targets/tdeeTargetLastEvalAt'] = Date.now();
+        }
+        await update(ref(db, `users/${uid}/profile_targets`), payload);
         try {
           await push(ref(db, `users/${uid}/tdee_history`), {
             date: new Date().toISOString().split('T')[0],
@@ -3771,6 +3777,7 @@ export default function SalaComandi() {
           carb: newCho,
           fat: newFat,
           fatTotal: newFat,
+          ...(options.recordTdeeEval === true ? { tdeeTargetLastEvalAt: Date.now() } : {}),
         }));
         alert(
           `✅ Autopilota Metabolico attivato!\nNuovo TDEE: ${finalKcal} kcal\nProteine: ${newPro}g (Invariate)\nCarboidrati: ${newCho}g\nGrassi: ${newFat}g`
@@ -3784,7 +3791,7 @@ export default function SalaComandi() {
   );
 
   /**
-   * TDEE + macro da ultima pesata (Mifflin o Katch) e propagazione su Firebase / stato locale.
+   * Macro da ultima pesata (kcal invariate = baseline profilo; nessuna formula BMR) + Firebase.
    * @returns {Promise<{ kcal: number, prot: number, carb: number, fat: number } | null>}
    */
   const applyAutomaticTargetRecalibration = useCallback(
@@ -3795,7 +3802,8 @@ export default function SalaComandi() {
       const uid = auth.currentUser?.uid;
       if (!uid) return null;
       try {
-        const targets = recalculateUserTargets(latestRecord, userProfile);
+        const baseK = userTargets.kcal ?? 2000;
+        const targets = recalculateUserTargets(latestRecord, userProfile, baseK);
         await update(ref(db, `users/${uid}/profile_targets`), {
           'targets/kcal': targets.kcal,
           'targets/prot': targets.prot,
@@ -3819,11 +3827,11 @@ export default function SalaComandi() {
           fat: targets.fat,
         };
       } catch (err) {
-        console.warn('Ricalibrazione automatica TDEE:', err);
+        console.warn('Ricalibrazione automatica macro:', err);
         return null;
       }
     },
-    [auth, db, userProfile]
+    [auth, db, userProfile, userTargets.kcal]
   );
 
   const handleSaveBodyMetrics = useCallback(async () => {
@@ -3863,36 +3871,28 @@ export default function SalaComandi() {
       const recalTargets = await applyAutomaticTargetRecalibration(payload);
 
       try {
-        const baseK = recalTargets?.kcal ?? userTargets?.kcal ?? 2000;
-        const historyForPred = (bodyMetricsHistory || []).filter(
-          (e) => metricEntryToIsoDay(e) !== weighDate
-        );
-        const predicted = getEndOfDayPredictedWeightForCalibration({
+        const historyWithThisWeigh = (() => {
+          const list = Array.isArray(bodyMetricsHistory) ? [...bodyMetricsHistory] : [];
+          const filtered = list.filter((e) => metricEntryToIsoDay(e) !== weighDate);
+          filtered.push(payload);
+          return filtered;
+        })();
+        const plan = computeDataDrivenTdee({
+          anchorDateIso: weighDate,
           fullHistory,
-          bodyMetricsHistory: historyForPred,
-          baseTdeeKcal: baseK,
-          targetIsoDate: weighDate,
+          bodyMetricsHistory: historyWithThisWeigh,
+          goal: goalFromProfile(userProfile),
+          adherenceScore: userProfile?.adherenceScore,
+          lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
         });
-        if (predicted != null && Number.isFinite(predicted)) {
-          const errorKg = w - predicted;
-          const calRef = ref(db, `users/${uid}/predictive_body_calibration`);
-          const calSnap = await get(calRef);
-          const prev = calSnap.exists() ? calSnap.val() : {};
-          let errs = Array.isArray(prev.errors) ? [...prev.errors] : [];
-          errs = errs.filter((e) => e && e.date !== weighDate);
-          errs.push({ date: weighDate, errorKg, actual: w, predicted, ts: Date.now() });
-          errs = errs.slice(-12);
-          await set(calRef, { errors: errs, updatedAt: Date.now() });
-          const ev = evaluatePersistentTdeeCalibration(errs);
-          if (ev.shouldAdjust) {
-            const newK = Math.round(baseK + ev.suggestedDeltaKcal);
-            if (newK >= 800 && newK <= 12000) {
-              await handleUpdateTDEE(newK);
-            }
-          }
+        if (plan.canUpdate && plan.calorie_target > 0) {
+          await handleUpdateTDEE(plan.calorie_target, {
+            prot: recalTargets?.prot,
+            recordTdeeEval: true,
+          });
         }
       } catch (calErr) {
-        console.warn('Motore predittivo / calibrazione TDEE:', calErr);
+        console.warn('Valutazione TDEE data-driven:', calErr);
       }
     } catch (err) {
       console.error('Salvataggio composizione corporea:', err);
@@ -3905,7 +3905,9 @@ export default function SalaComandi() {
     inputFat,
     bodyMetricsHistory,
     fullHistory,
+    userProfile,
     userTargets?.kcal,
+    userTargets?.tdeeTargetLastEvalAt,
     handleUpdateTDEE,
     applyAutomaticTargetRecalibration,
   ]);
@@ -3942,36 +3944,28 @@ export default function SalaComandi() {
         const recalTargets = await applyAutomaticTargetRecalibration(payload);
 
         try {
-          const baseK = recalTargets?.kcal ?? userTargets?.kcal ?? 2000;
-          const historyForPred = (bodyMetricsHistory || []).filter(
-            (e) => metricEntryToIsoDay(e) !== weighDate
-          );
-          const predicted = getEndOfDayPredictedWeightForCalibration({
+          const historyWithThisWeigh = (() => {
+            const list = Array.isArray(bodyMetricsHistory) ? [...bodyMetricsHistory] : [];
+            const filtered = list.filter((e) => metricEntryToIsoDay(e) !== weighDate);
+            filtered.push(payload);
+            return filtered;
+          })();
+          const plan = computeDataDrivenTdee({
+            anchorDateIso: weighDate,
             fullHistory,
-            bodyMetricsHistory: historyForPred,
-            baseTdeeKcal: baseK,
-            targetIsoDate: weighDate,
+            bodyMetricsHistory: historyWithThisWeigh,
+            goal: goalFromProfile(userProfile),
+            adherenceScore: userProfile?.adherenceScore,
+            lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
           });
-          if (predicted != null && Number.isFinite(predicted)) {
-            const errorKg = w - predicted;
-            const calRef = ref(db, `users/${uid}/predictive_body_calibration`);
-            const calSnap = await get(calRef);
-            const prev = calSnap.exists() ? calSnap.val() : {};
-            let errs = Array.isArray(prev.errors) ? [...prev.errors] : [];
-            errs = errs.filter((e) => e && e.date !== weighDate);
-            errs.push({ date: weighDate, errorKg, actual: w, predicted, ts: Date.now() });
-            errs = errs.slice(-12);
-            await set(calRef, { errors: errs, updatedAt: Date.now() });
-            const ev = evaluatePersistentTdeeCalibration(errs);
-            if (ev.shouldAdjust) {
-              const newK = Math.round(baseK + ev.suggestedDeltaKcal);
-              if (newK >= 800 && newK <= 12000) {
-                await handleUpdateTDEE(newK);
-              }
-            }
+          if (plan.canUpdate && plan.calorie_target > 0) {
+            await handleUpdateTDEE(plan.calorie_target, {
+              prot: recalTargets?.prot,
+              recordTdeeEval: true,
+            });
           }
         } catch (calErr) {
-          console.warn('Motore predittivo / calibrazione TDEE:', calErr);
+          console.warn('Valutazione TDEE data-driven:', calErr);
         }
       } catch (err) {
         console.error('Salvataggio pesata rapida:', err);
@@ -3983,7 +3977,9 @@ export default function SalaComandi() {
       db,
       bodyMetricsHistory,
       fullHistory,
+      userProfile,
       userTargets?.kcal,
+      userTargets?.tdeeTargetLastEvalAt,
       handleUpdateTDEE,
       applyAutomaticTargetRecalibration,
     ]
@@ -4114,36 +4110,29 @@ export default function SalaComandi() {
   };
 
   const calculateSmartTargets = () => {
-    const { gender, age, weight, height, activityLevel, nutritionGoal, goal } = userProfile;
+    const { weight, nutritionGoal, goal } = userProfile;
     const w = parseFloat(weight) || 75;
-    const h = parseFloat(height) || 175;
-    const a = parseFloat(age) || 30;
-    let bmr = (10 * w) + (6.25 * h) - (5 * a);
-    bmr += (gender === 'M') ? 5 : -161;
-    let tdee = bmr * parseFloat(activityLevel || '1.55');
     const ng = nutritionGoal || (goal === 'lose' ? 'cut' : goal === 'gain' ? 'bulk' : 'maintain');
-    if (ng === 'cut') tdee -= 500;
-    if (ng === 'bulk') tdee += 300;
-    const kcal = Math.round(tdee);
-    const prot = Math.round(w * 2.0);
-    const fat = Math.round((kcal * 0.25) / 9);
-    const carb = Math.round((kcal - (prot * 4) - (fat * 9)) / 4);
-    const water = Math.round(w * 35);
+    const endIso = getTodayString();
+    const fromLogs = averageFoodKcalOver14d(fullHistory, endIso);
+    const fallback = parseFloat(String(userProfile.targetCalories ?? '')) || 2000;
+    const kcal = fromLogs ?? Math.round(fallback);
+    const m = buildMacroSplitFromKcal(w, kcal);
     setUserProfile((prev) => ({
       ...prev,
       nutritionGoal: ng,
       goal: ng === 'cut' ? 'lose' : ng === 'bulk' ? 'gain' : 'maintain',
-      targetCalories: kcal,
+      targetCalories: m.kcal,
       proteinTarget: prev.proteinTarget,
     }));
-    setUserTargets(prev => ({
+    setUserTargets((prev) => ({
       ...prev,
-      kcal,
-      prot,
-      carb,
-      fatTotal: fat,
-      fat: fat,
-      water
+      kcal: m.kcal,
+      prot: m.prot,
+      carb: m.carb,
+      fatTotal: m.fat,
+      fat: m.fat,
+      water: m.water,
     }));
   };
 
@@ -12559,6 +12548,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             periodAnchorDate={currentTrackerDate}
             fullHistory={fullHistory}
             userTargets={userTargets}
+            userProfile={userProfile}
             onUpdateTDEE={handleUpdateTDEE}
             tdeeHistory={tdeeHistory}
             predictionCalibration={predictiveCalibration}
@@ -16040,6 +16030,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 periodAnchorDate={currentTrackerDate}
                 fullHistory={fullHistory}
                 userTargets={userTargets}
+                userProfile={userProfile}
                 onUpdateTDEE={handleUpdateTDEE}
                 tdeeHistory={tdeeHistory}
                 predictionCalibration={predictiveCalibration}

@@ -3,7 +3,8 @@ import { calculateConsolidatedAverageScore as calculateAverageScore } from './lo
 import OptimizationCard from './OptimizationCard';
 import { buildOptimizationDailyDataFromLog } from './optimizationIndex';
 import { computeTotali } from './useBiochimico';
-import { calculateMetabolicVariance, KCAL_PER_KG_BODY_MASS } from './metabolicEngine';
+import { calculateMetabolicVariance } from './metabolicEngine';
+import { computeDataDrivenTdee, goalFromProfile, coachMessageForDecision } from './dataDrivenTdee';
 import {
   getTodayString,
   computeDayEvaluations,
@@ -857,6 +858,8 @@ export default function LongevityView({
   weeklyTrendData = [],
   weeklyMicrosTotals = null,
   weeklyKcalChartReference = 2300,
+  /** Profilo (obiettivo nutrizionale, aderenza opzionale) per TDEE data-driven */
+  userProfile = null,
 }) {
   const [timeWindow, setTimeWindow] = useState(30);
   const [telemetryTab, setTelemetryTab] = useState('fisiologia');
@@ -1031,30 +1034,21 @@ export default function LongevityView({
   }, [tdeeHistory, timeWindow, anchorDate]);
 
   const metabolicAutopilot = useMemo(() => {
-    if (!metabolicVariance) return null;
-    const daysBetween = Number(metabolicVariance.daysBetween);
-    if (!Number.isFinite(daysBetween) || daysBetween < 5) {
-      return { tooSoon: true, daysBetween };
-    }
-    const variance = Number(metabolicVariance.variance);
-    if (!Number.isFinite(variance)) return null;
-    const dailyError = (variance * KCAL_PER_KG_BODY_MASS) / daysBetween;
-    let suggestedCorrection = -Math.round(dailyError);
-    if (suggestedCorrection > 200) suggestedCorrection = 200;
-    if (suggestedCorrection < -200) suggestedCorrection = -200;
-    const currentTDEE = userTargets?.kcal || 2000;
-    const newSuggestedTDEE = Math.max(800, Math.min(12000, Math.round(currentTDEE + suggestedCorrection)));
-    const needsRecalibration = Math.abs(suggestedCorrection) >= 50;
+    if (!fullHistory || !userTargets) return null;
+    const plan = computeDataDrivenTdee({
+      anchorDateIso: anchorDate,
+      fullHistory,
+      bodyMetricsHistory,
+      goal: goalFromProfile(userProfile || {}),
+      adherenceScore: userProfile?.adherenceScore,
+      lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
+    });
     return {
-      tooSoon: false,
-      dailyError,
-      suggestedCorrection,
-      currentTDEE,
-      newSuggestedTDEE,
-      needsRecalibration,
-      daysBetween,
+      plan,
+      coachIt: coachMessageForDecision(plan.decision, 'it'),
+      coachEn: coachMessageForDecision(plan.decision, 'en'),
     };
-  }, [metabolicVariance, userTargets?.kcal]);
+  }, [fullHistory, userTargets, bodyMetricsHistory, anchorDate, userProfile]);
 
   if (!data) {
     return (
@@ -1529,29 +1523,31 @@ export default function LongevityView({
                       margin: '12px 0',
                     }}
                   />
-                  {metabolicAutopilot.tooSoon ? (
-                    <div style={{ fontSize: '0.72rem', color: '#64748b', lineHeight: 1.45 }}>
-                      Servono almeno 5 giorni tra le pesate per l&apos;autopilota.
-                    </div>
-                  ) : metabolicAutopilot.needsRecalibration ? (
-                    <div style={{ marginTop: 2 }}>
-                      <div
-                        style={{
-                          fontSize: '0.82rem',
-                          color: '#fcd34d',
-                          lineHeight: 1.5,
-                          marginBottom: 10,
-                        }}
-                      >
-                        ⚠️ Adattamento rilevato: il tuo metabolismo si sta discostando dalla teoria di circa{' '}
-                        {Math.abs(Math.round(metabolicAutopilot.dailyError))} kcal al giorno.
+                  {metabolicAutopilot.plan.tdee > 0 ? (
+                    <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: 1.55, marginTop: 4 }}>
+                      <div>
+                        <strong style={{ color: '#e5e5e5' }}>TDEE stimato (da trend):</strong> {metabolicAutopilot.plan.tdee} kcal
                       </div>
-                      {typeof onUpdateTDEE === 'function' ? (
+                      <div style={{ marginTop: 4 }}>
+                        <strong style={{ color: '#e5e5e5' }}>Target kcal (obiettivo):</strong> {metabolicAutopilot.plan.calorie_target} kcal
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: '0.72rem', color: '#94a3b8' }}>
+                        {metabolicAutopilot.coachIt} ({metabolicAutopilot.coachEn})
+                      </div>
+                      {!metabolicAutopilot.plan.canUpdate && metabolicAutopilot.plan.skipReasons.length > 0 && (
+                        <div style={{ marginTop: 6, fontSize: '0.7rem', color: '#a8a29e' }}>
+                          Aggiornamento automatico sospeso: {metabolicAutopilot.plan.skipReasons.join(', ')}.
+                        </div>
+                      )}
+                      {metabolicAutopilot.plan.canUpdate && typeof onUpdateTDEE === 'function' ? (
                         <button
                           type="button"
-                          onClick={() => onUpdateTDEE(metabolicAutopilot.newSuggestedTDEE)}
+                          onClick={() =>
+                            onUpdateTDEE(metabolicAutopilot.plan.calorie_target, { recordTdeeEval: true })
+                          }
                           style={{
                             width: '100%',
+                            marginTop: 10,
                             padding: '10px 14px',
                             borderRadius: 10,
                             border: '1px solid rgba(14, 165, 233, 0.5)',
@@ -1563,13 +1559,13 @@ export default function LongevityView({
                             boxShadow: '0 2px 12px rgba(14, 165, 233, 0.25)',
                           }}
                         >
-                          Ricalibra TDEE a {metabolicAutopilot.newSuggestedTDEE} kcal
+                          Applica target {metabolicAutopilot.plan.calorie_target} kcal
                         </button>
                       ) : null}
                     </div>
                   ) : (
-                    <div style={{ fontSize: '0.82rem', color: '#86efac', lineHeight: 1.45 }}>
-                      ✅ TDEE perfettamente allineato al tuo metabolismo reale.
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', lineHeight: 1.45 }}>
+                      Servono 14 giorni con peso e calorie per stimare il TDEE da trend. Continua a tracciare.
                     </div>
                   )}
                 </>
