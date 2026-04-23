@@ -3234,9 +3234,40 @@ export default function SalaComandi() {
       });
   }, [activeLog]);
 
+  const computedActivityTimelineNodes = useMemo(() => {
+    return (activeLog || [])
+      .filter((e) => e && (e.type === 'workout' || e.type === 'activity'))
+      .map((e, idx) => {
+        let t = Number(e.time);
+        if (!Number.isFinite(t)) t = Number(e.mealTime);
+        if (!Number.isFinite(t)) {
+          const parsed = parseFlexibleTimeToDecimal(String(e.time || e.mealTime || '12:00'));
+          t = parsed != null ? parsed : 12;
+        }
+        const normalizedTime = Math.max(0, Math.min(23.99, t));
+        const isCardio =
+          String(e.workoutType || e.activity || '').toLowerCase() === 'cardio' ||
+          /cardio|corsa|bike|hiit/i.test(String(e.name || e.desc || ''));
+        return {
+          id: e.id || `wk_tl_${normalizedTime}_${idx}`,
+          type: 'workout',
+          subType: isCardio ? 'cardio' : 'pesi',
+          time: normalizedTime,
+          mealTime: normalizedTime,
+          duration: Number.isFinite(Number(e.duration)) ? Math.max(0.25, Number(e.duration)) : 1,
+          kcal: Number.isFinite(Number(e.kcal)) ? Number(e.kcal) : (Number.isFinite(Number(e.cal)) ? Number(e.cal) : 0),
+          cal: Number.isFinite(Number(e.cal)) ? Number(e.cal) : (Number.isFinite(Number(e.kcal)) ? Number(e.kcal) : 0),
+          name: e.name || e.desc || (isCardio ? 'Cardio' : 'Allenamento'),
+          desc: e.desc || e.name || '',
+          icon: isCardio ? '🏃' : '🏋️',
+        };
+      });
+  }, [activeLog]);
+
   const allNodes = useMemo(() => {
-    return [...computedMealNodes, ...ghostMealTimelineNodes, ...manualNodes].sort((a, b) => a.time - b.time);
-  }, [computedMealNodes, ghostMealTimelineNodes, manualNodes]);
+    return [...computedMealNodes, ...ghostMealTimelineNodes, ...computedActivityTimelineNodes, ...manualNodes]
+      .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+  }, [computedMealNodes, ghostMealTimelineNodes, computedActivityTimelineNodes, manualNodes]);
 
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
