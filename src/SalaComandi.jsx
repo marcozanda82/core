@@ -3834,6 +3834,32 @@ export default function SalaComandi() {
     [auth, db, userProfile, userTargets.kcal]
   );
 
+  const evaluateAndApplyTDEE = useCallback(
+    async ({ weighDate, historyWithThisWeigh, protOverride }) => {
+      try {
+        const plan = computeDataDrivenTdeeWithCoach({
+          anchorDateIso: weighDate,
+          fullHistory,
+          bodyMetricsHistory: historyWithThisWeigh,
+          goal: goalFromProfile(userProfile),
+          currentCalorieTarget: userTargets?.kcal,
+          lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
+        });
+        if (plan.canUpdate && plan.calorie_target != null) {
+          await handleUpdateTDEE(plan.calorie_target, {
+            prot: protOverride,
+            recordTdeeEval: true,
+          });
+        }
+        return plan;
+      } catch (calErr) {
+        console.warn('Valutazione TDEE data-driven:', calErr);
+        return null;
+      }
+    },
+    [fullHistory, userProfile, userTargets?.kcal, userTargets?.tdeeTargetLastEvalAt, handleUpdateTDEE]
+  );
+
   const handleSaveBodyMetrics = useCallback(async () => {
     const w = parseFloat(String(inputWeight).replace(',', '.'));
     if (!Number.isFinite(w) || w <= 0) {
@@ -3870,30 +3896,17 @@ export default function SalaComandi() {
 
       const recalTargets = await applyAutomaticTargetRecalibration(payload);
 
-      try {
-        const historyWithThisWeigh = (() => {
-          const list = Array.isArray(bodyMetricsHistory) ? [...bodyMetricsHistory] : [];
-          const filtered = list.filter((e) => metricEntryToIsoDay(e) !== weighDate);
-          filtered.push(payload);
-          return filtered;
-        })();
-        const plan = computeDataDrivenTdeeWithCoach({
-          anchorDateIso: weighDate,
-          fullHistory,
-          bodyMetricsHistory: historyWithThisWeigh,
-          goal: goalFromProfile(userProfile),
-          currentCalorieTarget: userTargets?.kcal,
-          lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
-        });
-        if (plan.canUpdate && plan.calorie_target != null) {
-          await handleUpdateTDEE(plan.calorie_target, {
-            prot: recalTargets?.prot,
-            recordTdeeEval: true,
-          });
-        }
-      } catch (calErr) {
-        console.warn('Valutazione TDEE data-driven:', calErr);
-      }
+      const historyWithThisWeigh = (() => {
+        const list = Array.isArray(bodyMetricsHistory) ? [...bodyMetricsHistory] : [];
+        const filtered = list.filter((e) => metricEntryToIsoDay(e) !== weighDate);
+        filtered.push(payload);
+        return filtered;
+      })();
+      await evaluateAndApplyTDEE({
+        weighDate,
+        historyWithThisWeigh,
+        protOverride: recalTargets?.prot,
+      });
     } catch (err) {
       console.error('Salvataggio composizione corporea:', err);
       alert('Errore durante il salvataggio. Riprova.');
@@ -3943,30 +3956,17 @@ export default function SalaComandi() {
 
         const recalTargets = await applyAutomaticTargetRecalibration(payload);
 
-        try {
-          const historyWithThisWeigh = (() => {
-            const list = Array.isArray(bodyMetricsHistory) ? [...bodyMetricsHistory] : [];
-            const filtered = list.filter((e) => metricEntryToIsoDay(e) !== weighDate);
-            filtered.push(payload);
-            return filtered;
-          })();
-          const plan = computeDataDrivenTdeeWithCoach({
-            anchorDateIso: weighDate,
-            fullHistory,
-            bodyMetricsHistory: historyWithThisWeigh,
-            goal: goalFromProfile(userProfile),
-            currentCalorieTarget: userTargets?.kcal,
-            lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
-          });
-          if (plan.canUpdate && plan.calorie_target != null) {
-            await handleUpdateTDEE(plan.calorie_target, {
-              prot: recalTargets?.prot,
-              recordTdeeEval: true,
-            });
-          }
-        } catch (calErr) {
-          console.warn('Valutazione TDEE data-driven:', calErr);
-        }
+        const historyWithThisWeigh = (() => {
+          const list = Array.isArray(bodyMetricsHistory) ? [...bodyMetricsHistory] : [];
+          const filtered = list.filter((e) => metricEntryToIsoDay(e) !== weighDate);
+          filtered.push(payload);
+          return filtered;
+        })();
+        await evaluateAndApplyTDEE({
+          weighDate,
+          historyWithThisWeigh,
+          protOverride: recalTargets?.prot,
+        });
       } catch (err) {
         console.error('Salvataggio pesata rapida:', err);
         alert('Errore durante il salvataggio. Riprova.');
