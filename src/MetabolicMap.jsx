@@ -135,18 +135,12 @@ const ZONE_LABELS = {
 const ZOOM_MIN = 0.75;
 const ZOOM_MAX = 2.2;
 const ZOOM_STEP = 0.12;
-const BLUE_LEVELS = [
-  '#dbeafe',
-  '#cbe4ff',
-  '#b8dcff',
-  '#9ed2ff',
-  '#7ec4ff',
-  '#5fb2f8',
-  '#4099ee',
-  '#2e7fe0',
-  '#1f66cf',
-  '#184fb8',
-];
+const ZONE_GRADIENTS = {
+  blue: ['#eaf4ff', '#dbecff', '#c9e1ff', '#b4d4ff', '#9cc6ff', '#81b5fb', '#66a1f2', '#4d8be6', '#3875d8', '#245fca'],
+  green: ['#ebfff2', '#ddfae8', '#cef6dd', '#b9f0cf', '#9ee7bc', '#82dca7', '#68cf92', '#4fbe7c', '#3aa868', '#2a9157'],
+  orange: ['#fff2e6', '#fee8d7', '#fdddc6', '#fbd0b1', '#f9c091', '#f6ad72', '#f29754', '#ed8240', '#e06f2f', '#c95b22'],
+  red: ['#ffebef', '#ffdce3', '#ffcbd5', '#ffb7c4', '#ff9fad', '#fa8393', '#f1667a', '#e84c62', '#d6384e', '#b92a3f'],
+};
 
 function clampZoom(v) {
   return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v));
@@ -181,21 +175,28 @@ function mixHex(a, b, t) {
   });
 }
 
-function radarColorByScore(score) {
-  const s = Math.max(1, Math.min(100, Number(score) || 0));
-  if (s >= 82) {
-    const idx = Math.max(0, Math.min(9, Math.floor(((s - 82) / 18) * 9)));
-    return BLUE_LEVELS[idx];
+function colorFromZoneArray(zone, t) {
+  const arr = ZONE_GRADIENTS[zone] || ZONE_GRADIENTS.blue;
+  const idx = Math.max(0, Math.min(arr.length - 1, Math.round(t * (arr.length - 1))));
+  return arr[idx];
+}
+
+export function getColorFromValue(value) {
+  const v = Math.max(0, Math.min(100, Number(value) || 0));
+  if (v >= 82) {
+    const t = (v - 82) / 18;
+    return colorFromZoneArray('blue', t);
   }
-  if (s >= 62) {
-    const t = (s - 62) / 20;
-    return mixHex('#16a34a', BLUE_LEVELS[0], t);
+  if (v >= 62) {
+    const t = (v - 62) / 20;
+    return mixHex(colorFromZoneArray('green', 1), colorFromZoneArray('blue', 0), t);
   }
-  if (s >= 40) {
-    const t = (s - 40) / 22;
-    return mixHex('#f97316', '#22c55e', t);
+  if (v >= 40) {
+    const t = (v - 40) / 22;
+    return mixHex(colorFromZoneArray('orange', 1), colorFromZoneArray('green', 0), t);
   }
-  return mixHex('#ef4444', '#f97316', Math.max(0, s / 40));
+  const t = v / 40;
+  return mixHex(colorFromZoneArray('red', 1), colorFromZoneArray('orange', 0), t);
 }
 
 const QUADRANT_RISK_LABELS = {
@@ -206,13 +207,17 @@ const QUADRANT_RISK_LABELS = {
 };
 
 function buildMapBackground() {
+  const b0 = ZONE_GRADIENTS.blue[1];
+  const b1 = ZONE_GRADIENTS.blue[7];
+  const g = ZONE_GRADIENTS.green[6];
+  const o = ZONE_GRADIENTS.orange[6];
+  const r = ZONE_GRADIENTS.red[7];
   return `radial-gradient(circle at 50% 50%,
-    rgba(14, 165, 233, 0.38) 0%,
-    rgba(8, 105, 155, 0.48) 32%,
-    rgba(110, 52, 14, 0.88) 35%,
-    rgba(130, 62, 18, 0.82) 70%,
-    rgba(92, 10, 24, 0.9) 70%,
-    rgba(48, 6, 14, 0.95) 100%
+    ${b0} 0%,
+    ${b1} 26%,
+    ${g} 46%,
+    ${o} 68%,
+    ${r} 100%
   )`;
 }
 
@@ -404,7 +409,7 @@ export default function MetabolicMap({
   };
 
   const sleepReliabilityLine = sleepDataReliabilityText(realSleepDays, totalWindowDays);
-  const dynamicCompassBorder = radarColorByScore(longevityScoreFinal);
+  const dynamicCompassBorder = getColorFromValue(longevityScoreFinal);
   const radarRingRadii = useMemo(
     () => Array.from({ length: 10 }, (_, i) => 5 + i * 4.5),
     []
@@ -429,7 +434,7 @@ export default function MetabolicMap({
           borderRadius: 16,
           overflow: 'hidden',
           background: buildMapBackground(),
-          boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.45)',
+          boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.45), 0 0 24px ${dynamicCompassBorder}55`,
           touchAction: 'none',
         }}
         onTouchStart={(e) => {
@@ -569,7 +574,7 @@ export default function MetabolicMap({
           <g aria-hidden>
             {radarRingRadii.map((ringR, idx) => {
               const pseudoScore = Math.max(1, Math.min(100, 100 - idx * 8.5));
-              const ringColor = radarColorByScore(pseudoScore);
+              const ringColor = getColorFromValue(pseudoScore);
               return (
                 <circle
                   key={`radar-ring-${idx}`}
@@ -593,7 +598,7 @@ export default function MetabolicMap({
                     cy={50}
                     r={ringR}
                     fill="none"
-                    stroke={radarColorByScore(level)}
+                    stroke={getColorFromValue(level)}
                     strokeWidth={0.28}
                     strokeDasharray="0.9 2.2"
                     strokeOpacity={0.68}
