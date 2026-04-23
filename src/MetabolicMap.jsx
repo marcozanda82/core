@@ -132,14 +132,14 @@ const ZONE_LABELS = {
   red: 'Rossa (Pericolo)',
 };
 
-const ZOOM_MIN = 0.75;
-const ZOOM_MAX = 2.2;
+const ZOOM_MIN = 0.8;
+const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 0.12;
 const ZONE_GRADIENTS = {
-  blue: ['#eaf4ff', '#dbecff', '#c9e1ff', '#b4d4ff', '#9cc6ff', '#81b5fb', '#66a1f2', '#4d8be6', '#3875d8', '#245fca'],
-  green: ['#ebfff2', '#ddfae8', '#cef6dd', '#b9f0cf', '#9ee7bc', '#82dca7', '#68cf92', '#4fbe7c', '#3aa868', '#2a9157'],
-  orange: ['#fff2e6', '#fee8d7', '#fdddc6', '#fbd0b1', '#f9c091', '#f6ad72', '#f29754', '#ed8240', '#e06f2f', '#c95b22'],
-  red: ['#ffebef', '#ffdce3', '#ffcbd5', '#ffb7c4', '#ff9fad', '#fa8393', '#f1667a', '#e84c62', '#d6384e', '#b92a3f'],
+  blue: ['#4b5d74', '#46596f', '#42556a', '#3d5165', '#394d60', '#35485a', '#304455', '#2c4050', '#283c4a', '#243845'],
+  green: ['#4f665f', '#4b625b', '#475d56', '#435952', '#3f554e', '#3b5049', '#364c45', '#334841', '#2f433c', '#2b3f38'],
+  orange: ['#6b5a4e', '#67574b', '#635347', '#5f5044', '#5b4d41', '#57493d', '#53463a', '#4f4337', '#4b3f33', '#473c30'],
+  red: ['#6c5056', '#684d53', '#644950', '#60464d', '#5c4349', '#583f46', '#543c43', '#503940', '#4c353c', '#483239'],
 };
 
 function clampZoom(v) {
@@ -399,9 +399,9 @@ export default function MetabolicMap({
   const labelStyle = {
     position: 'absolute',
     fontSize: '0.62rem',
-    fontWeight: 600,
+    fontWeight: 500,
     letterSpacing: '0.04em',
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(226,232,240,0.36)',
     lineHeight: 1.25,
     maxWidth: '42%',
     pointerEvents: 'none',
@@ -434,7 +434,7 @@ export default function MetabolicMap({
           borderRadius: 16,
           overflow: 'hidden',
           background: buildMapBackground(),
-          boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.45), 0 0 24px ${dynamicCompassBorder}55`,
+          boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.45), 0 0 18px ${dynamicCompassBorder}44`,
           touchAction: 'none',
         }}
         onTouchStart={(e) => {
@@ -448,7 +448,9 @@ export default function MetabolicMap({
           const [a, b] = [e.touches[0], e.touches[1]];
           const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
           const ratio = dist / Math.max(1, pinchRef.current.startDist);
-          setZoomLevel(pinchRef.current.startZoom * ratio);
+          const targetZoom = pinchRef.current.startZoom * ratio;
+          // Smooth pinch easing to avoid abrupt zoom jumps.
+          setZoomLevel(lerp(zoomLevel, targetZoom, 0.26));
         }}
         onTouchEnd={() => {
           pinchRef.current.active = false;
@@ -520,6 +522,17 @@ export default function MetabolicMap({
           aria-hidden
           style={{
             position: 'absolute',
+            inset: 0,
+            background:
+              'radial-gradient(circle at 50% 50%, rgba(6,10,16,0.02) 38%, rgba(4,7,12,0.22) 72%, rgba(2,4,8,0.42) 100%)',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        />
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
             left: '50%',
             top: 0,
             bottom: 0,
@@ -583,8 +596,8 @@ export default function MetabolicMap({
                   r={ringR}
                   fill={idx === 0 ? 'rgba(14,165,233,0.08)' : 'none'}
                   stroke={ringColor}
-                  strokeWidth={idx % 2 === 0 ? 0.42 : 0.3}
-                  strokeOpacity={idx < 3 ? 0.42 : 0.28}
+                  strokeWidth={idx % 2 === 0 ? 0.28 : 0.22}
+                  strokeOpacity={idx < 3 ? 0.08 : 0.05}
                   vectorEffect="nonScalingStroke"
                 />
               );
@@ -599,16 +612,16 @@ export default function MetabolicMap({
                     r={ringR}
                     fill="none"
                     stroke={getColorFromValue(level)}
-                    strokeWidth={0.28}
+                    strokeWidth={0.24}
                     strokeDasharray="0.9 2.2"
-                    strokeOpacity={0.68}
+                    strokeOpacity={0.22}
                     vectorEffect="nonScalingStroke"
                   />
                   <text
                     x={50}
                     y={50 - ringR - 0.5}
                     textAnchor="middle"
-                    fill="rgba(226, 232, 240, 0.42)"
+                    fill="rgba(226, 232, 240, 0.26)"
                     fontSize={8}
                     fontWeight={500}
                     style={{ fontFamily: 'system-ui, sans-serif', pointerEvents: 'none' }}
@@ -673,9 +686,9 @@ export default function MetabolicMap({
                 r={ANCHOR_CIRCLE_R}
                 cx={0}
                 cy={0}
-                fill="#0ea5e9"
+                fill={mixHex(dynamicCompassBorder, '#dbeafe', 0.55)}
                 stroke={dynamicCompassBorder}
-                strokeWidth={0.35}
+                strokeWidth={0.42}
                 filter={`url(#${glowFilterId})`}
                 vectorEffect="nonScalingStroke"
               />

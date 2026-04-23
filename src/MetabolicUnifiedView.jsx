@@ -189,7 +189,7 @@ export default function MetabolicUnifiedView({
         </button>
         <button
           type="button"
-          onClick={() => setMapZoom((z) => Math.max(0.75, z - 0.12))}
+          onClick={() => setMapZoom((z) => Math.max(0.8, z - 0.12))}
           disabled={viewMode !== 'map'}
           aria-label="Riduci zoom mappa"
           style={{
@@ -208,7 +208,7 @@ export default function MetabolicUnifiedView({
         </button>
         <button
           type="button"
-          onClick={() => setMapZoom((z) => Math.min(2.2, z + 0.12))}
+          onClick={() => setMapZoom((z) => Math.min(2.5, z + 0.12))}
           disabled={viewMode !== 'map'}
           aria-label="Aumenta zoom mappa"
           style={{
