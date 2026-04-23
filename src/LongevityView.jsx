@@ -1551,8 +1551,7 @@ export default function LongevityView({
                     ) : null}
                     {Number.isFinite(metabolicAutopilot.plan.tdee) &&
                     metabolicAutopilot.plan.tdee > 0 &&
-                    Number.isFinite(metabolicAutopilot.plan.calorie_target) &&
-                    metabolicAutopilot.plan.calorie_target > 0 &&
+                    metabolicAutopilot.plan.calorie_target != null &&
                     metabolicAutopilot.plan.canUpdate &&
                     typeof onUpdateTDEE === 'function' ? (
                       <button
