@@ -221,6 +221,10 @@ function buildMapBackground() {
   )`;
 }
 
+function buildVignetteOverlay() {
+  return 'radial-gradient(circle at 50% 50%, rgba(9,12,18,0.02) 34%, rgba(7,10,15,0.18) 66%, rgba(4,6,10,0.34) 100%)';
+}
+
 function buildGridBackground() {
   return `
     linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
@@ -401,7 +405,7 @@ export default function MetabolicMap({
     fontSize: '0.62rem',
     fontWeight: 500,
     letterSpacing: '0.04em',
-    color: 'rgba(226,232,240,0.36)',
+    color: 'rgba(226,232,240,0.3)',
     lineHeight: 1.25,
     maxWidth: '42%',
     pointerEvents: 'none',
@@ -434,7 +438,7 @@ export default function MetabolicMap({
           borderRadius: 16,
           overflow: 'hidden',
           background: buildMapBackground(),
-          boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.45), 0 0 18px ${dynamicCompassBorder}44`,
+          boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.45), 0 0 18px ${dynamicCompassBorder}33`,
           touchAction: 'none',
         }}
         onTouchStart={(e) => {
@@ -450,7 +454,7 @@ export default function MetabolicMap({
           const ratio = dist / Math.max(1, pinchRef.current.startDist);
           const targetZoom = pinchRef.current.startZoom * ratio;
           // Smooth pinch easing to avoid abrupt zoom jumps.
-          setZoomLevel(lerp(zoomLevel, targetZoom, 0.26));
+          setZoomLevel(lerp(zoomLevel, targetZoom, 0.18));
         }}
         onTouchEnd={() => {
           pinchRef.current.active = false;
@@ -514,10 +518,20 @@ export default function MetabolicMap({
               backgroundImage: buildGridBackground(),
               backgroundSize: buildGridSize(),
               backgroundPosition: buildGridPosition(),
-              opacity: 0.22,
+              opacity: 0.12,
             }}
           />
         </div>
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: buildVignetteOverlay(),
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        />
         <div
           aria-hidden
           style={{
@@ -596,7 +610,7 @@ export default function MetabolicMap({
                   r={ringR}
                   fill={idx === 0 ? 'rgba(14,165,233,0.08)' : 'none'}
                   stroke={ringColor}
-                  strokeWidth={idx % 2 === 0 ? 0.28 : 0.22}
+                  strokeWidth={idx % 2 === 0 ? 0.24 : 0.2}
                   strokeOpacity={idx < 3 ? 0.08 : 0.05}
                   vectorEffect="nonScalingStroke"
                 />
@@ -612,9 +626,9 @@ export default function MetabolicMap({
                     r={ringR}
                     fill="none"
                     stroke={getColorFromValue(level)}
-                    strokeWidth={0.24}
+                    strokeWidth={0.2}
                     strokeDasharray="0.9 2.2"
-                    strokeOpacity={0.22}
+                    strokeOpacity={0.14}
                     vectorEffect="nonScalingStroke"
                   />
                   <text
@@ -686,7 +700,7 @@ export default function MetabolicMap({
                 r={ANCHOR_CIRCLE_R}
                 cx={0}
                 cy={0}
-                fill={mixHex(dynamicCompassBorder, '#dbeafe', 0.55)}
+                fill={mixHex(dynamicCompassBorder, '#dbeafe', 0.58)}
                 stroke={dynamicCompassBorder}
                 strokeWidth={0.42}
                 filter={`url(#${glowFilterId})`}
