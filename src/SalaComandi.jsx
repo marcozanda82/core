@@ -78,6 +78,7 @@ import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { recalculateUserTargets, buildMacroSplitFromKcal } from './targetsEngine';
 import { computeDataDrivenTdeeWithCoach, goalFromProfile, averageFoodKcalOver14d } from './dataDrivenTdee';
+import { computeMetabolicNotification } from './notificationEngine';
 import { mergeDuplicateBiometrics } from './biometricHistory';
 import { getBarcodeNutritionOverride, setBarcodeNutritionOverride as setBarcodeNutritionOverrideStorage } from './barcodeFoodOverrides';
 import {
@@ -3845,6 +3846,34 @@ export default function SalaComandi() {
           currentCalorieTarget: userTargets?.kcal,
           lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
         });
+        const uid = auth.currentUser?.uid;
+        if (uid) {
+          const notification = computeMetabolicNotification({
+            plan,
+            lastNotificationAt: userTargets?.tdeeLastNotificationAt,
+            lastDecision: userTargets?.tdeeLastDecision,
+          });
+          const nowTs = Date.now();
+          const metadataPatch = {
+            'targets/tdeeLastDecision': plan?.decision ?? null,
+          };
+          if (notification.shouldNotify) {
+            metadataPatch['targets/tdeeLastNotificationAt'] = nowTs;
+          }
+          try {
+            await update(ref(db, `users/${uid}/profile_targets`), metadataPatch);
+            setUserTargets((prev) => ({
+              ...prev,
+              tdeeLastDecision: plan?.decision ?? null,
+              ...(notification.shouldNotify ? { tdeeLastNotificationAt: nowTs } : {}),
+            }));
+            if (notification.shouldNotify && notification.message) {
+              alert(notification.message);
+            }
+          } catch (notifyErr) {
+            console.warn('Notifica metabolica:', notifyErr);
+          }
+        }
         if (plan.status === 'hold' || !plan.canUpdate || plan.calorie_target == null) {
           return plan;
         }
@@ -3862,9 +3891,13 @@ export default function SalaComandi() {
       }
     },
     [
+      auth,
+      db,
       fullHistory,
       userProfile,
       userTargets?.kcal,
+      userTargets?.tdeeLastDecision,
+      userTargets?.tdeeLastNotificationAt,
       userTargets?.tdeeTargetLastEvalAt,
       applyAutomaticTargetRecalibration,
       handleUpdateTDEE,
