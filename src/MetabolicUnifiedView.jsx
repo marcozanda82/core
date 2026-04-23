@@ -76,6 +76,7 @@ export default function MetabolicUnifiedView({
   const [viewMode, setViewMode] = useState('compass');
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_TIMEFRAME);
+  const [showHistoricTrail, setShowHistoricTrail] = useState(false);
 
   const compassHistoryKey = useMemo(
     () => historyFingerprint(dailyHistory, selectedTimeframe),
@@ -119,36 +120,73 @@ export default function MetabolicUnifiedView({
         boxSizing: 'border-box',
       }}
     >
-      <button
-        type="button"
-        onClick={() => setViewMode((m) => (m === 'compass' ? 'map' : 'compass'))}
-        aria-label={
-          viewMode === 'compass' ? 'Apri mappa metabolica' : 'Apri bussola metabolica'
-        }
-        aria-pressed={viewMode === 'map'}
+      <div
         style={{
           position: 'absolute',
-          top: 6,
+          top: 8,
           right: 8,
-          zIndex: 30,
-          width: 42,
-          height: 42,
-          borderRadius: 11,
-          border: '1px solid rgba(255,255,255,0.12)',
-          background: 'rgba(10, 12, 16, 0.82)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          cursor: 'pointer',
+          zIndex: 40,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          color: 'rgba(240, 245, 250, 0.9)',
-          boxShadow: '0 4px 18px rgba(0,0,0,0.35)',
-          transition: reducedMotion ? 'none' : 'background 0.25s ease, transform 0.2s ease',
+          gap: 6,
+          padding: '6px',
+          borderRadius: 12,
+          border: '1px solid rgba(255,255,255,0.14)',
+          background: 'rgba(10, 12, 16, 0.74)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
         }}
       >
-        {viewMode === 'compass' ? <IconMapSwitch /> : <IconCompassSwitch />}
-      </button>
+        <button
+          type="button"
+          onClick={() => setViewMode((m) => (m === 'compass' ? 'map' : 'compass'))}
+          aria-label={
+            viewMode === 'compass' ? 'Apri mappa metabolica' : 'Apri bussola metabolica'
+          }
+          aria-pressed={viewMode === 'map'}
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.12)',
+            background: 'rgba(255,255,255,0.05)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'rgba(240, 245, 250, 0.9)',
+            transition: reducedMotion ? 'none' : 'background 0.25s ease, transform 0.2s ease',
+          }}
+        >
+          {viewMode === 'compass' ? <IconMapSwitch /> : <IconCompassSwitch />}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowHistoricTrail((v) => !v)}
+          disabled={viewMode !== 'map'}
+          aria-pressed={showHistoricTrail}
+          aria-label={showHistoricTrail ? 'Nascondi rotta storica' : 'Mostra rotta storica'}
+          title={showHistoricTrail ? 'Nascondi rotta storica' : 'Mostra rotta storica'}
+          style={{
+            minWidth: 70,
+            height: 38,
+            padding: '0 10px',
+            borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.12)',
+            background: showHistoricTrail ? 'rgba(14, 165, 233, 0.28)' : 'rgba(255,255,255,0.05)',
+            color: 'rgba(241,245,249,0.95)',
+            fontSize: '0.68rem',
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            cursor: viewMode === 'map' ? 'pointer' : 'default',
+            opacity: viewMode === 'map' ? 1 : 0.45,
+            transition: reducedMotion ? 'none' : 'background 0.25s ease',
+          }}
+        >
+          {showHistoricTrail ? 'Rotta on' : 'Rotta'}
+        </button>
+      </div>
 
       <div
         role="tablist"
@@ -162,7 +200,7 @@ export default function MetabolicUnifiedView({
           maxWidth: 340,
           padding: 3,
           gap: 2,
-          margin: '52px auto 8px',
+          margin: '58px auto 8px',
           borderRadius: 12,
           boxSizing: 'border-box',
           background: 'rgba(255,255,255,0.04)',
@@ -288,6 +326,9 @@ export default function MetabolicUnifiedView({
               selectedTimeframe={selectedTimeframe}
               baselineOffset={baselineOffset}
               bodyMetricsHistory={bodyMetricsHistory}
+              showHistoricTrail={showHistoricTrail}
+              onToggleHistoricTrail={setShowHistoricTrail}
+              showHistoricTrailControl={false}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}

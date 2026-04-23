@@ -214,12 +214,25 @@ export default function MetabolicMap({
   selectedTimeframe = '7d',
   baselineOffset = null,
   bodyMetricsHistory = null,
+  showHistoricTrail: showHistoricTrailProp = undefined,
+  onToggleHistoricTrail = null,
+  showHistoricTrailControl = true,
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
   const reduceMotion = useReducedMotion();
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
-  const [showHistoricTrail, setShowHistoricTrail] = useState(false);
+  const [showHistoricTrailLocal, setShowHistoricTrailLocal] = useState(false);
+  const showHistoricTrail = typeof showHistoricTrailProp === 'boolean'
+    ? showHistoricTrailProp
+    : showHistoricTrailLocal;
+  const toggleHistoricTrail = () => {
+    if (typeof onToggleHistoricTrail === 'function') {
+      onToggleHistoricTrail(!showHistoricTrail);
+      return;
+    }
+    setShowHistoricTrailLocal((v) => !v);
+  };
 
   const { x, y, finalAura } = useMemo(
     () =>
@@ -338,12 +351,12 @@ export default function MetabolicMap({
           boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.45)',
         }}
       >
-        {historicTrail.canToggle ? (
+        {showHistoricTrailControl && historicTrail.canToggle ? (
           <button
             type="button"
             aria-pressed={showHistoricTrail}
             title={showHistoricTrail ? 'Nascondi rotta storica' : 'Mostra rotta storica'}
-            onClick={() => setShowHistoricTrail((v) => !v)}
+            onClick={toggleHistoricTrail}
             style={{
               position: 'absolute',
               top: 8,
