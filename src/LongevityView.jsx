@@ -1533,6 +1533,16 @@ export default function LongevityView({
                       </>
                     ) : null}
                     <div style={{ marginTop: Number.isFinite(metabolicAutopilot.plan.tdee) && metabolicAutopilot.plan.tdee > 0 ? 8 : 0, fontSize: '0.78rem', color: '#e2e8f0' }}>
+                      {metabolicAutopilot.plan.status === 'hold' ? (
+                        <div style={{ marginBottom: 6, color: '#f59e0b', fontWeight: 700 }}>
+                          Stato: HOLD
+                          {metabolicAutopilot.plan.holdReason === 'low_adherence'
+                            ? ' · aderenza bassa'
+                            : metabolicAutopilot.plan.holdReason === 'insufficient_data'
+                              ? ' · dati insufficienti'
+                              : ''}
+                        </div>
+                      ) : null}
                       <div>
                         <strong>Coach</strong> · {metabolicAutopilot.plan.coach.confidence}
                       </div>
@@ -1544,7 +1554,7 @@ export default function LongevityView({
                       ) : null}
                       <div style={{ marginTop: 4, color: '#94a3b8' }}>{metabolicAutopilot.plan.coach.reason}</div>
                     </div>
-                    {Number.isFinite(metabolicAutopilot.plan.tdee) && metabolicAutopilot.plan.tdee > 0 && !metabolicAutopilot.plan.canUpdate && metabolicAutopilot.plan.skipReasons.length > 0 ? (
+                    {metabolicAutopilot.plan.status === 'hold' && metabolicAutopilot.plan.skipReasons.length > 0 ? (
                       <div style={{ marginTop: 6, fontSize: '0.7rem', color: '#a8a29e' }}>
                         Aggiornamento automatico sospeso: {metabolicAutopilot.plan.skipReasons.join(', ')}.
                       </div>
@@ -1552,6 +1562,7 @@ export default function LongevityView({
                     {Number.isFinite(metabolicAutopilot.plan.tdee) &&
                     metabolicAutopilot.plan.tdee > 0 &&
                     metabolicAutopilot.plan.calorie_target != null &&
+                    metabolicAutopilot.plan.status === 'ok' &&
                     metabolicAutopilot.plan.canUpdate &&
                     typeof onUpdateTDEE === 'function' ? (
                       <button

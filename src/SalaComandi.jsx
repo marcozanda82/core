@@ -3835,7 +3835,7 @@ export default function SalaComandi() {
   );
 
   const evaluateAndApplyTDEE = useCallback(
-    async ({ weighDate, historyWithThisWeigh, protOverride }) => {
+    async ({ weighDate, historyWithThisWeigh, latestRecord }) => {
       try {
         const plan = computeDataDrivenTdeeWithCoach({
           anchorDateIso: weighDate,
@@ -3845,9 +3845,13 @@ export default function SalaComandi() {
           currentCalorieTarget: userTargets?.kcal,
           lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
         });
+        if (plan.status === 'hold' || !plan.canUpdate || plan.calorie_target == null) {
+          return plan;
+        }
+        const recalTargets = await applyAutomaticTargetRecalibration(latestRecord);
         if (plan.canUpdate && plan.calorie_target != null) {
           await handleUpdateTDEE(plan.calorie_target, {
-            prot: protOverride,
+            prot: recalTargets?.prot,
             recordTdeeEval: true,
           });
         }
@@ -3857,7 +3861,14 @@ export default function SalaComandi() {
         return null;
       }
     },
-    [fullHistory, userProfile, userTargets?.kcal, userTargets?.tdeeTargetLastEvalAt, handleUpdateTDEE]
+    [
+      fullHistory,
+      userProfile,
+      userTargets?.kcal,
+      userTargets?.tdeeTargetLastEvalAt,
+      applyAutomaticTargetRecalibration,
+      handleUpdateTDEE,
+    ]
   );
 
   const handleSaveBodyMetrics = useCallback(async () => {
@@ -3894,8 +3905,6 @@ export default function SalaComandi() {
       setBodyMetricsSaveToast(true);
       setTimeout(() => setBodyMetricsSaveToast(false), 3500);
 
-      const recalTargets = await applyAutomaticTargetRecalibration(payload);
-
       const historyWithThisWeigh = (() => {
         const list = Array.isArray(bodyMetricsHistory) ? [...bodyMetricsHistory] : [];
         const filtered = list.filter((e) => metricEntryToIsoDay(e) !== weighDate);
@@ -3905,7 +3914,7 @@ export default function SalaComandi() {
       await evaluateAndApplyTDEE({
         weighDate,
         historyWithThisWeigh,
-        protOverride: recalTargets?.prot,
+        latestRecord: payload,
       });
     } catch (err) {
       console.error('Salvataggio composizione corporea:', err);
@@ -3921,8 +3930,7 @@ export default function SalaComandi() {
     userProfile,
     userTargets?.kcal,
     userTargets?.tdeeTargetLastEvalAt,
-    handleUpdateTDEE,
-    applyAutomaticTargetRecalibration,
+    evaluateAndApplyTDEE,
   ]);
 
   const handleQuickWeighInFromHistory = useCallback(
@@ -3954,8 +3962,6 @@ export default function SalaComandi() {
         setBodyMetricsSaveToast(true);
         setTimeout(() => setBodyMetricsSaveToast(false), 3500);
 
-        const recalTargets = await applyAutomaticTargetRecalibration(payload);
-
         const historyWithThisWeigh = (() => {
           const list = Array.isArray(bodyMetricsHistory) ? [...bodyMetricsHistory] : [];
           const filtered = list.filter((e) => metricEntryToIsoDay(e) !== weighDate);
@@ -3965,7 +3971,7 @@ export default function SalaComandi() {
         await evaluateAndApplyTDEE({
           weighDate,
           historyWithThisWeigh,
-          protOverride: recalTargets?.prot,
+          latestRecord: payload,
         });
       } catch (err) {
         console.error('Salvataggio pesata rapida:', err);
@@ -3980,8 +3986,7 @@ export default function SalaComandi() {
       userProfile,
       userTargets?.kcal,
       userTargets?.tdeeTargetLastEvalAt,
-      handleUpdateTDEE,
-      applyAutomaticTargetRecalibration,
+      evaluateAndApplyTDEE,
     ]
   );
 
