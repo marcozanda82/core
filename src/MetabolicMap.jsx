@@ -2,7 +2,6 @@ import React, { useId, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { calculateMetabolicMapPosition, calculateBaselineOffset } from './metabolicMapEngine';
 import { biometricsToMapBaselineInput } from './biometricHistory';
-import CompassOverlay from './CompassOverlay';
 
 /** viewBox 0–100: stesso sistema di posizionamento del marker (50 ± x/2, 50 ∓ y/2). */
 function mapPointToSvgCoords(x, y) {
@@ -99,9 +98,6 @@ function classifyMapPoint(x, y) {
 
 /** Soglie zona radiale: distanza ≤35 Blue Zone, ≤70 arancione, oltre rosso (coerente con classifyMapPoint). */
 const BLUE_ZONE_SVG_R = 17.5;
-const FEATURES = {
-  compassOverlay: true,
-};
 
 /** Anelli di riferimento Longevity Score (solo etichette su archi con score ≥ 10 → r ≤ 40). */
 const LONGEVITY_SCORE_RING_LEVELS = [80, 60, 40, 20];
@@ -414,8 +410,6 @@ export default function MetabolicMap({
 
   const sleepReliabilityLine = sleepDataReliabilityText(realSleepDays, totalWindowDays);
   const dynamicCompassBorder = getColorFromValue(longevityScoreFinal);
-  const mapTranslateX = 50 - (anchorSvg.cx * zoomLevel);
-  const mapTranslateY = 50 - (anchorSvg.cy * zoomLevel);
   const radarRingRadii = useMemo(
     () => Array.from({ length: 10 }, (_, i) => 5 + i * 4.5),
     []
@@ -505,8 +499,8 @@ export default function MetabolicMap({
           style={{
             position: 'absolute',
             inset: 0,
-            transform: `translate(${mapTranslateX}%, ${mapTranslateY}%) scale(${zoomLevel})`,
-            transformOrigin: '0 0',
+            transform: `scale(${zoomLevel})`,
+            transformOrigin: '50% 50%',
             pointerEvents: 'none',
             zIndex: 0,
           }}
@@ -551,17 +545,6 @@ export default function MetabolicMap({
           }}
         />
 
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            inset: 0,
-            transform: `translate(${mapTranslateX}%, ${mapTranslateY}%) scale(${zoomLevel})`,
-            transformOrigin: '0 0',
-            pointerEvents: 'none',
-            zIndex: 4,
-          }}
-        >
         <svg
           viewBox="0 0 100 100"
           preserveAspectRatio="xMidYMid meet"
@@ -571,7 +554,10 @@ export default function MetabolicMap({
             inset: 0,
             width: '100%',
             height: '100%',
+            zIndex: 4,
             pointerEvents: 'none',
+            transform: `scale(${zoomLevel})`,
+            transformOrigin: '50% 50%',
           }}
         >
           <defs>
@@ -675,46 +661,35 @@ export default function MetabolicMap({
             </g>
           ) : null}
 
-          {!FEATURES.compassOverlay && (
-            <motion.g
-              initial={{ x: anchorSvg.cx, y: anchorSvg.cy }}
-              animate={{ x: anchorSvg.cx, y: anchorSvg.cy }}
-              transition={vectorTransition}
-              style={{ transformOrigin: '0px 0px' }}
-              data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
-            >
-              <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
-                <circle
-                  r={ANCHOR_CIRCLE_R}
-                  cx={0}
-                  cy={0}
-                  fill="#0ea5e9"
-                  stroke={dynamicCompassBorder}
-                  strokeWidth={0.35}
-                  filter={`url(#${glowFilterId})`}
-                  vectorEffect="nonScalingStroke"
-                />
-                <motion.polygon
-                  points={needlePolygonPoints}
-                  stroke="rgba(255,255,255,0.35)"
-                  strokeWidth={0.12}
-                  vectorEffect="nonScalingStroke"
-                  animate={{ fill: needleFill, opacity: needleBladeOpacity }}
-                  transition={vectorTransition}
-                />
-              </motion.g>
+          <motion.g
+            initial={{ x: anchorSvg.cx, y: anchorSvg.cy }}
+            animate={{ x: anchorSvg.cx, y: anchorSvg.cy }}
+            transition={vectorTransition}
+            style={{ transformOrigin: '0px 0px' }}
+            data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
+          >
+            <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
+              <circle
+                r={ANCHOR_CIRCLE_R}
+                cx={0}
+                cy={0}
+                fill="#0ea5e9"
+                stroke={dynamicCompassBorder}
+                strokeWidth={0.35}
+                filter={`url(#${glowFilterId})`}
+                vectorEffect="nonScalingStroke"
+              />
+              <motion.polygon
+                points={needlePolygonPoints}
+                stroke="rgba(255,255,255,0.35)"
+                strokeWidth={0.12}
+                vectorEffect="nonScalingStroke"
+                animate={{ fill: needleFill, opacity: needleBladeOpacity }}
+                transition={vectorTransition}
+              />
             </motion.g>
-          )}
+          </motion.g>
         </svg>
-        </div>
-
-        {FEATURES.compassOverlay && (
-          <CompassOverlay
-            position={{ x: anchorSvg.cx, y: anchorSvg.cy }}
-            direction={needleRotateDeg}
-            zoneColor={dynamicCompassBorder}
-          />
-        )}
 
         <span style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
           BURNOUT / CORTISOLO
