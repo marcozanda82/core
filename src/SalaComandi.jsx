@@ -211,7 +211,7 @@ const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'planning', 'bussola', 'longev
 /** Voci barra inferiore (sempre tutte visibili; non condizionare al caricamento dati). */
 const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },
-  { id: 'analisi', label: 'Diario', icon: '📋' },
+  { id: 'analisi', label: 'Timeline', icon: '🕒' },
   { id: 'planning', label: 'Pianifica', icon: '📅' },
   { id: 'bussola', label: 'Salute', icon: '❤️' },
   { id: 'longevita', label: 'Progressi', icon: '📈' },
@@ -16241,11 +16241,40 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               <button type="button" onClick={() => { setShowLongevityModal(false); setExpandedRiskId(null); }} style={{ background: '#222', color: '#fff', border: 'none', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px', position: 'relative' }}>
               <div style={{ width: '180px', height: '180px', borderRadius: '50%', border: `4px solid ${longevityData.color}`, background: `${longevityData.color}10`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 40px ${longevityData.color}30` }}>
                 <span style={{ color: longevityData.color, fontSize: '4rem', fontWeight: 'bold', lineHeight: '1' }}>{longevityData.masterScore}</span>
                 <span style={{ color: '#aaa', fontSize: '0.85rem', marginTop: '5px', textTransform: 'uppercase', letterSpacing: '1px' }}>Score statistiche</span>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLongevityModal(false);
+                  handleBottomNavTabSelect('analisi');
+                }}
+                aria-label="Apri timeline"
+                title="Apri Timeline"
+                style={{
+                  position: 'absolute',
+                  right: 'calc(50% - 108px)',
+                  bottom: -6,
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'rgba(2,6,23,0.72)',
+                  color: '#cbd5e1',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 6px 16px rgba(0,0,0,0.35)',
+                  backdropFilter: 'blur(6px)',
+                }}
+              >
+                🕒
+              </button>
             </div>
 
             <HomeView
