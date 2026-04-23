@@ -2803,6 +2803,7 @@ export default function SalaComandi() {
   const [fullHistory, setFullHistory] = useState({});
   const [showReport, setShowReport] = useState(false);
   const [showBatteryModal, setShowBatteryModal] = useState(false);
+  const [showDateCalendarModal, setShowDateCalendarModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [trendModalMetric, setTrendModalMetric] = useState(null);
   const [trendDays, setTrendDays] = useState(30);
@@ -2811,11 +2812,48 @@ export default function SalaComandi() {
   });
   const [reportPeriod, setReportPeriod] = useState('7');
   const [currentDateObj, setCurrentDateObj] = useState(() => new Date());
+  const [calendarMonthIso, setCalendarMonthIso] = useState(() => getTodayString().slice(0, 7));
 
   const currentTrackerDate = useMemo(() => {
     const offset = currentDateObj.getTimezoneOffset() * 60000;
     return new Date(currentDateObj.getTime() - offset).toISOString().slice(0, 10);
   }, [currentDateObj]);
+
+  const calendarZoneByDate = useMemo(() => {
+    const out = {};
+    if (!fullHistory || typeof fullHistory !== 'object' || !userTargets) return out;
+    const anchor = getTodayString();
+    for (let i = 0; i < 60; i += 1) {
+      const d = addDays(anchor, -i);
+      try {
+        const matrix = computeRiskMatrix(fullHistory, userTargets, 1, addDays(d, 1));
+        const score = computeLongevityMasterScoreFromMatrix(matrix);
+        const zone = score >= 85 ? 'blue' : score >= 70 ? 'green' : score >= 55 ? 'orange' : 'red';
+        out[d] = { zone, score };
+      } catch {
+        // keep day uncolored if matrix cannot be computed
+      }
+    }
+    return out;
+  }, [fullHistory, userTargets]);
+
+  const calendarGridDays = useMemo(() => {
+    const [yy, mm] = String(calendarMonthIso || '').split('-').map(Number);
+    if (!Number.isFinite(yy) || !Number.isFinite(mm) || mm < 1 || mm > 12) return [];
+    const first = new Date(yy, mm - 1, 1);
+    const startWeekday = (first.getDay() + 6) % 7;
+    const daysInMonth = new Date(yy, mm, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < startWeekday; i += 1) cells.push(null);
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const d = new Date(yy, mm - 1, day);
+      const offset = d.getTimezoneOffset() * 60000;
+      const iso = new Date(d.getTime() - offset).toISOString().slice(0, 10);
+      cells.push(iso);
+    }
+    while (cells.length % 7 !== 0) cells.push(null);
+    return cells;
+  }, [calendarMonthIso]);
 
   useEffect(() => {
     const d = currentTrackerDate || getTodayString();
@@ -4174,13 +4212,12 @@ export default function SalaComandi() {
     }));
   };
 
-  const changeDate = (daysOffset) => {
-    const newDate = new Date(currentDateObj);
-    newDate.setDate(newDate.getDate() + daysOffset);
-    setCurrentDateObj(newDate);
-
-    const offset = newDate.getTimezoneOffset() * 60000;
-    const dateStr = new Date(newDate.getTime() - offset).toISOString().slice(0, 10);
+  const navigateToDate = useCallback((dateInput) => {
+    const nextDate = dateInput instanceof Date ? new Date(dateInput) : new Date(`${dateInput}T12:00:00`);
+    if (!Number.isFinite(nextDate.getTime())) return;
+    setCurrentDateObj(nextDate);
+    const offset = nextDate.getTimezoneOffset() * 60000;
+    const dateStr = new Date(nextDate.getTime() - offset).toISOString().slice(0, 10);
     const dayData = fullHistory[`trackerStorico_${dateStr}`];
 
     if (dayData) {
@@ -4192,6 +4229,12 @@ export default function SalaComandi() {
       setDailyLog([]);
       setManualNodes([]);
     }
+  }, [fullHistory]);
+
+  const changeDate = (daysOffset) => {
+    const newDate = new Date(currentDateObj);
+    newDate.setDate(newDate.getDate() + daysOffset);
+    navigateToDate(newDate);
   };
 
   const REPORT_NUTRIENT_KEYS = ['kcal', 'prot', 'carb', 'fatTotal', 'fibre', 'vitc', 'vitD', 'omega3', 'mg', 'k', 'fe', 'ca'];
@@ -11359,9 +11402,18 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               >
                 ◀
               </button>
-              <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap', pointerEvents: 'none', padding: '0 4px', textAlign: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setCalendarMonthIso(currentTrackerDate.slice(0, 7));
+                  setShowDateCalendarModal(true);
+                }}
+                style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap', padding: '0 6px', textAlign: 'center', background: 'none', border: 'none', cursor: 'pointer' }}
+                aria-label="Apri calendario storico"
+                title="Apri calendario storico"
+              >
                 {currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
-              </span>
+              </button>
               <button
                 type="button"
                 onClick={() => changeDate(1)}
@@ -14449,6 +14501,121 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               >
                 💾 Salva Profilo
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDateCalendarModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.78)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100040,
+            padding: '16px',
+          }}
+          onClick={() => setShowDateCalendarModal(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 420,
+              background: '#0b0b0c',
+              border: '1px solid rgba(255,255,255,0.14)',
+              borderRadius: 16,
+              padding: 14,
+              boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const [y, m] = calendarMonthIso.split('-').map(Number);
+                  const d = new Date(y, m - 2, 1);
+                  const mo = String(d.getMonth() + 1).padStart(2, '0');
+                  setCalendarMonthIso(`${d.getFullYear()}-${mo}`);
+                }}
+                style={{ background: 'none', border: 'none', color: '#7dd3fc', fontSize: '1rem', cursor: 'pointer' }}
+                aria-label="Mese precedente"
+              >
+                ◀
+              </button>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>
+                {(() => {
+                  const [y, m] = calendarMonthIso.split('-').map(Number);
+                  return new Date(y, m - 1, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+                })()}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const [y, m] = calendarMonthIso.split('-').map(Number);
+                  const d = new Date(y, m, 1);
+                  const mo = String(d.getMonth() + 1).padStart(2, '0');
+                  setCalendarMonthIso(`${d.getFullYear()}-${mo}`);
+                }}
+                style={{ background: 'none', border: 'none', color: '#7dd3fc', fontSize: '1rem', cursor: 'pointer' }}
+                aria-label="Mese successivo"
+              >
+                ▶
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 8 }}>
+              {['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((wd, idx) => (
+                <div key={`${wd}_${idx}`} style={{ textAlign: 'center', color: '#71717a', fontSize: '0.68rem', fontWeight: 700 }}>
+                  {wd}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+              {calendarGridDays.map((iso, idx) => {
+                if (!iso) return <div key={`empty_${idx}`} style={{ height: 36 }} />;
+                const zone = calendarZoneByDate[iso]?.zone ?? null;
+                const zoneStyle =
+                  zone === 'blue'
+                    ? { background: 'linear-gradient(180deg, #1d4ed8 0%, #0ea5e9 100%)', color: '#e0f2fe' }
+                    : zone === 'green'
+                      ? { background: 'linear-gradient(180deg, #15803d 0%, #22c55e 100%)', color: '#ecfdf5' }
+                      : zone === 'orange'
+                        ? { background: 'linear-gradient(180deg, #c2410c 0%, #f59e0b 100%)', color: '#fff7ed' }
+                        : zone === 'red'
+                          ? { background: 'linear-gradient(180deg, #b91c1c 0%, #ef4444 100%)', color: '#fee2e2' }
+                          : { background: 'rgba(255,255,255,0.04)', color: '#cbd5e1' };
+                const isSelected = iso === currentTrackerDate;
+                return (
+                  <button
+                    key={iso}
+                    type="button"
+                    onClick={() => {
+                      navigateToDate(iso);
+                      setShowDateCalendarModal(false);
+                    }}
+                    style={{
+                      height: 36,
+                      borderRadius: 10,
+                      border: isSelected ? '2px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+                      fontSize: '0.78rem',
+                      fontWeight: isSelected ? 800 : 600,
+                      cursor: 'pointer',
+                      ...zoneStyle,
+                    }}
+                    title={calendarZoneByDate[iso]?.score != null ? `Score ${calendarZoneByDate[iso].score}` : iso}
+                  >
+                    {iso.slice(-2)}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, fontSize: '0.64rem', color: '#94a3b8', flexWrap: 'wrap' }}>
+              <span>🔵 ottimale</span>
+              <span>🟢 buono</span>
+              <span>🟠 warning</span>
+              <span>🔴 critico</span>
             </div>
           </div>
         </div>
