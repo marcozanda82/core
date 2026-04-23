@@ -3,7 +3,7 @@
  * No free-form text, no randomness, no LLM.
  *
  * @typedef {'mass' | 'cut' | 'maintain'} Goal
- * @typedef {'increase' | 'decrease' | 'keep'} Decision
+ * @typedef {'increase' | 'decrease' | 'keep' | 'hold'} Decision
  * @typedef {'high' | 'medium' | 'low'} Confidence
  */
 
@@ -14,7 +14,7 @@
  * @param {number} input.calorie_target
  * @param {Decision} input.decision
  * @param {number | null} [input.weight_trend] — reserved for future rules; not used in copy (deterministic on decision + gates)
- * @param {number | undefined} [input.adherence_score]
+ * @param {'insufficient_data' | 'low_adherence' | null | undefined} [input.coach_override]
  * @returns {{
  *   primary_action: string,
  *   secondary_action: string,
@@ -28,8 +28,7 @@ export function buildCoachOutput(input) {
   const calorieTarget = Number(input.calorie_target);
   const hasSufficientData =
     Number.isFinite(tdee) && tdee > 0 && Number.isFinite(calorieTarget) && calorieTarget > 0;
-  const adh = input.adherence_score;
-  const adherenceLow = Number.isFinite(adh) && adh < 0.7;
+  const override = input?.coach_override;
 
   const secondary =
     g === 'mass'
@@ -38,20 +37,29 @@ export function buildCoachOutput(input) {
         ? 'Maintain protein intake and monitor energy levels'
         : 'Keep habits stable';
 
+  if (override === 'insufficient_data') {
+    return {
+      primary_action: 'Raccogli più dati prima di cambiare',
+      secondary_action: secondary,
+      reason: 'Dati insufficienti per adattare la strategia',
+      confidence: 'low',
+    };
+  }
+
+  if (override === 'low_adherence') {
+    return {
+      primary_action: 'Segui il piano con più costanza',
+      secondary_action: secondary,
+      reason: "L'aderenza attuale non consente aggiustamenti affidabili",
+      confidence: 'low',
+    };
+  }
+
   if (!hasSufficientData) {
     return {
       primary_action: 'Collect more data before making changes',
       secondary_action: secondary,
       reason: 'At least 14 days of weight and food intake are needed for reliable tracking.',
-      confidence: 'low',
-    };
-  }
-
-  if (adherenceLow) {
-    return {
-      primary_action: 'Improve consistency before adjusting calories',
-      secondary_action: secondary,
-      reason: 'Low adherence makes adjustments unreliable',
       confidence: 'low',
     };
   }

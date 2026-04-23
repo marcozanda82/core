@@ -3882,7 +3882,7 @@ export default function SalaComandi() {
           fullHistory,
           bodyMetricsHistory: historyWithThisWeigh,
           goal: goalFromProfile(userProfile),
-          adherenceScore: userProfile?.adherenceScore,
+          currentCalorieTarget: userTargets?.kcal,
           lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
         });
         if (plan.canUpdate && plan.calorie_target > 0) {
@@ -3955,7 +3955,7 @@ export default function SalaComandi() {
             fullHistory,
             bodyMetricsHistory: historyWithThisWeigh,
             goal: goalFromProfile(userProfile),
-            adherenceScore: userProfile?.adherenceScore,
+            currentCalorieTarget: userTargets?.kcal,
             lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
           });
           if (plan.canUpdate && plan.calorie_target > 0) {

@@ -1,6 +1,7 @@
 import { addDays } from './calendarDateUtils';
 import { getCombinedDayLogAndManualNodes, sumFoodKcalAndProtein, metricEntryToIsoDay } from './coreEngine';
 import { buildCoachOutput } from './coachEngine';
+import { computeAdherence } from './adherenceEngine';
 
 /** Fixed kcal nudge when progress rules fire (spec §6). */
 export const CALORIE_ADJUSTMENT_STEP = 150;
@@ -11,7 +12,6 @@ const MASS_HI = 0.007;
 const CUT_LO = -0.002;
 const CUT_HI = -0.01;
 const MAINT_BAND = 0.005; // 0.5%
-const ADHERENCE_MIN = 0.7;
 const MIN_DAYS = 14;
 const EVAL_COOLDOWN_MS = 10 * 86400000;
 
@@ -35,6 +35,28 @@ function mean(arr) {
   if (!arr.length) return NaN;
   const s = arr.reduce((a, b) => a + b, 0);
   return s / arr.length;
+}
+
+function buildLast7DayAdherenceInput(fullHistory, anchorDateIso, calorieTarget) {
+  const daily_calories = [];
+  let days_logged = 0;
+  const total_days = 7;
+
+  for (let i = 0; i < total_days; i += 1) {
+    const d = addDays(anchorDateIso, -(total_days - 1) + i);
+    const dayLog = getCombinedDayLogAndManualNodes(fullHistory, d) || [];
+    const { kcal } = sumFoodKcalAndProtein(dayLog);
+    const kcalSafe = Number.isFinite(kcal) && kcal > 0 ? Math.round(kcal) : 0;
+    daily_calories.push(kcalSafe);
+    if (dayLog.length > 0) days_logged += 1;
+  }
+
+  return {
+    daily_calories,
+    calorie_target: Number(calorieTarget),
+    days_logged,
+    total_days,
+  };
 }
 
 /**
@@ -158,17 +180,19 @@ function applyProgressNudge(goal, wTrend, baseTarget) {
  * @param {object | null} p.fullHistory — tracker_data tree
  * @param {unknown[]} p.bodyMetricsHistory
  * @param {MassCutMaintain} p.goal
- * @param {number | null | undefined} p.adherenceScore — 0–1; undefined/null ⇒ 1
+ * @param {number | null | undefined} p.currentCalorieTarget — current target kcal used for adherence check
  * @param {number | null | undefined} p.lastTdeeEvalAt — ms since epoch; optional
  * @param {number} [p.nowMs] — for tests
  * @returns {{
  *  tdee: number,
  *  calorie_target: number,
- *  decision: 'increase' | 'decrease' | 'keep',
+ *  decision: 'increase' | 'decrease' | 'keep' | 'hold',
  *  canUpdate: boolean,
  *  skipReasons: string[],
  *  weight_trend: number | null,
- *  base_target: number | null
+ *  base_target: number | null,
+ *  coach_override: 'insufficient_data' | 'low_adherence' | null,
+ *  adherence: { score: number | null, level: 'high' | 'medium' | 'low' }
  * }}
  */
 export function computeDataDrivenTdee({
@@ -176,30 +200,63 @@ export function computeDataDrivenTdee({
   fullHistory,
   bodyMetricsHistory,
   goal = 'maintain',
-  adherenceScore = 1,
+  currentCalorieTarget = null,
   lastTdeeEvalAt = null,
   nowMs = Date.now(),
 }) {
   const g = goal === 'mass' || goal === 'cut' ? goal : 'maintain';
+  const rawAdherence = computeAdherence(
+    buildLast7DayAdherenceInput(fullHistory, anchorDateIso, currentCalorieTarget)
+  );
+  const adherence = {
+    score: rawAdherence.adherence_score,
+    level: rawAdherence.adherence_level,
+  };
+
+  if (adherence.score == null) {
+    return {
+      tdee: 0,
+      calorie_target: 0,
+      decision: 'hold',
+      canUpdate: false,
+      skipReasons: ['adherence_insufficient_data'],
+      weight_trend: null,
+      base_target: null,
+      coach_override: 'insufficient_data',
+      adherence,
+    };
+  }
+
+  if (adherence.score < 0.7) {
+    return {
+      tdee: 0,
+      calorie_target: 0,
+      decision: 'hold',
+      canUpdate: false,
+      skipReasons: ['low_adherence'],
+      weight_trend: null,
+      base_target: null,
+      coach_override: 'low_adherence',
+      adherence,
+    };
+  }
 
   const series = build14DayWeightAndCaloriesSeries(bodyMetricsHistory, fullHistory, anchorDateIso);
   if (!series.ok || series.weights.length < MIN_DAYS) {
     return {
       tdee: 0,
       calorie_target: 0,
-      decision: 'keep',
+      decision: 'hold',
       canUpdate: false,
       skipReasons: ['insufficient_data_14d'],
       weight_trend: null,
       base_target: null,
+      coach_override: 'insufficient_data',
+      adherence,
     };
   }
 
   const gate = [];
-  const adh = Number(adherenceScore);
-  if (Number.isFinite(adh) && adh < ADHERENCE_MIN) {
-    gate.push('adherence_below_0_7');
-  }
   if (lastTdeeEvalAt != null && Number.isFinite(Number(lastTdeeEvalAt)) && (nowMs - Number(lastTdeeEvalAt) < EVAL_COOLDOWN_MS)) {
     gate.push('eval_cooldown_10d');
   }
@@ -210,11 +267,13 @@ export function computeDataDrivenTdee({
     return {
       tdee: 0,
       calorie_target: 0,
-      decision: 'keep',
+      decision: 'hold',
       canUpdate: false,
       skipReasons: ['non_finite_trend'],
       weight_trend: null,
       base_target: null,
+      coach_override: 'insufficient_data',
+      adherence,
     };
   }
 
@@ -223,11 +282,13 @@ export function computeDataDrivenTdee({
     return {
       tdee: 0,
       calorie_target: 0,
-      decision: 'keep',
+      decision: 'hold',
       canUpdate: false,
       skipReasons: ['invalid_tdee'],
       weight_trend: weightTrend,
       base_target: null,
+      coach_override: 'insufficient_data',
+      adherence,
     };
   }
 
@@ -245,6 +306,8 @@ export function computeDataDrivenTdee({
     skipReasons: canUpdate ? [] : gate,
     weight_trend: weightTrend,
     base_target: Math.round(baseTarget),
+    coach_override: null,
+    adherence,
   };
 }
 
@@ -279,7 +342,7 @@ export function computeDataDrivenTdeeWithCoach(p) {
     calorie_target: plan.calorie_target,
     decision: plan.decision,
     weight_trend: plan.weight_trend,
-    adherence_score: p.adherenceScore,
+    coach_override: plan.coach_override,
   });
   return { ...plan, coach };
 }

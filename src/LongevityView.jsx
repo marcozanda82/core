@@ -1040,7 +1040,7 @@ export default function LongevityView({
       fullHistory,
       bodyMetricsHistory,
       goal: goalFromProfile(userProfile || {}),
-      adherenceScore: userProfile?.adherenceScore,
+      currentCalorieTarget: userTargets?.kcal,
       lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
     });
     return { plan };
