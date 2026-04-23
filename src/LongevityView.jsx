@@ -1510,86 +1510,108 @@ export default function LongevityView({
                 TDEE {resolvedMetabolicTDEE} kcal/dì · Δ kcal cumulato{' '}
                 {Math.round(metabolicVariance.cumulativeCaloricDelta)} kcal
               </div>
-              {metabolicAutopilot != null && (
-                <>
-                  <hr
-                    style={{
-                      border: 'none',
-                      borderTop: '1px solid #333',
-                      margin: '12px 0',
-                    }}
-                  />
-                  <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: 1.55, marginTop: 4 }}>
-                    {Number.isFinite(metabolicAutopilot.plan.tdee) && metabolicAutopilot.plan.tdee > 0 ? (
-                      <>
-                        <div>
-                          <strong style={{ color: '#e5e5e5' }}>TDEE stimato (da trend):</strong> {metabolicAutopilot.plan.tdee}{' '}
-                          kcal
-                        </div>
-                        <div style={{ marginTop: 4 }}>
-                          <strong style={{ color: '#e5e5e5' }}>Target kcal (obiettivo):</strong> {metabolicAutopilot.plan.calorie_target}{' '}
-                          kcal
-                        </div>
-                      </>
-                    ) : null}
-                    <div style={{ marginTop: Number.isFinite(metabolicAutopilot.plan.tdee) && metabolicAutopilot.plan.tdee > 0 ? 8 : 0, fontSize: '0.78rem', color: '#e2e8f0' }}>
-                      {metabolicAutopilot.plan.status === 'hold' ? (
-                        <div style={{ marginBottom: 6, color: '#f59e0b', fontWeight: 700 }}>
-                          Stato: HOLD
-                          {metabolicAutopilot.plan.holdReason === 'low_adherence'
-                            ? ' · aderenza bassa'
-                            : metabolicAutopilot.plan.holdReason === 'insufficient_data'
-                              ? ' · dati insufficienti'
-                              : ''}
-                        </div>
+              {(() => {
+                const plan = metabolicAutopilot?.plan;
+                const status = plan?.status;
+                const holdReason = plan?.holdReason;
+                const isHold = status === 'hold';
+                const isOk = status === 'ok';
+                const isWait = !plan;
+                const uiTitle = isWait
+                  ? '⏳ Inizializzazione'
+                  : isHold && holdReason === 'low_adherence'
+                    ? '⚠️ Serve più costanza'
+                    : isHold && holdReason === 'insufficient_data'
+                      ? '⏳ Dati insufficienti'
+                      : 'Azione consigliata';
+                const uiMain = isWait
+                  ? 'Analisi in corso...'
+                  : isHold && holdReason === 'low_adherence'
+                    ? 'Segui il piano con più regolarità'
+                    : isHold && holdReason === 'insufficient_data'
+                      ? 'Continua a registrare i dati'
+                      : (plan?.coach?.primary_action || 'Analisi in corso...');
+                const uiReason = isWait
+                  ? 'Stiamo preparando il tuo piano'
+                  : isHold && holdReason === 'low_adherence'
+                    ? 'I dati attuali non sono sufficientemente coerenti per adattare la strategia'
+                    : isHold && holdReason === 'insufficient_data'
+                      ? 'Servono più informazioni per ottimizzare il piano'
+                      : (plan?.coach?.reason || 'Stiamo preparando il tuo piano');
+
+                return (
+                  <>
+                    <hr
+                      style={{
+                        border: 'none',
+                        borderTop: '1px solid #333',
+                        margin: '12px 0',
+                      }}
+                    />
+                    <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: 1.55, marginTop: 4 }}>
+                      {isOk && Number.isFinite(plan?.tdee) && plan.tdee > 0 ? (
+                        <>
+                          <div>
+                            <strong style={{ color: '#e5e5e5' }}>TDEE stimato (da trend):</strong> {plan.tdee}{' '}
+                            kcal
+                          </div>
+                          <div style={{ marginTop: 4 }}>
+                            <strong style={{ color: '#e5e5e5' }}>Target kcal (obiettivo):</strong> {plan.calorie_target}{' '}
+                            kcal
+                          </div>
+                        </>
                       ) : null}
-                      <div>
-                        <strong>Coach</strong> · {metabolicAutopilot.plan.coach.confidence}
-                      </div>
-                      <div style={{ marginTop: 4 }}>{metabolicAutopilot.plan.coach.primary_action}</div>
-                      {metabolicAutopilot.plan.coach.secondary_action ? (
-                        <div style={{ marginTop: 4, color: '#94a3b8' }}>
-                          {metabolicAutopilot.plan.coach.secondary_action}
-                        </div>
-                      ) : null}
-                      <div style={{ marginTop: 4, color: '#94a3b8' }}>{metabolicAutopilot.plan.coach.reason}</div>
-                    </div>
-                    {metabolicAutopilot.plan.status === 'hold' && metabolicAutopilot.plan.skipReasons.length > 0 ? (
-                      <div style={{ marginTop: 6, fontSize: '0.7rem', color: '#a8a29e' }}>
-                        Aggiornamento automatico sospeso: {metabolicAutopilot.plan.skipReasons.join(', ')}.
-                      </div>
-                    ) : null}
-                    {Number.isFinite(metabolicAutopilot.plan.tdee) &&
-                    metabolicAutopilot.plan.tdee > 0 &&
-                    metabolicAutopilot.plan.calorie_target != null &&
-                    metabolicAutopilot.plan.status === 'ok' &&
-                    metabolicAutopilot.plan.canUpdate &&
-                    typeof onUpdateTDEE === 'function' ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onUpdateTDEE(metabolicAutopilot.plan.calorie_target, { recordTdeeEval: true })
-                        }
+                      <div
                         style={{
-                          width: '100%',
-                          marginTop: 10,
-                          padding: '10px 14px',
-                          borderRadius: 10,
-                          border: '1px solid rgba(14, 165, 233, 0.5)',
-                          background: 'linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%)',
-                          color: '#fff',
-                          fontWeight: 700,
-                          fontSize: '0.85rem',
-                          cursor: 'pointer',
-                          boxShadow: '0 2px 12px rgba(14, 165, 233, 0.25)',
+                          marginTop: isOk && Number.isFinite(plan?.tdee) && plan.tdee > 0 ? 8 : 0,
+                          fontSize: '0.78rem',
+                          color: '#e2e8f0',
+                          opacity: isHold ? 0.86 : 1,
                         }}
                       >
-                        Applica target {metabolicAutopilot.plan.calorie_target} kcal
-                      </button>
-                    ) : null}
-                  </div>
-                </>
-              )}
+                        <div>
+                          <strong>{uiTitle}</strong>
+                        </div>
+                        <div style={{ marginTop: 4 }}>{uiMain}</div>
+                        <div style={{ marginTop: 4, color: '#94a3b8' }}>{uiReason}</div>
+                      </div>
+                      {isHold && Array.isArray(plan?.skipReasons) && plan.skipReasons.length > 0 ? (
+                        <div style={{ marginTop: 6, fontSize: '0.7rem', color: '#a8a29e' }}>
+                          Aggiornamento automatico sospeso: {plan.skipReasons.join(', ')}.
+                        </div>
+                      ) : null}
+                      {isOk &&
+                      Number.isFinite(plan?.tdee) &&
+                      plan.tdee > 0 &&
+                      plan?.calorie_target != null &&
+                      plan?.canUpdate &&
+                      typeof onUpdateTDEE === 'function' ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateTDEE(plan.calorie_target, { recordTdeeEval: true })
+                          }
+                          style={{
+                            width: '100%',
+                            marginTop: 10,
+                            padding: '10px 14px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(14, 165, 233, 0.5)',
+                            background: 'linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%)',
+                            color: '#fff',
+                            fontWeight: 700,
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 12px rgba(14, 165, 233, 0.25)',
+                          }}
+                        >
+                          Applica target {plan.calorie_target} kcal
+                        </button>
+                      ) : null}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
