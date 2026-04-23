@@ -1520,7 +1520,7 @@ export default function LongevityView({
                     }}
                   />
                   <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: 1.55, marginTop: 4 }}>
-                    {metabolicAutopilot.plan.tdee > 0 ? (
+                    {Number.isFinite(metabolicAutopilot.plan.tdee) && metabolicAutopilot.plan.tdee > 0 ? (
                       <>
                         <div>
                           <strong style={{ color: '#e5e5e5' }}>TDEE stimato (da trend):</strong> {metabolicAutopilot.plan.tdee}{' '}
@@ -1532,7 +1532,7 @@ export default function LongevityView({
                         </div>
                       </>
                     ) : null}
-                    <div style={{ marginTop: metabolicAutopilot.plan.tdee > 0 ? 8 : 0, fontSize: '0.78rem', color: '#e2e8f0' }}>
+                    <div style={{ marginTop: Number.isFinite(metabolicAutopilot.plan.tdee) && metabolicAutopilot.plan.tdee > 0 ? 8 : 0, fontSize: '0.78rem', color: '#e2e8f0' }}>
                       <div>
                         <strong>Coach</strong> · {metabolicAutopilot.plan.coach.confidence}
                       </div>
@@ -1544,12 +1544,17 @@ export default function LongevityView({
                       ) : null}
                       <div style={{ marginTop: 4, color: '#94a3b8' }}>{metabolicAutopilot.plan.coach.reason}</div>
                     </div>
-                    {metabolicAutopilot.plan.tdee > 0 && !metabolicAutopilot.plan.canUpdate && metabolicAutopilot.plan.skipReasons.length > 0 ? (
+                    {Number.isFinite(metabolicAutopilot.plan.tdee) && metabolicAutopilot.plan.tdee > 0 && !metabolicAutopilot.plan.canUpdate && metabolicAutopilot.plan.skipReasons.length > 0 ? (
                       <div style={{ marginTop: 6, fontSize: '0.7rem', color: '#a8a29e' }}>
                         Aggiornamento automatico sospeso: {metabolicAutopilot.plan.skipReasons.join(', ')}.
                       </div>
                     ) : null}
-                    {metabolicAutopilot.plan.tdee > 0 && metabolicAutopilot.plan.canUpdate && typeof onUpdateTDEE === 'function' ? (
+                    {Number.isFinite(metabolicAutopilot.plan.tdee) &&
+                    metabolicAutopilot.plan.tdee > 0 &&
+                    Number.isFinite(metabolicAutopilot.plan.calorie_target) &&
+                    metabolicAutopilot.plan.calorie_target > 0 &&
+                    metabolicAutopilot.plan.canUpdate &&
+                    typeof onUpdateTDEE === 'function' ? (
                       <button
                         type="button"
                         onClick={() =>

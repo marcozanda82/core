@@ -3885,7 +3885,7 @@ export default function SalaComandi() {
           currentCalorieTarget: userTargets?.kcal,
           lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
         });
-        if (plan.canUpdate && plan.calorie_target > 0) {
+        if (plan.canUpdate && Number.isFinite(plan.calorie_target) && plan.calorie_target > 0) {
           await handleUpdateTDEE(plan.calorie_target, {
             prot: recalTargets?.prot,
             recordTdeeEval: true,
@@ -3958,7 +3958,7 @@ export default function SalaComandi() {
             currentCalorieTarget: userTargets?.kcal,
             lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
           });
-          if (plan.canUpdate && plan.calorie_target > 0) {
+          if (plan.canUpdate && Number.isFinite(plan.calorie_target) && plan.calorie_target > 0) {
             await handleUpdateTDEE(plan.calorie_target, {
               prot: recalTargets?.prot,
               recordTdeeEval: true,

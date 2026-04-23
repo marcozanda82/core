@@ -184,8 +184,8 @@ function applyProgressNudge(goal, wTrend, baseTarget) {
  * @param {number | null | undefined} p.lastTdeeEvalAt — ms since epoch; optional
  * @param {number} [p.nowMs] — for tests
  * @returns {{
- *  tdee: number,
- *  calorie_target: number,
+ *  tdee: number | null,
+ *  calorie_target: number | null,
  *  decision: 'increase' | 'decrease' | 'keep' | 'hold',
  *  canUpdate: boolean,
  *  skipReasons: string[],
@@ -215,8 +215,8 @@ export function computeDataDrivenTdee({
 
   if (adherence.score == null) {
     return {
-      tdee: 0,
-      calorie_target: 0,
+      tdee: null,
+      calorie_target: null,
       decision: 'hold',
       canUpdate: false,
       skipReasons: ['adherence_insufficient_data'],
@@ -229,8 +229,8 @@ export function computeDataDrivenTdee({
 
   if (adherence.score < 0.7) {
     return {
-      tdee: 0,
-      calorie_target: 0,
+      tdee: null,
+      calorie_target: null,
       decision: 'hold',
       canUpdate: false,
       skipReasons: ['low_adherence'],
@@ -244,8 +244,8 @@ export function computeDataDrivenTdee({
   const series = build14DayWeightAndCaloriesSeries(bodyMetricsHistory, fullHistory, anchorDateIso);
   if (!series.ok || series.weights.length < MIN_DAYS) {
     return {
-      tdee: 0,
-      calorie_target: 0,
+      tdee: null,
+      calorie_target: null,
       decision: 'hold',
       canUpdate: false,
       skipReasons: ['insufficient_data_14d'],
@@ -265,8 +265,8 @@ export function computeDataDrivenTdee({
   const { weightTrend, calAvgNow } = rolling7AndTrend(weights, calories);
   if (!Number.isFinite(weightTrend) || !Number.isFinite(calAvgNow)) {
     return {
-      tdee: 0,
-      calorie_target: 0,
+      tdee: null,
+      calorie_target: null,
       decision: 'hold',
       canUpdate: false,
       skipReasons: ['non_finite_trend'],
@@ -280,8 +280,8 @@ export function computeDataDrivenTdee({
   const tdeeRaw = estimateTdeeKcal(calAvgNow, weightTrend);
   if (!Number.isFinite(tdeeRaw) || tdeeRaw < 0) {
     return {
-      tdee: 0,
-      calorie_target: 0,
+      tdee: null,
+      calorie_target: null,
       decision: 'hold',
       canUpdate: false,
       skipReasons: ['invalid_tdee'],
