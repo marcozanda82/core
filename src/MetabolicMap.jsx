@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useState } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { calculateMetabolicMapPosition, calculateBaselineOffset } from './metabolicMapEngine';
 import { biometricsToMapBaselineInput } from './biometricHistory';
@@ -132,6 +132,72 @@ const ZONE_LABELS = {
   red: 'Rossa (Pericolo)',
 };
 
+const ZOOM_MIN = 0.75;
+const ZOOM_MAX = 2.2;
+const ZOOM_STEP = 0.12;
+const BLUE_LEVELS = [
+  '#dbeafe',
+  '#cbe4ff',
+  '#b8dcff',
+  '#9ed2ff',
+  '#7ec4ff',
+  '#5fb2f8',
+  '#4099ee',
+  '#2e7fe0',
+  '#1f66cf',
+  '#184fb8',
+];
+
+function clampZoom(v) {
+  return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function hexToRgb(hex) {
+  const h = String(hex || '').replace('#', '');
+  if (h.length !== 6) return { r: 255, g: 255, b: 255 };
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  const toHex = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function mixHex(a, b, t) {
+  const ca = hexToRgb(a);
+  const cb = hexToRgb(b);
+  return rgbToHex({
+    r: lerp(ca.r, cb.r, t),
+    g: lerp(ca.g, cb.g, t),
+    b: lerp(ca.b, cb.b, t),
+  });
+}
+
+function radarColorByScore(score) {
+  const s = Math.max(1, Math.min(100, Number(score) || 0));
+  if (s >= 82) {
+    const idx = Math.max(0, Math.min(9, Math.floor(((s - 82) / 18) * 9)));
+    return BLUE_LEVELS[idx];
+  }
+  if (s >= 62) {
+    const t = (s - 62) / 20;
+    return mixHex('#16a34a', BLUE_LEVELS[0], t);
+  }
+  if (s >= 40) {
+    const t = (s - 40) / 22;
+    return mixHex('#f97316', '#22c55e', t);
+  }
+  return mixHex('#ef4444', '#f97316', Math.max(0, s / 40));
+}
+
 const QUADRANT_RISK_LABELS = {
   NW: 'BURNOUT / CORTISOLO',
   NE: 'INFIAMMAZIONE / BULK',
@@ -217,12 +283,16 @@ export default function MetabolicMap({
   showHistoricTrail: showHistoricTrailProp = undefined,
   onToggleHistoricTrail = null,
   showHistoricTrailControl = true,
+  zoomLevel: zoomLevelProp = undefined,
+  onZoomLevelChange = null,
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
   const reduceMotion = useReducedMotion();
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
   const [showHistoricTrailLocal, setShowHistoricTrailLocal] = useState(false);
+  const [zoomLevelLocal, setZoomLevelLocal] = useState(1);
+  const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1 });
   const showHistoricTrail = typeof showHistoricTrailProp === 'boolean'
     ? showHistoricTrailProp
     : showHistoricTrailLocal;
@@ -232,6 +302,12 @@ export default function MetabolicMap({
       return;
     }
     setShowHistoricTrailLocal((v) => !v);
+  };
+  const zoomLevel = typeof zoomLevelProp === 'number' ? clampZoom(zoomLevelProp) : zoomLevelLocal;
+  const setZoomLevel = (nextZoom) => {
+    const clamped = clampZoom(nextZoom);
+    if (typeof onZoomLevelChange === 'function') onZoomLevelChange(clamped);
+    else setZoomLevelLocal(clamped);
   };
 
   const { x, y, finalAura } = useMemo(
@@ -328,6 +404,11 @@ export default function MetabolicMap({
   };
 
   const sleepReliabilityLine = sleepDataReliabilityText(realSleepDays, totalWindowDays);
+  const dynamicCompassBorder = radarColorByScore(longevityScoreFinal);
+  const radarRingRadii = useMemo(
+    () => Array.from({ length: 10 }, (_, i) => 5 + i * 4.5),
+    []
+  );
 
   return (
     <div
@@ -349,6 +430,23 @@ export default function MetabolicMap({
           overflow: 'hidden',
           background: buildMapBackground(),
           boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.45)',
+          touchAction: 'none',
+        }}
+        onTouchStart={(e) => {
+          if (e.touches.length !== 2) return;
+          const [a, b] = [e.touches[0], e.touches[1]];
+          const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+          pinchRef.current = { active: true, startDist: dist, startZoom: zoomLevel };
+        }}
+        onTouchMove={(e) => {
+          if (!pinchRef.current.active || e.touches.length !== 2) return;
+          const [a, b] = [e.touches[0], e.touches[1]];
+          const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+          const ratio = dist / Math.max(1, pinchRef.current.startDist);
+          setZoomLevel(pinchRef.current.startZoom * ratio);
+        }}
+        onTouchEnd={() => {
+          pinchRef.current.active = false;
         }}
       >
         {showHistoricTrailControl && historicTrail.canToggle ? (
@@ -396,14 +494,23 @@ export default function MetabolicMap({
           style={{
             position: 'absolute',
             inset: 0,
-            backgroundImage: buildGridBackground(),
-            backgroundSize: buildGridSize(),
-            backgroundPosition: buildGridPosition(),
-            opacity: 0.35,
+            transform: `scale(${zoomLevel})`,
+            transformOrigin: '50% 50%',
             pointerEvents: 'none',
             zIndex: 0,
           }}
-        />
+        >
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage: buildGridBackground(),
+              backgroundSize: buildGridSize(),
+              backgroundPosition: buildGridPosition(),
+              opacity: 0.22,
+            }}
+          />
+        </div>
         <div
           aria-hidden
           style={{
@@ -444,6 +551,8 @@ export default function MetabolicMap({
             height: '100%',
             zIndex: 4,
             pointerEvents: 'none',
+            transform: `scale(${zoomLevel})`,
+            transformOrigin: '50% 50%',
           }}
         >
           <defs>
@@ -456,35 +565,25 @@ export default function MetabolicMap({
             </filter>
           </defs>
 
-          {/* Blue Zone + fasce allarme */}
+          {/* Radar rings + multi-gradient zones */}
           <g aria-hidden>
-            <circle
-              cx={50}
-              cy={50}
-              r={BLUE_ZONE_SVG_R}
-              fill="rgba(14, 165, 233, 0.15)"
-              stroke="#0ea5e9"
-              strokeWidth={0.45}
-              vectorEffect="nonScalingStroke"
-            />
-            <circle
-              cx={50}
-              cy={50}
-              r={35}
-              fill="none"
-              stroke="rgba(249, 115, 22, 0.42)"
-              strokeWidth={0.35}
-              vectorEffect="nonScalingStroke"
-            />
-            <circle
-              cx={50}
-              cy={50}
-              r={50}
-              fill="none"
-              stroke="rgba(239, 68, 68, 0.38)"
-              strokeWidth={0.3}
-              vectorEffect="nonScalingStroke"
-            />
+            {radarRingRadii.map((ringR, idx) => {
+              const pseudoScore = Math.max(1, Math.min(100, 100 - idx * 8.5));
+              const ringColor = radarColorByScore(pseudoScore);
+              return (
+                <circle
+                  key={`radar-ring-${idx}`}
+                  cx={50}
+                  cy={50}
+                  r={ringR}
+                  fill={idx === 0 ? 'rgba(14,165,233,0.08)' : 'none'}
+                  stroke={ringColor}
+                  strokeWidth={idx % 2 === 0 ? 0.42 : 0.3}
+                  strokeOpacity={idx < 3 ? 0.42 : 0.28}
+                  vectorEffect="nonScalingStroke"
+                />
+              );
+            })}
             {LONGEVITY_SCORE_RING_LEVELS.map((level) => {
               const ringR = svgRadiusForMetabolicScore(level);
               return (
@@ -494,10 +593,10 @@ export default function MetabolicMap({
                     cy={50}
                     r={ringR}
                     fill="none"
-                    stroke="rgba(148, 163, 184, 0.22)"
+                    stroke={radarColorByScore(level)}
                     strokeWidth={0.28}
                     strokeDasharray="0.9 2.2"
-                    strokeOpacity={0.85}
+                    strokeOpacity={0.68}
                     vectorEffect="nonScalingStroke"
                   />
                   <text
@@ -570,7 +669,7 @@ export default function MetabolicMap({
                 cx={0}
                 cy={0}
                 fill="#0ea5e9"
-                stroke="rgba(224, 242, 254, 0.95)"
+                stroke={dynamicCompassBorder}
                 strokeWidth={0.35}
                 filter={`url(#${glowFilterId})`}
                 vectorEffect="nonScalingStroke"

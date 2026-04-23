@@ -77,6 +77,7 @@ export default function MetabolicUnifiedView({
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_TIMEFRAME);
   const [showHistoricTrail, setShowHistoricTrail] = useState(false);
+  const [mapZoom, setMapZoom] = useState(1);
 
   const compassHistoryKey = useMemo(
     () => historyFingerprint(dailyHistory, selectedTimeframe),
@@ -185,6 +186,44 @@ export default function MetabolicUnifiedView({
           }}
         >
           {showHistoricTrail ? 'Rotta on' : 'Rotta'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setMapZoom((z) => Math.max(0.75, z - 0.12))}
+          disabled={viewMode !== 'map'}
+          aria-label="Riduci zoom mappa"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 9,
+            border: '1px solid rgba(255,255,255,0.12)',
+            background: 'rgba(255,255,255,0.05)',
+            color: '#e2e8f0',
+            fontWeight: 700,
+            cursor: viewMode === 'map' ? 'pointer' : 'default',
+            opacity: viewMode === 'map' ? 1 : 0.45,
+          }}
+        >
+          -
+        </button>
+        <button
+          type="button"
+          onClick={() => setMapZoom((z) => Math.min(2.2, z + 0.12))}
+          disabled={viewMode !== 'map'}
+          aria-label="Aumenta zoom mappa"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 9,
+            border: '1px solid rgba(255,255,255,0.12)',
+            background: 'rgba(255,255,255,0.05)',
+            color: '#e2e8f0',
+            fontWeight: 700,
+            cursor: viewMode === 'map' ? 'pointer' : 'default',
+            opacity: viewMode === 'map' ? 1 : 0.45,
+          }}
+        >
+          +
         </button>
       </div>
 
@@ -329,6 +368,8 @@ export default function MetabolicUnifiedView({
               showHistoricTrail={showHistoricTrail}
               onToggleHistoricTrail={setShowHistoricTrail}
               showHistoricTrailControl={false}
+              zoomLevel={mapZoom}
+              onZoomLevelChange={setMapZoom}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}
