@@ -16,6 +16,7 @@ import {
   getEquivalentMealTypes,
   toCanonicalMealType,
   buildPredictiveCompositionDailyRows,
+  computeNextWeighInPrediction,
   computePredictionReliabilityPercent,
 } from './coreEngine';
 import {
@@ -996,6 +997,19 @@ export default function LongevityView({
     });
   }, [bodyMetricsHistory, timeWindow, anchorDate]);
 
+  const metabolicAutopilot = useMemo(() => {
+    if (!fullHistory || !userTargets) return null;
+    const plan = computeDataDrivenTdeeWithCoach({
+      anchorDateIso: anchorDate,
+      fullHistory,
+      bodyMetricsHistory,
+      goal: goalFromProfile(userProfile || {}),
+      currentCalorieTarget: userTargets?.kcal,
+      lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
+    });
+    return { plan };
+  }, [fullHistory, userTargets, bodyMetricsHistory, anchorDate, userProfile]);
+
   const compositionPredictiveRows = useMemo(() => {
     if (!fullHistory || userTargets == null || !(Number(userTargets.kcal) > 0)) return null;
     const tw = Math.max(1, Math.min(366, Number(timeWindow) || 1));
@@ -1006,9 +1020,10 @@ export default function LongevityView({
       rangeStartIso: limitDate,
       rangeEndIso: anchorDate,
       baseTdeeKcal: userTargets.kcal,
+      adherenceScore: metabolicAutopilot?.plan?.adherence?.score ?? 1,
     });
     return rows.length > 0 ? rows : null;
-  }, [fullHistory, userTargets, timeWindow, anchorDate, bodyMetricsHistory]);
+  }, [fullHistory, userTargets, timeWindow, anchorDate, bodyMetricsHistory, metabolicAutopilot?.plan?.adherence?.score]);
 
   const compositionReliabilityPct = useMemo(
     () => computePredictionReliabilityPercent(predictionCalibration?.errors),
@@ -1033,18 +1048,32 @@ export default function LongevityView({
     });
   }, [tdeeHistory, timeWindow, anchorDate]);
 
-  const metabolicAutopilot = useMemo(() => {
-    if (!fullHistory || !userTargets) return null;
-    const plan = computeDataDrivenTdeeWithCoach({
-      anchorDateIso: anchorDate,
-      fullHistory,
-      bodyMetricsHistory,
-      goal: goalFromProfile(userProfile || {}),
-      currentCalorieTarget: userTargets?.kcal,
-      lastTdeeEvalAt: userTargets?.tdeeTargetLastEvalAt,
-    });
-    return { plan };
-  }, [fullHistory, userTargets, bodyMetricsHistory, anchorDate, userProfile]);
+  const latestKnownWeightKg = useMemo(() => {
+    const sorted = [...(bodyMetricsHistory || [])]
+      .filter((e) => Number(e?.weight) > 0)
+      .sort((a, b) => (Number(a?.timestamp) || 0) - (Number(b?.timestamp) || 0));
+    if (!sorted.length) return null;
+    return Number(sorted[sorted.length - 1].weight) || null;
+  }, [bodyMetricsHistory]);
+
+  const nextWeighInPrediction = useMemo(
+    () =>
+      computeNextWeighInPrediction({
+        predictiveRows: compositionPredictiveRows,
+        currentWeightKg: latestKnownWeightKg,
+        adherenceScore: metabolicAutopilot?.plan?.adherence?.score,
+        minDays: 7,
+      }),
+    [compositionPredictiveRows, latestKnownWeightKg, metabolicAutopilot?.plan?.adherence?.score]
+  );
+
+  const nextWeighInRangeText = useMemo(() => {
+    const min = Number(nextWeighInPrediction?.predicted_delta_min);
+    const max = Number(nextWeighInPrediction?.predicted_delta_max);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+    const fmt = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
+    return `${fmt(min)} → ${fmt(max)} kg`;
+  }, [nextWeighInPrediction]);
 
   if (!data) {
     return (
@@ -1645,6 +1674,27 @@ export default function LongevityView({
                     : ' (alta divergenza: continua a pesarti con costanza).'}
               </div>
             )}
+            <div
+              style={{
+                marginBottom: 12,
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(148, 163, 184, 0.28)',
+                background: 'rgba(148, 163, 184, 0.08)',
+                fontSize: '0.8rem',
+                color: '#cbd5e1',
+                lineHeight: 1.5,
+              }}
+            >
+              <div style={{ color: '#e2e8f0', fontWeight: 700 }}>Prossima pesata stimata</div>
+              {nextWeighInPrediction?.confidence === 'high' && nextWeighInRangeText ? (
+                <div style={{ marginTop: 4, color: '#f8fafc', fontWeight: 700 }}>{nextWeighInRangeText}</div>
+              ) : (
+                <div style={{ marginTop: 4, color: '#94a3b8' }}>
+                  Stiamo raccogliendo dati per migliorare la previsione
+                </div>
+              )}
+            </div>
             <BodyCompositionChart
               history={chartBodyMetrics}
               predictiveDailyRows={compositionPredictiveRows}

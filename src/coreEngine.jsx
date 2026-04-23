@@ -4899,6 +4899,35 @@ export function dayHasWeightsStrengthWorkout(dailyLog) {
   });
 }
 
+function clamp01(v) {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+function inferDailyBehaviorScores(dailyLog) {
+  const L = normalizeLogData(Array.isArray(dailyLog) ? dailyLog : Object.values(dailyLog || {}));
+  const workoutBurnKcal = sumWorkoutBurnKcal(L);
+  const hasStrength = dayHasWeightsStrengthWorkout(L);
+  const training_score = clamp01((workoutBurnKcal / 450) * 0.7 + (hasStrength ? 0.3 : 0));
+
+  const sleepEntry = L.find((e) => e.type === 'sleep');
+  const sleepHours = Number(sleepEntry?.duration ?? sleepEntry?.hours);
+  const sleepStress = Number.isFinite(sleepHours) ? clamp01((7.5 - sleepHours) / 3.5) : 0.45;
+  const hasLateStimulant = L.some(
+    (e) => e.type === 'stimulant' && Number(e.time ?? e.mealTime ?? 0) >= 16
+  );
+  const hasRecoveryNode = L.some((e) => {
+    if (e.type !== 'zen') return false;
+    const desc = String(e.desc ?? e.name ?? e.subType ?? '').toLowerCase();
+    return desc.includes('medit') || desc.includes('respiro') || desc.includes('stretch');
+  });
+  const stress_score = clamp01(
+    0.2 + sleepStress * 0.6 + (hasLateStimulant ? 0.25 : 0) - (hasRecoveryNode ? 0.15 : 0)
+  );
+
+  return { training_score, stress_score };
+}
+
 /** Variazione di massa corporea (kg) da bilancio kcal vs TDEE dinamico del giorno. */
 export function estimateBodyMassDeltaFromEnergyBalance(intakeKcal, dynamicTdeeKcal) {
   const bal = Number(intakeKcal) - Number(dynamicTdeeKcal);
@@ -4967,6 +4996,7 @@ export function buildPredictiveCompositionDailyRows({
   rangeStartIso,
   rangeEndIso,
   baseTdeeKcal,
+  adherenceScore = 1,
 }) {
   if (
     !fullHistory ||
@@ -4979,6 +5009,7 @@ export function buildPredictiveCompositionDailyRows({
   }
   const baseTdee = Number(baseTdeeKcal);
   if (!Number.isFinite(baseTdee) || baseTdee < 800) return [];
+  const adherence_score = clamp01(Number(adherenceScore));
 
   const sorted = [...(bodyMetricsHistory || [])]
     .filter((e) => e && Number(e.weight) > 0)
@@ -5039,7 +5070,12 @@ export function buildPredictiveCompositionDailyRows({
         waterPct: real.water != null && Number.isFinite(real.water) ? real.water : null,
       });
     } else if (carryW != null && carryM != null) {
-      const dW = estimateBodyMassDeltaFromEnergyBalance(kcal, tdeeDyn);
+      const { training_score, stress_score } = inferDailyBehaviorScores(log);
+      let delta_kcal = kcal - tdeeDyn;
+      delta_kcal += training_score * 150;
+      let dW = delta_kcal / KCAL_PER_KG_ENERGY_BALANCE;
+      dW *= 1 - stress_score * 0.3;
+      dW *= adherence_score;
       const dLean = estimateLeanMassDeltaKg(dW, carryW, prot, hasW);
       carryW += dW;
       carryM += dLean;
@@ -5052,6 +5088,9 @@ export function buildPredictiveCompositionDailyRows({
         bodyFat: null,
         musclePct: null,
         waterPct: null,
+        trainingScore: training_score,
+        stressScore: stress_score,
+        adherenceScore: adherence_score,
       });
     }
 
@@ -5059,6 +5098,50 @@ export function buildPredictiveCompositionDailyRows({
   }
 
   return rows;
+}
+
+/**
+ * Stima prossima pesata in range (mai numero puntuale).
+ * Ritorna confidenza bassa se dati o aderenza non sono sufficienti.
+ */
+export function computeNextWeighInPrediction({
+  predictiveRows,
+  currentWeightKg,
+  adherenceScore,
+  minDays = 7,
+}) {
+  const rows = Array.isArray(predictiveRows) ? predictiveRows : [];
+  const currentW = Number(currentWeightKg);
+  const adherence = Number(adherenceScore);
+  const enoughData = rows.length >= Math.max(1, Number(minDays) || 7);
+  const enoughAdherence = Number.isFinite(adherence) && adherence >= 0.7;
+  if (!enoughData || !enoughAdherence || !Number.isFinite(currentW) || currentW <= 0) {
+    return {
+      predicted_delta_min: null,
+      predicted_delta_max: null,
+      confidence: 'low',
+    };
+  }
+  const last = rows[rows.length - 1];
+  const predictedW = Number(last?.weightKg);
+  if (!Number.isFinite(predictedW)) {
+    return {
+      predicted_delta_min: null,
+      predicted_delta_max: null,
+      confidence: 'low',
+    };
+  }
+
+  const predicted_delta = predictedW - currentW;
+  const spread = Math.max(Math.abs(predicted_delta) * 0.2, 0.05);
+  const predicted_delta_min = predicted_delta - spread;
+  const predicted_delta_max = predicted_delta + spread;
+
+  return {
+    predicted_delta_min: Number(predicted_delta_min.toFixed(2)),
+    predicted_delta_max: Number(predicted_delta_max.toFixed(2)),
+    confidence: 'high',
+  };
 }
 
 function compareIsoDate(a, b) {
