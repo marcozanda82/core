@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { calculateMetabolicMapPosition, calculateBaselineOffset } from './metabolicMapEngine';
 import { biometricsToMapBaselineInput } from './biometricHistory';
@@ -155,8 +155,6 @@ const ZONE_GRADIENTS = {
   ],
 };
 
-/** Raggio posizione attuale (maggior lettura rispetto all’Ancora). */
-const TIP_CIRCLE_R = 2.45;
 /** Morbidezza follow pinch (più alto = meno scatti). */
 const ZOOM_PINCH_SMOOTH = 0.28;
 const ZOOM_WHEEL_STEP = 0.018;
@@ -317,12 +315,10 @@ export default function MetabolicMap({
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
-  const tipGlowFilterId = `${uid}-tip-glow`;
   const reduceMotion = useReducedMotion();
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
   const [showHistoricTrailLocal, setShowHistoricTrailLocal] = useState(false);
   const [zoomLevelLocal, setZoomLevelLocal] = useState(1);
-  const [smoothedTipSvg, setSmoothedTipSvg] = useState(MAP_CENTER_SVG);
   const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1 });
   const showHistoricTrail = typeof showHistoricTrailProp === 'boolean'
     ? showHistoricTrailProp
@@ -376,25 +372,6 @@ export default function MetabolicMap({
 
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
-  useEffect(() => {
-    let raf = 0;
-    const startAt = performance.now();
-    const startPos = { cx: smoothedTipSvg.cx, cy: smoothedTipSvg.cy };
-    const endPos = { cx: tipSvg.cx, cy: tipSvg.cy };
-    const tick = (now) => {
-      const elapsed = now - startAt;
-      const t = Math.max(0, Math.min(1, elapsed / VECTOR_MOTION_DURATION_MS));
-      // Stesso fattore t su entrambi gli assi: velocità costante e traiettoria coerente.
-      const next = {
-        cx: startPos.cx + (endPos.cx - startPos.cx) * t,
-        cy: startPos.cy + (endPos.cy - startPos.cy) * t,
-      };
-      setSmoothedTipSvg(next);
-      if (t < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [tipSvg.cx, tipSvg.cy]);
 
   const historicTrail = useMemo(
     () => buildHistoricBaselineTrailSvg(bodyMetricsHistory, baselineX, baselineY),
@@ -645,13 +622,6 @@ export default function MetabolicMap({
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
-            <filter id={tipGlowFilterId} x="-100%" y="-100%" width="300%" height="300%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="1.35" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
             <filter id={`${uid}-ring-glow`} x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" />
             </filter>
@@ -786,21 +756,6 @@ export default function MetabolicMap({
             </motion.g>
           </motion.g>
 
-          <g style={{ pointerEvents: 'none' }}>
-            <motion.circle
-              r={TIP_CIRCLE_R}
-              cx={smoothedTipSvg.cx}
-              cy={smoothedTipSvg.cy}
-              fill="rgba(220, 230, 240, 0.95)"
-              stroke="rgba(255,255,255,0.45)"
-              strokeWidth={0.3}
-              filter={`url(#${tipGlowFilterId})`}
-              vectorEffect="nonScalingStroke"
-              initial={false}
-              animate={{ cx: smoothedTipSvg.cx, cy: smoothedTipSvg.cy }}
-              transition={vectorTransition}
-            />
-          </g>
         </svg>
 
         <span style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
