@@ -1,7 +1,6 @@
 import React, { useId, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { calculateMetabolicMapPosition, calculateBaselineOffset } from './metabolicMapEngine';
-import { biometricsToMapBaselineInput } from './biometricHistory';
+import { calculateMetabolicMapPosition } from './metabolicMapEngine';
 
 /** viewBox 0–100: stesso sistema di posizionamento del marker (50 ± x/2, 50 ∓ y/2). */
 function mapPointToSvgCoords(x, y) {
@@ -40,48 +39,6 @@ function svgRadiusForMetabolicScore(score) {
   return ((100 - s) / 90) * 40;
 }
 
-function bodyMetricEntrySortTime(entry) {
-  if (entry?.date && typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
-    return new Date(`${entry.date}T12:00:00`).getTime();
-  }
-  const ts = Number(entry?.timestamp);
-  return Number.isFinite(ts) ? ts : 0;
-}
-
-/**
- * Percorso baseline (x,y mappa) dalle pesate → fino all’ancora corrente, in coordinate SVG viewBox.
- */
-function buildHistoricBaselineTrailSvg(bodyMetricsHistory, baselineX, baselineY) {
-  const arr = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
-  if (arr.length === 0) {
-    return { polylinePoints: '', historicDots: [], lastSolidConnector: null, canToggle: false };
-  }
-  const sorted = [...arr].sort((a, b) => bodyMetricEntrySortTime(a) - bodyMetricEntrySortTime(b));
-  const historicDots = [];
-  for (let i = 0; i < sorted.length; i += 1) {
-    const inp = biometricsToMapBaselineInput(sorted[i]);
-    if (!inp) continue;
-    const { x, y } = calculateBaselineOffset(inp);
-    historicDots.push(mapPointToSvgCoords(clampMapAxis(x), clampMapAxis(y)));
-  }
-  if (historicDots.length === 0) {
-    return { polylinePoints: '', historicDots: [], lastSolidConnector: null, canToggle: false };
-  }
-  /** Punto finale = Ancora (baselineOffset): stesse coordinate del cerchio principale, nessun drift. */
-  const anchor = baselineOffsetToAnchorSvg(baselineX, baselineY);
-  const trailSvgPoints = [...historicDots, { cx: anchor.cx, cy: anchor.cy }];
-  const lastHistoric = historicDots[historicDots.length - 1];
-  const lastSolidConnector =
-    lastHistoric.cx === anchor.cx && lastHistoric.cy === anchor.cy
-      ? null
-      : { x1: lastHistoric.cx, y1: lastHistoric.cy, x2: anchor.cx, y2: anchor.cy };
-  return {
-    polylinePoints: trailSvgPoints.map((p) => `${p.cx},${p.cy}`).join(' '),
-    historicDots,
-    lastSolidConnector,
-    canToggle: true,
-  };
-}
 
 function classifyMapPoint(x, y) {
   const distance = Math.hypot(x, y);
@@ -315,38 +272,6 @@ function chaikinSmooth(points, iterations = 2) {
   return arr;
 }
 
-function movingAveragePoints(points, windowSize = 5) {
-  const src = Array.isArray(points) ? points : [];
-  if (src.length === 0) return [];
-  const w = Math.max(3, Math.min(7, windowSize));
-  const half = Math.floor(w / 2);
-  return src.map((_, i) => {
-    let sx = 0;
-    let sy = 0;
-    let c = 0;
-    for (let j = i - half; j <= i + half; j += 1) {
-      if (j < 0 || j >= src.length) continue;
-      sx += src[j].cx;
-      sy += src[j].cy;
-      c += 1;
-    }
-    return c > 0 ? { cx: sx / c, cy: sy / c } : src[i];
-  });
-}
-
-function keepSignificantPoints(points, threshold = 1.05) {
-  const src = Array.isArray(points) ? points : [];
-  if (src.length <= 2) return src;
-  const out = [src[0]];
-  for (let i = 1; i < src.length - 1; i += 1) {
-    const prev = out[out.length - 1];
-    const curr = src[i];
-    const dist = Math.hypot(curr.cx - prev.cx, curr.cy - prev.cy);
-    if (dist >= threshold) out.push(curr);
-  }
-  out.push(src[src.length - 1]);
-  return out;
-}
 
 /**
  * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
@@ -361,9 +286,6 @@ export default function MetabolicMap({
   selectedTimeframe = '7d',
   baselineOffset = null,
   bodyMetricsHistory = null,
-  showHistoricTrail: showHistoricTrailProp = undefined,
-  onToggleHistoricTrail = null,
-  showHistoricTrailControl = true,
   zoomLevel: zoomLevelProp = undefined,
   onZoomLevelChange = null,
   dailyPositions = null,
@@ -375,19 +297,8 @@ export default function MetabolicMap({
   const glowFilterId = `${uid}-anchor-glow`;
   const reduceMotion = useReducedMotion();
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
-  const [showHistoricTrailLocal, setShowHistoricTrailLocal] = useState(false);
   const [zoomLevelLocal, setZoomLevelLocal] = useState(1);
   const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1 });
-  const showHistoricTrail = typeof showHistoricTrailProp === 'boolean'
-    ? showHistoricTrailProp
-    : showHistoricTrailLocal;
-  const toggleHistoricTrail = () => {
-    if (typeof onToggleHistoricTrail === 'function') {
-      onToggleHistoricTrail(!showHistoricTrail);
-      return;
-    }
-    setShowHistoricTrailLocal((v) => !v);
-  };
   const zoomLevel = typeof zoomLevelProp === 'number' ? clampZoom(zoomLevelProp) : zoomLevelLocal;
   const setZoomLevel = (nextZoom) => {
     const resolved = typeof nextZoom === 'function' ? nextZoom(zoomLevel) : nextZoom;
@@ -430,11 +341,6 @@ export default function MetabolicMap({
 
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
-
-  const historicTrail = useMemo(
-    () => buildHistoricBaselineTrailSvg(bodyMetricsHistory, baselineX, baselineY),
-    [bodyMetricsHistory, baselineX, baselineY],
-  );
 
   const lifestyleDx = shiftedX - baselineX;
   const lifestyleDy = shiftedY - baselineY;
@@ -522,17 +428,6 @@ export default function MetabolicMap({
     }
     return best;
   }, [radarRingRadii, distTarget]);
-  const pastPointsSvg = useMemo(() => {
-    const src = Array.isArray(dailyPositions) ? dailyPositions.slice(-7) : [];
-    return src
-      .map((p) => mapPointToSvgCoords(clampMapAxis(p?.x), clampMapAxis(p?.y)))
-      .filter((p) => Number.isFinite(p.cx) && Number.isFinite(p.cy));
-  }, [dailyPositions]);
-  const pastPointsSmooth = useMemo(() => {
-    const averaged = movingAveragePoints(pastPointsSvg, 5);
-    const significant = keepSignificantPoints(averaged, 1.05);
-    return chaikinSmooth(significant, 2);
-  }, [pastPointsSvg]);
   const projectedSvg = useMemo(() => {
     if (!projectedPosition) return null;
     return mapPointToSvgCoords(clampMapAxis(projectedPosition.x), clampMapAxis(projectedPosition.y));
@@ -591,46 +486,6 @@ export default function MetabolicMap({
           pinchRef.current.active = false;
         }}
       >
-        {showHistoricTrailControl && historicTrail.canToggle ? (
-          <button
-            type="button"
-            aria-pressed={showHistoricTrail}
-            title={showHistoricTrail ? 'Nascondi rotta storica' : 'Mostra rotta storica'}
-            onClick={toggleHistoricTrail}
-            style={{
-              position: 'absolute',
-              top: 8,
-              right: 8,
-              zIndex: 10,
-              pointerEvents: 'auto',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              padding: '4px 10px 4px 8px',
-              borderRadius: 999,
-              border: '1px solid rgba(255,255,255,0.22)',
-              background: showHistoricTrail
-                ? 'rgba(55, 90, 110, 0.35)'
-                : 'rgba(0, 0, 0, 0.5)',
-              color: 'rgba(241, 245, 249, 0.95)',
-              fontSize: '0.62rem',
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              cursor: 'pointer',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
-              maxWidth: 'calc(50% - 16px)',
-            }}
-          >
-            <span style={{ fontSize: '0.75rem', lineHeight: 1 }} aria-hidden>
-              🧭
-            </span>
-            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {showHistoricTrail ? 'Rotta on' : 'Rotta'}
-            </span>
-          </button>
-        ) : null}
         <div
           aria-hidden
           style={{
@@ -781,28 +636,6 @@ export default function MetabolicMap({
               );
             })}
           </g>
-          {pastPointsSmooth.length > 1 ? (
-            <g aria-hidden>
-              {pastPointsSmooth.slice(1).map((p, idx) => {
-                const prev = pastPointsSmooth[idx];
-                const t = idx / Math.max(1, pastPointsSmooth.length - 2);
-                const op = 0.05 + t * 0.25;
-                return (
-                  <line
-                    key={`past-seg-${idx}`}
-                    x1={prev.cx}
-                    y1={prev.cy}
-                    x2={p.cx}
-                    y2={p.cy}
-                    stroke={`rgba(206,218,232,${op.toFixed(3)})`}
-                    strokeWidth={0.16}
-                    strokeLinecap="round"
-                    vectorEffect="nonScalingStroke"
-                  />
-                );
-              })}
-            </g>
-          ) : null}
           {projectedLineEnd ? (
             <line
               x1={tipSvg.cx}
@@ -817,46 +650,6 @@ export default function MetabolicMap({
             />
           ) : null}
 
-          {showHistoricTrail && historicTrail.polylinePoints ? (
-            <g aria-hidden>
-              <polyline
-                fill="none"
-                stroke="rgba(255,255,255,0.11)"
-                strokeWidth={0.45}
-                strokeDasharray="1.4 2.4"
-                vectorEffect="nonScalingStroke"
-                points={historicTrail.polylinePoints}
-              />
-              {historicTrail.lastSolidConnector ? (
-                <line
-                  x1={historicTrail.lastSolidConnector.x1}
-                  y1={historicTrail.lastSolidConnector.y1}
-                  x2={historicTrail.lastSolidConnector.x2}
-                  y2={historicTrail.lastSolidConnector.y2}
-                  stroke="rgba(255,255,255,0.11)"
-                  strokeWidth={0.45}
-                  vectorEffect="nonScalingStroke"
-                />
-              ) : null}
-              {historicTrail.historicDots.map((p, index) => {
-                const n = historicTrail.historicDots.length;
-                const denom = Math.max(1, n - 1);
-                const opacity = 0.1 + 0.4 * (index / denom);
-                return (
-                  <circle
-                    key={`historic-${index}-${p.cx}-${p.cy}`}
-                    cx={p.cx}
-                    cy={p.cy}
-                    r={ANCHOR_CIRCLE_R}
-                    fill={HISTORIC_TRAIL_DOT_FILL}
-                    opacity={opacity}
-                    stroke="none"
-                    vectorEffect="nonScalingStroke"
-                  />
-                );
-              })}
-            </g>
-          ) : null}
 
           <motion.g
             initial={{ x: tipSvg.cx, y: tipSvg.cy }}

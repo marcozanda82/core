@@ -140,7 +140,6 @@ export default function MetabolicUnifiedView({
   const [viewMode, setViewMode] = useState('compass');
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_TIMEFRAME);
-  const [showHistoricTrail, setShowHistoricTrail] = useState(false);
   const [mapZoom, setMapZoom] = useState(1);
 
   const compassHistoryKey = useMemo(
@@ -248,31 +247,6 @@ export default function MetabolicUnifiedView({
           }}
         >
           {viewMode === 'compass' ? <IconMapSwitch /> : <IconCompassSwitch />}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowHistoricTrail((v) => !v)}
-          disabled={viewMode !== 'map'}
-          aria-pressed={showHistoricTrail}
-          aria-label={showHistoricTrail ? 'Nascondi rotta storica' : 'Mostra rotta storica'}
-          title={showHistoricTrail ? 'Nascondi rotta storica' : 'Mostra rotta storica'}
-          style={{
-            minWidth: 70,
-            height: 38,
-            padding: '0 10px',
-            borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.12)',
-            background: showHistoricTrail ? 'rgba(55, 90, 110, 0.32)' : 'rgba(255,255,255,0.05)',
-            color: 'rgba(241,245,249,0.95)',
-            fontSize: '0.68rem',
-            fontWeight: 700,
-            letterSpacing: '0.04em',
-            cursor: viewMode === 'map' ? 'pointer' : 'default',
-            opacity: viewMode === 'map' ? 1 : 0.45,
-            transition: reducedMotion ? 'none' : 'background 0.25s ease',
-          }}
-        >
-          {showHistoricTrail ? 'Rotta on' : 'Rotta'}
         </button>
         <button
           type="button"
@@ -473,9 +447,6 @@ export default function MetabolicUnifiedView({
               selectedTimeframe={selectedTimeframe}
               baselineOffset={baselineOffset}
               bodyMetricsHistory={bodyMetricsHistory}
-              showHistoricTrail={showHistoricTrail}
-              onToggleHistoricTrail={setShowHistoricTrail}
-              showHistoricTrailControl={false}
               zoomLevel={mapZoom}
               onZoomLevelChange={setMapZoom}
               dailyPositions={dailyMapPositions}
