@@ -105,11 +105,11 @@ const LONGEVITY_SCORE_RING_LEVELS = [80, 60, 40, 20];
 /** Centro mappa / “Blue Zone” in unità SVG (viewBox). */
 const MAP_CENTER_SVG = { cx: 50, cy: 50 };
 
-/** Raggio Ancora principale (viewBox) — marker storici usano lo stesso raggio, senza glow. */
-const ANCHOR_CIRCLE_R = 3.6;
+/** Raggio Ancora (viewBox) — marker storici usano lo stesso raggio, senza glow. */
+const ANCHOR_CIRCLE_R = 3.1;
 
-/** Ciano/grigio spento per i punti storici (l’Ancora resta col brillante). */
-const HISTORIC_TRAIL_DOT_FILL = 'rgb(100, 155, 168)';
+/** Punti storici: poco contrasto, non competono con posizione attuale. */
+const HISTORIC_TRAIL_DOT_FILL = 'rgb(82, 102, 112)';
 
 /** Sotto questa lunghezza (spazio mappa −100…100) il vettore stile di vita si considera “quasi nullo”: ago verso il centro, più tenue. */
 const LIFESTYLE_VECTOR_IDLE_THRESHOLD = 4;
@@ -134,13 +134,31 @@ const ZONE_LABELS = {
 
 const ZOOM_MIN = 0.8;
 const ZOOM_MAX = 2.5;
-const ZOOM_STEP = 0.12;
+/** Palette desaturata: blu = ottimale, verde = transizione, arancio = attenzione, rosso = critico. */
 const ZONE_GRADIENTS = {
-  blue: ['#4b5d74', '#46596f', '#42556a', '#3d5165', '#394d60', '#35485a', '#304455', '#2c4050', '#283c4a', '#243845'],
-  green: ['#4f665f', '#4b625b', '#475d56', '#435952', '#3f554e', '#3b5049', '#364c45', '#334841', '#2f433c', '#2b3f38'],
-  orange: ['#6b5a4e', '#67574b', '#635347', '#5f5044', '#5b4d41', '#57493d', '#53463a', '#4f4337', '#4b3f33', '#473c30'],
-  red: ['#6c5056', '#684d53', '#644950', '#60464d', '#5c4349', '#583f46', '#543c43', '#503940', '#4c353c', '#483239'],
+  blue: [
+    '#2a343f', '#28333d', '#26323a', '#243138', '#223036',
+    '#202f33', '#1e2e31', '#1c2d2f', '#1a2c2c', '#182a2a',
+  ],
+  green: [
+    '#28393a', '#263738', '#243536', '#223334', '#203132',
+    '#1e2f30', '#1c2d2e', '#1a2b2c', '#18292a', '#162828',
+  ],
+  orange: [
+    '#332e2c', '#312c2a', '#2f2a28', '#2d2826', '#2b2624',
+    '#292422', '#272220', '#25201e', '#231e1c', '#211c1a',
+  ],
+  red: [
+    '#332d2f', '#312b2d', '#2f292b', '#2d2729', '#2b2527',
+    '#292325', '#272123', '#251f21', '#231d1f', '#211b1d',
+  ],
 };
+
+/** Raggio posizione attuale (maggior lettura rispetto all’Ancora). */
+const TIP_CIRCLE_R = 2.45;
+/** Morbidezza follow pinch (più alto = meno scatti). */
+const ZOOM_PINCH_SMOOTH = 0.28;
+const ZOOM_WHEEL_STEP = 0.018;
 
 function clampZoom(v) {
   return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v));
@@ -207,30 +225,31 @@ const QUADRANT_RISK_LABELS = {
 };
 
 function buildMapBackground() {
-  const b0 = ZONE_GRADIENTS.blue[1];
-  const b1 = ZONE_GRADIENTS.blue[7];
-  const g = ZONE_GRADIENTS.green[6];
-  const o = ZONE_GRADIENTS.orange[6];
-  const r = ZONE_GRADIENTS.red[7];
+  const b0 = ZONE_GRADIENTS.blue[0];
+  const b1 = ZONE_GRADIENTS.blue[4];
+  const g0 = ZONE_GRADIENTS.green[3];
+  const o0 = ZONE_GRADIENTS.orange[3];
+  const r0 = ZONE_GRADIENTS.red[3];
   return `radial-gradient(circle at 50% 50%,
     ${b0} 0%,
-    ${b1} 26%,
-    ${g} 46%,
-    ${o} 68%,
-    ${r} 100%
+    ${b1} 24%,
+    ${g0} 42%,
+    ${o0} 64%,
+    ${r0} 100%
   )`;
 }
 
+/** Profondità: centro più leggibile, bordi leggermente oscurati. */
 function buildVignetteOverlay() {
-  return 'radial-gradient(circle at 50% 50%, rgba(9,12,18,0.02) 34%, rgba(7,10,15,0.18) 66%, rgba(4,6,10,0.34) 100%)';
+  return 'radial-gradient(circle at 50% 50%, rgba(5,6,8,0) 0%, rgba(5,6,8,0) 38%, rgba(0,0,0,0.16) 72%, rgba(0,0,0,0.48) 100%)';
 }
 
 function buildGridBackground() {
   return `
-    linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px),
-    linear-gradient(rgba(255,255,255,0.14) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.14) 1px, transparent 1px)
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)
   `;
 }
 
@@ -297,6 +316,7 @@ export default function MetabolicMap({
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
+  const tipGlowFilterId = `${uid}-tip-glow`;
   const reduceMotion = useReducedMotion();
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
   const [showHistoricTrailLocal, setShowHistoricTrailLocal] = useState(false);
@@ -314,7 +334,8 @@ export default function MetabolicMap({
   };
   const zoomLevel = typeof zoomLevelProp === 'number' ? clampZoom(zoomLevelProp) : zoomLevelLocal;
   const setZoomLevel = (nextZoom) => {
-    const clamped = clampZoom(nextZoom);
+    const resolved = typeof nextZoom === 'function' ? nextZoom(zoomLevel) : nextZoom;
+    const clamped = clampZoom(resolved);
     if (typeof onZoomLevelChange === 'function') onZoomLevelChange(clamped);
     else setZoomLevelLocal(clamped);
   };
@@ -370,7 +391,7 @@ export default function MetabolicMap({
   const needleRotateDeg = lifestyleNearlyIdle
     ? needleRotationDegSvg(MAP_CENTER_SVG, anchorSvg)
     : needleRotationDegSvg(tipSvg, anchorSvg);
-  const needleBladeOpacity = lifestyleNearlyIdle ? 0.38 : 0.96;
+  const needleBladeOpacity = lifestyleNearlyIdle ? 0.32 : 0.86;
 
   const distAnchor = Math.hypot(
     anchorSvg.cx - MAP_CENTER_SVG.cx,
@@ -386,7 +407,9 @@ export default function MetabolicMap({
   const surplusCaloricMap =
     distTarget > distAnchor + 1e-6 ? longevityScoreAnchor - longevityScoreFinal : 0;
   const needleFill =
-    distTarget > distAnchor ? 'rgba(255, 60, 60, 0.9)' : 'rgba(0, 200, 255, 0.9)';
+    distTarget > distAnchor
+      ? 'rgba(150, 95, 100, 0.78)'
+      : 'rgba(100, 140, 158, 0.82)';
 
   const needleBladeLen = useMemo(() => {
     if (lifestyleNearlyIdle) return NEEDLE_BLADE_LEN_IDLE;
@@ -405,7 +428,7 @@ export default function MetabolicMap({
     fontSize: '0.62rem',
     fontWeight: 500,
     letterSpacing: '0.04em',
-    color: 'rgba(226,232,240,0.3)',
+    color: 'rgba(200, 210, 220, 0.17)',
     lineHeight: 1.25,
     maxWidth: '42%',
     pointerEvents: 'none',
@@ -438,8 +461,13 @@ export default function MetabolicMap({
           borderRadius: 16,
           overflow: 'hidden',
           background: buildMapBackground(),
-          boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.45), 0 0 18px ${dynamicCompassBorder}33`,
+          boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.04), 0 8px 32px rgba(0,0,0,0.5), 0 0 14px ${dynamicCompassBorder}1a`,
           touchAction: 'none',
+        }}
+        onWheel={(e) => {
+          if (!e.ctrlKey) return;
+          e.preventDefault();
+          setZoomLevel((z) => clampZoom(z - e.deltaY * ZOOM_WHEEL_STEP));
         }}
         onTouchStart={(e) => {
           if (e.touches.length !== 2) return;
@@ -453,8 +481,7 @@ export default function MetabolicMap({
           const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
           const ratio = dist / Math.max(1, pinchRef.current.startDist);
           const targetZoom = pinchRef.current.startZoom * ratio;
-          // Smooth pinch easing to avoid abrupt zoom jumps.
-          setZoomLevel(lerp(zoomLevel, targetZoom, 0.18));
+          setZoomLevel((z) => clampZoom(lerp(z, targetZoom, ZOOM_PINCH_SMOOTH)));
         }}
         onTouchEnd={() => {
           pinchRef.current.active = false;
@@ -479,7 +506,7 @@ export default function MetabolicMap({
               borderRadius: 999,
               border: '1px solid rgba(255,255,255,0.22)',
               background: showHistoricTrail
-                ? 'rgba(14, 165, 233, 0.28)'
+                ? 'rgba(55, 90, 110, 0.35)'
                 : 'rgba(0, 0, 0, 0.5)',
               color: 'rgba(241, 245, 249, 0.95)',
               fontSize: '0.62rem',
@@ -518,7 +545,7 @@ export default function MetabolicMap({
               backgroundImage: buildGridBackground(),
               backgroundSize: buildGridSize(),
               backgroundPosition: buildGridPosition(),
-              opacity: 0.12,
+              opacity: 0.055,
             }}
           />
         </div>
@@ -536,23 +563,12 @@ export default function MetabolicMap({
           aria-hidden
           style={{
             position: 'absolute',
-            inset: 0,
-            background:
-              'radial-gradient(circle at 50% 50%, rgba(6,10,16,0.02) 38%, rgba(4,7,12,0.22) 72%, rgba(2,4,8,0.42) 100%)',
-            pointerEvents: 'none',
-            zIndex: 1,
-          }}
-        />
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
             left: '50%',
             top: 0,
             bottom: 0,
             width: 1,
             marginLeft: -0.5,
-            background: 'rgba(255,255,255,0.1)',
+            background: 'rgba(255,255,255,0.045)',
             pointerEvents: 'none',
             zIndex: 0,
           }}
@@ -566,7 +582,7 @@ export default function MetabolicMap({
             right: 0,
             height: 1,
             marginTop: -0.5,
-            background: 'rgba(255,255,255,0.1)',
+            background: 'rgba(255,255,255,0.045)',
             pointerEvents: 'none',
             zIndex: 0,
           }}
@@ -589,7 +605,14 @@ export default function MetabolicMap({
         >
           <defs>
             <filter id={glowFilterId} x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="1.4" result="blur" />
+              <feGaussianBlur in="SourceGraphic" stdDeviation="1.15" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id={tipGlowFilterId} x="-100%" y="-100%" width="300%" height="300%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="1.35" result="blur" />
               <feMerge>
                 <feMergeNode in="blur" />
                 <feMergeNode in="SourceGraphic" />
@@ -600,18 +623,16 @@ export default function MetabolicMap({
           {/* Radar rings + multi-gradient zones */}
           <g aria-hidden>
             {radarRingRadii.map((ringR, idx) => {
-              const pseudoScore = Math.max(1, Math.min(100, 100 - idx * 8.5));
-              const ringColor = getColorFromValue(pseudoScore);
+              const ringStroke = idx % 2 === 0 ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.055)';
               return (
                 <circle
                   key={`radar-ring-${idx}`}
                   cx={50}
                   cy={50}
                   r={ringR}
-                  fill={idx === 0 ? 'rgba(14,165,233,0.08)' : 'none'}
-                  stroke={ringColor}
-                  strokeWidth={idx % 2 === 0 ? 0.24 : 0.2}
-                  strokeOpacity={idx < 3 ? 0.08 : 0.05}
+                  fill={idx === 0 ? 'rgba(32, 42, 52, 0.06)' : 'none'}
+                  stroke={ringStroke}
+                  strokeWidth={0.18}
                   vectorEffect="nonScalingStroke"
                 />
               );
@@ -625,18 +646,17 @@ export default function MetabolicMap({
                     cy={50}
                     r={ringR}
                     fill="none"
-                    stroke={getColorFromValue(level)}
-                    strokeWidth={0.2}
+                    stroke="rgba(210, 218, 226, 0.1)"
+                    strokeWidth={0.18}
                     strokeDasharray="0.9 2.2"
-                    strokeOpacity={0.14}
                     vectorEffect="nonScalingStroke"
                   />
                   <text
                     x={50}
                     y={50 - ringR - 0.5}
                     textAnchor="middle"
-                    fill="rgba(226, 232, 240, 0.26)"
-                    fontSize={8}
+                    fill="rgba(200, 208, 216, 0.14)"
+                    fontSize={7.75}
                     fontWeight={500}
                     style={{ fontFamily: 'system-ui, sans-serif', pointerEvents: 'none' }}
                   >
@@ -651,8 +671,8 @@ export default function MetabolicMap({
             <g aria-hidden>
               <polyline
                 fill="none"
-                stroke="rgba(255,255,255,0.2)"
-                strokeWidth={0.5}
+                stroke="rgba(255,255,255,0.11)"
+                strokeWidth={0.45}
                 strokeDasharray="1.4 2.4"
                 vectorEffect="nonScalingStroke"
                 points={historicTrail.polylinePoints}
@@ -663,8 +683,8 @@ export default function MetabolicMap({
                   y1={historicTrail.lastSolidConnector.y1}
                   x2={historicTrail.lastSolidConnector.x2}
                   y2={historicTrail.lastSolidConnector.y2}
-                  stroke="rgba(255,255,255,0.2)"
-                  strokeWidth={0.5}
+                  stroke="rgba(255,255,255,0.11)"
+                  strokeWidth={0.45}
                   vectorEffect="nonScalingStroke"
                 />
               ) : null}
@@ -700,22 +720,38 @@ export default function MetabolicMap({
                 r={ANCHOR_CIRCLE_R}
                 cx={0}
                 cy={0}
-                fill={mixHex(dynamicCompassBorder, '#dbeafe', 0.58)}
-                stroke={dynamicCompassBorder}
-                strokeWidth={0.42}
+                fill={mixHex(dynamicCompassBorder, '#9db0c0', 0.42)}
+                stroke={mixHex(dynamicCompassBorder, '#4a5560', 0.5)}
+                strokeWidth={0.36}
                 filter={`url(#${glowFilterId})`}
                 vectorEffect="nonScalingStroke"
               />
               <motion.polygon
                 points={needlePolygonPoints}
-                stroke="rgba(255,255,255,0.35)"
-                strokeWidth={0.12}
+                stroke="rgba(255,255,255,0.22)"
+                strokeWidth={0.1}
                 vectorEffect="nonScalingStroke"
                 animate={{ fill: needleFill, opacity: needleBladeOpacity }}
                 transition={vectorTransition}
               />
             </motion.g>
           </motion.g>
+
+          <g style={{ pointerEvents: 'none' }}>
+            <motion.circle
+              r={TIP_CIRCLE_R}
+              cx={tipSvg.cx}
+              cy={tipSvg.cy}
+              fill="rgba(220, 230, 240, 0.95)"
+              stroke="rgba(255,255,255,0.45)"
+              strokeWidth={0.3}
+              filter={`url(#${tipGlowFilterId})`}
+              vectorEffect="nonScalingStroke"
+              initial={false}
+              animate={{ cx: tipSvg.cx, cy: tipSvg.cy }}
+              transition={vectorTransition}
+            />
+          </g>
         </svg>
 
         <span style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
@@ -775,9 +811,9 @@ export default function MetabolicMap({
               marginTop: 10,
               padding: '8px 10px',
               borderRadius: 8,
-              background: 'rgba(120, 45, 25, 0.35)',
-              border: '1px solid rgba(248, 113, 113, 0.45)',
-              color: 'rgba(254, 202, 165, 0.98)',
+              background: 'rgba(60, 42, 38, 0.45)',
+              border: '1px solid rgba(150, 110, 95, 0.35)',
+              color: 'rgba(210, 195, 185, 0.92)',
               fontWeight: 600,
               fontSize: '0.78rem',
             }}
@@ -792,9 +828,9 @@ export default function MetabolicMap({
               marginTop: 10,
               padding: '8px 10px',
               borderRadius: 8,
-              background: 'rgba(120, 20, 28, 0.35)',
-              border: '1px solid rgba(255, 80, 70, 0.45)',
-              color: 'rgba(255, 160, 150, 0.98)',
+              background: 'rgba(55, 38, 40, 0.45)',
+              border: '1px solid rgba(130, 90, 92, 0.35)',
+              color: 'rgba(215, 190, 188, 0.92)',
               fontWeight: 600,
               fontSize: '0.78rem',
             }}

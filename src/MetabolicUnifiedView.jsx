@@ -21,9 +21,9 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
 ];
 
 function mapZoneToGlowRgba(zone) {
-  if (zone === 'red') return 'rgba(239, 68, 68, 0.4)';
-  if (zone === 'orange') return 'rgba(249, 115, 22, 0.4)';
-  if (zone === 'green') return 'rgba(14, 165, 233, 0.4)';
+  if (zone === 'red') return 'rgba(120, 88, 92, 0.28)';
+  if (zone === 'orange') return 'rgba(125, 100, 82, 0.28)';
+  if (zone === 'green') return 'rgba(88, 108, 128, 0.28)';
   return '';
 }
 
@@ -175,7 +175,7 @@ export default function MetabolicUnifiedView({
             padding: '0 10px',
             borderRadius: 10,
             border: '1px solid rgba(255,255,255,0.12)',
-            background: showHistoricTrail ? 'rgba(14, 165, 233, 0.28)' : 'rgba(255,255,255,0.05)',
+            background: showHistoricTrail ? 'rgba(55, 90, 110, 0.32)' : 'rgba(255,255,255,0.05)',
             color: 'rgba(241,245,249,0.95)',
             fontSize: '0.68rem',
             fontWeight: 700,
