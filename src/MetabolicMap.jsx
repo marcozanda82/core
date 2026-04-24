@@ -106,7 +106,7 @@ const LONGEVITY_SCORE_RING_LEVELS = [80, 60, 40, 20];
 const MAP_CENTER_SVG = { cx: 50, cy: 50 };
 
 /** Raggio Ancora (viewBox) — marker storici usano lo stesso raggio, senza glow. */
-const ANCHOR_CIRCLE_R = 3.1;
+const ANCHOR_CIRCLE_R = 3.5;
 
 /** Punti storici: poco contrasto, non competono con posizione attuale. */
 const HISTORIC_TRAIL_DOT_FILL = 'rgb(82, 102, 112)';
@@ -120,8 +120,8 @@ const NEEDLE_BLADE_LEN_IDLE = 3.2;
 /** Estremi lama ago (viewBox) in funzione della magnitudo anchor → target (spazio mappa). */
 const NEEDLE_BLADE_LEN_MIN = 4;
 const NEEDLE_BLADE_LEN_MAX = 12.5;
-const NEEDLE_TRAIL_LEN_MIN = 0.2;
-const NEEDLE_TRAIL_LEN_MAX = 3.8;
+const NEEDLE_TRAIL_LEN_MIN = 0.24;
+const NEEDLE_TRAIL_LEN_MAX = 4.8;
 
 /** Valore di riferimento magnitudo (spazio mappa −100…100) per allungare l’ago al massimo. */
 const LIFESTYLE_LEN_FOR_FULL_NEEDLE = 95;
@@ -568,7 +568,7 @@ export default function MetabolicMap({
               backgroundImage: buildGridBackground(),
               backgroundSize: buildGridSize(),
               backgroundPosition: buildGridPosition(),
-              opacity: 0.055,
+              opacity: 0.04,
             }}
           />
         </div>
@@ -628,7 +628,7 @@ export default function MetabolicMap({
         >
           <defs>
             <filter id={glowFilterId} x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="1.15" result="blur" />
+              <feGaussianBlur in="SourceGraphic" stdDeviation="1.35" result="blur" />
               <feMerge>
                 <feMergeNode in="blur" />
                 <feMergeNode in="SourceGraphic" />
@@ -642,14 +642,14 @@ export default function MetabolicMap({
           {/* Radar rings + multi-gradient zones */}
           <g aria-hidden>
             {radarRingRadii.map((ringR, idx) => {
-              const ringStroke = idx % 2 === 0 ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.055)';
+              const ringStroke = idx % 2 === 0 ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.042)';
               return (
                 <circle
                   key={`radar-ring-${idx}`}
                   cx={50}
                   cy={50}
                   r={ringR}
-                  fill={idx === 0 ? 'rgba(32, 42, 52, 0.06)' : 'none'}
+                  fill={idx === 0 ? 'rgba(32, 42, 52, 0.04)' : 'none'}
                   stroke={ringStroke}
                   strokeWidth={0.18}
                   vectorEffect="nonScalingStroke"
@@ -677,7 +677,7 @@ export default function MetabolicMap({
                     cy={50}
                     r={ringR}
                     fill="none"
-                    stroke="rgba(210, 218, 226, 0.1)"
+                    stroke="rgba(210, 218, 226, 0.075)"
                     strokeWidth={0.18}
                     strokeDasharray="0.9 2.2"
                     vectorEffect="nonScalingStroke"
@@ -753,18 +753,28 @@ export default function MetabolicMap({
                 y1={0.5}
                 x2={0}
                 y2={trailLen}
-                stroke={`rgba(226,236,245,${trailOpacity})`}
+                stroke={`rgba(236,244,252,${Math.min(0.42, trailOpacity + 0.06)})`}
                 strokeWidth={0.18}
                 strokeLinecap="round"
+                vectorEffect="nonScalingStroke"
+              />
+              <circle
+                r={ANCHOR_CIRCLE_R + 0.75}
+                cx={0}
+                cy={0}
+                fill="none"
+                stroke="rgba(255,255,255,0.24)"
+                strokeWidth={0.22}
+                filter={`url(#${glowFilterId})`}
                 vectorEffect="nonScalingStroke"
               />
               <circle
                 r={ANCHOR_CIRCLE_R}
                 cx={0}
                 cy={0}
-                fill={mixHex(dynamicCompassBorder, '#9db0c0', 0.42)}
-                stroke={mixHex(dynamicCompassBorder, '#4a5560', 0.5)}
-                strokeWidth={0.36}
+                fill={mixHex(dynamicCompassBorder, '#f8fbff', 0.72)}
+                stroke={mixHex(dynamicCompassBorder, '#d9e5f2', 0.64)}
+                strokeWidth={0.42}
                 filter={`url(#${glowFilterId})`}
                 vectorEffect="nonScalingStroke"
               />
