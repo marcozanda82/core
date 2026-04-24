@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { calculateMetabolicMapPosition } from './metabolicMapEngine';
 
@@ -77,14 +77,13 @@ const NEEDLE_BLADE_LEN_IDLE = 3.2;
 /** Estremi lama ago (viewBox) in funzione della magnitudo anchor → target (spazio mappa). */
 const NEEDLE_BLADE_LEN_MIN = 4;
 const NEEDLE_BLADE_LEN_MAX = 12.5;
-const NEEDLE_TRAIL_LEN_MIN = 0.24;
-const NEEDLE_TRAIL_LEN_MAX = 4.8;
+const NEEDLE_TRAIL_LEN_MIN = 0.4;
+const NEEDLE_TRAIL_LEN_MAX = 1.8;
 
 /** Valore di riferimento magnitudo (spazio mappa −100…100) per allungare l’ago al massimo. */
 const LIFESTYLE_LEN_FOR_FULL_NEEDLE = 95;
 
-const VECTOR_MOTION_DURATION_MS = 280;
-const VECTOR_MOTION_TRANSITION = { duration: VECTOR_MOTION_DURATION_MS / 1000, ease: 'linear' };
+const VECTOR_MOTION_TRANSITION = { duration: 0.32, ease: 'linear' };
 
 const ZONE_LABELS = {
   green: 'Blue Zone (Longevità)',
@@ -298,7 +297,10 @@ export default function MetabolicMap({
   const reduceMotion = useReducedMotion();
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
   const [zoomLevelLocal, setZoomLevelLocal] = useState(1);
+  const [inertialTipSvg, setInertialTipSvg] = useState(MAP_CENTER_SVG);
   const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1 });
+  const targetTipRef = useRef(MAP_CENTER_SVG);
+  const inertiaVelRef = useRef(0.04);
   const zoomLevel = typeof zoomLevelProp === 'number' ? clampZoom(zoomLevelProp) : zoomLevelLocal;
   const setZoomLevel = (nextZoom) => {
     const resolved = typeof nextZoom === 'function' ? nextZoom(zoomLevel) : nextZoom;
@@ -341,6 +343,31 @@ export default function MetabolicMap({
 
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
+  const movementVelocity = useMemo(() => {
+    const speed = Number.isFinite(Number(trajectoryVelocity)) ? Number(trajectoryVelocity) : 0;
+    const t = Math.max(0, Math.min(1, speed / 9));
+    return 0.02 + t * 0.06; // 0.02–0.08
+  }, [trajectoryVelocity]);
+  useEffect(() => {
+    targetTipRef.current = tipSvg;
+    inertiaVelRef.current = movementVelocity;
+  }, [tipSvg, movementVelocity]);
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      setInertialTipSvg((prev) => {
+        const target = targetTipRef.current || prev;
+        const v = Math.max(0.02, Math.min(0.08, Number(inertiaVelRef.current) || 0.04));
+        return {
+          cx: prev.cx + (target.cx - prev.cx) * v,
+          cy: prev.cy + (target.cy - prev.cy) * v,
+        };
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   const lifestyleDx = shiftedX - baselineX;
   const lifestyleDy = shiftedY - baselineY;
@@ -353,7 +380,7 @@ export default function MetabolicMap({
 
   const needleRotateDeg = lifestyleNearlyIdle
     ? needleRotationDegSvg(MAP_CENTER_SVG, anchorSvg)
-    : needleRotationDegSvg(tipSvg, anchorSvg);
+    : needleRotationDegSvg(inertialTipSvg, anchorSvg);
   const needleBladeOpacity = lifestyleNearlyIdle ? 0.32 : 0.86;
 
   const distAnchor = Math.hypot(
@@ -361,8 +388,8 @@ export default function MetabolicMap({
     anchorSvg.cy - MAP_CENTER_SVG.cy,
   );
   const distTarget = Math.hypot(
-    tipSvg.cx - MAP_CENTER_SVG.cx,
-    tipSvg.cy - MAP_CENTER_SVG.cy,
+    inertialTipSvg.cx - MAP_CENTER_SVG.cx,
+    inertialTipSvg.cy - MAP_CENTER_SVG.cy,
   );
 
   const longevityScoreAnchor = calculateMetabolicScore(baselineX, baselineY);
@@ -385,9 +412,9 @@ export default function MetabolicMap({
     return NEEDLE_TRAIL_LEN_MIN + t * (NEEDLE_TRAIL_LEN_MAX - NEEDLE_TRAIL_LEN_MIN);
   }, [lifestyleNearlyIdle, lifestyleLen]);
   const trailOpacity = useMemo(() => {
-    if (lifestyleNearlyIdle) return 0.06;
+    if (lifestyleNearlyIdle) return 0.08;
     const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
-    return 0.09 + t * 0.22;
+    return 0.1 + t * 0.1;
   }, [lifestyleNearlyIdle, lifestyleLen]);
 
   const needlePolygonPoints = useMemo(() => {
@@ -434,13 +461,13 @@ export default function MetabolicMap({
   }, [projectedPosition]);
   const projectedLineEnd = useMemo(() => {
     if (!projectedSvg) return null;
-    const dx = projectedSvg.cx - tipSvg.cx;
-    const dy = projectedSvg.cy - tipSvg.cy;
+    const dx = projectedSvg.cx - inertialTipSvg.cx;
+    const dy = projectedSvg.cy - inertialTipSvg.cy;
     // Noise filter: micro spostamenti non aggiornano la traiettoria futura.
     if (Math.hypot(dx, dy) < 0.9) return null;
     const speedFactor = Math.max(0.65, Math.min(1.35, 0.75 + trajectorySpeed / 10));
-    return { x: tipSvg.cx + dx * speedFactor, y: tipSvg.cy + dy * speedFactor };
-  }, [projectedSvg, tipSvg.cx, tipSvg.cy, trajectorySpeed]);
+    return { x: inertialTipSvg.cx + dx * speedFactor, y: inertialTipSvg.cy + dy * speedFactor };
+  }, [projectedSvg, inertialTipSvg.cx, inertialTipSvg.cy, trajectorySpeed]);
   return (
     <div
       style={{
@@ -576,6 +603,13 @@ export default function MetabolicMap({
             <filter id={`${uid}-future-blur`} x="-40%" y="-40%" width="180%" height="180%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="0.35" />
             </filter>
+            <filter id={`${uid}-trail-soft`} x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="0.24" />
+            </filter>
+            <linearGradient id={`${uid}-trail-grad`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={`rgba(236,244,252,${Math.min(0.2, trailOpacity + 0.05)})`} />
+              <stop offset="100%" stopColor="rgba(236,244,252,0.02)" />
+            </linearGradient>
           </defs>
 
           {/* Radar rings + multi-gradient zones */}
@@ -638,8 +672,8 @@ export default function MetabolicMap({
           </g>
           {projectedLineEnd ? (
             <line
-              x1={tipSvg.cx}
-              y1={tipSvg.cy}
+              x1={inertialTipSvg.cx}
+              y1={inertialTipSvg.cy}
               x2={projectedLineEnd.x}
               y2={projectedLineEnd.y}
               stroke="rgba(220,232,244,0.2)"
@@ -652,22 +686,21 @@ export default function MetabolicMap({
 
 
           <motion.g
-            initial={{ x: tipSvg.cx, y: tipSvg.cy }}
-            animate={{ x: tipSvg.cx, y: tipSvg.cy }}
+            initial={{ x: inertialTipSvg.cx, y: inertialTipSvg.cy }}
+            animate={{ x: inertialTipSvg.cx, y: inertialTipSvg.cy }}
             transition={vectorTransition}
             style={{ transformOrigin: '0px 0px' }}
             data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
           >
             <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
               {/* Direzione+intensità: sottile scia dietro il centro, allineata all'asse del movimento. */}
-              <line
-                x1={0}
-                y1={0.5}
-                x2={0}
-                y2={trailLen}
-                stroke={`rgba(236,244,252,${Math.min(0.42, trailOpacity + 0.06)})`}
-                strokeWidth={0.18}
+              <path
+                d={`M 0 0.42 Q 0 ${trailLen * 0.56} 0 ${trailLen}`}
+                stroke={`url(#${uid}-trail-grad)`}
+                strokeWidth={0.24}
                 strokeLinecap="round"
+                fill="none"
+                filter={`url(#${uid}-trail-soft)`}
                 vectorEffect="nonScalingStroke"
               />
               <circle
