@@ -28,46 +28,6 @@ function mapZoneToGlowRgba(zone) {
   return '';
 }
 
-function clampAxis(v) {
-  return Math.max(-100, Math.min(100, Number(v) || 0));
-}
-
-function buildWhatIfTrajectory({
-  currentDeltaKcal,
-  currentPosition,
-  tdee,
-  mapInputs,
-  baselineOffset,
-}) {
-  const horizonDays = 4; // 3–5 giorni, centrato su 4
-  const baseDelta = Number.isFinite(Number(currentDeltaKcal)) ? Number(currentDeltaKcal) : 0;
-  const baseX = Number(currentPosition?.x) || 0;
-  const baseY = Number(currentPosition?.y) || 0;
-  const safeTdee = Number.isFinite(Number(tdee)) ? Number(tdee) : 2000;
-  const baseTrajectory = { x: baseX, y: baseY, days: horizonDays, tdee: safeTdee };
-  const dayScale = horizonDays / 7;
-
-  const scenarioDefs = [
-    { type: 'reduce', deltaKcal: baseDelta - 300, trainingBoost: 0 },
-    { type: 'increase', deltaKcal: baseDelta + 300, trainingBoost: 0 },
-    { type: 'training', deltaKcal: baseDelta - 200, trainingBoost: 8 },
-  ];
-
-  const scenarios = scenarioDefs.map((s) => {
-    const deltaShiftAxis = ((s.deltaKcal - baseDelta) / 5) * dayScale;
-    const sim = calculateMetabolicMapPosition({
-      energyBalance: clampAxis((Number(mapInputs?.energyBalance) || 0) + deltaShiftAxis),
-      trainingLoad: clampAxis((Number(mapInputs?.trainingLoad) || 0) + s.trainingBoost),
-      sleepHours: Number(mapInputs?.sleepHours) || 8,
-      glycemicInstability: Number(mapInputs?.glycemicInstability) || 0,
-      baselineOffsetX: Number(baselineOffset?.x) || 0,
-      baselineOffsetY: Number(baselineOffset?.y) || 0,
-    });
-    return { type: s.type, position: { x: sim.x, y: sim.y } };
-  });
-
-  return { base_trajectory: baseTrajectory, scenarios };
-}
 
 function IconMapSwitch() {
   return (
@@ -123,7 +83,6 @@ export default function MetabolicUnifiedView({
   const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_TIMEFRAME);
   const [showHistoricTrail, setShowHistoricTrail] = useState(false);
   const [mapZoom, setMapZoom] = useState(1);
-  const [showWhatIf, setShowWhatIf] = useState(false);
 
   const compassHistoryKey = useMemo(
     () => historyFingerprint(dailyHistory, selectedTimeframe),
@@ -167,30 +126,6 @@ export default function MetabolicUnifiedView({
   const { lineProjection, lineTrend, lineConfidence } = useMemo(
     () => formatWeightProjectionUI(weightProjection),
     [weightProjection]
-  );
-  const canShowWhatIf = weightProjection?.confidence_label === 'alta';
-  const currentMapPosition = useMemo(
-    () =>
-      calculateMetabolicMapPosition({
-        energyBalance: metabolicMapInputs.energyBalance,
-        trainingLoad: metabolicMapInputs.trainingLoad,
-        sleepHours: metabolicMapInputs.sleepHours,
-        glycemicInstability: metabolicMapInputs.glycemicInstability,
-        baselineOffsetX: baselineOffset.x,
-        baselineOffsetY: baselineOffset.y,
-      }),
-    [metabolicMapInputs, baselineOffset]
-  );
-  const whatIfTrajectory = useMemo(
-    () =>
-      buildWhatIfTrajectory({
-        currentDeltaKcal: metabolicMapRawDetails?.meanKcal,
-        currentPosition: currentMapPosition,
-        tdee: userTargets?.kcal,
-        mapInputs: metabolicMapInputs,
-        baselineOffset,
-      }),
-    [metabolicMapRawDetails, currentMapPosition, userTargets, metabolicMapInputs, baselineOffset]
   );
 
   const reducedMotion =
@@ -271,30 +206,6 @@ export default function MetabolicUnifiedView({
           }}
         >
           {showHistoricTrail ? 'Rotta on' : 'Rotta'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowWhatIf((v) => !v)}
-          disabled={viewMode !== 'map' || !canShowWhatIf}
-          aria-pressed={showWhatIf}
-          aria-label="Attiva simulazione what-if"
-          title="Simulazione what-if"
-          style={{
-            minWidth: 62,
-            height: 32,
-            padding: '0 8px',
-            borderRadius: 9,
-            border: '1px solid rgba(255,255,255,0.12)',
-            background: showWhatIf ? 'rgba(70, 90, 110, 0.34)' : 'rgba(255,255,255,0.05)',
-            color: 'rgba(241,245,249,0.9)',
-            fontSize: '0.62rem',
-            fontWeight: 700,
-            letterSpacing: '0.05em',
-            cursor: viewMode === 'map' && canShowWhatIf ? 'pointer' : 'default',
-            opacity: viewMode === 'map' && canShowWhatIf ? 1 : 0.45,
-          }}
-        >
-          WHAT-IF
         </button>
         <button
           type="button"
@@ -500,12 +411,6 @@ export default function MetabolicUnifiedView({
               showHistoricTrailControl={false}
               zoomLevel={mapZoom}
               onZoomLevelChange={setMapZoom}
-              predictionConfidence={weightProjection?.confidence_label || 'bassa'}
-              whatIfTrajectory={whatIfTrajectory}
-              showWhatIf={canShowWhatIf && showWhatIf}
-              onToggleWhatIf={() => {
-                if (canShowWhatIf) setShowWhatIf((v) => !v);
-              }}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}

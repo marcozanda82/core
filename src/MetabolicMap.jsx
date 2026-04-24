@@ -314,10 +314,6 @@ export default function MetabolicMap({
   showHistoricTrailControl = true,
   zoomLevel: zoomLevelProp = undefined,
   onZoomLevelChange = null,
-  predictionConfidence = 'bassa',
-  whatIfTrajectory = null,
-  showWhatIf = false,
-  onToggleWhatIf = null,
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
@@ -480,32 +476,6 @@ export default function MetabolicMap({
     }
     return best;
   }, [radarRingRadii, distTarget]);
-  const ghostOpacity =
-    predictionConfidence === 'alta' ? 0.4 : predictionConfidence === 'media' ? 0.25 : 0;
-  const ghostSvg = useMemo(() => {
-    const dx = smoothedTipSvg.cx - anchorSvg.cx;
-    const dy = smoothedTipSvg.cy - anchorSvg.cy;
-    const g = { cx: smoothedTipSvg.cx + dx * 0.28, cy: smoothedTipSvg.cy + dy * 0.28 };
-    return {
-      cx: Math.max(0, Math.min(100, g.cx)),
-      cy: Math.max(0, Math.min(100, g.cy)),
-    };
-  }, [anchorSvg.cx, anchorSvg.cy, smoothedTipSvg.cx, smoothedTipSvg.cy]);
-  const scenarioDots = useMemo(() => {
-    if (!showWhatIf || predictionConfidence !== 'alta') return [];
-    const arr = Array.isArray(whatIfTrajectory?.scenarios)
-      ? whatIfTrajectory.scenarios.slice(0, 3)
-      : [];
-    return arr
-      .map((s) => {
-        const p = s?.position;
-        if (!p) return null;
-        const svg = mapPointToSvgCoords(clampMapAxis(p.x), clampMapAxis(p.y));
-        return { type: String(s.type || ''), cx: svg.cx, cy: svg.cy };
-      })
-      .filter(Boolean);
-  }, [showWhatIf, predictionConfidence, whatIfTrajectory]);
-
   return (
     <div
       style={{
@@ -549,9 +519,6 @@ export default function MetabolicMap({
         }}
         onTouchEnd={() => {
           pinchRef.current.active = false;
-        }}
-        onClick={() => {
-          if (typeof onToggleWhatIf === 'function') onToggleWhatIf();
         }}
       >
         {showHistoricTrailControl && historicTrail.canToggle ? (
@@ -748,57 +715,6 @@ export default function MetabolicMap({
               );
             })}
           </g>
-
-          {ghostOpacity > 0 ? (
-            <g aria-hidden>
-              <line
-                x1={smoothedTipSvg.cx}
-                y1={smoothedTipSvg.cy}
-                x2={ghostSvg.cx}
-                y2={ghostSvg.cy}
-                stroke="rgba(220,230,240,0.22)"
-                strokeWidth={0.16}
-                strokeDasharray="0.7 1.5"
-                vectorEffect="nonScalingStroke"
-              />
-              <circle
-                cx={ghostSvg.cx}
-                cy={ghostSvg.cy}
-                r={TIP_CIRCLE_R * 0.92}
-                fill={`rgba(220,230,240,${ghostOpacity})`}
-                stroke={`rgba(255,255,255,${ghostOpacity * 0.55})`}
-                strokeWidth={0.22}
-                vectorEffect="nonScalingStroke"
-              />
-            </g>
-          ) : null}
-          {scenarioDots.length > 0 ? (
-            <g aria-hidden>
-              {scenarioDots.map((s) => (
-                <g key={`whatif-${s.type}`}>
-                  <line
-                    x1={smoothedTipSvg.cx}
-                    y1={smoothedTipSvg.cy}
-                    x2={s.cx}
-                    y2={s.cy}
-                    stroke="rgba(210,220,230,0.14)"
-                    strokeWidth={0.14}
-                    strokeDasharray="0.55 1.1"
-                    vectorEffect="nonScalingStroke"
-                  />
-                  <circle
-                    cx={s.cx}
-                    cy={s.cy}
-                    r={TIP_CIRCLE_R * 0.52}
-                    fill="rgba(215,225,235,0.24)"
-                    stroke="rgba(255,255,255,0.18)"
-                    strokeWidth={0.18}
-                    vectorEffect="nonScalingStroke"
-                  />
-                </g>
-              ))}
-            </g>
-          ) : null}
 
           {showHistoricTrail && historicTrail.polylinePoints ? (
             <g aria-hidden>
