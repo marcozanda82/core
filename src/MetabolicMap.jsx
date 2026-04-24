@@ -252,6 +252,11 @@ function needleRotationDegSvg(targetSvg, anchorSvg) {
   return baseDeg + 90;
 }
 
+function rotationDegFromDirection(dirX, dirY) {
+  const baseDeg = (Math.atan2(dirY, dirX) * 180) / Math.PI;
+  return baseDeg + 90;
+}
+
 function chaikinSmooth(points, iterations = 2) {
   let arr = Array.isArray(points) ? points.slice() : [];
   if (arr.length < 3) return arr;
@@ -378,9 +383,19 @@ export default function MetabolicMap({
   /** Angolo (gradi) tra Ancora e punto finale nello spazio mappa — Fase 1 richiesta. */
   const angleMapDeg = compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY);
 
-  const needleRotateDeg = lifestyleNearlyIdle
-    ? needleRotationDegSvg(MAP_CENTER_SVG, anchorSvg)
-    : needleRotationDegSvg(inertialTipSvg, anchorSvg);
+  const projectedSvg = useMemo(() => {
+    if (!projectedPosition) return null;
+    return mapPointToSvgCoords(clampMapAxis(projectedPosition.x), clampMapAxis(projectedPosition.y));
+  }, [projectedPosition]);
+  const directionVector = useMemo(() => {
+    const target = projectedSvg || inertialTipSvg;
+    const dx = (target?.cx ?? inertialTipSvg.cx) - inertialTipSvg.cx;
+    const dy = (target?.cy ?? inertialTipSvg.cy) - inertialTipSvg.cy;
+    const mag = Math.hypot(dx, dy);
+    if (mag < 1e-6) return { x: 0, y: -1, mag: 0 };
+    return { x: dx / mag, y: dy / mag, mag };
+  }, [projectedSvg, inertialTipSvg.cx, inertialTipSvg.cy]);
+  const needleRotateDeg = rotationDegFromDirection(directionVector.x, directionVector.y);
   const needleBladeOpacity = lifestyleNearlyIdle ? 0.32 : 0.86;
 
   const distAnchor = Math.hypot(
@@ -455,19 +470,18 @@ export default function MetabolicMap({
     }
     return best;
   }, [radarRingRadii, distTarget]);
-  const projectedSvg = useMemo(() => {
-    if (!projectedPosition) return null;
-    return mapPointToSvgCoords(clampMapAxis(projectedPosition.x), clampMapAxis(projectedPosition.y));
-  }, [projectedPosition]);
   const projectedLineEnd = useMemo(() => {
     if (!projectedSvg) return null;
-    const dx = projectedSvg.cx - inertialTipSvg.cx;
-    const dy = projectedSvg.cy - inertialTipSvg.cy;
+    const mag = directionVector.mag;
     // Noise filter: micro spostamenti non aggiornano la traiettoria futura.
-    if (Math.hypot(dx, dy) < 0.9) return null;
+    if (mag < 0.9) return null;
     const speedFactor = Math.max(0.65, Math.min(1.35, 0.75 + trajectorySpeed / 10));
-    return { x: inertialTipSvg.cx + dx * speedFactor, y: inertialTipSvg.cy + dy * speedFactor };
-  }, [projectedSvg, inertialTipSvg.cx, inertialTipSvg.cy, trajectorySpeed]);
+    const length = mag * speedFactor;
+    return {
+      x: inertialTipSvg.cx + directionVector.x * length,
+      y: inertialTipSvg.cy + directionVector.y * length,
+    };
+  }, [projectedSvg, inertialTipSvg.cx, inertialTipSvg.cy, trajectorySpeed, directionVector]);
   return (
     <div
       style={{
