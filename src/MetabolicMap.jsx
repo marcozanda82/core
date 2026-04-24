@@ -124,7 +124,8 @@ const NEEDLE_BLADE_LEN_MAX = 12.5;
 /** Valore di riferimento magnitudo (spazio mappa −100…100) per allungare l’ago al massimo. */
 const LIFESTYLE_LEN_FOR_FULL_NEEDLE = 95;
 
-const VECTOR_MOTION_TRANSITION = { duration: 0.5, ease: [0.4, 0, 0.2, 1] };
+const VECTOR_MOTION_DURATION_MS = 280;
+const VECTOR_MOTION_TRANSITION = { duration: VECTOR_MOTION_DURATION_MS / 1000, ease: 'linear' };
 
 const ZONE_LABELS = {
   green: 'Blue Zone (Longevità)',
@@ -381,15 +382,19 @@ export default function MetabolicMap({
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
   useEffect(() => {
     let raf = 0;
-    const tick = () => {
-      setSmoothedTipSvg((prev) => {
-        const next = {
-          cx: lerp(prev?.cx ?? tipSvg.cx, tipSvg.cx, 0.1),
-          cy: lerp(prev?.cy ?? tipSvg.cy, tipSvg.cy, 0.1),
-        };
-        return next;
-      });
-      raf = requestAnimationFrame(tick);
+    const startAt = performance.now();
+    const startPos = { cx: smoothedTipSvg.cx, cy: smoothedTipSvg.cy };
+    const endPos = { cx: tipSvg.cx, cy: tipSvg.cy };
+    const tick = (now) => {
+      const elapsed = now - startAt;
+      const t = Math.max(0, Math.min(1, elapsed / VECTOR_MOTION_DURATION_MS));
+      // Stesso fattore t su entrambi gli assi: velocità costante e traiettoria coerente.
+      const next = {
+        cx: startPos.cx + (endPos.cx - startPos.cx) * t,
+        cy: startPos.cy + (endPos.cy - startPos.cy) * t,
+      };
+      setSmoothedTipSvg(next);
+      if (t < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
