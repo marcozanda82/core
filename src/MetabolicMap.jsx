@@ -379,6 +379,10 @@ export default function MetabolicMap({
   const trajectorySpeed = Number.isFinite(Number(trajectoryVelocity)) ? Number(trajectoryVelocity) : 0;
   const lifestyleLen = Math.max(Math.hypot(lifestyleDx, lifestyleDy), trajectorySpeed);
   const lifestyleNearlyIdle = lifestyleLen < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
+  const compassCenter = useMemo(
+    () => ({ x: inertialTipSvg.cx, y: inertialTipSvg.cy }),
+    [inertialTipSvg.cx, inertialTipSvg.cy]
+  );
 
   /** Angolo (gradi) tra Ancora e punto finale nello spazio mappa — Fase 1 richiesta. */
   const angleMapDeg = compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY);
@@ -389,12 +393,12 @@ export default function MetabolicMap({
   }, [projectedPosition]);
   const directionVector = useMemo(() => {
     const target = projectedSvg || inertialTipSvg;
-    const dx = (target?.cx ?? inertialTipSvg.cx) - inertialTipSvg.cx;
-    const dy = (target?.cy ?? inertialTipSvg.cy) - inertialTipSvg.cy;
+    const dx = (target?.cx ?? compassCenter.x) - compassCenter.x;
+    const dy = (target?.cy ?? compassCenter.y) - compassCenter.y;
     const mag = Math.hypot(dx, dy);
     if (mag < 1e-6) return { x: 0, y: -1, mag: 0 };
     return { x: dx / mag, y: dy / mag, mag };
-  }, [projectedSvg, inertialTipSvg.cx, inertialTipSvg.cy]);
+  }, [projectedSvg, compassCenter.x, compassCenter.y, inertialTipSvg]);
   const needleRotateDeg = rotationDegFromDirection(directionVector.x, directionVector.y);
   const needleBladeOpacity = lifestyleNearlyIdle ? 0.32 : 0.86;
 
@@ -478,10 +482,10 @@ export default function MetabolicMap({
     const speedFactor = Math.max(0.65, Math.min(1.35, 0.75 + trajectorySpeed / 10));
     const length = mag * speedFactor;
     return {
-      x: inertialTipSvg.cx + directionVector.x * length,
-      y: inertialTipSvg.cy + directionVector.y * length,
+      x: compassCenter.x + directionVector.x * length,
+      y: compassCenter.y + directionVector.y * length,
     };
-  }, [projectedSvg, inertialTipSvg.cx, inertialTipSvg.cy, trajectorySpeed, directionVector]);
+  }, [projectedSvg, compassCenter.x, compassCenter.y, trajectorySpeed, directionVector]);
   return (
     <div
       style={{
@@ -686,8 +690,8 @@ export default function MetabolicMap({
           </g>
           {projectedLineEnd ? (
             <line
-              x1={inertialTipSvg.cx}
-              y1={inertialTipSvg.cy}
+              x1={compassCenter.x}
+              y1={compassCenter.y}
               x2={projectedLineEnd.x}
               y2={projectedLineEnd.y}
               stroke="rgba(220,232,244,0.2)"
@@ -700,8 +704,8 @@ export default function MetabolicMap({
 
 
           <motion.g
-            initial={{ x: inertialTipSvg.cx, y: inertialTipSvg.cy }}
-            animate={{ x: inertialTipSvg.cx, y: inertialTipSvg.cy }}
+            initial={{ x: compassCenter.x, y: compassCenter.y }}
+            animate={{ x: compassCenter.x, y: compassCenter.y }}
             transition={vectorTransition}
             style={{ transformOrigin: '0px 0px' }}
             data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
