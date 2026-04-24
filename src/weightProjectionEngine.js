@@ -169,6 +169,7 @@ function projectionDaysForConfidence(label) {
  *   projection_days: number | null,
  *   trend_label: string,
  *   confidence_label: 'alta' | 'media' | 'bassa',
+ *   adherence_score: number,
  * }}
  */
 export function computeWeightProjectionFromInputs({
@@ -222,6 +223,7 @@ export function computeWeightProjectionFromInputs({
       projection_days: null,
       trend_label,
       confidence_label,
+      adherence_score: adherence,
     };
   }
 
@@ -240,6 +242,7 @@ export function computeWeightProjectionFromInputs({
     projection_days,
     trend_label,
     confidence_label,
+    adherence_score: adherence,
   };
 }
 
@@ -271,4 +274,105 @@ export function formatWeightProjectionUI(p) {
   const lineProjection = `${a} → ${b} kg in ${projection_days} giorni`;
 
   return { lineProjection, lineTrend, lineConfidence };
+}
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const OPTIMAL_ZONE_RADIUS = 35;
+const SMALL_DISTANCE_DELTA = 1.5;
+
+function pointDistanceFromCenter(pos) {
+  const x = Number(pos?.x);
+  const y = Number(pos?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return NaN;
+  return Math.hypot(x, y);
+}
+
+function mapTrendToSeverity(trendLabel) {
+  const t = String(trendLabel || '').toLowerCase();
+  if (t.includes('crescita veloce')) return 3;
+  if (t.includes('crescita moderata')) return 2;
+  if (t.includes('crescita lenta')) return 1;
+  if (t.includes('stabile')) return 0;
+  if (t.includes('in calo')) return -1;
+  return 0;
+}
+
+/**
+ * Alert traiettoria intelligente: notifica solo cambiamenti significativi.
+ *
+ * @param {object} input
+ * @param {{x:number,y:number}} input.current_position
+ * @param {{x:number,y:number}} input.ghost_position
+ * @param {string} input.trend_label
+ * @param {'alta'|'media'|'bassa'} input.confidence_label
+ * @param {number} input.adherence_score
+ * @param {number | null | undefined} input.lastNotificationAt
+ * @param {number} [input.projected_days]
+ * @param {string | null | undefined} [input.prev_trend_label]
+ * @param {number | null | undefined} [input.nowMs]
+ * @returns {{ shouldNotify: boolean, message: string }}
+ */
+export function computeTrajectoryAlert(input = {}) {
+  const confidence = String(input?.confidence_label || '').toLowerCase();
+  const adherence = Number(input?.adherence_score);
+  const nowMs = Number.isFinite(Number(input?.nowMs)) ? Number(input.nowMs) : Date.now();
+  const lastAt = Number(input?.lastNotificationAt);
+
+  if (confidence !== 'alta') return { shouldNotify: false, message: '' };
+  if (!Number.isFinite(adherence) || adherence < 0.7) return { shouldNotify: false, message: '' };
+  if (Number.isFinite(lastAt) && nowMs - lastAt < ONE_DAY_MS) {
+    return { shouldNotify: false, message: '' };
+  }
+
+  const trendLabel = String(input?.trend_label || '').toLowerCase();
+  const currentDist = pointDistanceFromCenter(input?.current_position);
+  const ghostDist = pointDistanceFromCenter(input?.ghost_position);
+  const deltaFromCenter = ghostDist - currentDist;
+  const absDelta = Math.abs(deltaFromCenter);
+
+  // Ignore micro movimenti / rumore.
+  if (!Number.isFinite(currentDist) || !Number.isFinite(ghostDist) || absDelta < SMALL_DISTANCE_DELTA) {
+    return { shouldNotify: false, message: '' };
+  }
+
+  const projectedDaysRaw = Number(input?.projected_days);
+  const projectedDays = Number.isFinite(projectedDaysRaw) ? projectedDaysRaw : 3;
+  const ghostOutsideOptimal = ghostDist > OPTIMAL_ZONE_RADIUS;
+  const movingAway = deltaFromCenter > 0;
+  const movingToward = deltaFromCenter < 0;
+
+  // TYPE 1 — EXIT ZONE
+  if (ghostOutsideOptimal && projectedDays >= 2 && projectedDays <= 4) {
+    return {
+      shouldNotify: true,
+      message: 'Se continui cosi, uscirai dalla zona entro pochi giorni',
+    };
+  }
+
+  // IGNORE: trend stabile (eccetto traiettoria positiva esplicita)
+  const trendStable = trendLabel.includes('stabile');
+  if (trendStable && !movingToward) {
+    return { shouldNotify: false, message: '' };
+  }
+
+  // TYPE 2 — NEGATIVE DRIFT
+  const prevTrendSeverity = mapTrendToSeverity(input?.prev_trend_label);
+  const currTrendSeverity = mapTrendToSeverity(trendLabel);
+  const trendWorsening = currTrendSeverity > prevTrendSeverity || currTrendSeverity >= 2;
+  if (trendWorsening && movingAway) {
+    return {
+      shouldNotify: true,
+      message: 'Stai lentamente uscendo dalla zona ottimale',
+    };
+  }
+
+  // TYPE 3 — POSITIVE TRAJECTORY
+  if (movingToward && trendStable && confidence === 'alta') {
+    return {
+      shouldNotify: true,
+      message: 'Se continui cosi, sei in traiettoria perfetta',
+    };
+  }
+
+  return { shouldNotify: false, message: '' };
 }
