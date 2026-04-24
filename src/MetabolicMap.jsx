@@ -315,6 +315,39 @@ function chaikinSmooth(points, iterations = 2) {
   return arr;
 }
 
+function movingAveragePoints(points, windowSize = 5) {
+  const src = Array.isArray(points) ? points : [];
+  if (src.length === 0) return [];
+  const w = Math.max(3, Math.min(7, windowSize));
+  const half = Math.floor(w / 2);
+  return src.map((_, i) => {
+    let sx = 0;
+    let sy = 0;
+    let c = 0;
+    for (let j = i - half; j <= i + half; j += 1) {
+      if (j < 0 || j >= src.length) continue;
+      sx += src[j].cx;
+      sy += src[j].cy;
+      c += 1;
+    }
+    return c > 0 ? { cx: sx / c, cy: sy / c } : src[i];
+  });
+}
+
+function keepSignificantPoints(points, threshold = 1.05) {
+  const src = Array.isArray(points) ? points : [];
+  if (src.length <= 2) return src;
+  const out = [src[0]];
+  for (let i = 1; i < src.length - 1; i += 1) {
+    const prev = out[out.length - 1];
+    const curr = src[i];
+    const dist = Math.hypot(curr.cx - prev.cx, curr.cy - prev.cy);
+    if (dist >= threshold) out.push(curr);
+  }
+  out.push(src[src.length - 1]);
+  return out;
+}
+
 /**
  * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
  */
@@ -495,7 +528,11 @@ export default function MetabolicMap({
       .map((p) => mapPointToSvgCoords(clampMapAxis(p?.x), clampMapAxis(p?.y)))
       .filter((p) => Number.isFinite(p.cx) && Number.isFinite(p.cy));
   }, [dailyPositions]);
-  const pastPointsSmooth = useMemo(() => chaikinSmooth(pastPointsSvg, 2), [pastPointsSvg]);
+  const pastPointsSmooth = useMemo(() => {
+    const averaged = movingAveragePoints(pastPointsSvg, 5);
+    const significant = keepSignificantPoints(averaged, 1.05);
+    return chaikinSmooth(significant, 2);
+  }, [pastPointsSvg]);
   const projectedSvg = useMemo(() => {
     if (!projectedPosition) return null;
     return mapPointToSvgCoords(clampMapAxis(projectedPosition.x), clampMapAxis(projectedPosition.y));
@@ -504,6 +541,8 @@ export default function MetabolicMap({
     if (!projectedSvg) return null;
     const dx = projectedSvg.cx - tipSvg.cx;
     const dy = projectedSvg.cy - tipSvg.cy;
+    // Noise filter: micro spostamenti non aggiornano la traiettoria futura.
+    if (Math.hypot(dx, dy) < 0.9) return null;
     const speedFactor = Math.max(0.65, Math.min(1.35, 0.75 + trajectorySpeed / 10));
     return { x: tipSvg.cx + dx * speedFactor, y: tipSvg.cy + dy * speedFactor };
   }, [projectedSvg, tipSvg.cx, tipSvg.cy, trajectorySpeed]);
