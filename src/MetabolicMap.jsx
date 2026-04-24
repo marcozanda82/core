@@ -474,18 +474,6 @@ export default function MetabolicMap({
     }
     return best;
   }, [radarRingRadii, distTarget]);
-  const projectedLineEnd = useMemo(() => {
-    if (!projectedSvg) return null;
-    const mag = directionVector.mag;
-    // Noise filter: micro spostamenti non aggiornano la traiettoria futura.
-    if (mag < 0.9) return null;
-    const speedFactor = Math.max(0.65, Math.min(1.35, 0.75 + trajectorySpeed / 10));
-    const length = mag * speedFactor;
-    return {
-      x: compassCenter.x + directionVector.x * length,
-      y: compassCenter.y + directionVector.y * length,
-    };
-  }, [projectedSvg, compassCenter.x, compassCenter.y, trajectorySpeed, directionVector]);
   return (
     <div
       style={{
@@ -618,9 +606,6 @@ export default function MetabolicMap({
             <filter id={`${uid}-ring-glow`} x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" />
             </filter>
-            <filter id={`${uid}-future-blur`} x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="0.35" />
-            </filter>
             <filter id={`${uid}-trail-soft`} x="-60%" y="-60%" width="220%" height="220%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="0.24" />
             </filter>
@@ -688,21 +673,6 @@ export default function MetabolicMap({
               );
             })}
           </g>
-          {projectedLineEnd ? (
-            <line
-              x1={compassCenter.x}
-              y1={compassCenter.y}
-              x2={projectedLineEnd.x}
-              y2={projectedLineEnd.y}
-              stroke="rgba(220,232,244,0.2)"
-              strokeWidth={0.18}
-              strokeDasharray="0.9 1.5"
-              filter={`url(#${uid}-future-blur)`}
-              vectorEffect="nonScalingStroke"
-            />
-          ) : null}
-
-
           <motion.g
             initial={{ x: compassCenter.x, y: compassCenter.y }}
             animate={{ x: compassCenter.x, y: compassCenter.y }}
