@@ -120,6 +120,8 @@ const NEEDLE_BLADE_LEN_IDLE = 3.2;
 /** Estremi lama ago (viewBox) in funzione della magnitudo anchor → target (spazio mappa). */
 const NEEDLE_BLADE_LEN_MIN = 4;
 const NEEDLE_BLADE_LEN_MAX = 12.5;
+const NEEDLE_TRAIL_LEN_MIN = 0.2;
+const NEEDLE_TRAIL_LEN_MAX = 3.8;
 
 /** Valore di riferimento magnitudo (spazio mappa −100…100) per allungare l’ago al massimo. */
 const LIFESTYLE_LEN_FOR_FULL_NEEDLE = 95;
@@ -413,6 +415,16 @@ export default function MetabolicMap({
     if (lifestyleNearlyIdle) return NEEDLE_BLADE_LEN_IDLE;
     const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
     return NEEDLE_BLADE_LEN_MIN + t * (NEEDLE_BLADE_LEN_MAX - NEEDLE_BLADE_LEN_MIN);
+  }, [lifestyleNearlyIdle, lifestyleLen]);
+  const trailLen = useMemo(() => {
+    if (lifestyleNearlyIdle) return NEEDLE_TRAIL_LEN_MIN;
+    const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
+    return NEEDLE_TRAIL_LEN_MIN + t * (NEEDLE_TRAIL_LEN_MAX - NEEDLE_TRAIL_LEN_MIN);
+  }, [lifestyleNearlyIdle, lifestyleLen]);
+  const trailOpacity = useMemo(() => {
+    if (lifestyleNearlyIdle) return 0.06;
+    const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
+    return 0.09 + t * 0.22;
   }, [lifestyleNearlyIdle, lifestyleLen]);
 
   const needlePolygonPoints = useMemo(() => {
@@ -735,6 +747,17 @@ export default function MetabolicMap({
             data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
           >
             <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
+              {/* Direzione+intensità: sottile scia dietro il centro, allineata all'asse del movimento. */}
+              <line
+                x1={0}
+                y1={0.5}
+                x2={0}
+                y2={trailLen}
+                stroke={`rgba(226,236,245,${trailOpacity})`}
+                strokeWidth={0.18}
+                strokeLinecap="round"
+                vectorEffect="nonScalingStroke"
+              />
               <circle
                 r={ANCHOR_CIRCLE_R}
                 cx={0}
