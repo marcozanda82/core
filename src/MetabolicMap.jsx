@@ -296,6 +296,25 @@ function needleRotationDegSvg(targetSvg, anchorSvg) {
   return baseDeg + 90;
 }
 
+function chaikinSmooth(points, iterations = 2) {
+  let arr = Array.isArray(points) ? points.slice() : [];
+  if (arr.length < 3) return arr;
+  for (let k = 0; k < iterations; k += 1) {
+    const next = [arr[0]];
+    for (let i = 0; i < arr.length - 1; i += 1) {
+      const p0 = arr[i];
+      const p1 = arr[i + 1];
+      next.push(
+        { cx: p0.cx * 0.75 + p1.cx * 0.25, cy: p0.cy * 0.75 + p1.cy * 0.25 },
+        { cx: p0.cx * 0.25 + p1.cx * 0.75, cy: p0.cy * 0.25 + p1.cy * 0.75 },
+      );
+    }
+    next.push(arr[arr.length - 1]);
+    arr = next;
+  }
+  return arr;
+}
+
 /**
  * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
  */
@@ -314,6 +333,10 @@ export default function MetabolicMap({
   showHistoricTrailControl = true,
   zoomLevel: zoomLevelProp = undefined,
   onZoomLevelChange = null,
+  dailyPositions = null,
+  currentPosition = null,
+  projectedPosition = null,
+  trajectoryVelocity = 0,
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
@@ -369,8 +392,8 @@ export default function MetabolicMap({
   );
 
   const displayAura = finalAura;
-  const displayX = shiftedX;
-  const displayY = shiftedY;
+  const displayX = Number.isFinite(Number(currentPosition?.x)) ? Number(currentPosition.x) : shiftedX;
+  const displayY = Number.isFinite(Number(currentPosition?.y)) ? Number(currentPosition.y) : shiftedY;
 
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
@@ -382,7 +405,8 @@ export default function MetabolicMap({
 
   const lifestyleDx = shiftedX - baselineX;
   const lifestyleDy = shiftedY - baselineY;
-  const lifestyleLen = Math.hypot(lifestyleDx, lifestyleDy);
+  const trajectorySpeed = Number.isFinite(Number(trajectoryVelocity)) ? Number(trajectoryVelocity) : 0;
+  const lifestyleLen = Math.max(Math.hypot(lifestyleDx, lifestyleDy), trajectorySpeed);
   const lifestyleNearlyIdle = lifestyleLen < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
 
   /** Angolo (gradi) tra Ancora e punto finale nello spazio mappa — Fase 1 richiesta. */
@@ -465,6 +489,24 @@ export default function MetabolicMap({
     }
     return best;
   }, [radarRingRadii, distTarget]);
+  const pastPointsSvg = useMemo(() => {
+    const src = Array.isArray(dailyPositions) ? dailyPositions.slice(-7) : [];
+    return src
+      .map((p) => mapPointToSvgCoords(clampMapAxis(p?.x), clampMapAxis(p?.y)))
+      .filter((p) => Number.isFinite(p.cx) && Number.isFinite(p.cy));
+  }, [dailyPositions]);
+  const pastPointsSmooth = useMemo(() => chaikinSmooth(pastPointsSvg, 2), [pastPointsSvg]);
+  const projectedSvg = useMemo(() => {
+    if (!projectedPosition) return null;
+    return mapPointToSvgCoords(clampMapAxis(projectedPosition.x), clampMapAxis(projectedPosition.y));
+  }, [projectedPosition]);
+  const projectedLineEnd = useMemo(() => {
+    if (!projectedSvg) return null;
+    const dx = projectedSvg.cx - tipSvg.cx;
+    const dy = projectedSvg.cy - tipSvg.cy;
+    const speedFactor = Math.max(0.65, Math.min(1.35, 0.75 + trajectorySpeed / 10));
+    return { x: tipSvg.cx + dx * speedFactor, y: tipSvg.cy + dy * speedFactor };
+  }, [projectedSvg, tipSvg.cx, tipSvg.cy, trajectorySpeed]);
   return (
     <div
       style={{
@@ -637,6 +679,9 @@ export default function MetabolicMap({
             <filter id={`${uid}-ring-glow`} x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" />
             </filter>
+            <filter id={`${uid}-future-blur`} x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="0.35" />
+            </filter>
           </defs>
 
           {/* Radar rings + multi-gradient zones */}
@@ -697,6 +742,41 @@ export default function MetabolicMap({
               );
             })}
           </g>
+          {pastPointsSmooth.length > 1 ? (
+            <g aria-hidden>
+              {pastPointsSmooth.slice(1).map((p, idx) => {
+                const prev = pastPointsSmooth[idx];
+                const t = idx / Math.max(1, pastPointsSmooth.length - 2);
+                const op = 0.05 + t * 0.25;
+                return (
+                  <line
+                    key={`past-seg-${idx}`}
+                    x1={prev.cx}
+                    y1={prev.cy}
+                    x2={p.cx}
+                    y2={p.cy}
+                    stroke={`rgba(206,218,232,${op.toFixed(3)})`}
+                    strokeWidth={0.16}
+                    strokeLinecap="round"
+                    vectorEffect="nonScalingStroke"
+                  />
+                );
+              })}
+            </g>
+          ) : null}
+          {projectedLineEnd ? (
+            <line
+              x1={tipSvg.cx}
+              y1={tipSvg.cy}
+              x2={projectedLineEnd.x}
+              y2={projectedLineEnd.y}
+              stroke="rgba(220,232,244,0.2)"
+              strokeWidth={0.18}
+              strokeDasharray="0.9 1.5"
+              filter={`url(#${uid}-future-blur)`}
+              vectorEffect="nonScalingStroke"
+            />
+          ) : null}
 
           {showHistoricTrail && historicTrail.polylinePoints ? (
             <g aria-hidden>
@@ -740,8 +820,8 @@ export default function MetabolicMap({
           ) : null}
 
           <motion.g
-            initial={{ x: anchorSvg.cx, y: anchorSvg.cy }}
-            animate={{ x: anchorSvg.cx, y: anchorSvg.cy }}
+            initial={{ x: tipSvg.cx, y: tipSvg.cy }}
+            animate={{ x: tipSvg.cx, y: tipSvg.cy }}
             transition={vectorTransition}
             style={{ transformOrigin: '0px 0px' }}
             data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}

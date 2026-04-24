@@ -28,6 +28,65 @@ function mapZoneToGlowRgba(zone) {
   return '';
 }
 
+function clampAxis(v) {
+  return Math.max(-100, Math.min(100, Number(v) || 0));
+}
+
+function dailyTrainingToMapAxis(dayTrainingLoad) {
+  const t = Math.max(0, Math.min(100, Number(dayTrainingLoad) || 0));
+  return clampAxis(((t - 35) / 65) * 100);
+}
+
+function buildDailyPointFromLogDay(day, baselineOffset) {
+  const kcalBalance = Number(day?.kcalBalance) || 0;
+  const trainingLoadAxis = dailyTrainingToMapAxis(day?.trainingLoad);
+  const sleepHours = Number(day?.sleepHours);
+  const safeSleep = Number.isFinite(sleepHours) && sleepHours > 0 ? sleepHours : 8;
+  const surplusFactor = Math.max(0, Math.min(1, kcalBalance / 500));
+  const sleepStress = safeSleep < 7.5 ? Math.max(0, Math.min(1, (7.5 - safeSleep) / 7.5)) : 0;
+  const glycemicInstability = Math.max(0, Math.min(100, (0.4 * surplusFactor + 0.45 * sleepStress) * 100));
+  return calculateMetabolicMapPosition({
+    energyBalance: clampAxis(kcalBalance / 5),
+    trainingLoad: trainingLoadAxis,
+    sleepHours: safeSleep,
+    glycemicInstability,
+    baselineOffsetX: baselineOffset.x,
+    baselineOffsetY: baselineOffset.y,
+  });
+}
+
+function buildTrajectoryProjection(dailyPositions) {
+  const arr = Array.isArray(dailyPositions) ? dailyPositions : [];
+  const fallback = { projected: { x: 0, y: 0 }, velocity: 0 };
+  if (arr.length === 0) return fallback;
+  const current = arr[arr.length - 1];
+  if (arr.length < 2) return { projected: { x: current.x, y: current.y }, velocity: 0 };
+
+  let vx = 0;
+  let vy = 0;
+  let count = 0;
+  for (let i = Math.max(1, arr.length - 3); i < arr.length; i += 1) {
+    const prev = arr[i - 1];
+    const next = arr[i];
+    vx += (Number(next?.x) || 0) - (Number(prev?.x) || 0);
+    vy += (Number(next?.y) || 0) - (Number(prev?.y) || 0);
+    count += 1;
+  }
+  if (count > 0) {
+    vx /= count;
+    vy /= count;
+  }
+  const velocity = Math.hypot(vx, vy);
+  const projectionScale = Math.max(1.6, Math.min(3.2, velocity * 0.9 + 1.6));
+  return {
+    projected: {
+      x: clampAxis((Number(current.x) || 0) + vx * projectionScale),
+      y: clampAxis((Number(current.y) || 0) + vy * projectionScale),
+    },
+    velocity,
+  };
+}
+
 
 function IconMapSwitch() {
   return (
@@ -126,6 +185,14 @@ export default function MetabolicUnifiedView({
   const { lineProjection, lineTrend, lineConfidence } = useMemo(
     () => formatWeightProjectionUI(weightProjection),
     [weightProjection]
+  );
+  const dailyMapPositions = useMemo(() => {
+    const slice = Array.isArray(dailyHistory) ? dailyHistory.slice(-7) : [];
+    return slice.map((day) => buildDailyPointFromLogDay(day, baselineOffset));
+  }, [dailyHistory, baselineOffset]);
+  const projectedTrajectory = useMemo(
+    () => buildTrajectoryProjection(dailyMapPositions),
+    [dailyMapPositions]
   );
 
   const reducedMotion =
@@ -411,6 +478,10 @@ export default function MetabolicUnifiedView({
               showHistoricTrailControl={false}
               zoomLevel={mapZoom}
               onZoomLevelChange={setMapZoom}
+              dailyPositions={dailyMapPositions}
+              currentPosition={dailyMapPositions[dailyMapPositions.length - 1] || null}
+              projectedPosition={projectedTrajectory.projected}
+              trajectoryVelocity={projectedTrajectory.velocity}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}
