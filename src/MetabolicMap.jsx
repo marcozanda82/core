@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { calculateMetabolicMapPosition, calculateBaselineOffset } from './metabolicMapEngine';
 import { biometricsToMapBaselineInput } from './biometricHistory';
@@ -313,6 +313,7 @@ export default function MetabolicMap({
   showHistoricTrailControl = true,
   zoomLevel: zoomLevelProp = undefined,
   onZoomLevelChange = null,
+  predictionConfidence = 'bassa',
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
@@ -321,6 +322,7 @@ export default function MetabolicMap({
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
   const [showHistoricTrailLocal, setShowHistoricTrailLocal] = useState(false);
   const [zoomLevelLocal, setZoomLevelLocal] = useState(1);
+  const [smoothedTipSvg, setSmoothedTipSvg] = useState(MAP_CENTER_SVG);
   const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1 });
   const showHistoricTrail = typeof showHistoricTrailProp === 'boolean'
     ? showHistoricTrailProp
@@ -374,6 +376,21 @@ export default function MetabolicMap({
 
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      setSmoothedTipSvg((prev) => {
+        const next = {
+          cx: lerp(prev?.cx ?? tipSvg.cx, tipSvg.cx, 0.1),
+          cy: lerp(prev?.cy ?? tipSvg.cy, tipSvg.cy, 0.1),
+        };
+        return next;
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [tipSvg.cx, tipSvg.cy]);
 
   const historicTrail = useMemo(
     () => buildHistoricBaselineTrailSvg(bodyMetricsHistory, baselineX, baselineY),
@@ -441,6 +458,31 @@ export default function MetabolicMap({
     () => Array.from({ length: 10 }, (_, i) => 5 + i * 4.5),
     []
   );
+  const activeRingRadius = useMemo(() => {
+    if (!radarRingRadii.length) return null;
+    let best = radarRingRadii[0];
+    let bestDiff = Math.abs(best - distTarget);
+    for (let i = 1; i < radarRingRadii.length; i += 1) {
+      const rr = radarRingRadii[i];
+      const diff = Math.abs(rr - distTarget);
+      if (diff < bestDiff) {
+        best = rr;
+        bestDiff = diff;
+      }
+    }
+    return best;
+  }, [radarRingRadii, distTarget]);
+  const ghostOpacity =
+    predictionConfidence === 'alta' ? 0.4 : predictionConfidence === 'media' ? 0.25 : 0;
+  const ghostSvg = useMemo(() => {
+    const dx = smoothedTipSvg.cx - anchorSvg.cx;
+    const dy = smoothedTipSvg.cy - anchorSvg.cy;
+    const g = { cx: smoothedTipSvg.cx + dx * 0.28, cy: smoothedTipSvg.cy + dy * 0.28 };
+    return {
+      cx: Math.max(0, Math.min(100, g.cx)),
+      cy: Math.max(0, Math.min(100, g.cy)),
+    };
+  }, [anchorSvg.cx, anchorSvg.cy, smoothedTipSvg.cx, smoothedTipSvg.cy]);
 
   return (
     <div
@@ -618,6 +660,9 @@ export default function MetabolicMap({
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
+            <filter id={`${uid}-ring-glow`} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" />
+            </filter>
           </defs>
 
           {/* Radar rings + multi-gradient zones */}
@@ -637,6 +682,18 @@ export default function MetabolicMap({
                 />
               );
             })}
+            {activeRingRadius != null ? (
+              <circle
+                cx={50}
+                cy={50}
+                r={activeRingRadius}
+                fill="none"
+                stroke="rgba(225,235,245,0.22)"
+                strokeWidth={0.28}
+                filter={`url(#${uid}-ring-glow)`}
+                vectorEffect="nonScalingStroke"
+              />
+            ) : null}
             {LONGEVITY_SCORE_RING_LEVELS.map((level) => {
               const ringR = svgRadiusForMetabolicScore(level);
               return (
@@ -666,6 +723,30 @@ export default function MetabolicMap({
               );
             })}
           </g>
+
+          {ghostOpacity > 0 ? (
+            <g aria-hidden>
+              <line
+                x1={smoothedTipSvg.cx}
+                y1={smoothedTipSvg.cy}
+                x2={ghostSvg.cx}
+                y2={ghostSvg.cy}
+                stroke="rgba(220,230,240,0.22)"
+                strokeWidth={0.16}
+                strokeDasharray="0.7 1.5"
+                vectorEffect="nonScalingStroke"
+              />
+              <circle
+                cx={ghostSvg.cx}
+                cy={ghostSvg.cy}
+                r={TIP_CIRCLE_R * 0.92}
+                fill={`rgba(220,230,240,${ghostOpacity})`}
+                stroke={`rgba(255,255,255,${ghostOpacity * 0.55})`}
+                strokeWidth={0.22}
+                vectorEffect="nonScalingStroke"
+              />
+            </g>
+          ) : null}
 
           {showHistoricTrail && historicTrail.polylinePoints ? (
             <g aria-hidden>
@@ -740,15 +821,15 @@ export default function MetabolicMap({
           <g style={{ pointerEvents: 'none' }}>
             <motion.circle
               r={TIP_CIRCLE_R}
-              cx={tipSvg.cx}
-              cy={tipSvg.cy}
+              cx={smoothedTipSvg.cx}
+              cy={smoothedTipSvg.cy}
               fill="rgba(220, 230, 240, 0.95)"
               stroke="rgba(255,255,255,0.45)"
               strokeWidth={0.3}
               filter={`url(#${tipGlowFilterId})`}
               vectorEffect="nonScalingStroke"
               initial={false}
-              animate={{ cx: tipSvg.cx, cy: tipSvg.cy }}
+              animate={{ cx: smoothedTipSvg.cx, cy: smoothedTipSvg.cy }}
               transition={vectorTransition}
             />
           </g>

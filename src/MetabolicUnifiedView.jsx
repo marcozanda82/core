@@ -410,6 +410,7 @@ export default function MetabolicUnifiedView({
               showHistoricTrailControl={false}
               zoomLevel={mapZoom}
               onZoomLevelChange={setMapZoom}
+              predictionConfidence={weightProjection?.confidence_label || 'bassa'}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}
