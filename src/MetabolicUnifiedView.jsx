@@ -8,6 +8,7 @@ import {
   getLastBiometricData,
 } from './metabolicMapEngine';
 import { computeMetabolicMapInputsAndAudit } from './metabolicMapPeriodInputs';
+import { computeWeightProjectionFromInputs, formatWeightProjectionUI } from './weightProjectionEngine';
 import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
 import MetabolicMap from './MetabolicMap';
@@ -64,12 +65,15 @@ function IconCompassSwitch() {
  * Bussola + mappa metabolica in un unico flusso: traiettoria storica, mini-freccia allineata alla bussola,
  * alone bezel dalla zona dell’ultimo giorno della finestra.
  *
- * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null }>, bodyMetricsHistory?: Array<Record<string, unknown>>, compassScreenActive?: boolean }} props
+ * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null }>, bodyMetricsHistory?: Array<Record<string, unknown>>, compassScreenActive?: boolean, fullHistory?: object | null, userTargets?: { kcal?: number } | null, projectionAnchorDate?: string | null }} props
  */
 export default function MetabolicUnifiedView({
   dailyHistory: dailyHistoryProp = [],
   bodyMetricsHistory: bodyMetricsHistoryProp = [],
   compassScreenActive = true,
+  fullHistory = null,
+  userTargets = null,
+  projectionAnchorDate = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
@@ -107,6 +111,21 @@ export default function MetabolicUnifiedView({
     });
     return mapZoneToGlowRgba(zone);
   }, [metabolicMapInputs, baselineOffset]);
+
+  const weightProjection = useMemo(
+    () =>
+      computeWeightProjectionFromInputs({
+        bodyMetricsHistory,
+        fullHistory,
+        userTargets: userTargets || undefined,
+        anchorDateStr: projectionAnchorDate,
+      }),
+    [bodyMetricsHistory, fullHistory, userTargets, projectionAnchorDate]
+  );
+  const { lineProjection, lineTrend, lineConfidence } = useMemo(
+    () => formatWeightProjectionUI(weightProjection),
+    [weightProjection]
+  );
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -355,6 +374,27 @@ export default function MetabolicUnifiedView({
             >
               Analisi Stato Metabolico
             </h3>
+            <div
+              style={{
+                margin: '0 0 10px',
+                padding: '8px 10px',
+                borderRadius: 10,
+                background: 'rgba(16, 20, 24, 0.72)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: 'rgba(200, 210, 220, 0.88)',
+                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+              }}
+            >
+              {lineProjection ? (
+                <div style={{ fontWeight: 500, color: 'rgba(226, 232, 240, 0.92)', marginBottom: 4 }}>
+                  {lineProjection}
+                </div>
+              ) : null}
+              <div style={{ fontSize: 11, opacity: 0.9 }}>{lineTrend}</div>
+              <div style={{ fontSize: 11, opacity: 0.9 }}>{lineConfidence}</div>
+            </div>
             <MetabolicMap
               energyBalance={metabolicMapInputs.energyBalance}
               trainingLoad={metabolicMapInputs.trainingLoad}

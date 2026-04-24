@@ -12703,6 +12703,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             dailyHistory={metabolicCompassDailyHistory}
             bodyMetricsHistory={bodyMetricsHistory}
             compassScreenActive={activeBottomTab === 'bussola'}
+            fullHistory={fullHistory}
+            userTargets={userTargets}
+            projectionAnchorDate={currentTrackerDate}
           />
         </div>
       )}
