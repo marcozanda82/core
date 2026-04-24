@@ -4861,6 +4861,29 @@ export function buildLongevityExplanation(result) {
 
 /** kcal teoriche per ~1 kg di variazione di massa corporea da bilancio energetico. */
 export const KCAL_PER_KG_ENERGY_BALANCE = 7700;
+const METABOLIC_SENSITIVITY_MIN = 0.7;
+const METABOLIC_SENSITIVITY_MAX = 1.3;
+const METABOLIC_SENSITIVITY_INITIAL = 1.0;
+const METABOLIC_SENSITIVITY_GAIN = 0.1;
+const MAX_DAILY_SENSITIVITY_ADJUST_PCT = 0.1;
+
+function clampBetween(v, min, max) {
+  if (!Number.isFinite(v)) return min;
+  return Math.max(min, Math.min(max, v));
+}
+
+function weightedRecentAverage(values) {
+  const arr = Array.isArray(values) ? values.filter((v) => Number.isFinite(v)) : [];
+  if (arr.length === 0) return NaN;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < arr.length; i += 1) {
+    const w = i + 1;
+    num += arr[i] * w;
+    den += w;
+  }
+  return den > 0 ? num / den : NaN;
+}
 
 export function sumFoodKcalAndProtein(dailyLog) {
   const L = normalizeLogData(Array.isArray(dailyLog) ? dailyLog : Object.values(dailyLog || {}));
@@ -5037,6 +5060,8 @@ export function buildPredictiveCompositionDailyRows({
 
   let carryW = null;
   let carryM = null;
+  let metabolicSensitivity = METABOLIC_SENSITIVITY_INITIAL;
+  const recentRealWeights = [];
   for (let i = 0; i < sorted.length; i++) {
     const e = sorted[i];
     const day = metricEntryToIsoDay(e);
@@ -5055,8 +5080,38 @@ export function buildPredictiveCompositionDailyRows({
     const hasW = dayHasWeightsStrengthWorkout(log);
     const real = realByDay.get(d);
 
+    const { training_score, stress_score } = inferDailyBehaviorScores(log);
+    let delta_kcal = kcal - tdeeDyn;
+    delta_kcal += training_score * 150;
+    let dWPred = (delta_kcal / KCAL_PER_KG_ENERGY_BALANCE) * metabolicSensitivity;
+    dWPred *= 1 - stress_score * 0.3;
+    dWPred *= adherence_score;
+    const predictedWeight = carryW != null ? carryW + dWPred : null;
+
     if (real) {
-      carryW = real.weight;
+      recentRealWeights.push(real.weight);
+      if (recentRealWeights.length > 3) recentRealWeights.shift();
+      const smoothedWeight = weightedRecentAverage(recentRealWeights);
+      const realWeightForModel = Number.isFinite(smoothedWeight) ? smoothedWeight : real.weight;
+
+      if (Number.isFinite(predictedWeight)) {
+        const error = realWeightForModel - predictedWeight;
+        const targetSensitivity = clampBetween(
+          metabolicSensitivity + error * METABOLIC_SENSITIVITY_GAIN,
+          METABOLIC_SENSITIVITY_MIN,
+          METABOLIC_SENSITIVITY_MAX,
+        );
+        const maxUp = metabolicSensitivity * (1 + MAX_DAILY_SENSITIVITY_ADJUST_PCT);
+        const maxDown = metabolicSensitivity * (1 - MAX_DAILY_SENSITIVITY_ADJUST_PCT);
+        metabolicSensitivity = clampBetween(targetSensitivity, maxDown, maxUp);
+        metabolicSensitivity = clampBetween(
+          metabolicSensitivity,
+          METABOLIC_SENSITIVITY_MIN,
+          METABOLIC_SENSITIVITY_MAX,
+        );
+      }
+
+      carryW = realWeightForModel;
       carryM = inferMuscleMassKgFromMetric({ weight: real.weight, bodyFat: real.bodyFat, muscle: real.muscle });
       const muscleMassIsReal = real.muscle != null && Number.isFinite(Number(real.muscle));
       rows.push({
@@ -5068,14 +5123,11 @@ export function buildPredictiveCompositionDailyRows({
         bodyFat: real.bodyFat != null && Number.isFinite(real.bodyFat) ? real.bodyFat : null,
         musclePct: real.muscle != null && Number.isFinite(real.muscle) ? real.muscle : null,
         waterPct: real.water != null && Number.isFinite(real.water) ? real.water : null,
+        weightSmoothed: Number.isFinite(smoothedWeight) ? smoothedWeight : null,
+        metabolicSensitivity,
       });
     } else if (carryW != null && carryM != null) {
-      const { training_score, stress_score } = inferDailyBehaviorScores(log);
-      let delta_kcal = kcal - tdeeDyn;
-      delta_kcal += training_score * 150;
-      let dW = delta_kcal / KCAL_PER_KG_ENERGY_BALANCE;
-      dW *= 1 - stress_score * 0.3;
-      dW *= adherence_score;
+      const dW = dWPred;
       const dLean = estimateLeanMassDeltaKg(dW, carryW, prot, hasW);
       carryW += dW;
       carryM += dLean;
@@ -5091,6 +5143,7 @@ export function buildPredictiveCompositionDailyRows({
         trainingScore: training_score,
         stressScore: stress_score,
         adherenceScore: adherence_score,
+        metabolicSensitivity,
       });
     }
 
