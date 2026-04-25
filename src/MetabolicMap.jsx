@@ -51,7 +51,8 @@ function mapPointToSvgCoords(x, y, keepMarkerInside = false) {
 function buildTrajectoryPath(points) {
   const arr = Array.isArray(points) ? points : [];
   if (arr.length < 2) return '';
-  return arr
+  const smooth = chaikinSmooth(arr, arr.length > 2 ? 2 : 0);
+  return smooth
     .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.cx.toFixed(2)} ${p.cy.toFixed(2)}`)
     .join(' ');
 }
@@ -139,9 +140,6 @@ const MAP_CENTER_SVG = { cx: 50, cy: 50 };
 /** Raggio Ancora (viewBox) — marker storici usano lo stesso raggio, senza glow. */
 const ANCHOR_CIRCLE_R = 3.5;
 
-/** Punti storici: poco contrasto, non competono con posizione attuale. */
-const HISTORIC_TRAIL_DOT_FILL = 'rgb(82, 102, 112)';
-
 /** Sotto questa lunghezza (spazio mappa −100…100) il vettore stile di vita si considera “quasi nullo”: ago verso il centro, più tenue. */
 const LIFESTYLE_VECTOR_IDLE_THRESHOLD = 4;
 
@@ -151,8 +149,6 @@ const NEEDLE_BLADE_LEN_IDLE = 3.2;
 /** Estremi lama ago (viewBox) in funzione della magnitudo anchor → target (spazio mappa). */
 const NEEDLE_BLADE_LEN_MIN = 4;
 const NEEDLE_BLADE_LEN_MAX = 12.5;
-const NEEDLE_TRAIL_LEN_MIN = 0.4;
-const NEEDLE_TRAIL_LEN_MAX = 1.8;
 
 /** Valore di riferimento magnitudo (spazio mappa −100…100) per allungare l’ago al massimo. */
 const LIFESTYLE_LEN_FOR_FULL_NEEDLE = 95;
@@ -479,18 +475,21 @@ export default function MetabolicMap({
       })
       .filter((point) => Number.isFinite(point.cx) && Number.isFinite(point.cy));
   }, [dailyPositions]);
-  const trajectoryPath = useMemo(() => buildTrajectoryPath(dailyTrailSvg), [dailyTrailSvg]);
+  const trajectorySvg = useMemo(
+    () => (projectedSvg ? [...dailyTrailSvg, projectedSvg] : dailyTrailSvg),
+    [dailyTrailSvg, projectedSvg],
+  );
+  const trajectoryPath = useMemo(() => buildTrajectoryPath(trajectorySvg), [trajectorySvg]);
   const viewportViewBox = useMemo(
     () => buildDynamicMapViewBox(
       [
         anchorSvg,
         tipSvg,
-        projectedSvg,
-        ...dailyTrailSvg,
+        ...trajectorySvg,
       ].filter(Boolean),
       zoomLevel,
     ),
-    [anchorSvg, tipSvg, projectedSvg, dailyTrailSvg, zoomLevel],
+    [anchorSvg, tipSvg, trajectorySvg, zoomLevel],
   );
   useEffect(() => {
     const outOfBounds = [];
@@ -515,15 +514,17 @@ export default function MetabolicMap({
       });
     }
   }, [displayPosition, projectedPosition, dailyPositions]);
-  const directionVector = useMemo(() => {
-    const target = projectedSvg || inertialTipSvg;
-    const dx = (target?.cx ?? compassCenter.x) - compassCenter.x;
-    const dy = (target?.cy ?? compassCenter.y) - compassCenter.y;
+  const trajectoryTangent = useMemo(() => {
+    const lastIdx = trajectorySvg.length - 1;
+    const prev = lastIdx > 0 ? trajectorySvg[lastIdx - 1] : anchorSvg;
+    const target = lastIdx >= 0 ? trajectorySvg[lastIdx] : inertialTipSvg;
+    const dx = (target?.cx ?? compassCenter.x) - (prev?.cx ?? compassCenter.x);
+    const dy = (target?.cy ?? compassCenter.y) - (prev?.cy ?? compassCenter.y);
     const mag = Math.hypot(dx, dy);
     if (mag < 1e-6) return { x: 0, y: -1, mag: 0 };
     return { x: dx / mag, y: dy / mag, mag };
-  }, [projectedSvg, compassCenter.x, compassCenter.y, inertialTipSvg]);
-  const needleRotateDeg = rotationDegFromDirection(directionVector.x, directionVector.y);
+  }, [trajectorySvg, anchorSvg, compassCenter.x, compassCenter.y, inertialTipSvg]);
+  const needleRotateDeg = rotationDegFromDirection(trajectoryTangent.x, trajectoryTangent.y);
   const needleBladeOpacity = lifestyleNearlyIdle ? 0.32 : 0.86;
 
   const distAnchor = Math.hypot(
@@ -549,17 +550,6 @@ export default function MetabolicMap({
     const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
     return NEEDLE_BLADE_LEN_MIN + t * (NEEDLE_BLADE_LEN_MAX - NEEDLE_BLADE_LEN_MIN);
   }, [lifestyleNearlyIdle, lifestyleLen]);
-  const trailLen = useMemo(() => {
-    if (lifestyleNearlyIdle) return NEEDLE_TRAIL_LEN_MIN;
-    const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
-    return NEEDLE_TRAIL_LEN_MIN + t * (NEEDLE_TRAIL_LEN_MAX - NEEDLE_TRAIL_LEN_MIN);
-  }, [lifestyleNearlyIdle, lifestyleLen]);
-  const trailOpacity = useMemo(() => {
-    if (lifestyleNearlyIdle) return 0.08;
-    const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
-    return 0.1 + t * 0.1;
-  }, [lifestyleNearlyIdle, lifestyleLen]);
-
   const needlePolygonPoints = useMemo(() => {
     const halfW = Math.min(0.62, 0.28 + needleBladeLen * 0.035);
     const baseY = 0.55;
@@ -726,13 +716,6 @@ export default function MetabolicMap({
             <filter id={`${uid}-ring-glow`} x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" />
             </filter>
-            <filter id={`${uid}-trail-soft`} x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="0.24" />
-            </filter>
-            <linearGradient id={`${uid}-trail-grad`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={`rgba(236,244,252,${Math.min(0.2, trailOpacity + 0.05)})`} />
-              <stop offset="100%" stopColor="rgba(236,244,252,0.02)" />
-            </linearGradient>
           </defs>
 
           {/* Radar rings + multi-gradient zones */}
@@ -804,41 +787,6 @@ export default function MetabolicMap({
                 strokeLinejoin="round"
                 vectorEffect="nonScalingStroke"
               />
-              {dailyTrailSvg.map((point, idx) => (
-                <circle
-                  key={`trail-dot-${idx}`}
-                  cx={point.cx}
-                  cy={point.cy}
-                  r={idx === dailyTrailSvg.length - 1 ? 1.15 : 0.75}
-                  fill={idx === dailyTrailSvg.length - 1 ? 'rgba(226, 238, 246, 0.54)' : HISTORIC_TRAIL_DOT_FILL}
-                  opacity={idx === dailyTrailSvg.length - 1 ? 0.95 : 0.58}
-                  vectorEffect="nonScalingStroke"
-                />
-              ))}
-            </g>
-          ) : null}
-          {projectedSvg ? (
-            <g aria-hidden>
-              <line
-                x1={tipSvg.cx}
-                y1={tipSvg.cy}
-                x2={projectedSvg.cx}
-                y2={projectedSvg.cy}
-                stroke="rgba(235, 242, 248, 0.22)"
-                strokeWidth={0.34}
-                strokeDasharray="1.4 1.4"
-                strokeLinecap="round"
-                vectorEffect="nonScalingStroke"
-              />
-              <circle
-                cx={projectedSvg.cx}
-                cy={projectedSvg.cy}
-                r={1.05}
-                fill="rgba(235, 242, 248, 0.5)"
-                stroke="rgba(255,255,255,0.22)"
-                strokeWidth={0.18}
-                vectorEffect="nonScalingStroke"
-              />
             </g>
           ) : null}
           <motion.g
@@ -849,16 +797,6 @@ export default function MetabolicMap({
             data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
           >
             <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
-              {/* Direzione+intensità: sottile scia dietro il centro, allineata all'asse del movimento. */}
-              <path
-                d={`M 0 0.42 Q 0 ${trailLen * 0.56} 0 ${trailLen}`}
-                stroke={`url(#${uid}-trail-grad)`}
-                strokeWidth={0.24}
-                strokeLinecap="round"
-                fill="none"
-                filter={`url(#${uid}-trail-soft)`}
-                vectorEffect="nonScalingStroke"
-              />
               <circle
                 r={ANCHOR_CIRCLE_R + 0.75}
                 cx={0}
