@@ -362,10 +362,8 @@ export default function MetabolicMap({
   bodyMetricsHistory = null,
   zoomLevel: zoomLevelProp = undefined,
   onZoomLevelChange = null,
-  dailyPositions = null,
+  trajectoryPositions = null,
   currentPosition = null,
-  projectedPosition = null,
-  trajectoryVelocity = 0,
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
@@ -423,10 +421,16 @@ export default function MetabolicMap({
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY, true);
   const movementVelocity = useMemo(() => {
-    const speed = Number.isFinite(Number(trajectoryVelocity)) ? Number(trajectoryVelocity) : 0;
+    const positions = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
+    const last = positions[positions.length - 1];
+    const prev = positions.length > 1 ? positions[positions.length - 2] : last;
+    const speed = Math.hypot(
+      (Number(last?.x) || 0) - (Number(prev?.x) || 0),
+      (Number(last?.y) || 0) - (Number(prev?.y) || 0),
+    );
     const t = Math.max(0, Math.min(1, speed / 9));
     return 0.02 + t * 0.06; // 0.02–0.08
-  }, [trajectoryVelocity]);
+  }, [trajectoryPositions]);
   useEffect(() => {
     targetTipRef.current = tipSvg;
     inertiaVelRef.current = movementVelocity;
@@ -450,7 +454,15 @@ export default function MetabolicMap({
 
   const lifestyleDx = displayX - baselineX;
   const lifestyleDy = displayY - baselineY;
-  const trajectorySpeed = Number.isFinite(Number(trajectoryVelocity)) ? Number(trajectoryVelocity) : 0;
+  const trajectorySpeed = useMemo(() => {
+    const positions = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
+    const last = positions[positions.length - 1];
+    const prev = positions.length > 1 ? positions[positions.length - 2] : last;
+    return Math.hypot(
+      (Number(last?.x) || 0) - (Number(prev?.x) || 0),
+      (Number(last?.y) || 0) - (Number(prev?.y) || 0),
+    );
+  }, [trajectoryPositions]);
   const lifestyleLen = Math.max(Math.hypot(lifestyleDx, lifestyleDy), trajectorySpeed);
   const lifestyleNearlyIdle = lifestyleLen < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
   const compassCenter = useMemo(
@@ -461,24 +473,16 @@ export default function MetabolicMap({
   /** Angolo (gradi) tra Ancora e punto finale nello spazio mappa — Fase 1 richiesta. */
   const angleMapDeg = compassAngleDegMapSpace(displayX, displayY, baselineX, baselineY);
 
-  const projectedSvg = useMemo(() => {
-    if (!projectedPosition) return null;
-    const projected = clampMapPosition(projectedPosition, 'projected');
-    return mapPointToSvgCoords(projected.x, projected.y, true);
-  }, [projectedPosition]);
   const dailyTrailSvg = useMemo(() => {
-    const arr = Array.isArray(dailyPositions) ? dailyPositions : [];
+    const arr = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
     return arr
       .map((point, idx) => {
-        const clamped = clampMapPosition(point, `daily-${idx}`);
+        const clamped = clampMapPosition(point, `trajectory-${idx}`);
         return mapPointToSvgCoords(clamped.x, clamped.y, true);
       })
       .filter((point) => Number.isFinite(point.cx) && Number.isFinite(point.cy));
-  }, [dailyPositions]);
-  const trajectorySvg = useMemo(
-    () => (projectedSvg ? [...dailyTrailSvg, projectedSvg] : dailyTrailSvg),
-    [dailyTrailSvg, projectedSvg],
-  );
+  }, [trajectoryPositions]);
+  const trajectorySvg = dailyTrailSvg;
   const trajectoryPath = useMemo(() => buildTrajectoryPath(trajectorySvg), [trajectorySvg]);
   const viewportViewBox = useMemo(
     () => buildDynamicMapViewBox(
@@ -494,13 +498,9 @@ export default function MetabolicMap({
   useEffect(() => {
     const outOfBounds = [];
     if (displayPosition.outOfBounds) outOfBounds.push(displayPosition);
-    if (projectedPosition) {
-      const projected = clampMapPosition(projectedPosition, 'projected');
-      if (projected.outOfBounds) outOfBounds.push(projected);
-    }
-    if (Array.isArray(dailyPositions)) {
-      dailyPositions.forEach((point, idx) => {
-        const dailyPoint = clampMapPosition(point, `daily-${idx}`);
+    if (Array.isArray(trajectoryPositions)) {
+      trajectoryPositions.forEach((point, idx) => {
+        const dailyPoint = clampMapPosition(point, `trajectory-${idx}`);
         if (dailyPoint.outOfBounds) outOfBounds.push(dailyPoint);
       });
     }
@@ -513,7 +513,7 @@ export default function MetabolicMap({
         positions: outOfBounds,
       });
     }
-  }, [displayPosition, projectedPosition, dailyPositions]);
+  }, [displayPosition, trajectoryPositions]);
   const trajectoryTangent = useMemo(() => {
     const lastIdx = trajectorySvg.length - 1;
     const prev = lastIdx > 0 ? trajectorySvg[lastIdx - 1] : anchorSvg;

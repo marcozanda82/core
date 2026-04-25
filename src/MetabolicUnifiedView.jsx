@@ -57,39 +57,6 @@ function buildDailyPointFromLogDay(day, baselineOffset) {
 
 const TRAJECTORY_FOLLOW_VELOCITY = 0.34;
 
-function buildCoherentTrajectory(targetPositions) {
-  const targets = Array.isArray(targetPositions) ? targetPositions : [];
-  if (targets.length === 0) return { positions: [], projected: null, velocity: 0 };
-
-  const positions = [];
-  let pos = {
-    x: clampAxis(Number(targets[0]?.x) || 0),
-    y: clampAxis(Number(targets[0]?.y) || 0),
-  };
-  positions.push(pos);
-
-  for (let i = 1; i < targets.length; i += 1) {
-    const target = {
-      x: clampAxis(Number(targets[i]?.x) || 0),
-      y: clampAxis(Number(targets[i]?.y) || 0),
-    };
-    pos = {
-      x: clampAxis(pos.x + (target.x - pos.x) * TRAJECTORY_FOLLOW_VELOCITY),
-      y: clampAxis(pos.y + (target.y - pos.y) * TRAJECTORY_FOLLOW_VELOCITY),
-    };
-    positions.push(pos);
-  }
-
-  const lastTarget = targets[targets.length - 1];
-  const projected = {
-    x: clampAxis(pos.x + ((Number(lastTarget?.x) || 0) - pos.x) * TRAJECTORY_FOLLOW_VELOCITY),
-    y: clampAxis(pos.y + ((Number(lastTarget?.y) || 0) - pos.y) * TRAJECTORY_FOLLOW_VELOCITY),
-  };
-  const prev = positions.length > 1 ? positions[positions.length - 2] : positions[0];
-  const velocity = Math.hypot(pos.x - prev.x, pos.y - prev.y);
-  return { positions, projected, velocity };
-}
-
 
 function IconMapSwitch() {
   return (
@@ -188,14 +155,32 @@ export default function MetabolicUnifiedView({
     () => formatWeightProjectionUI(weightProjection),
     [weightProjection]
   );
-  const dailyMapTargets = useMemo(() => {
+  const dailyMapPoints = useMemo(() => {
     const slice = Array.isArray(dailyHistory) ? dailyHistory.slice(-7) : [];
     return slice.map((day) => buildDailyPointFromLogDay(day, baselineOffset));
   }, [dailyHistory, baselineOffset]);
-  const coherentTrajectory = useMemo(
-    () => buildCoherentTrajectory(dailyMapTargets),
-    [dailyMapTargets]
-  );
+  const trajectoryPositions = useMemo(() => {
+    if (dailyMapPoints.length === 0) return [];
+
+    const startPosition = {
+      x: clampAxis(Number(dailyMapPoints[0]?.x) || 0),
+      y: clampAxis(Number(dailyMapPoints[0]?.y) || 0),
+    };
+    const positions = [startPosition];
+
+    for (let i = 1; i < dailyMapPoints.length; i += 1) {
+      const prev = positions[i - 1];
+      const target = dailyMapPoints[i];
+      const next = {
+        x: clampAxis(prev.x + (clampAxis(Number(target?.x) || 0) - prev.x) * TRAJECTORY_FOLLOW_VELOCITY),
+        y: clampAxis(prev.y + (clampAxis(Number(target?.y) || 0) - prev.y) * TRAJECTORY_FOLLOW_VELOCITY),
+      };
+      positions.push(next);
+    }
+
+    return positions;
+  }, [dailyMapPoints]);
+  const currentTrajectoryPosition = trajectoryPositions[trajectoryPositions.length - 1] || null;
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -452,10 +437,8 @@ export default function MetabolicUnifiedView({
               bodyMetricsHistory={bodyMetricsHistory}
               zoomLevel={mapZoom}
               onZoomLevelChange={setMapZoom}
-              dailyPositions={coherentTrajectory.positions}
-              currentPosition={coherentTrajectory.positions[coherentTrajectory.positions.length - 1] || null}
-              projectedPosition={coherentTrajectory.projected}
-              trajectoryVelocity={coherentTrajectory.velocity}
+              trajectoryPositions={trajectoryPositions}
+              currentPosition={currentTrajectoryPosition}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}
