@@ -48,15 +48,6 @@ function mapPointToSvgCoords(x, y, keepMarkerInside = false) {
   };
 }
 
-function buildTrajectoryPath(points) {
-  const arr = Array.isArray(points) ? points : [];
-  if (arr.length < 2) return '';
-  const smooth = chaikinSmooth(arr, arr.length > 2 ? 2 : 0);
-  return smooth
-    .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.cx.toFixed(2)} ${p.cy.toFixed(2)}`)
-    .join(' ');
-}
-
 function buildDynamicMapViewBox(points, zoomLevel) {
   const safePoints = (Array.isArray(points) ? points : []).filter(
     (p) => Number.isFinite(Number(p?.cx)) && Number.isFinite(Number(p?.cy)),
@@ -327,26 +318,6 @@ function rotationDegFromDirection(dirX, dirY) {
   return baseDeg + 90;
 }
 
-function chaikinSmooth(points, iterations = 2) {
-  let arr = Array.isArray(points) ? points.slice() : [];
-  if (arr.length < 3) return arr;
-  for (let k = 0; k < iterations; k += 1) {
-    const next = [arr[0]];
-    for (let i = 0; i < arr.length - 1; i += 1) {
-      const p0 = arr[i];
-      const p1 = arr[i + 1];
-      next.push(
-        { cx: p0.cx * 0.75 + p1.cx * 0.25, cy: p0.cy * 0.75 + p1.cy * 0.25 },
-        { cx: p0.cx * 0.25 + p1.cx * 0.75, cy: p0.cy * 0.25 + p1.cy * 0.75 },
-      );
-    }
-    next.push(arr[arr.length - 1]);
-    arr = next;
-  }
-  return arr;
-}
-
-
 /**
  * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
  */
@@ -473,7 +444,7 @@ export default function MetabolicMap({
   /** Angolo (gradi) tra Ancora e punto finale nello spazio mappa — Fase 1 richiesta. */
   const angleMapDeg = compassAngleDegMapSpace(displayX, displayY, baselineX, baselineY);
 
-  const dailyTrailSvg = useMemo(() => {
+  const trajectoryPointSvg = useMemo(() => {
     const arr = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
     return arr
       .map((point, idx) => {
@@ -482,18 +453,14 @@ export default function MetabolicMap({
       })
       .filter((point) => Number.isFinite(point.cx) && Number.isFinite(point.cy));
   }, [trajectoryPositions]);
-  const trajectorySvg = dailyTrailSvg;
-  const trajectoryPath = useMemo(() => buildTrajectoryPath(trajectorySvg), [trajectorySvg]);
   const viewportViewBox = useMemo(
     () => buildDynamicMapViewBox(
       [
-        anchorSvg,
         tipSvg,
-        ...trajectorySvg,
       ].filter(Boolean),
       zoomLevel,
     ),
-    [anchorSvg, tipSvg, trajectorySvg, zoomLevel],
+    [tipSvg, zoomLevel],
   );
   useEffect(() => {
     const outOfBounds = [];
@@ -515,17 +482,25 @@ export default function MetabolicMap({
     }
   }, [displayPosition, trajectoryPositions]);
   const trajectoryTangent = useMemo(() => {
-    const lastIdx = trajectorySvg.length - 1;
-    const prev = lastIdx > 0 ? trajectorySvg[lastIdx - 1] : anchorSvg;
-    const target = lastIdx >= 0 ? trajectorySvg[lastIdx] : inertialTipSvg;
+    const lastIdx = trajectoryPointSvg.length - 1;
+    const prev = lastIdx > 0 ? trajectoryPointSvg[lastIdx - 1] : anchorSvg;
+    const target = lastIdx >= 0 ? trajectoryPointSvg[lastIdx] : inertialTipSvg;
     const dx = (target?.cx ?? compassCenter.x) - (prev?.cx ?? compassCenter.x);
     const dy = (target?.cy ?? compassCenter.y) - (prev?.cy ?? compassCenter.y);
     const mag = Math.hypot(dx, dy);
     if (mag < 1e-6) return { x: 0, y: -1, mag: 0 };
     return { x: dx / mag, y: dy / mag, mag };
-  }, [trajectorySvg, anchorSvg, compassCenter.x, compassCenter.y, inertialTipSvg]);
+  }, [trajectoryPointSvg, anchorSvg, compassCenter.x, compassCenter.y, inertialTipSvg]);
   const needleRotateDeg = rotationDegFromDirection(trajectoryTangent.x, trajectoryTangent.y);
   const needleBladeOpacity = lifestyleNearlyIdle ? 0.32 : 0.86;
+  const snailTrailStyle = useMemo(() => {
+    const t = Math.max(0, Math.min(1, trajectorySpeed / 14));
+    return {
+      length: 0.45 + t * 3.1,
+      opacity: t < 0.08 ? 0.015 : 0.035 + t * 0.18,
+      width: 0.95 + t * 1.1,
+    };
+  }, [trajectorySpeed]);
 
   const distAnchor = Math.hypot(
     anchorSvg.cx - MAP_CENTER_SVG.cx,
@@ -716,6 +691,14 @@ export default function MetabolicMap({
             <filter id={`${uid}-ring-glow`} x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" />
             </filter>
+            <filter id={`${uid}-snail-shadow-blur`} x="-120%" y="-80%" width="340%" height="260%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="0.62" />
+            </filter>
+            <linearGradient id={`${uid}-snail-shadow-grad`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(226,238,246,0.2)" stopOpacity="0.85" />
+              <stop offset="62%" stopColor="rgba(170,196,210,0.14)" stopOpacity="0.38" />
+              <stop offset="100%" stopColor="rgba(120,150,165,0.02)" stopOpacity="0" />
+            </linearGradient>
           </defs>
 
           {/* Radar rings + multi-gradient zones */}
@@ -776,19 +759,6 @@ export default function MetabolicMap({
               );
             })}
           </g>
-          {trajectoryPath ? (
-            <g aria-hidden>
-              <path
-                d={trajectoryPath}
-                fill="none"
-                stroke="rgba(210, 226, 236, 0.28)"
-                strokeWidth={0.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                vectorEffect="nonScalingStroke"
-              />
-            </g>
-          ) : null}
           <motion.g
             initial={{ x: compassCenter.x, y: compassCenter.y }}
             animate={{ x: compassCenter.x, y: compassCenter.y }}
@@ -797,6 +767,18 @@ export default function MetabolicMap({
             data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
           >
             <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
+              <motion.rect
+                x={-snailTrailStyle.width / 2}
+                y={0.72}
+                width={snailTrailStyle.width}
+                height={snailTrailStyle.length}
+                rx={snailTrailStyle.width / 2}
+                fill={`url(#${uid}-snail-shadow-grad)`}
+                filter={`url(#${uid}-snail-shadow-blur)`}
+                vectorEffect="nonScalingStroke"
+                animate={{ opacity: snailTrailStyle.opacity }}
+                transition={vectorTransition}
+              />
               <circle
                 r={ANCHOR_CIRCLE_R + 0.75}
                 cx={0}
