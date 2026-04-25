@@ -2,14 +2,88 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { calculateMetabolicMapPosition } from './metabolicMapEngine';
 
-/** viewBox 0–100: stesso sistema di posizionamento del marker (50 ± x/2, 50 ∓ y/2). */
-function mapPointToSvgCoords(x, y) {
-  return { cx: 50 + x / 2, cy: 50 - y / 2 };
-}
+const MAP_MIN_X = -100;
+const MAP_MAX_X = 100;
+const MAP_MIN_Y = -100;
+const MAP_MAX_Y = 100;
+const MAP_VIEWBOX_MIN = 0;
+const MAP_VIEWBOX_MAX = 100;
+const MAP_MARKER_SAFE_SVG_MARGIN = 4.75;
+const MAP_VIEWPORT_PADDING_SVG = 14;
 
 /** Stesso range della mappa (−100…100) usato per i punti storici e per l’Ancora. */
-function clampMapAxis(value) {
-  return Math.max(-100, Math.min(100, value));
+function clampMapAxis(value, min = MAP_MIN_X, max = MAP_MAX_X) {
+  return Math.max(min, Math.min(max, Number(value) || 0));
+}
+
+function clampMapPosition(position, label = 'position') {
+  const rawX = Number(position?.x);
+  const rawY = Number(position?.y);
+  const safeRawX = Number.isFinite(rawX) ? rawX : 0;
+  const safeRawY = Number.isFinite(rawY) ? rawY : 0;
+  const x = clampMapAxis(safeRawX, MAP_MIN_X, MAP_MAX_X);
+  const y = clampMapAxis(safeRawY, MAP_MIN_Y, MAP_MAX_Y);
+  return {
+    x,
+    y,
+    rawX: safeRawX,
+    rawY: safeRawY,
+    outOfBounds:
+      !Number.isFinite(rawX) ||
+      !Number.isFinite(rawY) ||
+      safeRawX !== x ||
+      safeRawY !== y,
+    label,
+  };
+}
+
+/** viewBox 0–100: stesso sistema di posizionamento del marker (50 ± x/2, 50 ∓ y/2). */
+function mapPointToSvgCoords(x, y, keepMarkerInside = false) {
+  const cxRaw = 50 + clampMapAxis(x, MAP_MIN_X, MAP_MAX_X) / 2;
+  const cyRaw = 50 - clampMapAxis(y, MAP_MIN_Y, MAP_MAX_Y) / 2;
+  if (!keepMarkerInside) return { cx: cxRaw, cy: cyRaw };
+  return {
+    cx: Math.max(MAP_MARKER_SAFE_SVG_MARGIN, Math.min(100 - MAP_MARKER_SAFE_SVG_MARGIN, cxRaw)),
+    cy: Math.max(MAP_MARKER_SAFE_SVG_MARGIN, Math.min(100 - MAP_MARKER_SAFE_SVG_MARGIN, cyRaw)),
+  };
+}
+
+function buildTrajectoryPath(points) {
+  const arr = Array.isArray(points) ? points : [];
+  if (arr.length < 2) return '';
+  return arr
+    .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.cx.toFixed(2)} ${p.cy.toFixed(2)}`)
+    .join(' ');
+}
+
+function buildDynamicMapViewBox(points, zoomLevel) {
+  const safePoints = (Array.isArray(points) ? points : []).filter(
+    (p) => Number.isFinite(Number(p?.cx)) && Number.isFinite(Number(p?.cy)),
+  );
+  const z = clampZoom(zoomLevel);
+  const defaultSize = 100 / z;
+  if (safePoints.length === 0 || z <= 1.01) return '0 0 100 100';
+
+  let minX = MAP_VIEWBOX_MAX;
+  let maxX = MAP_VIEWBOX_MIN;
+  let minY = MAP_VIEWBOX_MAX;
+  let maxY = MAP_VIEWBOX_MIN;
+  safePoints.forEach((p) => {
+    minX = Math.min(minX, p.cx);
+    maxX = Math.max(maxX, p.cx);
+    minY = Math.min(minY, p.cy);
+    maxY = Math.max(maxY, p.cy);
+  });
+
+  const contentW = maxX - minX + MAP_VIEWPORT_PADDING_SVG * 2;
+  const contentH = maxY - minY + MAP_VIEWPORT_PADDING_SVG * 2;
+  const size = Math.min(100, Math.max(defaultSize, contentW, contentH));
+  const half = size / 2;
+  const desiredCenterX = (minX + maxX) / 2;
+  const desiredCenterY = (minY + maxY) / 2;
+  const centerX = Math.max(half, Math.min(100 - half, desiredCenterX));
+  const centerY = Math.max(half, Math.min(100 - half, desiredCenterY));
+  return `${(centerX - half).toFixed(2)} ${(centerY - half).toFixed(2)} ${size.toFixed(2)} ${size.toFixed(2)}`;
 }
 
 /** Coordinate SVG dell’Ancora da baselineOffset (allineate allo storico). */
@@ -329,25 +403,29 @@ export default function MetabolicMap({
   const baselineY = Number(baselineOffset?.y) || 0;
 
   const shiftedX = useMemo(
-    () => Math.max(-100, Math.min(100, x + baselineX)),
+    () => clampMapAxis(x + baselineX, MAP_MIN_X, MAP_MAX_X),
     [x, baselineX],
   );
   const shiftedY = useMemo(
-    () => Math.max(-100, Math.min(100, y + baselineY)),
+    () => clampMapAxis(y + baselineY, MAP_MIN_Y, MAP_MAX_Y),
     [y, baselineY],
   );
 
+  const displayPosition = useMemo(
+    () => clampMapPosition(currentPosition || { x: shiftedX, y: shiftedY }, 'current'),
+    [currentPosition, shiftedX, shiftedY],
+  );
+  const displayAura = finalAura;
+  const displayX = displayPosition.x;
+  const displayY = displayPosition.y;
+
   const { zone: effectiveZone, quadrant: effectiveQuadrant, distance: effectiveDistance } = useMemo(
-    () => classifyMapPoint(shiftedX, shiftedY),
-    [shiftedX, shiftedY],
+    () => classifyMapPoint(displayX, displayY),
+    [displayX, displayY],
   );
 
-  const displayAura = finalAura;
-  const displayX = Number.isFinite(Number(currentPosition?.x)) ? Number(currentPosition.x) : shiftedX;
-  const displayY = Number.isFinite(Number(currentPosition?.y)) ? Number(currentPosition.y) : shiftedY;
-
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
-  const tipSvg = mapPointToSvgCoords(displayX, displayY);
+  const tipSvg = mapPointToSvgCoords(displayX, displayY, true);
   const movementVelocity = useMemo(() => {
     const speed = Number.isFinite(Number(trajectoryVelocity)) ? Number(trajectoryVelocity) : 0;
     const t = Math.max(0, Math.min(1, speed / 9));
@@ -374,8 +452,8 @@ export default function MetabolicMap({
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const lifestyleDx = shiftedX - baselineX;
-  const lifestyleDy = shiftedY - baselineY;
+  const lifestyleDx = displayX - baselineX;
+  const lifestyleDy = displayY - baselineY;
   const trajectorySpeed = Number.isFinite(Number(trajectoryVelocity)) ? Number(trajectoryVelocity) : 0;
   const lifestyleLen = Math.max(Math.hypot(lifestyleDx, lifestyleDy), trajectorySpeed);
   const lifestyleNearlyIdle = lifestyleLen < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
@@ -385,12 +463,58 @@ export default function MetabolicMap({
   );
 
   /** Angolo (gradi) tra Ancora e punto finale nello spazio mappa — Fase 1 richiesta. */
-  const angleMapDeg = compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY);
+  const angleMapDeg = compassAngleDegMapSpace(displayX, displayY, baselineX, baselineY);
 
   const projectedSvg = useMemo(() => {
     if (!projectedPosition) return null;
-    return mapPointToSvgCoords(clampMapAxis(projectedPosition.x), clampMapAxis(projectedPosition.y));
+    const projected = clampMapPosition(projectedPosition, 'projected');
+    return mapPointToSvgCoords(projected.x, projected.y, true);
   }, [projectedPosition]);
+  const dailyTrailSvg = useMemo(() => {
+    const arr = Array.isArray(dailyPositions) ? dailyPositions : [];
+    return arr
+      .map((point, idx) => {
+        const clamped = clampMapPosition(point, `daily-${idx}`);
+        return mapPointToSvgCoords(clamped.x, clamped.y, true);
+      })
+      .filter((point) => Number.isFinite(point.cx) && Number.isFinite(point.cy));
+  }, [dailyPositions]);
+  const trajectoryPath = useMemo(() => buildTrajectoryPath(dailyTrailSvg), [dailyTrailSvg]);
+  const viewportViewBox = useMemo(
+    () => buildDynamicMapViewBox(
+      [
+        anchorSvg,
+        tipSvg,
+        projectedSvg,
+        ...dailyTrailSvg,
+      ].filter(Boolean),
+      zoomLevel,
+    ),
+    [anchorSvg, tipSvg, projectedSvg, dailyTrailSvg, zoomLevel],
+  );
+  useEffect(() => {
+    const outOfBounds = [];
+    if (displayPosition.outOfBounds) outOfBounds.push(displayPosition);
+    if (projectedPosition) {
+      const projected = clampMapPosition(projectedPosition, 'projected');
+      if (projected.outOfBounds) outOfBounds.push(projected);
+    }
+    if (Array.isArray(dailyPositions)) {
+      dailyPositions.forEach((point, idx) => {
+        const dailyPoint = clampMapPosition(point, `daily-${idx}`);
+        if (dailyPoint.outOfBounds) outOfBounds.push(dailyPoint);
+      });
+    }
+    if (outOfBounds.length > 0) {
+      console.warn('[MetabolicMap] clamped out-of-bounds map positions', {
+        bounds: {
+          x: [MAP_MIN_X, MAP_MAX_X],
+          y: [MAP_MIN_Y, MAP_MAX_Y],
+        },
+        positions: outOfBounds,
+      });
+    }
+  }, [displayPosition, projectedPosition, dailyPositions]);
   const directionVector = useMemo(() => {
     const target = projectedSvg || inertialTipSvg;
     const dx = (target?.cx ?? compassCenter.x) - compassCenter.x;
@@ -524,8 +648,6 @@ export default function MetabolicMap({
           style={{
             position: 'absolute',
             inset: 0,
-            transform: `scale(${zoomLevel})`,
-            transformOrigin: '50% 50%',
             pointerEvents: 'none',
             zIndex: 0,
           }}
@@ -581,7 +703,7 @@ export default function MetabolicMap({
         />
 
         <svg
-          viewBox="0 0 100 100"
+          viewBox={viewportViewBox}
           preserveAspectRatio="xMidYMid meet"
           aria-hidden
           style={{
@@ -591,8 +713,6 @@ export default function MetabolicMap({
             height: '100%',
             zIndex: 4,
             pointerEvents: 'none',
-            transform: `scale(${zoomLevel})`,
-            transformOrigin: '50% 50%',
           }}
         >
           <defs>
@@ -673,6 +793,54 @@ export default function MetabolicMap({
               );
             })}
           </g>
+          {trajectoryPath ? (
+            <g aria-hidden>
+              <path
+                d={trajectoryPath}
+                fill="none"
+                stroke="rgba(210, 226, 236, 0.28)"
+                strokeWidth={0.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="nonScalingStroke"
+              />
+              {dailyTrailSvg.map((point, idx) => (
+                <circle
+                  key={`trail-dot-${idx}`}
+                  cx={point.cx}
+                  cy={point.cy}
+                  r={idx === dailyTrailSvg.length - 1 ? 1.15 : 0.75}
+                  fill={idx === dailyTrailSvg.length - 1 ? 'rgba(226, 238, 246, 0.54)' : HISTORIC_TRAIL_DOT_FILL}
+                  opacity={idx === dailyTrailSvg.length - 1 ? 0.95 : 0.58}
+                  vectorEffect="nonScalingStroke"
+                />
+              ))}
+            </g>
+          ) : null}
+          {projectedSvg ? (
+            <g aria-hidden>
+              <line
+                x1={tipSvg.cx}
+                y1={tipSvg.cy}
+                x2={projectedSvg.cx}
+                y2={projectedSvg.cy}
+                stroke="rgba(235, 242, 248, 0.22)"
+                strokeWidth={0.34}
+                strokeDasharray="1.4 1.4"
+                strokeLinecap="round"
+                vectorEffect="nonScalingStroke"
+              />
+              <circle
+                cx={projectedSvg.cx}
+                cy={projectedSvg.cy}
+                r={1.05}
+                fill="rgba(235, 242, 248, 0.5)"
+                stroke="rgba(255,255,255,0.22)"
+                strokeWidth={0.18}
+                vectorEffect="nonScalingStroke"
+              />
+            </g>
+          ) : null}
           <motion.g
             initial={{ x: compassCenter.x, y: compassCenter.y }}
             animate={{ x: compassCenter.x, y: compassCenter.y }}
