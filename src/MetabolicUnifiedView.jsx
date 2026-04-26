@@ -787,6 +787,9 @@ export default function MetabolicUnifiedView({
             unifiedDirectionMode
             unifiedDirectionLabel={unifiedCompassLabel}
             unifiedDirectionModeLabel={unifiedDirectionModeLabel}
+            unifiedDirectionVector={directionVector}
+            unifiedMovementState={movementState}
+            unifiedBehaviorConfidence={behaviorVector?.confidence}
           />
         </div>
 
