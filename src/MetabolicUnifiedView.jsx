@@ -11,6 +11,7 @@ import {
   getLastBiometricData,
 } from './metabolicMapEngine';
 import {
+  applyCalorieNeutralBand,
   computeMetabolicMapInputsAndAudit,
 } from './metabolicMapPeriodInputs';
 import { computeWeightProjectionFromInputs, formatWeightProjectionUI } from './weightProjectionEngine';
@@ -191,6 +192,11 @@ export default function MetabolicUnifiedView({
   const { mapInputs: metabolicMapInputs, rawDetails: metabolicMapRawDetails } = useMemo(
     () => computeMetabolicMapInputsAndAudit(dailyHistory, selectedTimeframe),
     [compassHistoryKey]
+  );
+  const isDev = Boolean(import.meta.env?.DEV);
+  const effectiveKcalAfterNeutralBand = useMemo(
+    () => applyCalorieNeutralBand(Number(metabolicMapRawDetails?.meanKcal ?? 0)),
+    [metabolicMapRawDetails]
   );
 
   const timeframeRange = useMemo(
@@ -701,6 +707,38 @@ export default function MetabolicUnifiedView({
               rawDetails={metabolicMapRawDetails}
               mapInputs={metabolicMapInputs}
             />
+            {isDev ? (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'rgba(7, 10, 14, 0.64)',
+                  fontSize: 10,
+                  lineHeight: 1.45,
+                  color: 'rgba(214, 224, 236, 0.9)',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                }}
+              >
+                <div>selectedTimeframe: {selectedTimeframe}</div>
+                <div>
+                  date range used:{' '}
+                  {timeframeRange
+                    ? `${timeframeRange.startDate} -> ${timeframeRange.endDate}`
+                    : 'n/a'}
+                </div>
+                <div>raw mean kcalBalance: {Number(metabolicMapRawDetails?.meanKcal ?? 0).toFixed(4)}</div>
+                <div>effective kcalBalance after neutral band: {Number(effectiveKcalAfterNeutralBand).toFixed(4)}</div>
+                <div>raw mean trainingLoad: {Number(metabolicMapRawDetails?.meanTraining01 ?? 0).toFixed(4)}</div>
+                <div>computed energyBalance: {Number(metabolicMapInputs?.energyBalance ?? 0).toFixed(4)}</div>
+                <div>computed trainingLoad: {Number(metabolicMapInputs?.trainingLoad ?? 0).toFixed(4)}</div>
+                <div>sleepHours: {Number(metabolicMapInputs?.sleepHours ?? 0).toFixed(4)}</div>
+                <div>glycemicInstability: {Number(metabolicMapInputs?.glycemicInstability ?? 0).toFixed(4)}</div>
+                <div>realSleepDays: {Number(metabolicMapInputs?.realSleepDays ?? 0)}</div>
+                <div>totalWindowDays: {Number(metabolicMapInputs?.totalWindowDays ?? 0)}</div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
