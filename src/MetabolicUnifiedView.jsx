@@ -168,6 +168,55 @@ function directionLabelFromQuadrant(quadrant) {
   return QUADRANT_DIRECTION_LABELS[String(quadrant || '')] || 'neutral';
 }
 
+function applyIeriDeficitTrainingGuard({
+  selectedTimeframe,
+  rawDetails,
+  mapInputs,
+  movement,
+}) {
+  const kcalRaw = Number(rawDetails?.meanKcal ?? 0);
+  const trainingRaw = Number(rawDetails?.meanTraining01 ?? 0);
+  const glycemic = Number(mapInputs?.glycemicInstability ?? 0);
+  const isGuardCase =
+    selectedTimeframe === '1d' &&
+    kcalRaw <= 0 &&
+    trainingRaw > 0;
+  if (!isGuardCase) {
+    return {
+      movement,
+      forcedLabel: '',
+      guardApplied: false,
+      guardReason: '',
+    };
+  }
+  const safeMovement = movement || { x: 0, y: 0, dailyVector: { x: 0, y: 0 }, consistencyFactor: 0 };
+  let x = Number(safeMovement.x) || 0;
+  let y = Number(safeMovement.y) || 0;
+  // Deficit + training in IERI must not drift into "accumulo grasso" direction.
+  if (x > -0.02) {
+    x = -Math.max(0.02, Math.min(0.28, 0.04 + trainingRaw * 0.0025));
+  }
+  if (y < 0.02) {
+    y = Math.max(0.02, Math.min(0.24, 0.03 + trainingRaw * 0.002));
+  }
+  const forcedLabel =
+    trainingRaw >= 60 && glycemic <= 35
+      ? 'massa pulita'
+      : trainingRaw >= 35
+        ? 'ricomposizione'
+        : 'recupero attivo';
+  return {
+    movement: {
+      ...safeMovement,
+      x,
+      y,
+    },
+    forcedLabel,
+    guardApplied: true,
+    guardReason: '1d_deficit_training',
+  };
+}
+
 
 function IconMapSwitch() {
   return (
@@ -257,10 +306,21 @@ export default function MetabolicUnifiedView({
   }, [bodyMetricsHistory, dailyHistory, timeframeRange]);
 
   const anchorPosition = useMemo(() => getAnchorFromLastWeighIn(baselineOffset), [baselineOffset]);
-  const movementState = useMemo(
+  const movementStateRaw = useMemo(
     () => movementFromMapInputs(metabolicMapInputs),
     [metabolicMapInputs]
   );
+  const ieriGuard = useMemo(
+    () =>
+      applyIeriDeficitTrainingGuard({
+        selectedTimeframe,
+        rawDetails: metabolicMapRawDetails,
+        mapInputs: metabolicMapInputs,
+        movement: movementStateRaw,
+      }),
+    [selectedTimeframe, metabolicMapRawDetails, metabolicMapInputs, movementStateRaw]
+  );
+  const movementState = ieriGuard.movement;
   const estimatedPosition = useMemo(
     () => ({
       x: clampAxis(anchorPosition.x + movementState.x),
@@ -313,7 +373,7 @@ export default function MetabolicUnifiedView({
   const directionState = useMemo(() => directionStateFromMovement(movementState), [movementState]);
   const directionVector = directionState.vector;
   const unifiedCompassQuadrant = String(normalizedMetabolicState?.quadrant || 'neutral');
-  const unifiedCompassLabel = directionLabelFromQuadrant(unifiedCompassQuadrant);
+  const unifiedCompassLabel = ieriGuard.forcedLabel || directionLabelFromQuadrant(unifiedCompassQuadrant);
   const unifiedDirectionModeLabel = directionModeLabelFromState(directionState);
   const movementAuditByTimeframe = useMemo(() => {
     return METABOLIC_COMPASS_TIMEFRAMES.reduce((acc, tf) => {
@@ -474,8 +534,10 @@ export default function MetabolicUnifiedView({
       },
       interpreted: {
         quadrant: interpretedQuadrant,
-        label: QUADRANT_DIRECTION_LABELS[interpretedQuadrant] || 'neutral',
+        label: ieriGuard.forcedLabel || QUADRANT_DIRECTION_LABELS[interpretedQuadrant] || 'neutral',
       },
+      ieriGuardApplied: ieriGuard.guardApplied,
+      ieriGuardReason: ieriGuard.guardReason || null,
     });
   }, [
     selectedTimeframe,
@@ -485,6 +547,7 @@ export default function MetabolicUnifiedView({
     movementState,
     directionVector,
     normalizedMetabolicState,
+    ieriGuard,
   ]);
 
   useEffect(() => {
@@ -502,6 +565,9 @@ export default function MetabolicUnifiedView({
       compassLabel: unifiedCompassLabel,
       mapQuadrant: unifiedCompassQuadrant,
       directionModeLabel: unifiedDirectionModeLabel,
+      ieriGuardApplied: ieriGuard.guardApplied,
+      ieriGuardReason: ieriGuard.guardReason,
+      forcedLabel: ieriGuard.forcedLabel || null,
     });
   }, [
     selectedTimeframe,
@@ -510,6 +576,7 @@ export default function MetabolicUnifiedView({
     unifiedCompassLabel,
     unifiedCompassQuadrant,
     unifiedDirectionModeLabel,
+    ieriGuard,
   ]);
 
   const reducedMotion =
