@@ -2955,9 +2955,10 @@ export default function SalaComandi() {
       buildMetabolicCompassDailyHistory(
         fullHistory,
         currentTrackerDate || getTodayString(),
-        userTargets
+        userTargets,
+        { calorieStrategy: kentuDailyCalorieStrategy }
       ),
-    [fullHistory, currentTrackerDate, userTargets]
+    [fullHistory, currentTrackerDate, userTargets, kentuDailyCalorieStrategy]
   );
 
   // Alias semantico: livello SNC usato in UI / allarmi.

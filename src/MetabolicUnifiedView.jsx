@@ -235,6 +235,34 @@ export default function MetabolicUnifiedView({
     () => timeframeDateRangeFromDailyHistory(dailyHistory, selectedTimeframe),
     [dailyHistory, selectedTimeframe]
   );
+  const selectedDayMapInputsDebug = useMemo(() => {
+    const endDate = timeframeRange?.endDate;
+    const series = Array.isArray(dailyHistory) ? dailyHistory : [];
+    const fallback = series.length > 0 ? series[series.length - 1] : null;
+    const byDate = endDate
+      ? series.find((row) => String(row?.date || '') === String(endDate))
+      : null;
+    const row = byDate || fallback;
+    if (!row) return null;
+    const consumedKcal = Number(row?.consumedKcal ?? 0);
+    const baseTargetKcal = Number(row?.baseTargetKcal ?? 0);
+    const workoutKcal = Number(row?.workoutKcal ?? 0);
+    const effectiveTargetKcal = Number(row?.effectiveTargetKcal ?? (baseTargetKcal + workoutKcal));
+    const remainingKcal = Number(row?.remainingKcal ?? (effectiveTargetKcal - consumedKcal));
+    const computedKcalBalance = Number(
+      row?.computedKcalBalance ?? row?.kcalBalance ?? (consumedKcal - effectiveTargetKcal)
+    );
+    return {
+      date: String(row?.date || endDate || 'n/a'),
+      consumedKcal,
+      baseTargetKcal,
+      workoutKcal,
+      effectiveTargetKcal,
+      remainingKcal,
+      computedKcalBalance,
+      source: String(row?.source || 'home_energy_summary'),
+    };
+  }, [dailyHistory, timeframeRange]);
 
   const baselineOffset = useMemo(() => {
     const range = timeframeRange;
@@ -801,6 +829,14 @@ export default function MetabolicUnifiedView({
                 <div>tractionVector.y: {Number(tractionState?.vector?.y ?? 0).toFixed(4)}</div>
                 <div>tractionMagnitude: {Number(tractionState?.magnitude ?? 0).toFixed(4)}</div>
                 <div>tractionReason: {String(tractionState?.reason || 'n/a')}</div>
+                <div style={{ marginTop: 6, opacity: 0.92 }}>selected day debug ({selectedDayMapInputsDebug?.date || 'n/a'}):</div>
+                <div>consumedKcal: {Number(selectedDayMapInputsDebug?.consumedKcal ?? 0).toFixed(4)}</div>
+                <div>baseTargetKcal: {Number(selectedDayMapInputsDebug?.baseTargetKcal ?? 0).toFixed(4)}</div>
+                <div>workoutKcal: {Number(selectedDayMapInputsDebug?.workoutKcal ?? 0).toFixed(4)}</div>
+                <div>effectiveTargetKcal: {Number(selectedDayMapInputsDebug?.effectiveTargetKcal ?? 0).toFixed(4)}</div>
+                <div>remainingKcal: {Number(selectedDayMapInputsDebug?.remainingKcal ?? 0).toFixed(4)}</div>
+                <div>computedKcalBalance: {Number(selectedDayMapInputsDebug?.computedKcalBalance ?? 0).toFixed(4)}</div>
+                <div>source: {String(selectedDayMapInputsDebug?.source || 'home_energy_summary')}</div>
               </div>
             ) : null}
           </div>

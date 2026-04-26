@@ -1,5 +1,10 @@
 import { addDays } from './calendarDateUtils';
-import { getLogFromStoricoTree, getTodayString, getYesterdayString } from './coreEngine';
+import {
+  getLogFromStoricoTree,
+  getTodayString,
+  getYesterdayString,
+  applyCalorieStrategyToProfileKcal,
+} from './coreEngine';
 import { computeTotali } from './useBiochimico';
 
 const DEFAULT_WINDOW_DAYS = 30;
@@ -59,18 +64,25 @@ function mainNightSleepHoursFromLog(log) {
  * @param {Record<string, unknown>} fullHistory albero tracker (es. `tracker_data` RTDB)
  * @param {string} anchorDateStr mantenuto per compatibilità chiamate (es. `currentTrackerDate`); non estende la finestra a oggi
  * @param {{ kcal?: number }} userTargets target kcal (TDEE di riferimento)
+ * @param {{ calorieStrategy?: string }} [options]
  * @param {number} [maxDays=30]
- * @returns {Array<{ date: string, kcalBalance: number, trainingLoad: number, sleepHours?: number | null }>}
+ * @returns {Array<{ date: string, kcalBalance: number, trainingLoad: number, sleepHours?: number | null, consumedKcal?: number, baseTargetKcal?: number, workoutKcal?: number, effectiveTargetKcal?: number, remainingKcal?: number, computedKcalBalance?: number, source?: string }>}
  */
 export function buildMetabolicCompassDailyHistory(
   fullHistory,
   anchorDateStr,
   userTargets,
+  options = {},
   maxDays = DEFAULT_WINDOW_DAYS
 ) {
   if (!anchorDateStr || typeof anchorDateStr !== 'string') return [];
-  const tdee = Number(userTargets?.kcal ?? 2000);
-  if (!Number.isFinite(tdee)) return [];
+  const baseProfileKcal = Number(userTargets?.kcal ?? 2000);
+  if (!Number.isFinite(baseProfileKcal)) return [];
+  const calorieStrategy = String(options?.calorieStrategy || 'pari');
+  const baseTargetKcal = Number(
+    applyCalorieStrategyToProfileKcal(baseProfileKcal, calorieStrategy)
+  );
+  if (!Number.isFinite(baseTargetKcal)) return [];
 
   const today = getTodayString();
   const yesterday = getYesterdayString();
@@ -83,15 +95,43 @@ export function buildMetabolicCompassDailyHistory(
     const dStr = addDays(yesterday, -i);
     const log = getLogFromStoricoTree(tree, dStr) || [];
     if (log.length === 0) {
-      out.push({ date: dStr, kcalBalance: 0, trainingLoad: 0, sleepHours: null });
+      out.push({
+        date: dStr,
+        kcalBalance: 0,
+        trainingLoad: 0,
+        sleepHours: null,
+        consumedKcal: 0,
+        baseTargetKcal,
+        workoutKcal: 0,
+        effectiveTargetKcal: baseTargetKcal,
+        remainingKcal: baseTargetKcal,
+        computedKcalBalance: 0,
+        source: 'home_energy_summary',
+      });
       continue;
     }
     const t = computeTotali(log);
-    const kcalBalance = (Number(t.kcal) || 0) - tdee;
+    const consumedKcal = Number(t.kcal) || 0;
     const wk = Number(t.workout) || 0;
+    const effectiveTargetKcal = baseTargetKcal + wk;
+    const remainingKcal = effectiveTargetKcal - consumedKcal;
+    // Same Home summary semantics: kcalBalance = consumed - effectiveTarget = -remaining.
+    const kcalBalance = consumedKcal - effectiveTargetKcal;
     const trainingLoad = Math.min(100, Math.round(wk / WORKOUT_KCAL_PER_LOAD_UNIT));
     const sleepHours = mainNightSleepHoursFromLog(log);
-    out.push({ date: dStr, kcalBalance, trainingLoad, sleepHours });
+    out.push({
+      date: dStr,
+      kcalBalance,
+      trainingLoad,
+      sleepHours,
+      consumedKcal,
+      baseTargetKcal,
+      workoutKcal: wk,
+      effectiveTargetKcal,
+      remainingKcal,
+      computedKcalBalance: kcalBalance,
+      source: 'home_energy_summary',
+    });
   }
 
   return out;
