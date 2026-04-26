@@ -295,9 +295,6 @@ export default function MetabolicCompass({
   unifiedDirectionMode = false,
   unifiedDirectionLabel = '',
   unifiedDirectionModeLabel = '',
-  unifiedDirectionVector = null,
-  unifiedMovementState = null,
-  unifiedBehaviorConfidence = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
@@ -343,22 +340,6 @@ export default function MetabolicCompass({
   );
 
   useEffect(() => {
-    if (unifiedDirectionMode) {
-      const dx = Number(unifiedDirectionVector?.x) || 0;
-      const dy = Number(unifiedDirectionVector?.y) || 0;
-      const dirLen = Math.hypot(dx, dy);
-      const movementMag = Math.hypot(
-        Number(unifiedMovementState?.x) || 0,
-        Number(unifiedMovementState?.y) || 0
-      );
-      const confidence01 = Math.max(0, Math.min(1, Number(unifiedBehaviorConfidence) || 0));
-      const movement01 = Math.max(0, Math.min(1, movementMag / 0.35));
-      const magnitude = dirLen > 1e-6 ? Math.max(confidence01, movement01 * 0.8) : 0;
-      const angleRad = Math.atan2(dy, dx);
-      const angleDeg = Number.isFinite(angleRad) ? angleRad * METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG : 0;
-      setSnapshot({ angleDeg, magnitude, x: dx, y: dy });
-      return;
-    }
     if (neutralStaticMode) {
       setSnapshot({ angleDeg: 0, magnitude: 0, x: 0, y: 0 });
       return;
@@ -379,10 +360,6 @@ export default function MetabolicCompass({
     compassHistoryKey,
     normalizedMetabolicState,
     neutralStaticMode,
-    unifiedDirectionMode,
-    unifiedDirectionVector,
-    unifiedMovementState,
-    unifiedBehaviorConfidence,
   ]);
 
   const angleDeg = snapshot?.angleDeg ?? 0;

@@ -148,7 +148,7 @@ const MAP_CENTER_SVG = { cx: 50, cy: 50 };
 /** Raggio Ancora (viewBox) — marker storici usano lo stesso raggio, senza glow. */
 const ANCHOR_CIRCLE_R = 3.5;
 /** Marker bussola principale: corpo circolare sempre visibile anche in direzione neutra. */
-const COMPASS_BODY_R = 7.1;
+const COMPASS_BODY_R = 5.1;
 
 /** Sotto questa lunghezza (spazio mappa −100…100) il vettore stile di vita si considera “quasi nullo”: ago verso il centro, più tenue. */
 const LIFESTYLE_VECTOR_IDLE_THRESHOLD = 4;
@@ -530,11 +530,6 @@ export default function MetabolicMap({
     const maxLen = COMPASS_BODY_R * 0.8;
     return minLen + t * (maxLen - minLen);
   }, [lifestyleNearlyIdle, lifestyleLen]);
-  const pullDotOffset = useMemo(() => {
-    if (!directionAvailable || directionMagnitude <= 1e-6) return 0;
-    const base = COMPASS_BODY_R * 0.42;
-    return base + Math.min(COMPASS_BODY_R * 0.26, directionMagnitude * (COMPASS_BODY_R * 0.22));
-  }, [directionAvailable, directionMagnitude]);
   const needleTipPoints = useMemo(() => {
     const tipY = -needleShaftLen;
     const baseY = -(needleShaftLen - 1.2);
@@ -868,34 +863,6 @@ export default function MetabolicMap({
             style={{ transformOrigin: '0px 0px' }}
             data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
           >
-            {directionAvailable && pullDotOffset > 0 ? (
-              <>
-                <motion.line
-                  x1={0}
-                  y1={0}
-                  x2={safeDirectionVector.x * pullDotOffset}
-                  y2={safeDirectionVector.y * pullDotOffset}
-                  stroke="rgba(208, 225, 238, 0.52)"
-                  strokeWidth={0.34}
-                  strokeLinecap="round"
-                  vectorEffect="nonScalingStroke"
-                  animate={{ opacity: 0.66 }}
-                  transition={vectorTransition}
-                />
-                <motion.circle
-                  cx={safeDirectionVector.x * pullDotOffset}
-                  cy={safeDirectionVector.y * pullDotOffset}
-                  r={1.1}
-                  fill="rgba(228, 238, 248, 0.82)"
-                  stroke="rgba(18, 24, 32, 0.62)"
-                  strokeWidth={0.18}
-                  filter={`url(#${glowFilterId})`}
-                  vectorEffect="nonScalingStroke"
-                  animate={{ opacity: 0.86 }}
-                  transition={vectorTransition}
-                />
-              </>
-            ) : null}
             <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
               <motion.rect
                 x={-snailTrailStyle.width / 2}
