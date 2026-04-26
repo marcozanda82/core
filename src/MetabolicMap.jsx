@@ -272,6 +272,22 @@ const QUADRANT_RISK_LABELS = {
   SE: 'FEGATO GRASSO / INSULINA',
 };
 
+function statusLabelFromSignals(quadrant, energyBalance, trainingLoad, glycemicInstability, sleepHours) {
+  const q = String(quadrant || 'neutral');
+  if (q !== 'NE') return QUADRANT_RISK_LABELS[q] || QUADRANT_RISK_LABELS.neutral;
+  const e = Number(energyBalance) || 0;
+  const t = Number(trainingLoad) || 0;
+  const g = Number(glycemicInstability) || 0;
+  const s = Number.isFinite(Number(sleepHours)) ? Number(sleepHours) : 8;
+  if (e > 0 && (g >= 35 || s < 6.2)) return 'INFIAMMAZIONE / BULK';
+  if (e > 0 && g < 25) {
+    return t >= 30
+      ? 'RICOMPOSIZIONE / SURPLUS CONTROLLATO'
+      : 'BULK LEGGERO';
+  }
+  return 'SURPLUS CONTROLLATO';
+}
+
 /** Profondità: centro più leggibile, bordi leggermente oscurati. */
 function buildVignetteOverlay() {
   return 'radial-gradient(circle at 50% 50%, rgba(5,6,8,0) 0%, rgba(5,6,8,0) 38%, rgba(0,0,0,0.16) 72%, rgba(0,0,0,0.48) 100%)';
@@ -322,10 +338,10 @@ function rotationDegFromDirection(dirX, dirY) {
  * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
  */
 export default function MetabolicMap({
-  energyBalance: _energyBalance = 0,
-  trainingLoad: _trainingLoad = 0,
-  sleepHours: _sleepHours = 8,
-  glycemicInstability: _glycemicInstability = 0,
+  energyBalance = 0,
+  trainingLoad = 0,
+  sleepHours = 8,
+  glycemicInstability = 0,
   realSleepDays = 0,
   totalWindowDays = 0,
   selectedTimeframe = '7d',
@@ -390,6 +406,17 @@ export default function MetabolicMap({
   const effectiveDistance = hasNormalizedState
     ? Math.max(0, Number(normalizedMetabolicState.distance) || 0)
     : Math.hypot(displayX, displayY);
+  const effectiveStatusLabel = useMemo(
+    () =>
+      statusLabelFromSignals(
+        effectiveQuadrant,
+        energyBalance,
+        trainingLoad,
+        glycemicInstability,
+        sleepHours
+      ),
+    [effectiveQuadrant, energyBalance, trainingLoad, glycemicInstability, sleepHours]
+  );
 
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY, true);
@@ -584,7 +611,7 @@ export default function MetabolicMap({
     >
       <div
         role="img"
-        aria-label={`Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(effectiveDistance)}`}
+        aria-label={`Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${effectiveStatusLabel}, distanza ${Math.round(effectiveDistance)}`}
         style={{
           position: 'relative',
           width: '100%',
@@ -955,7 +982,7 @@ export default function MetabolicMap({
         }}
       >
         <div style={{ fontWeight: 600, marginBottom: 4 }}>
-          Zona attuale: {ZONE_LABELS[effectiveZone]} — Stato: {QUADRANT_RISK_LABELS[effectiveQuadrant]}
+          Zona attuale: {ZONE_LABELS[effectiveZone]} — Stato: {effectiveStatusLabel}
         </div>
         <div
           style={{

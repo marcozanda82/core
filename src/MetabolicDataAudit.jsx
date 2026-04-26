@@ -63,7 +63,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
     const kcalReg = hasWindow && rd.meanKcal != null ? `${Math.round(rd.meanKcal)} kcal/d` : 'N/D';
     const kcalUsedVal = Number(mi.energyBalance ?? 0);
     const kcalUsed = `${kcalUsedVal.toFixed(1)}`;
-    const kcalNote = hasWindow ? 'Normalizzato (kcal/5)' : '—';
+    const kcalNote = hasWindow ? 'Pressione calorica normalizzata (banda neutra inclusa)' : '—';
 
     const trainReg =
       hasWindow && rd.meanTraining01 != null
@@ -72,7 +72,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
     // y in cronologia è già nel sistema metabolico (non in coordinate CSS top), quindi è allineato al marker.
     const trainUsedVal = Number(mi.trainingLoad ?? 0);
     const trainUsed = `${trainUsedVal.toFixed(1)}`;
-    const trainNote = hasWindow ? 'Normalizzato (0 = -54)' : '—';
+    const trainNote = hasWindow ? 'Stimolo allenante positivo diretto (0–100)' : '—';
 
     return [
       { key: 'sleep', metric: 'Sonno', registered: sleepReg, used: sleepUsed, note: sleepNote },
@@ -162,9 +162,9 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
               letterSpacing: '0.02em',
             }}
           >
-            Asse bilancio e allenamento: scala −100…+100. Bilancio: media kcal/d ÷ 5 (con clamp).
-            Allenamento: ((media−35)/65)×100, quindi 0 ≈ −54 e 100 = +100.
-            Zone radiali: centro Blue Zone (Longevità); arancione e rosso = allarme.
+            Bilancio: pressione calorica normalizzata dopo banda neutra kcal. Allenamento: stimolo
+            positivo diretto 0–100 (senza centratura su 35). Instabilità glicemica: segnale di stress
+            metabolico ammorbidito. Zone radiali: centro Blue Zone (Longevità); arancione e rosso = allarme.
           </p>
         </div>
       )}
