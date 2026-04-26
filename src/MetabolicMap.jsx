@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { calculateBaselineOffset, calculateMetabolicMapPosition } from './metabolicMapEngine';
+import { calculateBaselineOffset } from './metabolicMapEngine';
 import { biometricsToMapBaselineInput } from './biometricHistory';
 
 const MAP_MIN_X = -100;
@@ -136,20 +136,7 @@ function svgRadiusForMetabolicScore(score) {
 }
 
 
-function classifyMapPoint(x, y) {
-  const distance = Math.hypot(x, y);
-  let zone = 'green';
-  if (distance > 70) zone = 'red';
-  else if (distance > 35) zone = 'orange';
-
-  let quadrant = 'NE';
-  if (x < 0 && y >= 0) quadrant = 'NW';
-  else if (x >= 0 && y < 0) quadrant = 'SE';
-  else if (x < 0 && y < 0) quadrant = 'SW';
-  return { zone, quadrant, distance };
-}
-
-/** Soglie zona radiale: distanza ≤35 Blue Zone, ≤70 arancione, oltre rosso (coerente con classifyMapPoint). */
+/** Soglie zona radiale: distanza ≤35 Blue Zone, ≤70 arancione, oltre rosso. */
 const BLUE_ZONE_SVG_R = 17.5;
 
 /** Anelli di riferimento Longevity Score (solo etichette su archi con score ≥ 10 → r ≤ 40). */
@@ -177,6 +164,7 @@ const LIFESTYLE_LEN_FOR_FULL_NEEDLE = 95;
 const VECTOR_MOTION_TRANSITION = { duration: 0.32, ease: 'linear' };
 
 const ZONE_LABELS = {
+  neutral: 'Neutrale (Placeholder)',
   green: 'Blue Zone (Longevità)',
   orange: 'Arancione (Adattamento)',
   red: 'Rossa (Pericolo)',
@@ -275,6 +263,7 @@ export function getColorFromValue(value) {
 }
 
 const QUADRANT_RISK_LABELS = {
+  neutral: 'Modalità placeholder',
   NW: 'BURNOUT / CORTISOLO',
   NE: 'INFIAMMAZIONE / BULK',
   SW: 'DEPERIMENTO / CATABOLISMO',
@@ -331,10 +320,10 @@ function rotationDegFromDirection(dirX, dirY) {
  * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
  */
 export default function MetabolicMap({
-  energyBalance = 0,
-  trainingLoad = 0,
-  sleepHours = 8,
-  glycemicInstability = 0,
+  energyBalance: _energyBalance = 0,
+  trainingLoad: _trainingLoad = 0,
+  sleepHours: _sleepHours = 8,
+  glycemicInstability: _glycemicInstability = 0,
   realSleepDays = 0,
   totalWindowDays = 0,
   selectedTimeframe = '7d',
@@ -342,9 +331,10 @@ export default function MetabolicMap({
   bodyMetricsHistory = null,
   zoomLevel: zoomLevelProp = undefined,
   onZoomLevelChange = null,
-  trajectoryPositions = null,
+  trajectoryPositions: _trajectoryPositions = null,
   currentPosition = null,
-  normalizedMetabolicState = null,
+  normalizedMetabolicState: _normalizedMetabolicState = null,
+  directionVector = null,
   showRoute = false,
 }) {
   const uid = useId().replace(/:/g, '');
@@ -364,82 +354,27 @@ export default function MetabolicMap({
     else setZoomLevelLocal(clamped);
   };
 
-  const computedMapState = useMemo(
-    () =>
-      calculateMetabolicMapPosition({
-        energyBalance,
-        trainingLoad,
-        sleepHours,
-        glycemicInstability,
-      }),
-    [energyBalance, trainingLoad, sleepHours, glycemicInstability],
-  );
-
   const baselineX = Number(baselineOffset?.x) || 0;
   const baselineY = Number(baselineOffset?.y) || 0;
-  const hasSharedNormalizedState =
-    normalizedMetabolicState &&
-    Number.isFinite(Number(normalizedMetabolicState.x)) &&
-    Number.isFinite(Number(normalizedMetabolicState.y));
-
-  const shiftedX = useMemo(() => {
-    if (hasSharedNormalizedState) {
-      return clampMapAxis(Number(normalizedMetabolicState.x), MAP_MIN_X, MAP_MAX_X);
-    }
-    return clampMapAxis(computedMapState.x + baselineX, MAP_MIN_X, MAP_MAX_X);
-  }, [hasSharedNormalizedState, normalizedMetabolicState, computedMapState.x, baselineX]);
-  const shiftedY = useMemo(() => {
-    if (hasSharedNormalizedState) {
-      return clampMapAxis(Number(normalizedMetabolicState.y), MAP_MIN_Y, MAP_MAX_Y);
-    }
-    return clampMapAxis(computedMapState.y + baselineY, MAP_MIN_Y, MAP_MAX_Y);
-  }, [hasSharedNormalizedState, normalizedMetabolicState, computedMapState.y, baselineY]);
-
-  const stateZone = hasSharedNormalizedState ? String(normalizedMetabolicState.zone || '') : '';
-  const stateQuadrant = hasSharedNormalizedState ? String(normalizedMetabolicState.quadrant || '') : '';
-  const stateDistance = hasSharedNormalizedState ? Number(normalizedMetabolicState.distance) : NaN;
-
-  const displayPosition = useMemo(
-    () => clampMapPosition(currentPosition || { x: shiftedX, y: shiftedY }, 'current'),
-    [currentPosition, shiftedX, shiftedY],
+  const anchorPosition = useMemo(
+    () => clampMapPosition({ x: baselineX, y: baselineY }, 'anchor'),
+    [baselineX, baselineY],
   );
-  const displayAura = hasSharedNormalizedState
-    ? Math.max(0, Math.min(100, Number(normalizedMetabolicState.finalAura) || 0))
-    : computedMapState.finalAura;
+  const displayPosition = useMemo(
+    () => clampMapPosition(currentPosition || anchorPosition, 'current'),
+    [currentPosition, anchorPosition],
+  );
+  const displayAura = 0;
   const displayX = displayPosition.x;
   const displayY = displayPosition.y;
 
-  const { zone: effectiveZone, quadrant: effectiveQuadrant, distance: effectiveDistance } = useMemo(
-    () => {
-      if (
-        (stateZone === 'green' || stateZone === 'orange' || stateZone === 'red') &&
-        (stateQuadrant === 'NE' || stateQuadrant === 'NW' || stateQuadrant === 'SE' || stateQuadrant === 'SW') &&
-        Number.isFinite(stateDistance)
-      ) {
-        return {
-          zone: stateZone,
-          quadrant: stateQuadrant,
-          distance: stateDistance,
-        };
-      }
-      return classifyMapPoint(displayX, displayY);
-    },
-    [displayX, displayY, stateZone, stateQuadrant, stateDistance],
-  );
+  const effectiveZone = 'neutral';
+  const effectiveQuadrant = 'neutral';
+  const effectiveDistance = Math.hypot(displayX, displayY);
 
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY, true);
-  const movementVelocity = useMemo(() => {
-    const positions = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
-    const last = positions[positions.length - 1];
-    const prev = positions.length > 1 ? positions[positions.length - 2] : last;
-    const speed = Math.hypot(
-      (Number(last?.x) || 0) - (Number(prev?.x) || 0),
-      (Number(last?.y) || 0) - (Number(prev?.y) || 0),
-    );
-    const t = Math.max(0, Math.min(1, speed / 9));
-    return INERTIA_VELOCITY_MIN + t * (INERTIA_VELOCITY_MAX - INERTIA_VELOCITY_MIN);
-  }, [trajectoryPositions]);
+  const movementVelocity = INERTIA_VELOCITY_MIN;
   useEffect(() => {
     targetTipRef.current = tipSvg;
     inertiaVelRef.current = movementVelocity;
@@ -471,19 +406,17 @@ export default function MetabolicMap({
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const lifestyleDx = displayX - baselineX;
-  const lifestyleDy = displayY - baselineY;
-  const trajectorySpeed = useMemo(() => {
-    const positions = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
-    const last = positions[positions.length - 1];
-    const prev = positions.length > 1 ? positions[positions.length - 2] : last;
-    return Math.hypot(
-      (Number(last?.x) || 0) - (Number(prev?.x) || 0),
-      (Number(last?.y) || 0) - (Number(prev?.y) || 0),
-    );
-  }, [trajectoryPositions]);
-  const lifestyleLen = Math.max(Math.hypot(lifestyleDx, lifestyleDy), trajectorySpeed);
-  const lifestyleNearlyIdle = lifestyleLen < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
+  const safeDirectionVector = useMemo(() => {
+    const x = Number(directionVector?.x);
+    const y = Number(directionVector?.y);
+    return {
+      x: Number.isFinite(x) ? x : 0,
+      y: Number.isFinite(y) ? y : 0,
+    };
+  }, [directionVector]);
+  const directionMagnitude = Math.hypot(safeDirectionVector.x, safeDirectionVector.y);
+  const lifestyleLen = directionMagnitude;
+  const lifestyleNearlyIdle = directionMagnitude < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
   const compassCenter = useMemo(
     () => ({ x: inertialTipSvg.cx, y: inertialTipSvg.cy }),
     [inertialTipSvg.cx, inertialTipSvg.cy]
@@ -492,15 +425,6 @@ export default function MetabolicMap({
   /** Angolo (gradi) tra Ancora e punto finale nello spazio mappa — Fase 1 richiesta. */
   const angleMapDeg = compassAngleDegMapSpace(displayX, displayY, baselineX, baselineY);
 
-  const trajectoryPointSvg = useMemo(() => {
-    const arr = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
-    return arr
-      .map((point, idx) => {
-        const clamped = clampMapPosition(point, `trajectory-${idx}`);
-        return mapPointToSvgCoords(clamped.x, clamped.y, true);
-      })
-      .filter((point) => Number.isFinite(point.cx) && Number.isFinite(point.cy));
-  }, [trajectoryPositions]);
   const historicTrail = useMemo(
     () => buildHistoricBaselineTrailSvg(bodyMetricsHistory, baselineX, baselineY),
     [bodyMetricsHistory, baselineX, baselineY]
@@ -537,12 +461,6 @@ export default function MetabolicMap({
   useEffect(() => {
     const outOfBounds = [];
     if (displayPosition.outOfBounds) outOfBounds.push(displayPosition);
-    if (Array.isArray(trajectoryPositions)) {
-      trajectoryPositions.forEach((point, idx) => {
-        const dailyPoint = clampMapPosition(point, `trajectory-${idx}`);
-        if (dailyPoint.outOfBounds) outOfBounds.push(dailyPoint);
-      });
-    }
     if (outOfBounds.length > 0) {
       console.warn('[MetabolicMap] clamped out-of-bounds map positions', {
         bounds: {
@@ -552,27 +470,22 @@ export default function MetabolicMap({
         positions: outOfBounds,
       });
     }
-  }, [displayPosition, trajectoryPositions]);
-  const trajectoryTangent = useMemo(() => {
-    const lastIdx = trajectoryPointSvg.length - 1;
-    const prev = lastIdx > 0 ? trajectoryPointSvg[lastIdx - 1] : anchorSvg;
-    const target = lastIdx >= 0 ? trajectoryPointSvg[lastIdx] : inertialTipSvg;
-    const dx = (target?.cx ?? compassCenter.x) - (prev?.cx ?? compassCenter.x);
-    const dy = (target?.cy ?? compassCenter.y) - (prev?.cy ?? compassCenter.y);
-    const mag = Math.hypot(dx, dy);
-    if (mag < 1e-6) return { x: 0, y: -1, mag: 0 };
-    return { x: dx / mag, y: dy / mag, mag };
-  }, [trajectoryPointSvg, anchorSvg, compassCenter.x, compassCenter.y, inertialTipSvg]);
-  const needleRotateDeg = rotationDegFromDirection(trajectoryTangent.x, trajectoryTangent.y);
-  const needleBladeOpacity = lifestyleNearlyIdle ? 0.32 : 0.86;
+  }, [displayPosition]);
+  const needleRotateDeg = directionMagnitude > 1e-6
+    ? rotationDegFromDirection(safeDirectionVector.x, safeDirectionVector.y)
+    : 0;
+  const needleBladeOpacity = directionMagnitude > 1e-6 ? 0.86 : 0;
   const snailTrailStyle = useMemo(() => {
-    const t = Math.max(0, Math.min(1, trajectorySpeed / 14));
+    if (directionMagnitude <= 1e-6) {
+      return { length: 0, opacity: 0, width: 0.95 };
+    }
+    const t = Math.max(0, Math.min(1, directionMagnitude / 14));
     return {
       length: 0.45 + t * 3.1,
       opacity: t < 0.08 ? 0.015 : 0.035 + t * 0.18,
       width: 0.95 + t * 1.1,
     };
-  }, [trajectorySpeed]);
+  }, [directionMagnitude]);
 
   const distAnchor = Math.hypot(
     anchorSvg.cx - MAP_CENTER_SVG.cx,
@@ -585,8 +498,6 @@ export default function MetabolicMap({
 
   const longevityScoreAnchor = calculateMetabolicScore(baselineX, baselineY);
   const longevityScoreFinal = calculateMetabolicScore(displayX, displayY);
-  const surplusCaloricMap =
-    distTarget > distAnchor + 1e-6 ? longevityScoreAnchor - longevityScoreFinal : 0;
   const needleFill =
     distTarget > distAnchor
       ? 'rgba(150, 95, 100, 0.78)'
@@ -976,16 +887,16 @@ export default function MetabolicMap({
         </svg>
 
         <span style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
-          BURNOUT / CORTISOLO
+          ASSE Y+
         </span>
         <span style={{ ...labelStyle, top: 8, right: 8, textAlign: 'right', zIndex: 5 }}>
-          INFIAMMAZIONE / BULK
+          ASSE X+
         </span>
         <span style={{ ...labelStyle, bottom: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
-          DEPERIMENTO / CATABOLISMO
+          ASSE X-
         </span>
         <span style={{ ...labelStyle, bottom: 8, right: 8, textAlign: 'right', zIndex: 5 }}>
-          FEGATO GRASSO / INSULINA
+          ASSE Y-
         </span>
       </div>
 
@@ -1002,7 +913,7 @@ export default function MetabolicMap({
         }}
       >
         <div style={{ fontWeight: 600, marginBottom: 4 }}>
-          Zona attuale: {ZONE_LABELS[effectiveZone]} — Rischio: {QUADRANT_RISK_LABELS[effectiveQuadrant]}
+          Zona attuale: {ZONE_LABELS[effectiveZone]} — Stato: {QUADRANT_RISK_LABELS[effectiveQuadrant]}
         </div>
         <div
           style={{
@@ -1026,39 +937,9 @@ export default function MetabolicMap({
         <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
           Distanza dal centro: {effectiveDistance.toFixed(1)} · Aura glicemica: {Math.round(displayAura)}
         </div>
-        {surplusCaloricMap > 0 && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: '8px 10px',
-              borderRadius: 8,
-              background: 'rgba(60, 42, 38, 0.45)',
-              border: '1px solid rgba(150, 110, 95, 0.35)',
-              color: 'rgba(210, 195, 185, 0.92)',
-              fontWeight: 600,
-              fontSize: '0.78rem',
-            }}
-          >
-            Surplus calorico (mappa): la posizione finale è più lontana dal centro dell’Ancora — calo di
-            Longevity Score potenziale fino a ~{surplusCaloricMap} punti rispetto all’Ancora.
-          </div>
-        )}
-        {displayAura > 50 && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: '8px 10px',
-              borderRadius: 8,
-              background: 'rgba(55, 38, 40, 0.45)',
-              border: '1px solid rgba(130, 90, 92, 0.35)',
-              color: 'rgba(215, 190, 188, 0.92)',
-              fontWeight: 600,
-              fontSize: '0.78rem',
-            }}
-          >
-            Allarme Infiammazione Glicemica in corso
-          </div>
-        )}
+        <div style={{ marginTop: 10, fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.72)' }}>
+          Modalità placeholder attiva: posizione bloccata su Ancora, direzione disabilitata.
+        </div>
       </div>
 
       {sleepReliabilityLine && (

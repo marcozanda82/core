@@ -4,12 +4,10 @@ import { historyFingerprint } from './metabolicDirectionEngine';
 import { getStructuralBaselineOffsetFromHistory } from './biometricHistory';
 import {
   calculateBaselineOffset,
-  calculateMetabolicMapPosition,
   getLastBiometricData,
 } from './metabolicMapEngine';
 import {
   computeMetabolicMapInputsAndAudit,
-  mapEnergyAxisFromCalorieBalance,
 } from './metabolicMapPeriodInputs';
 import { computeWeightProjectionFromInputs, formatWeightProjectionUI } from './weightProjectionEngine';
 import MetabolicDataAudit from './MetabolicDataAudit';
@@ -35,30 +33,12 @@ function clampAxis(v) {
   return Math.max(-100, Math.min(100, Number(v) || 0));
 }
 
-function dailyTrainingToMapAxis(dayTrainingLoad) {
-  const t = Math.max(0, Math.min(100, Number(dayTrainingLoad) || 0));
-  return clampAxis(((t - 35) / 65) * 100);
+function getAnchorFromLastWeighIn(baselineOffset) {
+  return {
+    x: clampAxis(Number(baselineOffset?.x) || 0),
+    y: clampAxis(Number(baselineOffset?.y) || 0),
+  };
 }
-
-function buildDailyPointFromLogDay(day, baselineOffset) {
-  const kcalBalance = Number(day?.kcalBalance) || 0;
-  const trainingLoadAxis = dailyTrainingToMapAxis(day?.trainingLoad);
-  const sleepHours = Number(day?.sleepHours);
-  const safeSleep = Number.isFinite(sleepHours) && sleepHours > 0 ? sleepHours : 8;
-  const surplusFactor = Math.max(0, Math.min(1, kcalBalance / 500));
-  const sleepStress = safeSleep < 7.5 ? Math.max(0, Math.min(1, (7.5 - safeSleep) / 7.5)) : 0;
-  const glycemicInstability = Math.max(0, Math.min(100, (0.4 * surplusFactor + 0.45 * sleepStress) * 100));
-  return calculateMetabolicMapPosition({
-    energyBalance: mapEnergyAxisFromCalorieBalance(kcalBalance, day?.trainingLoad, 1),
-    trainingLoad: trainingLoadAxis,
-    sleepHours: safeSleep,
-    glycemicInstability,
-    baselineOffsetX: baselineOffset.x,
-    baselineOffsetY: baselineOffset.y,
-  });
-}
-
-const TRAJECTORY_FOLLOW_VELOCITY = 0.34;
 
 
 function IconMapSwitch() {
@@ -133,18 +113,22 @@ export default function MetabolicUnifiedView({
     return calculateBaselineOffset(biometrics);
   }, [bodyMetricsHistory, dailyHistory]);
 
-  const normalizedMetabolicState = useMemo(
-    () =>
-      calculateMetabolicMapPosition({
-        energyBalance: metabolicMapInputs.energyBalance,
-        trainingLoad: metabolicMapInputs.trainingLoad,
-        sleepHours: metabolicMapInputs.sleepHours,
-        glycemicInstability: metabolicMapInputs.glycemicInstability,
-        baselineOffsetX: baselineOffset.x,
-        baselineOffsetY: baselineOffset.y,
-      }),
-    [metabolicMapInputs, baselineOffset]
-  );
+  const anchorPosition = useMemo(() => getAnchorFromLastWeighIn(baselineOffset), [baselineOffset]);
+  const estimatedPosition = anchorPosition;
+  const directionVector = useMemo(() => ({ x: 0, y: 0 }), []);
+  const normalizedMetabolicState = useMemo(() => {
+    const x = clampAxis(Number(estimatedPosition?.x) || 0);
+    const y = clampAxis(Number(estimatedPosition?.y) || 0);
+    return {
+      x,
+      y,
+      finalAura: 0,
+      distance: Math.hypot(x, y),
+      zone: 'neutral',
+      quadrant: 'neutral',
+      placeholderStatic: true,
+    };
+  }, [estimatedPosition]);
 
   const mapZoneColor = useMemo(() => {
     const zone = normalizedMetabolicState?.zone;
@@ -166,42 +150,13 @@ export default function MetabolicUnifiedView({
     () => formatWeightProjectionUI(weightProjection),
     [weightProjection]
   );
-  const dailyMapPoints = useMemo(() => {
-    const slice = Array.isArray(dailyHistory) ? dailyHistory.slice(-7) : [];
-    return slice.map((day) => buildDailyPointFromLogDay(day, baselineOffset));
-  }, [dailyHistory, baselineOffset]);
-  const trajectoryPositions = useMemo(() => {
-    const targetPosition = {
-      x: clampAxis(Number(normalizedMetabolicState?.x) || 0),
-      y: clampAxis(Number(normalizedMetabolicState?.y) || 0),
-    };
-    if (dailyMapPoints.length === 0) return [targetPosition];
-
-    const startPosition = {
-      x: clampAxis(Number(dailyMapPoints[0]?.x) || 0),
-      y: clampAxis(Number(dailyMapPoints[0]?.y) || 0),
-    };
-    const positions = [startPosition];
-
-    for (let i = 1; i < dailyMapPoints.length; i += 1) {
-      const prev = positions[i - 1];
-      const target = dailyMapPoints[i];
-      const next = {
-        x: clampAxis(prev.x + (clampAxis(Number(target?.x) || 0) - prev.x) * TRAJECTORY_FOLLOW_VELOCITY),
-        y: clampAxis(prev.y + (clampAxis(Number(target?.y) || 0) - prev.y) * TRAJECTORY_FOLLOW_VELOCITY),
-      };
-      positions.push(next);
-    }
-
-    positions.push(targetPosition);
-    return positions;
-  }, [dailyMapPoints, normalizedMetabolicState]);
+  const trajectoryPositions = useMemo(() => [{ ...estimatedPosition }], [estimatedPosition]);
   const currentTrajectoryPosition = useMemo(
     () => ({
-      x: clampAxis(Number(normalizedMetabolicState?.x) || 0),
-      y: clampAxis(Number(normalizedMetabolicState?.y) || 0),
+      x: clampAxis(Number(estimatedPosition?.x) || 0),
+      y: clampAxis(Number(estimatedPosition?.y) || 0),
     }),
-    [normalizedMetabolicState]
+    [estimatedPosition]
   );
 
   const reducedMotion =
@@ -413,6 +368,7 @@ export default function MetabolicUnifiedView({
             selectedTimeframe={selectedTimeframe}
             onTimeframeChange={setSelectedTimeframe}
             normalizedMetabolicState={normalizedMetabolicState}
+            neutralStaticMode
           />
         </div>
 
@@ -486,7 +442,8 @@ export default function MetabolicUnifiedView({
               trajectoryPositions={trajectoryPositions}
               currentPosition={currentTrajectoryPosition}
               normalizedMetabolicState={normalizedMetabolicState}
-              showRoute={showRoute}
+              directionVector={directionVector}
+              showRoute={false}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}
