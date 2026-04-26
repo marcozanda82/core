@@ -24,8 +24,10 @@ export const WORKOUT_MUSCLE_GROUP_DEFS = [
   { id: 'Dorso', label: 'Dorso', aliases: ['Schiena', 'schiena'] },
   { id: 'Gambe', label: 'Gambe' },
   { id: 'Spalle', label: 'Spalle' },
+  { id: 'Bicipiti', label: 'Bicipiti', aliases: ['Bicipite', 'bicipite', 'biceps'] },
+  { id: 'Tricipiti', label: 'Tricipiti', aliases: ['Tricipite', 'tricipite', 'triceps'] },
+  { id: 'ABS', label: 'ABS', aliases: ['Addominali', 'addominali', 'Core', 'core'] },
   { id: 'Braccia', label: 'Braccia' },
-  { id: 'Core', label: 'Core', aliases: ['Addominali', 'addominali', 'ABS', 'abs'] },
   { id: 'Total Body', label: 'Total Body', aliases: ['Full Body', 'full body', 'totalbody'] },
 ];
 
@@ -88,9 +90,14 @@ export function inferMuscleGroupsFromWorkoutText(workout) {
   if (/petto|torace|pectoral|bench|panca/.test(text)) push('Petto');
   if (/dorso|schiena|lat\b|pull|remator|rowing|remata/.test(text)) push('Dorso');
   if (/gambe|quadricip|femorali|leg day|squat|stacco/.test(text)) push('Gambe');
-  if (/bracci|bicipit|tricipit|curl|dip\b/.test(text)) push('Braccia');
+  const hasBiceps = /bicipit|curl/.test(text);
+  const hasTriceps = /tricipit|dip\b|pushdown|estensioni/.test(text);
+  const hasArmsGeneric = /bracci/.test(text);
+  if (hasBiceps) push('Bicipiti');
+  if (hasTriceps) push('Tricipiti');
+  if (hasArmsGeneric && !hasBiceps && !hasTriceps) push('Braccia');
   if (/spalle|deltoid|shoulder|lateral/.test(text)) push('Spalle');
-  if (/addominal|abs\b|core/.test(text)) push('Core');
+  if (/addominal|abs\b|core/.test(text)) push('ABS');
   return found;
 }
 

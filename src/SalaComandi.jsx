@@ -2536,6 +2536,12 @@ export default function SalaComandi() {
     if (s >= 24) s -= 24;
     return s;
   })();
+  const napDurationMinutes = (() => {
+    let d = Number(drawerFastChargeEnd) - Number(drawerFastChargeStart);
+    if (d < 0) d += 24;
+    d = Math.max(0.08, Math.min(24, d));
+    return Math.round(d * 60);
+  })();
 
   const dailyWaterGoal = userTargets.water ?? 2500; 
   const [isZenActive, setIsZenActive] = useState(false);
@@ -5171,9 +5177,11 @@ export default function SalaComandi() {
         setShowChoiceModal(true);
         break;
       case 'nap': {
-        const tN = getCurrentTimeRoundedTo15Min();
-        setDrawerFastChargeStart(tN);
-        setDrawerFastChargeEnd(Math.min(24, tN + 0.5));
+        const endNow = getCurrentTimeRoundedTo15Min();
+        let startAuto = endNow - 0.5;
+        if (startAuto < 0) startAuto += 24;
+        setDrawerFastChargeEnd(endNow);
+        setDrawerFastChargeStart(startAuto);
         if (fromModal) setShowChoiceModal(false);
         setActiveAction('fast_charge_nap');
         setIsDrawerOpen(true);
@@ -13209,13 +13217,41 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               <div style={{ width: '70px' }}></div>
             </div>
             <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '16px', backdropFilter: 'blur(12px)' }}>
-              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '12px', textTransform: 'uppercase' }}>ORA INIZIO – ORA FINE</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <input type="time" value={decimalToTimeStr(drawerFastChargeStart)} onChange={(e) => setDrawerFastChargeStart(parseTimeStrToDecimal(e.target.value))} style={{ flex: 1, minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }} />
-                <span style={{ color: '#666' }}>–</span>
-                <input type="time" value={decimalToTimeStr(drawerFastChargeEnd)} onChange={(e) => setDrawerFastChargeEnd(parseTimeStrToDecimal(e.target.value))} style={{ flex: 1, minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }} />
+              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '12px', textTransform: 'uppercase' }}>ORA FINE (AUTO) + DURATA</div>
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '6px' }}>Fine pisolino</div>
+                <input
+                  type="time"
+                  value={decimalToTimeStr(drawerFastChargeEnd)}
+                  readOnly
+                  style={{ width: '100%', padding: '10px', background: '#151515', border: '1px solid #3f3f46', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center', opacity: 0.9 }}
+                />
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '10px' }}>Durata: {(() => { let d = drawerFastChargeEnd - drawerFastChargeStart; if (d < 0) d += 24; d = Math.max(0, d); return `${Math.floor(d * 60)} min`; })()}</div>
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '6px' }}>Durata (min)</div>
+                <input
+                  type="number"
+                  min={10}
+                  max={240}
+                  step={5}
+                  value={napDurationMinutes}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    const clampedMin = Number.isFinite(n) ? Math.max(10, Math.min(240, Math.round(n))) : 30;
+                    const dHours = clampedMin / 60;
+                    let startAuto = Number(drawerFastChargeEnd) - dHours;
+                    if (startAuto < 0) startAuto += 24;
+                    setDrawerFastChargeStart(startAuto);
+                  }}
+                  style={{ width: '100%', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }}
+                />
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '10px' }}>
+                Inizio calcolato: {decimalToTimeStr(drawerFastChargeStart)} · Durata: {napDurationMinutes} min
+              </div>
+              <div style={{ fontSize: '0.68rem', color: '#71717a', marginTop: '6px' }}>
+                Modifica manuale inizio/fine disponibile dalla modifica avanzata del nodo.
+              </div>
             </div>
             <button onClick={() => handleSaveFastCharge('nap')} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(129,140,248,0.4)' }}>SALVA</button>
           </div>
@@ -13286,28 +13322,60 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             <div style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '14px', marginBottom: '10px' }}>
                 <div style={{ flex: '1 1 140px' }}>
-                  <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-                    Ora di fine
-                  </div>
-                  <input
-                    type="time"
-                    value={decimalToTimeStr(workoutEndTime)}
-                    onChange={(e) =>
-                      setWorkoutEndTime(Math.min(24, Math.max(0, parseTimeStrToDecimal(e.target.value))))
-                    }
-                    style={{
-                      width: '100%',
-                      maxWidth: '160px',
-                      padding: '8px 10px',
-                      background: '#1a1a1a',
-                      border: '1px solid #ff6d00',
-                      borderRadius: '8px',
-                      color: '#ff6d00',
-                      fontSize: '1.05rem',
-                      fontWeight: 'bold',
-                      textAlign: 'center',
-                    }}
-                  />
+                  {workoutType === 'cardio' ? (
+                    <>
+                      <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                        Ora inizio
+                      </div>
+                      <input
+                        type="time"
+                        value={decimalToTimeStr(workoutStartTime)}
+                        onChange={(e) => {
+                          const newStart = Math.min(24, Math.max(0, parseTimeStrToDecimal(e.target.value)));
+                          let nextEnd = newStart + workoutDurationHours;
+                          if (nextEnd >= 24) nextEnd -= 24;
+                          setWorkoutEndTime(nextEnd);
+                        }}
+                        style={{
+                          width: '100%',
+                          maxWidth: '160px',
+                          padding: '8px 10px',
+                          background: '#1a1a1a',
+                          border: '1px solid #ff6d00',
+                          borderRadius: '8px',
+                          color: '#ff6d00',
+                          fontSize: '1.05rem',
+                          fontWeight: 'bold',
+                          textAlign: 'center',
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                        Ora di fine
+                      </div>
+                      <input
+                        type="time"
+                        value={decimalToTimeStr(workoutEndTime)}
+                        onChange={(e) =>
+                          setWorkoutEndTime(Math.min(24, Math.max(0, parseTimeStrToDecimal(e.target.value))))
+                        }
+                        style={{
+                          width: '100%',
+                          maxWidth: '160px',
+                          padding: '8px 10px',
+                          background: '#1a1a1a',
+                          border: '1px solid #ff6d00',
+                          borderRadius: '8px',
+                          color: '#ff6d00',
+                          fontSize: '1.05rem',
+                          fontWeight: 'bold',
+                          textAlign: 'center',
+                        }}
+                      />
+                    </>
+                  )}
                 </div>
                 <div style={{ flex: '0 0 120px' }}>
                   <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
@@ -13341,7 +13409,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#666', fontSize: '0.65rem', marginBottom: '8px' }}>
                 <span>0:00</span>
-                <span>Inizio calcolato: {decimalToTimeStr(workoutStartTime)}</span>
+                <span>{workoutType === 'cardio' ? `Fine calcolata: ${decimalToTimeStr(workoutEndTime)}` : `Inizio calcolato: ${decimalToTimeStr(workoutStartTime)}`}</span>
                 <span>24:00</span>
               </div>
               <div ref={miniTimelineActivityRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
@@ -15426,10 +15494,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 <button
                   type="button"
                   onClick={() => {
-                    const hour = timelineInsertUI.hour;
+                    const endNow = getCurrentTimeRoundedTo15Min();
+                    let startAuto = endNow - 0.5;
+                    if (startAuto < 0) startAuto += 24;
                     setTimelineInsertUI(null);
-                    setDrawerFastChargeStart(hour);
-                    setDrawerFastChargeEnd(Math.min(24, hour + 0.5));
+                    setDrawerFastChargeStart(startAuto);
+                    setDrawerFastChargeEnd(endNow);
                     setActiveAction('fast_charge_nap');
                     setIsDrawerOpen(true);
                   }}
@@ -15838,7 +15908,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   const ghostSt = node.subType || 'pesi';
                   setWorkoutType(resolveWorkoutActivityTypeId(ghostSt) ?? ghostSt);
                   const durH = Math.max(0.25, Number(node.duration) || 1);
-                  setWorkoutEndTime(Math.min(24, t + durH));
+                  setWorkoutEndTime((() => {
+                    let end = t + durH;
+                    while (end >= 24) end -= 24;
+                    while (end < 0) end += 24;
+                    return end;
+                  })());
                   setWorkoutDurationMin(Math.max(15, Math.min(600, Math.round(durH * 60))));
                   setWorkoutKcal(node.kcal || node.cal || 300);
                   setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
@@ -15860,7 +15935,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
                 const startT = node.time ?? 12;
                 const durH = Math.max(0.25, Number(node.duration) || 1);
-                setWorkoutEndTime(Math.min(24, startT + durH));
+                setWorkoutEndTime((() => {
+                  let end = startT + durH;
+                  while (end >= 24) end -= 24;
+                  while (end < 0) end += 24;
+                  return end;
+                })());
                 setWorkoutDurationMin(Math.max(15, Math.min(600, Math.round(durH * 60))));
                 setWorkoutKcal(node.kcal || node.cal || 300);
                 setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
