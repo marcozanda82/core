@@ -141,6 +141,7 @@ import {
   NODE_IMPORTANCE,
   NODE_TYPE_ICON,
   ADD_EVENT_MENU_DEFAULT_ORDER,
+  ADD_EVENT_MENU_ITEMS,
   denormalizeLogForFirebase,
   applyMealTimes,
   getLogFromStoricoTree,
@@ -206,13 +207,12 @@ function migrateIdealStrategy(raw) {
 }
 
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
-const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'planning', 'bussola', 'longevita'];
+const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola', 'longevita'];
 
 /** Voci barra inferiore (sempre tutte visibili; non condizionare al caricamento dati). */
 const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },
   { id: 'analisi', label: 'Timeline', icon: '🕒' },
-  { id: 'planning', label: 'Pianifica', icon: '📅' },
   { id: 'bussola', label: 'Salute', icon: '❤️' },
   { id: 'longevita', label: 'Progressi', icon: '📈' },
   { id: 'menu', label: 'Menu', icon: '≡' },
@@ -220,6 +220,9 @@ const BOTTOM_NAV_ITEMS = [
 
 const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
 const AI_COACH_DISMISSED_INSIGHTS_LS_KEY = 'kentu_ai_coach_dismissed_insights_v1';
+const ADD_EVENT_USAGE_LS_KEY = 'kentu_add_event_usage_counts_v1';
+const ADD_EVENT_PRIORITY_POOL = ['weight', 'workout', 'water', 'stimulant', 'nap', 'meditation', 'supplements', 'alcohol'];
+const ADD_EVENT_PRIORITY_FALLBACK = ['weight', 'workout'];
 
 /** Movimento prima del long-press su nodo timeline: oltre soglia → annulla drag e lascia swipe/scroll (allineato a `MOVE_THRESHOLD_PX` in TimelineNodi). */
 const NODE_DRAG_ARM_CANCEL_MOVE_PX = 6;
@@ -242,6 +245,24 @@ function readDismissedAiCoachInsights() {
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function readAddEventUsageCounts() {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(ADD_EVENT_USAGE_LS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out = {};
+    Object.keys(parsed).forEach((k) => {
+      const n = Number(parsed[k]);
+      if (Number.isFinite(n) && n > 0) out[k] = Math.floor(n);
+    });
+    return out;
   } catch {
     return {};
   }
@@ -2360,6 +2381,7 @@ export default function SalaComandi() {
       return [...ADD_EVENT_MENU_DEFAULT_ORDER];
     }
   });
+  const [addEventUsageCounts, setAddEventUsageCounts] = useState(() => readAddEventUsageCounts());
 
   useEffect(() => {
     try {
@@ -4724,6 +4746,42 @@ export default function SalaComandi() {
     }
   }, []);
 
+  const recordAddEventUsage = useCallback((itemId) => {
+    if (!itemId || itemId === 'meal') return;
+    setAddEventUsageCounts((prev) => {
+      const next = {
+        ...(prev || {}),
+        [itemId]: Math.max(0, Number(prev?.[itemId]) || 0) + 1,
+      };
+      try {
+        localStorage.setItem(ADD_EVENT_USAGE_LS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const priorityQuickActionIds = useMemo(() => {
+    const scored = ADD_EVENT_PRIORITY_POOL.map((id) => ({
+      id,
+      score: Number(addEventUsageCounts?.[id]) || 0,
+    }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => (b.score - a.score) || (ADD_EVENT_PRIORITY_POOL.indexOf(a.id) - ADD_EVENT_PRIORITY_POOL.indexOf(b.id)))
+      .map((x) => x.id);
+    const picks = [];
+    for (let i = 0; i < scored.length && picks.length < 2; i += 1) {
+      if (!picks.includes(scored[i])) picks.push(scored[i]);
+    }
+    for (let i = 0; i < ADD_EVENT_PRIORITY_FALLBACK.length && picks.length < 2; i += 1) {
+      const id = ADD_EVENT_PRIORITY_FALLBACK[i];
+      if (!picks.includes(id)) picks.push(id);
+    }
+    while (picks.length < 2) picks.push('workout');
+    return picks.slice(0, 2);
+  }, [addEventUsageCounts]);
+
   // ============================================================================
   // FUNZIONI CRITICHE CON RETROCOMPATIBILITÀ
   // ============================================================================
@@ -5055,6 +5113,7 @@ export default function SalaComandi() {
 
   function handleAddEventMenuItem(itemId, source) {
     const fromModal = source === 'modal';
+    recordAddEventUsage(itemId);
     switch (itemId) {
       case 'meal': {
         const predicted = predictMealType(getCurrentTimeRoundedTo15Min());
@@ -12601,63 +12660,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       )}
       </div>
       )}
-      {activeBottomTab === 'planning' && (
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'stretch',
-            padding: '20px 16px',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            WebkitOverflowScrolling: 'touch',
-            width: '100%',
-            boxSizing: 'border-box',
-            gap: 14,
-          }}
-        >
-          <p style={{ margin: 0, fontSize: '0.88rem', color: 'rgba(200,210,220,0.95)', lineHeight: 1.45 }}>
-            Pianifica attività, fasce orarie e pasti (ghost) per oggi. I dati confermati restano su Firebase sotto{' '}
-            <code style={{ fontSize: '0.75rem', color: '#7dd3fc' }}>planning/</code>.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setPlanningWizardHydrateNonce((n) => n + 1);
-              setPlanningWizardOverlayOpen(true);
-            }}
-            style={{
-              padding: '14px 18px',
-              borderRadius: 14,
-              border: '1px solid rgba(0, 229, 255, 0.45)',
-              background: 'rgba(0, 229, 255, 0.15)',
-              color: '#e0faff',
-              fontWeight: 800,
-              fontSize: '0.9rem',
-              cursor: 'pointer',
-            }}
-          >
-            Apri pianificazione guidata
-          </button>
-          <div
-            style={{
-              marginTop: 8,
-              paddingTop: 18,
-              borderTop: '1px solid rgba(255,255,255,0.12)',
-            }}
-          >
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#e8f4ff' }}>Piano settimanale</h3>
-            <WeeklyPlanning
-              value={weeklyPlan}
-              onChange={setWeeklyPlan}
-              anchorDate={new Date(`${currentTrackerDate || getTodayString()}T12:00:00`)}
-              profileDailyKcal={Number(userTargets?.kcal) || 2000}
-            />
-          </div>
-        </div>
-      )}
       {activeBottomTab === 'longevita' && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}>
           <LongevityView
@@ -12812,11 +12814,106 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         {/* VISTA MENU PRINCIPALE */}
         {(!activeAction || activeAction === 'home') && (
           <div className="view-animate">
-            <AddEventMenuGrid
-              menuOrder={addEventMenuOrder}
-              onOrderCommit={commitAddEventMenuOrder}
-              onItemActivate={(id) => handleAddEventMenuItem(id, 'drawer')}
-            />
+            {(() => {
+              const secondaryId = priorityQuickActionIds[0] || 'weight';
+              const tertiaryId = priorityQuickActionIds[1] || 'workout';
+              const secondaryDef = ADD_EVENT_MENU_ITEMS[secondaryId] || { icon: '⚖️', label: 'Mi sono pesato' };
+              const tertiaryDef = ADD_EVENT_MENU_ITEMS[tertiaryId] || { icon: '⚡', label: 'Mi sono allenato' };
+              return (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr',
+                    gap: 10,
+                    marginBottom: 14,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleAddEventMenuItem('meal', 'drawer')}
+                    style={{
+                      width: '100%',
+                      padding: '16px 14px',
+                      borderRadius: 14,
+                      border: '1px solid rgba(34, 197, 94, 0.36)',
+                      background: 'linear-gradient(145deg, rgba(22, 163, 74, 0.28), rgba(15, 23, 42, 0.78))',
+                      color: '#ecfdf5',
+                      fontSize: '0.98rem',
+                      fontWeight: 800,
+                      letterSpacing: '0.02em',
+                      cursor: 'pointer',
+                      boxShadow: '0 8px 20px rgba(34, 197, 94, 0.18)',
+                      textAlign: 'left',
+                    }}
+                  >
+                    🍝 Inserisci pasto
+                  </button>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <button
+                      type="button"
+                      onClick={() => handleAddEventMenuItem(secondaryId, 'drawer')}
+                      style={{
+                        width: '100%',
+                        padding: '12px 10px',
+                        borderRadius: 12,
+                        border: `1px solid ${secondaryDef.borderColor || 'rgba(148,163,184,0.35)'}`,
+                        background: 'rgba(15, 23, 42, 0.68)',
+                        color: secondaryDef.labelColor || '#e2e8f0',
+                        fontSize: '0.83rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ marginRight: 6 }}>{secondaryDef.icon}</span>
+                      {secondaryDef.label}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddEventMenuItem(tertiaryId, 'drawer')}
+                      style={{
+                        width: '100%',
+                        padding: '10px 9px',
+                        borderRadius: 11,
+                        border: `1px solid ${tertiaryDef.borderColor || 'rgba(120,130,150,0.28)'}`,
+                        background: 'rgba(15, 23, 42, 0.46)',
+                        color: tertiaryDef.labelColor || '#cbd5e1',
+                        fontSize: '0.76rem',
+                        fontWeight: 650,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        opacity: 0.94,
+                      }}
+                    >
+                      <span style={{ marginRight: 6 }}>{tertiaryDef.icon}</span>
+                      {tertiaryDef.label}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddChoiceView('main');
+                      setShowChoiceModal(true);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(148,163,184,0.28)',
+                      background: 'rgba(15,23,42,0.42)',
+                      color: '#cbd5e1',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Altri eventi
+                  </button>
+                </div>
+              );
+            })()}
             <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '0' }}>
               <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.8rem' }}>⚡ Inserimento Rapido / Output AI</h4>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -12859,6 +12956,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               <div style={{ width: '70px' }}></div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <button className="action-btn" onClick={() => setActiveAction('planning')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(125, 211, 252, 0.5))' }}>📅</span><span className="action-label" style={{ color: '#7dd3fc' }}>Pianifica</span></button>
               <button className="action-btn" onClick={() => setActiveAction('storico')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(176, 190, 197, 0.5))' }}>📚</span><span className="action-label" style={{ color: '#b0bec5' }}>Archivio Storico</span></button>
               <button className="action-btn" onClick={() => { setShowReport(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">📊</span><span className="action-label">Report</span></button>
               <button className="action-btn" onClick={() => { setShowProfile(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">⚙️</span><span className="action-label">Profilo & Target</span></button>
@@ -12883,6 +12981,56 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 ) : null}
                 <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#b388ff' }}>Kentu</span>
               </button>
+            </div>
+          </div>
+        )}
+
+        {activeAction === 'planning' && (
+          <div className="view-animate">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <button onClick={() => setActiveAction('menu_secondary')} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; MENU</button>
+              <h2 style={{ fontSize: '0.8rem', color: '#7dd3fc', letterSpacing: '2px', margin: 0 }}>📅 PIANIFICA</h2>
+              <div style={{ width: '70px' }}></div>
+            </div>
+            <p style={{ margin: '0 0 14px 0', fontSize: '0.84rem', color: 'rgba(200,210,220,0.95)', lineHeight: 1.45 }}>
+              Pianifica attività, fasce orarie e pasti ghost. I dati confermati restano su Firebase sotto{' '}
+              <code style={{ fontSize: '0.75rem', color: '#7dd3fc' }}>planning/</code>.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setPlanningWizardHydrateNonce((n) => n + 1);
+                setPlanningWizardOverlayOpen(true);
+              }}
+              style={{
+                width: '100%',
+                marginBottom: 16,
+                padding: '14px 18px',
+                borderRadius: 14,
+                border: '1px solid rgba(125, 211, 252, 0.45)',
+                background: 'rgba(56, 189, 248, 0.16)',
+                color: '#e0faff',
+                fontWeight: 800,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+              }}
+            >
+              Apri pianificazione guidata
+            </button>
+            <div
+              style={{
+                marginTop: 8,
+                paddingTop: 16,
+                borderTop: '1px solid rgba(255,255,255,0.12)',
+              }}
+            >
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', color: '#e8f4ff' }}>Piano settimanale</h3>
+              <WeeklyPlanning
+                value={weeklyPlan}
+                onChange={setWeeklyPlan}
+                anchorDate={new Date(`${currentTrackerDate || getTodayString()}T12:00:00`)}
+                profileDailyKcal={Number(userTargets?.kcal) || 2000}
+              />
             </div>
           </div>
         )}
