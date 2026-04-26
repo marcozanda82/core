@@ -336,7 +336,9 @@ export default function MetabolicMap({
   trajectoryPositions = null,
   currentPosition = null,
   normalizedMetabolicState: _normalizedMetabolicState = null,
-  directionVector: _directionVector = null,
+  directionVector = null,
+  directionAvailable = false,
+  directionUnavailableReason = 'unavailable',
   showRoute = false,
 }) {
   const uid = useId().replace(/:/g, '');
@@ -409,16 +411,13 @@ export default function MetabolicMap({
   }, []);
 
   const safeDirectionVector = useMemo(() => {
-    const points = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
-    if (points.length < 2) return { x: 0, y: 0 };
-    const last = points[points.length - 1];
-    const prev = points[points.length - 2];
-    const dx = (Number(last?.x) || 0) - (Number(prev?.x) || 0);
-    const dy = (Number(last?.y) || 0) - (Number(prev?.y) || 0);
-    const length = Math.hypot(dx, dy);
+    if (!directionAvailable) return { x: 0, y: 0 };
+    const x = Number(directionVector?.x);
+    const y = Number(directionVector?.y);
+    const length = Math.hypot(x, y);
     if (!Number.isFinite(length) || length <= 1e-9) return { x: 0, y: 0 };
-    return { x: dx / length, y: dy / length };
-  }, [trajectoryPositions]);
+    return { x: x / length, y: y / length };
+  }, [directionAvailable, directionVector]);
   const directionMagnitude = Math.hypot(safeDirectionVector.x, safeDirectionVector.y);
   const lifestyleLen = directionMagnitude;
   const lifestyleNearlyIdle = directionMagnitude < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
@@ -479,7 +478,7 @@ export default function MetabolicMap({
   const needleRotateDeg = directionMagnitude > 1e-6
     ? rotationDegFromDirection(safeDirectionVector.x, safeDirectionVector.y)
     : 0;
-  const needleBladeOpacity = directionMagnitude > 1e-6 ? 0.9 : 0.12;
+  const needleBladeOpacity = directionAvailable && directionMagnitude > 1e-6 ? 0.9 : 0;
   const snailTrailStyle = useMemo(() => {
     if (directionMagnitude <= 1e-6) {
       return { length: 0, opacity: 0, width: 0.95 };
@@ -503,7 +502,7 @@ export default function MetabolicMap({
 
   const longevityScoreAnchor = calculateMetabolicScore(baselineX, baselineY);
   const longevityScoreFinal = calculateMetabolicScore(displayX, displayY);
-  const needleFill = directionMagnitude > 1e-6
+  const needleFill = directionAvailable && directionMagnitude > 1e-6
     ? (distTarget > distAnchor
       ? 'rgba(150, 95, 100, 0.78)'
       : 'rgba(100, 140, 158, 0.82)')
@@ -965,9 +964,15 @@ export default function MetabolicMap({
         <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
           Distanza dal centro: {effectiveDistance.toFixed(1)} · Aura glicemica: {Math.round(displayAura)}
         </div>
-        <div style={{ marginTop: 10, fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.72)' }}>
-          Modalità placeholder attiva: posizione bloccata su Ancora, direzione disabilitata.
-        </div>
+        {directionAvailable ? (
+          <div style={{ marginTop: 10, fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.72)' }}>
+            Direzione attiva da movimento stimato (delta ultimi due punti della finestra).
+          </div>
+        ) : (
+          <div style={{ marginTop: 10, fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.72)' }}>
+            Direzione non disponibile ({directionUnavailableReason}): nessun delta utile nella finestra selezionata.
+          </div>
+        )}
       </div>
 
       {sleepReliabilityLine && (

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { METABOLIC_GOAL } from './metabolicDirection';
 import { historyFingerprint } from './metabolicDirectionEngine';
 import {
@@ -108,16 +108,35 @@ function buildTimeframeTrajectoryPositions(bodyMetricsHistory, timeframeRange, f
   return points;
 }
 
-function normalizedDirectionFromTrajectory(trajectoryPositions) {
+function directionStateFromTrajectory(trajectoryPositions) {
   const points = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
-  if (points.length < 2) return { x: 0, y: 0 };
+  if (points.length < 2) {
+    return {
+      vector: { x: 0, y: 0 },
+      available: false,
+      reason: 'insufficient_points',
+      points: points.length,
+    };
+  }
   const last = points[points.length - 1];
   const prev = points[points.length - 2];
   const dx = (Number(last?.x) || 0) - (Number(prev?.x) || 0);
   const dy = (Number(last?.y) || 0) - (Number(prev?.y) || 0);
   const length = Math.hypot(dx, dy);
-  if (!Number.isFinite(length) || length <= 1e-9) return { x: 0, y: 0 };
-  return { x: dx / length, y: dy / length };
+  if (!Number.isFinite(length) || length <= 1e-9) {
+    return {
+      vector: { x: 0, y: 0 },
+      available: false,
+      reason: 'no_delta_between_last_points',
+      points: points.length,
+    };
+  }
+  return {
+    vector: { x: dx / length, y: dy / length },
+    available: true,
+    reason: 'ok',
+    points: points.length,
+  };
 }
 
 
@@ -255,10 +274,66 @@ export default function MetabolicUnifiedView({
     }),
     [trajectoryPositions, estimatedPosition]
   );
-  const directionVector = useMemo(
-    () => normalizedDirectionFromTrajectory(trajectoryPositions),
+  const directionState = useMemo(
+    () => directionStateFromTrajectory(trajectoryPositions),
     [trajectoryPositions]
   );
+  const directionVector = directionState.vector;
+  const compassDirectionState = useMemo(() => {
+    if (!directionState.available) {
+      return {
+        x: 0,
+        y: 0,
+        finalAura: 0,
+        distance: 0,
+        zone: 'neutral',
+        quadrant: 'neutral',
+        placeholderStatic: true,
+      };
+    }
+    return {
+      x: directionVector.x * 100,
+      y: directionVector.y * 100,
+      finalAura: 0,
+      distance: 100,
+      zone: 'neutral',
+      quadrant: 'neutral',
+      placeholderStatic: false,
+    };
+  }, [directionState.available, directionVector.x, directionVector.y]);
+
+  const directionAuditByTimeframe = useMemo(() => {
+    return METABOLIC_COMPASS_TIMEFRAMES.reduce((acc, tf) => {
+      const range = timeframeDateRangeFromDailyHistory(dailyHistory, tf.value);
+      const baselineForTf = (() => {
+        if (range) {
+          const rangedBodyMetrics = filterBodyMetricsByDateRange(
+            bodyMetricsHistory,
+            range.startDate,
+            range.endDate
+          );
+          const rangedOffset = getStructuralBaselineOffsetFromHistory(rangedBodyMetrics);
+          if (rangedOffset) return rangedOffset;
+        }
+        return baselineOffset;
+      })();
+      const fallbackPos = getAnchorFromLastWeighIn(baselineForTf);
+      const tfTrajectory = buildTimeframeTrajectoryPositions(bodyMetricsHistory, range, fallbackPos);
+      const tfDirection = directionStateFromTrajectory(tfTrajectory);
+      acc[tf.value] = {
+        points: tfDirection.points,
+        available: tfDirection.available,
+        reason: tfDirection.reason,
+        x: Number(tfDirection.vector.x.toFixed(4)),
+        y: Number(tfDirection.vector.y.toFixed(4)),
+      };
+      return acc;
+    }, {});
+  }, [dailyHistory, bodyMetricsHistory, baselineOffset]);
+
+  useEffect(() => {
+    console.info('[MetabolicDirection] directionVector audit by timeframe', directionAuditByTimeframe);
+  }, [directionAuditByTimeframe]);
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -468,8 +543,8 @@ export default function MetabolicUnifiedView({
             onGoalChange={setGoal}
             selectedTimeframe={selectedTimeframe}
             onTimeframeChange={setSelectedTimeframe}
-            normalizedMetabolicState={normalizedMetabolicState}
-            neutralStaticMode
+            normalizedMetabolicState={compassDirectionState}
+            neutralStaticMode={!directionState.available}
           />
         </div>
 
@@ -544,6 +619,8 @@ export default function MetabolicUnifiedView({
               currentPosition={currentTrajectoryPosition}
               normalizedMetabolicState={normalizedMetabolicState}
               directionVector={directionVector}
+              directionAvailable={directionState.available}
+              directionUnavailableReason={directionState.reason}
               showRoute={false}
             />
             <MetabolicDataAudit
