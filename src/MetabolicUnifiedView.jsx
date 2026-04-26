@@ -105,6 +105,34 @@ function movementFromMapInputs(mapInputs) {
   };
 }
 
+function tractionVectorFromMapInputs(mapInputs) {
+  const energy = Number(mapInputs?.energyBalance) || 0;
+  const training = Number(mapInputs?.trainingLoad) || 0;
+  const glycemic = Number(mapInputs?.glycemicInstability) || 0;
+  const sleep = Number(mapInputs?.sleepHours) || 8;
+
+  const sleepDebt = Math.max(0, 7.2 - sleep) * 8;
+  const x = energy;
+  const y = training - glycemic - sleepDebt;
+  const len = Math.hypot(x, y);
+
+  if (!Number.isFinite(len) || len < 3) {
+    return {
+      vector: { x: 0, y: 0 },
+      available: false,
+      magnitude: 0,
+      reason: 'traction_too_weak',
+    };
+  }
+
+  return {
+    vector: { x: x / len, y: y / len },
+    available: true,
+    magnitude: Math.min(100, len),
+    reason: 'traction_from_current_inputs',
+  };
+}
+
 function directionStateFromMovement(movement) {
   const mx = Number(movement?.x) || 0;
   const my = Number(movement?.y) || 0;
@@ -119,14 +147,18 @@ function directionStateFromMovement(movement) {
   };
 }
 
-function directionModeLabelFromState(directionState) {
-  return directionState?.available
-    ? 'movement_active'
-    : `unavailable_${String(directionState?.reason || 'unknown')}`;
-}
-
 function directionLabelFromQuadrant(quadrant) {
   return QUADRANT_DIRECTION_LABELS[String(quadrant || '')] || 'neutral';
+}
+
+function quadrantFromVector(vector) {
+  const x = Number(vector?.x) || 0;
+  const y = Number(vector?.y) || 0;
+  if (Math.hypot(x, y) <= 1e-6) return 'neutral';
+  if (x >= 0 && y >= 0) return 'NE';
+  if (x < 0 && y >= 0) return 'NW';
+  if (x >= 0 && y < 0) return 'SE';
+  return 'SW';
 }
 
 function IconMapSwitch() {
@@ -276,13 +308,19 @@ export default function MetabolicUnifiedView({
     }),
     [trajectoryPositions, estimatedPosition]
   );
-  const directionState = useMemo(() => directionStateFromMovement(movementState), [movementState]);
-  const directionVector = directionState.vector;
-  const unifiedCompassQuadrant = String(normalizedMetabolicState?.quadrant || 'neutral');
-  const unifiedCompassLabel = directionState.available
+  const tractionState = useMemo(
+    () => tractionVectorFromMapInputs(metabolicMapInputs),
+    [metabolicMapInputs]
+  );
+  const directionVector = tractionState.vector;
+  const unifiedCompassQuadrant = useMemo(
+    () => quadrantFromVector(directionVector),
+    [directionVector]
+  );
+  const unifiedCompassLabel = tractionState.available
     ? directionLabelFromQuadrant(unifiedCompassQuadrant)
     : 'direzione non disponibile';
-  const unifiedDirectionModeLabel = directionModeLabelFromState(directionState);
+  const unifiedDirectionModeLabel = tractionState.reason;
   const movementAuditByTimeframe = useMemo(() => {
     return METABOLIC_COMPASS_TIMEFRAMES.reduce((acc, tf) => {
       const { mapInputs: inputs, rawDetails } = computeMetabolicMapInputsAndAudit(dailyHistory, tf.value);
@@ -304,6 +342,7 @@ export default function MetabolicUnifiedView({
         x: clampAxis(tfAnchor.x + tfMovement.x),
         y: clampAxis(tfAnchor.y + tfMovement.y),
       };
+      const tfTraction = tractionVectorFromMapInputs(inputs);
       const tfDirection = directionStateFromMovement(tfMovement);
       acc[tf.value] = {
         anchorPosition: {
@@ -333,6 +372,13 @@ export default function MetabolicUnifiedView({
         },
         directionAvailable: tfDirection.available,
         directionReason: tfDirection.reason,
+        tractionVector: {
+          x: Number((tfTraction.vector?.x || 0).toFixed(4)),
+          y: Number((tfTraction.vector?.y || 0).toFixed(4)),
+        },
+        tractionAvailable: tfTraction.available,
+        tractionMagnitude: Number((tfTraction.magnitude || 0).toFixed(4)),
+        tractionReason: tfTraction.reason,
       };
       return acc;
     }, {});
@@ -363,9 +409,14 @@ export default function MetabolicUnifiedView({
         x: Number(directionVector.x.toFixed(6)),
         y: Number(directionVector.y.toFixed(6)),
       },
+      tractionState: {
+        available: tractionState.available,
+        magnitude: Number((tractionState.magnitude || 0).toFixed(6)),
+        reason: tractionState.reason,
+      },
       interpreted: {
         quadrant: interpretedQuadrant,
-        label: directionState.available
+        label: tractionState.available
           ? (QUADRANT_DIRECTION_LABELS[interpretedQuadrant] || 'neutral')
           : 'direzione non disponibile',
       },
@@ -377,8 +428,8 @@ export default function MetabolicUnifiedView({
     metabolicMapInputs,
     movementState,
     directionVector,
+    tractionState,
     normalizedMetabolicState,
-    directionState,
   ]);
 
   useEffect(() => {
@@ -397,6 +448,11 @@ export default function MetabolicUnifiedView({
         x: Number((directionVector?.x || 0).toFixed(6)),
         y: Number((directionVector?.y || 0).toFixed(6)),
       },
+      tractionState: {
+        available: tractionState.available,
+        magnitude: Number((tractionState.magnitude || 0).toFixed(6)),
+        reason: tractionState.reason,
+      },
       compassLabel: unifiedCompassLabel,
       mapQuadrant: unifiedCompassQuadrant,
       directionModeLabel: unifiedDirectionModeLabel,
@@ -407,6 +463,7 @@ export default function MetabolicUnifiedView({
     metabolicMapInputs,
     movementState,
     directionVector,
+    tractionState,
     unifiedCompassLabel,
     unifiedCompassQuadrant,
     unifiedDirectionModeLabel,
@@ -621,10 +678,12 @@ export default function MetabolicUnifiedView({
             selectedTimeframe={selectedTimeframe}
             onTimeframeChange={setSelectedTimeframe}
             normalizedMetabolicState={normalizedMetabolicState}
-            neutralStaticMode={!directionState.available}
+            neutralStaticMode={false}
             unifiedDirectionMode
             unifiedDirectionLabel={unifiedCompassLabel}
             unifiedDirectionModeLabel={unifiedDirectionModeLabel}
+            unifiedDirectionVector={tractionState.vector}
+            compassDirectionAvailable={tractionState.available}
           />
         </div>
 
@@ -698,9 +757,9 @@ export default function MetabolicUnifiedView({
               trajectoryPositions={trajectoryPositions}
               currentPosition={currentTrajectoryPosition}
               normalizedMetabolicState={normalizedMetabolicState}
-              directionVector={directionVector}
-              directionAvailable={directionState.available}
-              directionUnavailableReason={directionState.reason}
+              directionVector={tractionState.vector}
+              directionAvailable={tractionState.available}
+              directionUnavailableReason={tractionState.reason}
               showRoute={false}
             />
             <MetabolicDataAudit
@@ -737,6 +796,10 @@ export default function MetabolicUnifiedView({
                 <div>glycemicInstability: {Number(metabolicMapInputs?.glycemicInstability ?? 0).toFixed(4)}</div>
                 <div>realSleepDays: {Number(metabolicMapInputs?.realSleepDays ?? 0)}</div>
                 <div>totalWindowDays: {Number(metabolicMapInputs?.totalWindowDays ?? 0)}</div>
+                <div>tractionVector.x: {Number(tractionState?.vector?.x ?? 0).toFixed(4)}</div>
+                <div>tractionVector.y: {Number(tractionState?.vector?.y ?? 0).toFixed(4)}</div>
+                <div>tractionMagnitude: {Number(tractionState?.magnitude ?? 0).toFixed(4)}</div>
+                <div>tractionReason: {String(tractionState?.reason || 'n/a')}</div>
               </div>
             ) : null}
           </div>

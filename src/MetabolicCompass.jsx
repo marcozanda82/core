@@ -295,6 +295,8 @@ export default function MetabolicCompass({
   unifiedDirectionMode = false,
   unifiedDirectionLabel = '',
   unifiedDirectionModeLabel = '',
+  unifiedDirectionVector = null,
+  compassDirectionAvailable = false,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
@@ -312,6 +314,19 @@ export default function MetabolicCompass({
   const selectedTimeframe = isTfControlled ? timeframeControlled : timeframeInternal;
 
   const [snapshot, setSnapshot] = useState(null);
+
+  const renderedSector = useMemo(() => {
+    if (!snapshot || !Number.isFinite(Number(snapshot.x)) || !Number.isFinite(Number(snapshot.y))) {
+      return 'neutral';
+    }
+    const x = Number(snapshot.x);
+    const y = Number(snapshot.y);
+    if (Math.hypot(x, y) <= 1e-6) return 'neutral';
+    if (x >= 0 && y >= 0) return 'NE';
+    if (x < 0 && y >= 0) return 'NW';
+    if (x >= 0 && y < 0) return 'SE';
+    return 'SW';
+  }, [snapshot]);
 
   useEffect(() => {
     if (!compassScreenActive) {
@@ -340,6 +355,22 @@ export default function MetabolicCompass({
   );
 
   useEffect(() => {
+    if (unifiedDirectionMode) {
+      const dx = Number(unifiedDirectionVector?.x) || 0;
+      const dy = Number(unifiedDirectionVector?.y) || 0;
+      const len = Math.hypot(dx, dy);
+      if (!compassDirectionAvailable || len <= 1e-6) {
+        setSnapshot({ angleDeg: 0, magnitude: 0, x: 0, y: 0 });
+        return;
+      }
+      const nx = dx / len;
+      const ny = dy / len;
+      const angleRad = Math.atan2(ny, nx);
+      const angleDeg = Number.isFinite(angleRad) ? angleRad * METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG : 0;
+      const magnitude = Math.max(0.18, Math.min(1, len));
+      setSnapshot({ angleDeg, magnitude, x: nx, y: ny });
+      return;
+    }
     if (neutralStaticMode) {
       setSnapshot({ angleDeg: 0, magnitude: 0, x: 0, y: 0 });
       return;
@@ -360,10 +391,24 @@ export default function MetabolicCompass({
     compassHistoryKey,
     normalizedMetabolicState,
     neutralStaticMode,
+    unifiedDirectionMode,
+    unifiedDirectionVector,
+    compassDirectionAvailable,
   ]);
 
   const angleDeg = snapshot?.angleDeg ?? 0;
   const magnitude = snapshot?.magnitude ?? 0;
+
+  if (typeof window !== 'undefined') {
+    console.log('COMPASS_RENDER_VECTOR', {
+      selectedTimeframe,
+      unifiedDirectionMode,
+      unifiedDirectionVector,
+      compassDirectionAvailable,
+      renderedAngle: angleDeg,
+      renderedSector,
+    });
+  }
 
   /** TEMPORARY: verifica finestra date in test */
   const compassDebugRangeLine = useMemo(() => {
@@ -552,7 +597,7 @@ export default function MetabolicCompass({
             key={g}
             type="button"
             role="tab"
-            aria-selected={goal === g}
+            aria-selected={!unifiedDirectionMode && goal === g}
             onClick={() => {
               if (unifiedDirectionMode) return;
               setGoal(g);
@@ -561,12 +606,12 @@ export default function MetabolicCompass({
               padding: '7px 13px',
               borderRadius: 100,
               border:
-                goal === g
+                !unifiedDirectionMode && goal === g
                   ? '1px solid rgba(255,255,255,0.18)'
                   : '1px solid rgba(255,255,255,0.06)',
               background:
-                goal === g ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
-              color: goal === g ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.4)',
+                !unifiedDirectionMode && goal === g ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
+              color: !unifiedDirectionMode && goal === g ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.4)',
               fontSize: 11,
               fontWeight: 560,
               letterSpacing: '0.04em',
@@ -640,7 +685,7 @@ export default function MetabolicCompass({
               <CompassDirectionLabel
                 key={`lbl-${angle}`}
                 labelText={label}
-                selected={goal === label}
+                selected={!unifiedDirectionMode && goal === label}
                 onSelect={setGoal}
                 layoutStyle={compassLabelStyleFromAngle(angle, compassRotation)}
               />
