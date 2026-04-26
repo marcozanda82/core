@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { METABOLIC_GOAL } from './metabolicDirection';
 import { historyFingerprint } from './metabolicDirectionEngine';
-import { getStructuralBaselineOffsetFromHistory } from './biometricHistory';
+import { calendarDayKeyFromRow, getStructuralBaselineOffsetFromHistory } from './biometricHistory';
 import {
   calculateBaselineOffset,
   getLastBiometricData,
@@ -21,6 +21,12 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '14d', label: '14G' },
   { value: '30d', label: '30G' },
 ];
+const TIMEFRAME_DAY_WINDOW = {
+  '1d': 1,
+  '7d': 7,
+  '14d': 14,
+  '30d': 30,
+};
 
 function mapZoneToGlowRgba(zone) {
   if (zone === 'red') return 'rgba(120, 88, 92, 0.28)';
@@ -38,6 +44,29 @@ function getAnchorFromLastWeighIn(baselineOffset) {
     x: clampAxis(Number(baselineOffset?.x) || 0),
     y: clampAxis(Number(baselineOffset?.y) || 0),
   };
+}
+
+function timeframeDateRangeFromDailyHistory(dailyHistory, timeframe) {
+  const arr = Array.isArray(dailyHistory) ? dailyHistory : [];
+  const dated = arr
+    .filter((d) => typeof d?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (dated.length === 0) return null;
+  const windowLen = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
+  const slice = dated.length <= windowLen ? dated : dated.slice(-windowLen);
+  const startDate = slice[0]?.date;
+  const endDate = slice[slice.length - 1]?.date;
+  if (!startDate || !endDate) return null;
+  return { startDate, endDate };
+}
+
+function filterBodyMetricsByDateRange(bodyMetricsHistory, startDate, endDate) {
+  if (!startDate || !endDate) return [];
+  const src = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
+  return src.filter((row) => {
+    const dayKey = calendarDayKeyFromRow(row);
+    return typeof dayKey === 'string' && dayKey >= startDate && dayKey <= endDate;
+  });
 }
 
 
@@ -107,11 +136,21 @@ export default function MetabolicUnifiedView({
   );
 
   const baselineOffset = useMemo(() => {
+    const range = timeframeDateRangeFromDailyHistory(dailyHistory, selectedTimeframe);
+    if (range) {
+      const rangedBodyMetrics = filterBodyMetricsByDateRange(
+        bodyMetricsHistory,
+        range.startDate,
+        range.endDate
+      );
+      const rangedOffset = getStructuralBaselineOffsetFromHistory(rangedBodyMetrics);
+      if (rangedOffset) return rangedOffset;
+    }
     const fromScale = getStructuralBaselineOffsetFromHistory(bodyMetricsHistory);
     if (fromScale) return fromScale;
     const biometrics = getLastBiometricData(dailyHistory);
     return calculateBaselineOffset(biometrics);
-  }, [bodyMetricsHistory, dailyHistory]);
+  }, [bodyMetricsHistory, dailyHistory, selectedTimeframe]);
 
   const anchorPosition = useMemo(() => getAnchorFromLastWeighIn(baselineOffset), [baselineOffset]);
   const estimatedPosition = anchorPosition;
