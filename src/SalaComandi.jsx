@@ -9644,6 +9644,7 @@ ${dbKeys || 'n/d'}`;
   const dotY = chartData.length > 0
     ? (chartData[currentH]?.energy ?? 0) + ((chartData[nextH]?.energy ?? 0) - (chartData[currentH]?.energy ?? 0)) * fraction
     : 0;
+  const currentEnergyPercentUnified = Math.round(Math.max(0, Math.min(100, Number(dotY) || 0)));
   const dotGlicemia = chartData.length > 0
     ? (chartData[currentH]?.glicemia ?? 85) + ((chartData[nextH]?.glicemia ?? 85) - (chartData[currentH]?.glicemia ?? 85)) * fraction
     : 85;
@@ -10922,7 +10923,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 syncDatiFirebase={syncDatiFirebase}
                 setManualNodes={setManualNodes}
                 setDailyLog={setDailyLog}
-                energyPercent={bodyBattery?.currentEnergy ?? 0}
+                energyPercent={currentEnergyPercentUnified}
                 nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                 timelineEnergySeries={timelineEnergySeries}
                 timelineQualityChartData={chartData}
@@ -11480,7 +11481,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             <div
               role="button"
               tabIndex={0}
-              aria-label={`Body Battery ${bodyBattery?.currentEnergy ?? 0} per cento. Apri dettaglio.`}
+              aria-label={`Body Battery ${currentEnergyPercentUnified} per cento. Apri dettaglio.`}
               title="Body Battery — dettaglio"
               onClick={() => setShowBatteryModal(true)}
               onKeyDown={(e) => {
@@ -11492,13 +11493,13 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, position: 'relative' }}
             >
               <EnergyArc
-                percentage={bodyBattery?.currentEnergy ?? 0}
+                percentage={currentEnergyPercentUnified}
                 size="small"
                 hasNapBoost={!!bodyBattery?.hasNapBoost}
                 showText={false}
               />
               <span style={{ fontSize: '0.7rem', color: '#a1a1aa', marginTop: '4px', fontWeight: '600', whiteSpace: 'nowrap' }}>
-                🔋 Energia {bodyBattery?.currentEnergy ?? 0}%
+                🔋 Energia {currentEnergyPercentUnified}%
               </span>
             </div>
           </div>
@@ -11963,7 +11964,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   )}
                   <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1, strokeDasharray: '5 5' }} />
                   {chartUnit === 'calorieTimeline' ? (
-                    <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
+                    <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={2} dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
                   ) : (
                     <>
                       <Area type="monotone"
@@ -12043,7 +12044,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   syncDatiFirebase={syncDatiFirebase}
                   setManualNodes={setManualNodes}
                   setDailyLog={setDailyLog}
-                  energyPercent={bodyBattery?.currentEnergy ?? 0}
+                  energyPercent={currentEnergyPercentUnified}
                   nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                   timelineEnergySeries={timelineEnergySeries}
                   timelineQualityChartData={chartData}

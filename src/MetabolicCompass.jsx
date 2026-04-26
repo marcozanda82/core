@@ -290,6 +290,7 @@ export default function MetabolicCompass({
   onGoalChange,
   selectedTimeframe: timeframeControlled,
   onTimeframeChange,
+  normalizedMetabolicState = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
@@ -335,10 +336,19 @@ export default function MetabolicCompass({
   );
 
   useEffect(() => {
+    if (normalizedMetabolicState && Number.isFinite(Number(normalizedMetabolicState.x)) && Number.isFinite(Number(normalizedMetabolicState.y))) {
+      const nx = Number(normalizedMetabolicState.x);
+      const ny = Number(normalizedMetabolicState.y);
+      const angleRad = Math.atan2(ny, nx);
+      const angleDeg = Number.isFinite(angleRad) ? angleRad * METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG : 0;
+      const magnitude = Math.min(1, Math.hypot(nx, ny) / 100);
+      setSnapshot({ angleDeg, magnitude, x: nx, y: ny });
+      return;
+    }
     const result = computeMetabolicCompassDirection(dailyHistory, selectedTimeframe);
     setSnapshot(result);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- compassHistoryKey = historyFingerprint(dailyHistory, selectedTimeframe)
-  }, [compassHistoryKey]);
+  }, [compassHistoryKey, normalizedMetabolicState]);
 
   const angleDeg = snapshot?.angleDeg ?? 0;
   const magnitude = snapshot?.magnitude ?? 0;

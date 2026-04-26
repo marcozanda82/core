@@ -111,6 +111,7 @@ export default function MetabolicUnifiedView({
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_TIMEFRAME);
   const [mapZoom, setMapZoom] = useState(1);
+  const [showRoute, setShowRoute] = useState(false);
 
   const compassHistoryKey = useMemo(
     () => historyFingerprint(dailyHistory, selectedTimeframe),
@@ -129,17 +130,24 @@ export default function MetabolicUnifiedView({
     return calculateBaselineOffset(biometrics);
   }, [bodyMetricsHistory, dailyHistory]);
 
+  const normalizedMetabolicState = useMemo(
+    () =>
+      calculateMetabolicMapPosition({
+        energyBalance: metabolicMapInputs.energyBalance,
+        trainingLoad: metabolicMapInputs.trainingLoad,
+        sleepHours: metabolicMapInputs.sleepHours,
+        glycemicInstability: metabolicMapInputs.glycemicInstability,
+        baselineOffsetX: baselineOffset.x,
+        baselineOffsetY: baselineOffset.y,
+      }),
+    [metabolicMapInputs, baselineOffset]
+  );
+
   const mapZoneColor = useMemo(() => {
-    const { zone } = calculateMetabolicMapPosition({
-      energyBalance: metabolicMapInputs.energyBalance,
-      trainingLoad: metabolicMapInputs.trainingLoad,
-      sleepHours: metabolicMapInputs.sleepHours,
-      glycemicInstability: metabolicMapInputs.glycemicInstability,
-      baselineOffsetX: baselineOffset.x,
-      baselineOffsetY: baselineOffset.y,
-    });
+    const zone = normalizedMetabolicState?.zone;
+    if (!zone) return '';
     return mapZoneToGlowRgba(zone);
-  }, [metabolicMapInputs, baselineOffset]);
+  }, [normalizedMetabolicState]);
 
   const weightProjection = useMemo(
     () =>
@@ -160,7 +168,11 @@ export default function MetabolicUnifiedView({
     return slice.map((day) => buildDailyPointFromLogDay(day, baselineOffset));
   }, [dailyHistory, baselineOffset]);
   const trajectoryPositions = useMemo(() => {
-    if (dailyMapPoints.length === 0) return [];
+    const targetPosition = {
+      x: clampAxis(Number(normalizedMetabolicState?.x) || 0),
+      y: clampAxis(Number(normalizedMetabolicState?.y) || 0),
+    };
+    if (dailyMapPoints.length === 0) return [targetPosition];
 
     const startPosition = {
       x: clampAxis(Number(dailyMapPoints[0]?.x) || 0),
@@ -178,9 +190,16 @@ export default function MetabolicUnifiedView({
       positions.push(next);
     }
 
+    positions.push(targetPosition);
     return positions;
-  }, [dailyMapPoints]);
-  const currentTrajectoryPosition = trajectoryPositions[trajectoryPositions.length - 1] || null;
+  }, [dailyMapPoints, normalizedMetabolicState]);
+  const currentTrajectoryPosition = useMemo(
+    () => ({
+      x: clampAxis(Number(normalizedMetabolicState?.x) || 0),
+      y: clampAxis(Number(normalizedMetabolicState?.y) || 0),
+    }),
+    [normalizedMetabolicState]
+  );
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -273,6 +292,29 @@ export default function MetabolicUnifiedView({
           }}
         >
           +
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowRoute((v) => !v)}
+          disabled={viewMode !== 'map'}
+          aria-label={showRoute ? 'Nascondi rotta' : 'Mostra rotta'}
+          style={{
+            minWidth: 54,
+            height: 32,
+            padding: '0 10px',
+            borderRadius: 9,
+            border: `1px solid ${showRoute ? 'rgba(148, 163, 184, 0.48)' : 'rgba(255,255,255,0.12)'}`,
+            background: showRoute ? 'rgba(148, 163, 184, 0.14)' : 'rgba(255,255,255,0.05)',
+            color: '#e2e8f0',
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            cursor: viewMode === 'map' ? 'pointer' : 'default',
+            opacity: viewMode === 'map' ? 1 : 0.45,
+          }}
+        >
+          Rotta
         </button>
       </div>
 
@@ -367,6 +409,7 @@ export default function MetabolicUnifiedView({
             onGoalChange={setGoal}
             selectedTimeframe={selectedTimeframe}
             onTimeframeChange={setSelectedTimeframe}
+            normalizedMetabolicState={normalizedMetabolicState}
           />
         </div>
 
@@ -439,6 +482,8 @@ export default function MetabolicUnifiedView({
               onZoomLevelChange={setMapZoom}
               trajectoryPositions={trajectoryPositions}
               currentPosition={currentTrajectoryPosition}
+              normalizedMetabolicState={normalizedMetabolicState}
+              showRoute={showRoute}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}
