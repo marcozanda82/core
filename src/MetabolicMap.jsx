@@ -538,16 +538,34 @@ export default function MetabolicMap({
     ? (distTarget > distAnchor ? 'rgba(178, 128, 136, 0.88)' : 'rgba(148, 186, 214, 0.88)')
     : 'rgba(176, 190, 206, 0.4)';
 
-  const labelStyle = {
+  const semanticLabelBaseStyle = {
     position: 'absolute',
-    fontSize: '0.62rem',
-    fontWeight: 500,
-    letterSpacing: '0.04em',
-    color: 'rgba(200, 210, 220, 0.17)',
+    color: '#cfe8ff',
+    textTransform: 'uppercase',
+    letterSpacing: '0.09em',
+    fontWeight: 400,
     lineHeight: 1.25,
-    maxWidth: '42%',
     pointerEvents: 'none',
     userSelect: 'none',
+    whiteSpace: 'nowrap',
+    zIndex: 5,
+    textAlign: 'center',
+  };
+  const semanticPrimaryStyle = {
+    ...semanticLabelBaseStyle,
+    fontSize: '0.57rem',
+    opacity: 0.55,
+  };
+  const semanticSecondaryStyle = {
+    ...semanticLabelBaseStyle,
+    fontSize: '0.5rem',
+    opacity: 0.35,
+  };
+  const semanticCenterStyle = {
+    ...semanticLabelBaseStyle,
+    fontSize: '0.5rem',
+    opacity: 0.25,
+    letterSpacing: '0.11em',
   };
 
   const sleepReliabilityLine = sleepDataReliabilityText(realSleepDays, totalWindowDays);
@@ -919,18 +937,63 @@ export default function MetabolicMap({
 
         </svg>
 
-        <span style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
-          ASSE Y+
+        <span style={{ ...semanticPrimaryStyle, top: 4, left: '50%', transform: 'translateX(-50%)' }}>
+          RICOMPOSIZIONE
         </span>
-        <span style={{ ...labelStyle, top: 8, right: 8, textAlign: 'right', zIndex: 5 }}>
-          ASSE X+
+        <span
+          style={{
+            ...semanticPrimaryStyle,
+            right: 4,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            textAlign: 'right',
+          }}
+        >
+          ACCUMULO GRASSO
         </span>
-        <span style={{ ...labelStyle, bottom: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
-          ASSE X-
+        <span style={{ ...semanticPrimaryStyle, bottom: 4, left: '50%', transform: 'translateX(-50%)' }}>
+          CATABOLISMO
         </span>
-        <span style={{ ...labelStyle, bottom: 8, right: 8, textAlign: 'right', zIndex: 5 }}>
-          ASSE Y-
+        <span
+          style={{
+            ...semanticPrimaryStyle,
+            left: 4,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            textAlign: 'left',
+          }}
+        >
+          DIGIUNO / AUTOFAGIA
         </span>
+
+        <span style={{ ...semanticSecondaryStyle, top: 28, right: 20, textAlign: 'right' }}>
+          SURPLUS CONTROLLATO
+        </span>
+        <span style={{ ...semanticSecondaryStyle, top: 28, left: 20, textAlign: 'left' }}>
+          MASSA PULITA
+        </span>
+        <span style={{ ...semanticSecondaryStyle, bottom: 28, right: 20, textAlign: 'right' }}>
+          SURPLUS DISFUNZIONALE
+        </span>
+        <span style={{ ...semanticSecondaryStyle, bottom: 28, left: 20, textAlign: 'left' }}>
+          PERDITA GRASSO
+        </span>
+
+        <div
+          style={{
+            ...semanticCenterStyle,
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            lineHeight: 1.2,
+          }}
+        >
+          <span>BLUE ZONE</span>
+          <span style={{ fontSize: '0.43rem', opacity: 0.8, letterSpacing: '0.1em' }}>LONGEVITÀ</span>
+        </div>
       </div>
 
       <div
