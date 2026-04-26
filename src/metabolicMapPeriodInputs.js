@@ -19,6 +19,7 @@ const EMPTY_MAP_INPUTS = {
 
 const EMPTY_RAW_DETAILS = {
   meanKcal: null,
+  effectiveMeanKcal: null,
   meanTraining01: null,
   sleepRegisteredMean: null,
   realSleepDays: 0,
@@ -33,6 +34,53 @@ function timeframeImpactMultiplier(timeframe) {
   if (timeframe === '30d' || timeframe === '14d') return 1.0;
   if (timeframe === '7d') return 0.75;
   return 0.4; // '1d' (ieri) e fallback conservativo
+}
+
+/** ±100 kcal = zona neutra: micro-fluttuazioni non spostano la mappa. */
+const CALORIE_NEUTRAL_BAND_KCAL = 100;
+/** Smorza l'eccesso oltre la zona neutra per ridurre bias pessimistico da piccoli surplus. */
+const CALORIE_EXCESS_ATTENUATION = 0.35;
+/** Conversione kcal effettive -> asse energia (più alto = meno sensibilità). */
+const KCAL_TO_MAP_AXIS_DIVISOR = 10;
+
+/**
+ * Bilancio calorico "effettivo" dopo neutral band ±100 kcal e attenuazione.
+ * @param {number} kcalBalance
+ * @returns {number}
+ */
+export function applyCalorieNeutralBand(kcalBalance) {
+  const k = Number(kcalBalance) || 0;
+  if (Math.abs(k) <= CALORIE_NEUTRAL_BAND_KCAL) return 0;
+  const excess = Math.abs(k) - CALORIE_NEUTRAL_BAND_KCAL;
+  return Math.sign(k) * (excess * CALORIE_EXCESS_ATTENUATION);
+}
+
+/**
+ * Riduce il peso di piccoli surplus quando il training è regolare (proxy massa pulita).
+ * @param {number} effectiveKcal
+ * @param {number} trainingLoad01to100
+ * @returns {number}
+ */
+function applyTrainingLeanMassCounterweight(effectiveKcal, trainingLoad01to100) {
+  const e = Number(effectiveKcal) || 0;
+  if (e <= 0) return e;
+  const t = clamp(Number(trainingLoad01to100) || 0, 0, 100);
+  const activation = clamp((t - 35) / 45, 0, 1); // 35+ = attività regolare
+  const reduction = 0.12 + activation * 0.5; // 12%..62%
+  return e * (1 - reduction);
+}
+
+/**
+ * Asse energia mappa (-100..100) da bilancio kcal, con neutral zone e controbilanciamento training.
+ * @param {number} kcalBalance
+ * @param {number} trainingLoad01to100
+ * @param {number} impact
+ * @returns {number}
+ */
+export function mapEnergyAxisFromCalorieBalance(kcalBalance, trainingLoad01to100 = 0, impact = 1) {
+  const eff = applyCalorieNeutralBand(kcalBalance);
+  const leanAdjusted = applyTrainingLeanMassCounterweight(eff, trainingLoad01to100);
+  return clamp((leanAdjusted / KCAL_TO_MAP_AXIS_DIVISOR) * (Number(impact) || 1), -100, 100);
 }
 
 function compassHistoryForEngine(days) {
@@ -118,9 +166,12 @@ export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d'
   const trainingLoads = slice.map((d) => clamp(Number(d.trainingLoad) || 0, 0, 100));
 
   const meanKcal = arithmeticMean(kcalBalances);
-  const energyBalance = clamp((meanKcal / 5) * impact, -100, 100);
-
   const meanTraining = arithmeticMean(trainingLoads);
+  const effectiveMeanKcal = applyTrainingLeanMassCounterweight(
+    applyCalorieNeutralBand(meanKcal),
+    meanTraining
+  );
+  const energyBalance = mapEnergyAxisFromCalorieBalance(meanKcal, meanTraining, impact);
   const trainingLoad = clamp(trainingLoadAxisRawFromMean(meanTraining) * impact, -100, 100);
 
   const rawSleep = slice.map((d) => {
@@ -159,6 +210,7 @@ export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d'
     },
     rawDetails: {
       meanKcal,
+      effectiveMeanKcal,
       meanTraining01: meanTraining,
       sleepRegisteredMean,
       realSleepDays,

@@ -7,7 +7,10 @@ import {
   calculateMetabolicMapPosition,
   getLastBiometricData,
 } from './metabolicMapEngine';
-import { computeMetabolicMapInputsAndAudit } from './metabolicMapPeriodInputs';
+import {
+  computeMetabolicMapInputsAndAudit,
+  mapEnergyAxisFromCalorieBalance,
+} from './metabolicMapPeriodInputs';
 import { computeWeightProjectionFromInputs, formatWeightProjectionUI } from './weightProjectionEngine';
 import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
@@ -46,7 +49,7 @@ function buildDailyPointFromLogDay(day, baselineOffset) {
   const sleepStress = safeSleep < 7.5 ? Math.max(0, Math.min(1, (7.5 - safeSleep) / 7.5)) : 0;
   const glycemicInstability = Math.max(0, Math.min(100, (0.4 * surplusFactor + 0.45 * sleepStress) * 100));
   return calculateMetabolicMapPosition({
-    energyBalance: clampAxis(kcalBalance / 5),
+    energyBalance: mapEnergyAxisFromCalorieBalance(kcalBalance, day?.trainingLoad, 1),
     trainingLoad: trainingLoadAxis,
     sleepHours: safeSleep,
     glycemicInstability,

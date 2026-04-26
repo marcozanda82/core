@@ -207,9 +207,9 @@ const ZONE_GRADIENTS = {
 /** Morbidezza follow pinch (più alto = meno scatti). */
 const ZOOM_PINCH_SMOOTH = 0.28;
 const ZOOM_WHEEL_STEP = 0.018;
-const INERTIA_VELOCITY_MIN = 0.015;
-const INERTIA_VELOCITY_MAX = 0.045;
-const INERTIA_MAX_STEP_SVG = 1.4;
+const INERTIA_VELOCITY_MIN = 0.01;
+const INERTIA_VELOCITY_MAX = 0.03;
+const INERTIA_MAX_STEP_SVG = 0.95;
 const ACTIVE_RING_PULSE_TRANSITION = {
   duration: 2.8,
   repeat: Infinity,
@@ -355,7 +355,7 @@ export default function MetabolicMap({
   const [inertialTipSvg, setInertialTipSvg] = useState(MAP_CENTER_SVG);
   const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1 });
   const targetTipRef = useRef(MAP_CENTER_SVG);
-  const inertiaVelRef = useRef(0.04);
+  const inertiaVelRef = useRef(0.02);
   const zoomLevel = typeof zoomLevelProp === 'number' ? clampZoom(zoomLevelProp) : zoomLevelLocal;
   const setZoomLevel = (nextZoom) => {
     const resolved = typeof nextZoom === 'function' ? nextZoom(zoomLevel) : nextZoom;
