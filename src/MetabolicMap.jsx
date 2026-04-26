@@ -476,7 +476,7 @@ export default function MetabolicMap({
   const needleRotateDeg = directionMagnitude > 1e-6
     ? rotationDegFromDirection(safeDirectionVector.x, safeDirectionVector.y)
     : 0;
-  const needleBladeOpacity = directionMagnitude > 1e-6 ? 0.86 : 0.08;
+  const needleBladeOpacity = directionMagnitude > 1e-6 ? 0.86 : 0.04;
   const snailTrailStyle = useMemo(() => {
     if (directionMagnitude <= 1e-6) {
       return { length: 0, opacity: 0, width: 0.95 };
@@ -500,10 +500,11 @@ export default function MetabolicMap({
 
   const longevityScoreAnchor = calculateMetabolicScore(baselineX, baselineY);
   const longevityScoreFinal = calculateMetabolicScore(displayX, displayY);
-  const needleFill =
-    distTarget > distAnchor
+  const needleFill = directionMagnitude > 1e-6
+    ? (distTarget > distAnchor
       ? 'rgba(150, 95, 100, 0.78)'
-      : 'rgba(100, 140, 158, 0.82)';
+      : 'rgba(100, 140, 158, 0.82)')
+    : 'rgba(162, 176, 192, 0.42)';
 
   const needleBladeLen = useMemo(() => {
     if (lifestyleNearlyIdle) return NEEDLE_BLADE_LEN_IDLE;
@@ -859,9 +860,8 @@ export default function MetabolicMap({
                 r={COMPASS_BODY_R + 1.3}
                 cx={0}
                 cy={0}
-                fill="rgba(130, 172, 210, 0.08)"
-                stroke="rgba(224,236,248,0.2)"
-                strokeWidth={0.26}
+                fill="rgba(116, 156, 194, 0.16)"
+                stroke="none"
                 filter={`url(#${glowFilterId})`}
                 vectorEffect="nonScalingStroke"
               />
@@ -869,28 +869,18 @@ export default function MetabolicMap({
                 r={COMPASS_BODY_R}
                 cx={0}
                 cy={0}
-                fill="rgba(12, 18, 26, 0.92)"
-                stroke={mixHex(dynamicCompassBorder, '#e8f2ff', 0.68)}
-                strokeWidth={0.52}
+                fill={mixHex(dynamicCompassBorder, '#1f2b38', 0.6)}
+                stroke={mixHex(dynamicCompassBorder, '#ddebf8', 0.56)}
+                strokeWidth={0.44}
                 filter={`url(#${glowFilterId})`}
                 vectorEffect="nonScalingStroke"
               />
               <circle
-                r={COMPASS_BODY_R * 0.58}
-                cx={0}
-                cy={0}
-                fill={mixHex(dynamicCompassBorder, '#f8fbff', 0.74)}
-                stroke="rgba(255,255,255,0.28)"
-                strokeWidth={0.2}
-                vectorEffect="nonScalingStroke"
-              />
-              <circle
-                r={COMPASS_BODY_R * 0.18}
-                cx={0}
-                cy={0}
-                fill="rgba(8, 12, 18, 0.95)"
-                stroke="rgba(235, 244, 252, 0.48)"
-                strokeWidth={0.13}
+                r={COMPASS_BODY_R * 0.28}
+                cx={-0.85}
+                cy={-1.05}
+                fill="rgba(236, 245, 255, 0.24)"
+                stroke="none"
                 vectorEffect="nonScalingStroke"
               />
               <motion.polygon
