@@ -1,7 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { METABOLIC_GOAL } from './metabolicDirection';
 import { historyFingerprint } from './metabolicDirectionEngine';
-import { calendarDayKeyFromRow, getStructuralBaselineOffsetFromHistory } from './biometricHistory';
+import {
+  biometricsToMapBaselineInput,
+  calendarDayKeyFromRow,
+  getStructuralBaselineOffsetFromHistory,
+  normalizeBiometricEntry,
+} from './biometricHistory';
 import {
   calculateBaselineOffset,
   getLastBiometricData,
@@ -67,6 +72,52 @@ function filterBodyMetricsByDateRange(bodyMetricsHistory, startDate, endDate) {
     const dayKey = calendarDayKeyFromRow(row);
     return typeof dayKey === 'string' && dayKey >= startDate && dayKey <= endDate;
   });
+}
+
+function bodyMetricEntrySortTime(entry) {
+  const ts = Number(entry?.timestamp);
+  if (Number.isFinite(ts) && ts > 0) return ts;
+  const dayKey = calendarDayKeyFromRow(entry);
+  if (typeof dayKey === 'string') return new Date(`${dayKey}T12:00:00`).getTime();
+  return 0;
+}
+
+function buildTimeframeTrajectoryPositions(bodyMetricsHistory, timeframeRange, fallbackPosition) {
+  const src = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
+  if (!timeframeRange || src.length === 0) return [{ ...fallbackPosition }];
+  const inRange = filterBodyMetricsByDateRange(
+    src,
+    timeframeRange.startDate,
+    timeframeRange.endDate
+  );
+  if (inRange.length === 0) return [{ ...fallbackPosition }];
+  const sorted = [...inRange].sort((a, b) => bodyMetricEntrySortTime(a) - bodyMetricEntrySortTime(b));
+  const points = sorted
+    .map((row) => normalizeBiometricEntry(row))
+    .filter(Boolean)
+    .map((entry) => biometricsToMapBaselineInput(entry))
+    .filter(Boolean)
+    .map((input) => {
+      const offset = calculateBaselineOffset(input);
+      return {
+        x: clampAxis(Number(offset?.x) || 0),
+        y: clampAxis(Number(offset?.y) || 0),
+      };
+    });
+  if (points.length === 0) return [{ ...fallbackPosition }];
+  return points;
+}
+
+function normalizedDirectionFromTrajectory(trajectoryPositions) {
+  const points = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
+  if (points.length < 2) return { x: 0, y: 0 };
+  const last = points[points.length - 1];
+  const prev = points[points.length - 2];
+  const dx = (Number(last?.x) || 0) - (Number(prev?.x) || 0);
+  const dy = (Number(last?.y) || 0) - (Number(prev?.y) || 0);
+  const length = Math.hypot(dx, dy);
+  if (!Number.isFinite(length) || length <= 1e-9) return { x: 0, y: 0 };
+  return { x: dx / length, y: dy / length };
 }
 
 
@@ -135,8 +186,13 @@ export default function MetabolicUnifiedView({
     [compassHistoryKey]
   );
 
+  const timeframeRange = useMemo(
+    () => timeframeDateRangeFromDailyHistory(dailyHistory, selectedTimeframe),
+    [dailyHistory, selectedTimeframe]
+  );
+
   const baselineOffset = useMemo(() => {
-    const range = timeframeDateRangeFromDailyHistory(dailyHistory, selectedTimeframe);
+    const range = timeframeRange;
     if (range) {
       const rangedBodyMetrics = filterBodyMetricsByDateRange(
         bodyMetricsHistory,
@@ -150,11 +206,10 @@ export default function MetabolicUnifiedView({
     if (fromScale) return fromScale;
     const biometrics = getLastBiometricData(dailyHistory);
     return calculateBaselineOffset(biometrics);
-  }, [bodyMetricsHistory, dailyHistory, selectedTimeframe]);
+  }, [bodyMetricsHistory, dailyHistory, timeframeRange]);
 
   const anchorPosition = useMemo(() => getAnchorFromLastWeighIn(baselineOffset), [baselineOffset]);
   const estimatedPosition = anchorPosition;
-  const directionVector = useMemo(() => ({ x: 0, y: 0 }), []);
   const normalizedMetabolicState = useMemo(() => {
     const x = clampAxis(Number(estimatedPosition?.x) || 0);
     const y = clampAxis(Number(estimatedPosition?.y) || 0);
@@ -189,13 +244,20 @@ export default function MetabolicUnifiedView({
     () => formatWeightProjectionUI(weightProjection),
     [weightProjection]
   );
-  const trajectoryPositions = useMemo(() => [{ ...estimatedPosition }], [estimatedPosition]);
+  const trajectoryPositions = useMemo(
+    () => buildTimeframeTrajectoryPositions(bodyMetricsHistory, timeframeRange, estimatedPosition),
+    [bodyMetricsHistory, timeframeRange, estimatedPosition]
+  );
   const currentTrajectoryPosition = useMemo(
     () => ({
-      x: clampAxis(Number(estimatedPosition?.x) || 0),
-      y: clampAxis(Number(estimatedPosition?.y) || 0),
+      x: clampAxis(Number(trajectoryPositions[trajectoryPositions.length - 1]?.x) || Number(estimatedPosition?.x) || 0),
+      y: clampAxis(Number(trajectoryPositions[trajectoryPositions.length - 1]?.y) || Number(estimatedPosition?.y) || 0),
     }),
-    [estimatedPosition]
+    [trajectoryPositions, estimatedPosition]
+  );
+  const directionVector = useMemo(
+    () => normalizedDirectionFromTrajectory(trajectoryPositions),
+    [trajectoryPositions]
   );
 
   const reducedMotion =

@@ -333,10 +333,10 @@ export default function MetabolicMap({
   bodyMetricsHistory = null,
   zoomLevel: zoomLevelProp = undefined,
   onZoomLevelChange = null,
-  trajectoryPositions: _trajectoryPositions = null,
+  trajectoryPositions = null,
   currentPosition = null,
   normalizedMetabolicState: _normalizedMetabolicState = null,
-  directionVector = null,
+  directionVector: _directionVector = null,
   showRoute = false,
 }) {
   const uid = useId().replace(/:/g, '');
@@ -409,13 +409,16 @@ export default function MetabolicMap({
   }, []);
 
   const safeDirectionVector = useMemo(() => {
-    const x = Number(directionVector?.x);
-    const y = Number(directionVector?.y);
-    return {
-      x: Number.isFinite(x) ? x : 0,
-      y: Number.isFinite(y) ? y : 0,
-    };
-  }, [directionVector]);
+    const points = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
+    if (points.length < 2) return { x: 0, y: 0 };
+    const last = points[points.length - 1];
+    const prev = points[points.length - 2];
+    const dx = (Number(last?.x) || 0) - (Number(prev?.x) || 0);
+    const dy = (Number(last?.y) || 0) - (Number(prev?.y) || 0);
+    const length = Math.hypot(dx, dy);
+    if (!Number.isFinite(length) || length <= 1e-9) return { x: 0, y: 0 };
+    return { x: dx / length, y: dy / length };
+  }, [trajectoryPositions]);
   const directionMagnitude = Math.hypot(safeDirectionVector.x, safeDirectionVector.y);
   const lifestyleLen = directionMagnitude;
   const lifestyleNearlyIdle = directionMagnitude < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
@@ -476,7 +479,7 @@ export default function MetabolicMap({
   const needleRotateDeg = directionMagnitude > 1e-6
     ? rotationDegFromDirection(safeDirectionVector.x, safeDirectionVector.y)
     : 0;
-  const needleBladeOpacity = directionMagnitude > 1e-6 ? 0.86 : 0.04;
+  const needleBladeOpacity = directionMagnitude > 1e-6 ? 0.9 : 0.12;
   const snailTrailStyle = useMemo(() => {
     if (directionMagnitude <= 1e-6) {
       return { length: 0, opacity: 0, width: 0.95 };
@@ -506,16 +509,19 @@ export default function MetabolicMap({
       : 'rgba(100, 140, 158, 0.82)')
     : 'rgba(162, 176, 192, 0.42)';
 
-  const needleBladeLen = useMemo(() => {
-    if (lifestyleNearlyIdle) return NEEDLE_BLADE_LEN_IDLE;
+  const needleShaftLen = useMemo(() => {
+    if (lifestyleNearlyIdle) return COMPASS_BODY_R * 0.22;
     const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
-    return NEEDLE_BLADE_LEN_MIN + t * (NEEDLE_BLADE_LEN_MAX - NEEDLE_BLADE_LEN_MIN);
+    const minLen = COMPASS_BODY_R * 0.64;
+    const maxLen = COMPASS_BODY_R * 0.8;
+    return minLen + t * (maxLen - minLen);
   }, [lifestyleNearlyIdle, lifestyleLen]);
-  const needlePolygonPoints = useMemo(() => {
-    const halfW = Math.min(0.62, 0.28 + needleBladeLen * 0.035);
-    const baseY = 0.55;
-    return `0,-${needleBladeLen} ${halfW},${baseY} -${halfW},${baseY}`;
-  }, [needleBladeLen]);
+  const needleTipPoints = useMemo(() => {
+    const tipY = -needleShaftLen;
+    const baseY = -(needleShaftLen - 1.2);
+    const halfW = 0.82;
+    return `0,${tipY} ${halfW},${baseY} -${halfW},${baseY}`;
+  }, [needleShaftLen]);
 
   const labelStyle = {
     position: 'absolute',
@@ -884,11 +890,23 @@ export default function MetabolicMap({
                 vectorEffect="nonScalingStroke"
               />
               <motion.polygon
-                points={needlePolygonPoints}
+                points={needleTipPoints}
                 stroke="rgba(255,255,255,0.22)"
                 strokeWidth={0.1}
                 vectorEffect="nonScalingStroke"
                 animate={{ fill: needleFill, opacity: needleBladeOpacity }}
+                transition={vectorTransition}
+              />
+              <motion.line
+                x1={0}
+                y1={0}
+                x2={0}
+                y2={-needleShaftLen}
+                stroke={mixHex(needleFill, '#f4f8ff', 0.25)}
+                strokeWidth={0.42}
+                strokeLinecap="round"
+                vectorEffect="nonScalingStroke"
+                animate={{ opacity: needleBladeOpacity }}
                 transition={vectorTransition}
               />
             </motion.g>
