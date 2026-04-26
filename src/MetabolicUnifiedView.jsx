@@ -164,6 +164,10 @@ function directionModeLabelFromState(directionState) {
     : `unavailable_${String(directionState?.reason || 'unknown')}`;
 }
 
+function directionLabelFromQuadrant(quadrant) {
+  return QUADRANT_DIRECTION_LABELS[String(quadrant || '')] || 'neutral';
+}
+
 
 function IconMapSwitch() {
   return (
@@ -308,32 +312,9 @@ export default function MetabolicUnifiedView({
   );
   const directionState = useMemo(() => directionStateFromMovement(movementState), [movementState]);
   const directionVector = directionState.vector;
-  const compassDirectionState = useMemo(() => {
-    if (!directionState.available) {
-      return {
-        x: 0,
-        y: 0,
-        finalAura: 0,
-        distance: 0,
-        zone: 'neutral',
-        quadrant: 'neutral',
-      };
-    }
-    const dailyVectorMagnitude = Math.hypot(
-      movementState.dailyVector.x,
-      movementState.dailyVector.y
-    );
-    const compassMagnitude = Math.max(
-      8,
-      Math.min(70, dailyVectorMagnitude * (0.7 + movementState.consistencyFactor * 0.6))
-    );
-    return calculateMetabolicMapPosition({
-      energyBalance: directionVector.x * compassMagnitude,
-      trainingLoad: directionVector.y * compassMagnitude,
-      sleepHours: metabolicMapInputs?.sleepHours,
-      glycemicInstability: metabolicMapInputs?.glycemicInstability,
-    });
-  }, [directionState.available, directionVector, movementState, metabolicMapInputs]);
+  const unifiedCompassQuadrant = String(normalizedMetabolicState?.quadrant || 'neutral');
+  const unifiedCompassLabel = directionLabelFromQuadrant(unifiedCompassQuadrant);
+  const unifiedDirectionModeLabel = directionModeLabelFromState(directionState);
   const movementAuditByTimeframe = useMemo(() => {
     return METABOLIC_COMPASS_TIMEFRAMES.reduce((acc, tf) => {
       const inputs = computeMetabolicMapInputsAndAudit(dailyHistory, tf.value).mapInputs;
@@ -475,7 +456,7 @@ export default function MetabolicUnifiedView({
   useEffect(() => {
     if (selectedTimeframe !== '1d') return;
     const selectedDateUsed = timeframeRange?.endDate ?? null;
-    const interpretedQuadrant = String(compassDirectionState?.quadrant || 'neutral');
+    const interpretedQuadrant = String(normalizedMetabolicState?.quadrant || 'neutral');
     console.info('[MetabolicMovement][1d debug]', {
       selectedTimeframe,
       selectedDateUsed,
@@ -503,7 +484,32 @@ export default function MetabolicUnifiedView({
     metabolicMapInputs,
     movementState,
     directionVector,
-    compassDirectionState,
+    normalizedMetabolicState,
+  ]);
+
+  useEffect(() => {
+    console.info('[MetabolicUnifiedDirection]', {
+      selectedTimeframe,
+      movementState: {
+        x: Number((movementState?.x || 0).toFixed(6)),
+        y: Number((movementState?.y || 0).toFixed(6)),
+        consistencyFactor: Number((movementState?.consistencyFactor || 0).toFixed(4)),
+      },
+      directionVector: {
+        x: Number((directionVector?.x || 0).toFixed(6)),
+        y: Number((directionVector?.y || 0).toFixed(6)),
+      },
+      compassLabel: unifiedCompassLabel,
+      mapQuadrant: unifiedCompassQuadrant,
+      directionModeLabel: unifiedDirectionModeLabel,
+    });
+  }, [
+    selectedTimeframe,
+    movementState,
+    directionVector,
+    unifiedCompassLabel,
+    unifiedCompassQuadrant,
+    unifiedDirectionModeLabel,
   ]);
 
   const reducedMotion =
@@ -714,8 +720,11 @@ export default function MetabolicUnifiedView({
             onGoalChange={setGoal}
             selectedTimeframe={selectedTimeframe}
             onTimeframeChange={setSelectedTimeframe}
-            normalizedMetabolicState={compassDirectionState}
+            normalizedMetabolicState={normalizedMetabolicState}
             neutralStaticMode={!directionState.available}
+            unifiedDirectionMode
+            unifiedDirectionLabel={unifiedCompassLabel}
+            unifiedDirectionModeLabel={unifiedDirectionModeLabel}
           />
         </div>
 

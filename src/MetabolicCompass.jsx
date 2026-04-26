@@ -292,6 +292,9 @@ export default function MetabolicCompass({
   onTimeframeChange,
   normalizedMetabolicState = null,
   neutralStaticMode = false,
+  unifiedDirectionMode = false,
+  unifiedDirectionLabel = '',
+  unifiedDirectionModeLabel = '',
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
@@ -369,10 +372,11 @@ export default function MetabolicCompass({
   }, [dailyHistory, selectedTimeframe]);
 
   const finalAngle = useMemo(() => {
+    if (unifiedDirectionMode) return angleDeg;
     const targetAngle = getMetabolicTargetAngle(goal);
     const raw = angleDeg - targetAngle;
     return Math.max(FINAL_ANGLE_MIN, Math.min(FINAL_ANGLE_MAX, raw));
-  }, [angleDeg, goal]);
+  }, [angleDeg, goal, unifiedDirectionMode]);
 
   const { tier } = useMemo(() => alignmentFromFinalAngle(finalAngle), [finalAngle]);
   const tierStyle = ALIGNMENT_TIERS[tier];
@@ -384,10 +388,23 @@ export default function MetabolicCompass({
   );
 
   const targetMetabolicAngle = useMemo(() => getMetabolicTargetAngle(goal), [goal]);
-  const microSuggestionText = useMemo(
-    () => metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngle),
-    [angleDeg, targetMetabolicAngle]
-  );
+  const microSuggestionText = useMemo(() => {
+    if (unifiedDirectionMode) {
+      const label = String(unifiedDirectionLabel || '').trim();
+      const mode = String(unifiedDirectionModeLabel || '').trim();
+      if (label && mode) return `${label} · ${mode}`;
+      if (label) return label;
+      if (mode) return mode;
+      return 'direzione non disponibile';
+    }
+    return metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngle);
+  }, [
+    unifiedDirectionMode,
+    unifiedDirectionLabel,
+    unifiedDirectionModeLabel,
+    angleDeg,
+    targetMetabolicAngle,
+  ]);
 
   const bezelBoxShadow = useMemo(() => {
     const base = `
@@ -427,7 +444,10 @@ export default function MetabolicCompass({
   }, [microSuggestionText]);
 
   /** Angolo rosa dell’obiettivo (da {@link METABOLIC_COMPASS_DIRECTIONS}). */
-  const targetAngle = useMemo(() => getCompassTargetAngleForGoal(goal), [goal]);
+  const targetAngle = useMemo(() => {
+    if (unifiedDirectionMode) return 0;
+    return getCompassTargetAngleForGoal(goal);
+  }, [goal, unifiedDirectionMode]);
   /** Solo sfondo rosa: Nord visivo = obiettivo → rotazione opposta all’angolo target. */
   const compassRotation = -targetAngle;
   /** Bearing metabolico reale + rotazione sfondo (freccia non è nel contenitore ruotato). */
@@ -529,7 +549,10 @@ export default function MetabolicCompass({
             type="button"
             role="tab"
             aria-selected={goal === g}
-            onClick={() => setGoal(g)}
+            onClick={() => {
+              if (unifiedDirectionMode) return;
+              setGoal(g);
+            }}
             style={{
               padding: '7px 13px',
               borderRadius: 100,
