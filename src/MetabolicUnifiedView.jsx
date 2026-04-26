@@ -759,6 +759,7 @@ export default function MetabolicUnifiedView({
               normalizedMetabolicState={normalizedMetabolicState}
               directionVector={tractionState.vector}
               directionAvailable={tractionState.available}
+              tractionMagnitude={tractionState.magnitude}
               directionUnavailableReason={tractionState.reason}
               showRoute={false}
             />

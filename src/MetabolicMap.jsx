@@ -148,20 +148,7 @@ const MAP_CENTER_SVG = { cx: 50, cy: 50 };
 /** Raggio Ancora (viewBox) — marker storici usano lo stesso raggio, senza glow. */
 const ANCHOR_CIRCLE_R = 3.5;
 /** Marker bussola principale: corpo circolare sempre visibile anche in direzione neutra. */
-const COMPASS_BODY_R = 5.1;
-
-/** Sotto questa lunghezza (spazio mappa −100…100) il vettore stile di vita si considera “quasi nullo”: ago verso il centro, più tenue. */
-const LIFESTYLE_VECTOR_IDLE_THRESHOLD = 4;
-
-/** Lunghezza lama ago (viewBox) quando il vettore stile di vita è quasi nullo. */
-const NEEDLE_BLADE_LEN_IDLE = 3.2;
-
-/** Estremi lama ago (viewBox) in funzione della magnitudo anchor → target (spazio mappa). */
-const NEEDLE_BLADE_LEN_MIN = 4;
-const NEEDLE_BLADE_LEN_MAX = 12.5;
-
-/** Valore di riferimento magnitudo (spazio mappa −100…100) per allungare l’ago al massimo. */
-const LIFESTYLE_LEN_FOR_FULL_NEEDLE = 95;
+const COMPASS_BODY_R = 6.4;
 
 const VECTOR_MOTION_TRANSITION = { duration: 0.32, ease: 'linear' };
 
@@ -329,11 +316,6 @@ function compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY) {
   );
 }
 
-function rotationDegFromDirection(dirX, dirY) {
-  const baseDeg = (Math.atan2(dirY, dirX) * 180) / Math.PI;
-  return baseDeg + 90;
-}
-
 /**
  * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
  */
@@ -354,6 +336,7 @@ export default function MetabolicMap({
   normalizedMetabolicState = null,
   directionVector = null,
   directionAvailable = false,
+  tractionMagnitude = 0,
   directionUnavailableReason = 'unavailable',
   showRoute = false,
 }) {
@@ -461,8 +444,6 @@ export default function MetabolicMap({
     return { x: x / length, y: y / length };
   }, [directionAvailable, directionVector]);
   const directionMagnitude = Math.hypot(safeDirectionVector.x, safeDirectionVector.y);
-  const lifestyleLen = directionMagnitude;
-  const lifestyleNearlyIdle = directionMagnitude < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
   const compassCenter = useMemo(
     () => ({ x: inertialTipSvg.cx, y: inertialTipSvg.cy }),
     [inertialTipSvg.cx, inertialTipSvg.cy]
@@ -517,22 +498,6 @@ export default function MetabolicMap({
       });
     }
   }, [displayPosition]);
-  const needleRotateDeg = directionMagnitude > 1e-6
-    ? rotationDegFromDirection(safeDirectionVector.x, safeDirectionVector.y)
-    : 0;
-  const needleBladeOpacity = directionAvailable && directionMagnitude > 1e-6 ? 0.9 : 0;
-  const snailTrailStyle = useMemo(() => {
-    if (directionMagnitude <= 1e-6) {
-      return { length: 0, opacity: 0, width: 0.95 };
-    }
-    const t = Math.max(0, Math.min(1, directionMagnitude / 14));
-    return {
-      length: 0.45 + t * 3.1,
-      opacity: t < 0.08 ? 0.015 : 0.035 + t * 0.18,
-      width: 0.95 + t * 1.1,
-    };
-  }, [directionMagnitude]);
-
   const distAnchor = Math.hypot(
     anchorSvg.cx - MAP_CENTER_SVG.cx,
     anchorSvg.cy - MAP_CENTER_SVG.cy,
@@ -544,25 +509,34 @@ export default function MetabolicMap({
 
   const longevityScoreAnchor = calculateMetabolicScore(baselineX, baselineY);
   const longevityScoreFinal = calculateMetabolicScore(displayX, displayY);
-  const needleFill = directionAvailable && directionMagnitude > 1e-6
-    ? (distTarget > distAnchor
-      ? 'rgba(150, 95, 100, 0.78)'
-      : 'rgba(100, 140, 158, 0.82)')
-    : 'rgba(162, 176, 192, 0.42)';
-
-  const needleShaftLen = useMemo(() => {
-    if (lifestyleNearlyIdle) return COMPASS_BODY_R * 0.22;
-    const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
-    const minLen = COMPASS_BODY_R * 0.64;
-    const maxLen = COMPASS_BODY_R * 0.8;
-    return minLen + t * (maxLen - minLen);
-  }, [lifestyleNearlyIdle, lifestyleLen]);
-  const needleTipPoints = useMemo(() => {
-    const tipY = -needleShaftLen;
-    const baseY = -(needleShaftLen - 1.2);
-    const halfW = 0.82;
-    return `0,${tipY} ${halfW},${baseY} -${halfW},${baseY}`;
-  }, [needleShaftLen]);
+  const tractionVisual = useMemo(() => {
+    const hasDirection = Boolean(directionAvailable) && directionMagnitude > 1e-6;
+    if (!hasDirection) {
+      return {
+        hasDirection: false,
+        lineX: 0,
+        lineY: 0,
+        dotX: 0,
+        dotY: 0,
+        dotR: 0,
+      };
+    }
+    const magnitude01 = Math.max(0, Math.min(1, (Number(tractionMagnitude) || 0) / 100));
+    const readableFallback01 = magnitude01 > 0 ? magnitude01 : 0.42;
+    const pullDotOffset = COMPASS_BODY_R * (0.24 + readableFallback01 * 0.42);
+    const pullLineLen = Math.max(COMPASS_BODY_R * 0.22, pullDotOffset - 0.8);
+    return {
+      hasDirection: true,
+      lineX: safeDirectionVector.x * pullLineLen,
+      lineY: -safeDirectionVector.y * pullLineLen,
+      dotX: safeDirectionVector.x * pullDotOffset,
+      dotY: -safeDirectionVector.y * pullDotOffset,
+      dotR: 1.14 + readableFallback01 * 0.5,
+    };
+  }, [directionAvailable, directionMagnitude, tractionMagnitude, safeDirectionVector]);
+  const pullColor = directionAvailable && directionMagnitude > 1e-6
+    ? (distTarget > distAnchor ? 'rgba(178, 128, 136, 0.88)' : 'rgba(148, 186, 214, 0.88)')
+    : 'rgba(176, 190, 206, 0.4)';
 
   const labelStyle = {
     position: 'absolute',
@@ -890,67 +864,57 @@ export default function MetabolicMap({
             style={{ transformOrigin: '0px 0px' }}
             data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
           >
-            <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
-              <motion.rect
-                x={-snailTrailStyle.width / 2}
-                y={0.72}
-                width={snailTrailStyle.width}
-                height={snailTrailStyle.length}
-                rx={snailTrailStyle.width / 2}
-                fill={`url(#${uid}-snail-shadow-grad)`}
-                filter={`url(#${uid}-snail-shadow-blur)`}
-                vectorEffect="nonScalingStroke"
-                animate={{ opacity: snailTrailStyle.opacity }}
-                transition={vectorTransition}
-              />
-              <circle
-                r={COMPASS_BODY_R + 1.3}
-                cx={0}
-                cy={0}
-                fill="rgba(116, 156, 194, 0.16)"
-                stroke="none"
-                filter={`url(#${glowFilterId})`}
-                vectorEffect="nonScalingStroke"
-              />
-              <circle
-                r={COMPASS_BODY_R}
-                cx={0}
-                cy={0}
-                fill={mixHex(dynamicCompassBorder, '#1f2b38', 0.6)}
-                stroke={mixHex(dynamicCompassBorder, '#ddebf8', 0.56)}
-                strokeWidth={0.44}
-                filter={`url(#${glowFilterId})`}
-                vectorEffect="nonScalingStroke"
-              />
-              <circle
-                r={COMPASS_BODY_R * 0.28}
-                cx={-0.85}
-                cy={-1.05}
-                fill="rgba(236, 245, 255, 0.24)"
-                stroke="none"
-                vectorEffect="nonScalingStroke"
-              />
-              <motion.polygon
-                points={needleTipPoints}
-                stroke="rgba(255,255,255,0.22)"
-                strokeWidth={0.1}
-                vectorEffect="nonScalingStroke"
-                animate={{ fill: needleFill, opacity: needleBladeOpacity }}
-                transition={vectorTransition}
-              />
-              <motion.line
-                x1={0}
-                y1={0}
-                x2={0}
-                y2={-needleShaftLen}
-                stroke={mixHex(needleFill, '#f4f8ff', 0.25)}
-                strokeWidth={0.42}
-                strokeLinecap="round"
-                vectorEffect="nonScalingStroke"
-                animate={{ opacity: needleBladeOpacity }}
-                transition={vectorTransition}
-              />
-            </motion.g>
+            <circle
+              r={COMPASS_BODY_R + 2.15}
+              cx={0}
+              cy={0}
+              fill="rgba(102, 148, 194, 0.2)"
+              stroke="none"
+              filter={`url(#${glowFilterId})`}
+              vectorEffect="nonScalingStroke"
+            />
+            <circle
+              r={COMPASS_BODY_R}
+              cx={0}
+              cy={0}
+              fill={mixHex(dynamicCompassBorder, '#1a2735', 0.5)}
+              stroke={mixHex(dynamicCompassBorder, '#e2ecf8', 0.52)}
+              strokeWidth={0.56}
+              filter={`url(#${glowFilterId})`}
+              vectorEffect="nonScalingStroke"
+            />
+            <circle
+              r={COMPASS_BODY_R * 0.34}
+              cx={0}
+              cy={0}
+              fill="rgba(222, 236, 252, 0.26)"
+              stroke="none"
+              vectorEffect="nonScalingStroke"
+            />
+            {tractionVisual.hasDirection ? (
+              <>
+                <line
+                  x1={0}
+                  y1={0}
+                  x2={tractionVisual.lineX}
+                  y2={tractionVisual.lineY}
+                  stroke={mixHex(pullColor, '#eef6ff', 0.24)}
+                  strokeWidth={0.74}
+                  strokeLinecap="round"
+                  vectorEffect="nonScalingStroke"
+                />
+                <circle
+                  r={tractionVisual.dotR}
+                  cx={tractionVisual.dotX}
+                  cy={tractionVisual.dotY}
+                  fill={mixHex(pullColor, '#f0f7ff', 0.18)}
+                  stroke="rgba(232, 242, 252, 0.32)"
+                  strokeWidth={0.24}
+                  filter={`url(#${glowFilterId})`}
+                  vectorEffect="nonScalingStroke"
+                />
+              </>
+            ) : null}
           </motion.g>
 
         </svg>
@@ -1008,11 +972,11 @@ export default function MetabolicMap({
         </div>
         {directionAvailable ? (
           <div style={{ marginTop: 10, fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.72)' }}>
-            Direzione attiva da movimento stimato (delta ultimi due punti della finestra).
+            Direzione visiva da trazione metabolica corrente (ancora stabile, nessun movimento reale).
           </div>
         ) : (
           <div style={{ marginTop: 10, fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.72)' }}>
-            Direzione non disponibile ({directionUnavailableReason}): nessun delta utile nella finestra selezionata.
+            Direzione non disponibile ({directionUnavailableReason}): trazione troppo debole nella finestra selezionata.
           </div>
         )}
       </div>
