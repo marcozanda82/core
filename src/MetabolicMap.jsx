@@ -335,7 +335,7 @@ export default function MetabolicMap({
   onZoomLevelChange = null,
   trajectoryPositions = null,
   currentPosition = null,
-  normalizedMetabolicState: _normalizedMetabolicState = null,
+  normalizedMetabolicState = null,
   directionVector = null,
   directionAvailable = false,
   directionUnavailableReason = 'unavailable',
@@ -368,13 +368,28 @@ export default function MetabolicMap({
     () => clampMapPosition(currentPosition || anchorPosition, 'current'),
     [currentPosition, anchorPosition],
   );
-  const displayAura = 0;
+  const hasNormalizedState =
+    normalizedMetabolicState &&
+    Number.isFinite(Number(normalizedMetabolicState.x)) &&
+    Number.isFinite(Number(normalizedMetabolicState.y));
+  const displayAura = hasNormalizedState
+    ? Math.max(0, Math.min(100, Number(normalizedMetabolicState.finalAura) || 0))
+    : 0;
   const displayX = displayPosition.x;
   const displayY = displayPosition.y;
-
-  const effectiveZone = 'neutral';
-  const effectiveQuadrant = 'neutral';
-  const effectiveDistance = Math.hypot(displayX, displayY);
+  const effectiveZone = hasNormalizedState
+    ? (['green', 'orange', 'red'].includes(String(normalizedMetabolicState.zone))
+      ? String(normalizedMetabolicState.zone)
+      : 'neutral')
+    : 'neutral';
+  const effectiveQuadrant = hasNormalizedState
+    ? (['NE', 'NW', 'SE', 'SW'].includes(String(normalizedMetabolicState.quadrant))
+      ? String(normalizedMetabolicState.quadrant)
+      : 'neutral')
+    : 'neutral';
+  const effectiveDistance = hasNormalizedState
+    ? Math.max(0, Number(normalizedMetabolicState.distance) || 0)
+    : Math.hypot(displayX, displayY);
 
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY, true);

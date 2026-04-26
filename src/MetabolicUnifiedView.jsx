@@ -2,13 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { METABOLIC_GOAL } from './metabolicDirection';
 import { historyFingerprint } from './metabolicDirectionEngine';
 import {
-  biometricsToMapBaselineInput,
   calendarDayKeyFromRow,
   getStructuralBaselineOffsetFromHistory,
-  normalizeBiometricEntry,
 } from './biometricHistory';
 import {
   calculateBaselineOffset,
+  calculateMetabolicMapPosition,
   getLastBiometricData,
 } from './metabolicMapEngine';
 import {
@@ -31,6 +30,12 @@ const TIMEFRAME_DAY_WINDOW = {
   '7d': 7,
   '14d': 14,
   '30d': 30,
+};
+const QUADRANT_DIRECTION_LABELS = {
+  NE: 'accumulo grasso',
+  NW: 'ricomposizione',
+  SE: 'catabolismo',
+  SW: 'scarso stimolo',
 };
 
 function mapZoneToGlowRgba(zone) {
@@ -74,68 +79,65 @@ function filterBodyMetricsByDateRange(bodyMetricsHistory, startDate, endDate) {
   });
 }
 
-function bodyMetricEntrySortTime(entry) {
-  const ts = Number(entry?.timestamp);
-  if (Number.isFinite(ts) && ts > 0) return ts;
-  const dayKey = calendarDayKeyFromRow(entry);
-  if (typeof dayKey === 'string') return new Date(`${dayKey}T12:00:00`).getTime();
-  return 0;
+const MOVEMENT_INERTIA = 0.02;
+
+function clamp01(v) {
+  return Math.max(0, Math.min(1, Number(v) || 0));
 }
 
-function buildTimeframeTrajectoryPositions(bodyMetricsHistory, timeframeRange, fallbackPosition) {
-  const src = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
-  if (!timeframeRange || src.length === 0) return [{ ...fallbackPosition }];
-  const inRange = filterBodyMetricsByDateRange(
-    src,
-    timeframeRange.startDate,
-    timeframeRange.endDate
-  );
-  if (inRange.length === 0) return [{ ...fallbackPosition }];
-  const sorted = [...inRange].sort((a, b) => bodyMetricEntrySortTime(a) - bodyMetricEntrySortTime(b));
-  const points = sorted
-    .map((row) => normalizeBiometricEntry(row))
-    .filter(Boolean)
-    .map((entry) => biometricsToMapBaselineInput(entry))
-    .filter(Boolean)
-    .map((input) => {
-      const offset = calculateBaselineOffset(input);
-      return {
-        x: clampAxis(Number(offset?.x) || 0),
-        y: clampAxis(Number(offset?.y) || 0),
-      };
-    });
-  if (points.length === 0) return [{ ...fallbackPosition }];
-  return points;
+function consistencyFactorFromInputs(mapInputs) {
+  const days = Number(mapInputs?.totalWindowDays) || 0;
+  const realSleepDays = Number(mapInputs?.realSleepDays) || 0;
+  const dataAvailability = days > 0 ? clamp01(realSleepDays / days) : 0;
+  if (days < 3) return 0.2 * (0.6 + 0.4 * dataAvailability);
+  if (days < 7) return 0.35 * (0.6 + 0.4 * dataAvailability);
+  return 0.65 * (0.6 + 0.4 * dataAvailability);
 }
 
-function directionStateFromTrajectory(trajectoryPositions) {
-  const points = Array.isArray(trajectoryPositions) ? trajectoryPositions : [];
-  if (points.length < 2) {
-    return {
-      vector: { x: 0, y: 0 },
-      available: false,
-      reason: 'insufficient_points',
-      points: points.length,
-    };
-  }
-  const last = points[points.length - 1];
-  const prev = points[points.length - 2];
-  const dx = (Number(last?.x) || 0) - (Number(prev?.x) || 0);
-  const dy = (Number(last?.y) || 0) - (Number(prev?.y) || 0);
-  const length = Math.hypot(dx, dy);
-  if (!Number.isFinite(length) || length <= 1e-9) {
-    return {
-      vector: { x: 0, y: 0 },
-      available: false,
-      reason: 'no_delta_between_last_points',
-      points: points.length,
-    };
+function dailyLifestyleVectorFromMapInputs(mapInputs) {
+  const energyBalance = Number(mapInputs?.energyBalance) || 0;
+  const trainingLoad = Number(mapInputs?.trainingLoad) || 0;
+  const glycemicInstability = Number(mapInputs?.glycemicInstability) || 0;
+  const sleepHours = Number(mapInputs?.sleepHours) || 8;
+  const sleepDebt = Math.max(0, 7.5 - sleepHours);
+  const vectorXRaw =
+    energyBalance * 0.9 +
+    glycemicInstability * 0.22 -
+    trainingLoad * 0.55 -
+    sleepDebt * 1.2;
+  const vectorYRaw =
+    trainingLoad * 0.52 -
+    glycemicInstability * 0.28 -
+    Math.max(0, energyBalance) * 0.08 -
+    sleepDebt * 2.0;
+  return {
+    x: clampAxis(Math.max(-26, Math.min(26, vectorXRaw))),
+    y: clampAxis(Math.max(-26, Math.min(26, vectorYRaw))),
+  };
+}
+
+function movementFromMapInputs(mapInputs) {
+  const dailyVector = dailyLifestyleVectorFromMapInputs(mapInputs);
+  const consistencyFactor = consistencyFactorFromInputs(mapInputs);
+  return {
+    x: dailyVector.x * consistencyFactor * MOVEMENT_INERTIA,
+    y: dailyVector.y * consistencyFactor * MOVEMENT_INERTIA,
+    dailyVector,
+    consistencyFactor,
+  };
+}
+
+function directionStateFromMovement(movement) {
+  const mx = Number(movement?.x) || 0;
+  const my = Number(movement?.y) || 0;
+  const length = Math.hypot(mx, my);
+  if (!Number.isFinite(length) || length <= 1e-6) {
+    return { vector: { x: 0, y: 0 }, available: false, reason: 'movement_near_zero' };
   }
   return {
-    vector: { x: dx / length, y: dy / length },
+    vector: { x: mx / length, y: my / length },
     available: true,
     reason: 'ok',
-    points: points.length,
   };
 }
 
@@ -228,20 +230,27 @@ export default function MetabolicUnifiedView({
   }, [bodyMetricsHistory, dailyHistory, timeframeRange]);
 
   const anchorPosition = useMemo(() => getAnchorFromLastWeighIn(baselineOffset), [baselineOffset]);
-  const estimatedPosition = anchorPosition;
+  const movementState = useMemo(
+    () => movementFromMapInputs(metabolicMapInputs),
+    [metabolicMapInputs]
+  );
+  const estimatedPosition = useMemo(
+    () => ({
+      x: clampAxis(anchorPosition.x + movementState.x),
+      y: clampAxis(anchorPosition.y + movementState.y),
+    }),
+    [anchorPosition, movementState.x, movementState.y]
+  );
   const normalizedMetabolicState = useMemo(() => {
-    const x = clampAxis(Number(estimatedPosition?.x) || 0);
-    const y = clampAxis(Number(estimatedPosition?.y) || 0);
-    return {
-      x,
-      y,
-      finalAura: 0,
-      distance: Math.hypot(x, y),
-      zone: 'neutral',
-      quadrant: 'neutral',
-      placeholderStatic: true,
-    };
-  }, [estimatedPosition]);
+    const estimatedX = clampAxis(Number(estimatedPosition?.x) || 0);
+    const estimatedY = clampAxis(Number(estimatedPosition?.y) || 0);
+    return calculateMetabolicMapPosition({
+      energyBalance: estimatedX,
+      trainingLoad: estimatedY,
+      sleepHours: metabolicMapInputs?.sleepHours,
+      glycemicInstability: metabolicMapInputs?.glycemicInstability,
+    });
+  }, [estimatedPosition, metabolicMapInputs]);
 
   const mapZoneColor = useMemo(() => {
     const zone = normalizedMetabolicState?.zone;
@@ -264,8 +273,8 @@ export default function MetabolicUnifiedView({
     [weightProjection]
   );
   const trajectoryPositions = useMemo(
-    () => buildTimeframeTrajectoryPositions(bodyMetricsHistory, timeframeRange, estimatedPosition),
-    [bodyMetricsHistory, timeframeRange, estimatedPosition]
+    () => [{ ...anchorPosition }, { ...estimatedPosition }],
+    [anchorPosition, estimatedPosition]
   );
   const currentTrajectoryPosition = useMemo(
     () => ({
@@ -274,10 +283,7 @@ export default function MetabolicUnifiedView({
     }),
     [trajectoryPositions, estimatedPosition]
   );
-  const directionState = useMemo(
-    () => directionStateFromTrajectory(trajectoryPositions),
-    [trajectoryPositions]
-  );
+  const directionState = useMemo(() => directionStateFromMovement(movementState), [movementState]);
   const directionVector = directionState.vector;
   const compassDirectionState = useMemo(() => {
     if (!directionState.available) {
@@ -288,24 +294,28 @@ export default function MetabolicUnifiedView({
         distance: 0,
         zone: 'neutral',
         quadrant: 'neutral',
-        placeholderStatic: true,
       };
     }
-    return {
-      x: directionVector.x * 100,
-      y: directionVector.y * 100,
-      finalAura: 0,
-      distance: 100,
-      zone: 'neutral',
-      quadrant: 'neutral',
-      placeholderStatic: false,
-    };
-  }, [directionState.available, directionVector.x, directionVector.y]);
-
-  const directionAuditByTimeframe = useMemo(() => {
+    const dailyVectorMagnitude = Math.hypot(
+      movementState.dailyVector.x,
+      movementState.dailyVector.y
+    );
+    const compassMagnitude = Math.max(
+      8,
+      Math.min(70, dailyVectorMagnitude * (0.7 + movementState.consistencyFactor * 0.6))
+    );
+    return calculateMetabolicMapPosition({
+      energyBalance: directionVector.x * compassMagnitude,
+      trainingLoad: directionVector.y * compassMagnitude,
+      sleepHours: metabolicMapInputs?.sleepHours,
+      glycemicInstability: metabolicMapInputs?.glycemicInstability,
+    });
+  }, [directionState.available, directionVector, movementState, metabolicMapInputs]);
+  const movementAuditByTimeframe = useMemo(() => {
     return METABOLIC_COMPASS_TIMEFRAMES.reduce((acc, tf) => {
+      const inputs = computeMetabolicMapInputsAndAudit(dailyHistory, tf.value).mapInputs;
       const range = timeframeDateRangeFromDailyHistory(dailyHistory, tf.value);
-      const baselineForTf = (() => {
+      const tfAnchor = (() => {
         if (range) {
           const rangedBodyMetrics = filterBodyMetricsByDateRange(
             bodyMetricsHistory,
@@ -313,27 +323,85 @@ export default function MetabolicUnifiedView({
             range.endDate
           );
           const rangedOffset = getStructuralBaselineOffsetFromHistory(rangedBodyMetrics);
-          if (rangedOffset) return rangedOffset;
+          if (rangedOffset) return getAnchorFromLastWeighIn(rangedOffset);
         }
-        return baselineOffset;
+        return anchorPosition;
       })();
-      const fallbackPos = getAnchorFromLastWeighIn(baselineForTf);
-      const tfTrajectory = buildTimeframeTrajectoryPositions(bodyMetricsHistory, range, fallbackPos);
-      const tfDirection = directionStateFromTrajectory(tfTrajectory);
+      const tfMovement = movementFromMapInputs(inputs);
+      const tfEstimated = {
+        x: clampAxis(tfAnchor.x + tfMovement.x),
+        y: clampAxis(tfAnchor.y + tfMovement.y),
+      };
+      const tfDirection = directionStateFromMovement(tfMovement);
       acc[tf.value] = {
-        points: tfDirection.points,
-        available: tfDirection.available,
-        reason: tfDirection.reason,
-        x: Number(tfDirection.vector.x.toFixed(4)),
-        y: Number(tfDirection.vector.y.toFixed(4)),
+        anchorPosition: {
+          x: Number(tfAnchor.x.toFixed(4)),
+          y: Number(tfAnchor.y.toFixed(4)),
+        },
+        mapInputs: {
+          energyBalance: Number((inputs.energyBalance || 0).toFixed(4)),
+          trainingLoad: Number((inputs.trainingLoad || 0).toFixed(4)),
+          glycemicInstability: Number((inputs.glycemicInstability || 0).toFixed(4)),
+          sleepHours: Number((inputs.sleepHours || 0).toFixed(4)),
+          totalWindowDays: Number(inputs.totalWindowDays || 0),
+        },
+        movement: {
+          x: Number(tfMovement.x.toFixed(6)),
+          y: Number(tfMovement.y.toFixed(6)),
+          consistencyFactor: Number(tfMovement.consistencyFactor.toFixed(4)),
+        },
+        estimatedPosition: {
+          x: Number(tfEstimated.x.toFixed(4)),
+          y: Number(tfEstimated.y.toFixed(4)),
+        },
+        directionVector: {
+          x: Number(tfDirection.vector.x.toFixed(4)),
+          y: Number(tfDirection.vector.y.toFixed(4)),
+        },
+        directionAvailable: tfDirection.available,
+        directionReason: tfDirection.reason,
       };
       return acc;
     }, {});
-  }, [dailyHistory, bodyMetricsHistory, baselineOffset]);
+  }, [dailyHistory, bodyMetricsHistory, anchorPosition]);
 
   useEffect(() => {
-    console.info('[MetabolicDirection] directionVector audit by timeframe', directionAuditByTimeframe);
-  }, [directionAuditByTimeframe]);
+    console.info('[MetabolicMovement] timeframe audit', movementAuditByTimeframe);
+  }, [movementAuditByTimeframe]);
+
+  useEffect(() => {
+    if (selectedTimeframe !== '1d') return;
+    const selectedDateUsed = timeframeRange?.endDate ?? null;
+    const interpretedQuadrant = String(compassDirectionState?.quadrant || 'neutral');
+    console.info('[MetabolicMovement][1d debug]', {
+      selectedTimeframe,
+      selectedDateUsed,
+      kcalBalance: Number(metabolicMapRawDetails?.meanKcal ?? 0),
+      trainingLoad: Number(metabolicMapRawDetails?.meanTraining01 ?? 0),
+      energyBalance: Number(metabolicMapInputs?.energyBalance ?? 0),
+      glycemicInstability: Number(metabolicMapInputs?.glycemicInstability ?? 0),
+      movement: {
+        x: Number(movementState.x.toFixed(6)),
+        y: Number(movementState.y.toFixed(6)),
+      },
+      directionVector: {
+        x: Number(directionVector.x.toFixed(6)),
+        y: Number(directionVector.y.toFixed(6)),
+      },
+      interpreted: {
+        quadrant: interpretedQuadrant,
+        label: QUADRANT_DIRECTION_LABELS[interpretedQuadrant] || 'neutral',
+      },
+    });
+  }, [
+    selectedTimeframe,
+    timeframeRange,
+    metabolicMapRawDetails,
+    metabolicMapInputs,
+    movementState,
+    directionVector,
+    compassDirectionState,
+  ]);
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
