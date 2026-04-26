@@ -2536,12 +2536,6 @@ export default function SalaComandi() {
     if (s >= 24) s -= 24;
     return s;
   })();
-  const napDurationMinutes = (() => {
-    let d = Number(drawerFastChargeEnd) - Number(drawerFastChargeStart);
-    if (d < 0) d += 24;
-    d = Math.max(0.08, Math.min(24, d));
-    return Math.round(d * 60);
-  })();
 
   const dailyWaterGoal = userTargets.water ?? 2500; 
   const [isZenActive, setIsZenActive] = useState(false);
@@ -3025,6 +3019,12 @@ export default function SalaComandi() {
   const [drawerFastChargeEnd, setDrawerFastChargeEnd] = useState(12.5);
   const [drawerFastChargeTime, setDrawerFastChargeTime] = useState(12);
   const [fastChargeSupplementName, setFastChargeSupplementName] = useState('');
+  const napDurationMinutes = (() => {
+    let d = Number(drawerFastChargeEnd) - Number(drawerFastChargeStart);
+    if (d < 0) d += 24;
+    d = Math.max(0.08, Math.min(24, d));
+    return Math.round(d * 60);
+  })();
   const currentTrackerDateRef = useRef(currentTrackerDate);
   useEffect(() => { currentTrackerDateRef.current = currentTrackerDate; }, [currentTrackerDate]);
   useEffect(() => { historyStackRef.current = historyStack; historyIndexRef.current = historyIndex; }, [historyStack, historyIndex]);
