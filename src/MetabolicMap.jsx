@@ -210,6 +210,12 @@ const ZOOM_WHEEL_STEP = 0.018;
 const INERTIA_VELOCITY_MIN = 0.015;
 const INERTIA_VELOCITY_MAX = 0.045;
 const INERTIA_MAX_STEP_SVG = 1.4;
+const ACTIVE_RING_PULSE_TRANSITION = {
+  duration: 2.8,
+  repeat: Infinity,
+  repeatType: 'loop',
+  ease: 'easeInOut',
+};
 
 function clampZoom(v) {
   return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v));
@@ -629,6 +635,11 @@ export default function MetabolicMap({
     }
     return best;
   }, [radarRingRadii, distTarget]);
+  const activeRingIndex = useMemo(() => {
+    if (activeRingRadius == null || !radarRingRadii.length) return null;
+    const idx = radarRingRadii.findIndex((r) => Math.abs(r - activeRingRadius) < 1e-6);
+    return idx >= 0 ? idx + 1 : null;
+  }, [activeRingRadius, radarRingRadii]);
   return (
     <div
       style={{
@@ -674,6 +685,31 @@ export default function MetabolicMap({
           pinchRef.current.active = false;
         }}
       >
+        {activeRingRadius != null && activeRingIndex != null ? (
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              right: 10,
+              top: 10,
+              zIndex: 7,
+              padding: '5px 8px',
+              borderRadius: 8,
+              border: '1px solid rgba(206, 220, 235, 0.32)',
+              background: 'rgba(12, 16, 24, 0.62)',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.28), inset 0 0 0 1px rgba(255,255,255,0.03)',
+              color: 'rgba(228, 236, 245, 0.94)',
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              lineHeight: 1.2,
+              fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+            }}
+          >
+            Ring {activeRingIndex}
+          </div>
+        ) : null}
         <div
           aria-hidden
           style={{
@@ -766,12 +802,16 @@ export default function MetabolicMap({
               <stop offset="100%" stopColor="rgba(120,150,165,0.02)" stopOpacity="0" />
             </linearGradient>
             <radialGradient id={`${uid}-map-zone-gradient`} cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#2a343f" stopOpacity="0.95" />
-              <stop offset="24%" stopColor="#243138" stopOpacity="0.95" />
-              <stop offset="42%" stopColor="#203132" stopOpacity="0.94" />
-              <stop offset="64%" stopColor="#2b2624" stopOpacity="0.95" />
-              <stop offset="100%" stopColor="#2b2527" stopOpacity="0.98" />
+              <stop offset="0%" stopColor="#1f3f8f" stopOpacity="0.96" />
+              <stop offset="16%" stopColor="#1b3777" stopOpacity="0.95" />
+              <stop offset="36%" stopColor="#2b3f4d" stopOpacity="0.94" />
+              <stop offset="58%" stopColor="#3f3a34" stopOpacity="0.95" />
+              <stop offset="78%" stopColor="#453133" stopOpacity="0.96" />
+              <stop offset="100%" stopColor="#1f1d23" stopOpacity="0.98" />
             </radialGradient>
+            <filter id={`${uid}-active-ring-soft-glow`} x="-65%" y="-65%" width="230%" height="230%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="1.15" />
+            </filter>
           </defs>
 
           {/* Radar rings + multi-gradient zones */}
@@ -779,31 +819,47 @@ export default function MetabolicMap({
             <circle cx={50} cy={50} r={50} fill={`url(#${uid}-map-zone-gradient)`} />
             <circle cx={50} cy={50} r={50} fill="rgba(8,10,14,0.2)" />
             {radarRingRadii.map((ringR, idx) => {
-              const ringStroke = idx % 2 === 0 ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.042)';
+              const ringStroke = idx % 2 === 0 ? 'rgba(198, 212, 228, 0.12)' : 'rgba(184, 198, 214, 0.085)';
               return (
                 <circle
                   key={`radar-ring-${idx}`}
                   cx={50}
                   cy={50}
                   r={ringR}
-                  fill={idx === 0 ? 'rgba(32, 42, 52, 0.04)' : 'none'}
+                  fill={idx === 0 ? 'rgba(38, 56, 96, 0.08)' : 'none'}
                   stroke={ringStroke}
-                  strokeWidth={0.18}
+                  strokeWidth={0.22}
                   vectorEffect="nonScalingStroke"
                 />
               );
             })}
             {activeRingRadius != null ? (
-              <circle
-                cx={50}
-                cy={50}
-                r={activeRingRadius}
-                fill="none"
-                stroke="rgba(225,235,245,0.22)"
-                strokeWidth={0.28}
-                filter={`url(#${uid}-ring-glow)`}
-                vectorEffect="nonScalingStroke"
-              />
+              <>
+                <motion.circle
+                  cx={50}
+                  cy={50}
+                  r={activeRingRadius}
+                  fill="none"
+                  stroke="rgba(196, 214, 232, 0.22)"
+                  strokeWidth={0.72}
+                  filter={`url(#${uid}-active-ring-soft-glow)`}
+                  vectorEffect="nonScalingStroke"
+                  animate={{ opacity: [0.26, 0.42, 0.26] }}
+                  transition={ACTIVE_RING_PULSE_TRANSITION}
+                />
+                <motion.circle
+                  cx={50}
+                  cy={50}
+                  r={activeRingRadius}
+                  fill="none"
+                  stroke="rgba(218, 230, 242, 0.6)"
+                  strokeWidth={0.36}
+                  filter={`url(#${uid}-ring-glow)`}
+                  vectorEffect="nonScalingStroke"
+                  animate={{ opacity: [0.55, 0.85, 0.55] }}
+                  transition={ACTIVE_RING_PULSE_TRANSITION}
+                />
+              </>
             ) : null}
             {LONGEVITY_SCORE_RING_LEVELS.map((level) => {
               const ringR = svgRadiusForMetabolicScore(level);
@@ -814,18 +870,18 @@ export default function MetabolicMap({
                     cy={50}
                     r={ringR}
                     fill="none"
-                    stroke="rgba(210, 218, 226, 0.075)"
-                    strokeWidth={0.18}
-                    strokeDasharray="0.9 2.2"
+                    stroke="rgba(196, 208, 222, 0.14)"
+                    strokeWidth={0.22}
+                    strokeDasharray="1.05 2"
                     vectorEffect="nonScalingStroke"
                   />
                   <text
                     x={50}
                     y={50 - ringR - 0.5}
                     textAnchor="middle"
-                    fill="rgba(200, 208, 216, 0.14)"
-                    fontSize={7.75}
-                    fontWeight={500}
+                    fill="rgba(226, 234, 242, 0.42)"
+                    fontSize={8.1}
+                    fontWeight={600}
                     style={{ fontFamily: 'system-ui, sans-serif', pointerEvents: 'none' }}
                   >
                     {level}
