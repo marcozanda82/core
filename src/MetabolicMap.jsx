@@ -266,13 +266,16 @@ function statusLabelFromSignals(quadrant, energyBalance, trainingLoad, glycemicI
   const t = Number(trainingLoad) || 0;
   const g = Number(glycemicInstability) || 0;
   const s = Number.isFinite(Number(sleepHours)) ? Number(sleepHours) : 8;
+  if (Math.abs(e) < 5 && t >= 70 && g < 25) return 'RICOMPOSIZIONE / STIMOLO ALLENANTE';
+  if (e <= 0 && t >= 70) return 'MASSA PULITA / RECUPERO ATTIVO';
   if (e > 0 && (g >= 35 || s < 6.2)) return 'INFIAMMAZIONE / BULK';
   if (e > 0 && g < 25) {
     return t >= 30
-      ? 'RICOMPOSIZIONE / SURPLUS CONTROLLATO'
+      ? (e > 8 ? 'RICOMPOSIZIONE / SURPLUS CONTROLLATO' : 'RICOMPOSIZIONE / STIMOLO ALLENANTE')
       : 'BULK LEGGERO';
   }
-  return 'SURPLUS CONTROLLATO';
+  if (e > 8) return 'SURPLUS CONTROLLATO';
+  return 'RICOMPOSIZIONE / STIMOLO ALLENANTE';
 }
 
 /** Profondità: centro più leggibile, bordi leggermente oscurati. */
