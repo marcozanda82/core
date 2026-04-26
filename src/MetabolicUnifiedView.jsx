@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { METABOLIC_GOAL } from './metabolicDirection';
-import { historyFingerprint } from './metabolicDirectionEngine';
+import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
 import {
   calendarDayKeyFromRow,
   getStructuralBaselineOffsetFromHistory,
@@ -11,6 +11,7 @@ import {
   getLastBiometricData,
 } from './metabolicMapEngine';
 import {
+  applyCalorieNeutralBand,
   computeMetabolicMapInputsAndAudit,
 } from './metabolicMapPeriodInputs';
 import { computeWeightProjectionFromInputs, formatWeightProjectionUI } from './weightProjectionEngine';
@@ -139,6 +140,28 @@ function directionStateFromMovement(movement) {
     available: true,
     reason: 'ok',
   };
+}
+
+function resolveAnchorForTimeframeDebug(timeframeRange, bodyMetricsHistory, dailyHistory) {
+  if (timeframeRange) {
+    const rangedBodyMetrics = filterBodyMetricsByDateRange(
+      bodyMetricsHistory,
+      timeframeRange.startDate,
+      timeframeRange.endDate
+    );
+    const rangedOffset = getStructuralBaselineOffsetFromHistory(rangedBodyMetrics);
+    if (rangedOffset) return getAnchorFromLastWeighIn(rangedOffset);
+  }
+  const fromScale = getStructuralBaselineOffsetFromHistory(bodyMetricsHistory);
+  if (fromScale) return getAnchorFromLastWeighIn(fromScale);
+  const biometrics = getLastBiometricData(dailyHistory);
+  return getAnchorFromLastWeighIn(calculateBaselineOffset(biometrics));
+}
+
+function directionModeLabelFromState(directionState) {
+  return directionState?.available
+    ? 'movement_active'
+    : `unavailable_${String(directionState?.reason || 'unknown')}`;
 }
 
 
@@ -368,6 +391,86 @@ export default function MetabolicUnifiedView({
   useEffect(() => {
     console.info('[MetabolicMovement] timeframe audit', movementAuditByTimeframe);
   }, [movementAuditByTimeframe]);
+
+  const diagnosticsByTimeframe = useMemo(() => {
+    return METABOLIC_COMPASS_TIMEFRAMES.map((tf) => {
+      const timeframe = tf.value;
+      const timeframeRangeLocal = timeframeDateRangeFromDailyHistory(dailyHistory, timeframe);
+      const { mapInputs, rawDetails } = computeMetabolicMapInputsAndAudit(dailyHistory, timeframe);
+      const anchor = resolveAnchorForTimeframeDebug(
+        timeframeRangeLocal,
+        bodyMetricsHistory,
+        dailyHistory
+      );
+      const movement = movementFromMapInputs(mapInputs);
+      const estimated = {
+        x: clampAxis(anchor.x + movement.x),
+        y: clampAxis(anchor.y + movement.y),
+      };
+      const directionStateLocal = directionStateFromMovement(movement);
+      const directionVectorLocal = directionStateLocal.vector;
+      const mapState = calculateMetabolicMapPosition({
+        energyBalance: estimated.x,
+        trainingLoad: estimated.y,
+        sleepHours: mapInputs?.sleepHours,
+        glycemicInstability: mapInputs?.glycemicInstability,
+      });
+      const compassState = (() => {
+        if (!directionStateLocal.available) {
+          return { quadrant: 'neutral' };
+        }
+        const dailyVectorMagnitude = Math.hypot(
+          movement.dailyVector.x,
+          movement.dailyVector.y
+        );
+        const compassMagnitude = Math.max(
+          8,
+          Math.min(70, dailyVectorMagnitude * (0.7 + movement.consistencyFactor * 0.6))
+        );
+        return calculateMetabolicMapPosition({
+          energyBalance: directionVectorLocal.x * compassMagnitude,
+          trainingLoad: directionVectorLocal.y * compassMagnitude,
+          sleepHours: mapInputs?.sleepHours,
+          glycemicInstability: mapInputs?.glycemicInstability,
+        });
+      })();
+      return {
+        timeframe,
+        range: timeframeRangeLocal
+          ? `${timeframeRangeLocal.startDate} -> ${timeframeRangeLocal.endDate}`
+          : 'n/a',
+        kcalBalanceRaw: Number(rawDetails?.meanKcal ?? 0),
+        kcalBalanceAfterNeutralBand: Number(
+          applyCalorieNeutralBand(rawDetails?.meanKcal ?? 0)
+        ),
+        trainingLoadRaw: Number(rawDetails?.meanTraining01 ?? 0),
+        trainingLoadAxis: Number(mapInputs?.trainingLoad ?? 0),
+        sleepHours: Number(mapInputs?.sleepHours ?? 0),
+        glycemicInstability: Number(mapInputs?.glycemicInstability ?? 0),
+        anchorPosition: anchor,
+        movement: { x: movement.x, y: movement.y },
+        estimatedPosition: estimated,
+        directionVector: directionVectorLocal,
+        mapZoneQuadrant: {
+          zone: String(mapState?.zone || 'neutral'),
+          quadrant: String(mapState?.quadrant || 'neutral'),
+        },
+        compassLabelQuadrant: {
+          quadrant: String(compassState?.quadrant || 'neutral'),
+          label:
+            QUADRANT_DIRECTION_LABELS[String(compassState?.quadrant || '')] || 'neutral',
+        },
+        directionModeLabel: directionModeLabelFromState(directionStateLocal),
+        sourceTags: {
+          mapInputsRaw: 'metabolicMapPeriodInputs',
+          directionEngineVec: 'metabolicDirectionEngine',
+          compassInterpretation: 'MetabolicCompass',
+          mapInterpretation: 'MetabolicMap',
+        },
+        directionEngineVec: computeMetabolicEngineTargetVec(dailyHistory, timeframe),
+      };
+    });
+  }, [dailyHistory, bodyMetricsHistory]);
 
   useEffect(() => {
     if (selectedTimeframe !== '1d') return;
@@ -695,6 +798,66 @@ export default function MetabolicUnifiedView({
               rawDetails={metabolicMapRawDetails}
               mapInputs={metabolicMapInputs}
             />
+            <details
+              open
+              style={{
+                marginTop: 10,
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.14)',
+                background: 'rgba(8, 12, 18, 0.7)',
+                padding: '8px 10px',
+              }}
+            >
+              <summary
+                style={{
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(230,236,245,0.9)',
+                  marginBottom: 6,
+                }}
+              >
+                Diagnostic Panel (Temporary)
+              </summary>
+              {diagnosticsByTimeframe.map((d) => (
+                <pre
+                  key={`diag-${d.timeframe}`}
+                  style={{
+                    margin: '0 0 8px',
+                    padding: '8px',
+                    borderRadius: 8,
+                    background: 'rgba(0,0,0,0.28)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    fontSize: 10,
+                    lineHeight: 1.45,
+                    color: 'rgba(223,232,242,0.92)',
+                    overflowX: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                  }}
+                >
+{`selectedTimeframe: ${d.timeframe}
+selected date range: ${d.range}
+kcalBalance raw: ${d.kcalBalanceRaw.toFixed(4)} (source: ${d.sourceTags.mapInputsRaw})
+kcalBalance after neutral band: ${d.kcalBalanceAfterNeutralBand.toFixed(4)} (source: ${d.sourceTags.mapInputsRaw})
+trainingLoad raw: ${d.trainingLoadRaw.toFixed(4)} (source: ${d.sourceTags.mapInputsRaw})
+trainingLoad axis value: ${d.trainingLoadAxis.toFixed(4)} (source: ${d.sourceTags.mapInputsRaw})
+sleepHours: ${d.sleepHours.toFixed(4)} (source: ${d.sourceTags.mapInputsRaw})
+glycemicInstability: ${d.glycemicInstability.toFixed(4)} (source: ${d.sourceTags.mapInputsRaw})
+anchorPosition: x=${d.anchorPosition.x.toFixed(4)}, y=${d.anchorPosition.y.toFixed(4)} (source: MetabolicUnifiedView)
+movement: x=${d.movement.x.toFixed(6)}, y=${d.movement.y.toFixed(6)} (source: MetabolicUnifiedView)
+estimatedPosition: x=${d.estimatedPosition.x.toFixed(4)}, y=${d.estimatedPosition.y.toFixed(4)} (source: MetabolicUnifiedView)
+directionVector: x=${d.directionVector.x.toFixed(6)}, y=${d.directionVector.y.toFixed(6)} (source: MetabolicUnifiedView)
+map zone/quadrant: ${d.mapZoneQuadrant.zone} / ${d.mapZoneQuadrant.quadrant} (source: ${d.sourceTags.mapInterpretation})
+compass label/quadrant: ${d.compassLabelQuadrant.label} / ${d.compassLabelQuadrant.quadrant} (source: ${d.sourceTags.compassInterpretation})
+direction-mode label: ${d.directionModeLabel} (source: MetabolicUnifiedView)
+directionEngine vec: x=${Number(d.directionEngineVec?.x || 0).toFixed(6)}, y=${Number(d.directionEngineVec?.y || 0).toFixed(6)} (source: ${d.sourceTags.directionEngineVec})`}
+                </pre>
+              ))}
+            </details>
           </div>
         </div>
       </div>
