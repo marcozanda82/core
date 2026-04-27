@@ -5219,12 +5219,13 @@ export default function SalaComandi() {
   const mostUsedEventButtons = useMemo(() => {
     const orderIndex = new Map(eventQuickButtonConfigs.map((cfg, idx) => [cfg.id, idx]));
     return [...eventQuickButtonConfigs]
+      .filter((cfg) => cfg.id !== 'pasto')
       .sort((a, b) => {
         const diff = (Number(eventUsage?.[b.id]) || 0) - (Number(eventUsage?.[a.id]) || 0);
         if (diff !== 0) return diff;
         return (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0);
       })
-      .slice(0, 3);
+      .slice(0, 2);
   }, [eventQuickButtonConfigs, eventUsage]);
 
   const getDefaultMealTime = (mealTypeKey) => {
@@ -10653,36 +10654,36 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               flexDirection: 'column',
               gap: '8px',
               marginBottom: '8px',
-              alignItems: 'stretch',
-              width: 'min(72vw, 240px)',
+              alignItems: 'flex-end',
+              width: 'min(78vw, 280px)',
               pointerEvents: 'auto',
             }}
           >
             <button
               type="button"
               onClick={() => {
-                trackEventUsage('altro');
-                setShowChoiceModal(false);
-                setIsDrawerOpen(true);
-                setActiveAction(null);
+                trackEventUsage('pasto');
+                handleAddEventMenuItem('meal', 'floating_stack');
                 setIsFabOpen(false);
               }}
               style={{
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '12px',
-                background: 'rgba(16, 16, 20, 0.96)',
-                color: '#e6f9ff',
+                border: '1px solid rgba(0, 229, 255, 0.45)',
+                borderRadius: '999px',
+                background: 'rgba(0, 229, 255, 0.16)',
+                color: '#e6fcff',
                 fontWeight: 700,
-                fontSize: '0.86rem',
-                padding: '10px 12px',
+                fontSize: '0.9rem',
+                padding: '10px 14px',
                 cursor: 'pointer',
-                textAlign: 'left',
+                textAlign: 'right',
                 backdropFilter: 'blur(8px)',
                 WebkitBackdropFilter: 'blur(8px)',
+                width: 'fit-content',
+                minWidth: '172px',
               }}
-              aria-label="Apri menu completo inserimenti"
+              aria-label="Inserisci pasto"
             >
-              ⋯ Altro...
+              🍽️ Inserisci Pasto
             </button>
 
             {mostUsedEventButtons.map((cfg) => (
@@ -10696,22 +10697,52 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 }}
                 style={{
                   border: '1px solid rgba(255,255,255,0.14)',
-                  borderRadius: '12px',
+                  borderRadius: '999px',
                   background: 'rgba(18, 18, 20, 0.94)',
                   color: '#c7f9ff',
                   fontWeight: 700,
                   fontSize: '0.86rem',
-                  padding: '10px 12px',
+                  padding: '9px 13px',
                   cursor: 'pointer',
-                  textAlign: 'left',
+                  textAlign: 'right',
                   backdropFilter: 'blur(8px)',
                   WebkitBackdropFilter: 'blur(8px)',
+                  width: 'fit-content',
+                  minWidth: '150px',
                 }}
                 aria-label={`Aggiungi ${cfg.label}`}
               >
                 {cfg.icon} {cfg.label}
               </button>
             ))}
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowChoiceModal(false);
+                setIsDrawerOpen(true);
+                setActiveAction(null);
+                setIsFabOpen(false);
+              }}
+              style={{
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '999px',
+                background: 'rgba(16, 16, 20, 0.96)',
+                color: '#e6f9ff',
+                fontWeight: 700,
+                fontSize: '0.86rem',
+                padding: '9px 13px',
+                cursor: 'pointer',
+                textAlign: 'right',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                width: 'fit-content',
+                minWidth: '128px',
+              }}
+              aria-label="Apri menu completo inserimenti"
+            >
+              ⋯ Altro...
+            </button>
           </div>
         )}
 
@@ -10719,27 +10750,24 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           type="button"
           onClick={() => setIsFabOpen((prev) => !prev)}
           style={{
-            width: 56,
-            height: 56,
-            minWidth: 56,
-            borderRadius: '50%',
-            border: '1px solid rgba(0, 229, 255, 0.65)',
-            background: 'linear-gradient(180deg, #00d4ff 0%, #00a8c6 100%)',
-            color: '#04161d',
+            width: 50,
+            height: 50,
+            minWidth: 50,
+            background: '#222',
+            color: '#00e5ff',
+            border: '1px solid #333',
+            borderRadius: '16px',
             fontSize: '1.8rem',
-            fontWeight: 700,
             display: 'flex',
-            alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 10px 24px rgba(0, 212, 255, 0.42)',
+            alignItems: 'center',
             cursor: 'pointer',
             pointerEvents: 'auto',
-            transform: isFabOpen ? 'rotate(45deg)' : 'rotate(0deg)',
-            transition: 'transform 0.18s ease',
+            transition: '0.3s',
           }}
           aria-label={isFabOpen ? 'Chiudi menu rapido' : 'Apri menu rapido'}
         >
-          +
+          {isFabOpen ? '×' : '+'}
         </button>
       </div>
 
