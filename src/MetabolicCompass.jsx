@@ -8,6 +8,8 @@ import {
 } from './metabolicDirection';
 import { getTodayString } from './coreEngine';
 import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
+import { getStructuralBaselineOffsetFromHistory, biometricsToMapBaselineInput } from './biometricHistory';
+import { calculateBaselineOffset } from './metabolicMapEngine';
 import MetabolicMap from './MetabolicMap';
 import { computeMetabolicMapInputsFromDailyHistory } from './metabolicMapPeriodInputs';
 
@@ -47,6 +49,56 @@ const COMPASS_ROTATION_TRANSITION = 'transform 0.48s cubic-bezier(0.45, 0, 0.2, 
 const DIAL_GRID_RINGS = [12.5, 22.5, 32.5];
 const DIAL_RADIAL_INNER = 10;
 const DIAL_RADIAL_OUTER = 44.5;
+const MAP_AXIS_MIN = -100;
+const MAP_AXIS_MAX = 100;
+
+function clampMapAxis(value) {
+  return Math.max(MAP_AXIS_MIN, Math.min(MAP_AXIS_MAX, Number(value) || 0));
+}
+
+function mapPointToCompassSvg(x, y) {
+  return {
+    cx: 50 + clampMapAxis(x) / 2,
+    cy: 50 - clampMapAxis(y) / 2,
+  };
+}
+
+function compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY) {
+  return (
+    Math.atan2(-(shiftedY - baselineY), shiftedX - baselineX) * (180 / Math.PI) + 90
+  );
+}
+
+function bodyMetricEntrySortTime(entry) {
+  if (entry?.date && typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
+    return new Date(`${entry.date}T12:00:00`).getTime();
+  }
+  const ts = Number(entry?.timestamp);
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function buildCompassHistoryTrail(bodyMetricsHistory, baselineOffset) {
+  const arr = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
+  if (arr.length === 0) return { points: [], polylinePoints: '' };
+  const sorted = [...arr].sort((a, b) => bodyMetricEntrySortTime(a) - bodyMetricEntrySortTime(b));
+  const trailPoints = [];
+  for (let i = 0; i < sorted.length; i += 1) {
+    const input = biometricsToMapBaselineInput(sorted[i]);
+    if (!input) continue;
+    const base = calculateBaselineOffset(input);
+    trailPoints.push({ x: clampMapAxis(base.x), y: clampMapAxis(base.y) });
+  }
+  // Saldatura visuale all'ancora corrente (stesso comportamento richiesto per la mappa).
+  trailPoints.push({
+    x: clampMapAxis(Number(baselineOffset?.x) || 0),
+    y: clampMapAxis(Number(baselineOffset?.y) || 0),
+  });
+  const svgPoints = trailPoints.map((pt) => mapPointToCompassSvg(pt.x, pt.y));
+  return {
+    points: svgPoints,
+    polylinePoints: svgPoints.map((p) => `${p.cx.toFixed(2)},${p.cy.toFixed(2)}`).join(' '),
+  };
+}
 
 function isCardinalCompassAngle(angle) {
   return angle === 0 || angle === 90 || angle === 180 || angle === -90;
@@ -283,6 +335,7 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
  */
 export default function MetabolicCompass({
   dailyHistory: dailyHistoryProp = [],
+  bodyMetricsHistory: bodyMetricsHistoryProp = [],
   compassScreenActive = true,
   mapZoneColor = '',
   hideMetabolicMapSection = false,
@@ -301,6 +354,7 @@ export default function MetabolicCompass({
   periodAverageLine = '',
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
+  const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
 
   const prevCompassScreenActiveRef = useRef(false);
   const [goalInternal, setGoalInternal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
@@ -316,6 +370,18 @@ export default function MetabolicCompass({
   const selectedTimeframe = isTfControlled ? timeframeControlled : timeframeInternal;
 
   const [snapshot, setSnapshot] = useState(null);
+  const compassBaselineOffset = useMemo(
+    () => getStructuralBaselineOffsetFromHistory(bodyMetricsHistory) || { x: 0, y: 0 },
+    [bodyMetricsHistory]
+  );
+  const compassHistoryTrail = useMemo(
+    () => buildCompassHistoryTrail(bodyMetricsHistory, compassBaselineOffset),
+    [bodyMetricsHistory, compassBaselineOffset]
+  );
+  const baselineToCenterAngleDeg = useMemo(
+    () => compassAngleDegMapSpace(0, 0, Number(compassBaselineOffset?.x) || 0, Number(compassBaselineOffset?.y) || 0),
+    [compassBaselineOffset]
+  );
 
   const renderedSector = useMemo(() => {
     if (!snapshot || !Number.isFinite(Number(snapshot.x)) || !Number.isFinite(Number(snapshot.y))) {
@@ -693,6 +759,42 @@ export default function MetabolicCompass({
               />
             ))}
           </div>
+          {compassHistoryTrail.points.length >= 2 ? (
+            <svg
+              viewBox="0 0 100 100"
+              preserveAspectRatio="xMidYMid meet"
+              aria-hidden
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: 1,
+              }}
+            >
+              <g data-baseline-angle-deg={Math.round(baselineToCenterAngleDeg * 10) / 10}>
+                <polyline
+                  points={compassHistoryTrail.polylinePoints}
+                  fill="none"
+                  stroke="rgba(176, 198, 218, 0.34)"
+                  strokeWidth={0.5}
+                  strokeDasharray="1.8 1.5"
+                  vectorEffect="nonScalingStroke"
+                />
+                {compassHistoryTrail.points.map((pt, idx) => (
+                  <circle
+                    key={`compass-history-${idx}`}
+                    cx={pt.cx}
+                    cy={pt.cy}
+                    r={idx === compassHistoryTrail.points.length - 1 ? 0.82 : 0.62}
+                    fill={idx === compassHistoryTrail.points.length - 1 ? 'rgba(214, 228, 242, 0.8)' : 'rgba(170, 194, 214, 0.55)'}
+                    vectorEffect="nonScalingStroke"
+                  />
+                ))}
+              </g>
+            </svg>
+          ) : null}
 
           {/* Freccia: lunghezza fissa; magnitudine → alone + opacità + luminosità leggera */}
           <div

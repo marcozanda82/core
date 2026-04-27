@@ -623,110 +623,6 @@ export default function MetabolicUnifiedView({
       }}
     >
       <div
-        style={{
-          position: 'absolute',
-          top: 8,
-          right: 8,
-          zIndex: 40,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '6px',
-          borderRadius: 12,
-          border: '1px solid rgba(255,255,255,0.14)',
-          background: 'rgba(10, 12, 16, 0.74)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setViewMode((m) => (m === 'compass' ? 'map' : 'compass'))}
-          aria-label={
-            viewMode === 'compass' ? 'Apri mappa metabolica' : 'Apri bussola metabolica'
-          }
-          aria-pressed={viewMode === 'map'}
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.12)',
-            background: 'rgba(255,255,255,0.05)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'rgba(240, 245, 250, 0.9)',
-            transition: reducedMotion ? 'none' : 'background 0.25s ease, transform 0.2s ease',
-          }}
-        >
-          {viewMode === 'compass' ? <IconMapSwitch /> : <IconCompassSwitch />}
-        </button>
-        <button
-          type="button"
-          onClick={() => setMapZoom((z) => Math.max(0.8, z - 0.12))}
-          disabled={viewMode !== 'map'}
-          aria-label="Riduci zoom mappa"
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 9,
-            border: '1px solid rgba(255,255,255,0.12)',
-            background: 'rgba(255,255,255,0.05)',
-            color: '#e2e8f0',
-            fontWeight: 700,
-            cursor: viewMode === 'map' ? 'pointer' : 'default',
-            opacity: viewMode === 'map' ? 1 : 0.45,
-          }}
-        >
-          -
-        </button>
-        <button
-          type="button"
-          onClick={() => setMapZoom((z) => Math.min(2.5, z + 0.12))}
-          disabled={viewMode !== 'map'}
-          aria-label="Aumenta zoom mappa"
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 9,
-            border: '1px solid rgba(255,255,255,0.12)',
-            background: 'rgba(255,255,255,0.05)',
-            color: '#e2e8f0',
-            fontWeight: 700,
-            cursor: viewMode === 'map' ? 'pointer' : 'default',
-            opacity: viewMode === 'map' ? 1 : 0.45,
-          }}
-        >
-          +
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowRoute((v) => !v)}
-          disabled={viewMode !== 'map'}
-          aria-label={showRoute ? 'Nascondi rotta' : 'Mostra rotta'}
-          style={{
-            minWidth: 54,
-            height: 32,
-            padding: '0 10px',
-            borderRadius: 9,
-            border: `1px solid ${showRoute ? 'rgba(148, 163, 184, 0.48)' : 'rgba(255,255,255,0.12)'}`,
-            background: showRoute ? 'rgba(148, 163, 184, 0.14)' : 'rgba(255,255,255,0.05)',
-            color: '#e2e8f0',
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            cursor: viewMode === 'map' ? 'pointer' : 'default',
-            opacity: viewMode === 'map' ? 1 : 0.45,
-          }}
-        >
-          Rotta
-        </button>
-      </div>
-
-      <div
         role="tablist"
         aria-label="Periodo analisi"
         className="metabolic-compass-timeframe"
@@ -790,6 +686,107 @@ export default function MetabolicUnifiedView({
         }}
       >
         <div
+          style={{
+            position: 'absolute',
+            top: 10,
+            right: 10,
+            zIndex: 45,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '5px 6px',
+            borderRadius: 999,
+            border: '1px solid rgba(71, 85, 105, 0.9)',
+            background: 'rgba(2, 6, 12, 0.5)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.24)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setViewMode((m) => (m === 'compass' ? 'map' : 'compass'))}
+            aria-label={viewMode === 'compass' ? 'Apri mappa metabolica' : 'Apri bussola metabolica'}
+            aria-pressed={viewMode === 'map'}
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 999,
+              border: '1px solid rgba(255,255,255,0.14)',
+              background: 'rgba(15, 23, 42, 0.56)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'rgba(240, 245, 250, 0.92)',
+              transition: reducedMotion ? 'none' : 'background 0.25s ease, transform 0.2s ease',
+            }}
+          >
+            {viewMode === 'compass' ? <IconMapSwitch /> : <IconCompassSwitch />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMapZoom((z) => Math.max(0.8, z - 0.12))}
+            disabled={viewMode !== 'map'}
+            aria-label="Riduci zoom mappa"
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 999,
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.05)',
+              color: '#e2e8f0',
+              fontWeight: 700,
+              cursor: viewMode === 'map' ? 'pointer' : 'default',
+              opacity: viewMode === 'map' ? 1 : 0.42,
+            }}
+          >
+            -
+          </button>
+          <button
+            type="button"
+            onClick={() => setMapZoom((z) => Math.min(2.5, z + 0.12))}
+            disabled={viewMode !== 'map'}
+            aria-label="Aumenta zoom mappa"
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 999,
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.05)',
+              color: '#e2e8f0',
+              fontWeight: 700,
+              cursor: viewMode === 'map' ? 'pointer' : 'default',
+              opacity: viewMode === 'map' ? 1 : 0.42,
+            }}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRoute((v) => !v)}
+            disabled={viewMode !== 'map'}
+            aria-label={showRoute ? 'Nascondi rotta' : 'Mostra rotta'}
+            style={{
+              minWidth: 44,
+              height: 26,
+              padding: '0 8px',
+              borderRadius: 999,
+              border: `1px solid ${showRoute ? 'rgba(148, 163, 184, 0.48)' : 'rgba(255,255,255,0.12)'}`,
+              background: showRoute ? 'rgba(148, 163, 184, 0.14)' : 'rgba(255,255,255,0.05)',
+              color: '#e2e8f0',
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              cursor: viewMode === 'map' ? 'pointer' : 'default',
+              opacity: viewMode === 'map' ? 1 : 0.42,
+            }}
+          >
+            Rotta
+          </button>
+        </div>
+        <div
           aria-hidden={viewMode !== 'compass'}
           style={{
             position: 'absolute',
@@ -826,6 +823,7 @@ export default function MetabolicUnifiedView({
             compassDirectionAvailable={tractionState.available}
             unifiedDirectionAudit={directionSourceAudit}
             periodAverageLine={periodAverageLine}
+            bodyMetricsHistory={bodyMetricsHistory}
           />
         </div>
 
