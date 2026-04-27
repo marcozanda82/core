@@ -24,7 +24,9 @@ export const WORKOUT_MUSCLE_GROUP_DEFS = [
   { id: 'Dorso', label: 'Dorso', aliases: ['Schiena', 'schiena'] },
   { id: 'Gambe', label: 'Gambe' },
   { id: 'Spalle', label: 'Spalle' },
-  { id: 'Braccia', label: 'Braccia' },
+  { id: 'abs', label: 'ABS' },
+  { id: 'bicipiti', label: 'Bicipiti' },
+  { id: 'tricipiti', label: 'Tricipiti' },
   { id: 'Core', label: 'Core', aliases: ['Addominali', 'addominali', 'ABS', 'abs'] },
   { id: 'Total Body', label: 'Total Body', aliases: ['Full Body', 'full body', 'totalbody'] },
 ];
