@@ -5155,8 +5155,11 @@ export default function SalaComandi() {
         break;
       case 'nap': {
         const tN = getCurrentTimeRoundedTo15Min();
-        setDrawerFastChargeStart(tN);
-        setDrawerFastChargeEnd(Math.min(24, tN + 0.5));
+        const defaultNapDurationHours = 0.5;
+        let napStart = tN - defaultNapDurationHours;
+        if (napStart < 0) napStart += 24;
+        setDrawerFastChargeStart(napStart);
+        setDrawerFastChargeEnd(tN);
         if (fromModal) setShowChoiceModal(false);
         setActiveAction('fast_charge_nap');
         setIsDrawerOpen(true);
@@ -13157,11 +13160,54 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               <div style={{ width: '70px' }}></div>
             </div>
             <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '16px', backdropFilter: 'blur(12px)' }}>
-              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '12px', textTransform: 'uppercase' }}>ORA INIZIO – ORA FINE</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <input type="time" value={decimalToTimeStr(drawerFastChargeStart)} onChange={(e) => setDrawerFastChargeStart(parseTimeStrToDecimal(e.target.value))} style={{ flex: 1, minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }} />
-                <span style={{ color: '#666' }}>–</span>
-                <input type="time" value={decimalToTimeStr(drawerFastChargeEnd)} onChange={(e) => setDrawerFastChargeEnd(parseTimeStrToDecimal(e.target.value))} style={{ flex: 1, minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                    Durata (Minuti)
+                  </div>
+                  <input
+                    type="number"
+                    min={5}
+                    max={1440}
+                    step={5}
+                    value={(() => {
+                      let d = Number(drawerFastChargeEnd) - Number(drawerFastChargeStart);
+                      if (d < 0) d += 24;
+                      return Math.max(0, Math.round(d * 60));
+                    })()}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      const durationMin = Number.isFinite(n) ? Math.max(5, Math.min(1440, Math.round(n))) : 30;
+                      const fixedEnd = Number(drawerFastChargeEnd) || 0;
+                      let nextStart = fixedEnd - durationMin / 60;
+                      while (nextStart < 0) nextStart += 24;
+                      while (nextStart >= 24) nextStart -= 24;
+                      setDrawerFastChargeStart(nextStart);
+                    }}
+                    style={{ width: '100%', minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                    Ora del risveglio
+                  </div>
+                  <input
+                    type="time"
+                    value={decimalToTimeStr(drawerFastChargeEnd)}
+                    onChange={(e) => {
+                      const nextEnd = parseTimeStrToDecimal(e.target.value);
+                      let durationHours = Number(drawerFastChargeEnd) - Number(drawerFastChargeStart);
+                      if (durationHours < 0) durationHours += 24;
+                      durationHours = Math.max(0, durationHours);
+                      let nextStart = nextEnd - durationHours;
+                      while (nextStart < 0) nextStart += 24;
+                      while (nextStart >= 24) nextStart -= 24;
+                      setDrawerFastChargeEnd(nextEnd);
+                      setDrawerFastChargeStart(nextStart);
+                    }}
+                    style={{ width: '100%', minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }}
+                  />
+                </div>
               </div>
               <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '10px' }}>Durata: {(() => { let d = drawerFastChargeEnd - drawerFastChargeStart; if (d < 0) d += 24; d = Math.max(0, d); return `${Math.floor(d * 60)} min`; })()}</div>
             </div>
