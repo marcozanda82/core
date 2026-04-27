@@ -13235,14 +13235,19 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '14px', marginBottom: '10px' }}>
                 <div style={{ flex: '1 1 140px' }}>
                   <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-                    Ora di fine
+                    Ora di inizio
                   </div>
                   <input
                     type="time"
-                    value={decimalToTimeStr(workoutEndTime)}
-                    onChange={(e) =>
-                      setWorkoutEndTime(Math.min(24, Math.max(0, parseTimeStrToDecimal(e.target.value))))
-                    }
+                    value={decimalToTimeStr(workoutStartTime)}
+                    onChange={(e) => {
+                      const startTime = Math.min(24, Math.max(0, parseTimeStrToDecimal(e.target.value)));
+                      const durationHours = Math.max(0, Number(workoutDurationMin) || 0) / 60;
+                      let computedEndTime = startTime + durationHours;
+                      while (computedEndTime >= 24) computedEndTime -= 24;
+                      while (computedEndTime < 0) computedEndTime += 24;
+                      setWorkoutEndTime(computedEndTime);
+                    }}
                     style={{
                       width: '100%',
                       maxWidth: '160px',
