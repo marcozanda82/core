@@ -133,10 +133,11 @@ function applyCalorieTractionNeutralBand(kcalBalanceRaw) {
 function tractionVectorFromSourceValues(sourceInputs) {
   const xRaw = Number(sourceInputs?.kcalBalanceRaw) || 0;
   const x = applyCalorieTractionNeutralBand(xRaw);
-  const trainingRaw = Number(sourceInputs?.trainingLoadRaw) || 0;
+  const avgTrain = Number(sourceInputs?.trainingLoadRaw) || 0;
+  const vectorY = clampAxis(avgTrain * 0.5);
   const glycemicPenalty = Number(sourceInputs?.glycemicInstabilityEstimated) || 0;
   const sleepPenalty = Number(sourceInputs?.sleepStressPenalty) || 0;
-  const y = trainingRaw - glycemicPenalty - sleepPenalty;
+  const y = vectorY - glycemicPenalty - sleepPenalty;
   const len = Math.hypot(x, y);
 
   if (!Number.isFinite(len) || len < 10) {

@@ -303,7 +303,7 @@ function sleepDataReliabilityText(realSleepDays, totalWindowDays) {
  */
 function compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY) {
   return (
-    Math.atan2(shiftedY - baselineY, shiftedX - baselineX) * (180 / Math.PI)
+    Math.atan2(-(shiftedY - baselineY), shiftedX - baselineX) * (180 / Math.PI) + 90
   );
 }
 
@@ -502,26 +502,19 @@ export default function MetabolicMap({
     if (!hasDirection) {
       return {
         hasDirection: false,
-        lineX: 0,
-        lineY: 0,
-        dotX: 0,
-        dotY: 0,
-        dotR: 0,
+        needlePoints: '-4,0 0,-15 4,0 0,6',
+        needleRotationDeg: 0,
       };
     }
-    const magnitude01 = Math.max(0, Math.min(1, (Number(tractionMagnitude) || 0) / 100));
-    const readableFallback01 = magnitude01 > 0 ? magnitude01 : 0.42;
-    const pullDotOffset = COMPASS_BODY_R * (0.24 + readableFallback01 * 0.42);
-    const pullLineLen = Math.max(COMPASS_BODY_R * 0.22, pullDotOffset - 0.8);
+    const magnitude = Math.hypot(displayX - baselineX, displayY - baselineY);
+    const needleLength = Math.max(15, Math.min(45, magnitude * 1.5));
+    const needleRotationDeg = Math.atan2(safeDirectionVector.x, safeDirectionVector.y) * (180 / Math.PI);
     return {
       hasDirection: true,
-      lineX: safeDirectionVector.x * pullLineLen,
-      lineY: -safeDirectionVector.y * pullLineLen,
-      dotX: safeDirectionVector.x * pullDotOffset,
-      dotY: -safeDirectionVector.y * pullDotOffset,
-      dotR: 1.14 + readableFallback01 * 0.5,
+      needlePoints: `-4,0 0,-${needleLength.toFixed(2)} 4,0 0,6`,
+      needleRotationDeg,
     };
-  }, [directionAvailable, directionMagnitude, tractionMagnitude, safeDirectionVector]);
+  }, [directionAvailable, directionMagnitude, safeDirectionVector, displayX, displayY, baselineX, baselineY]);
   const pullColor = directionAvailable && directionMagnitude > 1e-6
     ? (distTarget > distAnchor ? 'rgba(178, 128, 136, 0.88)' : 'rgba(148, 186, 214, 0.88)')
     : 'rgba(176, 190, 206, 0.4)';
@@ -909,28 +902,16 @@ export default function MetabolicMap({
               vectorEffect="nonScalingStroke"
             />
             {tractionVisual.hasDirection ? (
-              <>
-                <line
-                  x1={0}
-                  y1={0}
-                  x2={tractionVisual.lineX}
-                  y2={tractionVisual.lineY}
-                  stroke={mixHex(pullColor, '#eef6ff', 0.24)}
-                  strokeWidth={0.74}
-                  strokeLinecap="round"
-                  vectorEffect="nonScalingStroke"
-                />
-                <circle
-                  r={tractionVisual.dotR}
-                  cx={tractionVisual.dotX}
-                  cy={tractionVisual.dotY}
-                  fill={mixHex(pullColor, '#f0f7ff', 0.18)}
-                  stroke="rgba(232, 242, 252, 0.32)"
-                  strokeWidth={0.24}
+              <g transform={`rotate(${tractionVisual.needleRotationDeg})`}>
+                <polygon
+                  points={tractionVisual.needlePoints}
+                  fill={mixHex(pullColor, '#f0f7ff', 0.2)}
+                  stroke="rgba(232, 242, 252, 0.34)"
+                  strokeWidth={0.28}
                   filter={`url(#${glowFilterId})`}
                   vectorEffect="nonScalingStroke"
                 />
-              </>
+              </g>
             ) : null}
           </motion.g>
 
