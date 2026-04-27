@@ -2375,6 +2375,9 @@ export default function SalaComandi() {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [inputWeight, setInputWeight] = useState('');
   const [inputFat, setInputFat] = useState('');
+  const [drawerMuscleMass, setDrawerMuscleMass] = useState('');
+  const [drawerBodyWater, setDrawerBodyWater] = useState('');
+  const [drawerVisceralFat, setDrawerVisceralFat] = useState('');
   const [bodyMetricsSaveToast, setBodyMetricsSaveToast] = useState(false);
   const [bodyMetricsHistory, setBodyMetricsHistory] = useState([]);
   const [predictiveCalibration, setPredictiveCalibration] = useState({ errors: [] });
@@ -4033,10 +4036,22 @@ export default function SalaComandi() {
     const fatRaw = String(inputFat ?? '').trim();
     const parsedFat = fatRaw === '' ? null : parseFloat(fatRaw.replace(',', '.'));
     const bodyFat = parsedFat != null && Number.isFinite(parsedFat) ? parsedFat : null;
+    const muscleRaw = String(drawerMuscleMass ?? '').trim();
+    const parsedMuscle = muscleRaw === '' ? null : parseFloat(muscleRaw.replace(',', '.'));
+    const musclePct = parsedMuscle != null && Number.isFinite(parsedMuscle) ? parsedMuscle : null;
+    const waterRaw = String(drawerBodyWater ?? '').trim();
+    const parsedWater = waterRaw === '' ? null : parseFloat(waterRaw.replace(',', '.'));
+    const waterPct = parsedWater != null && Number.isFinite(parsedWater) ? parsedWater : null;
+    const visceralRaw = String(drawerVisceralFat ?? '').trim();
+    const parsedVisceral = visceralRaw === '' ? null : parseFloat(visceralRaw.replace(',', '.'));
+    const visceralFat = parsedVisceral != null && Number.isFinite(parsedVisceral) ? parsedVisceral : null;
     const weighDate = getTodayString();
     const payload = {
       weight: w,
       bodyFat,
+      muscle_pct: musclePct,
+      water_pct: waterPct,
+      visceral_fat: visceralFat,
       timestamp: Date.now(),
       date: weighDate,
     };
@@ -4045,10 +4060,20 @@ export default function SalaComandi() {
     try {
       await update(ref(db, `users/${uid}/profile_targets`), profileUpdates);
       await push(ref(db, `users/${uid}/body_metrics`), payload);
-      setUserProfile((prev) => ({ ...prev, weight: w, ...(bodyFat != null ? { bodyFat } : {}) }));
+      setUserProfile((prev) => ({
+        ...prev,
+        weight: w,
+        ...(bodyFat != null ? { bodyFat } : {}),
+        ...(musclePct != null ? { muscle_pct: musclePct } : {}),
+        ...(waterPct != null ? { water_pct: waterPct } : {}),
+        ...(visceralFat != null ? { visceral_fat: visceralFat } : {}),
+      }));
       setShowWeightModal(false);
       setInputWeight('');
       setInputFat('');
+      setDrawerMuscleMass('');
+      setDrawerBodyWater('');
+      setDrawerVisceralFat('');
       setBodyMetricsSaveToast(true);
       setTimeout(() => setBodyMetricsSaveToast(false), 3500);
 
@@ -4072,6 +4097,9 @@ export default function SalaComandi() {
     db,
     inputWeight,
     inputFat,
+    drawerMuscleMass,
+    drawerBodyWater,
+    drawerVisceralFat,
     bodyMetricsHistory,
     fullHistory,
     userProfile,
@@ -4144,6 +4172,12 @@ export default function SalaComandi() {
     setInputWeight(pw != null && pw !== '' ? String(pw) : '');
     const pbf = p?.bodyFat;
     setInputFat(pbf != null && pbf !== '' ? String(pbf) : '');
+    const pm = p?.muscle_pct ?? p?.muscleMass ?? p?.muscle;
+    setDrawerMuscleMass(pm != null && pm !== '' ? String(pm) : '');
+    const pwt = p?.water_pct ?? p?.bodyWater ?? p?.water;
+    setDrawerBodyWater(pwt != null && pwt !== '' ? String(pwt) : '');
+    const pvf = p?.visceral_fat ?? p?.visceralFat ?? p?.visceral;
+    setDrawerVisceralFat(pvf != null && pvf !== '' ? String(pvf) : '');
   }, [showWeightModal]);
 
   const handleCSVUpload = (e) => {
@@ -14943,6 +14977,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             <input type="number" step="0.1" min="0.1" inputMode="decimal" value={inputWeight} onChange={(e) => setInputWeight(e.target.value)} placeholder="es. 75.5" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: '14px', borderRadius: '12px', border: '1px solid #333', background: '#0d0d0f', color: '#fff', fontSize: '1rem' }} />
             <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px' }}>Massa grassa (% — opzionale)</label>
             <input type="number" step="0.1" min="0" max="100" inputMode="decimal" value={inputFat} onChange={(e) => setInputFat(e.target.value)} placeholder="es. 18.5" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: '20px', borderRadius: '12px', border: '1px solid #333', background: '#0d0d0f', color: '#fff', fontSize: '1rem' }} />
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px' }}>Massa Muscolare (%)</label>
+            <input type="number" step="0.1" min="0" max="100" inputMode="decimal" value={drawerMuscleMass} onChange={(e) => setDrawerMuscleMass(e.target.value)} placeholder="es. 42.0" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: '12px', borderRadius: '999px', border: '1px solid #3b82f6', background: '#0d0d0f', color: '#fff', fontSize: '1rem', fontWeight: 'bold' }} />
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px' }}>Acqua Corporea (%)</label>
+            <input type="number" step="0.1" min="0" max="100" inputMode="decimal" value={drawerBodyWater} onChange={(e) => setDrawerBodyWater(e.target.value)} placeholder="es. 55.0" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: '12px', borderRadius: '999px', border: '1px solid #06b6d4', background: '#0d0d0f', color: '#fff', fontSize: '1rem', fontWeight: 'bold' }} />
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px' }}>Grasso Viscerale (Indice)</label>
+            <input type="number" step="0.1" min="0" inputMode="decimal" value={drawerVisceralFat} onChange={(e) => setDrawerVisceralFat(e.target.value)} placeholder="es. 9" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: '20px', borderRadius: '999px', border: '1px solid #f59e0b', background: '#0d0d0f', color: '#fff', fontSize: '1rem', fontWeight: 'bold' }} />
             <div style={{ display: 'flex', gap: '10px' }}>
               <button type="button" onClick={() => { setShowWeightModal(false); }} style={{ flex: 1, padding: '14px', borderRadius: '12px', border: '1px solid #444', background: 'transparent', color: '#aaa', fontWeight: 'bold', cursor: 'pointer' }}>Annulla</button>
               <button type="button" onClick={() => { handleSaveBodyMetrics(); }} style={{ flex: 1, padding: '14px', borderRadius: '12px', border: 'none', background: '#00e5ff', color: '#000', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 0 20px rgba(0,229,255,0.35)' }}>Salva</button>
