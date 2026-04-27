@@ -221,6 +221,7 @@ const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
 const AI_COACH_DISMISSED_INSIGHTS_LS_KEY = 'kentu_ai_coach_dismissed_insights_v1';
 const EVENT_USAGE_LS_KEY = 'kentu_event_usage';
 const EVENT_USAGE_DEFAULT = {
+  pasto: 0,
   allenamento: 0,
   acqua: 0,
   nap: 0,
@@ -249,6 +250,7 @@ function readPersistedEventUsage() {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return { ...EVENT_USAGE_DEFAULT };
     return {
+      pasto: Math.max(0, Number(parsed.pasto) || 0),
       allenamento: Math.max(0, Number(parsed.allenamento) || 0),
       acqua: Math.max(0, Number(parsed.acqua) || 0),
       nap: Math.max(0, Number(parsed.nap) || 0),
@@ -2055,6 +2057,7 @@ export default function SalaComandi() {
   const [activeAction, setActiveAction] = useState('home');
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
   const [eventUsage, setEventUsage] = useState(readPersistedEventUsage);
+  const [isFabOpen, setIsFabOpen] = useState(false);
   const [slideDirection, setSlideDirection] = useState('slide-none');
 
   const trackEventUsage = useCallback((id) => {
@@ -5204,6 +5207,7 @@ export default function SalaComandi() {
 
   const eventQuickButtonConfigs = useMemo(
     () => [
+      { id: 'pasto', label: 'Inserisci Pasto', icon: '🍽️', drawerActionId: 'meal' },
       { id: 'allenamento', label: 'Allenamento', icon: '🏋️', drawerActionId: 'workout' },
       { id: 'acqua', label: 'Acqua', icon: '💧', drawerActionId: 'water' },
       { id: 'nap', label: 'Nap', icon: '😴', drawerActionId: 'nap' },
@@ -5220,7 +5224,7 @@ export default function SalaComandi() {
         if (diff !== 0) return diff;
         return (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0);
       })
-      .slice(0, 2);
+      .slice(0, 3);
   }, [eventQuickButtonConfigs, eventUsage]);
 
   const getDefaultMealTime = (mealTypeKey) => {
@@ -10637,57 +10641,106 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           zIndex: 10000,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'stretch',
+          alignItems: 'flex-end',
           gap: '8px',
-          width: 'min(62vw, 220px)',
+          pointerEvents: 'none',
         }}
       >
+        {isFabOpen && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              marginBottom: '8px',
+              alignItems: 'stretch',
+              width: 'min(72vw, 240px)',
+              pointerEvents: 'auto',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                trackEventUsage('altro');
+                setShowChoiceModal(false);
+                setIsDrawerOpen(true);
+                setActiveAction(null);
+                setIsFabOpen(false);
+              }}
+              style={{
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '12px',
+                background: 'rgba(16, 16, 20, 0.96)',
+                color: '#e6f9ff',
+                fontWeight: 700,
+                fontSize: '0.86rem',
+                padding: '10px 12px',
+                cursor: 'pointer',
+                textAlign: 'left',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+              }}
+              aria-label="Apri menu completo inserimenti"
+            >
+              ⋯ Altro...
+            </button>
+
+            {mostUsedEventButtons.map((cfg) => (
+              <button
+                key={cfg.id}
+                type="button"
+                onClick={() => {
+                  trackEventUsage(cfg.id);
+                  handleAddEventMenuItem(cfg.drawerActionId, 'floating_stack');
+                  setIsFabOpen(false);
+                }}
+                style={{
+                  border: '1px solid rgba(255,255,255,0.14)',
+                  borderRadius: '12px',
+                  background: 'rgba(18, 18, 20, 0.94)',
+                  color: '#c7f9ff',
+                  fontWeight: 700,
+                  fontSize: '0.86rem',
+                  padding: '10px 12px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                }}
+                aria-label={`Aggiungi ${cfg.label}`}
+              >
+                {cfg.icon} {cfg.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <button
           type="button"
-          onClick={() => handleAddEventMenuItem('meal', 'floating_stack')}
+          onClick={() => setIsFabOpen((prev) => !prev)}
           style={{
-            border: '1px solid rgba(0, 229, 255, 0.75)',
-            borderRadius: '14px',
+            width: 56,
+            height: 56,
+            minWidth: 56,
+            borderRadius: '50%',
+            border: '1px solid rgba(0, 229, 255, 0.65)',
             background: 'linear-gradient(180deg, #00d4ff 0%, #00a8c6 100%)',
-            color: '#02131a',
-            fontWeight: 800,
-            fontSize: '0.95rem',
-            padding: '12px 14px',
-            boxShadow: '0 8px 20px rgba(0, 212, 255, 0.35)',
+            color: '#04161d',
+            fontSize: '1.8rem',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 10px 24px rgba(0, 212, 255, 0.42)',
             cursor: 'pointer',
-            textAlign: 'left',
+            pointerEvents: 'auto',
+            transform: isFabOpen ? 'rotate(45deg)' : 'rotate(0deg)',
+            transition: 'transform 0.18s ease',
           }}
-          aria-label="Inserisci pasto"
+          aria-label={isFabOpen ? 'Chiudi menu rapido' : 'Apri menu rapido'}
         >
-          🍽 Inserisci Pasto
+          +
         </button>
-
-        {mostUsedEventButtons.map((cfg) => (
-          <button
-            key={cfg.id}
-            type="button"
-            onClick={() => {
-              trackEventUsage(cfg.id);
-              handleAddEventMenuItem(cfg.drawerActionId, 'floating_stack');
-            }}
-            style={{
-              border: '1px solid rgba(255,255,255,0.14)',
-              borderRadius: '12px',
-              background: 'rgba(18, 18, 20, 0.94)',
-              color: '#c7f9ff',
-              fontWeight: 700,
-              fontSize: '0.86rem',
-              padding: '10px 12px',
-              cursor: 'pointer',
-              textAlign: 'left',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-            }}
-            aria-label={`Aggiungi ${cfg.label}`}
-          >
-            {cfg.icon} {cfg.label}
-          </button>
-        ))}
       </div>
 
       <nav
