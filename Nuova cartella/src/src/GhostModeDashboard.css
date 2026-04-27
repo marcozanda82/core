@@ -1,0 +1,68 @@
+.ghost-dashboard {
+  min-height: 100vh;
+  min-height: calc(var(--vh, 1vh) * 100);
+  min-height: 100dvh;
+  background: #121212;
+  color: #e4e6eb;
+  padding: 24px 20px;
+}
+
+.ghost-dashboard-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.ghost-dashboard-title {
+  margin: 0 0 12px 0;
+  font-size: 1.75rem;
+  color: #00ffcc;
+  text-shadow: 0 0 12px rgba(0, 255, 204, 0.5);
+}
+
+.ghost-sync-score {
+  font-size: 1.25rem;
+  margin-bottom: 8px;
+  color: var(--score-color, #00ffcc);
+}
+
+.ghost-sync-score strong {
+  font-size: 1.4rem;
+}
+
+.ghost-message {
+  margin: 0;
+  font-size: 1rem;
+  color: #b0b3b8;
+  font-style: italic;
+}
+
+.ghost-chart-wrap {
+  background: rgba(30, 30, 30, 0.8);
+  border: 1px solid rgba(0, 255, 204, 0.25);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 0 24px rgba(0, 255, 204, 0.08);
+}
+
+.ghost-chart-legend {
+  margin: 12px 0 0 0;
+  font-size: 0.8rem;
+  color: #888;
+  text-align: center;
+}
+
+.ghost-dot-click {
+  transition: transform 0.2s;
+}
+
+.ghost-dot-click:hover {
+  transform: scale(1.15);
+}
+
+.insight-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 999;
+}

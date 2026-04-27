@@ -1,0 +1,396 @@
+import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import TimelineNodi from '../TimelineNodi';
+import { CHART_AXIS_GUTTER_LEFT_PX, CHART_AXIS_GUTTER_RIGHT_PX } from '../timeLayout';
+
+const SECTION_GAP = 22; // vertical rhythm between main blocks (18–24px)
+
+const getColor = (value) => {
+  if (value >= 75) return '#22c55e';
+  if (value >= 50) return '#facc15';
+  return '#ef4444';
+};
+
+const getScoreGlow = (value) => {
+  if (value >= 75) return '0 0 25px rgba(34,197,94,0.5)';
+  if (value >= 50) return '0 0 20px rgba(250,204,21,0.4)';
+  return '0 0 20px rgba(239,68,68,0.4)';
+};
+
+const COUNT_UP_MS = 800;
+
+/**
+ * Layout home: longevity hero, grafico energetico, timeline nodi, CTA.
+ * `longevity`: output di computeLongevityScore (score, priorityFocus, …).
+ * `chart`: nodo React (es. ResponsiveContainer + grafico) dal genitore.
+ * `timelineProps`: spread su TimelineNodi (stessi props di SalaComandi).
+ * `onFocusClick`: opzionale — click / Invio / Spazio sulla card Priority Focus.
+ * `explanation`: testo da buildLongevityExplanation; sotto la card Focus (o solo blocco leggibile se senza longevity).
+ * `dailyKcalConsumed` / `dailyKcalTarget`: opzionali — bilancio kcal giornaliero (surplus in rosso se assunte > target).
+ */
+export default function HomeView({
+  longevity,
+  chart,
+  timelineProps,
+  onAddEvent,
+  onFocusClick,
+  explanation,
+  dailyKcalConsumed,
+  dailyKcalTarget,
+}) {
+  const explanationText =
+    typeof explanation === 'string' && explanation.trim() ? explanation.trim() : '';
+
+  const score =
+    longevity != null && typeof longevity.score === 'number' && !Number.isNaN(longevity.score)
+      ? longevity.score
+      : 0;
+
+  const [displayScore, setDisplayScore] = useState(0);
+
+  useEffect(() => {
+    if (longevity == null) {
+      setDisplayScore(0);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const target = score;
+    const t0 = performance.now();
+
+    const tick = (now) => {
+      if (cancelled) return;
+      const t = Math.min(1, (now - t0) / COUNT_UP_MS);
+      const eased = 1 - (1 - t) ** 3;
+      setDisplayScore(Math.round(target * eased));
+      if (t < 1) requestAnimationFrame(tick);
+    };
+
+    const rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
+  }, [longevity, score]);
+
+  if (!longevity) {
+    if (!explanationText) return null;
+    return (
+      <div style={{ padding: '0 4px', marginBottom: 12, maxWidth: 700, marginLeft: 'auto', marginRight: 'auto' }}>
+        <div style={{
+          fontSize: 14,
+          lineHeight: 1.55,
+          color: '#c9d1d9',
+          opacity: 0.92
+        }}>
+          {explanationText}
+        </div>
+      </div>
+    );
+  }
+
+  const { priorityFocus } = longevity;
+  const scoreGlow = getScoreGlow(score);
+  const focusInteractive = typeof onFocusClick === 'function';
+
+  const kcalTarget =
+    typeof dailyKcalTarget === 'number' && !Number.isNaN(dailyKcalTarget) ? dailyKcalTarget : null;
+  const kcalConsumed =
+    typeof dailyKcalConsumed === 'number' && !Number.isNaN(dailyKcalConsumed) ? dailyKcalConsumed : null;
+  const showKcalDayLine = kcalTarget != null && kcalConsumed != null && kcalTarget > 0;
+  const kcalSurplus = showKcalDayLine && kcalConsumed > kcalTarget ? Math.round(kcalConsumed - kcalTarget) : 0;
+  const kcalRemaining = showKcalDayLine ? Math.max(0, Math.round(kcalTarget - kcalConsumed)) : 0;
+
+  const handleFocusKeyDown = (e) => {
+    if (!focusInteractive) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onFocusClick();
+    }
+  };
+
+  return (
+    <div style={{ padding: 16, maxWidth: 700, margin: '0 auto' }}>
+
+      {/* SCORE */}
+      <motion.div
+        style={{ marginBottom: SECTION_GAP }}
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div style={{
+          fontSize: 52,
+          fontWeight: 'bold',
+          color: getColor(score),
+          textShadow: scoreGlow
+        }}>
+          {displayScore}
+        </div>
+        <div style={{
+          opacity: 0.65,
+          letterSpacing: '0.5px',
+          color: '#e8e8e8'
+        }}>
+          Il tuo punteggio salute
+        </div>
+      </motion.div>
+
+      {/* FOCUS (HERO) */}
+      {priorityFocus && (
+        <motion.div
+          role={focusInteractive ? 'button' : undefined}
+          tabIndex={focusInteractive ? 0 : undefined}
+          aria-label={focusInteractive ? 'Longevity focus — show details' : undefined}
+          onClick={focusInteractive ? () => onFocusClick() : undefined}
+          onKeyDown={focusInteractive ? handleFocusKeyDown : undefined}
+          whileHover={focusInteractive ? { scale: 1.015 } : undefined}
+          style={{
+            marginBottom: SECTION_GAP,
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            background: 'linear-gradient(135deg, rgba(15,23,42,0.8), rgba(2,6,23,0.9))',
+            borderRadius: 18,
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 28px 56px rgba(0,0,0,0.55), 0 10px 24px rgba(0,0,0,0.35)',
+            padding: 18,
+            color: '#e8e8e8',
+            cursor: focusInteractive ? 'pointer' : undefined,
+            outlineOffset: 4
+          }}
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.1 }}
+        >
+          <div style={{
+            fontSize: 12,
+            opacity: 0.65,
+            letterSpacing: '0.5px',
+            color: '#e8e8e8'
+          }}>
+            COSA FARE OGGI
+          </div>
+
+          <div style={{
+            fontSize: 21,
+            fontWeight: 'bold',
+            marginTop: 4,
+            color: '#e8e8e8',
+            opacity: 1
+          }}>
+            {priorityFocus.title}
+          </div>
+
+          <div style={{
+            marginTop: 10,
+            color: '#22c55e',
+            fontWeight: 500,
+            opacity: 1
+          }}>
+            → {priorityFocus.action}
+          </div>
+        </motion.div>
+      )}
+
+      <div
+        style={{
+          marginBottom: SECTION_GAP,
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 10,
+          padding: '10px 12px',
+          background: 'rgba(15, 23, 42, 0.55)',
+          borderRadius: 12,
+          border: '1px solid rgba(148, 163, 184, 0.28)',
+          boxSizing: 'border-box',
+        }}
+      >
+        <span
+          style={{
+            fontSize: '1.35rem',
+            lineHeight: 1,
+            flexShrink: 0,
+            filter: 'drop-shadow(0 0 8px rgba(251, 191, 36, 0.35))',
+          }}
+          aria-hidden
+        >
+          ⚡
+        </span>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 800,
+              letterSpacing: '0.12em',
+              color: 'rgba(226, 232, 240, 0.95)',
+              textTransform: 'uppercase',
+              lineHeight: 1.35,
+            }}
+          >
+            CATABOLISMO / DIGIUNO
+          </div>
+          <div
+            style={{
+              marginTop: 6,
+              fontSize: '0.78rem',
+              lineHeight: 1.45,
+              color: 'rgba(203, 213, 225, 0.92)',
+              fontWeight: 500,
+            }}
+          >
+            Assumi proteine o amminoacidi prima di allenarti.
+          </div>
+        </div>
+      </div>
+
+      {showKcalDayLine ? (
+        <div
+          style={{
+            marginBottom: SECTION_GAP,
+            padding: '12px 14px',
+            borderRadius: 12,
+            background: 'rgba(15,23,42,0.65)',
+            border: '1px solid rgba(255,255,255,0.07)',
+            textAlign: 'center',
+          }}
+        >
+          {kcalSurplus > 0 ? (
+            <>
+              <div
+                style={{
+                  fontSize: 28,
+                  fontWeight: 700,
+                  color: '#f87171',
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                +{kcalSurplus} kcal
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.14em',
+                  color: 'rgba(248, 113, 113, 0.95)',
+                }}
+              >
+                SURPLUS
+              </div>
+            </>
+          ) : kcalRemaining === 0 ? (
+            <>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#86efac' }}>Obiettivo raggiunto</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75, color: '#94a3b8' }}>
+                {kcalConsumed} / {kcalTarget} kcal
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#e8e8e8' }}>{kcalRemaining} kcal</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.7, color: '#94a3b8' }}>rimanenti</div>
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {explanationText ? (
+        <div style={{
+          marginBottom: SECTION_GAP,
+          padding: '12px 14px',
+          borderRadius: 12,
+          background: 'rgba(15,23,42,0.5)',
+          border: '1px solid rgba(255,255,255,0.06)'
+        }}>
+          <div style={{
+            fontSize: 14,
+            lineHeight: 1.55,
+            color: '#c9d1d9',
+            opacity: 0.92
+          }}>
+            {explanationText}
+          </div>
+        </div>
+      ) : null}
+
+      {/* ENERGY CHART */}
+      {chart != null ? (
+        <motion.div
+          style={{
+            marginBottom: SECTION_GAP,
+            background: 'rgba(2,6,23,0.85)',
+            borderRadius: 18,
+            padding: 16,
+            border: '1px solid rgba(255,255,255,0.06)',
+            boxShadow: '0 14px 36px rgba(0,0,0,0.42)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)'
+          }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+        >
+          {chart}
+        </motion.div>
+      ) : null}
+
+      {/* TIMELINE */}
+      {timelineProps != null ? (
+        <motion.div
+          style={{
+            marginBottom: SECTION_GAP,
+            borderRadius: 18,
+            padding: 8,
+            background: 'rgba(2,6,23,0.4)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)'
+          }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.95 }}
+          transition={{ delay: 0.3 }}
+        >
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
+              paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
+              boxSizing: 'border-box',
+            }}
+          >
+            <TimelineNodi {...timelineProps} />
+          </div>
+        </motion.div>
+      ) : null}
+
+      {/* CTA */}
+      {typeof onAddEvent === 'function' ? (
+        <motion.button
+          type="button"
+          onClick={(e) => {
+            navigator.vibrate?.(10);
+            onAddEvent(e);
+          }}
+          whileTap={{ scale: 0.96 }}
+          whileHover={{ scale: 1.02 }}
+          style={{
+            width: '100%',
+            padding: 16,
+            borderRadius: 16,
+            background: 'linear-gradient(135deg, #22c55e, #4ade80)',
+            border: 'none',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            color: '#020617',
+            boxShadow: '0 10px 25px rgba(34,197,94,0.3)'
+          }}
+        >
+          + Add Event
+        </motion.button>
+      ) : null}
+
+    </div>
+  );
+}

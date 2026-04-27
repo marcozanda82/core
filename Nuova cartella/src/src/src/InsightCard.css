@@ -1,0 +1,81 @@
+.insight-card {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: #1e1e1e;
+  border: 1px solid #00ffcc;
+  border-radius: 12px;
+  box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
+  padding: 20px 24px;
+  z-index: 1000;
+}
+
+.insight-card-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255,255,255,0.1);
+  color: #e4e6eb;
+  font-size: 1.4rem;
+  line-height: 1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.insight-card-close:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+.insight-card-title {
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+  color: #00ffcc;
+}
+
+.insight-card-scostamento {
+  margin: 0 0 16px 0;
+  font-size: 0.95rem;
+  color: #b0b3b8;
+}
+
+.insight-card-scostamento strong {
+  color: #e4e6eb;
+}
+
+.insight-card-section {
+  margin-bottom: 14px;
+}
+
+.insight-card-section h4 {
+  margin: 0 0 6px 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #00ffcc;
+}
+
+.insight-card-section p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #e4e6eb;
+}
+
+.insight-card-section.cortisolo-risk {
+  background: rgba(255, 82, 82, 0.12);
+  border-left: 4px solid #ff5252;
+  padding: 10px 12px;
+  border-radius: 0 8px 8px 0;
+}
+
+.insight-food-tip p {
+  color: #ffd54f;
+}
