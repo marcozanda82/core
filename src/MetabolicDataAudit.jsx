@@ -31,10 +31,10 @@ const tdMuted = {
 };
 
 /**
- * Trasparenza: medie diario vs input motore mappa (stessa finestra temporale).
+ * Trasparenza: sorgente reale vs valore visuale mappa (stessa finestra temporale).
  *
  * @param {{
- *   rawDetails: { meanKcal: number | null, meanTraining01: number | null, sleepRegisteredMean: number | null, realSleepDays: number, totalWindowDays: number } | null | undefined,
+ *   rawDetails: { meanKcal: number | null, meanTraining01: number | null, sleepRegisteredMean: number | null, glycemicInstabilityEstimated?: number | null, glycemicInstabilityVisual?: number | null, realSleepDays: number, totalWindowDays: number } | null | undefined,
  *   mapInputs: { energyBalance: number, trainingLoad: number, sleepHours: number, realSleepDays?: number, totalWindowDays?: number } | null | undefined,
  * }} props
  */
@@ -73,6 +73,12 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
     const trainUsedVal = Number(mi.trainingLoad ?? 0);
     const trainUsed = `${trainUsedVal.toFixed(1)}`;
     const trainNote = hasWindow ? 'Stimolo allenante positivo diretto (0–100)' : '—';
+    const glyReg = hasWindow && rd.glycemicInstabilityEstimated != null
+      ? `${Number(rd.glycemicInstabilityEstimated).toFixed(1)} /100`
+      : 'N/D';
+    const glyVisualVal = Number(rd.glycemicInstabilityVisual ?? mi.glycemicInstability ?? 0);
+    const glyVisual = `${glyVisualVal.toFixed(1)} /100`;
+    const glyNote = hasWindow ? 'stima stress glicemico -> valore visuale smussato' : '—';
 
     return [
       { key: 'sleep', metric: 'Sonno', registered: sleepReg, used: sleepUsed, note: sleepNote },
@@ -84,6 +90,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
         used: trainUsed,
         note: trainNote,
       },
+      { key: 'gly', metric: 'Instabilità glicemica', registered: glyReg, used: glyVisual, note: glyNote },
     ];
   }, [rawDetails, mapInputs]);
 
@@ -110,7 +117,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
           transition: 'color 0.2s ease, border-color 0.2s ease',
         }}
       >
-        {expanded ? 'Nascondi dettagli calcolo' : 'Vedi dettagli calcolo'}
+        {expanded ? 'Nascondi dettagli valore visuale' : 'Vedi dettagli valore visuale'}
       </button>
 
       {expanded && (
@@ -137,7 +144,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
               <tr>
                 <th style={thStyle}>Metrica</th>
                 <th style={thStyle}>Registrato</th>
-                <th style={{ ...thStyle, color: 'rgba(140, 175, 200, 0.5)' }}>Usato dalla mappa</th>
+                <th style={{ ...thStyle, color: 'rgba(140, 175, 200, 0.5)' }}>Valore visuale</th>
                 <th style={thStyle}>Nota</th>
               </tr>
             </thead>
@@ -162,9 +169,8 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
               letterSpacing: '0.02em',
             }}
           >
-            Bilancio: pressione calorica normalizzata dopo banda neutra kcal. Allenamento: stimolo
-            positivo diretto 0–100 (senza centratura su 35). Instabilità glicemica: segnale di stress
-            metabolico ammorbidito. Zone radiali: centro Blue Zone (Longevità); arancione e rosso = allarme.
+            I valori in questa tabella sono secondari e servono solo alla resa grafica della mappa.
+            I numeri sorgente reali restano i valori principali mostrati nel pannello sopra.
           </p>
         </div>
       )}

@@ -297,6 +297,8 @@ export default function MetabolicCompass({
   unifiedDirectionModeLabel = '',
   unifiedDirectionVector = null,
   compassDirectionAvailable = false,
+  unifiedDirectionAudit = null,
+  periodAverageLine = '',
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
@@ -788,6 +790,47 @@ export default function MetabolicCompass({
       >
         {compassDebugRangeLine}
       </div>
+      {periodAverageLine ? (
+        <div
+          style={{
+            margin: '6px 0 0',
+            width: '100%',
+            maxWidth: 340,
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+            lineHeight: 1.35,
+            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            color: 'rgba(226, 232, 240, 0.86)',
+            textAlign: 'center',
+          }}
+        >
+          {periodAverageLine}
+        </div>
+      ) : null}
+      {unifiedDirectionMode && unifiedDirectionAudit ? (
+        <div
+          style={{
+            margin: '8px 0 0',
+            width: '100%',
+            maxWidth: 340,
+            padding: '8px 10px',
+            borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'rgba(12, 16, 24, 0.62)',
+            fontSize: 10,
+            lineHeight: 1.45,
+            color: 'rgba(226, 232, 240, 0.88)',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+          }}
+        >
+          <div>x sorgente (kcalBalance raw): {Number(unifiedDirectionAudit?.xRaw ?? 0).toFixed(1)}</div>
+          <div>trainingLoad raw: {Number(unifiedDirectionAudit?.trainingLoadRaw ?? 0).toFixed(1)}</div>
+          <div>penalita glicemica stimata: {Number(unifiedDirectionAudit?.glycemicPenalty ?? 0).toFixed(1)}</div>
+          <div>penalita stress sonno: {Number(unifiedDirectionAudit?.sleepPenalty ?? 0).toFixed(1)}</div>
+          <div>y usata (raw - penalita): {Number(unifiedDirectionAudit?.yAfterPenalty ?? 0).toFixed(1)}</div>
+        </div>
+      ) : null}
 
       <div
         className="metabolic-compass-micro-suggestion"

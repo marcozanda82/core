@@ -33,10 +33,10 @@ const TIMEFRAME_DAY_WINDOW = {
   '30d': 30,
 };
 const QUADRANT_DIRECTION_LABELS = {
-  NE: 'accumulo grasso',
-  NW: 'ricomposizione',
-  SE: 'catabolismo',
-  SW: 'scarso stimolo',
+  NE: 'Surplus controllato',
+  NW: 'Deficit + allenamento',
+  SE: 'Surplus con basso allenamento',
+  SW: 'Allenamento basso / energia negativa',
 };
 
 function mapZoneToGlowRgba(zone) {
@@ -69,6 +69,24 @@ function timeframeDateRangeFromDailyHistory(dailyHistory, timeframe) {
   const endDate = slice[slice.length - 1]?.date;
   if (!startDate || !endDate) return null;
   return { startDate, endDate };
+}
+
+function timeframeSliceFromDailyHistory(dailyHistory, timeframe) {
+  const arr = Array.isArray(dailyHistory) ? dailyHistory : [];
+  const dated = arr
+    .filter((d) => typeof d?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (dated.length === 0) return [];
+  const windowLen = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
+  return dated.length <= windowLen ? dated : dated.slice(-windowLen);
+}
+
+function arithmeticMean(values) {
+  const arr = (Array.isArray(values) ? values : [])
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v));
+  if (arr.length === 0) return 0;
+  return arr.reduce((sum, v) => sum + v, 0) / arr.length;
 }
 
 function filterBodyMetricsByDateRange(bodyMetricsHistory, startDate, endDate) {
@@ -105,15 +123,12 @@ function movementFromMapInputs(mapInputs) {
   };
 }
 
-function tractionVectorFromMapInputs(mapInputs) {
-  const energy = Number(mapInputs?.energyBalance) || 0;
-  const training = Number(mapInputs?.trainingLoad) || 0;
-  const glycemic = Number(mapInputs?.glycemicInstability) || 0;
-  const sleep = Number(mapInputs?.sleepHours) || 8;
-
-  const sleepDebt = Math.max(0, 7.2 - sleep) * 8;
-  const x = energy;
-  const y = training - glycemic - sleepDebt;
+function tractionVectorFromSourceValues(sourceInputs) {
+  const x = Number(sourceInputs?.kcalBalanceRaw) || 0;
+  const trainingRaw = Number(sourceInputs?.trainingLoadRaw) || 0;
+  const glycemicPenalty = Number(sourceInputs?.glycemicInstabilityEstimated) || 0;
+  const sleepPenalty = Number(sourceInputs?.sleepStressPenalty) || 0;
+  const y = trainingRaw - glycemicPenalty - sleepPenalty;
   const len = Math.hypot(x, y);
 
   if (!Number.isFinite(len) || len < 3) {
@@ -129,7 +144,7 @@ function tractionVectorFromMapInputs(mapInputs) {
     vector: { x: x / len, y: y / len },
     available: true,
     magnitude: Math.min(100, len),
-    reason: 'traction_from_current_inputs',
+    reason: 'traction_from_raw_source_values',
   };
 }
 
@@ -263,6 +278,75 @@ export default function MetabolicUnifiedView({
       source: String(row?.source || 'home_energy_summary'),
     };
   }, [dailyHistory, timeframeRange]);
+  const timeframeSlice = useMemo(
+    () => timeframeSliceFromDailyHistory(dailyHistory, selectedTimeframe),
+    [dailyHistory, selectedTimeframe]
+  );
+  const sourceReadings = useMemo(() => {
+    const rows = Array.isArray(timeframeSlice) ? timeframeSlice : [];
+    if (rows.length === 0) {
+      return {
+        windowDays: 0,
+        kcalBalanceRaw: 0,
+        consumedKcal: 0,
+        effectiveTargetKcal: 0,
+        remainingKcal: 0,
+        workoutKcal: 0,
+        trainingLoadRaw: 0,
+        sleepHours: null,
+        glycemicInstabilityEstimated: Number(metabolicMapRawDetails?.glycemicInstabilityEstimated ?? 0),
+        glycemicInstabilityVisual: Number(metabolicMapInputs?.glycemicInstability ?? 0),
+        sleepStressPenalty: 0,
+        yRawWithPenalty: 0,
+      };
+    }
+    const kcalBalanceRaw = arithmeticMean(rows.map((row) => Number(row?.computedKcalBalance ?? row?.kcalBalance ?? 0)));
+    const consumedKcal = arithmeticMean(rows.map((row) => Number(row?.consumedKcal ?? 0)));
+    const effectiveTargetKcal = arithmeticMean(rows.map((row) => Number(row?.effectiveTargetKcal ?? 0)));
+    const remainingKcal = arithmeticMean(rows.map((row) => Number(row?.remainingKcal ?? 0)));
+    const workoutKcal = arithmeticMean(rows.map((row) => Number(row?.workoutKcal ?? 0)));
+    const trainingLoadRaw = arithmeticMean(rows.map((row) => Number(row?.trainingLoad ?? 0)));
+    const sleepKnown = rows
+      .map((row) => Number(row?.sleepHours))
+      .filter((h) => Number.isFinite(h) && h > 0);
+    const sleepHours = sleepKnown.length > 0 ? arithmeticMean(sleepKnown) : null;
+    const glycemicInstabilityEstimated = Number(
+      metabolicMapRawDetails?.glycemicInstabilityEstimated ?? metabolicMapInputs?.glycemicInstability ?? 0
+    );
+    const glycemicInstabilityVisual = Number(metabolicMapInputs?.glycemicInstability ?? 0);
+    const sleepStressPenalty = Math.max(0, 7.2 - (sleepHours ?? 8)) * 8;
+    const yRawWithPenalty = trainingLoadRaw - glycemicInstabilityEstimated - sleepStressPenalty;
+    return {
+      windowDays: rows.length,
+      kcalBalanceRaw,
+      consumedKcal,
+      effectiveTargetKcal,
+      remainingKcal,
+      workoutKcal,
+      trainingLoadRaw,
+      sleepHours,
+      glycemicInstabilityEstimated,
+      glycemicInstabilityVisual,
+      sleepStressPenalty,
+      yRawWithPenalty,
+    };
+  }, [timeframeSlice, metabolicMapRawDetails, metabolicMapInputs]);
+  const periodAverageLine = useMemo(
+    () =>
+      `Media periodo: ${Math.round(sourceReadings.kcalBalanceRaw)} kcal/g · Allenamento medio: ${sourceReadings.trainingLoadRaw.toFixed(1)}/100`,
+    [sourceReadings]
+  );
+  const directionSourceAudit = useMemo(
+    () => ({
+      xRaw: sourceReadings.kcalBalanceRaw,
+      trainingLoadRaw: sourceReadings.trainingLoadRaw,
+      glycemicPenalty: sourceReadings.glycemicInstabilityEstimated,
+      sleepPenalty: sourceReadings.sleepStressPenalty,
+      yAfterPenalty: sourceReadings.yRawWithPenalty,
+      timeframeDays: sourceReadings.windowDays,
+    }),
+    [sourceReadings]
+  );
 
   const baselineOffset = useMemo(() => {
     const range = timeframeRange;
@@ -337,8 +421,8 @@ export default function MetabolicUnifiedView({
     [trajectoryPositions, estimatedPosition]
   );
   const tractionState = useMemo(
-    () => tractionVectorFromMapInputs(metabolicMapInputs),
-    [metabolicMapInputs]
+    () => tractionVectorFromSourceValues(sourceReadings),
+    [sourceReadings]
   );
   const directionVector = tractionState.vector;
   const unifiedCompassQuadrant = useMemo(
@@ -370,7 +454,14 @@ export default function MetabolicUnifiedView({
         x: clampAxis(tfAnchor.x + tfMovement.x),
         y: clampAxis(tfAnchor.y + tfMovement.y),
       };
-      const tfTraction = tractionVectorFromMapInputs(inputs);
+      const tfSlice = timeframeSliceFromDailyHistory(dailyHistory, tf.value);
+      const tfSourceReadings = {
+        kcalBalanceRaw: arithmeticMean(tfSlice.map((row) => Number(row?.computedKcalBalance ?? row?.kcalBalance ?? 0))),
+        trainingLoadRaw: arithmeticMean(tfSlice.map((row) => Number(row?.trainingLoad ?? 0))),
+        glycemicInstabilityEstimated: Number(rawDetails?.glycemicInstabilityEstimated ?? inputs?.glycemicInstability ?? 0),
+        sleepStressPenalty: Math.max(0, 7.2 - (Number(rawDetails?.sleepRegisteredMean ?? inputs?.sleepHours ?? 8) || 8)) * 8,
+      };
+      const tfTraction = tractionVectorFromSourceValues(tfSourceReadings);
       const tfDirection = directionStateFromMovement(tfMovement);
       acc[tf.value] = {
         anchorPosition: {
@@ -407,6 +498,12 @@ export default function MetabolicUnifiedView({
         tractionAvailable: tfTraction.available,
         tractionMagnitude: Number((tfTraction.magnitude || 0).toFixed(4)),
         tractionReason: tfTraction.reason,
+        sourceReadings: {
+          kcalBalanceRaw: Number((tfSourceReadings.kcalBalanceRaw || 0).toFixed(4)),
+          trainingLoadRaw: Number((tfSourceReadings.trainingLoadRaw || 0).toFixed(4)),
+          glycemicInstabilityEstimated: Number((tfSourceReadings.glycemicInstabilityEstimated || 0).toFixed(4)),
+          sleepStressPenalty: Number((tfSourceReadings.sleepStressPenalty || 0).toFixed(4)),
+        },
       };
       return acc;
     }, {});
@@ -712,6 +809,8 @@ export default function MetabolicUnifiedView({
             unifiedDirectionModeLabel={unifiedDirectionModeLabel}
             unifiedDirectionVector={tractionState.vector}
             compassDirectionAvailable={tractionState.available}
+            unifiedDirectionAudit={directionSourceAudit}
+            periodAverageLine={periodAverageLine}
           />
         </div>
 
@@ -762,6 +861,9 @@ export default function MetabolicUnifiedView({
                 fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
               }}
             >
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(226, 232, 240, 0.9)', marginBottom: 4 }}>
+                {periodAverageLine}
+              </div>
               {lineProjection ? (
                 <div style={{ fontWeight: 500, color: 'rgba(226, 232, 240, 0.92)', marginBottom: 4 }}>
                   {lineProjection}
@@ -790,6 +892,8 @@ export default function MetabolicUnifiedView({
               tractionMagnitude={tractionState.magnitude}
               directionUnavailableReason={tractionState.reason}
               showRoute={false}
+              sourceReadings={sourceReadings}
+              periodAverageLine={periodAverageLine}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}

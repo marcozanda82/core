@@ -252,30 +252,25 @@ export function getColorFromValue(value) {
 }
 
 const QUADRANT_RISK_LABELS = {
-  neutral: 'Modalità placeholder',
-  NW: 'BURNOUT / CORTISOLO',
-  NE: 'INFIAMMAZIONE / BULK',
-  SW: 'DEPERIMENTO / CATABOLISMO',
-  SE: 'FEGATO GRASSO / INSULINA',
+  neutral: 'Equilibrio in monitoraggio',
+  NW: 'Deficit + allenamento',
+  NE: 'Surplus controllato',
+  SW: 'Deficit con basso allenamento',
+  SE: 'Surplus con basso allenamento',
 };
 
 function statusLabelFromSignals(quadrant, energyBalance, trainingLoad, glycemicInstability, sleepHours) {
   const q = String(quadrant || 'neutral');
-  if (q !== 'NE') return QUADRANT_RISK_LABELS[q] || QUADRANT_RISK_LABELS.neutral;
   const e = Number(energyBalance) || 0;
   const t = Number(trainingLoad) || 0;
   const g = Number(glycemicInstability) || 0;
   const s = Number.isFinite(Number(sleepHours)) ? Number(sleepHours) : 8;
-  if (Math.abs(e) < 5 && t >= 70 && g < 25) return 'RICOMPOSIZIONE / STIMOLO ALLENANTE';
-  if (e <= 0 && t >= 70) return 'MASSA PULITA / RECUPERO ATTIVO';
-  if (e > 0 && (g >= 35 || s < 6.2)) return 'INFIAMMAZIONE / BULK';
-  if (e > 0 && g < 25) {
-    return t >= 30
-      ? (e > 8 ? 'RICOMPOSIZIONE / SURPLUS CONTROLLATO' : 'RICOMPOSIZIONE / STIMOLO ALLENANTE')
-      : 'BULK LEGGERO';
-  }
-  if (e > 8) return 'SURPLUS CONTROLLATO';
-  return 'RICOMPOSIZIONE / STIMOLO ALLENANTE';
+  if (g >= 45 || s < 6) return 'Stress metabolico elevato';
+  if (Math.abs(e) <= 30 && t >= 70) return 'Allenamento alto / energia neutra';
+  if (e <= -40 && t >= 35) return 'Deficit + allenamento';
+  if (e >= 40 && t >= 35) return 'Surplus controllato';
+  if (e >= 40 && t < 35) return 'Surplus con basso allenamento';
+  return QUADRANT_RISK_LABELS[q] || QUADRANT_RISK_LABELS.neutral;
 }
 
 /** Profondità: centro più leggibile, bordi leggermente oscurati. */
@@ -342,12 +337,15 @@ export default function MetabolicMap({
   tractionMagnitude = 0,
   directionUnavailableReason = 'unavailable',
   showRoute = false,
+  sourceReadings = null,
+  periodAverageLine = '',
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
   const reduceMotion = useReducedMotion();
   const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
   const [zoomLevelLocal, setZoomLevelLocal] = useState(1);
+  const [showVisualDetails, setShowVisualDetails] = useState(false);
   const [inertialTipSvg, setInertialTipSvg] = useState(MAP_CENTER_SVG);
   const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1 });
   const targetTipRef = useRef(MAP_CENTER_SVG);
@@ -572,6 +570,17 @@ export default function MetabolicMap({
   };
 
   const sleepReliabilityLine = sleepDataReliabilityText(realSleepDays, totalWindowDays);
+  const sourceKcalBalance = Number(sourceReadings?.kcalBalanceRaw ?? energyBalance ?? 0);
+  const sourceConsumedKcal = Number(sourceReadings?.consumedKcal ?? 0);
+  const sourceEffectiveTargetKcal = Number(sourceReadings?.effectiveTargetKcal ?? 0);
+  const sourceRemainingKcal = Number(sourceReadings?.remainingKcal ?? 0);
+  const sourceWorkoutKcal = Number(sourceReadings?.workoutKcal ?? 0);
+  const sourceTrainingLoad = Number(sourceReadings?.trainingLoadRaw ?? trainingLoad ?? 0);
+  const sourceSleepHours = Number.isFinite(Number(sourceReadings?.sleepHours))
+    ? Number(sourceReadings?.sleepHours)
+    : Number(sleepHours ?? 0);
+  const sourceGlycemicEstimated = Number(sourceReadings?.glycemicInstabilityEstimated ?? glycemicInstability ?? 0);
+  const visualGlycemic = Number(sourceReadings?.glycemicInstabilityVisual ?? glycemicInstability ?? 0);
   const dynamicCompassBorder = getColorFromValue(longevityScoreFinal);
   const radarRingRadii = useMemo(
     () => Array.from({ length: 10 }, (_, i) => 5 + i * 4.5),
@@ -952,10 +961,10 @@ export default function MetabolicMap({
             textAlign: 'right',
           }}
         >
-          ACCUMULO GRASSO
+          SURPLUS ENERGETICO
         </span>
         <span style={{ ...semanticPrimaryStyle, bottom: 4, left: '50%', transform: 'translateX(-50%)' }}>
-          CATABOLISMO
+          ALLENAMENTO BASSO
         </span>
         <span
           style={{
@@ -966,20 +975,20 @@ export default function MetabolicMap({
             textAlign: 'left',
           }}
         >
-          DIGIUNO / AUTOFAGIA
+          DEFICIT ENERGETICO
         </span>
 
         <span style={{ ...semanticSecondaryStyle, top: 28, right: 20, textAlign: 'right' }}>
-          SURPLUS CONTROLLATO
+          surplus + allenamento
         </span>
         <span style={{ ...semanticSecondaryStyle, top: 28, left: 20, textAlign: 'left' }}>
-          MASSA PULITA
+          deficit + allenamento
         </span>
         <span style={{ ...semanticSecondaryStyle, bottom: 28, right: 20, textAlign: 'right' }}>
-          SURPLUS DISFUNZIONALE
+          surplus + recupero basso
         </span>
         <span style={{ ...semanticSecondaryStyle, bottom: 28, left: 20, textAlign: 'left' }}>
-          PERDITA GRASSO
+          deficit + recupero basso
         </span>
 
         <div
@@ -1011,30 +1020,24 @@ export default function MetabolicMap({
           color: 'rgba(230, 235, 240, 0.92)',
         }}
       >
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>
-          Zona attuale: {ZONE_LABELS[effectiveZone]} — Stato: {effectiveStatusLabel}
+        <div style={{ fontWeight: 700, marginBottom: 6, color: 'rgba(230, 238, 246, 0.95)' }}>
+          {periodAverageLine || `Media periodo: ${Math.round(sourceKcalBalance)} kcal/g · Allenamento medio: ${sourceTrainingLoad.toFixed(1)}/100`}
         </div>
-        <div
-          style={{
-            fontSize: '0.78rem',
-            color: 'rgba(200, 208, 216, 0.88)',
-            marginBottom: 6,
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '6px 14px',
-          }}
-        >
-          <span>
-            Longevity Score (Ancora):{' '}
-            <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
-          </span>
-          <span>
-            Longevity Score (Posizione finale):{' '}
-            <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
-          </span>
+        <div style={{ fontSize: '0.76rem', color: 'rgba(200, 208, 216, 0.86)', marginBottom: 6 }}>
+          Stato descrittivo: <strong style={{ color: 'rgba(224, 232, 240, 0.95)' }}>{effectiveStatusLabel}</strong>
         </div>
-        <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
-          Distanza dal centro: {effectiveDistance.toFixed(1)} · Aura glicemica: {Math.round(displayAura)}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 10px', fontSize: '0.76rem' }}>
+          <div>kcalBalance raw: <strong>{sourceKcalBalance.toFixed(1)}</strong></div>
+          <div>consumedKcal: <strong>{sourceConsumedKcal.toFixed(1)}</strong></div>
+          <div>effectiveTargetKcal: <strong>{sourceEffectiveTargetKcal.toFixed(1)}</strong></div>
+          <div>remainingKcal: <strong>{sourceRemainingKcal.toFixed(1)}</strong></div>
+          <div>workoutKcal: <strong>{sourceWorkoutKcal.toFixed(1)}</strong></div>
+          <div>trainingLoad raw: <strong>{sourceTrainingLoad.toFixed(1)}/100</strong></div>
+          <div>sleepHours: <strong>{sourceSleepHours.toFixed(1)} h</strong></div>
+          <div>
+            glycemicInstability raw/estimated:{' '}
+            <strong>{sourceGlycemicEstimated.toFixed(1)} / {visualGlycemic.toFixed(1)}</strong>
+          </div>
         </div>
         {directionAvailable ? (
           <div style={{ marginTop: 10, fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.72)' }}>
@@ -1045,6 +1048,36 @@ export default function MetabolicMap({
             Direzione non disponibile ({directionUnavailableReason}): trazione troppo debole nella finestra selezionata.
           </div>
         )}
+        <button
+          type="button"
+          onClick={() => setShowVisualDetails((prev) => !prev)}
+          style={{
+            marginTop: 10,
+            borderRadius: 8,
+            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'rgba(12, 16, 24, 0.48)',
+            color: 'rgba(190, 212, 230, 0.82)',
+            fontSize: 10,
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+            padding: '6px 8px',
+            cursor: 'pointer',
+          }}
+        >
+          {showVisualDetails ? 'Nascondi valore visuale' : 'Vedi valore visuale (debug)'}
+        </button>
+        {showVisualDetails ? (
+          <div style={{ marginTop: 8, fontSize: '0.72rem', color: 'rgba(176, 196, 214, 0.8)', lineHeight: 1.45 }}>
+            <div>Zona valore visuale: {ZONE_LABELS[effectiveZone]}</div>
+            <div>Quadrante valore visuale: {effectiveQuadrant}</div>
+            <div>Energy valore visuale: {Number(energyBalance).toFixed(1)}</div>
+            <div>Training valore visuale: {Number(trainingLoad).toFixed(1)}</div>
+            <div>Glycemic valore visuale: {Number(glycemicInstability).toFixed(1)}</div>
+            <div>Distanza valore visuale: {effectiveDistance.toFixed(1)}</div>
+            <div>Aura valore visuale: {Math.round(displayAura)}</div>
+            <div>Longevity valore visuale (ancora/finale): {longevityScoreAnchor}/{longevityScoreFinal}</div>
+          </div>
+        ) : null}
       </div>
 
       {sleepReliabilityLine && (

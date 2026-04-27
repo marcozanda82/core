@@ -22,6 +22,8 @@ const EMPTY_RAW_DETAILS = {
   effectiveMeanKcal: null,
   meanTraining01: null,
   sleepRegisteredMean: null,
+  glycemicInstabilityEstimated: null,
+  glycemicInstabilityVisual: null,
   realSleepDays: 0,
   totalWindowDays: 0,
 };
@@ -142,7 +144,7 @@ function imputeSleepHoursSeries(rawHours) {
  * @param {'1d' | '7d' | '14d' | '30d'} timeframe
  * @returns {{
  *   mapInputs: { energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number },
- *   rawDetails: { meanKcal: number | null, effectiveMeanKcal: number | null, meanTraining01: number | null, sleepRegisteredMean: number | null, realSleepDays: number, totalWindowDays: number }
+ *   rawDetails: { meanKcal: number | null, effectiveMeanKcal: number | null, meanTraining01: number | null, sleepRegisteredMean: number | null, glycemicInstabilityEstimated: number | null, glycemicInstabilityVisual: number | null, realSleepDays: number, totalWindowDays: number }
  * }}
  */
 export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d') {
@@ -189,8 +191,9 @@ export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d'
 
   const glycemicRaw =
     0.45 * sleepStress + 0.38 * surplusFactor + 0.22 * varianceFactor;
+  const glycemicInstabilityEstimated = clamp(glycemicRaw * 100, 0, 100);
   // glycemicInstability = segnale di stress metabolico (0..100) ammorbidito per non dominare.
-  const glycemicInstability = clamp(softenGlycemicInstability(glycemicRaw * 100), 0, 100);
+  const glycemicInstability = clamp(softenGlycemicInstability(glycemicInstabilityEstimated), 0, 100);
 
   return {
     mapInputs: {
@@ -206,6 +209,8 @@ export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d'
       effectiveMeanKcal,
       meanTraining01: meanTraining,
       sleepRegisteredMean,
+      glycemicInstabilityEstimated,
+      glycemicInstabilityVisual: glycemicInstability,
       realSleepDays,
       totalWindowDays,
     },
