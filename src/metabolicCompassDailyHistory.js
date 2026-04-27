@@ -1,9 +1,5 @@
 import { addDays } from './calendarDateUtils';
-import {
-  getLogFromStoricoTree,
-  getTodayString,
-  getYesterdayString,
-} from './coreEngine';
+import { getLogFromStoricoTree, getTodayString, getYesterdayString } from './coreEngine';
 import { computeTotali } from './useBiochimico';
 
 const DEFAULT_WINDOW_DAYS = 30;
@@ -63,71 +59,40 @@ function mainNightSleepHoursFromLog(log) {
  * @param {Record<string, unknown>} fullHistory albero tracker (es. `tracker_data` RTDB)
  * @param {string} anchorDateStr mantenuto per compatibilità chiamate (es. `currentTrackerDate`); non estende la finestra a oggi
  * @param {{ kcal?: number }} userTargets target kcal (TDEE di riferimento)
- * @param {{ calorieStrategy?: string }} [options]
  * @param {number} [maxDays=30]
- * @returns {Array<{ date: string, kcalBalance: number, trainingLoad: number, sleepHours?: number | null, consumedKcal?: number, baseTargetKcal?: number, workoutKcal?: number, effectiveTargetKcal?: number, remainingKcal?: number, computedKcalBalance?: number, source?: string }>}
+ * @returns {Array<{ date: string, kcalBalance: number, trainingLoad: number, sleepHours?: number | null }>}
  */
 export function buildMetabolicCompassDailyHistory(
   fullHistory,
   anchorDateStr,
   userTargets,
-  options = {},
-  maxDays = 30
+  maxDays = DEFAULT_WINDOW_DAYS
 ) {
   if (!anchorDateStr || typeof anchorDateStr !== 'string') return [];
-  
-  // UI: Target Dietetico (Aderenza). Usa calorie_target se calcolato dal motore, altrimenti kcal, fallback a 2000
-  const baseTargetKcal = Number(userTargets?.calorie_target || userTargets?.kcal || 2000);
-  
-  // BUSSOLA: Mantenimento (Fisiologia). Usa il TDEE calcolato dal motore, altrimenti kcal, fallback a 2000
-  const physiologicalMaintenanceKcal = Number(userTargets?.tdee || userTargets?.kcal || 2000);
+  const tdee = Number(userTargets?.kcal ?? 2000);
+  if (!Number.isFinite(tdee)) return [];
 
   const today = getTodayString();
   const yesterday = getYesterdayString();
+  if (yesterday >= today) return [];
+
   const tree = fullHistory && typeof fullHistory === 'object' ? fullHistory : {};
   const out = [];
 
   for (let i = maxDays - 1; i >= 0; i -= 1) {
     const dStr = addDays(yesterday, -i);
     const log = getLogFromStoricoTree(tree, dStr) || [];
-    
     if (log.length === 0) {
-      out.push({
-        date: dStr, kcalBalance: 0, trainingLoad: 0, sleepHours: null, consumedKcal: 0,
-        baseTargetKcal, workoutKcal: 0, effectiveTargetKcal: baseTargetKcal,
-        remainingKcal: baseTargetKcal, computedKcalBalance: 0, source: 'home_energy_summary'
-      });
+      out.push({ date: dStr, kcalBalance: 0, trainingLoad: 0, sleepHours: null });
       continue;
     }
-    
     const t = computeTotali(log);
-    const consumedKcal = Number(t.kcal) || 0;
+    const kcalBalance = (Number(t.kcal) || 0) - tdee;
     const wk = Number(t.workout) || 0;
-    
-    // UI: Target Dietetico (Aderenza)
-    const effectiveTargetKcal = baseTargetKcal + wk;
-    const remainingKcal = effectiveTargetKcal - consumedKcal;
-    
-    // BUSSOLA: Target Reale (Fisiologia) basato sul TDEE dell'utente
-    const physiologicalEffectiveTarget = physiologicalMaintenanceKcal + wk;
-    const kcalBalance = consumedKcal - physiologicalEffectiveTarget;
-    
-    const trainingLoad = Math.min(100, Math.round(wk / 6));
+    const trainingLoad = Math.min(100, Math.round(wk / WORKOUT_KCAL_PER_LOAD_UNIT));
     const sleepHours = mainNightSleepHoursFromLog(log);
-    
-    out.push({
-      date: dStr,
-      kcalBalance, 
-      trainingLoad,
-      sleepHours,
-      consumedKcal,
-      baseTargetKcal,
-      workoutKcal: wk,
-      effectiveTargetKcal,
-      remainingKcal,
-      computedKcalBalance: kcalBalance,
-      source: 'home_energy_summary',
-    });
+    out.push({ date: dStr, kcalBalance, trainingLoad, sleepHours });
   }
+
   return out;
 }

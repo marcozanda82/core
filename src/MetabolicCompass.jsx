@@ -8,8 +8,6 @@ import {
 } from './metabolicDirection';
 import { getTodayString } from './coreEngine';
 import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
-import { getStructuralBaselineOffsetFromHistory, biometricsToMapBaselineInput } from './biometricHistory';
-import { calculateBaselineOffset } from './metabolicMapEngine';
 import MetabolicMap from './MetabolicMap';
 import { computeMetabolicMapInputsFromDailyHistory } from './metabolicMapPeriodInputs';
 
@@ -49,56 +47,6 @@ const COMPASS_ROTATION_TRANSITION = 'transform 0.48s cubic-bezier(0.45, 0, 0.2, 
 const DIAL_GRID_RINGS = [12.5, 22.5, 32.5];
 const DIAL_RADIAL_INNER = 10;
 const DIAL_RADIAL_OUTER = 44.5;
-const MAP_AXIS_MIN = -100;
-const MAP_AXIS_MAX = 100;
-
-function clampMapAxis(value) {
-  return Math.max(MAP_AXIS_MIN, Math.min(MAP_AXIS_MAX, Number(value) || 0));
-}
-
-function mapPointToCompassSvg(x, y) {
-  return {
-    cx: 50 + clampMapAxis(x) / 2,
-    cy: 50 - clampMapAxis(y) / 2,
-  };
-}
-
-function compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY) {
-  return (
-    Math.atan2(-(shiftedY - baselineY), shiftedX - baselineX) * (180 / Math.PI) + 90
-  );
-}
-
-function bodyMetricEntrySortTime(entry) {
-  if (entry?.date && typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
-    return new Date(`${entry.date}T12:00:00`).getTime();
-  }
-  const ts = Number(entry?.timestamp);
-  return Number.isFinite(ts) ? ts : 0;
-}
-
-function buildCompassHistoryTrail(bodyMetricsHistory, baselineOffset) {
-  const arr = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
-  if (arr.length === 0) return { points: [], polylinePoints: '' };
-  const sorted = [...arr].sort((a, b) => bodyMetricEntrySortTime(a) - bodyMetricEntrySortTime(b));
-  const trailPoints = [];
-  for (let i = 0; i < sorted.length; i += 1) {
-    const input = biometricsToMapBaselineInput(sorted[i]);
-    if (!input) continue;
-    const base = calculateBaselineOffset(input);
-    trailPoints.push({ x: clampMapAxis(base.x), y: clampMapAxis(base.y) });
-  }
-  // Saldatura visuale all'ancora corrente (stesso comportamento richiesto per la mappa).
-  trailPoints.push({
-    x: clampMapAxis(Number(baselineOffset?.x) || 0),
-    y: clampMapAxis(Number(baselineOffset?.y) || 0),
-  });
-  const svgPoints = trailPoints.map((pt) => mapPointToCompassSvg(pt.x, pt.y));
-  return {
-    points: svgPoints,
-    polylinePoints: svgPoints.map((p) => `${p.cx.toFixed(2)},${p.cy.toFixed(2)}`).join(' '),
-  };
-}
 
 function isCardinalCompassAngle(angle) {
   return angle === 0 || angle === 90 || angle === 180 || angle === -90;
@@ -335,7 +283,6 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
  */
 export default function MetabolicCompass({
   dailyHistory: dailyHistoryProp = [],
-  bodyMetricsHistory: bodyMetricsHistoryProp = [],
   compassScreenActive = true,
   mapZoneColor = '',
   hideMetabolicMapSection = false,
@@ -343,18 +290,8 @@ export default function MetabolicCompass({
   onGoalChange,
   selectedTimeframe: timeframeControlled,
   onTimeframeChange,
-  normalizedMetabolicState = null,
-  neutralStaticMode = false,
-  unifiedDirectionMode = false,
-  unifiedDirectionLabel = '',
-  unifiedDirectionModeLabel = '',
-  unifiedDirectionVector = null,
-  compassDirectionAvailable = false,
-  unifiedDirectionAudit = null,
-  periodAverageLine = '',
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
-  const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
 
   const prevCompassScreenActiveRef = useRef(false);
   const [goalInternal, setGoalInternal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
@@ -370,31 +307,6 @@ export default function MetabolicCompass({
   const selectedTimeframe = isTfControlled ? timeframeControlled : timeframeInternal;
 
   const [snapshot, setSnapshot] = useState(null);
-  const compassBaselineOffset = useMemo(
-    () => getStructuralBaselineOffsetFromHistory(bodyMetricsHistory) || { x: 0, y: 0 },
-    [bodyMetricsHistory]
-  );
-  const compassHistoryTrail = useMemo(
-    () => buildCompassHistoryTrail(bodyMetricsHistory, compassBaselineOffset),
-    [bodyMetricsHistory, compassBaselineOffset]
-  );
-  const baselineToCenterAngleDeg = useMemo(
-    () => compassAngleDegMapSpace(0, 0, Number(compassBaselineOffset?.x) || 0, Number(compassBaselineOffset?.y) || 0),
-    [compassBaselineOffset]
-  );
-
-  const renderedSector = useMemo(() => {
-    if (!snapshot || !Number.isFinite(Number(snapshot.x)) || !Number.isFinite(Number(snapshot.y))) {
-      return 'neutral';
-    }
-    const x = Number(snapshot.x);
-    const y = Number(snapshot.y);
-    if (Math.hypot(x, y) <= 1e-6) return 'neutral';
-    if (x >= 0 && y >= 0) return 'NE';
-    if (x < 0 && y >= 0) return 'NW';
-    if (x >= 0 && y < 0) return 'SE';
-    return 'SW';
-  }, [snapshot]);
 
   useEffect(() => {
     if (!compassScreenActive) {
@@ -423,60 +335,13 @@ export default function MetabolicCompass({
   );
 
   useEffect(() => {
-    if (unifiedDirectionMode) {
-      const dx = Number(unifiedDirectionVector?.x) || 0;
-      const dy = Number(unifiedDirectionVector?.y) || 0;
-      const len = Math.hypot(dx, dy);
-      if (!compassDirectionAvailable || len <= 1e-6) {
-        setSnapshot({ angleDeg: 0, magnitude: 0, x: 0, y: 0 });
-        return;
-      }
-      const nx = dx / len;
-      const ny = dy / len;
-      const angleRad = Math.atan2(ny, nx);
-      const angleDeg = Number.isFinite(angleRad) ? angleRad * METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG : 0;
-      const magnitude = Math.max(0.18, Math.min(1, len));
-      setSnapshot({ angleDeg, magnitude, x: nx, y: ny });
-      return;
-    }
-    if (neutralStaticMode) {
-      setSnapshot({ angleDeg: 0, magnitude: 0, x: 0, y: 0 });
-      return;
-    }
-    if (normalizedMetabolicState && Number.isFinite(Number(normalizedMetabolicState.x)) && Number.isFinite(Number(normalizedMetabolicState.y))) {
-      const nx = Number(normalizedMetabolicState.x);
-      const ny = Number(normalizedMetabolicState.y);
-      const angleRad = Math.atan2(ny, nx);
-      const angleDeg = Number.isFinite(angleRad) ? angleRad * METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG : 0;
-      const magnitude = Math.min(1, Math.hypot(nx, ny) / 100);
-      setSnapshot({ angleDeg, magnitude, x: nx, y: ny });
-      return;
-    }
     const result = computeMetabolicCompassDirection(dailyHistory, selectedTimeframe);
     setSnapshot(result);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- compassHistoryKey = historyFingerprint(dailyHistory, selectedTimeframe)
-  }, [
-    compassHistoryKey,
-    normalizedMetabolicState,
-    neutralStaticMode,
-    unifiedDirectionMode,
-    unifiedDirectionVector,
-    compassDirectionAvailable,
-  ]);
+  }, [compassHistoryKey]);
 
   const angleDeg = snapshot?.angleDeg ?? 0;
   const magnitude = snapshot?.magnitude ?? 0;
-
-  if (import.meta.env?.DEV && typeof window !== 'undefined' && window.KENTU_DEBUG_METABOLIC) {
-    console.log('COMPASS_RENDER_VECTOR', {
-      selectedTimeframe,
-      unifiedDirectionMode,
-      unifiedDirectionVector,
-      compassDirectionAvailable,
-      renderedAngle: angleDeg,
-      renderedSector,
-    });
-  }
 
   /** TEMPORARY: verifica finestra date in test */
   const compassDebugRangeLine = useMemo(() => {
@@ -489,11 +354,10 @@ export default function MetabolicCompass({
   }, [dailyHistory, selectedTimeframe]);
 
   const finalAngle = useMemo(() => {
-    if (unifiedDirectionMode) return angleDeg;
     const targetAngle = getMetabolicTargetAngle(goal);
     const raw = angleDeg - targetAngle;
     return Math.max(FINAL_ANGLE_MIN, Math.min(FINAL_ANGLE_MAX, raw));
-  }, [angleDeg, goal, unifiedDirectionMode]);
+  }, [angleDeg, goal]);
 
   const { tier } = useMemo(() => alignmentFromFinalAngle(finalAngle), [finalAngle]);
   const tierStyle = ALIGNMENT_TIERS[tier];
@@ -505,23 +369,10 @@ export default function MetabolicCompass({
   );
 
   const targetMetabolicAngle = useMemo(() => getMetabolicTargetAngle(goal), [goal]);
-  const microSuggestionText = useMemo(() => {
-    if (unifiedDirectionMode) {
-      const label = String(unifiedDirectionLabel || '').trim();
-      const mode = String(unifiedDirectionModeLabel || '').trim();
-      if (label && mode) return `${label} · ${mode}`;
-      if (label) return label;
-      if (mode) return mode;
-      return 'direzione non disponibile';
-    }
-    return metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngle);
-  }, [
-    unifiedDirectionMode,
-    unifiedDirectionLabel,
-    unifiedDirectionModeLabel,
-    angleDeg,
-    targetMetabolicAngle,
-  ]);
+  const microSuggestionText = useMemo(
+    () => metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngle),
+    [angleDeg, targetMetabolicAngle]
+  );
 
   const bezelBoxShadow = useMemo(() => {
     const base = `
@@ -561,10 +412,7 @@ export default function MetabolicCompass({
   }, [microSuggestionText]);
 
   /** Angolo rosa dell’obiettivo (da {@link METABOLIC_COMPASS_DIRECTIONS}). */
-  const targetAngle = useMemo(() => {
-    if (unifiedDirectionMode) return 0;
-    return getCompassTargetAngleForGoal(goal);
-  }, [goal, unifiedDirectionMode]);
+  const targetAngle = useMemo(() => getCompassTargetAngleForGoal(goal), [goal]);
   /** Solo sfondo rosa: Nord visivo = obiettivo → rotazione opposta all’angolo target. */
   const compassRotation = -targetAngle;
   /** Bearing metabolico reale + rotazione sfondo (freccia non è nel contenitore ruotato). */
@@ -665,21 +513,18 @@ export default function MetabolicCompass({
             key={g}
             type="button"
             role="tab"
-            aria-selected={!unifiedDirectionMode && goal === g}
-            onClick={() => {
-              if (unifiedDirectionMode) return;
-              setGoal(g);
-            }}
+            aria-selected={goal === g}
+            onClick={() => setGoal(g)}
             style={{
               padding: '7px 13px',
               borderRadius: 100,
               border:
-                !unifiedDirectionMode && goal === g
+                goal === g
                   ? '1px solid rgba(255,255,255,0.18)'
                   : '1px solid rgba(255,255,255,0.06)',
               background:
-                !unifiedDirectionMode && goal === g ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
-              color: !unifiedDirectionMode && goal === g ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.4)',
+                goal === g ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
+              color: goal === g ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.4)',
               fontSize: 11,
               fontWeight: 560,
               letterSpacing: '0.04em',
@@ -753,48 +598,12 @@ export default function MetabolicCompass({
               <CompassDirectionLabel
                 key={`lbl-${angle}`}
                 labelText={label}
-                selected={!unifiedDirectionMode && goal === label}
+                selected={goal === label}
                 onSelect={setGoal}
                 layoutStyle={compassLabelStyleFromAngle(angle, compassRotation)}
               />
             ))}
           </div>
-          {compassHistoryTrail.points.length >= 2 ? (
-            <svg
-              viewBox="0 0 100 100"
-              preserveAspectRatio="xMidYMid meet"
-              aria-hidden
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                pointerEvents: 'none',
-                zIndex: 1,
-              }}
-            >
-              <g data-baseline-angle-deg={Math.round(baselineToCenterAngleDeg * 10) / 10}>
-                <polyline
-                  points={compassHistoryTrail.polylinePoints}
-                  fill="none"
-                  stroke="rgba(176, 198, 218, 0.34)"
-                  strokeWidth={0.5}
-                  strokeDasharray="1.8 1.5"
-                  vectorEffect="nonScalingStroke"
-                />
-                {compassHistoryTrail.points.map((pt, idx) => (
-                  <circle
-                    key={`compass-history-${idx}`}
-                    cx={pt.cx}
-                    cy={pt.cy}
-                    r={idx === compassHistoryTrail.points.length - 1 ? 0.82 : 0.62}
-                    fill={idx === compassHistoryTrail.points.length - 1 ? 'rgba(214, 228, 242, 0.8)' : 'rgba(170, 194, 214, 0.55)'}
-                    vectorEffect="nonScalingStroke"
-                  />
-                ))}
-              </g>
-            </svg>
-          ) : null}
 
           {/* Freccia: lunghezza fissa; magnitudine → alone + opacità + luminosità leggera */}
           <div
@@ -892,49 +701,6 @@ export default function MetabolicCompass({
       >
         {compassDebugRangeLine}
       </div>
-      {periodAverageLine ? (
-        <div
-          style={{
-            margin: '6px 0 0',
-            width: '100%',
-            maxWidth: 340,
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: '0.02em',
-            lineHeight: 1.35,
-            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-            color: 'rgba(226, 232, 240, 0.86)',
-            textAlign: 'center',
-          }}
-        >
-          {periodAverageLine}
-        </div>
-      ) : null}
-      {unifiedDirectionMode && unifiedDirectionAudit ? (
-        <div
-          style={{
-            margin: '8px 0 0',
-            width: '100%',
-            maxWidth: 340,
-            padding: '8px 10px',
-            borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.08)',
-            background: 'rgba(12, 16, 24, 0.62)',
-            fontSize: 10,
-            lineHeight: 1.45,
-            color: 'rgba(226, 232, 240, 0.88)',
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-          }}
-        >
-          <div>x sorgente (kcalBalance raw): {Number(unifiedDirectionAudit?.xRaw ?? 0).toFixed(1)}</div>
-          <div>x dopo banda neutra: {Number(unifiedDirectionAudit?.xAfterNeutralBand ?? 0).toFixed(1)}</div>
-          <div>trainingLoad raw: {Number(unifiedDirectionAudit?.trainingLoadRaw ?? 0).toFixed(1)}</div>
-          <div>penalita glicemica stimata: {Number(unifiedDirectionAudit?.glycemicPenalty ?? 0).toFixed(1)}</div>
-          <div>penalita stress sonno: {Number(unifiedDirectionAudit?.sleepPenalty ?? 0).toFixed(1)}</div>
-          <div>y usata (raw - penalita): {Number(unifiedDirectionAudit?.yAfterPenalty ?? 0).toFixed(1)}</div>
-          <div>tractionReason: {String(unifiedDirectionAudit?.tractionReason || 'n/a')}</div>
-        </div>
-      ) : null}
 
       <div
         className="metabolic-compass-micro-suggestion"

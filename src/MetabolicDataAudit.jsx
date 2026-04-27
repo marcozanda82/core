@@ -31,10 +31,10 @@ const tdMuted = {
 };
 
 /**
- * Trasparenza: sorgente reale vs valore visuale mappa (stessa finestra temporale).
+ * Trasparenza: medie diario vs input motore mappa (stessa finestra temporale).
  *
  * @param {{
- *   rawDetails: { meanKcal: number | null, meanTraining01: number | null, sleepRegisteredMean: number | null, glycemicInstabilityEstimated?: number | null, glycemicInstabilityVisual?: number | null, realSleepDays: number, totalWindowDays: number } | null | undefined,
+ *   rawDetails: { meanKcal: number | null, meanTraining01: number | null, sleepRegisteredMean: number | null, realSleepDays: number, totalWindowDays: number } | null | undefined,
  *   mapInputs: { energyBalance: number, trainingLoad: number, sleepHours: number, realSleepDays?: number, totalWindowDays?: number } | null | undefined,
  * }} props
  */
@@ -63,7 +63,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
     const kcalReg = hasWindow && rd.meanKcal != null ? `${Math.round(rd.meanKcal)} kcal/d` : 'N/D';
     const kcalUsedVal = Number(mi.energyBalance ?? 0);
     const kcalUsed = `${kcalUsedVal.toFixed(1)}`;
-    const kcalNote = hasWindow ? 'Pressione calorica normalizzata (banda neutra inclusa)' : '—';
+    const kcalNote = hasWindow ? 'Normalizzato (kcal/5)' : '—';
 
     const trainReg =
       hasWindow && rd.meanTraining01 != null
@@ -72,13 +72,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
     // y in cronologia è già nel sistema metabolico (non in coordinate CSS top), quindi è allineato al marker.
     const trainUsedVal = Number(mi.trainingLoad ?? 0);
     const trainUsed = `${trainUsedVal.toFixed(1)}`;
-    const trainNote = hasWindow ? 'Stimolo allenante positivo diretto (0–100)' : '—';
-    const glyReg = hasWindow && rd.glycemicInstabilityEstimated != null
-      ? `${Number(rd.glycemicInstabilityEstimated).toFixed(1)} /100`
-      : 'N/D';
-    const glyVisualVal = Number(rd.glycemicInstabilityVisual ?? mi.glycemicInstability ?? 0);
-    const glyVisual = `${glyVisualVal.toFixed(1)} /100`;
-    const glyNote = hasWindow ? 'stima stress glicemico -> valore visuale smussato' : '—';
+    const trainNote = hasWindow ? 'Normalizzato (0 = -54)' : '—';
 
     return [
       { key: 'sleep', metric: 'Sonno', registered: sleepReg, used: sleepUsed, note: sleepNote },
@@ -90,7 +84,6 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
         used: trainUsed,
         note: trainNote,
       },
-      { key: 'gly', metric: 'Instabilità glicemica', registered: glyReg, used: glyVisual, note: glyNote },
     ];
   }, [rawDetails, mapInputs]);
 
@@ -117,7 +110,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
           transition: 'color 0.2s ease, border-color 0.2s ease',
         }}
       >
-        {expanded ? 'Nascondi dettagli valore visuale' : 'Vedi dettagli valore visuale'}
+        {expanded ? 'Nascondi dettagli calcolo' : 'Vedi dettagli calcolo'}
       </button>
 
       {expanded && (
@@ -144,7 +137,7 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
               <tr>
                 <th style={thStyle}>Metrica</th>
                 <th style={thStyle}>Registrato</th>
-                <th style={{ ...thStyle, color: 'rgba(140, 175, 200, 0.5)' }}>Valore visuale</th>
+                <th style={{ ...thStyle, color: 'rgba(140, 175, 200, 0.5)' }}>Usato dalla mappa</th>
                 <th style={thStyle}>Nota</th>
               </tr>
             </thead>
@@ -169,8 +162,9 @@ export default function MetabolicDataAudit({ rawDetails, mapInputs }) {
               letterSpacing: '0.02em',
             }}
           >
-            I valori in questa tabella sono secondari e servono solo alla resa grafica della mappa.
-            I numeri sorgente reali restano i valori principali mostrati nel pannello sopra.
+            Asse bilancio e allenamento: scala −100…+100. Bilancio: media kcal/d ÷ 5 (con clamp).
+            Allenamento: ((media−35)/65)×100, quindi 0 ≈ −54 e 100 = +100.
+            Zone radiali: centro Blue Zone (Longevità); arancione e rosso = allarme.
           </p>
         </div>
       )}

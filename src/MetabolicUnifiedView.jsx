@@ -1,19 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { METABOLIC_GOAL } from './metabolicDirection';
 import { historyFingerprint } from './metabolicDirectionEngine';
-import {
-  calendarDayKeyFromRow,
-  getStructuralBaselineOffsetFromHistory,
-} from './biometricHistory';
+import { getStructuralBaselineOffsetFromHistory } from './biometricHistory';
 import {
   calculateBaselineOffset,
   calculateMetabolicMapPosition,
   getLastBiometricData,
 } from './metabolicMapEngine';
-import {
-  applyCalorieNeutralBand,
-  computeMetabolicMapInputsAndAudit,
-} from './metabolicMapPeriodInputs';
+import { computeMetabolicMapInputsAndAudit } from './metabolicMapPeriodInputs';
 import { computeWeightProjectionFromInputs, formatWeightProjectionUI } from './weightProjectionEngine';
 import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
@@ -26,18 +20,6 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '14d', label: '14G' },
   { value: '30d', label: '30G' },
 ];
-const TIMEFRAME_DAY_WINDOW = {
-  '1d': 1,
-  '7d': 7,
-  '14d': 14,
-  '30d': 30,
-};
-const QUADRANT_DIRECTION_LABELS = {
-  NE: 'Surplus controllato',
-  NW: 'Deficit + allenamento',
-  SE: 'Surplus con basso allenamento',
-  SW: 'Allenamento basso / energia negativa',
-};
 
 function mapZoneToGlowRgba(zone) {
   if (zone === 'red') return 'rgba(120, 88, 92, 0.28)';
@@ -50,140 +32,61 @@ function clampAxis(v) {
   return Math.max(-100, Math.min(100, Number(v) || 0));
 }
 
-function getAnchorFromLastWeighIn(baselineOffset) {
-  return {
-    x: clampAxis(Number(baselineOffset?.x) || 0),
-    y: clampAxis(Number(baselineOffset?.y) || 0),
-  };
+function dailyTrainingToMapAxis(dayTrainingLoad) {
+  const t = Math.max(0, Math.min(100, Number(dayTrainingLoad) || 0));
+  return clampAxis(((t - 35) / 65) * 100);
 }
 
-function timeframeDateRangeFromDailyHistory(dailyHistory, timeframe) {
-  const arr = Array.isArray(dailyHistory) ? dailyHistory : [];
-  const dated = arr
-    .filter((d) => typeof d?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date))
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  if (dated.length === 0) return null;
-  const windowLen = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
-  const slice = dated.length <= windowLen ? dated : dated.slice(-windowLen);
-  const startDate = slice[0]?.date;
-  const endDate = slice[slice.length - 1]?.date;
-  if (!startDate || !endDate) return null;
-  return { startDate, endDate };
-}
-
-function timeframeSliceFromDailyHistory(dailyHistory, timeframe) {
-  const arr = Array.isArray(dailyHistory) ? dailyHistory : [];
-  const dated = arr
-    .filter((d) => typeof d?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date))
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  if (dated.length === 0) return [];
-  const windowLen = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
-  return dated.length <= windowLen ? dated : dated.slice(-windowLen);
-}
-
-function arithmeticMean(values) {
-  const arr = (Array.isArray(values) ? values : [])
-    .map((v) => Number(v))
-    .filter((v) => Number.isFinite(v));
-  if (arr.length === 0) return 0;
-  return arr.reduce((sum, v) => sum + v, 0) / arr.length;
-}
-
-function filterBodyMetricsByDateRange(bodyMetricsHistory, startDate, endDate) {
-  if (!startDate || !endDate) return [];
-  const src = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
-  return src.filter((row) => {
-    const dayKey = calendarDayKeyFromRow(row);
-    return typeof dayKey === 'string' && dayKey >= startDate && dayKey <= endDate;
+function buildDailyPointFromLogDay(day, baselineOffset) {
+  const kcalBalance = Number(day?.kcalBalance) || 0;
+  const trainingLoadAxis = dailyTrainingToMapAxis(day?.trainingLoad);
+  const sleepHours = Number(day?.sleepHours);
+  const safeSleep = Number.isFinite(sleepHours) && sleepHours > 0 ? sleepHours : 8;
+  const surplusFactor = Math.max(0, Math.min(1, kcalBalance / 500));
+  const sleepStress = safeSleep < 7.5 ? Math.max(0, Math.min(1, (7.5 - safeSleep) / 7.5)) : 0;
+  const glycemicInstability = Math.max(0, Math.min(100, (0.4 * surplusFactor + 0.45 * sleepStress) * 100));
+  return calculateMetabolicMapPosition({
+    energyBalance: clampAxis(kcalBalance / 5),
+    trainingLoad: trainingLoadAxis,
+    sleepHours: safeSleep,
+    glycemicInstability,
+    baselineOffsetX: baselineOffset.x,
+    baselineOffsetY: baselineOffset.y,
   });
 }
 
-const MOVEMENT_INERTIA = 0.02;
-const CALORIE_TRACTION_NEUTRAL_BAND = 75;
+function buildTrajectoryProjection(dailyPositions) {
+  const arr = Array.isArray(dailyPositions) ? dailyPositions : [];
+  const fallback = { projected: { x: 0, y: 0 }, velocity: 0 };
+  if (arr.length === 0) return fallback;
+  const current = arr[arr.length - 1];
+  if (arr.length < 2) return { projected: { x: current.x, y: current.y }, velocity: 0 };
 
-function clamp01(v) {
-  return Math.max(0, Math.min(1, Number(v) || 0));
-}
-
-function consistencyFactorFromInputs(mapInputs) {
-  const days = Number(mapInputs?.totalWindowDays) || 0;
-  const realSleepDays = Number(mapInputs?.realSleepDays) || 0;
-  const dataAvailability = days > 0 ? clamp01(realSleepDays / days) : 0;
-  if (days < 3) return 0.2 * (0.6 + 0.4 * dataAvailability);
-  if (days < 7) return 0.35 * (0.6 + 0.4 * dataAvailability);
-  return 0.65 * (0.6 + 0.4 * dataAvailability);
-}
-
-function movementFromMapInputs(mapInputs) {
-  const consistencyFactor = consistencyFactorFromInputs(mapInputs);
-  return {
-    x: 0,
-    y: 0,
-    reason: 'movement_disabled_baseline',
-    consistencyFactor,
-  };
-}
-
-function applyCalorieTractionNeutralBand(kcalBalanceRaw) {
-  const raw = Number(kcalBalanceRaw) || 0;
-  if (Math.abs(raw) <= CALORIE_TRACTION_NEUTRAL_BAND) return 0;
-  return raw - Math.sign(raw) * CALORIE_TRACTION_NEUTRAL_BAND;
-}
-
-function tractionVectorFromSourceValues(sourceInputs) {
-  const xRaw = Number(sourceInputs?.kcalBalanceRaw) || 0;
-  const x = applyCalorieTractionNeutralBand(xRaw);
-  const avgTrain = Number(sourceInputs?.trainingLoadRaw) || 0;
-  const vectorY = clampAxis(avgTrain * 0.5);
-  const glycemicPenalty = Number(sourceInputs?.glycemicInstabilityEstimated) || 0;
-  const sleepPenalty = Number(sourceInputs?.sleepStressPenalty) || 0;
-  const y = vectorY - glycemicPenalty - sleepPenalty;
-  const len = Math.hypot(x, y);
-
-  if (!Number.isFinite(len) || len < 10) {
-    return {
-      vector: { x: 0, y: 0 },
-      available: false,
-      magnitude: 0,
-      reason: 'traction_neutral_band',
-    };
+  let vx = 0;
+  let vy = 0;
+  let count = 0;
+  for (let i = Math.max(1, arr.length - 3); i < arr.length; i += 1) {
+    const prev = arr[i - 1];
+    const next = arr[i];
+    vx += (Number(next?.x) || 0) - (Number(prev?.x) || 0);
+    vy += (Number(next?.y) || 0) - (Number(prev?.y) || 0);
+    count += 1;
   }
-
-  return {
-    vector: { x: x / len, y: y / len },
-    available: true,
-    magnitude: Math.min(100, len),
-    reason: 'traction_from_raw_source_values',
-  };
-}
-
-function directionStateFromMovement(movement) {
-  const mx = Number(movement?.x) || 0;
-  const my = Number(movement?.y) || 0;
-  const length = Math.hypot(mx, my);
-  if (!Number.isFinite(length) || length <= 1e-6) {
-    return { vector: { x: 0, y: 0 }, available: false, reason: 'movement_disabled_baseline' };
+  if (count > 0) {
+    vx /= count;
+    vy /= count;
   }
+  const velocity = Math.hypot(vx, vy);
+  const projectionScale = Math.max(1.6, Math.min(3.2, velocity * 0.9 + 1.6));
   return {
-    vector: { x: mx / length, y: my / length },
-    available: true,
-    reason: 'ok',
+    projected: {
+      x: clampAxis((Number(current.x) || 0) + vx * projectionScale),
+      y: clampAxis((Number(current.y) || 0) + vy * projectionScale),
+    },
+    velocity,
   };
 }
 
-function directionLabelFromQuadrant(quadrant) {
-  return QUADRANT_DIRECTION_LABELS[String(quadrant || '')] || 'neutral';
-}
-
-function quadrantFromVector(vector) {
-  const x = Number(vector?.x) || 0;
-  const y = Number(vector?.y) || 0;
-  if (Math.hypot(x, y) <= 1e-6) return 'neutral';
-  if (x >= 0 && y >= 0) return 'NE';
-  if (x < 0 && y >= 0) return 'NW';
-  if (x >= 0 && y < 0) return 'SE';
-  return 'SW';
-}
 
 function IconMapSwitch() {
   return (
@@ -238,7 +141,6 @@ export default function MetabolicUnifiedView({
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_TIMEFRAME);
   const [mapZoom, setMapZoom] = useState(1);
-  const [showRoute, setShowRoute] = useState(false);
 
   const compassHistoryKey = useMemo(
     () => historyFingerprint(dailyHistory, selectedTimeframe),
@@ -249,148 +151,25 @@ export default function MetabolicUnifiedView({
     () => computeMetabolicMapInputsAndAudit(dailyHistory, selectedTimeframe),
     [compassHistoryKey]
   );
-  const isDev = Boolean(import.meta.env?.DEV);
-  const effectiveKcalAfterNeutralBand = useMemo(
-    () => applyCalorieNeutralBand(Number(metabolicMapRawDetails?.meanKcal ?? 0)),
-    [metabolicMapRawDetails]
-  );
 
-  const timeframeRange = useMemo(
-    () => timeframeDateRangeFromDailyHistory(dailyHistory, selectedTimeframe),
-    [dailyHistory, selectedTimeframe]
-  );
-  const selectedDayMapInputsDebug = useMemo(() => {
-    const endDate = timeframeRange?.endDate;
-    const series = Array.isArray(dailyHistory) ? dailyHistory : [];
-    const fallback = series.length > 0 ? series[series.length - 1] : null;
-    const byDate = endDate
-      ? series.find((row) => String(row?.date || '') === String(endDate))
-      : null;
-    const row = byDate || fallback;
-    if (!row) return null;
-    const consumedKcal = Number(row?.consumedKcal ?? 0);
-    const baseTargetKcal = Number(row?.baseTargetKcal ?? 0);
-    const workoutKcal = Number(row?.workoutKcal ?? 0);
-    const effectiveTargetKcal = Number(row?.effectiveTargetKcal ?? (baseTargetKcal + workoutKcal));
-    const remainingKcal = Number(row?.remainingKcal ?? (effectiveTargetKcal - consumedKcal));
-    const computedKcalBalance = Number(
-      row?.computedKcalBalance ?? row?.kcalBalance ?? (consumedKcal - effectiveTargetKcal)
-    );
-    return {
-      date: String(row?.date || endDate || 'n/a'),
-      consumedKcal,
-      baseTargetKcal,
-      workoutKcal,
-      effectiveTargetKcal,
-      remainingKcal,
-      computedKcalBalance,
-      source: String(row?.source || 'home_energy_summary'),
-    };
-  }, [dailyHistory, timeframeRange]);
-  const timeframeSlice = useMemo(
-    () => timeframeSliceFromDailyHistory(dailyHistory, selectedTimeframe),
-    [dailyHistory, selectedTimeframe]
-  );
-  const sourceReadings = useMemo(() => {
-    const rows = Array.isArray(timeframeSlice) ? timeframeSlice : [];
-    if (rows.length === 0) {
-      return {
-        windowDays: 0,
-        kcalBalanceRaw: 0,
-        consumedKcal: 0,
-        effectiveTargetKcal: 0,
-        remainingKcal: 0,
-        workoutKcal: 0,
-        trainingLoadRaw: 0,
-        sleepHours: null,
-        glycemicInstabilityEstimated: Number(metabolicMapRawDetails?.glycemicInstabilityEstimated ?? 0),
-        glycemicInstabilityVisual: Number(metabolicMapInputs?.glycemicInstability ?? 0),
-        sleepStressPenalty: 0,
-        yRawWithPenalty: 0,
-      };
-    }
-    const kcalBalanceRaw = arithmeticMean(rows.map((row) => Number(row?.computedKcalBalance ?? row?.kcalBalance ?? 0)));
-    const consumedKcal = arithmeticMean(rows.map((row) => Number(row?.consumedKcal ?? 0)));
-    const effectiveTargetKcal = arithmeticMean(rows.map((row) => Number(row?.effectiveTargetKcal ?? 0)));
-    const remainingKcal = arithmeticMean(rows.map((row) => Number(row?.remainingKcal ?? 0)));
-    const workoutKcal = arithmeticMean(rows.map((row) => Number(row?.workoutKcal ?? 0)));
-    const trainingLoadRaw = arithmeticMean(rows.map((row) => Number(row?.trainingLoad ?? 0)));
-    const sleepKnown = rows
-      .map((row) => Number(row?.sleepHours))
-      .filter((h) => Number.isFinite(h) && h > 0);
-    const sleepHours = sleepKnown.length > 0 ? arithmeticMean(sleepKnown) : null;
-    const glycemicInstabilityEstimated = Number(
-      metabolicMapRawDetails?.glycemicInstabilityEstimated ?? metabolicMapInputs?.glycemicInstability ?? 0
-    );
-    const glycemicInstabilityVisual = Number(metabolicMapInputs?.glycemicInstability ?? 0);
-    const sleepStressPenalty = Math.max(0, 7.2 - (sleepHours ?? 8)) * 8;
-    const yRawWithPenalty = trainingLoadRaw - glycemicInstabilityEstimated - sleepStressPenalty;
-    return {
-      windowDays: rows.length,
-      kcalBalanceRaw,
-      consumedKcal,
-      effectiveTargetKcal,
-      remainingKcal,
-      workoutKcal,
-      trainingLoadRaw,
-      sleepHours,
-      glycemicInstabilityEstimated,
-      glycemicInstabilityVisual,
-      sleepStressPenalty,
-      yRawWithPenalty,
-    };
-  }, [timeframeSlice, metabolicMapRawDetails, metabolicMapInputs]);
-  const periodAverageLine = useMemo(
-    () =>
-      `Media periodo: ${Math.round(sourceReadings.kcalBalanceRaw)} kcal/g · Allenamento medio: ${sourceReadings.trainingLoadRaw.toFixed(1)}/100`,
-    [sourceReadings]
-  );
   const baselineOffset = useMemo(() => {
-    const range = timeframeRange;
-    if (range) {
-      const rangedBodyMetrics = filterBodyMetricsByDateRange(
-        bodyMetricsHistory,
-        range.startDate,
-        range.endDate
-      );
-      const rangedOffset = getStructuralBaselineOffsetFromHistory(rangedBodyMetrics);
-      if (rangedOffset) return rangedOffset;
-    }
     const fromScale = getStructuralBaselineOffsetFromHistory(bodyMetricsHistory);
     if (fromScale) return fromScale;
     const biometrics = getLastBiometricData(dailyHistory);
     return calculateBaselineOffset(biometrics);
-  }, [bodyMetricsHistory, dailyHistory, timeframeRange]);
-
-  const anchorPosition = useMemo(() => getAnchorFromLastWeighIn(baselineOffset), [baselineOffset]);
-  const movementState = useMemo(
-    () => movementFromMapInputs(metabolicMapInputs),
-    [metabolicMapInputs]
-  );
-  const estimatedPosition = useMemo(
-    () => ({
-      x: clampAxis(anchorPosition.x + movementState.x),
-      y: clampAxis(anchorPosition.y + movementState.y),
-    }),
-    [anchorPosition, movementState.x, movementState.y]
-  );
-  const normalizedMetabolicState = useMemo(() => {
-    const estimatedX = clampAxis(Number(estimatedPosition?.x) || 0);
-    const estimatedY = clampAxis(Number(estimatedPosition?.y) || 0);
-    const computed = calculateMetabolicMapPosition({
-      energyBalance: estimatedX,
-      trainingLoad: estimatedY,
-      sleepHours: metabolicMapInputs?.sleepHours,
-      glycemicInstability: metabolicMapInputs?.glycemicInstability,
-    });
-    return computed;
-  }, [estimatedPosition, metabolicMapInputs]);
+  }, [bodyMetricsHistory, dailyHistory]);
 
   const mapZoneColor = useMemo(() => {
-    const zone = normalizedMetabolicState?.zone;
-    if (!zone) return '';
+    const { zone } = calculateMetabolicMapPosition({
+      energyBalance: metabolicMapInputs.energyBalance,
+      trainingLoad: metabolicMapInputs.trainingLoad,
+      sleepHours: metabolicMapInputs.sleepHours,
+      glycemicInstability: metabolicMapInputs.glycemicInstability,
+      baselineOffsetX: baselineOffset.x,
+      baselineOffsetY: baselineOffset.y,
+    });
     return mapZoneToGlowRgba(zone);
-  }, [normalizedMetabolicState]);
+  }, [metabolicMapInputs, baselineOffset]);
 
   const weightProjection = useMemo(
     () =>
@@ -406,208 +185,14 @@ export default function MetabolicUnifiedView({
     () => formatWeightProjectionUI(weightProjection),
     [weightProjection]
   );
-  const trajectoryPositions = useMemo(
-    () => [{ ...anchorPosition }, { ...estimatedPosition }],
-    [anchorPosition, estimatedPosition]
+  const dailyMapPositions = useMemo(() => {
+    const slice = Array.isArray(dailyHistory) ? dailyHistory.slice(-7) : [];
+    return slice.map((day) => buildDailyPointFromLogDay(day, baselineOffset));
+  }, [dailyHistory, baselineOffset]);
+  const projectedTrajectory = useMemo(
+    () => buildTrajectoryProjection(dailyMapPositions),
+    [dailyMapPositions]
   );
-  const currentTrajectoryPosition = useMemo(
-    () => ({
-      x: clampAxis(Number(trajectoryPositions[trajectoryPositions.length - 1]?.x) || Number(estimatedPosition?.x) || 0),
-      y: clampAxis(Number(trajectoryPositions[trajectoryPositions.length - 1]?.y) || Number(estimatedPosition?.y) || 0),
-    }),
-    [trajectoryPositions, estimatedPosition]
-  );
-  const tractionState = useMemo(
-    () => tractionVectorFromSourceValues(sourceReadings),
-    [sourceReadings]
-  );
-  const directionSourceAudit = useMemo(
-    () => ({
-      xRaw: sourceReadings.kcalBalanceRaw,
-      xAfterNeutralBand: applyCalorieTractionNeutralBand(sourceReadings.kcalBalanceRaw),
-      trainingLoadRaw: sourceReadings.trainingLoadRaw,
-      glycemicPenalty: sourceReadings.glycemicInstabilityEstimated,
-      sleepPenalty: sourceReadings.sleepStressPenalty,
-      yAfterPenalty: sourceReadings.yRawWithPenalty,
-      timeframeDays: sourceReadings.windowDays,
-      tractionReason: tractionState.reason,
-    }),
-    [sourceReadings, tractionState.reason]
-  );
-  const directionVector = tractionState.vector;
-  const unifiedCompassQuadrant = useMemo(
-    () => quadrantFromVector(directionVector),
-    [directionVector]
-  );
-  const unifiedCompassLabel = tractionState.available
-    ? directionLabelFromQuadrant(unifiedCompassQuadrant)
-    : 'direzione non disponibile';
-  const unifiedDirectionModeLabel = tractionState.reason;
-  const movementAuditByTimeframe = useMemo(() => {
-    return METABOLIC_COMPASS_TIMEFRAMES.reduce((acc, tf) => {
-      const { mapInputs: inputs, rawDetails } = computeMetabolicMapInputsAndAudit(dailyHistory, tf.value);
-      const range = timeframeDateRangeFromDailyHistory(dailyHistory, tf.value);
-      const tfAnchor = (() => {
-        if (range) {
-          const rangedBodyMetrics = filterBodyMetricsByDateRange(
-            bodyMetricsHistory,
-            range.startDate,
-            range.endDate
-          );
-          const rangedOffset = getStructuralBaselineOffsetFromHistory(rangedBodyMetrics);
-          if (rangedOffset) return getAnchorFromLastWeighIn(rangedOffset);
-        }
-        return anchorPosition;
-      })();
-      const tfMovement = movementFromMapInputs(inputs);
-      const tfEstimated = {
-        x: clampAxis(tfAnchor.x + tfMovement.x),
-        y: clampAxis(tfAnchor.y + tfMovement.y),
-      };
-      const tfSlice = timeframeSliceFromDailyHistory(dailyHistory, tf.value);
-      const tfSourceReadings = {
-        kcalBalanceRaw: arithmeticMean(tfSlice.map((row) => Number(row?.computedKcalBalance ?? row?.kcalBalance ?? 0))),
-        trainingLoadRaw: arithmeticMean(tfSlice.map((row) => Number(row?.trainingLoad ?? 0))),
-        glycemicInstabilityEstimated: Number(rawDetails?.glycemicInstabilityEstimated ?? inputs?.glycemicInstability ?? 0),
-        sleepStressPenalty: Math.max(0, 7.2 - (Number(rawDetails?.sleepRegisteredMean ?? inputs?.sleepHours ?? 8) || 8)) * 8,
-      };
-      const tfTraction = tractionVectorFromSourceValues(tfSourceReadings);
-      const tfDirection = directionStateFromMovement(tfMovement);
-      acc[tf.value] = {
-        anchorPosition: {
-          x: Number(tfAnchor.x.toFixed(4)),
-          y: Number(tfAnchor.y.toFixed(4)),
-        },
-        mapInputs: {
-          energyBalance: Number((inputs.energyBalance || 0).toFixed(4)),
-          trainingLoad: Number((inputs.trainingLoad || 0).toFixed(4)),
-          glycemicInstability: Number((inputs.glycemicInstability || 0).toFixed(4)),
-          sleepHours: Number((inputs.sleepHours || 0).toFixed(4)),
-          totalWindowDays: Number(inputs.totalWindowDays || 0),
-        },
-        movement: {
-          x: Number(tfMovement.x.toFixed(6)),
-          y: Number(tfMovement.y.toFixed(6)),
-          consistencyFactor: Number(tfMovement.consistencyFactor.toFixed(4)),
-          reason: tfMovement.reason,
-        },
-        estimatedPosition: {
-          x: Number(tfEstimated.x.toFixed(4)),
-          y: Number(tfEstimated.y.toFixed(4)),
-        },
-        directionVector: {
-          x: Number(tfDirection.vector.x.toFixed(4)),
-          y: Number(tfDirection.vector.y.toFixed(4)),
-        },
-        directionAvailable: tfDirection.available,
-        directionReason: tfDirection.reason,
-        tractionVector: {
-          x: Number((tfTraction.vector?.x || 0).toFixed(4)),
-          y: Number((tfTraction.vector?.y || 0).toFixed(4)),
-        },
-        tractionAvailable: tfTraction.available,
-        tractionMagnitude: Number((tfTraction.magnitude || 0).toFixed(4)),
-        tractionReason: tfTraction.reason,
-        sourceReadings: {
-          kcalBalanceRaw: Number((tfSourceReadings.kcalBalanceRaw || 0).toFixed(4)),
-          trainingLoadRaw: Number((tfSourceReadings.trainingLoadRaw || 0).toFixed(4)),
-          glycemicInstabilityEstimated: Number((tfSourceReadings.glycemicInstabilityEstimated || 0).toFixed(4)),
-          sleepStressPenalty: Number((tfSourceReadings.sleepStressPenalty || 0).toFixed(4)),
-        },
-      };
-      return acc;
-    }, {});
-  }, [dailyHistory, bodyMetricsHistory, anchorPosition]);
-
-  useEffect(() => {
-    if (!isDev || typeof window === 'undefined' || !window.KENTU_DEBUG_METABOLIC) return;
-    console.info('[MetabolicMovement] timeframe audit', movementAuditByTimeframe);
-  }, [isDev, movementAuditByTimeframe]);
-
-  useEffect(() => {
-    if (!isDev || typeof window === 'undefined' || !window.KENTU_DEBUG_METABOLIC) return;
-    if (selectedTimeframe !== '1d') return;
-    const selectedDateUsed = timeframeRange?.endDate ?? null;
-    const interpretedQuadrant = String(normalizedMetabolicState?.quadrant || 'neutral');
-    console.info('[MetabolicMovement][1d debug]', {
-      selectedTimeframe,
-      selectedDateUsed,
-      kcalBalance: Number(metabolicMapRawDetails?.meanKcal ?? 0),
-      trainingLoad: Number(metabolicMapRawDetails?.meanTraining01 ?? 0),
-      energyBalance: Number(metabolicMapInputs?.energyBalance ?? 0),
-      glycemicInstability: Number(metabolicMapInputs?.glycemicInstability ?? 0),
-      mapInputs: metabolicMapInputs,
-      rawDetails: metabolicMapRawDetails,
-      movement: {
-        x: Number(movementState.x.toFixed(6)),
-        y: Number(movementState.y.toFixed(6)),
-      },
-      directionVector: {
-        x: Number(directionVector.x.toFixed(6)),
-        y: Number(directionVector.y.toFixed(6)),
-      },
-      tractionState: {
-        available: tractionState.available,
-        magnitude: Number((tractionState.magnitude || 0).toFixed(6)),
-        reason: tractionState.reason,
-      },
-      interpreted: {
-        quadrant: interpretedQuadrant,
-        label: tractionState.available
-          ? (QUADRANT_DIRECTION_LABELS[interpretedQuadrant] || 'neutral')
-          : 'direzione non disponibile',
-      },
-    });
-  }, [
-    isDev,
-    selectedTimeframe,
-    timeframeRange,
-    metabolicMapRawDetails,
-    metabolicMapInputs,
-    movementState,
-    directionVector,
-    tractionState,
-    normalizedMetabolicState,
-  ]);
-
-  useEffect(() => {
-    if (!isDev || typeof window === 'undefined' || !window.KENTU_DEBUG_METABOLIC) return;
-    console.info('[MetabolicUnifiedDirection]', {
-      selectedTimeframe,
-      rawDetailsMeanKcal: Number(metabolicMapRawDetails?.meanKcal ?? 0),
-      rawDetailsMeanTraining01: Number(metabolicMapRawDetails?.meanTraining01 ?? 0),
-      mapInputs: metabolicMapInputs,
-      movementState: {
-        x: Number((movementState?.x || 0).toFixed(6)),
-        y: Number((movementState?.y || 0).toFixed(6)),
-        consistencyFactor: Number((movementState?.consistencyFactor || 0).toFixed(4)),
-        reason: movementState?.reason || 'n/a',
-      },
-      directionVector: {
-        x: Number((directionVector?.x || 0).toFixed(6)),
-        y: Number((directionVector?.y || 0).toFixed(6)),
-      },
-      tractionState: {
-        available: tractionState.available,
-        magnitude: Number((tractionState.magnitude || 0).toFixed(6)),
-        reason: tractionState.reason,
-      },
-      compassLabel: unifiedCompassLabel,
-      mapQuadrant: unifiedCompassQuadrant,
-      directionModeLabel: unifiedDirectionModeLabel,
-    });
-  }, [
-    isDev,
-    selectedTimeframe,
-    metabolicMapRawDetails,
-    metabolicMapInputs,
-    movementState,
-    directionVector,
-    tractionState,
-    unifiedCompassLabel,
-    unifiedCompassQuadrant,
-    unifiedDirectionModeLabel,
-  ]);
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -622,6 +207,87 @@ export default function MetabolicUnifiedView({
         boxSizing: 'border-box',
       }}
     >
+      <div
+        style={{
+          position: 'absolute',
+          top: 8,
+          right: 8,
+          zIndex: 40,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px',
+          borderRadius: 12,
+          border: '1px solid rgba(255,255,255,0.14)',
+          background: 'rgba(10, 12, 16, 0.74)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setViewMode((m) => (m === 'compass' ? 'map' : 'compass'))}
+          aria-label={
+            viewMode === 'compass' ? 'Apri mappa metabolica' : 'Apri bussola metabolica'
+          }
+          aria-pressed={viewMode === 'map'}
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.12)',
+            background: 'rgba(255,255,255,0.05)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'rgba(240, 245, 250, 0.9)',
+            transition: reducedMotion ? 'none' : 'background 0.25s ease, transform 0.2s ease',
+          }}
+        >
+          {viewMode === 'compass' ? <IconMapSwitch /> : <IconCompassSwitch />}
+        </button>
+        <button
+          type="button"
+          onClick={() => setMapZoom((z) => Math.max(0.8, z - 0.12))}
+          disabled={viewMode !== 'map'}
+          aria-label="Riduci zoom mappa"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 9,
+            border: '1px solid rgba(255,255,255,0.12)',
+            background: 'rgba(255,255,255,0.05)',
+            color: '#e2e8f0',
+            fontWeight: 700,
+            cursor: viewMode === 'map' ? 'pointer' : 'default',
+            opacity: viewMode === 'map' ? 1 : 0.45,
+          }}
+        >
+          -
+        </button>
+        <button
+          type="button"
+          onClick={() => setMapZoom((z) => Math.min(2.5, z + 0.12))}
+          disabled={viewMode !== 'map'}
+          aria-label="Aumenta zoom mappa"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 9,
+            border: '1px solid rgba(255,255,255,0.12)',
+            background: 'rgba(255,255,255,0.05)',
+            color: '#e2e8f0',
+            fontWeight: 700,
+            cursor: viewMode === 'map' ? 'pointer' : 'default',
+            opacity: viewMode === 'map' ? 1 : 0.45,
+          }}
+        >
+          +
+        </button>
+      </div>
+
       <div
         role="tablist"
         aria-label="Periodo analisi"
@@ -686,107 +352,6 @@ export default function MetabolicUnifiedView({
         }}
       >
         <div
-          style={{
-            position: 'absolute',
-            top: 10,
-            right: 10,
-            zIndex: 45,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '5px 6px',
-            borderRadius: 999,
-            border: '1px solid rgba(71, 85, 105, 0.9)',
-            background: 'rgba(2, 6, 12, 0.5)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.24)',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setViewMode((m) => (m === 'compass' ? 'map' : 'compass'))}
-            aria-label={viewMode === 'compass' ? 'Apri mappa metabolica' : 'Apri bussola metabolica'}
-            aria-pressed={viewMode === 'map'}
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 999,
-              border: '1px solid rgba(255,255,255,0.14)',
-              background: 'rgba(15, 23, 42, 0.56)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'rgba(240, 245, 250, 0.92)',
-              transition: reducedMotion ? 'none' : 'background 0.25s ease, transform 0.2s ease',
-            }}
-          >
-            {viewMode === 'compass' ? <IconMapSwitch /> : <IconCompassSwitch />}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMapZoom((z) => Math.max(0.8, z - 0.12))}
-            disabled={viewMode !== 'map'}
-            aria-label="Riduci zoom mappa"
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 999,
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(255,255,255,0.05)',
-              color: '#e2e8f0',
-              fontWeight: 700,
-              cursor: viewMode === 'map' ? 'pointer' : 'default',
-              opacity: viewMode === 'map' ? 1 : 0.42,
-            }}
-          >
-            -
-          </button>
-          <button
-            type="button"
-            onClick={() => setMapZoom((z) => Math.min(2.5, z + 0.12))}
-            disabled={viewMode !== 'map'}
-            aria-label="Aumenta zoom mappa"
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 999,
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(255,255,255,0.05)',
-              color: '#e2e8f0',
-              fontWeight: 700,
-              cursor: viewMode === 'map' ? 'pointer' : 'default',
-              opacity: viewMode === 'map' ? 1 : 0.42,
-            }}
-          >
-            +
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowRoute((v) => !v)}
-            disabled={viewMode !== 'map'}
-            aria-label={showRoute ? 'Nascondi rotta' : 'Mostra rotta'}
-            style={{
-              minWidth: 44,
-              height: 26,
-              padding: '0 8px',
-              borderRadius: 999,
-              border: `1px solid ${showRoute ? 'rgba(148, 163, 184, 0.48)' : 'rgba(255,255,255,0.12)'}`,
-              background: showRoute ? 'rgba(148, 163, 184, 0.14)' : 'rgba(255,255,255,0.05)',
-              color: '#e2e8f0',
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              cursor: viewMode === 'map' ? 'pointer' : 'default',
-              opacity: viewMode === 'map' ? 1 : 0.42,
-            }}
-          >
-            Rotta
-          </button>
-        </div>
-        <div
           aria-hidden={viewMode !== 'compass'}
           style={{
             position: 'absolute',
@@ -814,16 +379,6 @@ export default function MetabolicUnifiedView({
             onGoalChange={setGoal}
             selectedTimeframe={selectedTimeframe}
             onTimeframeChange={setSelectedTimeframe}
-            normalizedMetabolicState={normalizedMetabolicState}
-            neutralStaticMode={false}
-            unifiedDirectionMode
-            unifiedDirectionLabel={unifiedCompassLabel}
-            unifiedDirectionModeLabel={unifiedDirectionModeLabel}
-            unifiedDirectionVector={tractionState.vector}
-            compassDirectionAvailable={tractionState.available}
-            unifiedDirectionAudit={directionSourceAudit}
-            periodAverageLine={periodAverageLine}
-            bodyMetricsHistory={bodyMetricsHistory}
           />
         </div>
 
@@ -874,9 +429,6 @@ export default function MetabolicUnifiedView({
                 fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
               }}
             >
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(226, 232, 240, 0.9)', marginBottom: 4 }}>
-                {periodAverageLine}
-              </div>
               {lineProjection ? (
                 <div style={{ fontWeight: 500, color: 'rgba(226, 232, 240, 0.92)', marginBottom: 4 }}>
                   {lineProjection}
@@ -897,65 +449,15 @@ export default function MetabolicUnifiedView({
               bodyMetricsHistory={bodyMetricsHistory}
               zoomLevel={mapZoom}
               onZoomLevelChange={setMapZoom}
-              trajectoryPositions={trajectoryPositions}
-              currentPosition={currentTrajectoryPosition}
-              normalizedMetabolicState={normalizedMetabolicState}
-              directionVector={tractionState.vector}
-              directionAvailable={tractionState.available}
-              tractionMagnitude={tractionState.magnitude}
-              directionUnavailableReason={tractionState.reason}
-              showRoute={false}
-              sourceReadings={sourceReadings}
-              periodAverageLine={periodAverageLine}
+              dailyPositions={dailyMapPositions}
+              currentPosition={dailyMapPositions[dailyMapPositions.length - 1] || null}
+              projectedPosition={projectedTrajectory.projected}
+              trajectoryVelocity={projectedTrajectory.velocity}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}
               mapInputs={metabolicMapInputs}
             />
-            {isDev ? (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: '8px 10px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  background: 'rgba(7, 10, 14, 0.64)',
-                  fontSize: 10,
-                  lineHeight: 1.45,
-                  color: 'rgba(214, 224, 236, 0.9)',
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-                }}
-              >
-                <div>selectedTimeframe: {selectedTimeframe}</div>
-                <div>
-                  date range used:{' '}
-                  {timeframeRange
-                    ? `${timeframeRange.startDate} -> ${timeframeRange.endDate}`
-                    : 'n/a'}
-                </div>
-                <div>raw mean kcalBalance: {Number(metabolicMapRawDetails?.meanKcal ?? 0).toFixed(4)}</div>
-                <div>effective kcalBalance after neutral band: {Number(effectiveKcalAfterNeutralBand).toFixed(4)}</div>
-                <div>raw mean trainingLoad: {Number(metabolicMapRawDetails?.meanTraining01 ?? 0).toFixed(4)}</div>
-                <div>computed energyBalance: {Number(metabolicMapInputs?.energyBalance ?? 0).toFixed(4)}</div>
-                <div>computed trainingLoad: {Number(metabolicMapInputs?.trainingLoad ?? 0).toFixed(4)}</div>
-                <div>sleepHours: {Number(metabolicMapInputs?.sleepHours ?? 0).toFixed(4)}</div>
-                <div>glycemicInstability: {Number(metabolicMapInputs?.glycemicInstability ?? 0).toFixed(4)}</div>
-                <div>realSleepDays: {Number(metabolicMapInputs?.realSleepDays ?? 0)}</div>
-                <div>totalWindowDays: {Number(metabolicMapInputs?.totalWindowDays ?? 0)}</div>
-                <div>tractionVector.x: {Number(tractionState?.vector?.x ?? 0).toFixed(4)}</div>
-                <div>tractionVector.y: {Number(tractionState?.vector?.y ?? 0).toFixed(4)}</div>
-                <div>tractionMagnitude: {Number(tractionState?.magnitude ?? 0).toFixed(4)}</div>
-                <div>tractionReason: {String(tractionState?.reason || 'n/a')}</div>
-                <div style={{ marginTop: 6, opacity: 0.92 }}>selected day debug ({selectedDayMapInputsDebug?.date || 'n/a'}):</div>
-                <div>consumedKcal: {Number(selectedDayMapInputsDebug?.consumedKcal ?? 0).toFixed(4)}</div>
-                <div>baseTargetKcal: {Number(selectedDayMapInputsDebug?.baseTargetKcal ?? 0).toFixed(4)}</div>
-                <div>workoutKcal: {Number(selectedDayMapInputsDebug?.workoutKcal ?? 0).toFixed(4)}</div>
-                <div>effectiveTargetKcal: {Number(selectedDayMapInputsDebug?.effectiveTargetKcal ?? 0).toFixed(4)}</div>
-                <div>remainingKcal: {Number(selectedDayMapInputsDebug?.remainingKcal ?? 0).toFixed(4)}</div>
-                <div>computedKcalBalance: {Number(selectedDayMapInputsDebug?.computedKcalBalance ?? 0).toFixed(4)}</div>
-                <div>source: {String(selectedDayMapInputsDebug?.source || 'home_energy_summary')}</div>
-              </div>
-            ) : null}
           </div>
         </div>
       </div>
