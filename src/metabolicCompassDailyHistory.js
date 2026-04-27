@@ -75,10 +75,12 @@ export function buildMetabolicCompassDailyHistory(
   maxDays = 30
 ) {
   if (!anchorDateStr || typeof anchorDateStr !== 'string') return [];
-  const baseTargetKcal = Number(userTargets?.kcal ?? 2000);
   
-  // Punto di pareggio reale (Mantenimento)
-  const physiologicalMaintenanceKcal = 2500; 
+  // UI: Target Dietetico (Aderenza). Usa calorie_target se calcolato dal motore, altrimenti kcal, fallback a 2000
+  const baseTargetKcal = Number(userTargets?.calorie_target || userTargets?.kcal || 2000);
+  
+  // BUSSOLA: Mantenimento (Fisiologia). Usa il TDEE calcolato dal motore, altrimenti kcal, fallback a 2000
+  const physiologicalMaintenanceKcal = Number(userTargets?.tdee || userTargets?.kcal || 2000);
 
   const today = getTodayString();
   const yesterday = getYesterdayString();
@@ -106,7 +108,7 @@ export function buildMetabolicCompassDailyHistory(
     const effectiveTargetKcal = baseTargetKcal + wk;
     const remainingKcal = effectiveTargetKcal - consumedKcal;
     
-    // BUSSOLA: Target Reale (Fisiologia)
+    // BUSSOLA: Target Reale (Fisiologia) basato sul TDEE dell'utente
     const physiologicalEffectiveTarget = physiologicalMaintenanceKcal + wk;
     const kcalBalance = consumedKcal - physiologicalEffectiveTarget;
     
