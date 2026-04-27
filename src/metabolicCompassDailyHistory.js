@@ -73,15 +73,23 @@ export function buildMetabolicCompassDailyHistory(
   anchorDateStr,
   userTargets,
   options = {},
-  maxDays = DEFAULT_WINDOW_DAYS
+  maxDays = 30 // DEFAULT_WINDOW_DAYS
 ) {
   if (!anchorDateStr || typeof anchorDateStr !== 'string') return [];
   const baseProfileKcal = Number(userTargets?.kcal ?? 2000);
   if (!Number.isFinite(baseProfileKcal)) return [];
+
+  // Target con strategia (mantenuto per calcolare le calorie rimanenti nella UI)
   const calorieStrategy = String(options?.calorieStrategy || 'pari');
   const baseTargetKcal = Number(
     applyCalorieStrategyToProfileKcal(baseProfileKcal, calorieStrategy)
   );
+
+  // Target fisiologico (TDEE di mantenimento, forza la strategia a 'pari')
+  const physiologicalTargetKcal = Number(
+    applyCalorieStrategyToProfileKcal(baseProfileKcal, 'pari')
+  );
+
   if (!Number.isFinite(baseTargetKcal)) return [];
 
   const today = getTodayString();
@@ -113,10 +121,14 @@ export function buildMetabolicCompassDailyHistory(
     const t = computeTotali(log);
     const consumedKcal = Number(t.kcal) || 0;
     const wk = Number(t.workout) || 0;
+
     const effectiveTargetKcal = baseTargetKcal + wk;
     const remainingKcal = effectiveTargetKcal - consumedKcal;
-    // Same Home summary semantics: kcalBalance = consumed - effectiveTarget = -remaining.
-    const kcalBalance = consumedKcal - effectiveTargetKcal;
+
+    // FIX: Il bilancio per il motore metabolico deve rappresentare il bilancio FISIOLOGICO reale rispetto all'omeostasi.
+    const physiologicalEffectiveTarget = physiologicalTargetKcal + wk;
+    const kcalBalance = consumedKcal - physiologicalEffectiveTarget;
+
     const trainingLoad = Math.min(100, Math.round(wk / WORKOUT_KCAL_PER_LOAD_UNIT));
     const sleepHours = mainNightSleepHoursFromLog(log);
     out.push({
