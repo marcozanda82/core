@@ -206,13 +206,12 @@ function migrateIdealStrategy(raw) {
 }
 
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
-const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'planning', 'bussola', 'longevita'];
+const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola', 'longevita'];
 
 /** Voci barra inferiore (sempre tutte visibili; non condizionare al caricamento dati). */
 const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },
   { id: 'analisi', label: 'Timeline', icon: '🕒' },
-  { id: 'planning', label: 'Pianifica', icon: '📅' },
   { id: 'bussola', label: 'Salute', icon: '❤️' },
   { id: 'longevita', label: 'Progressi', icon: '📈' },
   { id: 'menu', label: 'Menu', icon: '≡' },
