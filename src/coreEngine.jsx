@@ -5,6 +5,16 @@ import { computeTotali, DEFAULT_TARGETS } from './useBiochimico';
 import { addDays } from './calendarDateUtils';
 
 const RADIAN = Math.PI / 180;
+function isKentuEnergyDebugEnabled() {
+  if (!import.meta.env?.DEV) return false;
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.KENTU_DEBUG_ENERGY);
+}
+function debugEnergyLog(...args) {
+  if (!isKentuEnergyDebugEnabled()) return;
+  // Debug-only energy simulation tracing.
+  console.log(...args);
+}
 
 const getTodayString = () => {
   const d = new Date();
@@ -223,7 +233,7 @@ function computeBaselineEnergy(dailyLog, timelineNodes) {
     sleepEntry.sleepHours ??
     7;
 
-  console.log("Sleep entry detected:", sleepEntry);
+  debugEnergyLog("Sleep entry detected:", sleepEntry);
 
   const deepMinutes =
     sleepEntry.deepMin ??
@@ -499,11 +509,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   let peakEnergyAtWake = null;
   let peakNeuroAtWake = null;
 
-  console.log("initialEnergy:", initialEnergy);
-  console.log("realBaseline:", realBaseline);
-  console.log("baselineEnergy:", baselineEnergy);
-  console.log("nightStartEnergy:", nightStartEnergy);
-  console.log("REAL baseline energy:", realBaseline);
+  debugEnergyLog("initialEnergy:", initialEnergy);
+  debugEnergyLog("realBaseline:", realBaseline);
+  debugEnergyLog("baselineEnergy:", baselineEnergy);
+  debugEnergyLog("nightStartEnergy:", nightStartEnergy);
+  debugEnergyLog("REAL baseline energy:", realBaseline);
 
   for (let h = 0; h <= 24; h++) {
     glycemicMemory *= 0.92;
@@ -697,7 +707,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     currentEnergy = Math.min(currentEnergy, maxEnergyCap);
     previousEnergy = currentEnergy;
 
-    console.log("Simulated energy:", currentEnergy);
+    debugEnergyLog("Simulated energy:", currentEnergy);
 
     let cortisolBase;
     if (h < wake) {
@@ -2707,7 +2717,7 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
     if (!Number.isFinite(durH) || durH <= 0 || durH >= NIGHT_SLEEP_MIN_HOURS) return;
     const napMinutes = durH * 60;
     const boost = Math.round(calculateNapBoost(napMinutes));
-    console.log('KENTU DEBUG - Sonnellino processato:', { durH, napMinutes, boost });
+    debugEnergyLog('KENTU DEBUG - Sonnellino processato:', { durH, napMinutes, boost });
     if (boost <= 0) return;
     napGain += boost;
     napBreakdownRows.push({

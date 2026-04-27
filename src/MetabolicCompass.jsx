@@ -401,7 +401,7 @@ export default function MetabolicCompass({
   const angleDeg = snapshot?.angleDeg ?? 0;
   const magnitude = snapshot?.magnitude ?? 0;
 
-  if (typeof window !== 'undefined') {
+  if (import.meta.env?.DEV && typeof window !== 'undefined' && window.KENTU_DEBUG_METABOLIC) {
     console.log('COMPASS_RENDER_VECTOR', {
       selectedTimeframe,
       unifiedDirectionMode,

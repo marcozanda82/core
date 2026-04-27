@@ -344,20 +344,6 @@ export default function MetabolicUnifiedView({
       `Media periodo: ${Math.round(sourceReadings.kcalBalanceRaw)} kcal/g · Allenamento medio: ${sourceReadings.trainingLoadRaw.toFixed(1)}/100`,
     [sourceReadings]
   );
-  const directionSourceAudit = useMemo(
-    () => ({
-      xRaw: sourceReadings.kcalBalanceRaw,
-      xAfterNeutralBand: applyCalorieTractionNeutralBand(sourceReadings.kcalBalanceRaw),
-      trainingLoadRaw: sourceReadings.trainingLoadRaw,
-      glycemicPenalty: sourceReadings.glycemicInstabilityEstimated,
-      sleepPenalty: sourceReadings.sleepStressPenalty,
-      yAfterPenalty: sourceReadings.yRawWithPenalty,
-      timeframeDays: sourceReadings.windowDays,
-      tractionReason: tractionState.reason,
-    }),
-    [sourceReadings, tractionState.reason]
-  );
-
   const baselineOffset = useMemo(() => {
     const range = timeframeRange;
     if (range) {
@@ -433,6 +419,19 @@ export default function MetabolicUnifiedView({
   const tractionState = useMemo(
     () => tractionVectorFromSourceValues(sourceReadings),
     [sourceReadings]
+  );
+  const directionSourceAudit = useMemo(
+    () => ({
+      xRaw: sourceReadings.kcalBalanceRaw,
+      xAfterNeutralBand: applyCalorieTractionNeutralBand(sourceReadings.kcalBalanceRaw),
+      trainingLoadRaw: sourceReadings.trainingLoadRaw,
+      glycemicPenalty: sourceReadings.glycemicInstabilityEstimated,
+      sleepPenalty: sourceReadings.sleepStressPenalty,
+      yAfterPenalty: sourceReadings.yRawWithPenalty,
+      timeframeDays: sourceReadings.windowDays,
+      tractionReason: tractionState.reason,
+    }),
+    [sourceReadings, tractionState.reason]
   );
   const directionVector = tractionState.vector;
   const unifiedCompassQuadrant = useMemo(
@@ -520,10 +519,12 @@ export default function MetabolicUnifiedView({
   }, [dailyHistory, bodyMetricsHistory, anchorPosition]);
 
   useEffect(() => {
+    if (!isDev || typeof window === 'undefined' || !window.KENTU_DEBUG_METABOLIC) return;
     console.info('[MetabolicMovement] timeframe audit', movementAuditByTimeframe);
-  }, [movementAuditByTimeframe]);
+  }, [isDev, movementAuditByTimeframe]);
 
   useEffect(() => {
+    if (!isDev || typeof window === 'undefined' || !window.KENTU_DEBUG_METABOLIC) return;
     if (selectedTimeframe !== '1d') return;
     const selectedDateUsed = timeframeRange?.endDate ?? null;
     const interpretedQuadrant = String(normalizedMetabolicState?.quadrant || 'neutral');
@@ -557,6 +558,7 @@ export default function MetabolicUnifiedView({
       },
     });
   }, [
+    isDev,
     selectedTimeframe,
     timeframeRange,
     metabolicMapRawDetails,
@@ -568,6 +570,7 @@ export default function MetabolicUnifiedView({
   ]);
 
   useEffect(() => {
+    if (!isDev || typeof window === 'undefined' || !window.KENTU_DEBUG_METABOLIC) return;
     console.info('[MetabolicUnifiedDirection]', {
       selectedTimeframe,
       rawDetailsMeanKcal: Number(metabolicMapRawDetails?.meanKcal ?? 0),
@@ -593,6 +596,7 @@ export default function MetabolicUnifiedView({
       directionModeLabel: unifiedDirectionModeLabel,
     });
   }, [
+    isDev,
     selectedTimeframe,
     metabolicMapRawDetails,
     metabolicMapInputs,
