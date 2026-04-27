@@ -251,26 +251,19 @@ export function getColorFromValue(value) {
   return mixHex(colorFromZoneArray('red', 1), colorFromZoneArray('orange', 0), t);
 }
 
-const QUADRANT_RISK_LABELS = {
-  neutral: 'Equilibrio in monitoraggio',
-  NW: 'Deficit + allenamento',
-  NE: 'Surplus controllato',
-  SW: 'Deficit con basso allenamento',
-  SE: 'Surplus con basso allenamento',
-};
-
-function statusLabelFromSignals(quadrant, energyBalance, trainingLoad, glycemicInstability, sleepHours) {
-  const q = String(quadrant || 'neutral');
-  const e = Number(energyBalance) || 0;
-  const t = Number(trainingLoad) || 0;
-  const g = Number(glycemicInstability) || 0;
-  const s = Number.isFinite(Number(sleepHours)) ? Number(sleepHours) : 8;
-  if (g >= 45 || s < 6) return 'Stress metabolico elevato';
-  if (Math.abs(e) <= 30 && t >= 70) return 'Allenamento alto / energia neutra';
-  if (e <= -40 && t >= 35) return 'Deficit + allenamento';
-  if (e >= 40 && t >= 35) return 'Surplus controllato';
-  if (e >= 40 && t < 35) return 'Surplus con basso allenamento';
-  return QUADRANT_RISK_LABELS[q] || QUADRANT_RISK_LABELS.neutral;
+function statusLabelFromRawSources(rawKcalBalance, rawTrainingLoad) {
+  const kcal = Number(rawKcalBalance) || 0;
+  const training = Number(rawTrainingLoad) || 0;
+  if (kcal < 0 && training < 10) return 'Deficit lieve / nessuno stimolo allenante';
+  if (Math.abs(kcal) <= 75 && training < 10) return 'Equilibrio calorico / nessuno stimolo allenante';
+  if (kcal > 75 && training < 20) return 'Surplus energetico / basso stimolo allenante';
+  if (kcal > 75 && training >= 20) return 'Surplus controllato';
+  if (Math.abs(kcal) <= 75 && training >= 50) return 'Ricomposizione / stimolo allenante';
+  if (kcal < -75 && training >= 50) return 'Deficit + allenamento';
+  if (training >= 70 && Math.abs(kcal) <= 120) return 'Allenamento alto / energia neutra';
+  if (kcal < -75) return 'Deficit energetico';
+  if (kcal > 75) return 'Surplus energetico';
+  return 'Equilibrio in monitoraggio';
 }
 
 /** Profondità: centro più leggibile, bordi leggermente oscurati. */
@@ -390,17 +383,11 @@ export default function MetabolicMap({
   const effectiveDistance = hasNormalizedState
     ? Math.max(0, Number(normalizedMetabolicState.distance) || 0)
     : Math.hypot(displayX, displayY);
-  const effectiveStatusLabel = useMemo(
-    () =>
-      statusLabelFromSignals(
-        effectiveQuadrant,
-        energyBalance,
-        trainingLoad,
-        glycemicInstability,
-        sleepHours
-      ),
-    [effectiveQuadrant, energyBalance, trainingLoad, glycemicInstability, sleepHours]
-  );
+  const effectiveStatusLabel = useMemo(() => {
+    const rawKcal = Number(sourceReadings?.kcalBalanceRaw ?? energyBalance ?? 0);
+    const rawTraining = Number(sourceReadings?.trainingLoadRaw ?? trainingLoad ?? 0);
+    return statusLabelFromRawSources(rawKcal, rawTraining);
+  }, [sourceReadings, energyBalance, trainingLoad]);
 
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY, true);
