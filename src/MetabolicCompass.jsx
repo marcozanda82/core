@@ -825,10 +825,12 @@ export default function MetabolicCompass({
           }}
         >
           <div>x sorgente (kcalBalance raw): {Number(unifiedDirectionAudit?.xRaw ?? 0).toFixed(1)}</div>
+          <div>x dopo banda neutra: {Number(unifiedDirectionAudit?.xAfterNeutralBand ?? 0).toFixed(1)}</div>
           <div>trainingLoad raw: {Number(unifiedDirectionAudit?.trainingLoadRaw ?? 0).toFixed(1)}</div>
           <div>penalita glicemica stimata: {Number(unifiedDirectionAudit?.glycemicPenalty ?? 0).toFixed(1)}</div>
           <div>penalita stress sonno: {Number(unifiedDirectionAudit?.sleepPenalty ?? 0).toFixed(1)}</div>
           <div>y usata (raw - penalita): {Number(unifiedDirectionAudit?.yAfterPenalty ?? 0).toFixed(1)}</div>
+          <div>tractionReason: {String(unifiedDirectionAudit?.tractionReason || 'n/a')}</div>
         </div>
       ) : null}
 

@@ -99,6 +99,7 @@ function filterBodyMetricsByDateRange(bodyMetricsHistory, startDate, endDate) {
 }
 
 const MOVEMENT_INERTIA = 0.02;
+const CALORIE_TRACTION_NEUTRAL_BAND = 75;
 
 function clamp01(v) {
   return Math.max(0, Math.min(1, Number(v) || 0));
@@ -123,20 +124,27 @@ function movementFromMapInputs(mapInputs) {
   };
 }
 
+function applyCalorieTractionNeutralBand(kcalBalanceRaw) {
+  const raw = Number(kcalBalanceRaw) || 0;
+  if (Math.abs(raw) <= CALORIE_TRACTION_NEUTRAL_BAND) return 0;
+  return raw - Math.sign(raw) * CALORIE_TRACTION_NEUTRAL_BAND;
+}
+
 function tractionVectorFromSourceValues(sourceInputs) {
-  const x = Number(sourceInputs?.kcalBalanceRaw) || 0;
+  const xRaw = Number(sourceInputs?.kcalBalanceRaw) || 0;
+  const x = applyCalorieTractionNeutralBand(xRaw);
   const trainingRaw = Number(sourceInputs?.trainingLoadRaw) || 0;
   const glycemicPenalty = Number(sourceInputs?.glycemicInstabilityEstimated) || 0;
   const sleepPenalty = Number(sourceInputs?.sleepStressPenalty) || 0;
   const y = trainingRaw - glycemicPenalty - sleepPenalty;
   const len = Math.hypot(x, y);
 
-  if (!Number.isFinite(len) || len < 3) {
+  if (!Number.isFinite(len) || len < 10) {
     return {
       vector: { x: 0, y: 0 },
       available: false,
       magnitude: 0,
-      reason: 'traction_too_weak',
+      reason: 'traction_neutral_band',
     };
   }
 
@@ -339,13 +347,15 @@ export default function MetabolicUnifiedView({
   const directionSourceAudit = useMemo(
     () => ({
       xRaw: sourceReadings.kcalBalanceRaw,
+      xAfterNeutralBand: applyCalorieTractionNeutralBand(sourceReadings.kcalBalanceRaw),
       trainingLoadRaw: sourceReadings.trainingLoadRaw,
       glycemicPenalty: sourceReadings.glycemicInstabilityEstimated,
       sleepPenalty: sourceReadings.sleepStressPenalty,
       yAfterPenalty: sourceReadings.yRawWithPenalty,
       timeframeDays: sourceReadings.windowDays,
+      tractionReason: tractionState.reason,
     }),
-    [sourceReadings]
+    [sourceReadings, tractionState.reason]
   );
 
   const baselineOffset = useMemo(() => {
