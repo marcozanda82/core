@@ -84,6 +84,20 @@ import SpieInfoOverlay from './features/salaComandi/overlays/SpieInfoOverlay';
 import SleepPromptOverlay from './features/salaComandi/overlays/SleepPromptOverlay';
 import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
 import useFoodInputEngine from './features/salaComandi/hooks/useFoodInputEngine';
+import { findBestFoodMatch, findRecentFoodHabit } from './features/salaComandi/utils/foodUtils';
+import {
+  mealFoodsRead,
+  planningMealSlotKeyForFirebase,
+  normalizeTimingByMacroForPlanningDoc,
+  buildPlanningFirebaseDoc,
+} from './features/salaComandi/utils/planningUtils';
+import {
+  stripInvisibleContextFromVisibleUserText,
+  collectDispensaProbableFoods,
+  getInvisibleContext,
+} from './features/salaComandi/utils/aiContextUtils';
+import { normalizeAddMenuOrderState } from './features/salaComandi/utils/menuUtils';
+import { formatBodyBatteryValue } from './features/salaComandi/utils/bodyMetricsUtils';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { recalculateUserTargets, buildMacroSplitFromKcal } from './targetsEngine';
@@ -283,255 +297,6 @@ function readDismissedAiCoachInsights() {
   }
 }
 
-/**
- * Match migliore sul database alimenti: esatto > bidirezionale (includes) con score da differenza di lunghezza.
- * @param {string} searchQuery
- * @param {Record<string, { desc?: string, name?: string }>} db
- * @returns {string|null} chiave dell'entry nel db o null
- */
-function findBestFoodMatch(searchQuery, db) {
-  if (!searchQuery || !db) return null;
-  const query = searchQuery.toLowerCase().trim();
-  if (!query) return null;
-  let bestMatchKey = null;
-  let bestScore = -1;
-
-  for (const key in db) {
-    if (!Object.prototype.hasOwnProperty.call(db, key)) continue;
-    const item = db[key];
-    const dbName = (item.desc || item.name || '').toLowerCase().trim();
-    if (!dbName) continue;
-
-    if (dbName === query) return key;
-
-    if (dbName.includes(query) || query.includes(dbName)) {
-      const lengthDiff = Math.abs(dbName.length - query.length);
-      const score = 1000 - lengthDiff;
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatchKey = key;
-      }
-    }
-  }
-  return bestMatchKey;
-}
-
-/**
- * Abitudine / recency: match su foodDb + ultima grammatura usata nello storico (log più recenti per primi).
- * @param {string} query
- * @param {Record<string, object>} foodDb
- * @param {Array} flatLog — es. dailyLog (+ simulated) già normalizzato; ordine [più recente, …]
- */
-function findRecentFoodHabit(query, foodDb, flatLog) {
-  if (!query || !foodDb) return null;
-  const bestKey = findBestFoodMatch(query, foodDb);
-  if (!bestKey) return null;
-  const item = foodDb[bestKey];
-  if (!item) return null;
-  const logArr = Array.isArray(flatLog) ? flatLog : [];
-  let lastQty = null;
-  for (let i = 0; i < logArr.length; i++) {
-    const e = logArr[i];
-    if (e.type !== 'food' && e.type !== 'recipe') continue;
-    const nm = e.desc || e.name;
-    if (!nm || typeof nm !== 'string') continue;
-    const k = findBestFoodMatch(nm.trim(), foodDb);
-    if (k === bestKey) {
-      const q = Number(e.qta ?? e.weight);
-      if (Number.isFinite(q) && q > 0) {
-        lastQty = Math.round(q);
-        break;
-      }
-    }
-  }
-  const dq = Number(item.defaultQty);
-  const defaultQty =
-    lastQty != null ? lastQty : Number.isFinite(dq) && dq > 0 ? Math.round(dq) : 150;
-  return {
-    dbKey: bestKey,
-    name: item.desc || item.name || query,
-    qty: defaultQty,
-  };
-}
-
-/** Pasto / nodo piano: `foods` sempre array, mai undefined. */
-function mealFoodsRead(meal) {
-  const f = meal?.foods;
-  return Array.isArray(f) ? f : [];
-}
-
-/** Chiave stabile pasto pianificato (mealType canonico + mealTime) per `planning/{uid}/{date}`. */
-function planningMealSlotKeyForFirebase(row) {
-  const mt = toCanonicalMealType(String(row?.mealType || '').split('_')[0]) || 'snack';
-  const t = typeof row?.mealTime === 'number' && !Number.isNaN(row.mealTime) ? row.mealTime : 0;
-  return `${mt}_${t.toFixed(3)}`;
-}
-
-const PLANNING_TIMING_SLOT_IDS = new Set(['mattina', 'pomeriggio', 'sera']);
-
-/** `timingByMacro` su RTDB: array di fasce per macro (migrazione da stringa singola). */
-function normalizeTimingByMacroForPlanningDoc(raw) {
-  if (!raw || typeof raw !== 'object') return {};
-  const out = {};
-  for (const [k, v] of Object.entries(raw)) {
-    if (Array.isArray(v)) {
-      const arr = [];
-      for (const x of v) {
-        const s = String(x).trim();
-        if (PLANNING_TIMING_SLOT_IDS.has(s) && !arr.includes(s)) arr.push(s);
-      }
-      out[k] = arr;
-    } else if (typeof v === 'string' && PLANNING_TIMING_SLOT_IDS.has(v)) {
-      out[k] = [v];
-    } else {
-      out[k] = [];
-    }
-  }
-  return out;
-}
-
-/**
- * Documento RTDB `planning/{userId}/{date}` — separato da tracker_data.
- * @param {object} payload — output PlanningWizard (ghostMeals + wizardMeta + workout flags)
- */
-function buildPlanningFirebaseDoc(payload) {
-  const ghostList = Array.isArray(payload?.ghostMeals) ? payload.ghostMeals : [];
-  const meta = payload?.wizardMeta || {};
-  const stagingDraftBySlot = {};
-  const draftMap = meta.stagingDraftById && typeof meta.stagingDraftById === 'object' ? meta.stagingDraftById : {};
-  for (const g of ghostList) {
-    const key = planningMealSlotKeyForFirebase(g);
-    const fromMeta = draftMap[g.id];
-    if (Array.isArray(fromMeta) && fromMeta.length > 0) {
-      stagingDraftBySlot[key] = fromMeta.map((x) =>
-        typeof x === 'string' ? x : `${Math.round(Number(x?.qty ?? x?.weight) || 0) || '?'}g ${String(x?.name || x?.desc || '').trim()}`.trim()
-      );
-    } else if (mealFoodsRead(g).length > 0) {
-      stagingDraftBySlot[key] = mealFoodsRead(g).map((f) =>
-        typeof f === 'string'
-          ? f
-          : `${Math.round(Number(f?.qty) || 0) || '?'}g ${String(f?.name || '').trim()}`.trim()
-      );
-    }
-  }
-  const meals = ghostList.map((g) => ({
-    mealType: toCanonicalMealType(String(g.mealType || '').split('_')[0]) || 'snack',
-    mealTime: typeof g.mealTime === 'number' && !Number.isNaN(g.mealTime) ? g.mealTime : null,
-    time: g.time != null ? String(g.time) : undefined,
-    title: String(g.title || '').trim(),
-    microDesc: String(g.microDesc || '').trim(),
-    draftFoods: Array.isArray(g.draftFoods) ? g.draftFoods : [],
-    foods: normalizeMealFoodsArray(mealFoodsRead(g)),
-    target: g.target != null ? g.target : undefined,
-    source: g.source || undefined,
-  }));
-  const workoutTimesDecPersist = (Array.isArray(payload.workoutTimesDec)
-    ? payload.workoutTimesDec
-    : typeof payload.workoutTimeDec === 'number' && !Number.isNaN(payload.workoutTimeDec)
-      ? [payload.workoutTimeDec]
-      : []
-  ).filter((x) => typeof x === 'number' && !Number.isNaN(x));
-  const activities = {
-    macros: Array.isArray(meta.macros) ? [...meta.macros] : [],
-    muscles: Array.isArray(meta.muscles) ? [...meta.muscles] : [],
-    timingByMacro: normalizeTimingByMacroForPlanningDoc(meta.timingByMacro),
-    addGhostWorkout: Boolean(payload.addGhostWorkout),
-    workoutTimeDec:
-      typeof payload.workoutTimeDec === 'number' && !Number.isNaN(payload.workoutTimeDec)
-        ? payload.workoutTimeDec
-        : workoutTimesDecPersist[0] ?? null,
-    workoutTimesDec: workoutTimesDecPersist,
-    stagingDraftBySlot,
-  };
-  return { meals, activities, createdAt: Date.now() };
-}
-
-/** Rimuove il prefisso iniettato per l'API dalla cronologia conversazione inviata all'API. */
-function stripInvisibleContextFromVisibleUserText(text) {
-  if (text == null || typeof text !== 'string') return text;
-  return text
-    .replace(/\[CONTEXT_LIVE:[^\]]*\]\s*/gi, '')
-    .replace(/\[CONTESTO DI SISTEMA INVISIBILE:[^\]]*\]\s*/gi, '')
-    .trim();
-}
-
-/**
- * Ultimi N alimenti/ricette distinti dai log degli ultimi `numDays` giorni (più recenti per primi).
- */
-function collectDispensaProbableFoods(fullHistory, anchorDateStr, maxDistinct, numDays) {
-  if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr || maxDistinct <= 0) return 'n/d';
-  const seen = new Set();
-  const out = [];
-  const days = Math.max(1, Math.min(14, numDays || 4));
-  for (let d = 0; d < days; d++) {
-    const dStr = addDays(anchorDateStr, -d);
-    const rawLog = getLogFromStoricoTree(fullHistory, dStr) || [];
-    const log = normalizeLogData(Array.isArray(rawLog) ? rawLog : Object.values(rawLog));
-    for (let i = 0; i < log.length; i++) {
-      const item = log[i];
-      if (!item || (item.type !== 'food' && item.type !== 'recipe')) continue;
-      const raw = (item.desc || item.name || '').trim();
-      if (!raw) continue;
-      const key = raw
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(raw.length > 48 ? `${raw.slice(0, 45)}…` : raw);
-      if (out.length >= maxDistinct) return out.join(', ');
-    }
-  }
-  return out.length ? out.join(', ') : 'nessun dato recente';
-}
-
-/**
- * Contesto live iniettato nell'ultimo messaggio utente verso l'API (non mostrato in UI se non salvato nel testo).
- */
-function getInvisibleContext({
-  bodyBatteryPercent,
-  dynamicDailyKcal,
-  totali,
-  userTargets,
-  fullHistory,
-  anchorDateStr,
-  trainingWaveSnippet,
-  mealTypeForSmart,
-  dailyLogForSmart,
-  kentuCalorieStrategy,
-}) {
-  const bb = Math.round(Number(bodyBatteryPercent) || 0);
-  const dynK = Number(dynamicDailyKcal) || 0;
-  const eatenK = Number(totali?.kcal) || 0;
-  const kcalSurplus = eatenK > dynK ? Math.round(eatenK - dynK) : 0;
-  const resKcal = Math.round(Math.max(0, dynK - eatenK));
-  const kcalBalanceSnippet =
-    kcalSurplus > 0 ? `SURPLUS +${kcalSurplus} kcal` : `Residuo: ${resKcal}kcal`;
-  const tProt = Number(userTargets?.prot ?? 150);
-  const tCarb = Number(userTargets?.carb ?? 200);
-  const tFat = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 65);
-  const eProt = Number(totali?.prot) || 0;
-  const eCarb = Number(totali?.carb) || 0;
-  const eFat = Number(totali?.fatTotal ?? totali?.fat) || 0;
-  const rProt = Math.max(0, Math.round((tProt - eProt) * 10) / 10);
-  const rCarb = Math.max(0, Math.round((tCarb - eCarb) * 10) / 10);
-  const rFat = Math.max(0, Math.round((tFat - eFat) * 10) / 10);
-  const dispensa = collectDispensaProbableFoods(fullHistory, anchorDateStr, 10, 4);
-  const nota =
-    'L\'utente soffre di problemi di cortisolo alto quando chiede consigli sulla cena.';
-  const wave = trainingWaveSnippet ? ` ${trainingWaveSnippet}` : '';
-  const smartPhysio =
-    mealTypeForSmart && dailyLogForSmart && userTargets
-      ? buildSmartMealPhysioContextSnippet(mealTypeForSmart, dailyLogForSmart, userTargets)
-      : '';
-  const smartPart = smartPhysio ? ` Smart: ${smartPhysio}.` : '';
-  const stratPart =
-    kentuCalorieStrategy != null && String(kentuCalorieStrategy).trim() !== ''
-      ? ` Strategia kcal oggi: ${calorieStrategyShortLabelIt(kentuCalorieStrategy)}.`
-      : '';
-  return `[CONTEXT_LIVE: BB: ${bb}%, ${kcalBalanceSnippet}, ${rProt}P/${rCarb}C/${rFat}F. Dispensa: ${dispensa}. Nota: ${nota}.${smartPart}${stratPart}${wave}]`;
-}
 
 /** Totali kcal/P/C/F solo da voci food/recipe nel log giornaliero. */
 function aggregateFoodRecipeDayTotals(log) {
@@ -792,11 +557,6 @@ function extractAndStripDailyPlan(rawText) {
   return { stripped, plan };
 }
 
-function formatBodyBatteryValue(v) {
-  const n = Math.round(Number(v) * 10) / 10;
-  if (n === 0) return '0%';
-  return `${n > 0 ? '+' : ''}${n}%`;
-}
 
 /** Arco semicircolare Body Battery — look neon sottile; 💤 cyan se boost sonnellino. */
 function EnergyArc({ percentage, size = 'small', hasNapBoost = false, showText = true }) {
@@ -1770,27 +1530,6 @@ function kentuChatHistoryForPersistence(messages) {
 
 const ADD_MENU_ORDER_LS_KEY = 'kentu_add_menu_order';
 
-function normalizeAddMenuOrderState(saved, defaultOrder) {
-  const allowed = new Set(defaultOrder);
-  if (!Array.isArray(saved)) return [...defaultOrder];
-  const out = [];
-  const seen = new Set();
-  for (const id of saved) {
-    if (id === 'luce') continue;
-    if (allowed.has(id) && !seen.has(id)) {
-      out.push(id);
-      seen.add(id);
-    }
-  }
-  for (const id of defaultOrder) {
-    if (!seen.has(id)) {
-      if (id === 'plan') out.unshift(id);
-      else out.push(id);
-      seen.add(id);
-    }
-  }
-  return out;
-}
 
 function getNowDecimalHourForPlanMerge() {
   const d = new Date();
