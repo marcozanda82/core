@@ -76,6 +76,12 @@ import PastoDrawer from './components/drawers/PastoDrawer';
 import BottomChrome from './features/salaComandi/BottomChrome';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
 import OverlayHost from './features/salaComandi/OverlayHost';
+import ChoiceModalOverlay from './features/salaComandi/overlays/ChoiceModalOverlay';
+import DateCalendarOverlay from './features/salaComandi/overlays/DateCalendarOverlay';
+import BatteryModalOverlay from './features/salaComandi/overlays/BatteryModalOverlay';
+import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverlay';
+import AlcoholPopupOverlay from './features/salaComandi/overlays/AlcoholPopupOverlay';
+import SleepModalOverlay from './features/salaComandi/overlays/SleepModalOverlay';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { recalculateUserTargets, buildMacroSplitFromKcal } from './targetsEngine';
@@ -10599,6 +10605,98 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
     ? mealPieDisplayData.findIndex((e) => e.id === selectedMealCenter.id)
     : -1;
 
+  const handlePrevCalendarMonth = () => {
+    const [y, m] = calendarMonthIso.split('-').map(Number);
+    const d = new Date(y, m - 2, 1);
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    setCalendarMonthIso(`${d.getFullYear()}-${mo}`);
+  };
+
+  const handleNextCalendarMonth = () => {
+    const [y, m] = calendarMonthIso.split('-').map(Number);
+    const d = new Date(y, m, 1);
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    setCalendarMonthIso(`${d.getFullYear()}-${mo}`);
+  };
+
+  const handleSelectCalendarDate = (iso) => {
+    navigateToDate(iso);
+    setShowDateCalendarModal(false);
+  };
+
+  const handleCloseChoiceModal = () => {
+    setShowChoiceModal(false);
+    setAddChoiceView('main');
+  };
+
+  const handleSaveChoiceStimulant = () => {
+    const id = Date.now().toString();
+    const node = { id, type: 'stimulant', subtype: stimulantSubtype, time: stimulantTime };
+    const next = [...manualNodes, node];
+    setManualNodes(next);
+    syncDatiFirebase(dailyLog, next);
+    setShowChoiceModal(false);
+    setAddChoiceView('main');
+  };
+
+  const sleepDurationLabel = (() => {
+    const dur = computeSleepDurationHours(
+      parseTimeStrToDecimal(sleepFormBedStr),
+      parseTimeStrToDecimal(sleepFormWakeStr)
+    );
+    const hh = Math.floor(dur);
+    const mm = Math.round((dur % 1) * 60);
+    return `${hh}h ${String(mm).padStart(2, '0')}m`;
+  })();
+
+  const handleSaveSleepModal = () => {
+    const bedDec = parseTimeStrToDecimal(sleepFormBedStr);
+    const wakeDec = parseTimeStrToDecimal(sleepFormWakeStr);
+    const hours = computeSleepDurationHours(bedDec, wakeDec);
+    if (!(hours > 0)) {
+      window.alert('Controlla gli orari di addormentamento e risveglio.');
+      return;
+    }
+    const id = sleepModal.editingId || `sleep_${Date.now()}`;
+    const logLook = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
+    const existing = sleepModal.editingId
+      ? logLook.find((e) => e?.id === sleepModal.editingId && e?.type === 'sleep')
+      : null;
+    if (sleepModal.editingId && !existing) {
+      console.warn('[SalaComandi] sleep entry not found while saving edit', { editingId: sleepModal.editingId });
+    }
+    const entry = {
+      type: 'sleep',
+      id,
+      wakeTime: wakeDec,
+      bedtime: bedDec,
+      sleepStart: bedDec,
+      sleepEnd: wakeDec,
+      hours,
+      duration: hours,
+      sleepHours: hours,
+      deepMin: existing?.deepMin ?? 60,
+      remMin: existing?.remMin ?? 60,
+      ...(existing?.hr != null ? { hr: existing.hr } : {}),
+      ...(existing?.quality != null ? { quality: existing.quality } : {}),
+    };
+    if (isSimulationMode) {
+      setSimulatedLog((prev) => {
+        const base = prev || [];
+        const rest = sleepModal.editingId ? base.filter((e) => e.id !== sleepModal.editingId) : base;
+        return [...rest, entry];
+      });
+    } else {
+      const base = dailyLog || [];
+      const rest = sleepModal.editingId ? base.filter((e) => e.id !== sleepModal.editingId) : base;
+      const next = [...rest, entry];
+      setDailyLog(next);
+      syncDatiFirebase(next, manualNodes || []);
+    }
+    dismissKentuSleepTrigger();
+    setSleepModal(null);
+  };
+
   // ========================================================
   // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
   // ========================================================
@@ -14465,167 +14563,31 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           </div>
         </div>
       )}
-      {showDateCalendarModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.78)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 100040,
-            padding: '16px',
-          }}
-          onClick={() => setShowDateCalendarModal(false)}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: 420,
-              background: '#0b0b0c',
-              border: '1px solid rgba(255,255,255,0.14)',
-              borderRadius: 16,
-              padding: 14,
-              boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  const [y, m] = calendarMonthIso.split('-').map(Number);
-                  const d = new Date(y, m - 2, 1);
-                  const mo = String(d.getMonth() + 1).padStart(2, '0');
-                  setCalendarMonthIso(`${d.getFullYear()}-${mo}`);
-                }}
-                style={{ background: 'none', border: 'none', color: '#7dd3fc', fontSize: '1rem', cursor: 'pointer' }}
-                aria-label="Mese precedente"
-              >
-                ◀
-              </button>
-              <div style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>
-                {(() => {
-                  const [y, m] = calendarMonthIso.split('-').map(Number);
-                  return new Date(y, m - 1, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
-                })()}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const [y, m] = calendarMonthIso.split('-').map(Number);
-                  const d = new Date(y, m, 1);
-                  const mo = String(d.getMonth() + 1).padStart(2, '0');
-                  setCalendarMonthIso(`${d.getFullYear()}-${mo}`);
-                }}
-                style={{ background: 'none', border: 'none', color: '#7dd3fc', fontSize: '1rem', cursor: 'pointer' }}
-                aria-label="Mese successivo"
-              >
-                ▶
-              </button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 8 }}>
-              {['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((wd, idx) => (
-                <div key={`${wd}_${idx}`} style={{ textAlign: 'center', color: '#71717a', fontSize: '0.68rem', fontWeight: 700 }}>
-                  {wd}
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
-              {calendarGridDays.map((iso, idx) => {
-                if (!iso) return <div key={`empty_${idx}`} style={{ height: 36 }} />;
-                const zone = calendarZoneByDate[iso]?.zone ?? null;
-                const zoneStyle =
-                  zone === 'blue'
-                    ? { background: 'linear-gradient(180deg, #1d4ed8 0%, #0ea5e9 100%)', color: '#e0f2fe' }
-                    : zone === 'green'
-                      ? { background: 'linear-gradient(180deg, #15803d 0%, #22c55e 100%)', color: '#ecfdf5' }
-                      : zone === 'orange'
-                        ? { background: 'linear-gradient(180deg, #c2410c 0%, #f59e0b 100%)', color: '#fff7ed' }
-                        : zone === 'red'
-                          ? { background: 'linear-gradient(180deg, #b91c1c 0%, #ef4444 100%)', color: '#fee2e2' }
-                          : { background: 'rgba(255,255,255,0.04)', color: '#cbd5e1' };
-                const isSelected = iso === currentTrackerDate;
-                return (
-                  <button
-                    key={iso}
-                    type="button"
-                    onClick={() => {
-                      navigateToDate(iso);
-                      setShowDateCalendarModal(false);
-                    }}
-                    style={{
-                      height: 36,
-                      borderRadius: 10,
-                      border: isSelected ? '2px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-                      fontSize: '0.78rem',
-                      fontWeight: isSelected ? 800 : 600,
-                      cursor: 'pointer',
-                      ...zoneStyle,
-                    }}
-                    title={calendarZoneByDate[iso]?.score != null ? `Score ${calendarZoneByDate[iso].score}` : iso}
-                  >
-                    {iso.slice(-2)}
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 10, fontSize: '0.64rem', color: '#94a3b8', flexWrap: 'wrap' }}>
-              <span>🔵 ottimale</span>
-              <span>🟢 buono</span>
-              <span>🟠 warning</span>
-              <span>🔴 critico</span>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Pop-up Scelta Azione (Ottimizzato per schermi piccoli) */}
-      {showChoiceModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100020, padding: '15px' }} onClick={() => { setShowChoiceModal(false); setAddChoiceView('main'); }}>
-          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '25px', padding: '20px', width: '100%', maxWidth: '350px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 10px 50px rgba(0,0,0,0.9)' }} onClick={e => e.stopPropagation()}>
-            {addChoiceView === 'stimulant' ? (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <button type="button" onClick={() => setAddChoiceView('main')} style={{ background: 'none', border: 'none', color: '#888', fontSize: '0.9rem', cursor: 'pointer' }}>← Indietro</button>
-                  <h3 style={{ margin: 0, color: '#fff', fontSize: '1rem', letterSpacing: '1px' }}>☕ Sostanza energizzante</h3>
-                  <div style={{ width: '70px' }} />
-                </div>
-                <p style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#aaa' }}>Tipo</p>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                  {['caffè', 'tè', 'energy drink'].map((sub) => (
-                    <button key={sub} type="button" onClick={() => setStimulantSubtype(sub)} style={{ flex: 1, padding: '10px', borderRadius: '12px', border: stimulantSubtype === sub ? '2px solid #f59e0b' : '1px solid #333', background: stimulantSubtype === sub ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)', color: stimulantSubtype === sub ? '#f59e0b' : '#fff', fontSize: '0.85rem', fontWeight: stimulantSubtype === sub ? 'bold' : 'normal', cursor: 'pointer' }}>
-                      {sub === 'caffè' ? '☕ Caffè' : sub === 'tè' ? '🍵 Tè' : '🥤 Energy'}
-                    </button>
-                  ))}
-                </div>
-                <p style={{ margin: '0 0 8px 0', fontSize: '0.85rem', color: '#aaa' }}>Orario</p>
-                <input type="range" min={0} max={24} step={0.25} value={stimulantTime} onChange={(e) => setStimulantTime(Number(e.target.value))} style={{ width: '100%', marginBottom: '8px' }} />
-                <span style={{ fontSize: '0.9rem', color: '#00e5ff', marginBottom: '16px' }}>{Math.floor(stimulantTime)}:{String(Math.round((stimulantTime % 1) * 60)).padStart(2, '0')}</span>
-                <button type="button" onClick={() => {
-                  const id = Date.now().toString();
-                  const node = { id, type: 'stimulant', subtype: stimulantSubtype, time: stimulantTime };
-                  const next = [...manualNodes, node];
-                  setManualNodes(next);
-                  syncDatiFirebase(dailyLog, next);
-                  setShowChoiceModal(false);
-                  setAddChoiceView('main');
-                }} style={{ padding: '14px', background: '#f59e0b', color: '#000', border: 'none', borderRadius: '12px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer' }}>
-                  Salva
-                </button>
-              </>
-            ) : (
-              <AddEventMenuGrid
-                menuOrder={addEventMenuOrder}
-                onOrderCommit={commitAddEventMenuOrder}
-                onItemActivate={(id) => handleAddEventMenuItem(id, 'modal')}
-                title="AGGIUNGI EVENTO"
-                headingStyle={{ marginBottom: 0 }}
-              />
-            )}
-          </div>
-        </div>
-      )}
+      <DateCalendarOverlay
+        showDateCalendarModal={showDateCalendarModal}
+        onClose={() => setShowDateCalendarModal(false)}
+        calendarMonthIso={calendarMonthIso}
+        onPrevMonth={handlePrevCalendarMonth}
+        onNextMonth={handleNextCalendarMonth}
+        calendarGridDays={calendarGridDays}
+        calendarZoneByDate={calendarZoneByDate}
+        currentTrackerDate={currentTrackerDate}
+        onSelectDate={handleSelectCalendarDate}
+      />
+      <ChoiceModalOverlay
+        showChoiceModal={showChoiceModal}
+        onClose={handleCloseChoiceModal}
+        addChoiceView={addChoiceView}
+        onBackToMain={() => setAddChoiceView('main')}
+        stimulantSubtype={stimulantSubtype}
+        setStimulantSubtype={setStimulantSubtype}
+        stimulantTime={stimulantTime}
+        setStimulantTime={setStimulantTime}
+        onSaveStimulant={handleSaveChoiceStimulant}
+        addEventMenuOrder={addEventMenuOrder}
+        commitAddEventMenuOrder={commitAddEventMenuOrder}
+        handleAddEventMenuItem={handleAddEventMenuItem}
+      />
 
       <OverlayHost
         showUnsavedMealWarning={showUnsavedMealWarning}
@@ -14743,190 +14705,16 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         </div>
       )}
 
-      {sleepModal != null && (
-        <div
-          className="modal-overlay"
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            background: 'rgba(0,0,0,0.85)',
-            zIndex: 100025,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-          }}
-          onClick={() => setSleepModal(null)}
-        >
-          <div
-            className="modal-content"
-            style={{
-              background: '#1a1a20',
-              color: '#fff',
-              padding: '24px',
-              borderRadius: '16px',
-              width: '100%',
-              maxWidth: '380px',
-              border: '1px solid #333',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ margin: '0 0 8px 0', color: '#4ba3e3', fontSize: '1.05rem' }}>
-              {sleepModal.editingId ? 'Modifica sonno' : 'Registra sonno'}
-            </h3>
-            <p style={{ margin: '0 0 16px 0', fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.45 }}>
-              Inserisci ora di addormentamento e di risveglio; la durata si calcola automaticamente (anche oltre mezzanotte).
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px' }}>
-              <div>
-                <label style={{ display: 'block', color: '#aaa', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 600 }}>
-                  Ora in cui ti sei addormentato
-                </label>
-                <input
-                  type="time"
-                  value={sleepFormBedStr}
-                  onChange={(e) => setSleepFormBedStr(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '10px',
-                    background: '#111',
-                    border: '1px solid #444',
-                    color: '#fff',
-                    fontSize: '1rem',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', color: '#aaa', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 600 }}>
-                  Ora del risveglio
-                </label>
-                <input
-                  type="time"
-                  value={sleepFormWakeStr}
-                  onChange={(e) => setSleepFormWakeStr(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '10px',
-                    background: '#111',
-                    border: '1px solid #444',
-                    color: '#fff',
-                    fontSize: '1rem',
-                  }}
-                />
-              </div>
-            </div>
-            <div
-              style={{
-                marginBottom: '18px',
-                padding: '12px',
-                borderRadius: '10px',
-                background: 'rgba(75, 163, 227, 0.12)',
-                border: '1px solid rgba(75, 163, 227, 0.35)',
-                fontSize: '0.9rem',
-                color: '#e2e8f0',
-              }}
-            >
-              Durata stimata:{' '}
-              <strong style={{ color: '#4ba3e3' }}>
-                {(() => {
-                  const dur = computeSleepDurationHours(
-                    parseTimeStrToDecimal(sleepFormBedStr),
-                    parseTimeStrToDecimal(sleepFormWakeStr)
-                  );
-                  const hh = Math.floor(dur);
-                  const mm = Math.round((dur % 1) * 60);
-                  return `${hh}h ${String(mm).padStart(2, '0')}m`;
-                })()}
-              </strong>
-            </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                type="button"
-                onClick={() => setSleepModal(null)}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  background: '#333',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '10px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                }}
-              >
-                Annulla
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const bedDec = parseTimeStrToDecimal(sleepFormBedStr);
-                  const wakeDec = parseTimeStrToDecimal(sleepFormWakeStr);
-                  const hours = computeSleepDurationHours(bedDec, wakeDec);
-                  if (!(hours > 0)) {
-                    window.alert('Controlla gli orari di addormentamento e risveglio.');
-                    return;
-                  }
-                  const id = sleepModal.editingId || `sleep_${Date.now()}`;
-                  const logLook = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
-                  const existing = sleepModal.editingId
-                    ? logLook.find((e) => e?.id === sleepModal.editingId && e?.type === 'sleep')
-                    : null;
-                  if (sleepModal.editingId && !existing) {
-                    console.warn('[SalaComandi] sleep entry not found while saving edit', { editingId: sleepModal.editingId });
-                  }
-                  const entry = {
-                    type: 'sleep',
-                    id,
-                    wakeTime: wakeDec,
-                    bedtime: bedDec,
-                    sleepStart: bedDec,
-                    sleepEnd: wakeDec,
-                    hours,
-                    duration: hours,
-                    sleepHours: hours,
-                    deepMin: existing?.deepMin ?? 60,
-                    remMin: existing?.remMin ?? 60,
-                    ...(existing?.hr != null ? { hr: existing.hr } : {}),
-                    ...(existing?.quality != null ? { quality: existing.quality } : {}),
-                  };
-                  if (isSimulationMode) {
-                    setSimulatedLog((prev) => {
-                      const base = prev || [];
-                      const rest = sleepModal.editingId ? base.filter((e) => e.id !== sleepModal.editingId) : base;
-                      return [...rest, entry];
-                    });
-                  } else {
-                    const base = dailyLog || [];
-                    const rest = sleepModal.editingId ? base.filter((e) => e.id !== sleepModal.editingId) : base;
-                    const next = [...rest, entry];
-                    setDailyLog(next);
-                    syncDatiFirebase(next, manualNodes || []);
-                  }
-                  dismissKentuSleepTrigger();
-                  setSleepModal(null);
-                }}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  background: '#4ba3e3',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '10px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                }}
-              >
-                Salva
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SleepModalOverlay
+        sleepModal={sleepModal}
+        onClose={() => setSleepModal(null)}
+        sleepFormBedStr={sleepFormBedStr}
+        setSleepFormBedStr={setSleepFormBedStr}
+        sleepFormWakeStr={sleepFormWakeStr}
+        setSleepFormWakeStr={setSleepFormWakeStr}
+        sleepDurationLabel={sleepDurationLabel}
+        onSave={handleSaveSleepModal}
+      />
 
       {editingQuickNode && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 100020, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setEditingQuickNode(null)}>
@@ -15746,57 +15534,14 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         </div>
       )}
 
-      {/* MODAL REPORT GIORNALIERO A 5 STELLE */}
-      {showReportModal && dailyReport?.ready && dailyReportDisplay && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100020, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={() => setShowReportModal(false)}>
-          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '25px', maxWidth: '380px', width: '100%', position: 'relative', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '8px', borderBottom: '1px solid #222', paddingBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#ffc107' }}>★</span> Report Giornaliero
-            </h3>
-            <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '20px' }}>
-              {currentDateObj.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
-            </p>
-            {[
-              { key: 'muscle', label: 'Crescita Muscolare', emoji: '💪' },
-              { key: 'fat', label: 'Perdita di Grasso', emoji: '🔥' },
-              { key: 'neuro', label: 'Recupero Neurologico', emoji: '🧠' },
-              { key: 'fast', label: 'Pulizia Cellulare (Digiuno)', emoji: '🕐' }
-            ].map(({ key, label, emoji }) => {
-              const item = dailyReportDisplay[key];
-              const score = typeof item === 'object' && item != null && 'score' in item ? item.score : (Number(item) || 0);
-              const reason = typeof item === 'object' && item != null && 'reason' in item ? item.reason : '';
-              return (
-                <div key={key} style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#aaa', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                    <span>{emoji} {label}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setTrendModalMetric(key); }}
-                      style={{ background: 'transparent', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', marginLeft: '10px' }}
-                      title="Vedi Trend Storico"
-                    >
-                      📈
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', gap: '2px' }}>
-                    {[1, 2, 3, 4, 5].map(n => (
-                      <span key={n} style={{ color: n <= score ? '#ffc107' : '#333', fontSize: '1.1rem' }}>★</span>
-                    ))}
-                  </div>
-                  {reason ? (
-                    <div style={{ fontSize: '0.85rem', color: '#888', fontStyle: 'italic', marginTop: '4px', lineHeight: '1.2' }}>
-                      {reason}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-            <button onClick={() => setShowReportModal(false)} style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}>
-              Chiudi
-            </button>
-          </div>
-        </div>
-      )}
+      <ReportModalOverlay
+        showReportModal={showReportModal}
+        dailyReport={dailyReport}
+        dailyReportDisplay={dailyReportDisplay}
+        onClose={() => setShowReportModal(false)}
+        currentDateObj={currentDateObj}
+        setTrendModalMetric={setTrendModalMetric}
+      />
 
       {/* Trend storico valutazioni report (cumulativo) */}
       {trendModalMetric && (
@@ -15875,9 +15620,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         </div>
       )}
 
-      {showBatteryModal && (
-        <BodyBatteryModal onClose={() => setShowBatteryModal(false)} batteryData={bodyBattery} />
-      )}
+      <BatteryModalOverlay
+        showBatteryModal={showBatteryModal}
+        BodyBatteryModalComponent={BodyBatteryModal}
+        onClose={() => setShowBatteryModal(false)}
+        batteryData={bodyBattery}
+      />
 
       {showSncPopup && (
         <div
@@ -15957,179 +15705,17 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         );
       })()}
 
-      {showAlcoholPopup && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, backdropFilter: 'blur(4px)' }} onClick={() => setShowAlcoholPopup(false)}>
-          <div style={{ background: '#1a1a1c', padding: '24px', borderRadius: '20px', width: '90%', maxWidth: '380px', border: '1px solid #333', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <span style={{ fontSize: '1.8rem' }}>🍷</span>
-              <h3 style={{ margin: 0, color: '#fff' }}>Aggiungi Drink</h3>
-            </div>
-
-            {/* Timeline Interattiva Alcol */}
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ color: '#666', fontSize: '0.8rem', fontWeight: 'bold' }}>00:00</span>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#aaa', textTransform: 'uppercase', marginBottom: '2px' }}>Orario</div>
-                  <div style={{ color: '#00e5ff', fontWeight: 'bold', fontSize: '1.2rem', background: '#111', padding: '4px 12px', borderRadius: '8px', border: '1px solid #333' }}>
-                    {alcoholForm.timeStr}
-                  </div>
-                </div>
-                <span style={{ color: '#666', fontSize: '0.8rem', fontWeight: 'bold' }}>23:59</span>
-              </div>
-
-              <div style={{ position: 'relative', height: '44px', background: '#111', borderRadius: '22px', border: '1px solid #222', display: 'flex', alignItems: 'center' }}>
-                {/* Background Line */}
-                <div style={{ position: 'absolute', left: '20px', right: '20px', height: '4px', background: '#333', borderRadius: '2px' }} />
-
-                {/* Nodi Esistenti (Sfondo) - Pallini grigi per dare contesto */}
-                {manualNodes.map(n => {
-                  if (typeof n.time !== 'number') return null;
-                  const percent = getTimePositionPercent(n.time);
-                  return (
-                    <div key={n.id} style={{ position: 'absolute', left: `calc(20px + ${percent}% - ${percent * 0.4}px)`, width: '8px', height: '8px', borderRadius: '50%', background: 'rgba(255,255,255,0.15)', transform: 'translate(-50%, -50%)', top: '50%', pointerEvents: 'none' }} />
-                  );
-                })}
-
-                {(() => {
-                  const [h, m] = alcoholForm.timeStr.split(':').map(Number);
-                  const currentFloat = (h || 0) + ((m || 0) / 60);
-                  const currentPercent = getTimePositionPercent(currentFloat);
-                  const icon = alcoholForm.subtype === 'birra' ? '🍺' : alcoholForm.subtype === 'vino' ? '🍷' : '🥃';
-
-                  return (
-                    <>
-                      {/* Range Input: Invisibile ma permette il trascinamento tattile perfetto */}
-                      <input
-                        type="range"
-                        min="0"
-                        max="23.99"
-                        step="0.25"
-                        value={currentFloat}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          const newH = Math.floor(val);
-                          const newM = Math.round((val - newH) * 60);
-                          setAlcoholForm({ ...alcoholForm, timeStr: `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}` });
-                        }}
-                        style={{ position: 'absolute', left: '10px', right: '10px', width: 'calc(100% - 20px)', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10, margin: 0 }}
-                      />
-
-                      {/* Maniglia Personalizzata: Il nodo visibile che si muove */}
-                      <div style={{
-                        position: 'absolute',
-                        top: '50%',
-                        left: `calc(20px + ${currentPercent}% - ${currentPercent * 0.4}px)`,
-                        transform: 'translate(-50%, -50%)',
-                        width: '32px', height: '32px',
-                        borderRadius: '50%',
-                        background: '#f44336',
-                        border: '2px solid #fff',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: '0 0 12px rgba(244,67,54,0.6)',
-                        pointerEvents: 'none', zIndex: 5,
-                        transition: 'left 0.1s ease-out'
-                      }}>
-                        <span style={{ fontSize: '14px' }}>{icon}</span>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              {[
-                { id: 'birra', label: 'Birra 🍺', ml: 330, abv: 5 },
-                { id: 'vino', label: 'Vino 🍷', ml: 150, abv: 12 },
-                { id: 'superalcolico', label: 'Shot/Cocktail 🥃', ml: 40, abv: 40 }
-              ].map(preset => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => setAlcoholForm({ ...alcoholForm, subtype: preset.id, ml: preset.ml, abv: preset.abv })}
-                  style={{
-                    flex: 1,
-                    padding: '10px 5px',
-                    background: alcoholForm.subtype === preset.id ? '#00e5ff' : '#2a2a2c',
-                    color: alcoholForm.subtype === preset.id ? '#000' : '#fff',
-                    border: 'none',
-                    borderRadius: '10px',
-                    fontWeight: 'bold',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                    transition: '0.2s'
-                  }}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', padding: '15px 0', marginBottom: '10px' }}>
-              {[...Array(5)].map((_, i) => {
-                const baseMl = getAlcoholBaseMl(alcoholForm.subtype);
-                const glassIcon = getAlcoholGlassIcon(alcoholForm.subtype);
-                const mlNum = Number(alcoholForm.ml) || 0;
-                const isFilled = mlNum >= baseMl * (i + 1);
-                return (
-                  <div
-                    key={i}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setAlcoholForm({ ...alcoholForm, ml: baseMl * (i + 1) });
-                      }
-                    }}
-                    onClick={() => setAlcoholForm({ ...alcoholForm, ml: baseMl * (i + 1) })}
-                    style={{
-                      fontSize: '2.2rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                      opacity: isFilled ? 1 : 0.25,
-                      filter: isFilled ? 'drop-shadow(0 0 8px rgba(255,255,255,0.2))' : 'grayscale(100%)',
-                      transform: isFilled ? 'scale(1.1)' : 'scale(1)'
-                    }}
-                  >
-                    {glassIcon}
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ textAlign: 'center', fontSize: '0.85rem', color: '#b0b0b0', marginBottom: '20px' }}>
-              Tocca i bicchieri per impostare la quantità
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Quantità (ml)</label>
-                <input type="number" value={alcoholForm.ml} onChange={e => setAlcoholForm({ ...alcoholForm, ml: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111', border: '1px solid #444', borderRadius: '8px', color: '#fff' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: '#aaa', marginBottom: '5px' }}>Gradazione (%)</label>
-                <input type="number" step="0.1" value={alcoholForm.abv} onChange={e => setAlcoholForm({ ...alcoholForm, abv: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111', border: '1px solid #444', borderRadius: '8px', color: '#fff' }} />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(244, 67, 54, 0.1)', border: '1px solid #f44336', borderRadius: '10px', fontSize: '0.85rem', color: '#ffbaba' }}>
-              <div>
-                Alcol puro:{' '}
-                <strong>{((Number(alcoholForm.ml) * (Number(alcoholForm.abv) / 100)) * 0.8).toFixed(1)}g</strong>
-              </div>
-              <div style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.8 }}>
-                Calorie vuote stimate: {Math.round(((Number(alcoholForm.ml) * (Number(alcoholForm.abv) / 100)) * 0.8) * 7)} kcal
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="button" onClick={() => setShowAlcoholPopup(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#aaa', border: '1px solid #444', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>Annulla</button>
-              <button type="button" onClick={handleSaveAlcohol} style={{ flex: 2, padding: '12px', background: '#f44336', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>Aggiungi Drink</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlcoholPopupOverlay
+        showAlcoholPopup={showAlcoholPopup}
+        onClose={() => setShowAlcoholPopup(false)}
+        alcoholForm={alcoholForm}
+        setAlcoholForm={setAlcoholForm}
+        manualNodes={manualNodes}
+        getTimePositionPercent={getTimePositionPercent}
+        getAlcoholBaseMl={getAlcoholBaseMl}
+        getAlcoholGlassIcon={getAlcoholGlassIcon}
+        handleSaveAlcohol={handleSaveAlcohol}
+      />
 
       {showLongevityModal && longevityData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,12,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100000, overflowY: 'auto', padding: '20px', backdropFilter: 'blur(10px)' }}>
