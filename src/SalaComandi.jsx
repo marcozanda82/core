@@ -82,6 +82,9 @@ import BatteryModalOverlay from './features/salaComandi/overlays/BatteryModalOve
 import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverlay';
 import AlcoholPopupOverlay from './features/salaComandi/overlays/AlcoholPopupOverlay';
 import SleepModalOverlay from './features/salaComandi/overlays/SleepModalOverlay';
+import SpieInfoOverlay from './features/salaComandi/overlays/SpieInfoOverlay';
+import SleepPromptOverlay from './features/salaComandi/overlays/SleepPromptOverlay';
+import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { recalculateUserTargets, buildMacroSplitFromKcal } from './targetsEngine';
@@ -10697,6 +10700,77 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
     setSleepModal(null);
   };
 
+  const handleSleepPromptInsertSleep = () => {
+    setShowSleepPrompt(false);
+    setSleepModal({ editingId: null });
+  };
+
+  const handleSleepPromptUseAverage = () => {
+    const bed = 23;
+    const wake = 6;
+    const hours = computeSleepDurationHours(bed, wake);
+    const sleepEntry = {
+      type: 'sleep',
+      id: `sleep_avg_${Date.now()}`,
+      hours,
+      duration: hours,
+      sleepHours: hours,
+      deepMin: 60,
+      remMin: 60,
+      wakeTime: wake,
+      bedtime: bed,
+      sleepStart: bed,
+      sleepEnd: wake,
+    };
+    if (isSimulationMode) {
+      setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
+    } else {
+      const next = [...(dailyLog || []), sleepEntry];
+      setDailyLog(next);
+      syncDatiFirebase(next, manualNodes || []);
+    }
+    dismissKentuSleepTrigger();
+    setShowSleepPrompt(false);
+  };
+
+  const handleCloseQuickNodeEdit = () => {
+    setEditingQuickNode(null);
+  };
+
+  const handleDeleteQuickNodeEdit = () => {
+    if (!editingQuickNode) return;
+    if (window.confirm('Vuoi eliminare questa attività?')) {
+      const next = manualNodes.filter((n) => n.id !== editingQuickNode.id);
+      setManualNodes(next);
+      syncDatiFirebase(dailyLog, next);
+      setEditingQuickNode(null);
+    }
+  };
+
+  const handleSaveQuickNodeEdit = () => {
+    if (!editingQuickNode) return;
+    const newStart = document.getElementById('quick-start-time')?.value;
+    const newEnd = document.getElementById('quick-end-time')?.value;
+    if (newStart != null && newEnd != null && newStart !== '' && newEnd !== '') {
+      const startDec = parseTimeStrToDecimal(newStart);
+      const endDec = parseTimeStrToDecimal(newEnd);
+      let duration = endDec - startDec;
+      if (duration <= 0) duration += 24;
+      duration = Math.max(0.08, Math.min(24, duration));
+      const next = manualNodes.map((n) => (n.id === editingQuickNode.id ? { ...n, time: startDec, startTime: startDec, endTime: endDec, duration } : n));
+      setManualNodes(next);
+      syncDatiFirebase(dailyLog, next);
+    }
+    setEditingQuickNode(null);
+  };
+
+  const quickNodeEditStartTime = editingQuickNode
+    ? decimalToTimeStr(editingQuickNode.time ?? editingQuickNode.startTime ?? 14)
+    : '14:00';
+  const quickNodeEditEndTime = editingQuickNode
+    ? decimalToTimeStr((editingQuickNode.time ?? editingQuickNode.startTime ?? 14) + (editingQuickNode.duration ?? 0.25))
+    : '14:15';
+
   // ========================================================
   // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
   // ========================================================
@@ -14624,86 +14698,14 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         bodyMetricsSaveToast={bodyMetricsSaveToast}
       />
 
-      {/* Pop-up Info Spie (Ottimizzato per schermi piccoli) */}
-      {showSpieInfo && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100020, padding: '15px' }} onClick={() => setShowSpieInfo(false)}>
-          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '25px', padding: '20px', width: '100%', maxWidth: '350px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 10px 50px rgba(0,0,0,0.9)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 15px 0', color: '#00e5ff', fontSize: '1rem', letterSpacing: '2px', textAlign: 'center' }}>TELEMETRIA SISTEMA</h3>
+      <SpieInfoOverlay showSpieInfo={showSpieInfo} onClose={() => setShowSpieInfo(false)} />
 
-            <div style={{ marginBottom: '12px' }}>
-              <strong style={{ color: '#00e676', fontSize: '0.9rem' }}>🟢 Micro OK:</strong>
-              <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#aaa', lineHeight: '1.4' }}>Vitamine e minerali essenziali sono coperti dai pasti inseriti.</p>
-            </div>
-
-            <div style={{ marginBottom: '12px' }}>
-              <strong style={{ color: '#ff9800', fontSize: '0.9rem' }}>🟠 Livelli Serali:</strong>
-              <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#aaa', lineHeight: '1.4' }}>Stato del serbatoio energetico. Previene il rischio di picchi di cortisolo.</p>
-            </div>
-
-            <div>
-              <strong style={{ color: '#00e5ff', fontSize: '0.9rem' }}>🔥 Deficit / Surplus:</strong>
-              <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#aaa', lineHeight: '1.4' }}>Il bilancio istantaneo rispetto al tuo target di calorie giornaliere.</p>
-            </div>
-
-            <button onClick={() => setShowSpieInfo(false)} style={{ width: '100%', marginTop: '20px', background: '#333', color: '#fff', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0 }}>CHIUDI</button>
-          </div>
-        </div>
-      )}
-
-      {showSleepPrompt && (
-        <div className="sleepPromptModal">
-          <div className="sleepPromptCard">
-            <h3>Dati sonno mancanti</h3>
-            <p>Per calcolare correttamente l'energia della giornata inserisci i dati del sonno.</p>
-            <div className="sleepPromptActions">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSleepPrompt(false);
-                  setSleepModal({ editingId: null });
-                }}
-              >
-                Inserisci sonno
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const bed = 23;
-                  const wake = 6;
-                  const hours = computeSleepDurationHours(bed, wake);
-                  const sleepEntry = {
-                    type: 'sleep',
-                    id: `sleep_avg_${Date.now()}`,
-                    hours,
-                    duration: hours,
-                    sleepHours: hours,
-                    deepMin: 60,
-                    remMin: 60,
-                    wakeTime: wake,
-                    bedtime: bed,
-                    sleepStart: bed,
-                    sleepEnd: wake,
-                  };
-                  if (isSimulationMode) {
-                    setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
-                  } else {
-                    const next = [...(dailyLog || []), sleepEntry];
-                    setDailyLog(next);
-                    syncDatiFirebase(next, manualNodes || []);
-                  }
-                  dismissKentuSleepTrigger();
-                  setShowSleepPrompt(false);
-                }}
-              >
-                Usa valori medi
-              </button>
-              <button type="button" onClick={() => setShowSleepPrompt(false)}>
-                Dopo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SleepPromptOverlay
+        showSleepPrompt={showSleepPrompt}
+        onInsertSleep={handleSleepPromptInsertSleep}
+        onUseAverage={handleSleepPromptUseAverage}
+        onLater={() => setShowSleepPrompt(false)}
+      />
 
       <SleepModalOverlay
         sleepModal={sleepModal}
@@ -14716,74 +14718,14 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         onSave={handleSaveSleepModal}
       />
 
-      {editingQuickNode && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 100020, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setEditingQuickNode(null)}>
-          <div style={{ background: '#1e1e1e', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '350px', border: '1px solid #333' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '20px', textAlign: 'center' }}>Modifica {editingQuickNode.name || (editingQuickNode.type === 'nap' ? 'Pisolino' : editingQuickNode.type === 'meditation' ? 'Meditazione' : 'Attività')}</h3>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <div style={{ width: '45%' }}>
-                <label style={{ display: 'block', color: '#aaa', fontSize: '0.8rem', marginBottom: '5px' }}>Ora Inizio</label>
-                <input
-                  type="time"
-                  defaultValue={decimalToTimeStr(editingQuickNode.time ?? editingQuickNode.startTime ?? 14)}
-                  id="quick-start-time"
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', background: '#333', color: '#fff', border: 'none' }}
-                />
-              </div>
-              <div style={{ width: '45%' }}>
-                <label style={{ display: 'block', color: '#aaa', fontSize: '0.8rem', marginBottom: '5px' }}>Ora Fine</label>
-                <input
-                  type="time"
-                  defaultValue={decimalToTimeStr((editingQuickNode.time ?? editingQuickNode.startTime ?? 14) + (editingQuickNode.duration ?? 0.25))}
-                  id="quick-end-time"
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', background: '#333', color: '#fff', border: 'none' }}
-                />
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={() => {
-                  if (window.confirm('Vuoi eliminare questa attività?')) {
-                    const next = manualNodes.filter(n => n.id !== editingQuickNode.id);
-                    setManualNodes(next);
-                    syncDatiFirebase(dailyLog, next);
-                    setEditingQuickNode(null);
-                  }
-                }}
-                style={{ flex: 1, padding: '12px', background: '#ff3b30', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
-              >
-                Elimina
-              </button>
-              <button
-                onClick={() => setEditingQuickNode(null)}
-                style={{ flex: 1, padding: '12px', background: '#333', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
-              >
-                Annulla
-              </button>
-              <button
-                onClick={() => {
-                  const newStart = document.getElementById('quick-start-time')?.value;
-                  const newEnd = document.getElementById('quick-end-time')?.value;
-                  if (newStart != null && newEnd != null && newStart !== '' && newEnd !== '') {
-                    const startDec = parseTimeStrToDecimal(newStart);
-                    const endDec = parseTimeStrToDecimal(newEnd);
-                    let duration = endDec - startDec;
-                    if (duration <= 0) duration += 24;
-                    duration = Math.max(0.08, Math.min(24, duration));
-                    const next = manualNodes.map(n => n.id === editingQuickNode.id ? { ...n, time: startDec, startTime: startDec, endTime: endDec, duration } : n);
-                    setManualNodes(next);
-                    syncDatiFirebase(dailyLog, next);
-                  }
-                  setEditingQuickNode(null);
-                }}
-                style={{ flex: 1, padding: '12px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
-              >
-                Salva
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <QuickNodeEditOverlay
+        editingQuickNode={editingQuickNode}
+        onClose={handleCloseQuickNodeEdit}
+        defaultStartValue={quickNodeEditStartTime}
+        defaultEndValue={quickNodeEditEndTime}
+        onDelete={handleDeleteQuickNodeEdit}
+        onSave={handleSaveQuickNodeEdit}
+      />
 
       {timelineInsertUI != null && (
         <div
