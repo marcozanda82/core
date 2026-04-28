@@ -261,7 +261,10 @@ export default function HistoryView({
                       {onDeleteBodyMetrics && r.entryId != null ? (
                         <button
                           type="button"
-                          onClick={() => handleDelete(r.entryId)}
+                          onClick={() => {
+                            console.log('Deleting entry:', r.id);
+                            handleDelete(r.entryId);
+                          }}
                           disabled={deletingEntryId === r.entryId}
                           style={{
                             padding: '4px 8px',
