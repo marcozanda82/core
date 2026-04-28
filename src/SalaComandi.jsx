@@ -53,7 +53,6 @@ import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
 import MetabolicPhaseCompact from './components/MetabolicPhaseCompact';
-import PlanningWizard from './PlanningWizard';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
   WORKOUT_ACTIVITY_SELECTOR_IDS,
@@ -73,8 +72,10 @@ import {
 } from './weeklyPlanning';
 import AddEventMenuGrid from './components/AddEventMenuGrid';
 import WeeklyPlanning from './components/WeeklyPlanning';
-import PesataDrawer from './components/drawers/PesataDrawer';
 import PastoDrawer from './components/drawers/PastoDrawer';
+import BottomChrome from './features/salaComandi/BottomChrome';
+import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
+import OverlayHost from './features/salaComandi/OverlayHost';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { recalculateUserTargets, buildMacroSplitFromKcal } from './targetsEngine';
@@ -10603,268 +10604,20 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
   // ========================================================
   /** Barra Kentu + navigazione: sempre montata dopo login, anche durante caricamento dati (Bussola sempre visibile). */
   const fixedAppBottomChrome = (
-    <>
-      <div
-        style={{
-          position: 'fixed',
-          bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))',
-          left: 0,
-          right: 0,
-          display: 'flex',
-          gap: '8px',
-          alignItems: 'center',
-          paddingTop: '16px',
-          paddingBottom: '16px',
-          paddingLeft: '15px',
-          paddingRight: '15px',
-          background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #0a0a0a 100%)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          zIndex: 9998,
-          boxSizing: 'border-box',
-        }}
-      >
-        <div
-          onClick={() => {
-            setActiveAction('ai_chat');
-            setIsDrawerOpen(true);
-          }}
-          style={{
-            flex: 1,
-            position: 'relative',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            background: '#1a1a1a',
-            borderRadius: '30px',
-            padding: '12px 20px',
-            border: '1px solid #333',
-            cursor: 'pointer',
-          }}
-        >
-          {kentuChatNotificationBadge ? (
-            <span
-              aria-hidden
-              style={{
-                position: 'absolute',
-                top: 8,
-                right: 14,
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                background: '#f59e0b',
-                boxShadow: '0 0 10px rgba(245, 158, 11, 0.7)',
-                pointerEvents: 'none',
-              }}
-            />
-          ) : null}
-          <img
-            src="/nuova-icona.png"
-            alt=""
-            className="action-icon-img action-icon-img-fab"
-            width={22}
-            height={22}
-            decoding="async"
-          />
-          <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Kentu...</span>
-        </div>
-        <div
-          style={{
-            position: 'relative',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-          }}
-        >
-          {isFabOpen && (
-            <div
-              style={{
-                position: 'absolute',
-                bottom: '120%',
-                right: 0,
-                background: 'rgba(25, 25, 28, 0.75)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: '20px',
-                padding: '10px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-                zIndex: 1000,
-                alignItems: 'flex-end',
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  trackEventUsage('pasto');
-                  handleAddEventMenuItem('meal', 'floating_stack');
-                  setIsFabOpen(false);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  width: '180px',
-                  padding: '12px 16px',
-                  borderRadius: '14px',
-                  border: '1px solid rgba(0, 229, 255, 0.3)',
-                  background: 'rgba(0, 229, 255, 0.15)',
-                  color: '#00e5ff',
-                  fontSize: '0.95rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-                aria-label="Inserisci pasto"
-              >
-                <span aria-hidden>🍽️</span>
-                <span>Inserisci Pasto</span>
-              </button>
-
-              {mostUsedEventButtons.map((cfg) => (
-                <button
-                  key={cfg.id}
-                  type="button"
-                  onClick={() => {
-                    trackEventUsage(cfg.id);
-                    handleAddEventMenuItem(cfg.drawerActionId, 'floating_stack');
-                    setIsFabOpen(false);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    width: '180px',
-                    padding: '12px 16px',
-                    borderRadius: '14px',
-                    border: 'none',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    color: '#e5e5e5',
-                    fontSize: '0.95rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                  }}
-                  aria-label={`Aggiungi ${cfg.label}`}
-                >
-                  <span aria-hidden>{cfg.icon}</span>
-                  <span>{cfg.label}</span>
-                </button>
-              ))}
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowChoiceModal(false);
-                  setIsDrawerOpen(true);
-                  setActiveAction(null);
-                  setIsFabOpen(false);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  width: '180px',
-                  padding: '12px 16px',
-                  borderRadius: '14px',
-                  border: 'none',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  color: '#e5e5e5',
-                  fontSize: '0.95rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-                aria-label="Apri menu completo inserimenti"
-              >
-                <span aria-hidden>⋯</span>
-                <span>Altro...</span>
-              </button>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setIsFabOpen((prev) => !prev)}
-            style={{
-              width: 50,
-              height: 50,
-              minWidth: 50,
-              background: '#222',
-              color: '#00e5ff',
-              border: '1px solid #333',
-              borderRadius: '50%',
-              fontSize: '1.8rem',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              cursor: 'pointer',
-              transition: '0.3s',
-            }}
-            aria-label={isFabOpen ? 'Chiudi menu rapido' : 'Apri menu rapido'}
-          >
-            {isFabOpen ? '×' : '+'}
-          </button>
-        </div>
-      </div>
-
-      <nav
-        aria-label="Navigazione principale"
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: '75px',
-          background: 'rgba(20, 20, 22, 0.90)',
-          backdropFilter: 'blur(15px)',
-          WebkitBackdropFilter: 'blur(15px)',
-          borderTop: '1px solid #333',
-          display: 'flex',
-          justifyContent: 'space-around',
-          alignItems: 'center',
-          zIndex: 9999,
-          paddingBottom: 'env(safe-area-inset-bottom)',
-          boxSizing: 'border-box',
-        }}
-      >
-        {BOTTOM_NAV_ITEMS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => handleBottomNavTabSelect(t.id)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '4px',
-              cursor: 'pointer',
-              flex: '1 1 0',
-              minWidth: 0,
-              color: activeBottomTab === t.id ? '#00e5ff' : '#888',
-              fontSize: '0.7rem',
-              padding: '4px 0',
-            }}
-          >
-            <span
-              style={{
-                fontSize: t.id === 'menu' ? '1.45rem' : '1.25rem',
-                lineHeight: 1,
-                fontWeight: t.id === 'menu' ? 700 : undefined,
-              }}
-              aria-hidden
-            >
-              {t.icon}
-            </span>
-            <span>{t.label}</span>
-          </button>
-        ))}
-      </nav>
-    </>
+    <BottomChrome
+      kentuChatNotificationBadge={kentuChatNotificationBadge}
+      setActiveAction={setActiveAction}
+      setIsDrawerOpen={setIsDrawerOpen}
+      isFabOpen={isFabOpen}
+      trackEventUsage={trackEventUsage}
+      handleAddEventMenuItem={handleAddEventMenuItem}
+      setIsFabOpen={setIsFabOpen}
+      mostUsedEventButtons={mostUsedEventButtons}
+      setShowChoiceModal={setShowChoiceModal}
+      BOTTOM_NAV_ITEMS={BOTTOM_NAV_ITEMS}
+      handleBottomNavTabSelect={handleBottomNavTabSelect}
+      activeBottomTab={activeBottomTab}
+    />
   );
 
   let salaContent;
@@ -12932,101 +12685,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       </div>
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
-      <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={closeDrawer}></div>
-
-      {showUnsavedMealWarning &&
-        createPortal(
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="unsaved-meal-warning-title"
-            onClick={() => setShowUnsavedMealWarning(false)}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 100050,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 20,
-              background: 'rgba(0,0,0,0.72)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-            }}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: '100%',
-                maxWidth: 360,
-                borderRadius: 16,
-                padding: '22px 20px 18px',
-                background: 'linear-gradient(165deg, #1e2128 0%, #12141a 100%)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                boxShadow: '0 24px 48px rgba(0,0,0,0.55)',
-              }}
-            >
-              <h3
-                id="unsaved-meal-warning-title"
-                style={{
-                  margin: '0 0 12px',
-                  fontSize: '1.05rem',
-                  fontWeight: 800,
-                  color: '#f5f5f5',
-                  letterSpacing: '0.02em',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <span aria-hidden>⚠️</span> Attenzione
-              </h3>
-              <p style={{ margin: '0 0 22px', fontSize: '0.9rem', lineHeight: 1.5, color: 'rgba(226,232,240,0.88)' }}>
-                Hai inserito degli alimenti che non sono stati salvati. Sei sicuro di voler uscire perdendo le modifiche?
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowUnsavedMealWarning(false)}
-                  style={{
-                    width: '100%',
-                    padding: '14px 16px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(0,229,255,0.35)',
-                    background: 'rgba(0,229,255,0.12)',
-                    color: '#00e5ff',
-                    fontSize: '0.9rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Resta
-                </button>
-                <button
-                  type="button"
-                  onClick={finalizeMealBuilderCloseEmpty}
-                  style={{
-                    width: '100%',
-                    padding: '14px 16px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(248,113,113,0.45)',
-                    background: 'rgba(248,113,113,0.12)',
-                    color: '#f87171',
-                    fontSize: '0.9rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Esci e perdi dati
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-      
-      <div className={`drawer-content ${isDrawerOpen ? 'open' : ''}`}>
-        <div style={{ width: '40px', height: '4px', backgroundColor: '#444', borderRadius: '2px', margin: '0 auto 20px auto' }}></div>
+      <MenuDrawerShell isDrawerOpen={isDrawerOpen} onClose={closeDrawer}>
         
         {/* VISTA MENU PRINCIPALE */}
         {(!activeAction || activeAction === 'home') && (
@@ -14516,7 +14175,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           </div>
         )}
 
-      </div>
+      </MenuDrawerShell>
 
       {isAiCoachSuggestionModalOpen && aiCoachSuggestion
         ? createPortal(
@@ -14968,7 +14627,10 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         </div>
       )}
 
-      <PesataDrawer
+      <OverlayHost
+        showUnsavedMealWarning={showUnsavedMealWarning}
+        setShowUnsavedMealWarning={setShowUnsavedMealWarning}
+        finalizeMealBuilderCloseEmpty={finalizeMealBuilderCloseEmpty}
         showWeightModal={showWeightModal}
         setShowWeightModal={setShowWeightModal}
         inputWeight={inputWeight}
@@ -14982,43 +14644,23 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         drawerVisceralFat={drawerVisceralFat}
         setDrawerVisceralFat={setDrawerVisceralFat}
         handleSaveBodyMetrics={handleSaveBodyMetrics}
+        planningWizardOverlayOpen={planningWizardOverlayOpen}
+        setPlanningWizardOverlayOpen={setPlanningWizardOverlayOpen}
+        activeLog={activeLog}
+        userTargets={userTargets}
+        kentuDailyCalorieStrategy={kentuDailyCalorieStrategy}
+        planningWizardBurnedKcal={planningWizardBurnedKcal}
+        remotePlanning={remotePlanning}
+        planningWizardInitialMeals={planningWizardInitialMeals}
+        planningWizardHydrateNonce={planningWizardHydrateNonce}
+        weeklyPlan={weeklyPlan}
+        planningDateKey={currentTrackerDate || getTodayString()}
+        handlePlanningWizardConfirm={handlePlanningWizardConfirm}
+        handleGeneratePlanGhostMealDraft={handleGeneratePlanGhostMealDraft}
+        showUndoToast={showUndoToast}
+        handleUndo={handleUndo}
+        bodyMetricsSaveToast={bodyMetricsSaveToast}
       />
-
-      {planningWizardOverlayOpen &&
-        createPortal(
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 100025,
-              background: 'rgba(0,0,0,0.88)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 16,
-            }}
-            onClick={() => setPlanningWizardOverlayOpen(false)}
-            role="presentation"
-          >
-            <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 400, maxHeight: '90vh', overflow: 'auto' }}>
-              <PlanningWizard
-                dailyLog={activeLog || []}
-                userTargets={userTargets}
-                calorieStrategy={kentuDailyCalorieStrategy}
-                burnedKcalBonus={planningWizardBurnedKcal}
-                firebasePlanning={remotePlanning}
-                initialMeals={planningWizardInitialMeals}
-                hydrateNonce={planningWizardHydrateNonce}
-                weeklyPlan={weeklyPlan}
-                planningDateKey={currentTrackerDate || getTodayString()}
-                onClose={() => setPlanningWizardOverlayOpen(false)}
-                onConfirmApply={handlePlanningWizardConfirm}
-                onGeneratePlanGhostMealDraft={handleGeneratePlanGhostMealDraft}
-              />
-            </div>
-          </div>,
-          document.body
-        )}
 
       {/* Pop-up Info Spie (Ottimizzato per schermi piccoli) */}
       {showSpieInfo && (
@@ -16632,22 +16274,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             </div>
 
           </div>
-        </div>
-      )}
-
-      {/* Toast Undo: fisso in basso al centro */}
-      {showUndoToast && (
-        <div style={{ position: 'fixed', bottom: 'calc(80px + 75px + env(safe-area-inset-bottom, 0px))', left: '50%', transform: 'translateX(-50%)', zIndex: 10001, display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px', background: '#1a1a1c', border: '1px solid #333', borderRadius: '16px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-          <span style={{ color: '#e0e0e0', fontSize: '0.9rem' }}>Orario modificato</span>
-          <button type="button" onClick={handleUndo} style={{ padding: '8px 16px', fontSize: '0.8rem', fontWeight: 'bold', background: 'rgba(0, 229, 255, 0.15)', border: '1px solid #00e5ff', borderRadius: '10px', color: '#00e5ff', cursor: 'pointer' }}>
-            ANNULLA
-          </button>
-        </div>
-      )}
-
-      {bodyMetricsSaveToast && (
-        <div style={{ position: 'fixed', bottom: 'calc(80px + 75px + env(safe-area-inset-bottom, 0px))', left: '50%', transform: 'translateX(-50%)', zIndex: 100021, padding: '12px 22px', background: '#1a1a1c', border: '1px solid #00e676', borderRadius: '16px', boxShadow: '0 8px 24px rgba(0,230,118,0.2)' }} role="status">
-          <span style={{ color: '#00e676', fontSize: '0.9rem', fontWeight: '600' }}>Pesata registrata con successo!</span>
         </div>
       )}
 
