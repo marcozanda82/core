@@ -5,6 +5,7 @@ import { getCreaFusionPayload, fuseUsdaIntoCrea } from '../../../foodSourceFusio
 import { TARGETS, getDefaultNutrientValue } from '../../../useBiochimico';
 import { getBarcodeNutritionOverride } from '../../../barcodeFoodOverrides';
 import { enrichDbRowWithFoodUnits } from '../../../foodUnits';
+import { estraiDatiFoodDb, getAverageEstimate } from '../engines/foodDataEngine';
 
 export default function useFoodInputEngine({
   foodDb,
@@ -19,9 +20,7 @@ export default function useFoodInputEngine({
   setAddedFoods,
   setShowFoodDropdown,
   setMealBuilderBarcodeBootstrap,
-  estraiDatiFoodDbRef,
   getLastQuantityForFoodRef,
-  getAverageEstimateRef,
   callGeminiAPIWithRotationRef,
 }) {
   const [foodNameInput, setFoodNameInput] = useState('');
@@ -260,9 +259,13 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         if (typeof data[k] === 'number' && data[k] > 0) entryPer100[k] = data[k];
       });
       Object.keys(TARGETS).forEach((g) => Object.keys(TARGETS[g]).forEach((k) => {
-        if (entryPer100[k] == null || entryPer100[k] === 0) entryPer100[k] = getAverageEstimateRef.current?.(k, desc);
+        if (entryPer100[k] == null || entryPer100[k] === 0) {
+          entryPer100[k] = getAverageEstimate({ nutrientKey: k, foodDesc: desc, fullHistory: fullHistoryRef.current });
+        }
       }));
-      if (entryPer100.kcal == null || entryPer100.kcal === 0) entryPer100.kcal = entryPer100.cal ?? getAverageEstimateRef.current?.('kcal', desc);
+      if (entryPer100.kcal == null || entryPer100.kcal === 0) {
+        entryPer100.kcal = entryPer100.cal ?? getAverageEstimate({ nutrientKey: 'kcal', foodDesc: desc, fullHistory: fullHistoryRef.current });
+      }
       entryPer100.cal = entryPer100.cal ?? entryPer100.kcal;
       const newKey = `food_${Date.now()}_${String(desc).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30)}`;
       const basePath = `users/${userUid}/tracker_data`;
@@ -287,9 +290,11 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       newItem.category = entrySaved.category;
       newItem.foodDbKey = newKey;
       Object.keys(TARGETS).forEach((g) => Object.keys(TARGETS[g]).forEach((k) => {
-        if (newItem[k] == null || newItem[k] === 0) newItem[k] = ((getAverageEstimateRef.current?.(k, desc) || 0) / 100) * weight;
+        if (newItem[k] == null || newItem[k] === 0) {
+          newItem[k] = (getAverageEstimate({ nutrientKey: k, foodDesc: desc, fullHistory: fullHistoryRef.current }) / 100) * weight;
+        }
       }));
-      newItem.kcal = newItem.kcal ?? newItem.cal ?? ((getAverageEstimateRef.current?.('kcal', desc) || 0) / 100) * weight;
+      newItem.kcal = newItem.kcal ?? newItem.cal ?? ((getAverageEstimate({ nutrientKey: 'kcal', foodDesc: desc, fullHistory: fullHistoryRef.current }) || 0) / 100) * weight;
       newItem.cal = newItem.cal ?? newItem.kcal;
       setAddedFoods((prev) => [...prev, newItem]);
       setFoodNameInput('');
@@ -300,7 +305,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     } finally {
       setIsGeneratingFood(false);
     }
-  }, [userUid, mealType, foodNameInput, foodWeightInput, callGeminiAPIWithRotationRef, getAverageEstimateRef, db, setFoodDb, setAddedFoods, setShowFoodDropdown]);
+  }, [userUid, mealType, foodNameInput, foodWeightInput, callGeminiAPIWithRotationRef, fullHistoryRef, db, setFoodDb, setAddedFoods, setShowFoodDropdown]);
 
   const triggerCreaSearch = useCallback(async (query, opts = {}) => {
     const q = String(query || '').trim();
@@ -379,12 +384,17 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
   const handleAddFoodManual = useCallback(() => {
     if (!foodNameInput || !foodWeightInput) return;
-    if (typeof estraiDatiFoodDbRef.current !== 'function') return;
-    const item = estraiDatiFoodDbRef.current(foodNameInput.trim(), parseFloat(foodWeightInput), mealType);
+    const item = estraiDatiFoodDb({
+      nome: foodNameInput.trim(),
+      qta: parseFloat(foodWeightInput),
+      pastoType: mealType,
+      foodDb,
+      fullHistory: fullHistoryRef.current,
+    });
     setAddedFoods([item, ...addedFoods]);
     setFoodNameInput('');
     setFoodWeightInput('');
-  }, [foodNameInput, foodWeightInput, estraiDatiFoodDbRef, mealType, setAddedFoods, addedFoods]);
+  }, [foodNameInput, foodWeightInput, mealType, foodDb, fullHistoryRef, setAddedFoods, addedFoods]);
 
   return {
     foodNameInput,
