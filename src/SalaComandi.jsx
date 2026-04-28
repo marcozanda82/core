@@ -1993,6 +1993,7 @@ export default function SalaComandi() {
     bodyMetricsSaveToast,
     handleSaveBodyMetrics,
     handleQuickWeighInFromHistory,
+    handleDeleteBodyMetrics,
     handleUpdateTDEE,
     applyAutomaticTargetRecalibration,
   } = useBodyMetricsEngine({
@@ -11185,6 +11186,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             predictionCalibration={predictiveCalibration}
             onBalanceCsvImport={handleCSVUpload}
             onQuickWeighInSubmit={handleQuickWeighInFromHistory}
+            onDeleteBodyMetrics={handleDeleteBodyMetrics}
             pastDaysStorico={pastDaysStorico}
             weeklyTrendData={weeklyTrendData}
             weeklyMicrosTotals={weeklyMicrosTotals}
@@ -14105,6 +14107,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 predictionCalibration={predictiveCalibration}
                 onBalanceCsvImport={handleCSVUpload}
                 onQuickWeighInSubmit={handleQuickWeighInFromHistory}
+                onDeleteBodyMetrics={handleDeleteBodyMetrics}
                 pastDaysStorico={pastDaysStorico}
                 weeklyTrendData={weeklyTrendData}
                 weeklyMicrosTotals={weeklyMicrosTotals}

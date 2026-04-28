@@ -854,6 +854,8 @@ export default function LongevityView({
   onBalanceCsvImport = null,
   /** Salva pesata rapida da HistoryView (Firebase + ricalibrazione) */
   onQuickWeighInSubmit = null,
+  /** Elimina una pesata singola da HistoryView */
+  onDeleteBodyMetrics = null,
   /** Dati settimanali kcal/micros (da SalaComandi) per blocco in cima alle Statistiche */
   pastDaysStorico = [],
   weeklyTrendData = [],
@@ -1840,6 +1842,7 @@ export default function LongevityView({
           bodyMetricsHistory={bodyMetricsHistory}
           onBalanceCsvImport={onBalanceCsvImport || undefined}
           onSubmitQuickWeighIn={onQuickWeighInSubmit || undefined}
+          onDeleteBodyMetrics={onDeleteBodyMetrics || undefined}
         />
       )}
 

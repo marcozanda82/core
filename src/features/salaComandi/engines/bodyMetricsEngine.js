@@ -53,3 +53,24 @@ export function normalizePredictiveCalibrationState(v) {
     updatedAt: v.updatedAt,
   };
 }
+
+export function removeBodyMetricsEntry({ history, entryId }) {
+  if (!Array.isArray(history)) return [];
+  if (entryId == null || entryId === '') return history;
+
+  const asString = String(entryId);
+  const hasIdMatch = history.some((entry) => String(entry?.id ?? '') === asString);
+  if (hasIdMatch) {
+    return history.filter((entry) => String(entry?.id ?? '') !== asString);
+  }
+
+  const asNumber = Number(entryId);
+  if (Number.isFinite(asNumber)) {
+    const hasTimestampMatch = history.some((entry) => Number(entry?.timestamp) === asNumber);
+    if (hasTimestampMatch) {
+      return history.filter((entry) => Number(entry?.timestamp) !== asNumber);
+    }
+  }
+
+  return history;
+}

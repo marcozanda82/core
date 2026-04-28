@@ -7,6 +7,7 @@ import {
   mergeHistoryWithLatestWeigh,
   normalizePredictiveCalibrationState,
   recalculateUserTargets,
+  removeBodyMetricsEntry,
 } from '../engines/bodyMetricsEngine';
 
 export default function useBodyMetricsEngine({
@@ -401,6 +402,53 @@ export default function useBodyMetricsEngine({
     [auth, db, bodyMetricsHistory, evaluateAndApplyTDEE, metricEntryToIsoDay, getTodayString, setUserProfile]
   );
 
+  const handleDeleteBodyMetrics = useCallback(
+    async (entryId) => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        alert('Accedi per eliminare una pesata.');
+        return;
+      }
+      const currentHistory = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
+      const nextHistory = removeBodyMetricsEntry({ history: currentHistory, entryId });
+      if (nextHistory === currentHistory || nextHistory.length === currentHistory.length) {
+        console.log('Nessuna pesata rimossa: entryId non trovato.', entryId);
+        return;
+      }
+
+      const idKey = String(entryId ?? '');
+      const directMatches = currentHistory.filter((entry) => String(entry?.id ?? '') === idKey);
+      const ts = Number(entryId);
+      const timestampMatches =
+        directMatches.length === 0 && Number.isFinite(ts)
+          ? currentHistory.filter((entry) => Number(entry?.timestamp) === ts)
+          : [];
+      const idsToDelete = [...directMatches, ...timestampMatches]
+        .map((entry) => (typeof entry?.id === 'string' ? entry.id : ''))
+        .filter(Boolean);
+
+      if (idsToDelete.length === 0) {
+        console.warn('Eliminazione pesata annullata: nessun id Firebase trovato per entryId', entryId);
+        return;
+      }
+
+      setBodyMetricsHistory(nextHistory);
+      try {
+        const patch = {};
+        idsToDelete.forEach((id) => {
+          patch[id] = null;
+        });
+        await update(ref(db, `users/${uid}/body_metrics`), patch);
+        console.log('Pesata eliminata con successo', { entryId, deletedIds: idsToDelete });
+      } catch (err) {
+        console.error('Eliminazione pesata:', err);
+        setBodyMetricsHistory(currentHistory);
+        alert('Errore durante l’eliminazione della pesata. Riprova.');
+      }
+    },
+    [auth, bodyMetricsHistory, db]
+  );
+
   return {
     bodyMetricsHistory,
     predictiveCalibration,
@@ -408,6 +456,7 @@ export default function useBodyMetricsEngine({
     bodyMetricsSaveToast,
     handleSaveBodyMetrics,
     handleQuickWeighInFromHistory,
+    handleDeleteBodyMetrics,
     handleUpdateTDEE,
     applyAutomaticTargetRecalibration,
   };

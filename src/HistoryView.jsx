@@ -46,12 +46,14 @@ function fmt(v) {
  *     water: number | null,
  *     visceral: number | null,
  *   }) => void | Promise<void>,
+ *   onDeleteBodyMetrics?: (entryId: string | number) => void | Promise<void>,
  * }} props
  */
 export default function HistoryView({
   bodyMetricsHistory = [],
   onBalanceCsvImport,
   onSubmitQuickWeighIn,
+  onDeleteBodyMetrics,
 }) {
   const localCsvRef = useRef(null);
 
@@ -68,6 +70,7 @@ export default function HistoryView({
   const [water, setWater] = useState('');
   const [visceral, setVisceral] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deletingEntryId, setDeletingEntryId] = useState(null);
 
   /** Stessa logica dell’import CSV: una riga per data, campi BIA uniti se erano su righe duplicate. */
   const mergedForDisplay = useMemo(() => {
@@ -98,6 +101,13 @@ export default function HistoryView({
               ? Number(r.visceralFat)
               : null;
         return {
+          id: typeof r.id === 'string' ? r.id : null,
+          entryId:
+            typeof r.id === 'string' && r.id
+              ? r.id
+              : Number.isFinite(Number(r.timestamp))
+                ? Number(r.timestamp)
+                : null,
           date: r.date,
           timestamp: Number(r.timestamp) || 0,
           weight: Number(r.weight),
@@ -146,6 +156,18 @@ export default function HistoryView({
       setVisceral('');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async (entryId) => {
+    if (!onDeleteBodyMetrics || entryId == null) return;
+    const confirmed = window.confirm('Eliminare questa pesata dallo storico?');
+    if (!confirmed) return;
+    setDeletingEntryId(entryId);
+    try {
+      await onDeleteBodyMetrics(entryId);
+    } finally {
+      setDeletingEntryId(null);
     }
   };
 
@@ -216,12 +238,13 @@ export default function HistoryView({
                 <th style={th}>Muscolo</th>
                 <th style={th}>Acqua</th>
                 <th style={th}>Visc.</th>
+                <th style={th}>Azioni</th>
               </tr>
             </thead>
             <tbody>
               {rowsDesc.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ ...td, textAlign: 'center', color: '#64748b' }}>
+                  <td colSpan={7} style={{ ...td, textAlign: 'center', color: '#64748b' }}>
                     Nessuna pesata in elenco.
                   </td>
                 </tr>
@@ -234,6 +257,27 @@ export default function HistoryView({
                     <td style={td}>{fmt(r.muscle ?? r.muscleMass)}</td>
                     <td style={td}>{fmt(r.water ?? r.waterPercentage)}</td>
                     <td style={td}>{fmt(r.visceral ?? r.visceralFat)}</td>
+                    <td style={td}>
+                      {onDeleteBodyMetrics && r.entryId != null ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(r.entryId)}
+                          disabled={deletingEntryId === r.entryId}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            border: '1px solid rgba(248,113,113,0.45)',
+                            background: 'rgba(239,68,68,0.12)',
+                            color: '#fecaca',
+                            cursor: deletingEntryId === r.entryId ? 'wait' : 'pointer',
+                          }}
+                        >
+                          {deletingEntryId === r.entryId ? '…' : '🗑️'}
+                        </button>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                   </tr>
                 ))
               )}
