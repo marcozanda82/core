@@ -1532,6 +1532,7 @@ export default function SalaComandi() {
   const [editQuantityValue, setEditQuantityValue] = useState('');
   const [showChoiceModal, setShowChoiceModal] = useState(false);
   const [showWeightModal, setShowWeightModal] = useState(false);
+  const [inputWeightDate, setInputWeightDate] = useState(() => getTodayString());
   const [inputWeight, setInputWeight] = useState('');
   const [inputFat, setInputFat] = useState('');
   const [drawerMuscleMass, setDrawerMuscleMass] = useState('');
@@ -2008,12 +2009,14 @@ export default function SalaComandi() {
     computeMetabolicNotification,
     metricEntryToIsoDay,
     getTodayString,
+    inputWeightDate,
     inputWeight,
     inputFat,
     drawerMuscleMass,
     drawerBodyWater,
     drawerVisceralFat,
     setShowWeightModal,
+    setInputWeightDate,
     setInputWeight,
     setInputFat,
     setDrawerMuscleMass,
@@ -2959,6 +2962,7 @@ export default function SalaComandi() {
 
   useEffect(() => {
     if (!showWeightModal) return;
+    setInputWeightDate(getTodayString());
     const p = userProfileRef.current;
     const pw = p?.weight;
     setInputWeight(pw != null && pw !== '' ? String(pw) : '');
@@ -2970,7 +2974,7 @@ export default function SalaComandi() {
     setDrawerBodyWater(pwt != null && pwt !== '' ? String(pwt) : '');
     const pvf = p?.visceral_fat ?? p?.visceralFat ?? p?.visceral;
     setDrawerVisceralFat(pvf != null && pvf !== '' ? String(pvf) : '');
-  }, [showWeightModal]);
+  }, [showWeightModal, getTodayString]);
 
   const handleCSVUpload = (e) => {
     const file = e.target.files?.[0];
@@ -13036,6 +13040,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         finalizeMealBuilderCloseEmpty={finalizeMealBuilderCloseEmpty}
         showWeightModal={showWeightModal}
         setShowWeightModal={setShowWeightModal}
+        inputWeightDate={inputWeightDate}
+        setInputWeightDate={setInputWeightDate}
         inputWeight={inputWeight}
         setInputWeight={setInputWeight}
         inputFat={inputFat}

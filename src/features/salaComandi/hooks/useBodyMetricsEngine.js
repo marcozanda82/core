@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { onValue, push, ref, update } from 'firebase/database';
 import {
+  bodyMetricTimestampFromDate,
   buildTdeeTargetsFromRequest,
+  clampBodyMetricDateToToday,
   computeDataDrivenTdeeWithCoach,
   goalFromProfile,
   mergeHistoryWithLatestWeigh,
+  normalizeBodyMetricDate,
   normalizePredictiveCalibrationState,
   recalculateUserTargets,
   removeBodyMetricsEntry,
+  sortBodyMetricsHistoryByDateAsc,
 } from '../engines/bodyMetricsEngine';
 
 export default function useBodyMetricsEngine({
@@ -22,12 +26,14 @@ export default function useBodyMetricsEngine({
   computeMetabolicNotification,
   metricEntryToIsoDay,
   getTodayString,
+  inputWeightDate,
   inputWeight,
   inputFat,
   drawerMuscleMass,
   drawerBodyWater,
   drawerVisceralFat,
   setShowWeightModal,
+  setInputWeightDate,
   setInputWeight,
   setInputFat,
   setDrawerMuscleMass,
@@ -53,11 +59,11 @@ export default function useBodyMetricsEngine({
         setBodyMetricsHistory([]);
         return;
       }
+      const fallbackDate = getTodayString();
       const arr = Object.entries(val)
         .map(([id, v]) => (v != null && typeof v === 'object' ? { id, ...v } : null))
         .filter(Boolean);
-      arr.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
-      setBodyMetricsHistory(arr);
+      setBodyMetricsHistory(sortBodyMetricsHistoryByDateAsc(arr, fallbackDate));
     });
 
     const unsubTdeeHistory = onValue(ref(db, `users/${user.uid}/tdee_history`), (snap) => {
@@ -85,7 +91,7 @@ export default function useBodyMetricsEngine({
       unsubTdeeHistory();
       unsubPredictiveCalibration();
     };
-  }, [user, db]);
+  }, [user, db, getTodayString]);
 
   const handleUpdateTDEE = useCallback(
     async (newKcal, options = {}) => {
@@ -286,14 +292,26 @@ export default function useBodyMetricsEngine({
     const visceralRaw = String(drawerVisceralFat ?? '').trim();
     const parsedVisceral = visceralRaw === '' ? null : parseFloat(visceralRaw.replace(',', '.'));
     const visceralFat = parsedVisceral != null && Number.isFinite(parsedVisceral) ? parsedVisceral : null;
-    const weighDate = getTodayString();
+    const todayDate = getTodayString();
+    const selectedDate = clampBodyMetricDateToToday({
+      date: normalizeBodyMetricDate({
+        date: inputWeightDate,
+        timestamp: null,
+        fallbackDate: todayDate,
+      }),
+      todayDate,
+    });
+    if (selectedDate !== String(inputWeightDate || '').slice(0, 10)) {
+      alert('La data futura non è consentita. Uso la data di oggi.');
+    }
+    const weighDate = selectedDate;
     const payload = {
       weight: w,
       bodyFat,
       muscle_pct: musclePct,
       water_pct: waterPct,
       visceral_fat: visceralFat,
-      timestamp: Date.now(),
+      timestamp: bodyMetricTimestampFromDate(weighDate),
       date: weighDate,
     };
     const profileUpdates = { 'profile/weight': w };
@@ -310,6 +328,7 @@ export default function useBodyMetricsEngine({
         ...(visceralFat != null ? { visceral_fat: visceralFat } : {}),
       }));
       setShowWeightModal(false);
+      setInputWeightDate(getTodayString());
       setInputWeight('');
       setInputFat('');
       setDrawerMuscleMass('');
@@ -337,6 +356,7 @@ export default function useBodyMetricsEngine({
     auth,
     db,
     inputWeight,
+    inputWeightDate,
     inputFat,
     drawerMuscleMass,
     drawerBodyWater,
@@ -347,6 +367,7 @@ export default function useBodyMetricsEngine({
     getTodayString,
     setUserProfile,
     setShowWeightModal,
+    setInputWeightDate,
     setInputWeight,
     setInputFat,
     setDrawerMuscleMass,
@@ -367,7 +388,7 @@ export default function useBodyMetricsEngine({
       const weighDate = getTodayString();
       const payload = {
         weight: w,
-        timestamp: Date.now(),
+        timestamp: bodyMetricTimestampFromDate(weighDate),
         date: weighDate,
       };
       if (bodyFat != null) payload.bodyFat = bodyFat;

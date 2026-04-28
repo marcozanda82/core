@@ -10,6 +10,84 @@ export const mergeDuplicateBiometrics = mergeDuplicateBiometricsBase;
 export const recalculateUserTargets = recalculateUserTargetsBase;
 export const goalFromProfile = goalFromProfileBase;
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function toIsoDateFromTimestamp(timestamp) {
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts) || ts <= 0) return null;
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+export function isValidIsoDate(value) {
+  if (typeof value !== 'string') return false;
+  const iso = value.trim().slice(0, 10);
+  if (!ISO_DATE_RE.test(iso)) return false;
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.toISOString().slice(0, 10) === iso;
+}
+
+export function normalizeBodyMetricDate({ date, timestamp, fallbackDate }) {
+  const candidateDate = typeof date === 'string' ? date.trim().slice(0, 10) : '';
+  if (isValidIsoDate(candidateDate)) return candidateDate;
+
+  const fromTimestamp = toIsoDateFromTimestamp(timestamp);
+  if (fromTimestamp && isValidIsoDate(fromTimestamp)) return fromTimestamp;
+
+  return isValidIsoDate(fallbackDate) ? fallbackDate : new Date().toISOString().slice(0, 10);
+}
+
+export function clampBodyMetricDateToToday({ date, todayDate }) {
+  const safeToday = isValidIsoDate(todayDate) ? todayDate : new Date().toISOString().slice(0, 10);
+  const safeDate = normalizeBodyMetricDate({
+    date,
+    timestamp: null,
+    fallbackDate: safeToday,
+  });
+  if (safeDate > safeToday) return safeToday;
+  return safeDate;
+}
+
+/**
+ * Usiamo mezzogiorno UTC per evitare slittamenti di giorno con i fusi.
+ */
+export function bodyMetricTimestampFromDate(date) {
+  const safeDate = normalizeBodyMetricDate({
+    date,
+    timestamp: null,
+    fallbackDate: new Date().toISOString().slice(0, 10),
+  });
+  return new Date(`${safeDate}T12:00:00Z`).getTime();
+}
+
+export function normalizeBodyMetricsEntryForTimeline({ entry, fallbackDate }) {
+  if (!entry || typeof entry !== 'object') return null;
+  const normalizedDate = normalizeBodyMetricDate({
+    date: entry.date,
+    timestamp: entry.timestamp,
+    fallbackDate,
+  });
+  return {
+    ...entry,
+    date: normalizedDate,
+    timestamp: bodyMetricTimestampFromDate(normalizedDate),
+  };
+}
+
+export function sortBodyMetricsHistoryByDateAsc(history = [], fallbackDate) {
+  const safeHistory = Array.isArray(history) ? history : [];
+  return safeHistory
+    .map((entry) => normalizeBodyMetricsEntryForTimeline({ entry, fallbackDate }))
+    .filter(Boolean)
+    .sort((a, b) => {
+      const d = String(a.date || '').localeCompare(String(b.date || ''));
+      if (d !== 0) return d;
+      return (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0);
+    });
+}
+
 /**
  * Autopilota metabolico: prot fisse, delta kcal su CHO/FAT 50/50.
  * Mantiene formula e limiti originali.

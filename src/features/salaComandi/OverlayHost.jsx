@@ -9,6 +9,8 @@ export default function OverlayHost({
   finalizeMealBuilderCloseEmpty,
   showWeightModal,
   setShowWeightModal,
+  inputWeightDate,
+  setInputWeightDate,
   inputWeight,
   setInputWeight,
   inputFat,
@@ -133,6 +135,8 @@ export default function OverlayHost({
       <PesataDrawer
         showWeightModal={showWeightModal}
         setShowWeightModal={setShowWeightModal}
+        inputWeightDate={inputWeightDate}
+        setInputWeightDate={setInputWeightDate}
         inputWeight={inputWeight}
         setInputWeight={setInputWeight}
         inputFat={inputFat}
