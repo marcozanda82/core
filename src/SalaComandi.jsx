@@ -38,7 +38,6 @@ import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
 import AiCluster from './AiCluster';
-import MealBuilder from './MealBuilder';
 import { UserNutritionGoalsProvider } from './UserNutritionGoalsContext';
 import { mergeProfileNutritionFromServer, buildNutritionGoalsSnapshot } from './userNutritionGoals';
 import {
@@ -75,6 +74,7 @@ import {
 import AddEventMenuGrid from './components/AddEventMenuGrid';
 import WeeklyPlanning from './components/WeeklyPlanning';
 import PesataDrawer from './components/drawers/PesataDrawer';
+import PastoDrawer from './components/drawers/PastoDrawer';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { recalculateUserTargets, buildMacroSplitFromKcal } from './targetsEngine';
@@ -13647,79 +13647,78 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         )}
 
         {/* VISTA PASTO RAPIDO - CON BOTTONI CANONICI */}
-        {activeAction === 'pasto' && (
-          <MealBuilder
-            onClose={handleAttemptCloseMeal}
-            mealType={mealType}
-            setMealType={setMealType}
-            drawerMealTime={drawerMealTime}
-            setDrawerMealTime={setDrawerMealTime}
-            setDrawerMealTimeStr={setDrawerMealTimeStr}
-            getDefaultMealTime={getDefaultMealTime}
-            decimalToTimeStr={decimalToTimeStr}
-            parseTimeStrToDecimal={parseTimeStrToDecimal}
-            miniTimelinePastoRef={miniTimelinePastoRef}
-            handleMiniTimelineDrag={handleMiniTimelineDrag}
-            allNodes={allNodes}
-            totali={macroDailyReals}
-            userTargets={userTargets}
-            dynamicDailyKcal={dynamicDailyKcal}
-            renderLiveProgressBar={renderLiveProgressBar}
-            renderMiniBar={renderMiniBar}
-            renderProgressBar={renderProgressBar}
-            renderRatioBar={renderRatioBar}
-            mealTotaliFull={mealTotaliFull}
-            targetMacrosPasto={targetMacrosPastoWithPlanning}
-            ratio={ratio}
-            energyAt20Percent={energyAt20Percent}
-            isBarcodeScannerOpen={isBarcodeScannerOpen}
-            setIsBarcodeScannerOpen={setIsBarcodeScannerOpen}
-            barcodeVideoRef={barcodeVideoRef}
-            onCloseBarcodeScanner={closeBarcodeScanner}
-            foodNameInput={foodNameInput}
-            setFoodNameInput={setFoodNameInput}
-            foodWeightInput={foodWeightInput}
-            setFoodWeightInput={setFoodWeightInput}
-            foodInputRef={foodInputRef}
-            foodDropdownSuggestions={foodDropdownSuggestions}
-            creaResults={creaResults}
-            isCreaLoading={isCreaLoading}
-            getLastQuantityForFood={getLastQuantityForFood}
-            showFoodDropdown={showFoodDropdown}
-            setShowFoodDropdown={setShowFoodDropdown}
-            generateFoodWithAI={generateFoodWithAI}
-            triggerCreaSearch={triggerCreaSearch}
-            isGeneratingFood={isGeneratingFood}
-            handleAddFoodManual={handleAddFoodManual}
-            abitudiniIeri={abitudiniIeri}
-            addedFoods={addedFoods}
-            setAddedFoods={setAddedFoods}
-            handleCalibrateFoodWeight={handleCalibrateFoodWeight}
-            setSelectedFoodForInfo={setSelectedFoodForInfo}
-            setSelectedFoodForEdit={setSelectedFoodForEdit}
-            setEditQuantityValue={setEditQuantityValue}
-            userProfile={userProfile}
-            checkBilanciamentoPasto={checkBilanciamentoPasto}
-            TELEMETRY_TABS={TELEMETRY_TABS}
-            TARGETS={TARGETS}
-            MEAL_LABELS_SAVE={MEAL_LABELS_SAVE}
-            saveMealToDiary={saveMealToDiary}
-            editingMealId={editingMealId}
-            callGeminiAPIWithRotation={callGeminiAPIWithRotation}
-            saveCustomRecipeToFoodDb={saveCustomRecipeToFoodDb}
-            foodDb={foodDb}
-            saveFoodEntryPer100ToFoodDb={saveFoodEntryPer100ToFoodDb}
-            deleteRecipeFromFoodDb={deleteRecipeFromFoodDb}
-            estraiDatiFoodDb={estraiDatiFoodDb}
-            plannerNoteFromAi={mealPlannerGhostNote}
-            onSmartComplete={handleSmartMealCompletion}
-            smartMealLaunchKey={mealBuilderSmartLaunchKey}
-            coachPracticalLaunchKey={mealBuilderCoachPracticalKey}
-            mealBuilderBarcodeBootstrap={mealBuilderBarcodeBootstrap}
-            onMealBuilderBarcodeBootstrapConsumed={consumeMealBuilderBarcodeBootstrap}
-            persistBarcodeNutritionCorrection={persistBarcodeNutritionCorrection}
-          />
-        )}
+        <PastoDrawer
+          activeAction={activeAction}
+          onClose={handleAttemptCloseMeal}
+          mealType={mealType}
+          setMealType={setMealType}
+          drawerMealTime={drawerMealTime}
+          setDrawerMealTime={setDrawerMealTime}
+          setDrawerMealTimeStr={setDrawerMealTimeStr}
+          getDefaultMealTime={getDefaultMealTime}
+          decimalToTimeStr={decimalToTimeStr}
+          parseTimeStrToDecimal={parseTimeStrToDecimal}
+          miniTimelinePastoRef={miniTimelinePastoRef}
+          handleMiniTimelineDrag={handleMiniTimelineDrag}
+          allNodes={allNodes}
+          totali={macroDailyReals}
+          userTargets={userTargets}
+          dynamicDailyKcal={dynamicDailyKcal}
+          renderLiveProgressBar={renderLiveProgressBar}
+          renderMiniBar={renderMiniBar}
+          renderProgressBar={renderProgressBar}
+          renderRatioBar={renderRatioBar}
+          mealTotaliFull={mealTotaliFull}
+          targetMacrosPasto={targetMacrosPastoWithPlanning}
+          ratio={ratio}
+          energyAt20Percent={energyAt20Percent}
+          isBarcodeScannerOpen={isBarcodeScannerOpen}
+          setIsBarcodeScannerOpen={setIsBarcodeScannerOpen}
+          barcodeVideoRef={barcodeVideoRef}
+          onCloseBarcodeScanner={closeBarcodeScanner}
+          foodNameInput={foodNameInput}
+          setFoodNameInput={setFoodNameInput}
+          foodWeightInput={foodWeightInput}
+          setFoodWeightInput={setFoodWeightInput}
+          foodInputRef={foodInputRef}
+          foodDropdownSuggestions={foodDropdownSuggestions}
+          creaResults={creaResults}
+          isCreaLoading={isCreaLoading}
+          getLastQuantityForFood={getLastQuantityForFood}
+          showFoodDropdown={showFoodDropdown}
+          setShowFoodDropdown={setShowFoodDropdown}
+          generateFoodWithAI={generateFoodWithAI}
+          triggerCreaSearch={triggerCreaSearch}
+          isGeneratingFood={isGeneratingFood}
+          handleAddFoodManual={handleAddFoodManual}
+          abitudiniIeri={abitudiniIeri}
+          addedFoods={addedFoods}
+          setAddedFoods={setAddedFoods}
+          handleCalibrateFoodWeight={handleCalibrateFoodWeight}
+          setSelectedFoodForInfo={setSelectedFoodForInfo}
+          setSelectedFoodForEdit={setSelectedFoodForEdit}
+          setEditQuantityValue={setEditQuantityValue}
+          userProfile={userProfile}
+          checkBilanciamentoPasto={checkBilanciamentoPasto}
+          TELEMETRY_TABS={TELEMETRY_TABS}
+          TARGETS={TARGETS}
+          MEAL_LABELS_SAVE={MEAL_LABELS_SAVE}
+          saveMealToDiary={saveMealToDiary}
+          editingMealId={editingMealId}
+          callGeminiAPIWithRotation={callGeminiAPIWithRotation}
+          saveCustomRecipeToFoodDb={saveCustomRecipeToFoodDb}
+          foodDb={foodDb}
+          saveFoodEntryPer100ToFoodDb={saveFoodEntryPer100ToFoodDb}
+          deleteRecipeFromFoodDb={deleteRecipeFromFoodDb}
+          estraiDatiFoodDb={estraiDatiFoodDb}
+          plannerNoteFromAi={mealPlannerGhostNote}
+          onSmartComplete={handleSmartMealCompletion}
+          smartMealLaunchKey={mealBuilderSmartLaunchKey}
+          coachPracticalLaunchKey={mealBuilderCoachPracticalKey}
+          mealBuilderBarcodeBootstrap={mealBuilderBarcodeBootstrap}
+          onMealBuilderBarcodeBootstrapConsumed={consumeMealBuilderBarcodeBootstrap}
+          persistBarcodeNutritionCorrection={persistBarcodeNutritionCorrection}
+        />
 
         {/* VISTA DIARIO GIORNALIERO */}
         {activeAction === 'diario_giornaliero' && (
