@@ -84,7 +84,15 @@ import SpieInfoOverlay from './features/salaComandi/overlays/SpieInfoOverlay';
 import SleepPromptOverlay from './features/salaComandi/overlays/SleepPromptOverlay';
 import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
 import useFoodInputEngine from './features/salaComandi/hooks/useFoodInputEngine';
-import { findBestFoodMatch, findRecentFoodHabit } from './features/salaComandi/utils/foodUtils';
+import {
+  findBestFoodMatch,
+  findRecentFoodHabit,
+  draftStringsToFoods,
+  ghostMealModalFoodRows,
+  parsePlanMealDraftAiResponse,
+  structuredFoodsToProposalItems,
+  ghostSurfaceDraftToProposalItems,
+} from './features/salaComandi/utils/foodUtils';
 import {
   mealFoodsRead,
   planningMealSlotKeyForFirebase,
@@ -95,9 +103,34 @@ import {
   stripInvisibleContextFromVisibleUserText,
   collectDispensaProbableFoods,
   getInvisibleContext,
+  extractAndStripMealProposal,
+  normalizeDailyPlanTimeForInput,
+  normalizeDailyPlanFromToken,
+  extractAndStripDailyPlan,
+  parseSmartCompletionJsonFromAiResponse,
 } from './features/salaComandi/utils/aiContextUtils';
 import { normalizeAddMenuOrderState } from './features/salaComandi/utils/menuUtils';
-import { formatBodyBatteryValue } from './features/salaComandi/utils/bodyMetricsUtils';
+import {
+  formatBodyBatteryValue,
+  extractNumber,
+  normalizeCsvTimeFragment,
+  parseUniversalDate,
+  buildBodyMetricsColumnMap,
+} from './features/salaComandi/utils/bodyMetricsUtils';
+import {
+  getMealTimeFromLogItem,
+  normalizeWorkoutSearchKey,
+  formatDecimalHourIt,
+  parseFlexibleTimeToDecimal,
+  extractWorkoutSearchKeysFromMessage,
+  detectWorkoutIntentFromChat,
+  findLastMatchingWorkoutSlot,
+  buildPastOnlyRealMealTypeSet,
+  buildBaseLogForGhostPlanMerge,
+  dedupeGhostMealsPayloadForConfirm,
+  ghostMealLogEntryIdFromPayload,
+  normalizeGhostFoodsForTimelineNode,
+} from './features/salaComandi/utils/timelineUtils';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { recalculateUserTargets, buildMacroSplitFromKcal } from './targetsEngine';
@@ -188,7 +221,6 @@ import {
   getTrainingWaveCurves,
   buildTrainingWaveContextSnippet,
   getDynamicMealTargets,
-  normalizeMealFoodItem,
   normalizeMealFoodsArray,
   buildSmartMealPhysioContextSnippet,
   parseKentuInvisibleCmd,
@@ -393,170 +425,6 @@ function buildMealIdeaFromDispensaSecretPrompt() {
     `Rispondi SOLO con il blocco [MEAL_PROPOSAL:{...}] su una riga (CARTA MENU), zero testo prima o dopo.`
   );
 }
-
-/**
- * Estrae [MEAL_PROPOSAL:{...}] dalla risposta AI e restituisce JSON validato + testo senza il blocco.
- */
-function extractAndStripMealProposal(rawText) {
-  const text = rawText == null ? '' : String(rawText);
-  const tag = '[MEAL_PROPOSAL:';
-  const i = text.indexOf(tag);
-  if (i === -1) return { stripped: text, proposal: null };
-  const jsonStart = i + tag.length;
-  if (text[jsonStart] !== '{') return { stripped: text, proposal: null };
-  let depth = 0;
-  let j = jsonStart;
-  for (; j < text.length; j++) {
-    const c = text[j];
-    if (c === '{') depth++;
-    else if (c === '}') {
-      depth--;
-      if (depth === 0) {
-        j++;
-        break;
-      }
-    }
-  }
-  if (depth !== 0) return { stripped: text, proposal: null };
-  let k = j;
-  while (k < text.length && /\s/.test(text[k])) k++;
-  const endBlock = k < text.length && text[k] === ']' ? k + 1 : j;
-  const jsonStr = text.slice(jsonStart, j);
-  let proposal = null;
-  try {
-    const parsed = JSON.parse(jsonStr);
-    if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
-      proposal = {
-        title: parsed.title != null ? String(parsed.title) : undefined,
-        timeString: parsed.timeString != null ? String(parsed.timeString) : undefined,
-        items: parsed.items.map((row, idx) => ({
-          id: row.id != null ? String(row.id) : `ing_${idx}`,
-          name: String(row.name || row.desc || 'Alimento').trim(),
-          qty: Number(row.qty ?? row.weight ?? row.qta) > 0 ? Number(row.qty ?? row.weight ?? row.qta) : 100,
-          dbKey: row.dbKey != null ? String(row.dbKey) : undefined,
-          why: row.why != null ? String(row.why) : row.perche != null ? String(row.perche) : '',
-          estKcal: row.estKcal,
-          estPro: row.estPro,
-          estCar: row.estCar,
-          estFat: row.estFat,
-        })),
-      };
-    }
-  } catch (_) {
-    proposal = null;
-  }
-  const stripped = (text.slice(0, i) + text.slice(endBlock)).replace(/\s+/g, ' ').trim();
-  return { stripped, proposal };
-}
-
-/** Normalizza orario per input type="time" (HH:mm). */
-function normalizeDailyPlanTimeForInput(raw) {
-  if (raw == null) return '';
-  const s = String(raw).trim();
-  if (!s || s.toLowerCase() === 'null') return '';
-  const colon = s.match(/^(\d{1,2})\s*[:.h]\s*(\d{2})$/i);
-  if (colon) {
-    const h = Math.min(23, Math.max(0, parseInt(colon[1], 10)));
-    const min = Math.min(59, Math.max(0, parseInt(colon[2], 10)));
-    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-  }
-  const n = parseFloat(s.replace(',', '.'));
-  if (Number.isFinite(n)) {
-    const h = Math.floor(n) % 24;
-    const frac = n % 1;
-    const min = Math.min(59, Math.round(frac * 60) % 60);
-    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-  }
-  return '';
-}
-
-function normalizeDailyPlanFromToken(parsed) {
-  if (!parsed || typeof parsed !== 'object') return null;
-  const rawActivities = Array.isArray(parsed.activities) ? parsed.activities : [];
-  const activities = rawActivities
-    .map((a, idx) => {
-      const timeNorm = normalizeDailyPlanTimeForInput(a?.time != null ? String(a.time) : '') || '12:00';
-      const desc = String(a?.desc ?? a?.title ?? '').trim() || `Attività ${idx + 1}`;
-      return { time: timeNorm, desc };
-    })
-    .filter((a) => a.desc);
-  if (activities.length === 0) return null;
-  const targetNorm = normalizeCalorieStrategyTarget(parsed.target);
-  const target = targetNorm || 'pari';
-  let workoutTime = null;
-  if (parsed.workoutTime != null) {
-    const ws = String(parsed.workoutTime).trim();
-    if (ws && ws.toLowerCase() !== 'null') {
-      const wn = normalizeDailyPlanTimeForInput(ws);
-      if (wn) workoutTime = wn;
-    }
-  }
-  let ghostMeals = [];
-  if (Array.isArray(parsed.ghostMeals)) {
-    ghostMeals = parsed.ghostMeals
-      .map((g) => {
-        const mealType = String(g?.mealType || 'pranzo').toLowerCase().split('_')[0];
-        const timeNorm = normalizeDailyPlanTimeForInput(g?.time != null ? String(g.time) : '') || '12:00';
-        const title = String(g?.title || 'Pasto pianificato').trim();
-        const microDesc = String(g?.microDesc || '').trim();
-        const draftFoods = Array.isArray(g?.draftFoods)
-          ? g.draftFoods.map((x) => String(x).trim()).filter(Boolean)
-          : [];
-        if (!title) return null;
-        const row = {
-          mealType,
-          time: timeNorm,
-          title,
-          microDesc,
-          draftFoods,
-          foods: normalizeMealFoodsArray(g?.foods),
-        };
-        return row;
-      })
-      .filter(Boolean);
-  }
-  return { target, workoutTime, activities, ghostMeals };
-}
-
-/**
- * Estrae [DAILY_PLAN:{...}] dalla risposta AI e restituisce JSON validato + testo senza il blocco.
- */
-function extractAndStripDailyPlan(rawText) {
-  const text = rawText == null ? '' : String(rawText);
-  const tag = '[DAILY_PLAN:';
-  const i = text.indexOf(tag);
-  if (i === -1) return { stripped: text, plan: null };
-  const jsonStart = i + tag.length;
-  if (text[jsonStart] !== '{') return { stripped: text, plan: null };
-  let depth = 0;
-  let j = jsonStart;
-  for (; j < text.length; j++) {
-    const c = text[j];
-    if (c === '{') depth++;
-    else if (c === '}') {
-      depth--;
-      if (depth === 0) {
-        j++;
-        break;
-      }
-    }
-  }
-  if (depth !== 0) return { stripped: text, plan: null };
-  let k = j;
-  while (k < text.length && /\s/.test(text[k])) k++;
-  const endBlock = k < text.length && text[k] === ']' ? k + 1 : j;
-  const jsonStr = text.slice(jsonStart, j);
-  let plan = null;
-  try {
-    const parsed = JSON.parse(jsonStr);
-    plan = normalizeDailyPlanFromToken(parsed);
-  } catch (_) {
-    plan = null;
-  }
-  const stripped = (text.slice(0, i) + text.slice(endBlock)).replace(/\s+/g, ' ').trim();
-  return { stripped, plan };
-}
-
 
 /** Arco semicircolare Body Battery — look neon sottile; 💤 cyan se boost sonnellino. */
 function EnergyArc({ percentage, size = 'small', hasNapBoost = false, showText = true }) {
@@ -1135,126 +1003,6 @@ function computeSleepDurationHours(bedDecimal, wakeDecimal) {
   return Math.round(Math.min(24, Math.max(0, dur)) * 100) / 100;
 }
 
-function getMealTimeFromLogItem(item) {
-  if (!item) return null;
-  const mt = Number(item.mealTime);
-  if (Number.isFinite(mt)) return mt;
-  const t = Number(item.time);
-  return Number.isFinite(t) ? t : null;
-}
-
-function normalizeWorkoutSearchKey(str) {
-  return String(str || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function formatDecimalHourIt(dec) {
-  const d = Number(dec);
-  if (!Number.isFinite(d)) return '';
-  let h = Math.floor(d);
-  let m = Math.round((d - h) * 60);
-  if (m >= 60) {
-    h += Math.floor(m / 60);
-    m %= 60;
-  }
-  h %= 24;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-function parseFlexibleTimeToDecimal(text) {
-  const s = String(text || '').trim().toLowerCase();
-  const m = s.match(/\b(\d{1,2})[:h.](\d{2})\b/);
-  if (m) {
-    const h = parseInt(m[1], 10);
-    const min = parseInt(m[2], 10);
-    if (h >= 0 && h <= 23 && min >= 0 && min < 60) return Math.round((h + min / 60) * 100) / 100;
-  }
-  const m2 = s.match(/\b(\d{1,2})\s*,\s*(\d{2})\b/);
-  if (m2) {
-    const h = parseInt(m2[1], 10);
-    const min = parseInt(m2[2], 10);
-    if (h >= 0 && h <= 23 && min >= 0 && min < 60) return Math.round((h + min / 60) * 100) / 100;
-  }
-  const m3 = s.match(/\b(\d{1,2})\s*(?:e\s*mezza)\b/);
-  if (m3) {
-    const h = parseInt(m3[1], 10);
-    if (h >= 0 && h < 24) return h + 0.5;
-  }
-  return null;
-}
-
-function extractWorkoutSearchKeysFromMessage(normMsg) {
-  const parts = normMsg.split(/\s+/).filter(Boolean);
-  const skip = new Set([
-    'oggi', 'stasera', 'ieri', 'allenamento', 'di', 'il', 'la', 'lo', 'per', 'un', 'una', 'ho', 'fare', 'faccio', 'faro', 'farò',
-    'programmo', 'voglio', 'devo', 'andare', 'in', 'palestra', 'con', 'del', 'dei', 'della',
-  ]);
-  return [...new Set(parts.filter((p) => p.length > 2 && !skip.has(p)))];
-}
-
-/** Rileva intento allenamento in chat (solo giorno corrente, prima della chiamata API). */
-function detectWorkoutIntentFromChat(raw) {
-  const m = String(raw || '').trim();
-  if (m.length < 4) return null;
-  const norm = normalizeWorkoutSearchKey(m);
-  if (/\b(ho mangiato|logga\s+pasto|registra(?:\s+il)?\s*pasto)\b/i.test(m) && !/\ballenamento\b|\bpalestra\b|\bpesi\b/i.test(m)) {
-    return null;
-  }
-  const hasStrong =
-    /\ballenamento\b|\bpalestra\b|\bpesi\b|workout|crossfit|push\s*day|pull\s*day|leg\s*day|\bcardio\b|\bcorsa\b|\bhiit\b/i.test(m);
-  const hasBody = /\b(petto|schiena|gambe|braccia|glutei|spalle|bicipiti|tricipiti|addome|dorso|quadricipiti|polpacci)\b/i.test(m);
-  if (!hasStrong) {
-    if (!hasBody) return null;
-    if (!/\b(faccio|farò|faro|oggi|stasera|programmo|voglio|allen)\b/i.test(norm)) return null;
-  }
-  let activity = 'weights';
-  if (/\bcorsa\b|\bcardio\b|\bcamminata\b|\bhiit\b|bike|spinning|ellittica|nuot/i.test(m)) activity = 'cardio';
-
-  let displayLabel = m.replace(/\s+/g, ' ');
-  const am = m.match(/\ballenamento\s+(?:di\s+|da\s+)?([^.!?\n]{2,40})/i);
-  if (am) displayLabel = am[1].trim().replace(/\s+$/,'');
-  else {
-    const bm = m.match(/\b(petto|schiena|gambe|braccia|glutei|spalle|bicipiti|tricipiti|push|pull|legs|dorso)\b/i);
-    if (bm) displayLabel = bm[0];
-  }
-
-  const keys = extractWorkoutSearchKeysFromMessage(normalizeWorkoutSearchKey(displayLabel));
-  const fullKeys = [...new Set([...keys, normalizeWorkoutSearchKey(displayLabel)])].filter(Boolean);
-  if (fullKeys.length === 0) fullKeys.push(normalizeWorkoutSearchKey(displayLabel));
-  return { displayLabel, activity, searchKeys: fullKeys };
-}
-
-function findLastMatchingWorkoutSlot(fullHistory, anchorDateStr, searchKeys) {
-  if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr || !searchKeys?.length) return null;
-  for (let i = 1; i < 90; i++) {
-    const dStr = addDays(anchorDateStr, -i);
-    const log = getLogFromStoricoTree(fullHistory, dStr) || [];
-    const workouts = log.filter(
-      (e) => e && (e.type === 'workout' || e.type === 'work' || e.type === 'activity' || e.type === 'cognitive')
-    );
-    for (const w of workouts) {
-      const desc = normalizeWorkoutSearchKey((w.desc || w.name || w.label || '').trim());
-      if (!desc) continue;
-      const hit = searchKeys.some(
-        (k) =>
-          k.length >= 3 &&
-          (desc.includes(k) || k.includes(desc.slice(0, Math.min(14, desc.length))))
-      );
-      if (hit) {
-        const t = getMealTimeFromLogItem(w) ?? (typeof w.time === 'number' ? w.time : null);
-        if (t != null && Number.isFinite(t)) {
-          return { decimalHour: t, sourceLabel: w.desc || w.name || '' };
-        }
-      }
-    }
-  }
-  return null;
-}
-
 const FIREBASE_LOAD_OVERLAY_FADE_MS = 800;
 
 /** Riferimenti stabili per chart vuoto / notte in sospeso (evita ricalcoli longevity ad ogni render). */
@@ -1349,150 +1097,6 @@ export function calculateAge(dobString) {
   return age;
 }
 
-/** Alias intestazioni CSV bilance / app salute (Renpho, Xiaomi, Withings, ecc.) */
-const COLUMN_ALIASES = {
-  date: ['date', 'data', 'time', 'ora', 'misurazione', 'measurement'],
-  weight: ['peso', 'weight', 'poid', 'kg', 'lbs'],
-  fat: ['grasso', 'fat', 'adipose', 'bf'],
-  muscle: ['muscol', 'muscle', 'skeletal'],
-  water: ['acqua', 'water', 'hydration', 'eau'],
-  visceral: ['viscerale', 'visceral', 'vfr'],
-};
-
-const CSV_BODY_METRIC_FIELDS = ['date', 'weight', 'fat', 'muscle', 'water', 'visceral'];
-
-function extractNumber(str) {
-  if (str == null) return null;
-  let s = String(str).replace(/[^0-9.,-]/g, '');
-  if (!s || s === '-') return null;
-  const lastComma = s.lastIndexOf(',');
-  if (lastComma !== -1) {
-    s = `${s.slice(0, lastComma).replace(/,/g, '')}.${s.slice(lastComma + 1)}`;
-  }
-  s = s.replace(/,/g, '');
-  const n = parseFloat(s);
-  return Number.isFinite(n) ? n : null;
-}
-
-function normalizeCsvTimeFragment(timePart) {
-  const t = String(timePart).trim();
-  if (!t) return '12:00:00';
-  if (/^\d{1,2}:\d{2}$/.test(t)) return `${t}:00`;
-  if (/^\d{1,2}:\d{2}:\d{2}/.test(t)) return t.slice(0, 8);
-  return t;
-}
-
-/**
- * Riconosce YYYY-MM-DD, EU (GG/MM/YYYY o GG-MM-YYYY con primi token) e US MM-DD-YYYY quando ambiguo con trattino.
- * @returns {{ isoDate: string, timestamp: number } | null}
- */
-function parseUniversalDate(raw) {
-  if (raw == null || raw === '') return null;
-  const str = String(raw).trim();
-  const [datePart, ...timeRest] = str.split(/\s+/);
-  if (!datePart) return null;
-  const timePart = timeRest.join(' ').trim();
-
-  let year;
-  let month;
-  let day;
-
-  let m = datePart.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
-  if (m) {
-    year = Number(m[1]);
-    month = Number(m[2]);
-    day = Number(m[3]);
-  } else {
-    m = datePart.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (m) {
-      const a = Number(m[1]);
-      const b = Number(m[2]);
-      const y = Number(m[3]);
-      if (a > 12) {
-        day = a;
-        month = b;
-        year = y;
-      } else if (b > 12) {
-        month = a;
-        day = b;
-        year = y;
-      } else {
-        day = a;
-        month = b;
-        year = y;
-      }
-    } else {
-      m = datePart.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-      if (m) {
-        const a = Number(m[1]);
-        const b = Number(m[2]);
-        const y = Number(m[3]);
-        if (a > 12) {
-          day = a;
-          month = b;
-          year = y;
-        } else if (b > 12) {
-          month = a;
-          day = b;
-          year = y;
-        } else {
-          month = a;
-          day = b;
-          year = y;
-        }
-      }
-    }
-  }
-
-  if (
-    year == null ||
-    !Number.isFinite(month) ||
-    !Number.isFinite(day) ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
-  ) {
-    return null;
-  }
-
-  const isoDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  const isoTime = normalizeCsvTimeFragment(timePart);
-  const d = new Date(`${isoDate}T${isoTime}`);
-  if (!Number.isFinite(d.getTime())) return null;
-  return { isoDate, timestamp: d.getTime() };
-}
-
-function buildBodyMetricsColumnMap(headerLine) {
-  const headerCells = headerLine
-    .replace(/"/g, '')
-    .toLowerCase()
-    .split(',')
-    .map((h) => h.trim());
-
-  const columnMap = { date: -1, weight: -1, fat: -1, muscle: -1, water: -1, visceral: -1 };
-
-  for (const field of CSV_BODY_METRIC_FIELDS) {
-    const aliases = COLUMN_ALIASES[field];
-    if (!aliases) continue;
-    for (let i = 0; i < headerCells.length; i++) {
-      const h = headerCells[i];
-      if (aliases.some((alias) => h.includes(alias))) {
-        columnMap[field] = i;
-        break;
-      }
-    }
-  }
-
-  if (columnMap.date === -1 || columnMap.weight === -1) {
-    throw new Error(
-      "CSV: intestazione non valida — servono colonne riconoscibili per data e peso (es. 'date'/'data' e 'weight'/'peso')."
-    );
-  }
-
-  return { columnMap, headerCells };
-}
-
 function kentuChatStorageKey(dateStr) {
   return `kentu_chat_${dateStr}`;
 }
@@ -1536,70 +1140,8 @@ function getNowDecimalHourForPlanMerge() {
   return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
 }
 
-/** Tipi pasto già consumati (reali, non ghost) con orario ≤ ora: bloccano un nuovo ghost sullo stesso slot. */
-function buildPastOnlyRealMealTypeSet(srcLog, nowDec) {
-  const set = new Set();
-  (srcLog || []).forEach((n) => {
-    if (!n || n.isGhost || (n.type !== 'food' && n.type !== 'recipe') || !n.mealType) return;
-    const dec = Number(n.mealTime);
-    if (Number.isNaN(dec) || dec > nowDec) return;
-    const mt = toCanonicalMealType(String(n.mealType).split('_')[0]);
-    if (mt) set.add(mt);
-  });
-  return set;
-}
-
-/** Rimuove ghost_meal e i pasti reali futuri che verranno sostituiti da ghost nel piano (stesso mealType). */
-function buildBaseLogForGhostPlanMerge(srcLog, ghostList, nowDec) {
-  const ghostMt = new Set(
-    (ghostList || [])
-      .map((gm) => toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]))
-      .filter(Boolean)
-  );
-  return (srcLog || []).filter((e) => {
-    if (!e) return false;
-    if (e.type === 'ghost_meal') return false;
-    if ((e.type === 'food' || e.type === 'recipe') && !e.isGhost) {
-      const dec = Number(e.mealTime);
-      if (!Number.isNaN(dec) && dec > nowDec) {
-        const mt = toCanonicalMealType(String(e.mealType || '').split('_')[0]);
-        if (mt && ghostMt.has(mt)) return false;
-      }
-    }
-    return true;
-  });
-}
-
 /** Debounce conferma pasti (wizard / piano giornaliero): evita doppio insert su click rapidi. */
 const MEAL_CONFIRM_DEBOUNCE_MS = 900;
-
-/**
- * Deduplica voci ghost nel payload (stesso `id` staging o stesso slot mealType+orario).
- * @param {object[]} ghostList
- * @param {(gm: object) => string} getSlotKey
- */
-function dedupeGhostMealsPayloadForConfirm(ghostList, getSlotKey) {
-  const seen = new Set();
-  const out = [];
-  for (const gm of ghostList || []) {
-    if (!gm || typeof gm !== 'object') continue;
-    const key = getSlotKey(gm);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(gm);
-  }
-  return out;
-}
-
-/** Id log stabile da payload wizard/piano (`ghost_meal_<id>`) o batch timestamp se manca id. */
-function ghostMealLogEntryIdFromPayload(gm, index, batchTs) {
-  const rawId = gm.id != null && String(gm.id).trim() !== '' ? String(gm.id).trim() : '';
-  if (rawId) {
-    const safe = rawId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
-    return `ghost_meal_${safe}`;
-  }
-  return `ghost_meal_${batchTs}_${index}`;
-}
 
 function tryAcquireMealConfirmGuard(guardRef) {
   const g = guardRef.current;
@@ -1612,162 +1154,6 @@ function tryAcquireMealConfirmGuard(guardRef) {
 
 function releaseMealConfirmGuard(guardRef) {
   guardRef.current.busy = false;
-}
-
-/** Da stringhe tipo "200g Riso" → oggetti { name, qty } per stato `meals.foods`. */
-function draftStringsToFoods(strings) {
-  if (!Array.isArray(strings)) return [];
-  return strings
-    .map((s) => {
-      const raw = String(s || '').trim();
-      if (!raw) return null;
-      const m = raw.match(/^(\d+(?:[.,]\d+)?)\s*g\s+(.+)$/i);
-      if (m) {
-        const qty = Math.round(Number(String(m[1]).replace(',', '.')) || 100);
-        const name = String(m[2]).trim();
-        return name ? { name, qty: qty > 0 ? qty : 100 } : null;
-      }
-      return { name: raw, qty: 100 };
-    })
-    .filter(Boolean)
-    .slice(0, 14);
-}
-
-/** Righe alimento per modal ghost: prima `foods` normalizzati, poi oggetti in draft, poi stringhe. */
-function ghostMealModalFoodRows(report) {
-  let rows = normalizeMealFoodsArray(report?.foods);
-  if (rows.length > 0) return rows;
-  const draft = Array.isArray(report?.draftFoods) ? report.draftFoods : [];
-  const objs = draft.filter((x) => x && typeof x === 'object' && (x.name || x.desc));
-  if (objs.length > 0) rows = normalizeMealFoodsArray(objs);
-  else {
-    const strs = draft
-      .filter((x) => typeof x === 'string')
-      .map((s) => String(s).trim())
-      .filter(Boolean);
-    if (strs.length > 0) rows = normalizeMealFoodsArray(draftStringsToFoods(strs));
-  }
-  return rows;
-}
-
-/**
- * Risposta AI piano pasto: preferisce `items` strutturati; fallback `draftFoods` (stringhe).
- * @returns {{ foods: object[], draftFoods: string[] }}
- */
-function parsePlanMealDraftAiResponse(raw) {
-  const s = String(raw || '').trim();
-  let jsonStr = s;
-  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) jsonStr = fence[1].trim();
-  let obj;
-  try {
-    obj = JSON.parse(jsonStr);
-  } catch (e) {
-    throw new Error(e?.message ? String(e.message) : 'JSON non valido');
-  }
-  if (Array.isArray(obj?.items) && obj.items.length > 0) {
-    const foods = normalizeMealFoodsArray(obj.items).slice(0, 14);
-    const draftFoods = foods.map((f) => `${f.qty}g ${f.name}`);
-    return { foods, draftFoods };
-  }
-  const arr = obj?.draftFoods;
-  if (!Array.isArray(arr) || arr.length === 0) throw new Error('draftFoods vuoto o non valido');
-  const draftFoods = arr.map((x) => String(x).trim()).filter(Boolean).slice(0, 14);
-  const foods = normalizeMealFoodsArray(draftStringsToFoods(draftFoods));
-  return { foods, draftFoods };
-}
-
-/** Da voci canoniche `meal.foods` (o legacy) → items per `mapProposalItemsToDiaryFoods` (est* + matchedKey). */
-function structuredFoodsToProposalItems(foods) {
-  if (!Array.isArray(foods)) return [];
-  return foods
-    .map((f) => {
-      const canon = normalizeMealFoodItem(f);
-      if (!canon) return null;
-      const o = {
-        name: canon.name,
-        qty: canon.qty,
-        estKcal: canon.kcal,
-        estPro: canon.prot,
-        estCar: canon.carb,
-        estFat: canon.fat,
-      };
-      if (canon.dbKey) o.dbKey = canon.dbKey;
-      if (f && typeof f === 'object' && f.matchedKey != null && String(f.matchedKey).trim() !== '') {
-        o.matchedKey = String(f.matchedKey).trim();
-      }
-      return o;
-    })
-    .filter(Boolean);
-}
-
-/**
- * `draftFoods` UI (stringhe "200g X" o oggetti pill) → proposal items per espansione in righe diario.
- */
-function ghostSurfaceDraftToProposalItems(draftFoods) {
-  if (!Array.isArray(draftFoods)) return [];
-  return draftFoods
-    .map((x) => {
-      if (x == null) return null;
-      if (typeof x === 'object') {
-        return structuredFoodsToProposalItems([x])[0] ?? null;
-      }
-      const s = String(x).trim();
-      if (!s) return null;
-      const m = s.match(/^(\d+(?:[.,]\d+)?)\s*g\s+(.+)$/i);
-      if (m) {
-        const qty = Math.max(1, Math.round(Number(String(m[1]).replace(',', '.')) || 100));
-        const name = String(m[2]).trim();
-        return name ? { name, qty } : null;
-      }
-      return { name: s, qty: 100 };
-    })
-    .filter(Boolean);
-}
-
-/** Nodo timeline ghost: `foods` in forma canonica (da log o da draftFoods). */
-function normalizeGhostFoodsForTimelineNode(e) {
-  const fromLog = normalizeMealFoodsArray(mealFoodsRead(e));
-  if (fromLog.length > 0) return fromLog;
-  return normalizeMealFoodsArray(ghostSurfaceDraftToProposalItems(e?.draftFoods));
-}
-
-function parseSmartCompletionFoodsPayload(obj) {
-  const foods = obj?.foods;
-  if (!Array.isArray(foods) || foods.length === 0) throw new Error('foods vuoto o non valido');
-  return foods
-    .map((f) => ({
-      desc: String(f?.desc ?? f?.name ?? '').trim(),
-      weight: Math.max(5, Math.round(Number(f?.weight ?? f?.qty) || 100)),
-    }))
-    .filter((f) => f.desc.length > 0)
-    .slice(0, 20);
-}
-
-function parseSmartCompletionJsonFromAiResponse(raw) {
-  const aiText = String(raw || '').trim();
-  let obj = null;
-  const match = aiText.match(/\[COMPLETION_JSON:\s*(\{[\s\S]*?\})\s*\]/i);
-  if (!match) {
-    console.log('AI Response:', aiText);
-  } else {
-    try {
-      obj = JSON.parse(match[1]);
-    } catch (_) {
-      obj = null;
-    }
-  }
-  if (!obj) {
-    const i0 = aiText.indexOf('{');
-    const i1 = aiText.lastIndexOf('}');
-    if (i0 < 0 || i1 <= i0) throw new Error('Token COMPLETION_JSON non trovato o JSON non estraibile');
-    try {
-      obj = JSON.parse(aiText.slice(i0, i1 + 1));
-    } catch (e) {
-      throw new Error(e?.message ? String(e.message) : 'JSON non valido (fallback brace)');
-    }
-  }
-  return parseSmartCompletionFoodsPayload(obj);
 }
 
 export default function SalaComandi() {
