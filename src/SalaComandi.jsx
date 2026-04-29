@@ -138,7 +138,6 @@ import {
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { buildMacroSplitFromKcal } from './targetsEngine';
-import { averageFoodKcalOver14d } from './dataDrivenTdee';
 import { computeMetabolicNotification } from './notificationEngine';
 import { setBarcodeNutritionOverride as setBarcodeNutritionOverrideStorage } from './barcodeFoodOverrides';
 import {
@@ -3092,18 +3091,79 @@ export default function SalaComandi() {
   };
 
   const calculateSmartTargets = () => {
-    const { weight, nutritionGoal, goal } = userProfile;
-    const w = parseFloat(weight) || 75;
-    const ng = nutritionGoal || (goal === 'lose' ? 'cut' : goal === 'gain' ? 'bulk' : 'maintain');
-    const endIso = getTodayString();
-    const fromLogs = averageFoodKcalOver14d(fullHistory, endIso);
-    const fallback = parseFloat(String(userProfile.targetCalories ?? '')) || 2000;
-    const kcal = fromLogs ?? Math.round(fallback);
-    const m = buildMacroSplitFromKcal(w, kcal);
+    const weightKg = Number.parseFloat(String(userProfile?.weight ?? ''));
+    const heightCm = Number.parseFloat(String(userProfile?.height ?? ''));
+    const computedAge = calculateAge(birthDate);
+    const ageYears =
+      Number.isFinite(Number(computedAge)) && Number(computedAge) > 0
+        ? Number(computedAge)
+        : Number.parseInt(String(userProfile?.age ?? ''), 10);
+    const safeWeight = Number.isFinite(weightKg) && weightKg > 0 ? weightKg : 75;
+    const safeHeight = Number.isFinite(heightCm) && heightCm > 0 ? heightCm : 175;
+    const safeAge = Number.isFinite(ageYears) && ageYears > 0 ? ageYears : 30;
+
+    const genderRaw = String(userProfile?.gender ?? 'M').trim().toUpperCase();
+    const isFemale = genderRaw === 'F' || genderRaw === 'FEMALE' || genderRaw === 'DONNA';
+
+    const activityRaw = String(userProfile?.activityLevel ?? '1.55').trim().toLowerCase();
+    const activityFactorMap = {
+      sedentary: 1.2,
+      light: 1.375,
+      moderate: 1.55,
+      active: 1.725,
+      very_active: 1.9,
+    };
+    const activityFromLabel = activityFactorMap[activityRaw];
+    const activityFromNumeric = Number.parseFloat(activityRaw);
+    const activityFactor =
+      Number.isFinite(activityFromLabel) ? activityFromLabel
+        : Number.isFinite(activityFromNumeric) ? activityFromNumeric
+        : 1.55;
+
+    const goalRaw = String(userProfile?.nutritionGoal || userProfile?.goal || 'maintain')
+      .trim()
+      .toLowerCase();
+    const goalAdjustmentMap = {
+      maintain: 0,
+      maintenance: 0,
+      mantenimento: 0,
+      cut: -300,
+      lose: -300,
+      perdita_grasso: -300,
+      dimagrimento: -300,
+      recomp: -100,
+      recomposition: -100,
+      ricomposizione: -100,
+      bulk: 250,
+      gain: 250,
+      massa: 250,
+    };
+    const goalAdjustment = goalAdjustmentMap[goalRaw] ?? 0;
+
+    const bmr = (10 * safeWeight) + (6.25 * safeHeight) - (5 * safeAge) + (isFemale ? -161 : 5);
+    const tdee = bmr * activityFactor;
+    const unclampedGoalKcal = tdee + goalAdjustment;
+    const clampedGoalKcal = Math.min(5000, Math.max(1200, unclampedGoalKcal));
+    const goalAdjustedKcal = Math.round(clampedGoalKcal / 10) * 10;
+
+    if (import.meta.env.DEV) {
+      console.log('[UniversalSettings] auto target', {
+        bmr,
+        tdee,
+        goalAdjustedKcal,
+        activityFactor,
+      });
+    }
+
+    const m = buildMacroSplitFromKcal(safeWeight, goalAdjustedKcal);
+    const normalizedNutritionGoal =
+      userProfile?.nutritionGoal
+      || (userProfile?.goal === 'lose' ? 'cut' : userProfile?.goal === 'gain' ? 'bulk' : 'maintain');
     setUserProfile((prev) => ({
       ...prev,
-      nutritionGoal: ng,
-      goal: ng === 'cut' ? 'lose' : ng === 'bulk' ? 'gain' : 'maintain',
+      age: safeAge,
+      nutritionGoal: normalizedNutritionGoal,
+      goal: normalizedNutritionGoal === 'cut' ? 'lose' : normalizedNutritionGoal === 'bulk' ? 'gain' : 'maintain',
       targetCalories: m.kcal,
       proteinTarget: prev.proteinTarget,
     }));
@@ -12863,6 +12923,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     <option value="1.375">Leggero (1-3 allenamenti)</option>
                     <option value="1.55">Moderato (3-5 allenamenti)</option>
                     <option value="1.725">Attivo (6-7 allenamenti)</option>
+                    <option value="1.9">Molto attivo</option>
                   </select>
                 </label>
                 <label style={{ display: 'block' }}>Obiettivo nutrizionale:
@@ -12879,6 +12940,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
                   >
                     <option value="cut">Deficit (cut)</option>
+                    <option value="recomp">Ricomposizione</option>
                     <option value="maintain">Mantenimento</option>
                     <option value="bulk">Surplus (bulk)</option>
                   </select>
