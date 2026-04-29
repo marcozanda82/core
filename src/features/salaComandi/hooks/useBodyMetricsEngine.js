@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { onValue, push, ref, update } from 'firebase/database';
 import {
   bodyMetricTimestampFromDate,
@@ -42,6 +42,27 @@ export default function useBodyMetricsEngine({
   const [predictiveCalibration, setPredictiveCalibration] = useState({ errors: [] });
   const [tdeeHistory, setTdeeHistory] = useState([]);
   const [bodyMetricsSaveToast, setBodyMetricsSaveToast] = useState(false);
+  const blockMacroMutationFromWeighInFlowRef = useRef(false);
+
+  const setUserTargetsGuarded = useCallback(
+    (updater, source = 'unknown') => {
+      setUserTargets((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        if (!next || typeof next !== 'object') return prev;
+        if (!blockMacroMutationFromWeighInFlowRef.current) return next;
+        const macroKeys = ['kcal', 'prot', 'carb', 'fat', 'fatTotal', 'water'];
+        const hasMacroMutation = macroKeys.some((key) => Number(next[key]) !== Number(prev[key]));
+        if (!hasMacroMutation) return next;
+        console.warn('[BodyMetrics] blocked macro target mutation from weigh-in flow', {
+          source,
+          prev,
+          attempted: next,
+        });
+        return prev;
+      });
+    },
+    [setUserTargets]
+  );
 
   useEffect(() => {
     if (!user) {
@@ -135,7 +156,7 @@ export default function useBodyMetricsEngine({
         } catch (histErr) {
           console.error('Salvataggio tdee_history:', histErr);
         }
-        setUserTargets((prev) => ({
+        setUserTargetsGuarded((prev) => ({
           ...prev,
           kcal: finalKcal,
           prot: newPro,
@@ -143,7 +164,7 @@ export default function useBodyMetricsEngine({
           fat: newFat,
           fatTotal: newFat,
           ...(options.recordTdeeEval === true ? { tdeeTargetLastEvalAt: Date.now() } : {}),
-        }));
+        }), 'handleUpdateTDEE');
         alert(
           `✅ Autopilota Metabolico attivato!\nNuovo TDEE: ${finalKcal} kcal\nProteine: ${newPro}g (Invariate)\nCarboidrati: ${newCho}g\nGrassi: ${newFat}g`
         );
@@ -152,7 +173,7 @@ export default function useBodyMetricsEngine({
         alert('Errore durante il salvataggio del TDEE.');
       }
     },
-    [auth, db, userTargets, setUserTargets]
+    [auth, db, userTargets, setUserTargetsGuarded]
   );
 
   const applyAutomaticTargetRecalibration = useCallback(
@@ -172,7 +193,7 @@ export default function useBodyMetricsEngine({
           'targets/fat': targets.fat,
           'targets/fatTotal': targets.fat,
         });
-        setUserTargets((prev) => ({
+        setUserTargetsGuarded((prev) => ({
           ...prev,
           kcal: targets.kcal,
           prot: targets.prot,
@@ -180,7 +201,7 @@ export default function useBodyMetricsEngine({
           fat: targets.fat,
           fatTotal: targets.fat,
           water: targets.water,
-        }));
+        }), 'applyAutomaticTargetRecalibration');
         return {
           kcal: targets.kcal,
           prot: targets.prot,
@@ -192,7 +213,7 @@ export default function useBodyMetricsEngine({
         return null;
       }
     },
-    [auth, db, userProfile, userTargets.kcal, setUserTargets]
+    [auth, db, userProfile, userTargets.kcal, setUserTargetsGuarded]
   );
 
   const evaluateAndApplyTDEE = useCallback(
@@ -222,11 +243,11 @@ export default function useBodyMetricsEngine({
           }
           try {
             await update(ref(db, `users/${uid}/profile_targets`), metadataPatch);
-            setUserTargets((prev) => ({
+            setUserTargetsGuarded((prev) => ({
               ...prev,
               tdeeLastDecision: plan?.decision ?? null,
               ...(notification.shouldNotify ? { tdeeLastNotificationAt: nowTs } : {}),
-            }));
+            }), 'evaluateAndApplyTDEE:metadata');
             if (notification.shouldNotify && notification.message) {
               alert(notification.message);
             }
@@ -314,6 +335,7 @@ export default function useBodyMetricsEngine({
     };
     const profileUpdates = { 'profile/weight': w };
     if (bodyFat != null) profileUpdates['profile/bodyFat'] = bodyFat;
+    blockMacroMutationFromWeighInFlowRef.current = true;
     try {
       await update(ref(db, `users/${uid}/profile_targets`), profileUpdates);
       await push(ref(db, `users/${uid}/body_metrics`), payload);
@@ -339,6 +361,8 @@ export default function useBodyMetricsEngine({
     } catch (err) {
       console.error('Salvataggio composizione corporea:', err);
       alert('Errore durante il salvataggio. Riprova.');
+    } finally {
+      blockMacroMutationFromWeighInFlowRef.current = false;
     }
   }, [
     auth,
@@ -382,6 +406,7 @@ export default function useBodyMetricsEngine({
       if (visceral != null) payload.visceralFat = visceral;
       const profileUpdates = { 'profile/weight': w };
       if (bodyFat != null) profileUpdates['profile/bodyFat'] = bodyFat;
+      blockMacroMutationFromWeighInFlowRef.current = true;
       try {
         await update(ref(db, `users/${uid}/profile_targets`), profileUpdates);
         await push(ref(db, `users/${uid}/body_metrics`), payload);
@@ -400,6 +425,8 @@ export default function useBodyMetricsEngine({
       } catch (err) {
         console.error('Salvataggio pesata rapida:', err);
         alert('Errore durante il salvataggio. Riprova.');
+      } finally {
+        blockMacroMutationFromWeighInFlowRef.current = false;
       }
     },
     [auth, db, getTodayString, setUserProfile]
@@ -436,6 +463,7 @@ export default function useBodyMetricsEngine({
       }
 
       setBodyMetricsHistory(nextHistory);
+      blockMacroMutationFromWeighInFlowRef.current = true;
       try {
         const patch = {};
         idsToDelete.forEach((id) => {
@@ -447,10 +475,74 @@ export default function useBodyMetricsEngine({
         console.error('Eliminazione pesata:', err);
         setBodyMetricsHistory(currentHistory);
         alert('Errore durante l’eliminazione della pesata. Riprova.');
+      } finally {
+        blockMacroMutationFromWeighInFlowRef.current = false;
       }
     },
     [auth, bodyMetricsHistory, db]
   );
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return undefined;
+    window.KENTU_RECALC_TARGETS_FROM_CURRENT_TDEE = async () => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        console.warn('[BodyMetrics] helper aborted: user not authenticated');
+        return null;
+      }
+      const baseK = Number(userTargets?.kcal);
+      const latestRecord = {
+        weight: Number(userProfile?.weight),
+        bodyFat:
+          userProfile?.bodyFat != null && userProfile?.bodyFat !== ''
+            ? Number(userProfile.bodyFat)
+            : null,
+        muscleMass:
+          userProfile?.muscleMass ??
+          userProfile?.muscle ??
+          userProfile?.leanMass ??
+          userProfile?.muscle_pct ??
+          null,
+        bodyWater:
+          userProfile?.bodyWater ??
+          userProfile?.water ??
+          userProfile?.waterPercentage ??
+          userProfile?.water_pct ??
+          null,
+        visceralFat:
+          userProfile?.visceralFat ??
+          userProfile?.visceral ??
+          userProfile?.visceral_fat ??
+          null,
+      };
+      const targets = recalculateUserTargets(latestRecord, userProfile, Number.isFinite(baseK) ? baseK : 2000);
+      await update(ref(db, `users/${uid}/profile_targets`), {
+        'targets/kcal': targets.kcal,
+        'targets/prot': targets.prot,
+        'targets/carb': targets.carb,
+        'targets/fat': targets.fat,
+        'targets/fatTotal': targets.fat,
+      });
+      setUserTargetsGuarded((prev) => ({
+        ...prev,
+        kcal: targets.kcal,
+        prot: targets.prot,
+        carb: targets.carb,
+        fat: targets.fat,
+        fatTotal: targets.fat,
+        water: targets.water,
+      }), 'dev:KENTU_RECALC_TARGETS_FROM_CURRENT_TDEE');
+      console.log('[BodyMetrics] dev helper recalculated targets from current profile + kcal', {
+        baseK,
+        latestRecord,
+        targets,
+      });
+      return targets;
+    };
+    return () => {
+      delete window.KENTU_RECALC_TARGETS_FROM_CURRENT_TDEE;
+    };
+  }, [auth, db, userProfile, userTargets?.kcal, setUserTargetsGuarded]);
 
   return {
     bodyMetricsHistory,
