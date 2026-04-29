@@ -6,7 +6,6 @@ import {
   clampBodyMetricDateToToday,
   computeDataDrivenTdeeWithCoach,
   goalFromProfile,
-  mergeHistoryWithLatestWeigh,
   normalizeBodyMetricDate,
   normalizePredictiveCalibrationState,
   recalculateUserTargets,
@@ -24,7 +23,6 @@ export default function useBodyMetricsEngine({
   setUserProfile,
   setUserTargets,
   computeMetabolicNotification,
-  metricEntryToIsoDay,
   getTodayString,
   inputWeightDate,
   inputWeight,
@@ -337,17 +335,7 @@ export default function useBodyMetricsEngine({
       setBodyMetricsSaveToast(true);
       setTimeout(() => setBodyMetricsSaveToast(false), 3500);
 
-      const historyWithThisWeigh = mergeHistoryWithLatestWeigh({
-        bodyMetricsHistory,
-        weighDate,
-        payload,
-        metricEntryToIsoDay,
-      });
-      await evaluateAndApplyTDEE({
-        weighDate,
-        historyWithThisWeigh,
-        latestRecord: payload,
-      });
+      console.log('[BodyMetrics] save weigh-in without target recalculation', payload);
     } catch (err) {
       console.error('Salvataggio composizione corporea:', err);
       alert('Errore durante il salvataggio. Riprova.');
@@ -361,9 +349,6 @@ export default function useBodyMetricsEngine({
     drawerMuscleMass,
     drawerBodyWater,
     drawerVisceralFat,
-    bodyMetricsHistory,
-    evaluateAndApplyTDEE,
-    metricEntryToIsoDay,
     getTodayString,
     setUserProfile,
     setShowWeightModal,
@@ -411,23 +396,13 @@ export default function useBodyMetricsEngine({
         setBodyMetricsSaveToast(true);
         setTimeout(() => setBodyMetricsSaveToast(false), 3500);
 
-        const historyWithThisWeigh = mergeHistoryWithLatestWeigh({
-          bodyMetricsHistory,
-          weighDate,
-          payload,
-          metricEntryToIsoDay,
-        });
-        await evaluateAndApplyTDEE({
-          weighDate,
-          historyWithThisWeigh,
-          latestRecord: payload,
-        });
+        console.log('[BodyMetrics] save weigh-in without target recalculation', payload);
       } catch (err) {
         console.error('Salvataggio pesata rapida:', err);
         alert('Errore durante il salvataggio. Riprova.');
       }
     },
-    [auth, db, bodyMetricsHistory, evaluateAndApplyTDEE, metricEntryToIsoDay, getTodayString, setUserProfile]
+    [auth, db, getTodayString, setUserProfile]
   );
 
   const handleDeleteBodyMetrics = useCallback(
@@ -487,5 +462,6 @@ export default function useBodyMetricsEngine({
     handleDeleteBodyMetrics,
     handleUpdateTDEE,
     applyAutomaticTargetRecalibration,
+    evaluateAndApplyTDEE,
   };
 }
