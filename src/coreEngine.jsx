@@ -5112,8 +5112,12 @@ export function buildPredictiveCompositionDailyRows({
       }
 
       carryW = realWeightForModel;
-      carryM = inferMuscleMassKgFromMetric({ weight: real.weight, bodyFat: real.bodyFat, muscle: real.muscle });
-      const muscleMassIsReal = real.muscle != null && Number.isFinite(Number(real.muscle));
+      const realMuscle =
+        real.muscleMass ?? real.muscle ?? real.leanMass ?? real.muscle_pct ?? null;
+      const realWater =
+        real.bodyWater ?? real.water ?? real.waterPercentage ?? real.water_pct ?? null;
+      carryM = inferMuscleMassKgFromMetric({ weight: real.weight, bodyFat: real.bodyFat, muscle: realMuscle });
+      const muscleMassIsReal = realMuscle != null && Number.isFinite(Number(realMuscle));
       rows.push({
         isoDate: d,
         weightKg: carryW,
@@ -5121,8 +5125,8 @@ export function buildPredictiveCompositionDailyRows({
         muscleMassKg: carryM,
         muscleMassIsReal: muscleMassIsReal,
         bodyFat: real.bodyFat != null && Number.isFinite(real.bodyFat) ? real.bodyFat : null,
-        musclePct: real.muscle != null && Number.isFinite(real.muscle) ? real.muscle : null,
-        waterPct: real.water != null && Number.isFinite(real.water) ? real.water : null,
+        musclePct: realMuscle != null && Number.isFinite(Number(realMuscle)) ? Number(realMuscle) : null,
+        waterPct: realWater != null && Number.isFinite(Number(realWater)) ? Number(realWater) : null,
         weightSmoothed: Number.isFinite(smoothedWeight) ? smoothedWeight : null,
         metabolicSensitivity,
       });

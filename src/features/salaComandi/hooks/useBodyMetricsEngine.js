@@ -285,10 +285,10 @@ export default function useBodyMetricsEngine({
     const bodyFat = parsedFat != null && Number.isFinite(parsedFat) ? parsedFat : null;
     const muscleRaw = String(drawerMuscleMass ?? '').trim();
     const parsedMuscle = muscleRaw === '' ? null : parseFloat(muscleRaw.replace(',', '.'));
-    const musclePct = parsedMuscle != null && Number.isFinite(parsedMuscle) ? parsedMuscle : null;
+    const muscleMass = parsedMuscle != null && Number.isFinite(parsedMuscle) ? parsedMuscle : null;
     const waterRaw = String(drawerBodyWater ?? '').trim();
     const parsedWater = waterRaw === '' ? null : parseFloat(waterRaw.replace(',', '.'));
-    const waterPct = parsedWater != null && Number.isFinite(parsedWater) ? parsedWater : null;
+    const bodyWater = parsedWater != null && Number.isFinite(parsedWater) ? parsedWater : null;
     const visceralRaw = String(drawerVisceralFat ?? '').trim();
     const parsedVisceral = visceralRaw === '' ? null : parseFloat(visceralRaw.replace(',', '.'));
     const visceralFat = parsedVisceral != null && Number.isFinite(parsedVisceral) ? parsedVisceral : null;
@@ -308,9 +308,9 @@ export default function useBodyMetricsEngine({
     const payload = {
       weight: w,
       bodyFat,
-      muscle_pct: musclePct,
-      water_pct: waterPct,
-      visceral_fat: visceralFat,
+      muscleMass,
+      bodyWater,
+      visceralFat,
       timestamp: bodyMetricTimestampFromDate(weighDate),
       date: weighDate,
     };
@@ -323,9 +323,9 @@ export default function useBodyMetricsEngine({
         ...prev,
         weight: w,
         ...(bodyFat != null ? { bodyFat } : {}),
-        ...(musclePct != null ? { muscle_pct: musclePct } : {}),
-        ...(waterPct != null ? { water_pct: waterPct } : {}),
-        ...(visceralFat != null ? { visceral_fat: visceralFat } : {}),
+        ...(muscleMass != null ? { muscleMass } : {}),
+        ...(bodyWater != null ? { bodyWater } : {}),
+        ...(visceralFat != null ? { visceralFat } : {}),
       }));
       setShowWeightModal(false);
       setInputWeightDate(getTodayString());
@@ -392,15 +392,22 @@ export default function useBodyMetricsEngine({
         date: weighDate,
       };
       if (bodyFat != null) payload.bodyFat = bodyFat;
-      if (muscle != null) payload.muscle = muscle;
-      if (water != null) payload.water = water;
-      if (visceral != null) payload.visceral = visceral;
+      if (muscle != null) payload.muscleMass = muscle;
+      if (water != null) payload.bodyWater = water;
+      if (visceral != null) payload.visceralFat = visceral;
       const profileUpdates = { 'profile/weight': w };
       if (bodyFat != null) profileUpdates['profile/bodyFat'] = bodyFat;
       try {
         await update(ref(db, `users/${uid}/profile_targets`), profileUpdates);
         await push(ref(db, `users/${uid}/body_metrics`), payload);
-        setUserProfile((prev) => ({ ...prev, weight: w, ...(bodyFat != null ? { bodyFat } : {}) }));
+        setUserProfile((prev) => ({
+          ...prev,
+          weight: w,
+          ...(bodyFat != null ? { bodyFat } : {}),
+          ...(muscle != null ? { muscleMass: muscle } : {}),
+          ...(water != null ? { bodyWater: water } : {}),
+          ...(visceral != null ? { visceralFat: visceral } : {}),
+        }));
         setBodyMetricsSaveToast(true);
         setTimeout(() => setBodyMetricsSaveToast(false), 3500);
 

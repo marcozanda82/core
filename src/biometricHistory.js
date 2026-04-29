@@ -108,10 +108,10 @@ export function mergeDuplicateBiometrics(parsedRows) {
       if (pickFirstNumeric(base, ['weight']) == null && pickFirstNumeric(r, ['weight']) != null) {
         base.weight = Number(r.weight);
       }
-      mergeMetricPair(base, r, 'bodyFat', ['bodyFat']);
-      mergeMetricPair(base, r, 'muscle', ['muscle', 'muscleMass']);
-      mergeMetricPair(base, r, 'water', ['water', 'waterPercentage']);
-      mergeMetricPair(base, r, 'visceral', ['visceral', 'visceralFat']);
+      mergeMetricPair(base, r, 'bodyFat', ['bodyFat', 'fat', 'fatPercentage']);
+      mergeMetricPair(base, r, 'muscle', ['muscleMass', 'muscle', 'leanMass', 'muscle_pct']);
+      mergeMetricPair(base, r, 'water', ['bodyWater', 'water', 'waterPercentage', 'water_pct']);
+      mergeMetricPair(base, r, 'visceral', ['visceralFat', 'visceral', 'visceral_fat']);
       base.timestamp = Math.max(Number(base.timestamp) || 0, Number(r.timestamp) || 0);
     }
     out.push(base);
@@ -130,17 +130,17 @@ export function normalizeBiometricEntry(raw) {
     raw.bodyFat != null && raw.bodyFat !== ''
       ? Number(raw.bodyFat)
       : null;
-  const muscleRaw = raw.muscle ?? raw.muscleMass;
+  const muscleRaw = raw.muscleMass ?? raw.muscle ?? raw.leanMass ?? raw.muscle_pct;
   const muscleMass =
     muscleRaw != null && muscleRaw !== ''
       ? Number(muscleRaw)
       : null;
-  const waterRaw = raw.water ?? raw.waterPercentage;
+  const waterRaw = raw.bodyWater ?? raw.water ?? raw.waterPercentage ?? raw.water_pct;
   const waterPercentage =
     waterRaw != null && waterRaw !== ''
       ? Number(waterRaw)
       : null;
-  const viscRaw = raw.visceral ?? raw.visceralFat;
+  const viscRaw = raw.visceralFat ?? raw.visceral ?? raw.visceral_fat;
   const visceralFat =
     viscRaw != null && viscRaw !== ''
       ? Number(viscRaw)

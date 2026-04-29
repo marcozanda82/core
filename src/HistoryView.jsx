@@ -33,6 +33,17 @@ function fmt(v) {
   return Number.isFinite(n) ? String(n) : '—';
 }
 
+function pickNumericMetric(row, keys) {
+  for (let i = 0; i < keys.length; i += 1) {
+    const key = keys[i];
+    const value = row?.[key];
+    if (value == null || value === '') continue;
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 /**
  * Storico pesate: tabella + import CSV (callback verso SalaComandi) + form rapido ultima pesata.
  *
@@ -82,24 +93,9 @@ export default function HistoryView({
         return Number(r.timestamp) > 0 || typeof r.date === 'string';
       })
       .map((r) => {
-        const muscle =
-          r.muscle != null && r.muscle !== ''
-            ? Number(r.muscle)
-            : r.muscleMass != null && r.muscleMass !== ''
-              ? Number(r.muscleMass)
-              : null;
-        const water =
-          r.water != null && r.water !== ''
-            ? Number(r.water)
-            : r.waterPercentage != null && r.waterPercentage !== ''
-              ? Number(r.waterPercentage)
-              : null;
-        const visceral =
-          r.visceral != null && r.visceral !== ''
-            ? Number(r.visceral)
-            : r.visceralFat != null && r.visceralFat !== ''
-              ? Number(r.visceralFat)
-              : null;
+        const muscle = pickNumericMetric(r, ['muscleMass', 'muscle', 'leanMass', 'muscle_pct']);
+        const water = pickNumericMetric(r, ['bodyWater', 'water', 'waterPercentage', 'water_pct']);
+        const visceral = pickNumericMetric(r, ['visceralFat', 'visceral', 'visceral_fat']);
         return {
           id: typeof r.id === 'string' ? r.id : null,
           entryId:
@@ -111,8 +107,7 @@ export default function HistoryView({
           date: r.date,
           timestamp: Number(r.timestamp) || 0,
           weight: Number(r.weight),
-          bodyFat:
-            r.bodyFat != null && r.bodyFat !== '' ? Number(r.bodyFat) : null,
+          bodyFat: pickNumericMetric(r, ['bodyFat', 'fat', 'fatPercentage']),
           muscle: muscle != null && Number.isFinite(muscle) ? muscle : null,
           water: water != null && Number.isFinite(water) ? water : null,
           visceral: visceral != null && Number.isFinite(visceral) ? visceral : null,
@@ -254,9 +249,9 @@ export default function HistoryView({
                     <td style={td}>{r.date || '—'}</td>
                     <td style={td}>{fmt(r.weight)}</td>
                     <td style={td}>{fmt(r.bodyFat)}</td>
-                    <td style={td}>{fmt(r.muscle ?? r.muscleMass)}</td>
-                    <td style={td}>{fmt(r.water ?? r.waterPercentage)}</td>
-                    <td style={td}>{fmt(r.visceral ?? r.visceralFat)}</td>
+                    <td style={td}>{fmt(r.muscle)}</td>
+                    <td style={td}>{fmt(r.water)}</td>
+                    <td style={td}>{fmt(r.visceral)}</td>
                     <td style={td}>
                       {onDeleteBodyMetrics && r.entryId != null ? (
                         <button
