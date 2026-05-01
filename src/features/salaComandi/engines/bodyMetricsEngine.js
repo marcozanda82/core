@@ -286,6 +286,7 @@ export function analyzeEnergyVsWeightTrend({
       confidence: 'low',
       confidenceScore: 0,
       outlierDetected: false,
+      latestIsOutlier: false,
       latestEntryIsOutlier: false,
       suggestion: {
         type: 'no_change',
@@ -300,8 +301,81 @@ export function analyzeEnergyVsWeightTrend({
     };
   }
 
-  const latestRaw = normalizedHistory[normalizedHistory.length - 1];
-  const latestDateRaw = latestRaw.date;
+  const latestEntry = normalizedHistory[normalizedHistory.length - 1];
+  const historyBeforeLatest = normalizedHistory.slice(0, -1);
+  const nonOutlierBeforeLatest = [historyBeforeLatest[0]];
+  for (let i = 1; i < historyBeforeLatest.length; i += 1) {
+    const current = historyBeforeLatest[i];
+    const prev = nonOutlierBeforeLatest[nonOutlierBeforeLatest.length - 1];
+    const daysDiff = Math.max(
+      1,
+      Math.round((toDayTimestamp(current.date) - toDayTimestamp(prev.date)) / 86400000),
+    );
+    const outlierResult = isWeightOutlier(prev.weight, current.weight, daysDiff);
+    console.log('[WeightOutlierCheck]', {
+      prevWeight: prev.weight,
+      currentWeight: current.weight,
+      daysDiff,
+      result: outlierResult,
+    });
+    if (outlierResult.isOutlier) continue;
+    nonOutlierBeforeLatest.push(current);
+  }
+  const previousValidEntry = nonOutlierBeforeLatest[nonOutlierBeforeLatest.length - 1] || null;
+  let latestIsOutlier = false;
+  if (previousValidEntry) {
+    const daysLatestEntryVsPrevValid = Math.max(
+      1,
+      Math.round(
+        (toDayTimestamp(latestEntry.date) - toDayTimestamp(previousValidEntry.date)) / 86400000,
+      ),
+    );
+    const latestCheck = isWeightOutlier(previousValidEntry.weight, latestEntry.weight, daysLatestEntryVsPrevValid);
+    latestIsOutlier = latestCheck.isOutlier;
+  }
+  if (latestIsOutlier) {
+    console.log('[OutlierHardBlock]', {
+      latestEntry,
+      previousValidEntry,
+      triggered: true,
+    });
+    return {
+      avgKcalBalance: 0,
+      weightDelta: 0,
+      expectedWeightDelta: 0,
+      discrepancy: 0,
+      confidence: 'low',
+      confidenceScore: 0.3,
+      hardBlockOutlier: true,
+      outlierDetected: true,
+      latestIsOutlier: true,
+      latestEntryIsOutlier: true,
+      validDays: 0,
+      sampleDays: [],
+      dailyWindowReason: null,
+      suggestion: {
+        type: 'no_change',
+        kcalAdjustment: 0,
+        explanation: 'Pesata anomala rilevata. Ignorata per il ricalcolo.',
+      },
+      flags: {
+        outlierDetected: true,
+        latestIsOutlier: true,
+      },
+      explanation: {
+        summary: 'Blocco sicurezza: pesata anomala',
+        reason: 'hard_block_latest_outlier',
+        flags: {
+          outlierDetected: true,
+          latestIsOutlier: true,
+          lowConfidence: true,
+          insufficientData: false,
+        },
+      },
+    };
+  }
+
+  const latestDateRaw = latestEntry.date;
   const minDateTs = toDayTimestamp(latestDateRaw) - ((safeWindow - 1) * 86400000);
   const windowHistoryRaw = normalizedHistory.filter((entry) => toDayTimestamp(entry.date) >= minDateTs);
   if (windowHistoryRaw.length < 2) {
@@ -318,6 +392,7 @@ export function analyzeEnergyVsWeightTrend({
       confidence: 'low',
       confidenceScore: 0,
       outlierDetected: false,
+      latestIsOutlier: false,
       latestEntryIsOutlier: false,
       suggestion: {
         type: 'no_change',
@@ -356,10 +431,7 @@ export function analyzeEnergyVsWeightTrend({
   }
   const outlierDetected = outlierEntries.length > 0;
   const latestValidEntry = nonOutlierSequence[nonOutlierSequence.length - 1] || null;
-  const latestEntryIsOutlier =
-    !!latestValidEntry &&
-    (latestValidEntry.date !== latestRaw.date ||
-      Number(latestValidEntry.timestamp) !== Number(latestRaw.timestamp));
+  const latestEntryIsOutlier = false;
   if (nonOutlierSequence.length < 2) {
     const flags = {
       outlierDetected,
@@ -374,6 +446,7 @@ export function analyzeEnergyVsWeightTrend({
       confidence: 'low',
       confidenceScore: 0,
       outlierDetected,
+      latestIsOutlier: latestEntryIsOutlier,
       latestEntryIsOutlier,
       suggestion: {
         type: 'no_change',
@@ -461,6 +534,7 @@ export function analyzeEnergyVsWeightTrend({
       confidence: 'low',
       confidenceScore: 0,
       outlierDetected,
+      latestIsOutlier: latestEntryIsOutlier,
       latestEntryIsOutlier,
       validDays: 0,
       sampleDays: [],
@@ -513,7 +587,10 @@ export function analyzeEnergyVsWeightTrend({
     volatility: highWeightVolatility ? 0.2 : 0,
   };
   const rawScore = 1 - (penalties.weighIns + penalties.logs + penalties.outliers + penalties.volatility);
-  const confidenceScore = Math.max(0, Math.min(1, rawScore));
+  let confidenceScore = Math.max(0, Math.min(1, rawScore));
+  if (outlierDetected) {
+    confidenceScore = Math.min(0.3, confidenceScore);
+  }
   console.log('[ConfidenceScore]', {
     score: confidenceScore,
     penalties,
@@ -522,6 +599,9 @@ export function analyzeEnergyVsWeightTrend({
   let confidence = 'high';
   if (confidenceScore <= 0.7) confidence = 'medium';
   if (confidenceScore < 0.4) confidence = 'low';
+  if (outlierDetected) {
+    confidence = 'low';
+  }
 
   const smallThresholdKg = 0.25;
   const flags = {
@@ -530,7 +610,7 @@ export function analyzeEnergyVsWeightTrend({
     insufficientData: windowHistory.length < 3 || validDays < 7,
   };
 
-  if (latestEntryIsOutlier || confidence === 'low') {
+  if (confidence === 'low') {
     return {
       avgKcalBalance,
       weightDelta,
@@ -539,6 +619,7 @@ export function analyzeEnergyVsWeightTrend({
       confidence,
       confidenceScore,
       outlierDetected,
+      latestIsOutlier: latestEntryIsOutlier,
       latestEntryIsOutlier,
       validDays,
       sampleDays,
@@ -550,7 +631,7 @@ export function analyzeEnergyVsWeightTrend({
       },
       explanation: {
         summary: 'Analisi sospesa per stabilita dati',
-        reason: latestEntryIsOutlier ? 'latest_outlier' : 'low_confidence',
+        reason: 'low_confidence',
         flags,
       },
     };
@@ -565,6 +646,7 @@ export function analyzeEnergyVsWeightTrend({
       confidence,
       confidenceScore,
       outlierDetected,
+      latestIsOutlier: latestEntryIsOutlier,
       latestEntryIsOutlier,
       validDays,
       sampleDays,
@@ -611,6 +693,7 @@ export function analyzeEnergyVsWeightTrend({
     confidence,
     confidenceScore,
     outlierDetected,
+    latestIsOutlier: latestEntryIsOutlier,
     latestEntryIsOutlier,
     validDays,
     sampleDays,

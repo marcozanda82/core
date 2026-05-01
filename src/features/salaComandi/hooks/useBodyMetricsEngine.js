@@ -176,6 +176,9 @@ export default function useBodyMetricsEngine({
       });
       if (!result) {
         reason = 'wiring_error';
+      } else if (result.hardBlockOutlier === true || result.latestIsOutlier === true) {
+        shouldShow = false;
+        reason = 'hard_block_outlier';
       } else if (result?.dailyWindowReason === 'missing_daily_logs') {
         reason = 'missing_daily_logs';
       } else if (result?.dailyWindowReason === 'insufficient_logs') {
@@ -714,6 +717,14 @@ export default function useBodyMetricsEngine({
 
   const applyRecalibrationProposal = useCallback(async () => {
     const proposal = recalibrationProposal?.analysis;
+    if (
+      proposal?.hardBlockOutlier === true ||
+      proposal?.latestIsOutlier === true ||
+      proposal?.outlierDetected === true
+    ) {
+      setRecalibrationProposal((prev) => ({ ...prev, show: false }));
+      return;
+    }
     const suggestedAdjustment = Number(proposal?.suggestion?.kcalAdjustment);
     if (!proposal || !Number.isFinite(suggestedAdjustment) || suggestedAdjustment === 0) {
       setRecalibrationProposal((prev) => ({ ...prev, show: false }));
