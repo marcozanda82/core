@@ -2002,9 +2002,12 @@ export default function SalaComandi() {
     predictiveCalibration,
     tdeeHistory,
     bodyMetricsSaveToast,
+    recalibrationProposal,
     handleSaveBodyMetrics,
     handleQuickWeighInFromHistory,
     handleDeleteBodyMetrics,
+    applyRecalibrationProposal,
+    dismissRecalibrationProposal,
     handleUpdateTDEE,
     applyAutomaticTargetRecalibration,
   } = useBodyMetricsEngine({
@@ -2037,6 +2040,7 @@ export default function SalaComandi() {
   const [showBatteryModal, setShowBatteryModal] = useState(false);
   const [showDateCalendarModal, setShowDateCalendarModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showRecalibrationDetails, setShowRecalibrationDetails] = useState(false);
   const [trendModalMetric, setTrendModalMetric] = useState(null);
   const [trendDays, setTrendDays] = useState(30);
   const [reportViewedDates, setReportViewedDates] = useState(() => {
@@ -2045,6 +2049,10 @@ export default function SalaComandi() {
   const [reportPeriod, setReportPeriod] = useState('7');
   const [currentDateObj, setCurrentDateObj] = useState(() => new Date());
   const [calendarMonthIso, setCalendarMonthIso] = useState(() => getTodayString().slice(0, 7));
+
+  useEffect(() => {
+    if (!recalibrationProposal?.show) setShowRecalibrationDetails(false);
+  }, [recalibrationProposal?.show]);
 
   const currentTrackerDate = useMemo(() => {
     const offset = currentDateObj.getTimezoneOffset() * 60000;
@@ -12963,6 +12971,135 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           ) : null}
         </>,
         document.body
+      )}
+
+      {recalibrationProposal?.show && recalibrationProposal?.analysis && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'rgba(0,0,0,0.86)',
+            zIndex: 100060,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '18px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 460,
+              background: '#161616',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 14,
+              padding: 18,
+              color: '#f8fafc',
+            }}
+          >
+            <h3 style={{ margin: '0 0 10px', color: '#00e5ff', fontSize: '1rem' }}>
+              Nuova pesata registrata
+            </h3>
+            <p style={{ margin: '0 0 10px', color: '#cbd5e1', fontSize: '0.88rem', lineHeight: 1.45 }}>
+              Negli ultimi {recalibrationProposal.analysis.daysWindow} giorni:
+              <br />
+              Bilancio medio: {Math.round(Number(recalibrationProposal.analysis.avgKcalBalance) || 0)} kcal/g
+              <br />
+              Peso: {(Number(recalibrationProposal.analysis.weightDelta) >= 0 ? '+' : '')}
+              {(Number(recalibrationProposal.analysis.weightDelta) || 0).toFixed(1)} kg
+            </p>
+            <p style={{ margin: '0 0 14px', color: '#94a3b8', fontSize: '0.82rem', lineHeight: 1.4 }}>
+              Possibile disallineamento tra stima energetica e realta. Vuoi adattare i target?
+            </p>
+            <div
+              style={{
+                background: 'rgba(0, 229, 255, 0.08)',
+                border: '1px solid rgba(0, 229, 255, 0.2)',
+                borderRadius: 10,
+                padding: '10px 12px',
+                marginBottom: 12,
+                fontSize: '0.82rem',
+                lineHeight: 1.45,
+              }}
+            >
+              {recalibrationProposal.analysis.suggestion?.explanation}
+            </div>
+            {showRecalibrationDetails && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  background: '#0f172a',
+                  border: '1px solid rgba(148,163,184,0.25)',
+                  borderRadius: 10,
+                  padding: '10px 12px',
+                  fontSize: '0.78rem',
+                  color: '#cbd5e1',
+                  lineHeight: 1.45,
+                }}
+              >
+                <div>Variazione attesa: {(Number(recalibrationProposal.analysis.expectedWeightDelta) >= 0 ? '+' : '')}{(Number(recalibrationProposal.analysis.expectedWeightDelta) || 0).toFixed(2)} kg</div>
+                <div>Scostamento: {(Number(recalibrationProposal.analysis.discrepancy) >= 0 ? '+' : '')}{(Number(recalibrationProposal.analysis.discrepancy) || 0).toFixed(2)} kg</div>
+                <div>Affidabilita: {String(recalibrationProposal.analysis.confidence || 'n/a')}</div>
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  dismissRecalibrationProposal();
+                }}
+                style={{
+                  padding: '11px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(148,163,184,0.4)',
+                  background: 'transparent',
+                  color: '#cbd5e1',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                }}
+              >
+                Mantieni target attuali
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  applyRecalibrationProposal();
+                }}
+                style={{
+                  padding: '11px 12px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #00e5ff, #38bdf8)',
+                  color: '#052236',
+                  cursor: 'pointer',
+                  fontWeight: 800,
+                }}
+              >
+                Applica correzione ({Number(recalibrationProposal.analysis.suggestion?.kcalAdjustment) >= 0 ? '+' : ''}{Math.round(Number(recalibrationProposal.analysis.suggestion?.kcalAdjustment) || 0)} kcal)
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowRecalibrationDetails((v) => !v)}
+                style={{
+                  padding: '9px 10px',
+                  borderRadius: 10,
+                  border: '1px dashed rgba(148,163,184,0.45)',
+                  background: 'transparent',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                }}
+              >
+                {showRecalibrationDetails ? 'Nascondi dettagli' : 'Vedi dettagli'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showProfile && (

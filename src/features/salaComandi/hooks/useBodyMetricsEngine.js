@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onValue, push, ref, update } from 'firebase/database';
 import {
+  analyzeEnergyVsWeightTrend,
   bodyMetricTimestampFromDate,
   buildTdeeTargetsFromRequest,
   clampBodyMetricDateToToday,
   computeDataDrivenTdeeWithCoach,
   deriveCurrentBodyMetricsFromHistory,
-  deriveEffectiveBodyMetricsForDate,
   goalFromProfile,
   mergeHistoryWithLatestWeigh,
   normalizeBodyMetricDate,
   normalizePredictiveCalibrationState,
   recalculateUserTargets,
   removeBodyMetricsEntry,
+  resolveTargetConfigForDate,
   sortBodyMetricsHistoryByDateAsc,
   upsertTargetHistoryEntry,
 } from '../engines/bodyMetricsEngine';
@@ -47,6 +48,11 @@ export default function useBodyMetricsEngine({
   const [predictiveCalibration, setPredictiveCalibration] = useState({ errors: [] });
   const [tdeeHistory, setTdeeHistory] = useState([]);
   const [bodyMetricsSaveToast, setBodyMetricsSaveToast] = useState(false);
+  const [recalibrationProposal, setRecalibrationProposal] = useState({
+    show: false,
+    analysis: null,
+    daysWindow: 14,
+  });
   const blockMacroMutationFromWeighInFlowRef = useRef(false);
 
   const setUserTargetsGuarded = useCallback(
@@ -135,56 +141,82 @@ export default function useBodyMetricsEngine({
     [db, deriveLatestMetricsFromHistory, pickFirstFiniteNumber, setUserProfile]
   );
 
-  const maybeRecalculateAutoTargetsFromBodyMetrics = useCallback(
-    async ({ uid, history, effectiveDate, source }) => {
-      if (!userTargets?.autoCalculated) return null;
-      const safeDate = normalizeBodyMetricDate({
-        date: effectiveDate,
+  const addIsoDays = useCallback((isoDate, deltaDays) => {
+    const d = new Date(`${isoDate}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + Number(deltaDays || 0));
+    return d.toISOString().slice(0, 10);
+  }, []);
+
+  const sumLogKcal = useCallback((nodeLog) => {
+    const arr = Array.isArray(nodeLog) ? nodeLog : Object.values(nodeLog || {});
+    return arr.reduce((sum, row) => {
+      if (!row || typeof row !== 'object') return sum;
+      const type = String(row.type || '').toLowerCase();
+      if (type !== 'food' && type !== 'recipe') return sum;
+      const kcal = Number(row.kcal ?? row.cal ?? row.calorie ?? 0);
+      return sum + (Number.isFinite(kcal) ? kcal : 0);
+    }, 0);
+  }, []);
+
+  const buildRecentDailyKcalBalanceLogs = useCallback(
+    ({ anchorDate, daysWindow }) => {
+      const safeAnchor = normalizeBodyMetricDate({
+        date: anchorDate,
         timestamp: null,
         fallbackDate: getTodayString(),
       });
-      const effectiveMetrics =
-        deriveEffectiveBodyMetricsForDate(history, safeDate, getTodayString()) ||
-        deriveCurrentBodyMetricsFromHistory(history, getTodayString());
-      if (!effectiveMetrics) return null;
-      const baseK = Number(userTargets?.kcal);
-      const recalculated = recalculateUserTargets(
-        effectiveMetrics,
-        userProfile,
-        Number.isFinite(baseK) && baseK > 0 ? baseK : 2000
-      );
-      const nextTargetHistory = upsertTargetHistoryEntry({
-        history: userTargets?.targetHistory,
-        effectiveDate: safeDate,
-        targets: recalculated,
-        todayDate: getTodayString(),
-        source: source || 'body-metrics-auto',
-        seedPreviousTargets: userTargets,
-      });
-      await update(ref(db, `users/${uid}/profile_targets`), {
-        'targets/kcal': recalculated.kcal,
-        'targets/prot': recalculated.prot,
-        'targets/carb': recalculated.carb,
-        'targets/fat': recalculated.fat,
-        'targets/fatTotal': recalculated.fat,
-        'targets/water': recalculated.water,
-        'targets/autoCalculated': true,
-        'targets/targetHistory': nextTargetHistory,
-      });
-      setUserTargets((prev) => ({
-        ...prev,
-        kcal: recalculated.kcal,
-        prot: recalculated.prot,
-        carb: recalculated.carb,
-        fat: recalculated.fat,
-        fatTotal: recalculated.fat,
-        water: recalculated.water,
-        autoCalculated: true,
-        targetHistory: nextTargetHistory,
-      }));
-      return recalculated;
+      const safeWindow = Math.max(7, Math.min(60, Number(daysWindow) || 14));
+      const out = [];
+      for (let i = safeWindow - 1; i >= 0; i -= 1) {
+        const day = addIsoDays(safeAnchor, -i);
+        const dayNode = fullHistory?.[`trackerStorico_${day}`];
+        if (!dayNode || typeof dayNode !== 'object') continue;
+        const kcalIn = sumLogKcal(dayNode.log);
+        if (!Number.isFinite(kcalIn) || kcalIn <= 0) continue;
+        const targetsForDay = resolveTargetConfigForDate({
+          targets: userTargets,
+          date: day,
+          todayDate: getTodayString(),
+        });
+        const targetKcal = Number(targetsForDay?.kcal);
+        if (!Number.isFinite(targetKcal) || targetKcal <= 0) continue;
+        out.push({
+          date: day,
+          kcalIn,
+          kcalTarget: targetKcal,
+          kcalBalance: kcalIn - targetKcal,
+        });
+      }
+      return out;
     },
-    [db, getTodayString, setUserTargets, userProfile, userTargets]
+    [addIsoDays, fullHistory, getTodayString, sumLogKcal, userTargets]
+  );
+
+  const maybeCreateRecalibrationProposal = useCallback(
+    ({ history, weighDate, daysWindow = 14 }) => {
+      const safeHistory = Array.isArray(history) ? history : [];
+      if (safeHistory.length < 2) return;
+      const dailyLogs = buildRecentDailyKcalBalanceLogs({ anchorDate: weighDate, daysWindow });
+      if (!dailyLogs.length) return;
+      const analysis = analyzeEnergyVsWeightTrend({
+        bodyMetricsHistory: safeHistory,
+        dailyLogs,
+        daysWindow,
+      });
+      console.log('[RecalibrationAnalysis]', analysis);
+      if (!analysis || analysis.confidence === 'low') return;
+      if (analysis.suggestion?.type === 'no_change') return;
+      setRecalibrationProposal({
+        show: true,
+        analysis: {
+          ...analysis,
+          weighDate,
+          daysWindow,
+        },
+        daysWindow,
+      });
+    },
+    [buildRecentDailyKcalBalanceLogs]
   );
 
   useEffect(() => {
@@ -500,12 +532,7 @@ export default function useBodyMetricsEngine({
       metricsPatch[newEntryKey] = payload;
       await update(ref(db, `users/${uid}/body_metrics`), metricsPatch);
       await syncCurrentProfileFromHistory({ uid, history: nextHistory });
-      await maybeRecalculateAutoTargetsFromBodyMetrics({
-        uid,
-        history: nextHistory,
-        effectiveDate: weighDate,
-        source: 'save-weigh-in',
-      });
+      maybeCreateRecalibrationProposal({ history: nextHistory, weighDate, daysWindow: 14 });
       setShowWeightModal(false);
       setInputWeightDate(getTodayString());
       setInputWeight('');
@@ -536,7 +563,7 @@ export default function useBodyMetricsEngine({
     bodyMetricsHistory,
     metricEntryToIsoDaySafe,
     getTodayString,
-    maybeRecalculateAutoTargetsFromBodyMetrics,
+    maybeCreateRecalibrationProposal,
     syncCurrentProfileFromHistory,
     setShowWeightModal,
     setInputWeightDate,
@@ -592,12 +619,7 @@ export default function useBodyMetricsEngine({
         metricsPatch[newEntryKey] = payload;
         await update(ref(db, `users/${uid}/body_metrics`), metricsPatch);
         await syncCurrentProfileFromHistory({ uid, history: nextHistory });
-        await maybeRecalculateAutoTargetsFromBodyMetrics({
-          uid,
-          history: nextHistory,
-          effectiveDate: weighDate,
-          source: 'quick-weigh-in',
-        });
+        maybeCreateRecalibrationProposal({ history: nextHistory, weighDate, daysWindow: 14 });
         setBodyMetricsSaveToast(true);
         setTimeout(() => setBodyMetricsSaveToast(false), 3500);
 
@@ -616,7 +638,7 @@ export default function useBodyMetricsEngine({
       bodyMetricsHistory,
       metricEntryToIsoDaySafe,
       getTodayString,
-      maybeRecalculateAutoTargetsFromBodyMetrics,
+      maybeCreateRecalibrationProposal,
       syncCurrentProfileFromHistory,
     ]
   );
@@ -642,7 +664,6 @@ export default function useBodyMetricsEngine({
         directMatches.length === 0 && Number.isFinite(ts)
           ? currentHistory.filter((entry) => Number(entry?.timestamp) === ts)
           : [];
-      const deletedEntries = [...directMatches, ...timestampMatches];
       const idsToDelete = [...directMatches, ...timestampMatches]
         .map((entry) => (typeof entry?.id === 'string' ? entry.id : ''))
         .filter(Boolean);
@@ -661,22 +682,6 @@ export default function useBodyMetricsEngine({
         });
         await update(ref(db, `users/${uid}/body_metrics`), patch);
         await syncCurrentProfileFromHistory({ uid, history: nextHistory });
-        const deletedDates = deletedEntries
-          .map((entry) =>
-            normalizeBodyMetricDate({
-              date: entry?.date,
-              timestamp: entry?.timestamp,
-              fallbackDate: getTodayString(),
-            })
-          )
-          .filter(Boolean)
-          .sort();
-        await maybeRecalculateAutoTargetsFromBodyMetrics({
-          uid,
-          history: nextHistory,
-          effectiveDate: deletedDates[0] || getTodayString(),
-          source: 'delete-weigh-in',
-        });
         console.log('Pesata eliminata con successo', { entryId, deletedIds: idsToDelete });
       } catch (err) {
         console.error('Eliminazione pesata:', err);
@@ -690,11 +695,71 @@ export default function useBodyMetricsEngine({
       auth,
       bodyMetricsHistory,
       db,
-      getTodayString,
-      maybeRecalculateAutoTargetsFromBodyMetrics,
       syncCurrentProfileFromHistory,
     ]
   );
+
+  const dismissRecalibrationProposal = useCallback(() => {
+    setRecalibrationProposal((prev) => ({ ...prev, show: false }));
+  }, []);
+
+  const applyRecalibrationProposal = useCallback(async () => {
+    const proposal = recalibrationProposal?.analysis;
+    const suggestedAdjustment = Number(proposal?.suggestion?.kcalAdjustment);
+    if (!proposal || !Number.isFinite(suggestedAdjustment) || suggestedAdjustment === 0) {
+      setRecalibrationProposal((prev) => ({ ...prev, show: false }));
+      return;
+    }
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      alert('Accedi per aggiornare i target.');
+      return;
+    }
+    const currentKcal = Number(userTargets?.kcal);
+    const baseKcal = Number.isFinite(currentKcal) && currentKcal > 0 ? currentKcal : 2000;
+    const requestedKcal = Math.max(800, Math.min(12000, Math.round(baseKcal + suggestedAdjustment)));
+    const built = buildTdeeTargetsFromRequest({ newKcal: requestedKcal, userTargets });
+    if (built.error) {
+      alert(built.error);
+      return;
+    }
+    const { finalKcal, newPro, newCho, newFat } = built;
+    const effectiveDate = getTodayString();
+    const nextTargetHistory = upsertTargetHistoryEntry({
+      history: userTargets?.targetHistory,
+      effectiveDate,
+      targets: {
+        kcal: finalKcal,
+        prot: newPro,
+        carb: newCho,
+        fat: newFat,
+        fatTotal: newFat,
+      },
+      todayDate: getTodayString(),
+      source: 'post-weigh-in-proposal',
+      seedPreviousTargets: userTargets,
+    });
+    await update(ref(db, `users/${uid}/profile_targets`), {
+      'targets/kcal': finalKcal,
+      'targets/prot': newPro,
+      'targets/carb': newCho,
+      'targets/fat': newFat,
+      'targets/fatTotal': newFat,
+      'targets/autoCalculated': true,
+      'targets/targetHistory': nextTargetHistory,
+    });
+    setUserTargets((prev) => ({
+      ...prev,
+      kcal: finalKcal,
+      prot: newPro,
+      carb: newCho,
+      fat: newFat,
+      fatTotal: newFat,
+      autoCalculated: true,
+      targetHistory: nextTargetHistory,
+    }));
+    setRecalibrationProposal((prev) => ({ ...prev, show: false }));
+  }, [auth, db, getTodayString, recalibrationProposal?.analysis, setUserTargets, userTargets]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return undefined;
@@ -763,9 +828,12 @@ export default function useBodyMetricsEngine({
     predictiveCalibration,
     tdeeHistory,
     bodyMetricsSaveToast,
+    recalibrationProposal,
     handleSaveBodyMetrics,
     handleQuickWeighInFromHistory,
     handleDeleteBodyMetrics,
+    applyRecalibrationProposal,
+    dismissRecalibrationProposal,
     handleUpdateTDEE,
     applyAutomaticTargetRecalibration,
     evaluateAndApplyTDEE,

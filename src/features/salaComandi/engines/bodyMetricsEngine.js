@@ -219,6 +219,152 @@ export function resolveTargetConfigForDate({ targets, date, todayDate }) {
   return resolved;
 }
 
+function toDayTimestamp(isoDate) {
+  const iso = normalizeBodyMetricDate({ date: isoDate, timestamp: null, fallbackDate: isoDate });
+  return new Date(`${iso}T00:00:00Z`).getTime();
+}
+
+function dayDiffInclusive(startIso, endIso) {
+  const delta = toDayTimestamp(endIso) - toDayTimestamp(startIso);
+  return Math.max(1, Math.round(delta / 86400000) + 1);
+}
+
+/**
+ * Analisi trend energetico vs trend peso su finestra recente.
+ * dailyLogs: Array<{ date: YYYY-MM-DD, kcalBalance: number }>
+ */
+export function analyzeEnergyVsWeightTrend({
+  bodyMetricsHistory,
+  dailyLogs,
+  daysWindow = 14,
+}) {
+  const safeWindow = Math.max(7, Math.min(60, Number(daysWindow) || 14));
+  const normalizedHistory = sortBodyMetricsHistoryByDateAsc(bodyMetricsHistory, new Date().toISOString().slice(0, 10));
+  if (normalizedHistory.length < 2) {
+    return {
+      avgKcalBalance: 0,
+      weightDelta: 0,
+      expectedWeightDelta: 0,
+      discrepancy: 0,
+      confidence: 'low',
+      suggestion: {
+        type: 'no_change',
+        kcalAdjustment: 0,
+        explanation: 'Servono almeno due pesate valide per una proposta affidabile.',
+      },
+    };
+  }
+
+  const latest = normalizedHistory[normalizedHistory.length - 1];
+  const latestDate = latest.date;
+  const minDateTs = toDayTimestamp(latestDate) - ((safeWindow - 1) * 86400000);
+  const windowHistory = normalizedHistory.filter((entry) => toDayTimestamp(entry.date) >= minDateTs);
+  if (windowHistory.length < 2) {
+    return {
+      avgKcalBalance: 0,
+      weightDelta: 0,
+      expectedWeightDelta: 0,
+      discrepancy: 0,
+      confidence: 'low',
+      suggestion: {
+        type: 'no_change',
+        kcalAdjustment: 0,
+        explanation: 'Periodo pesate insufficiente per valutare il trend energetico.',
+      },
+    };
+  }
+
+  const oldest = windowHistory[0];
+  const spanDays = dayDiffInclusive(oldest.date, latestDate);
+
+  const validDailyLogs = (Array.isArray(dailyLogs) ? dailyLogs : [])
+    .filter((row) => row && isValidIsoDate(row.date) && Number.isFinite(Number(row.kcalBalance)))
+    .filter((row) => row.date >= oldest.date && row.date <= latestDate);
+
+  if (validDailyLogs.length === 0) {
+    return {
+      avgKcalBalance: 0,
+      weightDelta: Number(latest.weight) - Number(oldest.weight),
+      expectedWeightDelta: 0,
+      discrepancy: Number(latest.weight) - Number(oldest.weight),
+      confidence: 'low',
+      suggestion: {
+        type: 'no_change',
+        kcalAdjustment: 0,
+        explanation: 'Nessun log calorico recente: proposta non disponibile.',
+      },
+    };
+  }
+
+  const avgKcalBalance =
+    validDailyLogs.reduce((sum, row) => sum + Number(row.kcalBalance), 0) / validDailyLogs.length;
+  const weightDelta = Number(latest.weight) - Number(oldest.weight);
+  const expectedWeightDelta = (avgKcalBalance * spanDays) / 7700;
+  const discrepancy = weightDelta - expectedWeightDelta;
+  const discrepancyAbs = Math.abs(discrepancy);
+
+  const variance =
+    validDailyLogs.reduce((acc, row) => {
+      const d = Number(row.kcalBalance) - avgKcalBalance;
+      return acc + (d * d);
+    }, 0) / Math.max(1, validDailyLogs.length);
+  const stdDev = Math.sqrt(variance);
+
+  let confidence = 'high';
+  if (spanDays < 10 || validDailyLogs.length < 10 || stdDev > 500) confidence = 'medium';
+  if (spanDays < 7 || validDailyLogs.length < 7 || stdDev > 800) confidence = 'low';
+
+  const smallThresholdKg = 0.25;
+  if (discrepancyAbs < smallThresholdKg) {
+    return {
+      avgKcalBalance,
+      weightDelta,
+      expectedWeightDelta,
+      discrepancy,
+      confidence,
+      suggestion: {
+        type: 'no_change',
+        kcalAdjustment: 0,
+        explanation: 'Trend peso ed energia risultano allineati: nessuna correzione consigliata.',
+      },
+    };
+  }
+
+  const kcalPerDayFromDiscrepancy = Math.round((discrepancyAbs * 7700) / Math.max(1, spanDays));
+  const boundedAdjustment = Math.max(40, Math.min(260, kcalPerDayFromDiscrepancy));
+
+  let type = 'no_change';
+  let signedAdjustment = 0;
+  let explanation = 'Dati non conclusivi, meglio mantenere i target attuali.';
+
+  if ((avgKcalBalance < 0 && weightDelta > 0) || (avgKcalBalance > 0 && weightDelta < 0)) {
+    type = 'increase_tdee';
+    signedAdjustment = boundedAdjustment;
+    explanation = 'Peso e bilancio energetico sono in conflitto: conviene riallineare la stima energetica verso l’alto.';
+  } else if (weightDelta > expectedWeightDelta + smallThresholdKg) {
+    type = 'decrease_tdee';
+    signedAdjustment = -boundedAdjustment;
+    explanation = 'Il peso sale piu del previsto: meglio ridurre il target calorico corrente.';
+  } else if (weightDelta < expectedWeightDelta - smallThresholdKg) {
+    type = 'increase_tdee';
+    signedAdjustment = boundedAdjustment;
+    explanation = 'Il peso scende piu del previsto: meglio aumentare il target calorico corrente.';
+  }
+
+  return {
+    avgKcalBalance,
+    weightDelta,
+    expectedWeightDelta,
+    discrepancy,
+    confidence,
+    suggestion: {
+      type,
+      kcalAdjustment: signedAdjustment,
+      explanation,
+    },
+  };
+}
+
 /**
  * Autopilota metabolico: prot fisse, delta kcal su CHO/FAT 50/50.
  * Mantiene formula e limiti originali.
