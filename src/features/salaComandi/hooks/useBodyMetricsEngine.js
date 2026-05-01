@@ -195,28 +195,94 @@ export default function useBodyMetricsEngine({
   const maybeCreateRecalibrationProposal = useCallback(
     ({ history, weighDate, daysWindow = 14 }) => {
       const safeHistory = Array.isArray(history) ? history : [];
-      if (safeHistory.length < 2) return;
+      let result = null;
+      let reason = 'wiring_error';
+      let shouldShow = false;
+      if (safeHistory.length < 2) {
+        reason = 'insufficient_weigh_ins';
+        console.log('[RecalibrationPromptDecision]', {
+          shouldShow,
+          reason,
+          confidence: result?.confidence,
+          suggestionType: result?.suggestion?.type,
+          avgKcalBalance: result?.avgKcalBalance,
+          weightDelta: result?.weightDelta,
+          expectedWeightDelta: result?.expectedWeightDelta,
+          discrepancy: result?.discrepancy,
+        });
+        return { shouldShow, reason, result, dailyLogsAvailable: 0 };
+      }
       const dailyLogs = buildRecentDailyKcalBalanceLogs({ anchorDate: weighDate, daysWindow });
-      if (!dailyLogs.length) return;
-      const analysis = analyzeEnergyVsWeightTrend({
+      if (!dailyLogs.length) {
+        reason = 'missing_daily_logs';
+        console.log('[RecalibrationPromptDecision]', {
+          shouldShow,
+          reason,
+          confidence: result?.confidence,
+          suggestionType: result?.suggestion?.type,
+          avgKcalBalance: result?.avgKcalBalance,
+          weightDelta: result?.weightDelta,
+          expectedWeightDelta: result?.expectedWeightDelta,
+          discrepancy: result?.discrepancy,
+        });
+        return { shouldShow, reason, result, dailyLogsAvailable: 0 };
+      }
+      if (dailyLogs.length < 7) {
+        reason = 'insufficient_logs';
+        console.log('[RecalibrationPromptDecision]', {
+          shouldShow,
+          reason,
+          confidence: result?.confidence,
+          suggestionType: result?.suggestion?.type,
+          avgKcalBalance: result?.avgKcalBalance,
+          weightDelta: result?.weightDelta,
+          expectedWeightDelta: result?.expectedWeightDelta,
+          discrepancy: result?.discrepancy,
+        });
+        return { shouldShow, reason, result, dailyLogsAvailable: dailyLogs.length };
+      }
+      result = analyzeEnergyVsWeightTrend({
         bodyMetricsHistory: safeHistory,
         dailyLogs,
         daysWindow,
       });
-      console.log('[RecalibrationAnalysis]', analysis);
-      if (!analysis || analysis.confidence === 'low') return;
-      if (analysis.suggestion?.type === 'no_change') return;
-      setRecalibrationProposal({
-        show: true,
-        analysis: {
-          ...analysis,
-          weighDate,
+      console.log('[RecalibrationAnalysis]', result);
+      if (!result) {
+        reason = 'wiring_error';
+      } else if (result.confidence === 'low') {
+        reason = 'low_confidence';
+      } else if (result.suggestion?.type === 'no_change') {
+        reason = 'no_change';
+      } else if (!Number.isFinite(Number(result?.suggestion?.kcalAdjustment)) || Number(result.suggestion.kcalAdjustment) === 0) {
+        reason = 'no_change';
+      } else if (userTargets?.autoCalculated === false && userTargets?.postWeighInRecalibrationDisabled === true) {
+        reason = 'manual_targets';
+      } else {
+        shouldShow = true;
+        reason = 'show';
+        setRecalibrationProposal({
+          show: true,
+          analysis: {
+            ...result,
+            weighDate,
+            daysWindow,
+          },
           daysWindow,
-        },
-        daysWindow,
+        });
+      }
+      console.log('[RecalibrationPromptDecision]', {
+        shouldShow,
+        reason,
+        confidence: result?.confidence,
+        suggestionType: result?.suggestion?.type,
+        avgKcalBalance: result?.avgKcalBalance,
+        weightDelta: result?.weightDelta,
+        expectedWeightDelta: result?.expectedWeightDelta,
+        discrepancy: result?.discrepancy,
       });
+      return { shouldShow, reason, result, dailyLogsAvailable: dailyLogs.length };
     },
-    [buildRecentDailyKcalBalanceLogs]
+    [buildRecentDailyKcalBalanceLogs, userTargets?.autoCalculated, userTargets?.postWeighInRecalibrationDisabled]
   );
 
   useEffect(() => {
@@ -532,6 +598,16 @@ export default function useBodyMetricsEngine({
       metricsPatch[newEntryKey] = payload;
       await update(ref(db, `users/${uid}/body_metrics`), metricsPatch);
       await syncCurrentProfileFromHistory({ uid, history: nextHistory });
+      const dailyLogsAvailable = buildRecentDailyKcalBalanceLogs({
+        anchorDate: weighDate,
+        daysWindow: 14,
+      }).length;
+      console.log('[PostWeighInRecalibrationTrigger]', {
+        savedEntry: payload,
+        bodyMetricsHistoryLength: nextHistory.length,
+        dailyLogsAvailable,
+        userTargets,
+      });
       maybeCreateRecalibrationProposal({ history: nextHistory, weighDate, daysWindow: 14 });
       setShowWeightModal(false);
       setInputWeightDate(getTodayString());
@@ -563,6 +639,8 @@ export default function useBodyMetricsEngine({
     bodyMetricsHistory,
     metricEntryToIsoDaySafe,
     getTodayString,
+    buildRecentDailyKcalBalanceLogs,
+    userTargets,
     maybeCreateRecalibrationProposal,
     syncCurrentProfileFromHistory,
     setShowWeightModal,
