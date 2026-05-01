@@ -88,7 +88,10 @@ import {
   getAverageEstimate as getAverageEstimateFromEngine,
 } from './features/salaComandi/engines/foodDataEngine';
 import {
+  deriveEffectiveBodyMetricsForDate,
   deriveCurrentBodyMetricsFromHistory,
+  resolveTargetConfigForDate,
+  upsertTargetHistoryEntry,
   mergeDuplicateBiometrics,
 } from './features/salaComandi/engines/bodyMetricsEngine';
 import {
@@ -288,6 +291,7 @@ const EVENT_USAGE_DEFAULT = {
   nap: 0,
   supplements: 0,
 };
+const MANUAL_TARGET_EDIT_EXCLUDED_KEYS = new Set(['autoCalculated', 'targetHistory']);
 
 /** Movimento prima del long-press su nodo timeline: oltre soglia → annulla drag e lascia swipe/scroll (allineato a `MOVE_THRESHOLD_PX` in TimelineNodi). */
 const NODE_DRAG_ARM_CANCEL_MOVE_PX = 6;
@@ -1675,7 +1679,11 @@ export default function SalaComandi() {
     proteinTarget: null,
     level: 'base'
   });
-  const [userTargets, setUserTargets] = useState({ ...DEFAULT_TARGETS });
+  const [userTargets, setUserTargets] = useState({
+    ...DEFAULT_TARGETS,
+    autoCalculated: false,
+    targetHistory: [],
+  });
   const [birthDate, setBirthDate] = useState('');
   const userProfileRef = useRef(userProfile);
   userProfileRef.current = userProfile;
@@ -2042,6 +2050,39 @@ export default function SalaComandi() {
     const offset = currentDateObj.getTimezoneOffset() * 60000;
     return new Date(currentDateObj.getTime() - offset).toISOString().slice(0, 10);
   }, [currentDateObj]);
+
+  const effectiveTargetsForCurrentDate = useMemo(
+    () =>
+      resolveTargetConfigForDate({
+        targets: userTargets,
+        date: currentTrackerDate || getTodayString(),
+        todayDate: getTodayString(),
+      }),
+    [userTargets, currentTrackerDate]
+  );
+
+  const applyTargetModeUpdate = useCallback(
+    ({ updater, mode, source }) => {
+      const effectiveDate = currentTrackerDate || getTodayString();
+      setUserTargets((prev) => {
+        const nextRaw = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+        const nextHistory = upsertTargetHistoryEntry({
+          history: nextRaw?.targetHistory,
+          effectiveDate,
+          targets: nextRaw,
+          todayDate: getTodayString(),
+          source,
+          seedPreviousTargets: prev,
+        });
+        return {
+          ...nextRaw,
+          autoCalculated: mode === 'auto',
+          targetHistory: nextHistory,
+        };
+      });
+    },
+    [currentTrackerDate, getTodayString]
+  );
 
   const calendarZoneByDate = useMemo(() => {
     const out = {};
@@ -2769,7 +2810,16 @@ export default function SalaComandi() {
     get(ref(db, `users/${user.uid}/profile_targets`)).then(profileSnap => {
       if (profileSnap.exists()) {
         const data = profileSnap.val();
-        if (data?.targets) setUserTargets(prev => ({ ...prev, ...data.targets }));
+        if (data?.targets) {
+          setUserTargets((prev) => ({
+            ...prev,
+            ...data.targets,
+            autoCalculated: data?.targets?.autoCalculated === true,
+            targetHistory: Array.isArray(data?.targets?.targetHistory)
+              ? data.targets.targetHistory
+              : prev.targetHistory || [],
+          }));
+        }
         if (data?.profile) {
           const merged = mergeProfileNutritionFromServer(data.profile);
           setUserProfile(prev => ({ ...prev, ...merged }));
@@ -3058,15 +3108,17 @@ export default function SalaComandi() {
         for (let i = 1; i < mergedPayloads.length; i += 1) {
           if (mergedPayloads[i].timestamp > latest.timestamp) latest = mergedPayloads[i];
         }
-        await applyAutomaticTargetRecalibration({
-          weight: latest.weight,
-          bodyFat: latest.bodyFat,
-          muscle: latest.muscle,
-          water: latest.water,
-          visceral: latest.visceral,
-          date: latest.date,
-          timestamp: latest.timestamp,
-        });
+        if (userTargets?.autoCalculated === true) {
+          await applyAutomaticTargetRecalibration({
+            weight: latest.weight,
+            bodyFat: latest.bodyFat,
+            muscle: latest.muscle,
+            water: latest.water,
+            visceral: latest.visceral,
+            date: latest.date,
+            timestamp: latest.timestamp,
+          });
+        }
         setUserProfile((prev) => ({
           ...prev,
           weight: latest.weight,
@@ -3170,15 +3222,19 @@ export default function SalaComandi() {
       targetCalories: m.kcal,
       proteinTarget: prev.proteinTarget,
     }));
-    setUserTargets((prev) => ({
-      ...prev,
-      kcal: m.kcal,
-      prot: m.prot,
-      carb: m.carb,
-      fatTotal: m.fat,
-      fat: m.fat,
-      water: m.water,
-    }));
+    applyTargetModeUpdate({
+      updater: (prev) => ({
+        ...prev,
+        kcal: m.kcal,
+        prot: m.prot,
+        carb: m.carb,
+        fatTotal: m.fat,
+        fat: m.fat,
+        water: m.water,
+      }),
+      mode: 'auto',
+      source: 'universal-auto-calc',
+    });
   };
 
   const navigateToDate = useCallback((dateInput) => {
@@ -3563,7 +3619,7 @@ export default function SalaComandi() {
   }, [isDrawerOpen, activeAction, drawerMealTime]);
 
   // Motore biochimico
-  const baseKcal = (userTargets.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
+  const baseKcal = (effectiveTargetsForCurrentDate.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
   const { totali, obiettiviPasti } = useBiochimico(activeLog, baseKcal);
   const targetKcal = baseKcal + (totali?.workout ?? 0);
 
@@ -3577,8 +3633,8 @@ export default function SalaComandi() {
     if (!activeLog || currentTrackerDate === getTodayString()) return null;
     const foods = (activeLog || []).filter(e => e.type === 'food' || e.type === 'recipe');
     if (foods.length === 0 && !(activeLog || []).some(e => e.type === 'sleep' || e.type === 'workout')) return null;
-    return computeDayEvaluations(activeLog, userTargets);
-  }, [activeLog, currentTrackerDate, userTargets]);
+    return computeDayEvaluations(activeLog, effectiveTargetsForCurrentDate);
+  }, [activeLog, currentTrackerDate, effectiveTargetsForCurrentDate]);
 
   const longevityData = useMemo(() => {
     if (!fullHistory || !userTargets) return null;
@@ -5316,8 +5372,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   };
 
   const bodyBattery = useMemo(
-    () => calculateBodyBattery(fullHistory, currentTrackerDate, activeLog, userTargets),
-    [fullHistory, currentTrackerDate, activeLog, userTargets]
+    () => calculateBodyBattery(fullHistory, currentTrackerDate, activeLog, effectiveTargetsForCurrentDate),
+    [fullHistory, currentTrackerDate, activeLog, effectiveTargetsForCurrentDate]
   );
 
   const {
@@ -5326,7 +5382,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     dismissKentuSleepTrigger,
     dismissKentuAgendaTrigger,
     dismissKentuActiveTrigger,
-  } = useSmartKentuTriggers(activeLog, currentTrackerDate, fullHistory, userTargets, bodyBattery?.maxCapacity ?? 100);
+  } = useSmartKentuTriggers(
+    activeLog,
+    currentTrackerDate,
+    fullHistory,
+    effectiveTargetsForCurrentDate,
+    bodyBattery?.maxCapacity ?? 100
+  );
 
   const handleAutoLogDinner = useCallback(
     (mealData) => {
@@ -5983,7 +6045,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const piccoCortisolo = Math.max(0, ...(cortisolCurve?.map(c => c.cortisolScore) ?? [0]));
 
       const anchorAi = currentTrackerDate || getTodayString();
-      const lastBodyEntry = deriveCurrentBodyMetricsFromHistory(bodyMetricsHistory, getTodayString());
+      const lastBodyEntry =
+        deriveEffectiveBodyMetricsForDate(bodyMetricsHistory, anchorAi, getTodayString()) ||
+        deriveCurrentBodyMetricsFromHistory(bodyMetricsHistory, getTodayString());
       const weightKgForAi =
         lastBodyEntry?.weight != null && Number.isFinite(Number(lastBodyEntry.weight))
           ? Number(lastBodyEntry.weight)
@@ -8863,18 +8927,27 @@ ${dbKeys || 'n/d'}`;
           ? displayTime
           : 12;
     return getDynamicMealTargets(mealType, dailyLogForDynamicTargets, {
-      kcal: userTargets?.kcal ?? 2000,
-      prot: userTargets?.prot ?? 150,
-      carb: userTargets?.carb ?? 200,
-      fatTotal: userTargets?.fatTotal ?? userTargets?.fat ?? 60,
-      fat: userTargets?.fat ?? userTargets?.fatTotal ?? 60,
-      fibre: userTargets?.fibre ?? 30,
+      kcal: effectiveTargetsForCurrentDate?.kcal ?? 2000,
+      prot: effectiveTargetsForCurrentDate?.prot ?? 150,
+      carb: effectiveTargetsForCurrentDate?.carb ?? 200,
+      fatTotal:
+        effectiveTargetsForCurrentDate?.fatTotal ?? effectiveTargetsForCurrentDate?.fat ?? 60,
+      fat: effectiveTargetsForCurrentDate?.fat ?? effectiveTargetsForCurrentDate?.fatTotal ?? 60,
+      fibre: effectiveTargetsForCurrentDate?.fibre ?? 30,
     }, {
       currentDecimalHour: h,
       calorieStrategy: kentuDailyCalorieStrategy,
       burnedKcalBonus: burnedKcal,
     });
-  }, [mealType, dailyLogForDynamicTargets, userTargets, kentuDailyCalorieStrategy, burnedKcal, drawerMealTime, displayTime]);
+  }, [
+    mealType,
+    dailyLogForDynamicTargets,
+    effectiveTargetsForCurrentDate,
+    kentuDailyCalorieStrategy,
+    burnedKcal,
+    drawerMealTime,
+    displayTime,
+  ]);
 
   const targetMacrosPastoWithPlanning = useMemo(() => {
     const base =
@@ -12958,7 +13031,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                       const nextCal = Number.isFinite(n) ? n : null;
                       setUserProfile({ ...userProfile, targetCalories: nextCal });
                       if (Number.isFinite(n)) {
-                        setUserTargets((prev) => ({ ...prev, kcal: n }));
+                        applyTargetModeUpdate({
+                          updater: (prev) => ({ ...prev, kcal: n }),
+                          mode: 'manual',
+                          source: 'manual-kcal-input',
+                        });
                       }
                     }}
                     style={{ width: '100%', marginTop: '4px', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
@@ -12982,7 +13059,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                       const n = parseInt(raw, 10);
                       if (Number.isFinite(n)) {
                         setUserProfile({ ...userProfile, proteinTarget: n });
-                        setUserTargets((prev) => ({ ...prev, prot: n }));
+                        applyTargetModeUpdate({
+                          updater: (prev) => ({ ...prev, prot: n }),
+                          mode: 'manual',
+                          source: 'manual-protein-input',
+                        });
                       }
                     }}
                     style={{ width: '100%', marginTop: '4px', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
@@ -13005,10 +13086,27 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               <h3 style={{ margin: '0 0 15px 0' }}>2. Modifica Manuale Target</h3>
               <p style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '15px' }}>Correggi manualmente i valori calcolati se il tuo nutrizionista (o l'AI) ti ha fornito numeri specifici.</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px' }}>
-                {Object.keys(userTargets).map(key => (
+                {Object.keys(userTargets)
+                  .filter((key) => !MANUAL_TARGET_EDIT_EXCLUDED_KEYS.has(key))
+                  .map(key => (
                   <label key={key} style={{ display: 'flex', flexDirection: 'column', fontSize: '0.9rem' }}>
                     <span style={{ textTransform: 'uppercase', color: '#00e5ff' }}>{key}</span>
-                    <input type="number" min="0" step={key === 'omega3' || key === 'vitD' ? 0.1 : 1} inputMode="decimal" value={userTargets[key] ?? ''} onChange={e => setUserTargets({ ...userTargets, [key]: parseFloat(e.target.value) || 0 })} style={{ padding: '8px', border: '1px solid #444', background: '#111', color: '#fff', borderRadius: '4px' }} />
+                    <input
+                      type="number"
+                      min="0"
+                      step={key === 'omega3' || key === 'vitD' ? 0.1 : 1}
+                      inputMode="decimal"
+                      value={userTargets[key] ?? ''}
+                      onChange={e => {
+                        const parsed = parseFloat(e.target.value);
+                        applyTargetModeUpdate({
+                          updater: (prev) => ({ ...prev, [key]: Number.isFinite(parsed) ? parsed : 0 }),
+                          mode: 'manual',
+                          source: 'manual-target-grid',
+                        });
+                      }}
+                      style={{ padding: '8px', border: '1px solid #444', background: '#111', color: '#fff', borderRadius: '4px' }}
+                    />
                   </label>
                 ))}
               </div>

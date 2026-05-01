@@ -100,6 +100,126 @@ export function deriveCurrentBodyMetricsFromHistory(history = [], fallbackDate) 
 }
 
 /**
+ * Ritorna la pesata effettiva per una data: ultima entry con `entry.date <= date`.
+ * Ignora entry eliminate/non valide (weight <= 0), mai usa pesate future.
+ */
+export function deriveEffectiveBodyMetricsForDate(history = [], date, fallbackDate) {
+  const safeDate = normalizeBodyMetricDate({ date, timestamp: null, fallbackDate });
+  const sorted = sortBodyMetricsHistoryByDateAsc(history, fallbackDate);
+  if (!sorted.length) return null;
+  let latest = null;
+  for (let i = 0; i < sorted.length; i += 1) {
+    const entry = sorted[i];
+    if (String(entry?.date || '') > safeDate) break;
+    latest = entry;
+  }
+  return latest;
+}
+
+const TARGET_TIMELINE_KEYS = ['kcal', 'prot', 'carb', 'fat', 'fatTotal', 'water', 'fibre'];
+
+function pickTargetTimelinePayload(input) {
+  const out = {};
+  TARGET_TIMELINE_KEYS.forEach((key) => {
+    const n = Number(input?.[key]);
+    if (Number.isFinite(n)) out[key] = n;
+  });
+  return out;
+}
+
+function normalizeTargetTimelineEntry(entry, todayDate) {
+  if (!entry || typeof entry !== 'object') return null;
+  const effectiveDate = normalizeBodyMetricDate({
+    date: entry.effectiveDate,
+    timestamp: entry.timestamp,
+    fallbackDate: todayDate,
+  });
+  const targets = pickTargetTimelinePayload(entry.targets ?? entry);
+  if (Object.keys(targets).length === 0) return null;
+  return {
+    effectiveDate,
+    timestamp: bodyMetricTimestampFromDate(effectiveDate),
+    targets,
+    source: typeof entry.source === 'string' ? entry.source : null,
+  };
+}
+
+export function upsertTargetHistoryEntry({
+  history = [],
+  effectiveDate,
+  targets,
+  todayDate,
+  source = null,
+  seedPreviousTargets = null,
+}) {
+  const safeToday = isValidIsoDate(todayDate) ? todayDate : new Date().toISOString().slice(0, 10);
+  const safeDate = normalizeBodyMetricDate({
+    date: effectiveDate,
+    timestamp: null,
+    fallbackDate: safeToday,
+  });
+  const payload = pickTargetTimelinePayload(targets);
+  if (Object.keys(payload).length === 0) {
+    return Array.isArray(history) ? history : [];
+  }
+
+  const normalized = (Array.isArray(history) ? history : [])
+    .map((entry) => normalizeTargetTimelineEntry(entry, safeToday))
+    .filter(Boolean)
+    .filter((entry) => entry.effectiveDate !== safeDate);
+
+  if (normalized.length === 0 && seedPreviousTargets && typeof seedPreviousTargets === 'object') {
+    const previousPayload = pickTargetTimelinePayload(seedPreviousTargets);
+    if (Object.keys(previousPayload).length > 0) {
+      const previousDate = '1970-01-01';
+      normalized.push({
+        effectiveDate: previousDate,
+        timestamp: bodyMetricTimestampFromDate(previousDate),
+        targets: previousPayload,
+        source: 'seed-previous',
+      });
+    }
+  }
+
+  normalized.push({
+    effectiveDate: safeDate,
+    timestamp: bodyMetricTimestampFromDate(safeDate),
+    targets: payload,
+    source,
+  });
+
+  normalized.sort((a, b) => {
+    const d = String(a.effectiveDate).localeCompare(String(b.effectiveDate));
+    if (d !== 0) return d;
+    return (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0);
+  });
+
+  return normalized;
+}
+
+export function resolveTargetConfigForDate({ targets, date, todayDate }) {
+  const base = targets && typeof targets === 'object' ? { ...targets } : {};
+  const safeToday = isValidIsoDate(todayDate) ? todayDate : new Date().toISOString().slice(0, 10);
+  const safeDate = normalizeBodyMetricDate({
+    date,
+    timestamp: null,
+    fallbackDate: safeToday,
+  });
+  const timeline = (Array.isArray(base.targetHistory) ? base.targetHistory : [])
+    .map((entry) => normalizeTargetTimelineEntry(entry, safeToday))
+    .filter(Boolean)
+    .sort((a, b) => String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
+
+  let resolved = { ...base };
+  for (let i = 0; i < timeline.length; i += 1) {
+    const entry = timeline[i];
+    if (entry.effectiveDate > safeDate) break;
+    resolved = { ...resolved, ...entry.targets };
+  }
+  return resolved;
+}
+
+/**
  * Autopilota metabolico: prot fisse, delta kcal su CHO/FAT 50/50.
  * Mantiene formula e limiti originali.
  */
