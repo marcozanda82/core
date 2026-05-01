@@ -151,12 +151,12 @@ export default function useBodyMetricsEngine({
         console.log('[RecalibrationPromptDecision]', {
           shouldShow,
           reason,
+          blockRecalibration: result?.blockRecalibration,
+          latestIsOutlier: result?.latestIsOutlier,
+          outlierDetected: result?.outlierDetected,
           confidence: result?.confidence,
           suggestionType: result?.suggestion?.type,
-          avgKcalBalance: result?.avgKcalBalance,
-          weightDelta: result?.weightDelta,
-          expectedWeightDelta: result?.expectedWeightDelta,
-          discrepancy: result?.discrepancy,
+          kcalAdjustment: result?.suggestion?.kcalAdjustment,
         });
         return { shouldShow, reason, result, dailyLogsAvailable: 0 };
       }
@@ -176,43 +176,52 @@ export default function useBodyMetricsEngine({
       });
       if (!result) {
         reason = 'wiring_error';
-      } else if (result.hardBlockOutlier === true || result.latestIsOutlier === true) {
-        shouldShow = false;
-        reason = 'hard_block_outlier';
-      } else if (result?.dailyWindowReason === 'missing_daily_logs') {
-        reason = 'missing_daily_logs';
-      } else if (result?.dailyWindowReason === 'insufficient_logs') {
-        reason = 'insufficient_logs';
-      } else if (result.confidence === 'low') {
-        reason = 'low_confidence';
-      } else if (result.suggestion?.type === 'no_change') {
-        reason = 'no_change';
-      } else if (!Number.isFinite(Number(result?.suggestion?.kcalAdjustment)) || Number(result.suggestion.kcalAdjustment) === 0) {
-        reason = 'no_change';
-      } else if (userTargets?.autoCalculated === false && userTargets?.postWeighInRecalibrationDisabled === true) {
-        reason = 'manual_targets';
       } else {
-        shouldShow = true;
-        reason = 'show';
-        setRecalibrationProposal({
-          show: true,
-          analysis: {
-            ...result,
-            weighDate,
+        const kcalAdj = Number(result.suggestion?.kcalAdjustment);
+        shouldShow = Boolean(
+          result.blockRecalibration !== true &&
+            result.latestIsOutlier !== true &&
+            result.suggestion?.type !== 'no_change' &&
+            Number.isFinite(kcalAdj) &&
+            kcalAdj !== 0 &&
+            result.confidence !== 'low',
+        );
+
+        if (!shouldShow) {
+          if (result.blockRecalibration === true || result.latestIsOutlier === true) {
+            reason = 'blocked_outlier';
+          } else if (result.confidence === 'low') {
+            reason = 'low_confidence';
+          } else if (result.suggestion?.type === 'no_change' || !Number.isFinite(kcalAdj) || kcalAdj === 0) {
+            reason = 'no_change';
+          } else {
+            reason = 'suppressed';
+          }
+        } else if (userTargets?.autoCalculated === false && userTargets?.postWeighInRecalibrationDisabled === true) {
+          shouldShow = false;
+          reason = 'manual_targets';
+        } else {
+          reason = 'show';
+          setRecalibrationProposal({
+            show: true,
+            analysis: {
+              ...result,
+              weighDate,
+              daysWindow,
+            },
             daysWindow,
-          },
-          daysWindow,
-        });
+          });
+        }
       }
       console.log('[RecalibrationPromptDecision]', {
         shouldShow,
         reason,
+        blockRecalibration: result?.blockRecalibration,
+        latestIsOutlier: result?.latestIsOutlier,
+        outlierDetected: result?.outlierDetected,
         confidence: result?.confidence,
         suggestionType: result?.suggestion?.type,
-        avgKcalBalance: result?.avgKcalBalance,
-        weightDelta: result?.weightDelta,
-        expectedWeightDelta: result?.expectedWeightDelta,
-        discrepancy: result?.discrepancy,
+        kcalAdjustment: result?.suggestion?.kcalAdjustment,
       });
       return { shouldShow, reason, result, dailyLogsAvailable: Number(result?.validDays) || 0 };
     },
@@ -718,6 +727,7 @@ export default function useBodyMetricsEngine({
   const applyRecalibrationProposal = useCallback(async () => {
     const proposal = recalibrationProposal?.analysis;
     if (
+      proposal?.blockRecalibration === true ||
       proposal?.hardBlockOutlier === true ||
       proposal?.latestIsOutlier === true ||
       proposal?.outlierDetected === true

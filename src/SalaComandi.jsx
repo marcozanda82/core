@@ -2036,11 +2036,6 @@ export default function SalaComandi() {
     setDrawerBodyWater,
     setDrawerVisceralFat,
   });
-  const recalibrationAnalysis = recalibrationProposal?.analysis;
-  const recalibrationApplyBlocked =
-    recalibrationAnalysis?.hardBlockOutlier === true ||
-    recalibrationAnalysis?.latestIsOutlier === true ||
-    recalibrationAnalysis?.outlierDetected === true;
   const [showReport, setShowReport] = useState(false);
   const [showBatteryModal, setShowBatteryModal] = useState(false);
   const [showDateCalendarModal, setShowDateCalendarModal] = useState(false);
@@ -13018,9 +13013,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               {(Number(recalibrationProposal.analysis.weightDelta) || 0).toFixed(1)} kg
             </p>
             <p style={{ margin: '0 0 14px', color: '#94a3b8', fontSize: '0.82rem', lineHeight: 1.4 }}>
-              {recalibrationApplyBlocked
-                ? 'Rilevata una o piu pesate anomale nel periodo: nessuna correzione automatica ai target.'
-                : 'Possibile disallineamento tra stima energetica e realta. Vuoi adattare i target?'}
+              Possibile disallineamento tra stima energetica e realta. Vuoi adattare i target?
             </p>
             <div
               style={{
@@ -13069,9 +13062,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   fontWeight: 700,
                 }}
               >
-                {recalibrationApplyBlocked ? 'Ho capito' : 'Mantieni target attuali'}
+                Mantieni target attuali
               </button>
-              {!recalibrationApplyBlocked ? (
               <button
                 type="button"
                 onClick={() => {
@@ -13089,7 +13081,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               >
                 Applica correzione ({Number(recalibrationProposal.analysis.suggestion?.kcalAdjustment) >= 0 ? '+' : ''}{Math.round(Number(recalibrationProposal.analysis.suggestion?.kcalAdjustment) || 0)} kcal)
               </button>
-              ) : null}
               <button
                 type="button"
                 onClick={() => setShowRecalibrationDetails((v) => !v)}

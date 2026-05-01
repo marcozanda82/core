@@ -271,6 +271,52 @@ export function analyzeEnergyVsWeightTrend({
   daysWindow = 14,
 }) {
   const safeWindow = Math.max(7, Math.min(60, Number(daysWindow) || 14));
+  const hardBlockLatestWeighIn = ({ latestEntry: le, previousValidEntry: pve }) => {
+    console.log('[OutlierHardBlock]', { latestEntry: le, previousValidEntry: pve, triggered: true });
+    return {
+      avgKcalBalance: 0,
+      weightDelta: 0,
+      expectedWeightDelta: 0,
+      discrepancy: 0,
+      confidence: 'low',
+      confidenceScore: 0,
+      latestIsOutlier: true,
+      outlierDetected: true,
+      blockRecalibration: true,
+      latestEntryIsOutlier: true,
+      hardBlockOutlier: true,
+      validDays: 0,
+      sampleDays: [],
+      dailyWindowReason: null,
+      suggestion: {
+        type: 'no_change',
+        kcalAdjustment: 0,
+        explanation: 'Pesata anomala rilevata. Ignorata per il ricalcolo.',
+      },
+      explanation: {
+        summary: 'Pesata anomala',
+        reason: 'La variazione di peso è troppo grande per essere usata come calibrazione.',
+        flags: {
+          latestIsOutlier: true,
+          outlierDetected: true,
+          lowConfidence: true,
+        },
+      },
+    };
+  };
+  const isSameWeighInRecord = (a, b) => {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const ida = a.id != null ? String(a.id) : '';
+    const idb = b.id != null ? String(b.id) : '';
+    if (ida && idb && ida === idb) return true;
+    if (String(a.date) !== String(b.date)) return false;
+    const tsa = Number(a.timestamp);
+    const tsb = Number(b.timestamp);
+    if (Number.isFinite(tsa) && Number.isFinite(tsb)) return tsa === tsb;
+    if (!Number.isFinite(tsa) && !Number.isFinite(tsb)) return Number(a.weight) === Number(b.weight);
+    return false;
+  };
   const normalizedHistory = sortBodyMetricsHistoryByDateAsc(bodyMetricsHistory, new Date().toISOString().slice(0, 10));
   if (normalizedHistory.length < 2) {
     const flags = {
@@ -287,6 +333,7 @@ export function analyzeEnergyVsWeightTrend({
       confidenceScore: 0,
       outlierDetected: false,
       latestIsOutlier: false,
+      blockRecalibration: false,
       latestEntryIsOutlier: false,
       suggestion: {
         type: 'no_change',
@@ -334,45 +381,7 @@ export function analyzeEnergyVsWeightTrend({
     latestIsOutlier = latestCheck.isOutlier;
   }
   if (latestIsOutlier) {
-    console.log('[OutlierHardBlock]', {
-      latestEntry,
-      previousValidEntry,
-      triggered: true,
-    });
-    return {
-      avgKcalBalance: 0,
-      weightDelta: 0,
-      expectedWeightDelta: 0,
-      discrepancy: 0,
-      confidence: 'low',
-      confidenceScore: 0.3,
-      hardBlockOutlier: true,
-      outlierDetected: true,
-      latestIsOutlier: true,
-      latestEntryIsOutlier: true,
-      validDays: 0,
-      sampleDays: [],
-      dailyWindowReason: null,
-      suggestion: {
-        type: 'no_change',
-        kcalAdjustment: 0,
-        explanation: 'Pesata anomala rilevata. Ignorata per il ricalcolo.',
-      },
-      flags: {
-        outlierDetected: true,
-        latestIsOutlier: true,
-      },
-      explanation: {
-        summary: 'Blocco sicurezza: pesata anomala',
-        reason: 'hard_block_latest_outlier',
-        flags: {
-          outlierDetected: true,
-          latestIsOutlier: true,
-          lowConfidence: true,
-          insufficientData: false,
-        },
-      },
-    };
+    return hardBlockLatestWeighIn({ latestEntry, previousValidEntry });
   }
 
   const latestDateRaw = latestEntry.date;
@@ -393,6 +402,7 @@ export function analyzeEnergyVsWeightTrend({
       confidenceScore: 0,
       outlierDetected: false,
       latestIsOutlier: false,
+      blockRecalibration: false,
       latestEntryIsOutlier: false,
       suggestion: {
         type: 'no_change',
@@ -432,6 +442,13 @@ export function analyzeEnergyVsWeightTrend({
   const outlierDetected = outlierEntries.length > 0;
   const latestValidEntry = nonOutlierSequence[nonOutlierSequence.length - 1] || null;
   const latestEntryIsOutlier = false;
+  const rawLatestEntry = normalizedHistory[normalizedHistory.length - 1];
+  const seqLatestEntry = nonOutlierSequence[nonOutlierSequence.length - 1] || null;
+  const latestWeighInDroppedFromCleanSequence =
+    !!seqLatestEntry && !!rawLatestEntry && !isSameWeighInRecord(seqLatestEntry, rawLatestEntry);
+  if (latestWeighInDroppedFromCleanSequence) {
+    return hardBlockLatestWeighIn({ latestEntry: rawLatestEntry, previousValidEntry: seqLatestEntry });
+  }
   if (nonOutlierSequence.length < 2) {
     const flags = {
       outlierDetected,
@@ -447,6 +464,7 @@ export function analyzeEnergyVsWeightTrend({
       confidenceScore: 0,
       outlierDetected,
       latestIsOutlier: latestEntryIsOutlier,
+      blockRecalibration: false,
       latestEntryIsOutlier,
       suggestion: {
         type: 'no_change',
@@ -535,6 +553,7 @@ export function analyzeEnergyVsWeightTrend({
       confidenceScore: 0,
       outlierDetected,
       latestIsOutlier: latestEntryIsOutlier,
+      blockRecalibration: false,
       latestEntryIsOutlier,
       validDays: 0,
       sampleDays: [],
@@ -620,6 +639,7 @@ export function analyzeEnergyVsWeightTrend({
       confidenceScore,
       outlierDetected,
       latestIsOutlier: latestEntryIsOutlier,
+      blockRecalibration: false,
       latestEntryIsOutlier,
       validDays,
       sampleDays,
@@ -647,6 +667,7 @@ export function analyzeEnergyVsWeightTrend({
       confidenceScore,
       outlierDetected,
       latestIsOutlier: latestEntryIsOutlier,
+      blockRecalibration: false,
       latestEntryIsOutlier,
       validDays,
       sampleDays,
@@ -694,6 +715,7 @@ export function analyzeEnergyVsWeightTrend({
     confidenceScore,
     outlierDetected,
     latestIsOutlier: latestEntryIsOutlier,
+    blockRecalibration: false,
     latestEntryIsOutlier,
     validDays,
     sampleDays,
