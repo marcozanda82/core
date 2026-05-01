@@ -13,7 +13,6 @@ import {
   normalizePredictiveCalibrationState,
   recalculateUserTargets,
   removeBodyMetricsEntry,
-  resolveTargetConfigForDate,
   sortBodyMetricsHistoryByDateAsc,
   upsertTargetHistoryEntry,
 } from '../engines/bodyMetricsEngine';
@@ -141,57 +140,6 @@ export default function useBodyMetricsEngine({
     [db, deriveLatestMetricsFromHistory, pickFirstFiniteNumber, setUserProfile]
   );
 
-  const addIsoDays = useCallback((isoDate, deltaDays) => {
-    const d = new Date(`${isoDate}T12:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + Number(deltaDays || 0));
-    return d.toISOString().slice(0, 10);
-  }, []);
-
-  const sumLogKcal = useCallback((nodeLog) => {
-    const arr = Array.isArray(nodeLog) ? nodeLog : Object.values(nodeLog || {});
-    return arr.reduce((sum, row) => {
-      if (!row || typeof row !== 'object') return sum;
-      const type = String(row.type || '').toLowerCase();
-      if (type !== 'food' && type !== 'recipe') return sum;
-      const kcal = Number(row.kcal ?? row.cal ?? row.calorie ?? 0);
-      return sum + (Number.isFinite(kcal) ? kcal : 0);
-    }, 0);
-  }, []);
-
-  const buildRecentDailyKcalBalanceLogs = useCallback(
-    ({ anchorDate, daysWindow }) => {
-      const safeAnchor = normalizeBodyMetricDate({
-        date: anchorDate,
-        timestamp: null,
-        fallbackDate: getTodayString(),
-      });
-      const safeWindow = Math.max(7, Math.min(60, Number(daysWindow) || 14));
-      const out = [];
-      for (let i = safeWindow - 1; i >= 0; i -= 1) {
-        const day = addIsoDays(safeAnchor, -i);
-        const dayNode = fullHistory?.[`trackerStorico_${day}`];
-        if (!dayNode || typeof dayNode !== 'object') continue;
-        const kcalIn = sumLogKcal(dayNode.log);
-        if (!Number.isFinite(kcalIn) || kcalIn <= 0) continue;
-        const targetsForDay = resolveTargetConfigForDate({
-          targets: userTargets,
-          date: day,
-          todayDate: getTodayString(),
-        });
-        const targetKcal = Number(targetsForDay?.kcal);
-        if (!Number.isFinite(targetKcal) || targetKcal <= 0) continue;
-        out.push({
-          date: day,
-          kcalIn,
-          kcalTarget: targetKcal,
-          kcalBalance: kcalIn - targetKcal,
-        });
-      }
-      return out;
-    },
-    [addIsoDays, fullHistory, getTodayString, sumLogKcal, userTargets]
-  );
-
   const maybeCreateRecalibrationProposal = useCallback(
     ({ history, weighDate, daysWindow = 14 }) => {
       const safeHistory = Array.isArray(history) ? history : [];
@@ -212,43 +160,26 @@ export default function useBodyMetricsEngine({
         });
         return { shouldShow, reason, result, dailyLogsAvailable: 0 };
       }
-      const dailyLogs = buildRecentDailyKcalBalanceLogs({ anchorDate: weighDate, daysWindow });
-      if (!dailyLogs.length) {
-        reason = 'missing_daily_logs';
-        console.log('[RecalibrationPromptDecision]', {
-          shouldShow,
-          reason,
-          confidence: result?.confidence,
-          suggestionType: result?.suggestion?.type,
-          avgKcalBalance: result?.avgKcalBalance,
-          weightDelta: result?.weightDelta,
-          expectedWeightDelta: result?.expectedWeightDelta,
-          discrepancy: result?.discrepancy,
-        });
-        return { shouldShow, reason, result, dailyLogsAvailable: 0 };
-      }
-      if (dailyLogs.length < 7) {
-        reason = 'insufficient_logs';
-        console.log('[RecalibrationPromptDecision]', {
-          shouldShow,
-          reason,
-          confidence: result?.confidence,
-          suggestionType: result?.suggestion?.type,
-          avgKcalBalance: result?.avgKcalBalance,
-          weightDelta: result?.weightDelta,
-          expectedWeightDelta: result?.expectedWeightDelta,
-          discrepancy: result?.discrepancy,
-        });
-        return { shouldShow, reason, result, dailyLogsAvailable: dailyLogs.length };
-      }
       result = analyzeEnergyVsWeightTrend({
         bodyMetricsHistory: safeHistory,
-        dailyLogs,
+        fullHistory,
+        userTargets,
+        calorieStrategy: null,
         daysWindow,
       });
       console.log('[RecalibrationAnalysis]', result);
+      console.log('[RecalibrationDailyWindow]', {
+        daysWindow,
+        validDays: Number(result?.validDays) || 0,
+        avgKcalBalance: result?.avgKcalBalance,
+        sampleDays: Array.isArray(result?.sampleDays) ? result.sampleDays : [],
+      });
       if (!result) {
         reason = 'wiring_error';
+      } else if (result?.dailyWindowReason === 'missing_daily_logs') {
+        reason = 'missing_daily_logs';
+      } else if (result?.dailyWindowReason === 'insufficient_logs') {
+        reason = 'insufficient_logs';
       } else if (result.confidence === 'low') {
         reason = 'low_confidence';
       } else if (result.suggestion?.type === 'no_change') {
@@ -280,9 +211,9 @@ export default function useBodyMetricsEngine({
         expectedWeightDelta: result?.expectedWeightDelta,
         discrepancy: result?.discrepancy,
       });
-      return { shouldShow, reason, result, dailyLogsAvailable: dailyLogs.length };
+      return { shouldShow, reason, result, dailyLogsAvailable: Number(result?.validDays) || 0 };
     },
-    [buildRecentDailyKcalBalanceLogs, userTargets?.autoCalculated, userTargets?.postWeighInRecalibrationDisabled]
+    [fullHistory, userTargets]
   );
 
   useEffect(() => {
@@ -598,17 +529,18 @@ export default function useBodyMetricsEngine({
       metricsPatch[newEntryKey] = payload;
       await update(ref(db, `users/${uid}/body_metrics`), metricsPatch);
       await syncCurrentProfileFromHistory({ uid, history: nextHistory });
-      const dailyLogsAvailable = buildRecentDailyKcalBalanceLogs({
-        anchorDate: weighDate,
+      const proposalDecision = maybeCreateRecalibrationProposal({
+        history: nextHistory,
+        weighDate,
         daysWindow: 14,
-      }).length;
+      });
+      const dailyLogsAvailable = Number(proposalDecision?.dailyLogsAvailable) || 0;
       console.log('[PostWeighInRecalibrationTrigger]', {
         savedEntry: payload,
         bodyMetricsHistoryLength: nextHistory.length,
         dailyLogsAvailable,
         userTargets,
       });
-      maybeCreateRecalibrationProposal({ history: nextHistory, weighDate, daysWindow: 14 });
       setShowWeightModal(false);
       setInputWeightDate(getTodayString());
       setInputWeight('');
@@ -639,7 +571,6 @@ export default function useBodyMetricsEngine({
     bodyMetricsHistory,
     metricEntryToIsoDaySafe,
     getTodayString,
-    buildRecentDailyKcalBalanceLogs,
     userTargets,
     maybeCreateRecalibrationProposal,
     syncCurrentProfileFromHistory,

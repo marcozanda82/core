@@ -2,13 +2,21 @@ import {
   computeDataDrivenTdeeWithCoach as computeDataDrivenTdeeWithCoachBase,
   goalFromProfile as goalFromProfileBase,
 } from '../../../dataDrivenTdee';
+import {
+  applyCalorieStrategyToProfileKcal as applyCalorieStrategyToProfileKcalBase,
+  getLogFromStoricoTree as getLogFromStoricoTreeBase,
+} from '../../../coreEngine';
 import { mergeDuplicateBiometrics as mergeDuplicateBiometricsBase } from '../../../biometricHistory';
 import { recalculateUserTargets as recalculateUserTargetsBase } from '../../../targetsEngine';
+import { computeTotali as computeTotaliBase } from '../../../useBiochimico';
 
 export const computeDataDrivenTdeeWithCoach = computeDataDrivenTdeeWithCoachBase;
 export const mergeDuplicateBiometrics = mergeDuplicateBiometricsBase;
 export const recalculateUserTargets = recalculateUserTargetsBase;
 export const goalFromProfile = goalFromProfileBase;
+const getLogFromStoricoTree = getLogFromStoricoTreeBase;
+const computeTotali = computeTotaliBase;
+const applyCalorieStrategyToProfileKcal = applyCalorieStrategyToProfileKcalBase;
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -236,6 +244,9 @@ function dayDiffInclusive(startIso, endIso) {
 export function analyzeEnergyVsWeightTrend({
   bodyMetricsHistory,
   dailyLogs,
+  fullHistory,
+  userTargets,
+  calorieStrategy = null,
   daysWindow = 14,
 }) {
   const safeWindow = Math.max(7, Math.min(60, Number(daysWindow) || 14));
@@ -277,9 +288,58 @@ export function analyzeEnergyVsWeightTrend({
   const oldest = windowHistory[0];
   const spanDays = dayDiffInclusive(oldest.date, latestDate);
 
-  const validDailyLogs = (Array.isArray(dailyLogs) ? dailyLogs : [])
+  const deriveDailyLogsFromTracker = () => {
+    if (!fullHistory || typeof fullHistory !== 'object' || Object.keys(fullHistory).length === 0) {
+      return { rows: [], reason: 'missing_daily_logs' };
+    }
+    const out = [];
+    const todayDate = new Date().toISOString().slice(0, 10);
+    let cursor = oldest.date;
+    while (cursor <= latestDate) {
+      if (cursor > todayDate) break;
+      const log = getLogFromStoricoTree(fullHistory, cursor) || [];
+      if (Array.isArray(log) && log.length > 0) {
+        const totals = computeTotali(log);
+        const consumedKcal = Number(totals?.kcal);
+        const workoutKcal = Number(totals?.workout);
+        const targetsForDay = resolveTargetConfigForDate({
+          targets: userTargets || {},
+          date: cursor,
+          todayDate,
+        });
+        let baseTargetKcal = Number(targetsForDay?.kcal);
+        if (Number.isFinite(baseTargetKcal) && calorieStrategy) {
+          baseTargetKcal = applyCalorieStrategyToProfileKcal(baseTargetKcal, calorieStrategy);
+        }
+        if (Number.isFinite(consumedKcal) && Number.isFinite(baseTargetKcal) && baseTargetKcal > 0) {
+          const workoutBonus = Number.isFinite(workoutKcal) && workoutKcal > 0 ? workoutKcal : 0;
+          const effectiveTargetKcal = baseTargetKcal + workoutBonus;
+          out.push({
+            date: cursor,
+            kcalIn: consumedKcal,
+            workoutKcal: workoutBonus,
+            effectiveTargetKcal,
+            kcalBalance: consumedKcal - effectiveTargetKcal,
+          });
+        }
+      }
+      const next = new Date(`${cursor}T00:00:00Z`);
+      next.setUTCDate(next.getUTCDate() + 1);
+      cursor = next.toISOString().slice(0, 10);
+    }
+    if (out.length === 0) return { rows: [], reason: 'missing_daily_logs' };
+    if (out.length < 7) return { rows: out, reason: 'insufficient_logs' };
+    return { rows: out, reason: null };
+  };
+
+  const providedDailyLogs = (Array.isArray(dailyLogs) ? dailyLogs : [])
     .filter((row) => row && isValidIsoDate(row.date) && Number.isFinite(Number(row.kcalBalance)))
     .filter((row) => row.date >= oldest.date && row.date <= latestDate);
+  const fromTracker = deriveDailyLogsFromTracker();
+  const validDailyLogs = providedDailyLogs.length > 0 ? providedDailyLogs : fromTracker.rows;
+  const dailyWindowReason = providedDailyLogs.length > 0 ? null : fromTracker.reason;
+  const validDays = validDailyLogs.length;
+  const sampleDays = validDailyLogs.slice(Math.max(0, validDailyLogs.length - 3));
 
   if (validDailyLogs.length === 0) {
     return {
@@ -288,6 +348,9 @@ export function analyzeEnergyVsWeightTrend({
       expectedWeightDelta: 0,
       discrepancy: Number(latest.weight) - Number(oldest.weight),
       confidence: 'low',
+      validDays: 0,
+      sampleDays: [],
+      dailyWindowReason: dailyWindowReason || 'missing_daily_logs',
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
@@ -322,6 +385,9 @@ export function analyzeEnergyVsWeightTrend({
       expectedWeightDelta,
       discrepancy,
       confidence,
+      validDays,
+      sampleDays,
+      dailyWindowReason,
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
@@ -357,6 +423,9 @@ export function analyzeEnergyVsWeightTrend({
     expectedWeightDelta,
     discrepancy,
     confidence,
+    validDays,
+    sampleDays,
+    dailyWindowReason,
     suggestion: {
       type,
       kcalAdjustment: signedAdjustment,
