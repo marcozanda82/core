@@ -33,6 +33,7 @@ import { Line } from 'react-chartjs-2';
 import { AlcoholRecoveryComposedChart } from './LifestyleTelemetryCharts';
 import HistoryView from './HistoryView';
 import StatisticsView from './StatisticsView';
+import { deriveCurrentBodyMetricsFromHistory } from './features/salaComandi/engines/bodyMetricsEngine';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -1051,11 +1052,9 @@ export default function LongevityView({
   }, [tdeeHistory, timeWindow, anchorDate]);
 
   const latestKnownWeightKg = useMemo(() => {
-    const sorted = [...(bodyMetricsHistory || [])]
-      .filter((e) => Number(e?.weight) > 0)
-      .sort((a, b) => (Number(a?.timestamp) || 0) - (Number(b?.timestamp) || 0));
-    if (!sorted.length) return null;
-    return Number(sorted[sorted.length - 1].weight) || null;
+    const latest = deriveCurrentBodyMetricsFromHistory(bodyMetricsHistory, getTodayString());
+    const weight = Number(latest?.weight);
+    return Number.isFinite(weight) && weight > 0 ? weight : null;
   }, [bodyMetricsHistory]);
 
   const nextWeighInPrediction = useMemo(

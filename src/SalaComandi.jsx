@@ -87,7 +87,10 @@ import {
   estraiDatiFoodDb as resolveFoodDataFromEngine,
   getAverageEstimate as getAverageEstimateFromEngine,
 } from './features/salaComandi/engines/foodDataEngine';
-import { mergeDuplicateBiometrics } from './features/salaComandi/engines/bodyMetricsEngine';
+import {
+  deriveCurrentBodyMetricsFromHistory,
+  mergeDuplicateBiometrics,
+} from './features/salaComandi/engines/bodyMetricsEngine';
 import {
   findBestFoodMatch,
   findRecentFoodHabit,
@@ -5980,10 +5983,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const piccoCortisolo = Math.max(0, ...(cortisolCurve?.map(c => c.cortisolScore) ?? [0]));
 
       const anchorAi = currentTrackerDate || getTodayString();
-      const lastBodyEntry =
-        Array.isArray(bodyMetricsHistory) && bodyMetricsHistory.length > 0
-          ? bodyMetricsHistory[bodyMetricsHistory.length - 1]
-          : null;
+      const lastBodyEntry = deriveCurrentBodyMetricsFromHistory(bodyMetricsHistory, getTodayString());
       const weightKgForAi =
         lastBodyEntry?.weight != null && Number.isFinite(Number(lastBodyEntry.weight))
           ? Number(lastBodyEntry.weight)

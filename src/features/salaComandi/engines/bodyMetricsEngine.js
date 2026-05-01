@@ -80,12 +80,23 @@ export function sortBodyMetricsHistoryByDateAsc(history = [], fallbackDate) {
   const safeHistory = Array.isArray(history) ? history : [];
   return safeHistory
     .map((entry) => normalizeBodyMetricsEntryForTimeline({ entry, fallbackDate }))
+    .filter((entry) => Number.isFinite(Number(entry?.weight)) && Number(entry.weight) > 0)
     .filter(Boolean)
     .sort((a, b) => {
       const d = String(a.date || '').localeCompare(String(b.date || ''));
       if (d !== 0) return d;
       return (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0);
     });
+}
+
+/**
+ * Deriva la metrica corporea corrente esclusivamente dallo storico residuo.
+ * Ritorna l'entry più recente valida (o `null` se lo storico è vuoto/invalido).
+ */
+export function deriveCurrentBodyMetricsFromHistory(history = [], fallbackDate) {
+  const sorted = sortBodyMetricsHistoryByDateAsc(history, fallbackDate);
+  if (!sorted.length) return null;
+  return sorted[sorted.length - 1] || null;
 }
 
 /**
