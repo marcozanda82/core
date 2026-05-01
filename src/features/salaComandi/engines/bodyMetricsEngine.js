@@ -237,6 +237,27 @@ function dayDiffInclusive(startIso, endIso) {
   return Math.max(1, Math.round(delta / 86400000) + 1);
 }
 
+export function isWeightOutlier(prevWeight, currentWeight, daysDiff) {
+  const prev = Number(prevWeight);
+  const curr = Number(currentWeight);
+  const dd = Math.max(1, Number(daysDiff) || 1);
+  if (!Number.isFinite(prev) || prev <= 0 || !Number.isFinite(curr)) {
+    return { isOutlier: false, reason: null };
+  }
+  const deltaKg = curr - prev;
+  const deltaPct = deltaKg / prev;
+  if (Math.abs(deltaKg) > 2.5 && dd <= 2) {
+    return { isOutlier: true, reason: 'extreme_short_term_change' };
+  }
+  if (Math.abs(deltaPct) > 0.03 && dd <= 3) {
+    return { isOutlier: true, reason: 'relative_change_too_high' };
+  }
+  if (Math.abs(deltaKg) > 5 && dd <= 7) {
+    return { isOutlier: true, reason: 'absolute_extreme_change' };
+  }
+  return { isOutlier: false, reason: null };
+}
+
 /**
  * Analisi trend energetico vs trend peso su finestra recente.
  * dailyLogs: Array<{ date: YYYY-MM-DD, kcalBalance: number }>
@@ -252,39 +273,124 @@ export function analyzeEnergyVsWeightTrend({
   const safeWindow = Math.max(7, Math.min(60, Number(daysWindow) || 14));
   const normalizedHistory = sortBodyMetricsHistoryByDateAsc(bodyMetricsHistory, new Date().toISOString().slice(0, 10));
   if (normalizedHistory.length < 2) {
+    const flags = {
+      outlierDetected: false,
+      lowConfidence: true,
+      insufficientData: true,
+    };
     return {
       avgKcalBalance: 0,
       weightDelta: 0,
       expectedWeightDelta: 0,
       discrepancy: 0,
       confidence: 'low',
+      confidenceScore: 0,
+      outlierDetected: false,
+      latestEntryIsOutlier: false,
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
-        explanation: 'Servono almeno due pesate valide per una proposta affidabile.',
+        explanation: 'Peso recente anomalo o dati insufficienti. Attendere ulteriori pesate.',
+      },
+      explanation: {
+        summary: 'Dati pesate insufficienti',
+        reason: 'insufficient_weigh_ins',
+        flags,
       },
     };
   }
 
-  const latest = normalizedHistory[normalizedHistory.length - 1];
+  const latestRaw = normalizedHistory[normalizedHistory.length - 1];
+  const latestDateRaw = latestRaw.date;
+  const minDateTs = toDayTimestamp(latestDateRaw) - ((safeWindow - 1) * 86400000);
+  const windowHistoryRaw = normalizedHistory.filter((entry) => toDayTimestamp(entry.date) >= minDateTs);
+  if (windowHistoryRaw.length < 2) {
+    const flags = {
+      outlierDetected: false,
+      lowConfidence: true,
+      insufficientData: true,
+    };
+    return {
+      avgKcalBalance: 0,
+      weightDelta: 0,
+      expectedWeightDelta: 0,
+      discrepancy: 0,
+      confidence: 'low',
+      confidenceScore: 0,
+      outlierDetected: false,
+      latestEntryIsOutlier: false,
+      suggestion: {
+        type: 'no_change',
+        kcalAdjustment: 0,
+        explanation: 'Peso recente anomalo o dati insufficienti. Attendere ulteriori pesate.',
+      },
+      explanation: {
+        summary: 'Finestra pesate insufficiente',
+        reason: 'insufficient_weigh_ins',
+        flags,
+      },
+    };
+  }
+
+  const nonOutlierSequence = [windowHistoryRaw[0]];
+  const outlierEntries = [];
+  for (let i = 1; i < windowHistoryRaw.length; i += 1) {
+    const current = windowHistoryRaw[i];
+    const prev = nonOutlierSequence[nonOutlierSequence.length - 1];
+    const daysDiff = Math.max(
+      1,
+      Math.round((toDayTimestamp(current.date) - toDayTimestamp(prev.date)) / 86400000)
+    );
+    const outlierResult = isWeightOutlier(prev.weight, current.weight, daysDiff);
+    console.log('[WeightOutlierCheck]', {
+      prevWeight: prev.weight,
+      currentWeight: current.weight,
+      daysDiff,
+      result: outlierResult,
+    });
+    if (outlierResult.isOutlier) {
+      outlierEntries.push({ ...current, outlierReason: outlierResult.reason });
+      continue;
+    }
+    nonOutlierSequence.push(current);
+  }
+  const outlierDetected = outlierEntries.length > 0;
+  const latestValidEntry = nonOutlierSequence[nonOutlierSequence.length - 1] || null;
+  const latestEntryIsOutlier =
+    !!latestValidEntry &&
+    (latestValidEntry.date !== latestRaw.date ||
+      Number(latestValidEntry.timestamp) !== Number(latestRaw.timestamp));
+  if (nonOutlierSequence.length < 2) {
+    const flags = {
+      outlierDetected,
+      lowConfidence: true,
+      insufficientData: true,
+    };
+    return {
+      avgKcalBalance: 0,
+      weightDelta: 0,
+      expectedWeightDelta: 0,
+      discrepancy: 0,
+      confidence: 'low',
+      confidenceScore: 0,
+      outlierDetected,
+      latestEntryIsOutlier,
+      suggestion: {
+        type: 'no_change',
+        kcalAdjustment: 0,
+        explanation: 'Peso recente anomalo o dati insufficienti. Attendere ulteriori pesate.',
+      },
+      explanation: {
+        summary: 'Sequenza pesate instabile',
+        reason: 'outlier_detected',
+        flags,
+      },
+    };
+  }
+
+  const latest = latestValidEntry;
   const latestDate = latest.date;
-  const minDateTs = toDayTimestamp(latestDate) - ((safeWindow - 1) * 86400000);
-  const windowHistory = normalizedHistory.filter((entry) => toDayTimestamp(entry.date) >= minDateTs);
-  if (windowHistory.length < 2) {
-    return {
-      avgKcalBalance: 0,
-      weightDelta: 0,
-      expectedWeightDelta: 0,
-      discrepancy: 0,
-      confidence: 'low',
-      suggestion: {
-        type: 'no_change',
-        kcalAdjustment: 0,
-        explanation: 'Periodo pesate insufficiente per valutare il trend energetico.',
-      },
-    };
-  }
-
+  const windowHistory = nonOutlierSequence;
   const oldest = windowHistory[0];
   const spanDays = dayDiffInclusive(oldest.date, latestDate);
 
@@ -342,19 +448,32 @@ export function analyzeEnergyVsWeightTrend({
   const sampleDays = validDailyLogs.slice(Math.max(0, validDailyLogs.length - 3));
 
   if (validDailyLogs.length === 0) {
+    const flags = {
+      outlierDetected,
+      lowConfidence: true,
+      insufficientData: true,
+    };
     return {
       avgKcalBalance: 0,
       weightDelta: Number(latest.weight) - Number(oldest.weight),
       expectedWeightDelta: 0,
       discrepancy: Number(latest.weight) - Number(oldest.weight),
       confidence: 'low',
+      confidenceScore: 0,
+      outlierDetected,
+      latestEntryIsOutlier,
       validDays: 0,
       sampleDays: [],
       dailyWindowReason: dailyWindowReason || 'missing_daily_logs',
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
-        explanation: 'Nessun log calorico recente: proposta non disponibile.',
+        explanation: 'Peso recente anomalo o dati insufficienti. Attendere ulteriori pesate.',
+      },
+      explanation: {
+        summary: 'Storico energetico assente',
+        reason: dailyWindowReason || 'missing_daily_logs',
+        flags,
       },
     };
   }
@@ -373,11 +492,70 @@ export function analyzeEnergyVsWeightTrend({
     }, 0) / Math.max(1, validDailyLogs.length);
   const stdDev = Math.sqrt(variance);
 
+  const normalizedWeightRate = [];
+  for (let i = 1; i < windowHistory.length; i += 1) {
+    const prev = windowHistory[i - 1];
+    const curr = windowHistory[i];
+    const dd = Math.max(1, Math.round((toDayTimestamp(curr.date) - toDayTimestamp(prev.date)) / 86400000));
+    const dkg = Number(curr.weight) - Number(prev.weight);
+    if (Number.isFinite(dkg)) normalizedWeightRate.push(dkg / dd);
+  }
+  const absAvgWeightRate =
+    normalizedWeightRate.length > 0
+      ? normalizedWeightRate.reduce((s, v) => s + Math.abs(v), 0) / normalizedWeightRate.length
+      : 0;
+  const highWeightVolatility = absAvgWeightRate > 0.6;
+
+  const penalties = {
+    weighIns: windowHistory.length < 3 ? 0.3 : 0,
+    logs: validDays < 7 ? 0.3 : 0,
+    outliers: outlierDetected ? 0.4 : 0,
+    volatility: highWeightVolatility ? 0.2 : 0,
+  };
+  const rawScore = 1 - (penalties.weighIns + penalties.logs + penalties.outliers + penalties.volatility);
+  const confidenceScore = Math.max(0, Math.min(1, rawScore));
+  console.log('[ConfidenceScore]', {
+    score: confidenceScore,
+    penalties,
+  });
+
   let confidence = 'high';
-  if (spanDays < 10 || validDailyLogs.length < 10 || stdDev > 500) confidence = 'medium';
-  if (spanDays < 7 || validDailyLogs.length < 7 || stdDev > 800) confidence = 'low';
+  if (confidenceScore <= 0.7) confidence = 'medium';
+  if (confidenceScore < 0.4) confidence = 'low';
 
   const smallThresholdKg = 0.25;
+  const flags = {
+    outlierDetected,
+    lowConfidence: confidence === 'low',
+    insufficientData: windowHistory.length < 3 || validDays < 7,
+  };
+
+  if (latestEntryIsOutlier || confidence === 'low') {
+    return {
+      avgKcalBalance,
+      weightDelta,
+      expectedWeightDelta,
+      discrepancy,
+      confidence,
+      confidenceScore,
+      outlierDetected,
+      latestEntryIsOutlier,
+      validDays,
+      sampleDays,
+      dailyWindowReason,
+      suggestion: {
+        type: 'no_change',
+        kcalAdjustment: 0,
+        explanation: 'Peso recente anomalo o dati insufficienti. Attendere ulteriori pesate.',
+      },
+      explanation: {
+        summary: 'Analisi sospesa per stabilita dati',
+        reason: latestEntryIsOutlier ? 'latest_outlier' : 'low_confidence',
+        flags,
+      },
+    };
+  }
+
   if (discrepancyAbs < smallThresholdKg) {
     return {
       avgKcalBalance,
@@ -385,6 +563,9 @@ export function analyzeEnergyVsWeightTrend({
       expectedWeightDelta,
       discrepancy,
       confidence,
+      confidenceScore,
+      outlierDetected,
+      latestEntryIsOutlier,
       validDays,
       sampleDays,
       dailyWindowReason,
@@ -392,6 +573,11 @@ export function analyzeEnergyVsWeightTrend({
         type: 'no_change',
         kcalAdjustment: 0,
         explanation: 'Trend peso ed energia risultano allineati: nessuna correzione consigliata.',
+      },
+      explanation: {
+        summary: 'Trend allineato',
+        reason: 'no_change',
+        flags,
       },
     };
   }
@@ -423,6 +609,9 @@ export function analyzeEnergyVsWeightTrend({
     expectedWeightDelta,
     discrepancy,
     confidence,
+    confidenceScore,
+    outlierDetected,
+    latestEntryIsOutlier,
     validDays,
     sampleDays,
     dailyWindowReason,
@@ -430,6 +619,11 @@ export function analyzeEnergyVsWeightTrend({
       type,
       kcalAdjustment: signedAdjustment,
       explanation,
+    },
+    explanation: {
+      summary: 'Proposta di ricalibrazione disponibile',
+      reason: type,
+      flags,
     },
   };
 }
