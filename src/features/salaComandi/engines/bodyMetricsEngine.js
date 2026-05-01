@@ -242,20 +242,34 @@ export function isWeightOutlier(prevWeight, currentWeight, daysDiff) {
   const curr = Number(currentWeight);
   const dd = Math.max(1, Number(daysDiff) || 1);
   if (!Number.isFinite(prev) || prev <= 0 || !Number.isFinite(curr)) {
-    return { isOutlier: false, reason: null };
+    return {
+      isOutlier: false,
+      reason: null,
+      deltaKg: null,
+      deltaPct: null,
+      daysDiff: dd,
+    };
   }
   const deltaKg = curr - prev;
-  const deltaPct = deltaKg / prev;
-  if (Math.abs(deltaKg) > 2.5 && dd <= 2) {
-    return { isOutlier: true, reason: 'extreme_short_term_change' };
+  const absDeltaKg = Math.abs(deltaKg);
+  const deltaPct = absDeltaKg / prev;
+
+  if (absDeltaKg >= 10) {
+    return { isOutlier: true, reason: 'absolute_delta', deltaKg, deltaPct, daysDiff: dd };
   }
-  if (Math.abs(deltaPct) > 0.03 && dd <= 3) {
-    return { isOutlier: true, reason: 'relative_change_too_high' };
+  if (deltaPct >= 0.10) {
+    return { isOutlier: true, reason: 'relative_delta', deltaKg, deltaPct, daysDiff: dd };
   }
-  if (Math.abs(deltaKg) > 5 && dd <= 7) {
-    return { isOutlier: true, reason: 'absolute_extreme_change' };
+  if (absDeltaKg > 2.5 && dd <= 2) {
+    return { isOutlier: true, reason: 'short_term_delta', deltaKg, deltaPct, daysDiff: dd };
   }
-  return { isOutlier: false, reason: null };
+  if (deltaPct > 0.03 && dd <= 3) {
+    return { isOutlier: true, reason: 'short_term_pct', deltaKg, deltaPct, daysDiff: dd };
+  }
+  if (absDeltaKg > 5 && dd <= 7) {
+    return { isOutlier: true, reason: 'weekly_delta', deltaKg, deltaPct, daysDiff: dd };
+  }
+  return { isOutlier: false, reason: null, deltaKg, deltaPct, daysDiff: dd };
 }
 
 /**
