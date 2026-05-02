@@ -486,6 +486,12 @@ export default function MetabolicCompass({
     return microSuggestionText;
   }, [usesEngineCompassBundle, compassDisplayLabelFromBundle, microSuggestionText]);
 
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[CompassAmbientStyle:compass]', compassAmbientStyle);
+    }
+  }, [compassAmbientStyle]);
+
   const compassAmbientLayer = useMemo(() => {
     const a = compassAmbientStyle;
     if (!a || typeof a !== 'object') return null;
@@ -495,16 +501,25 @@ export default function MetabolicCompass({
     const opacity = Number(a.opacity);
     const ringOpacity = Number(a.ringOpacity);
     if (!Number.isFinite(opacity) || !Number.isFinite(ringOpacity)) return null;
-    const o = Math.max(0, Math.min(1, opacity));
-    const ro = Math.max(0, Math.min(1, ringOpacity));
 
-    const bezelExtra = `, 0 0 18px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.42}), 0 0 38px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.3}), 0 0 56px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.18})`;
+    /** DEV: esagera alone/anello per verificare wiring (produzione invariata). */
+    const ambientDebugExaggerate = import.meta.env.DEV;
+    const o = ambientDebugExaggerate ? 1 : Math.max(0, Math.min(1, opacity));
+    const ro = ambientDebugExaggerate ? 1 : Math.max(0, Math.min(1, ringOpacity));
 
-    const faceAmbientShadow = `inset 0 0 0 1px rgba(${rgb.r},${rgb.g},${rgb.b},${ro * 0.55}), inset 0 0 48px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.14})`;
+    const bezelExtra = ambientDebugExaggerate
+      ? `, 0 0 32px rgba(${gRgb.r},${gRgb.g},${gRgb.b},0.95), 0 0 72px rgba(${gRgb.r},${gRgb.g},${gRgb.b},0.72), 0 0 120px rgba(${gRgb.r},${gRgb.g},${gRgb.b},0.48)`
+      : `, 0 0 18px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.42}), 0 0 38px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.3}), 0 0 56px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.18})`;
 
-    const faceGradient = `radial-gradient(ellipse 80% 80% at 50% 38%, rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.1}) 0%, transparent 56%)`;
+    const faceAmbientShadow = ambientDebugExaggerate
+      ? `inset 0 0 0 2px rgba(${rgb.r},${rgb.g},${rgb.b},0.92), inset 0 0 88px rgba(${gRgb.r},${gRgb.g},${gRgb.b},0.5)`
+      : `inset 0 0 0 1px rgba(${rgb.r},${rgb.g},${rgb.b},${ro * 0.55}), inset 0 0 48px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.14})`;
 
-    return { bezelExtra, faceAmbientShadow, faceGradient };
+    const faceGradient = ambientDebugExaggerate
+      ? `radial-gradient(ellipse 82% 82% at 50% 38%, rgba(${gRgb.r},${gRgb.g},${gRgb.b},0.38) 0%, transparent 58%)`
+      : `radial-gradient(ellipse 80% 80% at 50% 38%, rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.1}) 0%, transparent 56%)`;
+
+    return { bezelExtra, faceAmbientShadow, faceGradient, ambientDebugExaggerate };
   }, [compassAmbientStyle]);
 
   const bezelBoxShadow = useMemo(() => {
@@ -691,10 +706,16 @@ export default function MetabolicCompass({
           width: 'min(100%, 320px)',
           padding: '2.25%',
           borderRadius: '50%',
+          boxSizing: 'border-box',
           background:
             'linear-gradient(155deg, rgba(58,64,76,0.5) 0%, rgba(22,24,32,0.92) 38%, rgba(10,11,16,1) 100%)',
           boxShadow: bezelBoxShadow,
           transition: 'box-shadow 0.55s ease',
+          ...(import.meta.env.DEV &&
+          compassAmbientLayer?.ambientDebugExaggerate &&
+          typeof compassAmbientStyle?.color === 'string'
+            ? { border: `2px solid ${compassAmbientStyle.color}` }
+            : {}),
         }}
       >
         <div

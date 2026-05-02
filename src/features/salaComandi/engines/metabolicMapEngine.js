@@ -418,6 +418,10 @@ export function computeMetabolicMapCompassBundle({
     compassSignalStrength
   );
 
+  if (import.meta.env.DEV) {
+    console.log('[CompassAmbientStyle:engine]', compassAmbientStyle);
+  }
+
   const sleepPenalty =
     mapInputs.sleepHours < 7.5 ? Math.max(0, 7.5 - mapInputs.sleepHours) : 0;
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { METABOLIC_GOAL } from './metabolicDirection';
 import { computeMetabolicMapCompassBundle } from './features/salaComandi/engines/metabolicMapEngine';
 import MetabolicDataAudit from './MetabolicDataAudit';
@@ -179,6 +179,12 @@ export default function MetabolicUnifiedView({
     lineTrend,
     lineConfidence,
   } = mapData;
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[CompassAmbientStyle:unified]', mapData?.compassAmbientStyle);
+    }
+  }, [mapData]);
 
   const compassDebugByTimeframe = useMemo(() => {
     if (!SHOW_METABOLIC_DEBUG) return [];
