@@ -24,6 +24,7 @@ const DEFAULT_INSIGHT = {
   severity: 'info',
   title: 'Coach metabolico',
   message: 'Aggiungi qualche giorno di diario per un feedback più preciso.',
+  guidanceSteps: null,
   reason: null,
   actionLabel: null,
 };
@@ -40,6 +41,7 @@ const DEFAULT_INSIGHT = {
  *   severity: 'info' | 'warning' | 'good',
  *   title: string,
  *   message: string,
+ *   guidanceSteps: string[] | null,
  *   reason: string | null,
  *   actionLabel: string | null,
  * }}
@@ -65,10 +67,31 @@ export function buildMetabolicCoachInsight({
   const kcalTarget = userTargets?.kcal;
 
   if (strength === 'very_weak') {
+    const inputs = mapData.metabolicMapInputs || {};
+    const validDays = Number(inputs.totalWindowDays) || 0;
+    const instab = Number(mapData.glycemic ?? inputs.glycemicInstability ?? 0) || 0;
+
+    const guidanceSteps = [
+      'Mantieni un apporto calorico coerente per almeno 3–5 giorni',
+      'Evita variazioni brusche di allenamento',
+      'Continua a registrare sonno e alimentazione con precisione',
+    ];
+
+    if (validDays < 5) {
+      guidanceSteps.push('Servono più giorni di dati per una valutazione affidabile');
+    }
+
+    if (instab > 48) {
+      guidanceSteps.push(
+        'Riduci la variabilità giornaliera per migliorare la lettura del trend',
+      );
+    }
+
     return {
       severity: 'info',
       title: 'Nessuna direzione chiara',
-      message: 'I dati non indicano una direzione metabolica significativa.',
+      message: 'I dati non indicano ancora una direzione metabolica chiara.',
+      guidanceSteps,
       reason: `Periodo analizzato: ${tf}`,
       actionLabel: null,
     };
@@ -81,6 +104,7 @@ export function buildMetabolicCoachInsight({
       message:
         displayLabel ||
         'Il segnale è ancora leggero: un po’ più di dati consecutivi aiuta a definire il trend.',
+      guidanceSteps: null,
       reason: kcalTarget ? `${tf} · obiettivo ${Math.round(kcalTarget)} kcal` : `Periodo: ${tf}`,
       actionLabel: null,
     };
@@ -102,6 +126,7 @@ export function buildMetabolicCoachInsight({
         'Con il segnale attuale vale la pena osservare recupero, bilancio e qualità del sonno nella finestra selezionata.',
       reason: parts.length ? parts.join(' · ') : `Mappa · ${tf}`,
       actionLabel: 'Controlla diario e sonno',
+      guidanceSteps: null,
     };
   }
 
@@ -123,6 +148,7 @@ export function buildMetabolicCoachInsight({
           ? `Longevity indicativa ${Math.round(longevity)} · ${tf}`
           : `Finestra ${tf}`,
       actionLabel: lowGly ? 'Continua con costanza' : null,
+      guidanceSteps: null,
     };
   }
 
@@ -132,5 +158,6 @@ export function buildMetabolicCoachInsight({
     message: displayLabel || 'Segui il trend nei prossimi giorni con logging regolare.',
     reason: tf,
     actionLabel: null,
+    guidanceSteps: null,
   };
 }

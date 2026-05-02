@@ -8,6 +8,7 @@ import React from 'react';
  *     severity: 'info' | 'warning' | 'good',
  *     title: string,
  *     message: string,
+ *     guidanceSteps?: string[] | null,
  *     reason: string | null,
  *     actionLabel: string | null,
  *   } | null | undefined,
@@ -15,6 +16,11 @@ import React from 'react';
  */
 export default function MetabolicCoachCard({ insight } = {}) {
   if (!insight || !insight.title) return null;
+
+  const steps =
+    Array.isArray(insight.guidanceSteps) && insight.guidanceSteps.length > 0
+      ? insight.guidanceSteps
+      : [];
 
   const borderTint =
     insight.severity === 'warning'
@@ -73,6 +79,24 @@ export default function MetabolicCoachCard({ insight } = {}) {
       >
         {insight.message}
       </p>
+      {steps.length > 0 ? (
+        <ul
+          style={{
+            margin: '8px 0 0',
+            paddingLeft: 18,
+            fontSize: 11,
+            lineHeight: 1.4,
+            color: 'rgba(190, 205, 218, 0.88)',
+            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+          }}
+        >
+          {steps.map((s) => (
+            <li key={s} style={{ marginBottom: 4 }}>
+              {s}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {insight.reason ? (
         <p
           style={{
