@@ -182,6 +182,16 @@ const QUADRANT_RISK_LABELS = {
 };
 
 /**
+ * Scala solo il layer di display (marker / proiezione), allineato alla bussola.
+ * @param {'very_weak' | 'weak' | 'moderate' | 'strong' | null | undefined} mapSignalStrength
+ */
+function mapSignalDisplayScale(mapSignalStrength) {
+  if (mapSignalStrength === 'very_weak') return 0.3;
+  if (mapSignalStrength === 'weak') return 0.6;
+  return 1;
+}
+
+/**
  * Stessi livelli del motore bussola (rawMagnitude); solo resa visiva / copy.
  * @param {'very_weak' | 'weak' | 'moderate' | 'strong' | null | undefined} mapSignalStrength
  */
@@ -221,7 +231,7 @@ function mapMetabolicSignalCaption(mapSignalStrength, quadrantKey) {
   }
   if (mapSignalStrength === 'weak') {
     const q = QUADRANT_RISK_LABELS[quadrantKey] || String(quadrantKey || '');
-    return `Tendenza metabolica leggera verso ${q}`;
+    return `Possibile tendenza verso ${q}`;
   }
   return 'Direzione metabolica definita';
 }
@@ -398,10 +408,50 @@ export default function MetabolicMap({
     [mapSignalStrength, effectiveQuadrant],
   );
 
-  const displayAura = finalAura;
-  const displayX = Number.isFinite(Number(currentPosition?.x)) ? Number(currentPosition.x) : shiftedX;
-  const displayY = Number.isFinite(Number(currentPosition?.y)) ? Number(currentPosition.y) : shiftedY;
+  const rawDisplayX = Number.isFinite(Number(currentPosition?.x))
+    ? Number(currentPosition.x)
+    : shiftedX;
+  const rawDisplayY = Number.isFinite(Number(currentPosition?.y))
+    ? Number(currentPosition.y)
+    : shiftedY;
+  const signalPosScale =
+    mapSignalStrength != null ? mapSignalDisplayScale(mapSignalStrength) : 1;
 
+  const displayX = useMemo(
+    () => Math.max(-100, Math.min(100, rawDisplayX * signalPosScale)),
+    [rawDisplayX, signalPosScale],
+  );
+  const displayY = useMemo(
+    () => Math.max(-100, Math.min(100, rawDisplayY * signalPosScale)),
+    [rawDisplayY, signalPosScale],
+  );
+
+  const displayAuraForUi = useMemo(() => {
+    const a = Number(finalAura) || 0;
+    if (mapSignalStrength === 'very_weak') return a * 0.35;
+    if (mapSignalStrength === 'weak') return a * 0.65;
+    return a;
+  }, [finalAura, mapSignalStrength]);
+
+  const panelRadialDistance =
+    mapSignalStrength != null ? Math.hypot(displayX, displayY) : effectiveDistance;
+
+  const mapAriaLabel = useMemo(() => {
+    if (mapSignalStrength === 'very_weak') {
+      return `Mappa metabolica (${selectedTimeframe}): segnale debole, posizione non ancora significativa`;
+    }
+    if (mapSignalStrength === 'weak') {
+      return `Mappa metabolica (${selectedTimeframe}): possibile tendenza, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(panelRadialDistance)}`;
+    }
+    return `Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(mapSignalStrength != null ? panelRadialDistance : effectiveDistance)}${mapSignalStrength != null ? `, segnale ${mapSignalStrength}` : ''}`;
+  }, [
+    selectedTimeframe,
+    mapSignalStrength,
+    effectiveZone,
+    effectiveQuadrant,
+    effectiveDistance,
+    panelRadialDistance,
+  ]);
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
   const tipSvg = mapPointToSvgCoords(displayX, displayY);
   const movementVelocity = useMemo(() => {
@@ -445,8 +495,12 @@ export default function MetabolicMap({
 
   const projectedSvg = useMemo(() => {
     if (!projectedPosition) return null;
-    return mapPointToSvgCoords(clampMapAxis(projectedPosition.x), clampMapAxis(projectedPosition.y));
-  }, [projectedPosition]);
+    const scale =
+      mapSignalStrength != null ? mapSignalDisplayScale(mapSignalStrength) : 1;
+    const sx = clampMapAxis(Number(projectedPosition.x) * scale);
+    const sy = clampMapAxis(Number(projectedPosition.y) * scale);
+    return mapPointToSvgCoords(sx, sy);
+  }, [projectedPosition, mapSignalStrength]);
   const directionVector = useMemo(() => {
     const target = projectedSvg || inertialTipSvg;
     const dx = (target?.cx ?? compassCenter.x) - compassCenter.x;
@@ -541,7 +595,7 @@ export default function MetabolicMap({
     >
       <div
         role="img"
-        aria-label={`Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(effectiveDistance)}${mapSignalStrength != null ? `, segnale ${mapSignalStrength}` : ''}`}
+        aria-label={mapAriaLabel}
         style={{
           position: 'relative',
           width: '100%',
@@ -801,6 +855,8 @@ export default function MetabolicMap({
 
         </svg>
 
+        {mapSignalStrength !== 'very_weak' ? (
+          <>
         <span
           style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5, color: cornerLabelRgb }}
         >
@@ -835,6 +891,8 @@ export default function MetabolicMap({
         >
           FEGATO GRASSO / INSULINA
         </span>
+          </>
+        ) : null}
         {mapSignalStrength === 'very_weak' || mapSignalStrength === 'weak' ? (
           <div
             aria-hidden
@@ -896,63 +954,163 @@ export default function MetabolicMap({
           color: 'rgba(230, 235, 240, 0.92)',
         }}
       >
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>
-          Zona attuale: {ZONE_LABELS[effectiveZone]} — Rischio: {QUADRANT_RISK_LABELS[effectiveQuadrant]}
-        </div>
-        <div
-          style={{
-            fontSize: '0.78rem',
-            color: 'rgba(200, 208, 216, 0.88)',
-            marginBottom: 6,
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '6px 14px',
-          }}
-        >
-          <span>
-            Longevity Score (Ancora):{' '}
-            <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
-          </span>
-          <span>
-            Longevity Score (Posizione finale):{' '}
-            <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
-          </span>
-        </div>
-        <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
-          Distanza dal centro: {effectiveDistance.toFixed(1)} · Aura glicemica: {Math.round(displayAura)}
-        </div>
-        {surplusCaloricMap > 0 && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: '8px 10px',
-              borderRadius: 8,
-              background: 'rgba(60, 42, 38, 0.45)',
-              border: '1px solid rgba(150, 110, 95, 0.35)',
-              color: 'rgba(210, 195, 185, 0.92)',
-              fontWeight: 600,
-              fontSize: '0.78rem',
-            }}
-          >
-            Surplus calorico (mappa): la posizione finale è più lontana dal centro dell’Ancora — calo di
-            Longevity Score potenziale fino a ~{surplusCaloricMap} punti rispetto all’Ancora.
-          </div>
-        )}
-        {displayAura > 50 && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: '8px 10px',
-              borderRadius: 8,
-              background: 'rgba(55, 38, 40, 0.45)',
-              border: '1px solid rgba(130, 90, 92, 0.35)',
-              color: 'rgba(215, 190, 188, 0.92)',
-              fontWeight: 600,
-              fontSize: '0.78rem',
-            }}
-          >
-            Allarme Infiammazione Glicemica in corso
-          </div>
+        {mapSignalStrength === 'very_weak' ? (
+          <>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              Segnale metabolico debole: la posizione non è ancora significativa
+            </div>
+            <div
+              style={{
+                fontSize: '0.78rem',
+                color: 'rgba(200, 208, 216, 0.88)',
+                marginBottom: 6,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '6px 14px',
+              }}
+            >
+              <span>
+                Longevity Score (Ancora):{' '}
+                <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
+              </span>
+              <span>
+                Longevity Score (indicatore posizione):{' '}
+                <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
+              </span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
+              Distanza indicativa: {panelRadialDistance.toFixed(1)} · Aura glicemica (indicatore):{' '}
+              {Math.round(displayAuraForUi)}
+            </div>
+          </>
+        ) : mapSignalStrength === 'weak' ? (
+          <>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              Possibile tendenza verso {QUADRANT_RISK_LABELS[effectiveQuadrant]} —{' '}
+              {ZONE_LABELS[effectiveZone]}
+            </div>
+            <div
+              style={{
+                fontSize: '0.78rem',
+                color: 'rgba(200, 208, 216, 0.88)',
+                marginBottom: 6,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '6px 14px',
+              }}
+            >
+              <span>
+                Longevity Score (Ancora):{' '}
+                <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
+              </span>
+              <span>
+                Longevity Score (Posizione finale):{' '}
+                <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
+              </span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
+              Distanza dal centro: {panelRadialDistance.toFixed(1)} · Aura glicemica:{' '}
+              {Math.round(displayAuraForUi)}
+            </div>
+            {surplusCaloricMap > 0 && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: 'rgba(60, 42, 38, 0.45)',
+                  border: '1px solid rgba(150, 110, 95, 0.35)',
+                  color: 'rgba(210, 195, 185, 0.92)',
+                  fontWeight: 600,
+                  fontSize: '0.78rem',
+                }}
+              >
+                Surplus calorico (mappa): la posizione finale è più lontana dal centro dell’Ancora —
+                calo di Longevity Score potenziale fino a ~{surplusCaloricMap} punti rispetto
+                all’Ancora.
+              </div>
+            )}
+            {displayAuraForUi > 50 && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: 'rgba(55, 38, 40, 0.45)',
+                  border: '1px solid rgba(130, 90, 92, 0.35)',
+                  color: 'rgba(215, 190, 188, 0.92)',
+                  fontWeight: 600,
+                  fontSize: '0.78rem',
+                }}
+              >
+                Allarme Infiammazione Glicemica in corso
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              Zona attuale: {ZONE_LABELS[effectiveZone]} — Rischio:{' '}
+              {QUADRANT_RISK_LABELS[effectiveQuadrant]}
+            </div>
+            <div
+              style={{
+                fontSize: '0.78rem',
+                color: 'rgba(200, 208, 216, 0.88)',
+                marginBottom: 6,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '6px 14px',
+              }}
+            >
+              <span>
+                Longevity Score (Ancora):{' '}
+                <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
+              </span>
+              <span>
+                Longevity Score (Posizione finale):{' '}
+                <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
+              </span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
+              Distanza dal centro: {panelRadialDistance.toFixed(1)} · Aura glicemica:{' '}
+              {Math.round(mapSignalStrength != null ? displayAuraForUi : finalAura)}
+            </div>
+            {surplusCaloricMap > 0 && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: 'rgba(60, 42, 38, 0.45)',
+                  border: '1px solid rgba(150, 110, 95, 0.35)',
+                  color: 'rgba(210, 195, 185, 0.92)',
+                  fontWeight: 600,
+                  fontSize: '0.78rem',
+                }}
+              >
+                Surplus calorico (mappa): la posizione finale è più lontana dal centro dell’Ancora —
+                calo di Longevity Score potenziale fino a ~{surplusCaloricMap} punti rispetto
+                all’Ancora.
+              </div>
+            )}
+            {(mapSignalStrength != null ? displayAuraForUi : finalAura) > 50 && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: 'rgba(55, 38, 40, 0.45)',
+                  border: '1px solid rgba(130, 90, 92, 0.35)',
+                  color: 'rgba(215, 190, 188, 0.92)',
+                  fontWeight: 600,
+                  fontSize: '0.78rem',
+                }}
+              >
+                Allarme Infiammazione Glicemica in corso
+              </div>
+            )}
+          </>
         )}
       </div>
 
