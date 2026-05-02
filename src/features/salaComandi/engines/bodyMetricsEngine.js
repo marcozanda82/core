@@ -272,6 +272,53 @@ export function isWeightOutlier(prevWeight, currentWeight, daysDiff) {
   return { isOutlier: false, reason: null, deltaKg, deltaPct, daysDiff: dd };
 }
 
+const RECAL_SMALL_DISCREPANCY_KG = 0.25;
+
+function pickRecalibrationDiagnosis({
+  latestIsOutlier: latestOut,
+  outlierDetected: outDet,
+  confidence,
+  discrepancyAbs,
+  validDays,
+  dailyWindowReason,
+  smallThresholdKg = RECAL_SMALL_DISCREPANCY_KG,
+}) {
+  if (latestOut || outDet) {
+    return {
+      diagnosisType: 'outlier',
+      diagnosisMessage: 'Pesata anomala: non viene usata per calibrare i target.',
+    };
+  }
+  if (confidence === 'low') {
+    return {
+      diagnosisType: 'low_confidence',
+      diagnosisMessage: 'Dati insufficienti o instabili: meglio attendere altre pesate.',
+    };
+  }
+  if (discrepancyAbs < smallThresholdKg) {
+    return {
+      diagnosisType: 'normal_variation',
+      diagnosisMessage: 'Peso e bilancio energetico sono compatibili: nessuna correzione necessaria.',
+    };
+  }
+  const weakCoverage =
+    validDays < 10 ||
+    dailyWindowReason === 'insufficient_logs' ||
+    dailyWindowReason === 'missing_daily_logs';
+  if (weakCoverage) {
+    return {
+      diagnosisType: 'intake_tracking_error',
+      diagnosisMessage:
+        'Il disallineamento potrebbe dipendere da tracking incompleto o stime alimentari imprecise.',
+    };
+  }
+  return {
+    diagnosisType: 'tdee_mismatch',
+    diagnosisMessage:
+      'Peso e bilancio energetico sono in conflitto: la stima energetica potrebbe essere da riallineare.',
+  };
+}
+
 /**
  * Analisi trend energetico vs trend peso su finestra recente.
  * dailyLogs: Array<{ date: YYYY-MM-DD, kcalBalance: number }>
@@ -302,10 +349,12 @@ export function analyzeEnergyVsWeightTrend({
       validDays: 0,
       sampleDays: [],
       dailyWindowReason: null,
+      diagnosisType: 'outlier',
+      diagnosisMessage: 'Pesata anomala: non viene usata per calibrare i target.',
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
-        explanation: 'Pesata anomala rilevata. Ignorata per il ricalcolo.',
+        explanation: 'Pesata anomala: non viene usata per calibrare i target.',
       },
       explanation: {
         summary: 'Pesata anomala',
@@ -352,13 +401,15 @@ export function analyzeEnergyVsWeightTrend({
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
-        explanation: 'Peso recente anomalo o dati insufficienti. Attendere ulteriori pesate.',
+        explanation: 'Dati insufficienti o instabili: meglio attendere altre pesate.',
       },
       explanation: {
         summary: 'Dati pesate insufficienti',
         reason: 'insufficient_weigh_ins',
         flags,
       },
+      diagnosisType: 'low_confidence',
+      diagnosisMessage: 'Dati insufficienti o instabili: meglio attendere altre pesate.',
     };
   }
 
@@ -421,13 +472,15 @@ export function analyzeEnergyVsWeightTrend({
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
-        explanation: 'Peso recente anomalo o dati insufficienti. Attendere ulteriori pesate.',
+        explanation: 'Dati insufficienti o instabili: meglio attendere altre pesate.',
       },
       explanation: {
         summary: 'Finestra pesate insufficiente',
         reason: 'insufficient_weigh_ins',
         flags,
       },
+      diagnosisType: 'low_confidence',
+      diagnosisMessage: 'Dati insufficienti o instabili: meglio attendere altre pesate.',
     };
   }
 
@@ -469,6 +522,15 @@ export function analyzeEnergyVsWeightTrend({
       lowConfidence: true,
       insufficientData: true,
     };
+    const dm = outlierDetected
+      ? {
+          diagnosisType: 'outlier',
+          diagnosisMessage: 'Pesata anomala: non viene usata per calibrare i target.',
+        }
+      : {
+          diagnosisType: 'low_confidence',
+          diagnosisMessage: 'Dati insufficienti o instabili: meglio attendere altre pesate.',
+        };
     return {
       avgKcalBalance: 0,
       weightDelta: 0,
@@ -480,10 +542,11 @@ export function analyzeEnergyVsWeightTrend({
       latestIsOutlier: latestEntryIsOutlier,
       blockRecalibration: false,
       latestEntryIsOutlier,
+      ...dm,
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
-        explanation: 'Peso recente anomalo o dati insufficienti. Attendere ulteriori pesate.',
+        explanation: dm.diagnosisMessage,
       },
       explanation: {
         summary: 'Sequenza pesate instabile',
@@ -558,6 +621,15 @@ export function analyzeEnergyVsWeightTrend({
       lowConfidence: true,
       insufficientData: true,
     };
+    const dm = outlierDetected
+      ? {
+          diagnosisType: 'outlier',
+          diagnosisMessage: 'Pesata anomala: non viene usata per calibrare i target.',
+        }
+      : {
+          diagnosisType: 'low_confidence',
+          diagnosisMessage: 'Dati insufficienti o instabili: meglio attendere altre pesate.',
+        };
     return {
       avgKcalBalance: 0,
       weightDelta: Number(latest.weight) - Number(oldest.weight),
@@ -569,13 +641,14 @@ export function analyzeEnergyVsWeightTrend({
       latestIsOutlier: latestEntryIsOutlier,
       blockRecalibration: false,
       latestEntryIsOutlier,
+      ...dm,
       validDays: 0,
       sampleDays: [],
       dailyWindowReason: dailyWindowReason || 'missing_daily_logs',
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
-        explanation: 'Peso recente anomalo o dati insufficienti. Attendere ulteriori pesate.',
+        explanation: dm.diagnosisMessage,
       },
       explanation: {
         summary: 'Storico energetico assente',
@@ -636,7 +709,7 @@ export function analyzeEnergyVsWeightTrend({
     confidence = 'low';
   }
 
-  const smallThresholdKg = 0.25;
+  const smallThresholdKg = RECAL_SMALL_DISCREPANCY_KG;
   const flags = {
     outlierDetected,
     lowConfidence: confidence === 'low',
@@ -644,6 +717,15 @@ export function analyzeEnergyVsWeightTrend({
   };
 
   if (confidence === 'low') {
+    const { diagnosisType, diagnosisMessage } = pickRecalibrationDiagnosis({
+      latestIsOutlier: latestEntryIsOutlier,
+      outlierDetected,
+      confidence,
+      discrepancyAbs,
+      validDays,
+      dailyWindowReason,
+      smallThresholdKg,
+    });
     return {
       avgKcalBalance,
       weightDelta,
@@ -655,13 +737,15 @@ export function analyzeEnergyVsWeightTrend({
       latestIsOutlier: latestEntryIsOutlier,
       blockRecalibration: false,
       latestEntryIsOutlier,
+      diagnosisType,
+      diagnosisMessage,
       validDays,
       sampleDays,
       dailyWindowReason,
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
-        explanation: 'Peso recente anomalo o dati insufficienti. Attendere ulteriori pesate.',
+        explanation: diagnosisMessage,
       },
       explanation: {
         summary: 'Analisi sospesa per stabilita dati',
@@ -683,13 +767,16 @@ export function analyzeEnergyVsWeightTrend({
       latestIsOutlier: latestEntryIsOutlier,
       blockRecalibration: false,
       latestEntryIsOutlier,
+      diagnosisType: 'normal_variation',
+      diagnosisMessage:
+        'Peso e bilancio energetico sono compatibili: nessuna correzione necessaria.',
       validDays,
       sampleDays,
       dailyWindowReason,
       suggestion: {
         type: 'no_change',
         kcalAdjustment: 0,
-        explanation: 'Trend peso ed energia risultano allineati: nessuna correzione consigliata.',
+        explanation: diagnosisMessage,
       },
       explanation: {
         summary: 'Trend allineato',
@@ -720,6 +807,25 @@ export function analyzeEnergyVsWeightTrend({
     explanation = 'Il peso scende piu del previsto: meglio aumentare il target calorico corrente.';
   }
 
+  const { diagnosisType, diagnosisMessage } = pickRecalibrationDiagnosis({
+    latestIsOutlier: latestEntryIsOutlier,
+    outlierDetected,
+    confidence,
+    discrepancyAbs,
+    validDays,
+    dailyWindowReason,
+    smallThresholdKg,
+  });
+
+  let finalType = type;
+  let finalSigned = signedAdjustment;
+  let finalExplanation = explanation;
+  if (diagnosisType === 'intake_tracking_error') {
+    finalType = 'no_change';
+    finalSigned = 0;
+    finalExplanation = diagnosisMessage;
+  }
+
   return {
     avgKcalBalance,
     weightDelta,
@@ -731,17 +837,19 @@ export function analyzeEnergyVsWeightTrend({
     latestIsOutlier: latestEntryIsOutlier,
     blockRecalibration: false,
     latestEntryIsOutlier,
+    diagnosisType,
+    diagnosisMessage,
     validDays,
     sampleDays,
     dailyWindowReason,
     suggestion: {
-      type,
-      kcalAdjustment: signedAdjustment,
-      explanation,
+      type: finalType,
+      kcalAdjustment: finalSigned,
+      explanation: finalExplanation,
     },
     explanation: {
       summary: 'Proposta di ricalibrazione disponibile',
-      reason: type,
+      reason: finalType,
       flags,
     },
   };

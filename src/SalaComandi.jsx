@@ -12973,7 +12973,15 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         document.body
       )}
 
-      {recalibrationProposal?.show && recalibrationProposal?.analysis && (
+      {recalibrationProposal?.show && recalibrationProposal?.analysis && (() => {
+        const ra = recalibrationProposal.analysis;
+        const showRecalApply =
+          ra.diagnosisType === 'tdee_mismatch' &&
+          ra.confidence === 'high' &&
+          ra.suggestion?.type !== 'no_change' &&
+          Number.isFinite(Number(ra.suggestion?.kcalAdjustment)) &&
+          Number(ra.suggestion?.kcalAdjustment) !== 0;
+        return (
         <div
           className="modal-overlay"
           style={{
@@ -13001,32 +13009,26 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               color: '#f8fafc',
             }}
           >
-            <h3 style={{ margin: '0 0 10px', color: '#00e5ff', fontSize: '1rem' }}>
+            <h3 style={{ margin: '0 0 12px', color: '#00e5ff', fontSize: '1rem' }}>
               Nuova pesata registrata
             </h3>
-            <p style={{ margin: '0 0 10px', color: '#cbd5e1', fontSize: '0.88rem', lineHeight: 1.45 }}>
-              Negli ultimi {recalibrationProposal.analysis.daysWindow} giorni:
-              <br />
-              Bilancio medio: {Math.round(Number(recalibrationProposal.analysis.avgKcalBalance) || 0)} kcal/g
-              <br />
-              Peso: {(Number(recalibrationProposal.analysis.weightDelta) >= 0 ? '+' : '')}
-              {(Number(recalibrationProposal.analysis.weightDelta) || 0).toFixed(1)} kg
-            </p>
-            <p style={{ margin: '0 0 14px', color: '#94a3b8', fontSize: '0.82rem', lineHeight: 1.4 }}>
-              Possibile disallineamento tra stima energetica e realta. Vuoi adattare i target?
+            <p style={{ margin: '0 0 12px', color: '#94a3b8', fontSize: '0.8rem' }}>
+              Analisi sugli ultimi {ra.daysWindow} giorni
             </p>
             <div
               style={{
-                background: 'rgba(0, 229, 255, 0.08)',
-                border: '1px solid rgba(0, 229, 255, 0.2)',
+                background: 'rgba(0, 229, 255, 0.12)',
+                border: '1px solid rgba(0, 229, 255, 0.28)',
                 borderRadius: 10,
-                padding: '10px 12px',
+                padding: '12px 14px',
                 marginBottom: 12,
-                fontSize: '0.82rem',
-                lineHeight: 1.45,
+                fontSize: '0.92rem',
+                lineHeight: 1.5,
+                color: '#f1f5f9',
+                fontWeight: 600,
               }}
             >
-              {recalibrationProposal.analysis.suggestion?.explanation}
+              {ra.diagnosisMessage || ra.suggestion?.explanation}
             </div>
             {showRecalibrationDetails && (
               <div
@@ -13041,9 +13043,20 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   lineHeight: 1.45,
                 }}
               >
-                <div>Variazione attesa: {(Number(recalibrationProposal.analysis.expectedWeightDelta) >= 0 ? '+' : '')}{(Number(recalibrationProposal.analysis.expectedWeightDelta) || 0).toFixed(2)} kg</div>
-                <div>Scostamento: {(Number(recalibrationProposal.analysis.discrepancy) >= 0 ? '+' : '')}{(Number(recalibrationProposal.analysis.discrepancy) || 0).toFixed(2)} kg</div>
-                <div>Affidabilita: {String(recalibrationProposal.analysis.confidence || 'n/a')}</div>
+                <div>Bilancio medio: {Math.round(Number(ra.avgKcalBalance) || 0)} kcal/giorno</div>
+                <div>
+                  Variazione peso: {(Number(ra.weightDelta) >= 0 ? '+' : '')}
+                  {(Number(ra.weightDelta) || 0).toFixed(2)} kg
+                </div>
+                <div>
+                  Variazione attesa: {(Number(ra.expectedWeightDelta) >= 0 ? '+' : '')}
+                  {(Number(ra.expectedWeightDelta) || 0).toFixed(2)} kg
+                </div>
+                <div>
+                  Scostamento: {(Number(ra.discrepancy) >= 0 ? '+' : '')}
+                  {(Number(ra.discrepancy) || 0).toFixed(2)} kg
+                </div>
+                <div>Affidabilita: {String(ra.confidence || 'n/a')}</div>
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
@@ -13064,6 +13077,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               >
                 Mantieni target attuali
               </button>
+              {showRecalApply ? (
               <button
                 type="button"
                 onClick={() => {
@@ -13079,8 +13093,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   fontWeight: 800,
                 }}
               >
-                Applica correzione ({Number(recalibrationProposal.analysis.suggestion?.kcalAdjustment) >= 0 ? '+' : ''}{Math.round(Number(recalibrationProposal.analysis.suggestion?.kcalAdjustment) || 0)} kcal)
+                Applica correzione ({Number(ra.suggestion?.kcalAdjustment) >= 0 ? '+' : ''}{Math.round(Number(ra.suggestion?.kcalAdjustment) || 0)} kcal)
               </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setShowRecalibrationDetails((v) => !v)}
@@ -13100,7 +13115,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {showProfile && (
         <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.9)', zIndex: 100020, overflowY: 'auto', padding: '20px' }}>

@@ -17,6 +17,18 @@ import {
   upsertTargetHistoryEntry,
 } from '../engines/bodyMetricsEngine';
 
+function isRecalibrationApplyAllowed(analysis) {
+  if (!analysis || typeof analysis !== 'object') return false;
+  const kcalAdj = Number(analysis.suggestion?.kcalAdjustment);
+  return (
+    analysis.diagnosisType === 'tdee_mismatch' &&
+    analysis.confidence === 'high' &&
+    Number.isFinite(kcalAdj) &&
+    kcalAdj !== 0 &&
+    analysis.suggestion?.type !== 'no_change'
+  );
+}
+
 export default function useBodyMetricsEngine({
   auth,
   db,
@@ -151,10 +163,12 @@ export default function useBodyMetricsEngine({
         console.log('[RecalibrationPromptDecision]', {
           shouldShow,
           reason,
+          applyAllowed: isRecalibrationApplyAllowed(result),
+          diagnosisType: result?.diagnosisType,
+          confidence: result?.confidence,
           blockRecalibration: result?.blockRecalibration,
           latestIsOutlier: result?.latestIsOutlier,
           outlierDetected: result?.outlierDetected,
-          confidence: result?.confidence,
           suggestionType: result?.suggestion?.type,
           kcalAdjustment: result?.suggestion?.kcalAdjustment,
         });
@@ -168,6 +182,17 @@ export default function useBodyMetricsEngine({
         daysWindow,
       });
       console.log('[RecalibrationAnalysis]', result);
+      console.log('[RecalibrationDiagnosis]', {
+        diagnosisType: result?.diagnosisType,
+        diagnosisMessage: result?.diagnosisMessage,
+        avgKcalBalance: result?.avgKcalBalance,
+        weightDelta: result?.weightDelta,
+        expectedWeightDelta: result?.expectedWeightDelta,
+        discrepancy: result?.discrepancy,
+        confidence: result?.confidence,
+        confidenceScore: result?.confidenceScore,
+        validDays: result?.validDays,
+      });
       console.log('[RecalibrationDailyWindow]', {
         daysWindow,
         validDays: Number(result?.validDays) || 0,
@@ -178,18 +203,22 @@ export default function useBodyMetricsEngine({
         reason = 'wiring_error';
       } else {
         const kcalAdj = Number(result.suggestion?.kcalAdjustment);
+        const informativeDiagnoses = [
+          'tdee_mismatch',
+          'intake_tracking_error',
+          'low_confidence',
+          'normal_variation',
+        ];
+        const outlierBlocked = result.blockRecalibration === true || result.latestIsOutlier === true;
         shouldShow = Boolean(
-          result.blockRecalibration !== true &&
-            result.latestIsOutlier !== true &&
-            result.suggestion?.type !== 'no_change' &&
-            Number.isFinite(kcalAdj) &&
-            kcalAdj !== 0 &&
-            result.confidence !== 'low',
+          !outlierBlocked && informativeDiagnoses.includes(result.diagnosisType),
         );
 
         if (!shouldShow) {
           if (result.blockRecalibration === true || result.latestIsOutlier === true) {
             reason = 'blocked_outlier';
+          } else if (!informativeDiagnoses.includes(result.diagnosisType)) {
+            reason = 'no_diagnosis';
           } else if (result.confidence === 'low') {
             reason = 'low_confidence';
           } else if (result.suggestion?.type === 'no_change' || !Number.isFinite(kcalAdj) || kcalAdj === 0) {
@@ -216,10 +245,12 @@ export default function useBodyMetricsEngine({
       console.log('[RecalibrationPromptDecision]', {
         shouldShow,
         reason,
+        applyAllowed: isRecalibrationApplyAllowed(result),
+        diagnosisType: result?.diagnosisType,
+        confidence: result?.confidence,
         blockRecalibration: result?.blockRecalibration,
         latestIsOutlier: result?.latestIsOutlier,
         outlierDetected: result?.outlierDetected,
-        confidence: result?.confidence,
         suggestionType: result?.suggestion?.type,
         kcalAdjustment: result?.suggestion?.kcalAdjustment,
       });
@@ -726,6 +757,14 @@ export default function useBodyMetricsEngine({
 
   const applyRecalibrationProposal = useCallback(async () => {
     const proposal = recalibrationProposal?.analysis;
+    if (!isRecalibrationApplyAllowed(proposal)) {
+      console.warn('[RecalibrationApplyBlocked]', {
+        diagnosisType: proposal?.diagnosisType,
+        confidence: proposal?.confidence,
+        suggestion: proposal?.suggestion,
+      });
+      return;
+    }
     if (
       proposal?.blockRecalibration === true ||
       proposal?.hardBlockOutlier === true ||
@@ -736,10 +775,6 @@ export default function useBodyMetricsEngine({
       return;
     }
     const suggestedAdjustment = Number(proposal?.suggestion?.kcalAdjustment);
-    if (!proposal || !Number.isFinite(suggestedAdjustment) || suggestedAdjustment === 0) {
-      setRecalibrationProposal((prev) => ({ ...prev, show: false }));
-      return;
-    }
     const uid = auth.currentUser?.uid;
     if (!uid) {
       alert('Accedi per aggiornare i target.');
