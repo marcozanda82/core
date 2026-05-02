@@ -15,8 +15,8 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
 
 const COMPASS_DEBUG_ALL_TIMEFRAMES = ['1d', '7d', '14d', '30d'];
 
-/** Impostare `true` in dev per mostrare il pannello sotto la bussola (raw / visual / tabella timeframe). */
-const SHOW_COMPASS_DEBUG = false;
+/** `true` in dev: pannello raw/visual bussola e (opz.) audit espandibile. Produzione: sempre `false`. */
+const SHOW_METABOLIC_DEBUG = false;
 
 function CompassDebugPanel({ selectedTimeframe, mapData, compassDebugByTimeframe }) {
   const {
@@ -179,7 +179,7 @@ export default function MetabolicUnifiedView({
   } = mapData;
 
   const compassDebugByTimeframe = useMemo(() => {
-    if (!SHOW_COMPASS_DEBUG) return [];
+    if (!SHOW_METABOLIC_DEBUG) return [];
     const base = {
       dailyHistory,
       bodyMetricsHistory,
@@ -392,7 +392,7 @@ export default function MetabolicUnifiedView({
             compassDisplayLabelFromBundle={mapData.compassDisplayLabel}
             mapSignalStrengthFromBundle={mapData.mapSignalStrength}
           />
-          {SHOW_COMPASS_DEBUG && (
+          {SHOW_METABOLIC_DEBUG && (
             <CompassDebugPanel
               selectedTimeframe={selectedTimeframe}
               mapData={mapData}
@@ -475,10 +475,12 @@ export default function MetabolicUnifiedView({
               mapSignalStrength={mapData.mapSignalStrength}
               mapPresentation={mapData.mapPresentation}
             />
-            <MetabolicDataAudit
-              rawDetails={metabolicMapRawDetails}
-              mapInputs={metabolicMapInputs}
-            />
+            {SHOW_METABOLIC_DEBUG ? (
+              <MetabolicDataAudit
+                rawDetails={metabolicMapRawDetails}
+                mapInputs={metabolicMapInputs}
+              />
+            ) : null}
           </div>
         </div>
       </div>

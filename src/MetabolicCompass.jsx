@@ -11,6 +11,9 @@ import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolic
 import MetabolicMap from './MetabolicMap';
 import { computeMetabolicMapInputsFromDailyHistory } from './metabolicMapPeriodInputs';
 
+/** `true` in dev: mostra intervallo date sotto la bussola. Produzione: `false`. */
+const SHOW_METABOLIC_DEBUG = false;
+
 const FINAL_ANGLE_MIN = -135;
 const FINAL_ANGLE_MAX = 135;
 
@@ -375,25 +378,29 @@ export default function MetabolicCompass({
       JSON.stringify(oldInternalSnapshot) === JSON.stringify(compassDirectionFromBundle);
     const inputsMatch =
       JSON.stringify(oldInternalMapInputs) === JSON.stringify(metabolicMapInputsFromBundle);
-    console.log('[CompassParityCheck]', {
-      oldInternal: {
-        snapshot: oldInternalSnapshot,
-        metabolicMapInputs: oldInternalMapInputs,
-      },
-      newFromMapData: {
-        snapshot: compassDirectionFromBundle,
-        metabolicMapInputs: metabolicMapInputsFromBundle,
-      },
-      snapshotMatch,
-      inputsMatch,
-    });
-    if (!snapshotMatch || !inputsMatch) {
-      console.warn('[CompassParityCheck] mismatch', {
+    if (import.meta.env.DEV) {
+      console.log('[CompassParityCheck]', {
+        oldInternal: {
+          snapshot: oldInternalSnapshot,
+          metabolicMapInputs: oldInternalMapInputs,
+        },
+        newFromMapData: {
+          snapshot: compassDirectionFromBundle,
+          metabolicMapInputs: metabolicMapInputsFromBundle,
+        },
         snapshotMatch,
         inputsMatch,
-        oldInternalSnapshot,
-        compassDirectionFromBundle,
       });
+    }
+    if (!snapshotMatch || !inputsMatch) {
+      if (import.meta.env.DEV) {
+        console.warn('[CompassParityCheck] mismatch', {
+          snapshotMatch,
+          inputsMatch,
+          oldInternalSnapshot,
+          compassDirectionFromBundle,
+        });
+      }
     }
   }, [
     compassHistoryKey,
@@ -768,7 +775,8 @@ export default function MetabolicCompass({
         </div>
       </div>
 
-      {/* TEMPORARY DEBUG — rimuovere dopo test */}
+      {/* Finestra date solo in modalità debug (stesso flag della vista unificata per convenzione). */}
+      {SHOW_METABOLIC_DEBUG ? (
       <div
         className="metabolic-compass-debug-range"
         aria-hidden
@@ -789,6 +797,7 @@ export default function MetabolicCompass({
       >
         {compassDebugRangeLine}
       </div>
+      ) : null}
 
       <div
         className="metabolic-compass-micro-suggestion"
