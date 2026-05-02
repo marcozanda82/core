@@ -4,6 +4,8 @@ import { computeMetabolicMapCompassBundle } from './features/salaComandi/engines
 import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
 import MetabolicMap from './MetabolicMap';
+import MetabolicCoachCard from './features/salaComandi/components/MetabolicCoachCard';
+import useMetabolicCoach from './features/salaComandi/hooks/useMetabolicCoach';
 
 const DEFAULT_TIMEFRAME = '7d';
 const METABOLIC_COMPASS_TIMEFRAMES = [
@@ -200,6 +202,12 @@ export default function MetabolicUnifiedView({
       };
     });
   }, [dailyHistory, bodyMetricsHistory, fullHistory, userTargets, projectionAnchorDate]);
+
+  const coachInsight = useMetabolicCoach({
+    mapData,
+    userTargets,
+    selectedTimeframe,
+  });
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -484,6 +492,7 @@ export default function MetabolicUnifiedView({
           </div>
         </div>
       </div>
+      <MetabolicCoachCard insight={coachInsight} />
     </div>
   );
 }
