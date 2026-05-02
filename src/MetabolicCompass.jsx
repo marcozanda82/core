@@ -363,7 +363,7 @@ export default function MetabolicCompass({
   }, [compassHistoryKey, usesEngineCompassBundle]);
 
   useEffect(() => {
-    if (!import.meta.env.DEV || !usesEngineCompassBundle) return;
+    if (!usesEngineCompassBundle || !import.meta.env.DEV) return;
     const oldInternalSnapshot = computeMetabolicCompassDirection(dailyHistory, selectedTimeframe);
     const oldInternalMapInputs = computeMetabolicMapInputsFromDailyHistory(
       dailyHistory,
@@ -450,14 +450,15 @@ export default function MetabolicCompass({
   );
 
   const suggestionLineText = useMemo(() => {
-    if (
-      typeof compassDisplayLabelFromBundle === 'string' &&
-      compassDisplayLabelFromBundle.trim().length > 0
-    ) {
-      return compassDisplayLabelFromBundle.trim();
+    if (usesEngineCompassBundle) {
+      const s =
+        typeof compassDisplayLabelFromBundle === 'string'
+          ? compassDisplayLabelFromBundle.trim()
+          : '';
+      return s.length > 0 ? s : 'Segnale debole / quasi neutro';
     }
     return microSuggestionText;
-  }, [compassDisplayLabelFromBundle, microSuggestionText]);
+  }, [usesEngineCompassBundle, compassDisplayLabelFromBundle, microSuggestionText]);
 
   const bezelBoxShadow = useMemo(() => {
     const base = `
@@ -804,11 +805,7 @@ export default function MetabolicCompass({
           fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           color: 'rgb(232, 235, 242)',
           textAlign: 'center',
-          textTransform:
-            compassDisplayLabelFromBundle != null &&
-            String(compassDisplayLabelFromBundle).trim().length > 0
-              ? 'none'
-              : 'lowercase',
+          textTransform: usesEngineCompassBundle ? 'none' : 'lowercase',
           background: 'none',
           border: 'none',
           padding: 0,

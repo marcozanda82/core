@@ -15,6 +15,94 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
 
 const COMPASS_DEBUG_ALL_TIMEFRAMES = ['1d', '7d', '14d', '30d'];
 
+/** Impostare `true` in dev per mostrare il pannello sotto la bussola (raw / visual / tabella timeframe). */
+const SHOW_COMPASS_DEBUG = false;
+
+function CompassDebugPanel({ selectedTimeframe, mapData, compassDebugByTimeframe }) {
+  const {
+    rawVector,
+    visualVector,
+    compassDirection,
+    rawMagnitude,
+    compassSectorLabel,
+    compassSignalStrength,
+    compassDisplayLabel,
+  } = mapData;
+
+  return (
+    <div style={{ marginTop: 16, fontSize: 12, color: '#aaa' }}>
+      <div style={{ fontWeight: 600, marginBottom: 8, color: '#888' }}>Compass debug</div>
+      <div>selectedTimeframe: {String(selectedTimeframe)}</div>
+      <div>mapData.rawVector.x: {rawVector != null ? String(rawVector.x) : '—'}</div>
+      <div>mapData.rawVector.y: {rawVector != null ? String(rawVector.y) : '—'}</div>
+      <div>
+        |raw| (hypot):{' '}
+        {rawVector != null
+          ? String(Math.hypot(Number(rawVector.x) || 0, Number(rawVector.y) || 0))
+          : '—'}
+      </div>
+      <div>mapData.visualVector.visualX: {visualVector != null ? String(visualVector.visualX) : '—'}</div>
+      <div>mapData.visualVector.visualY: {visualVector != null ? String(visualVector.visualY) : '—'}</div>
+      <div>
+        |visual| (hypot):{' '}
+        {visualVector != null
+          ? String(
+              Math.hypot(
+                Number(visualVector.visualX) || 0,
+                Number(visualVector.visualY) || 0
+              )
+            )
+          : '—'}
+      </div>
+      <div>
+        mapData.compassDirection.angleDeg:{' '}
+        {compassDirection != null ? String(compassDirection.angleDeg) : '—'}
+      </div>
+      <div>mapData.rawMagnitude: {rawMagnitude != null ? String(rawMagnitude) : '—'}</div>
+      <div>mapData.compassSectorLabel (raw): {compassSectorLabel != null ? String(compassSectorLabel) : '—'}</div>
+      <div>mapData.compassSignalStrength: {compassSignalStrength != null ? String(compassSignalStrength) : '—'}</div>
+      <div>mapData.compassDisplayLabel: {compassDisplayLabel != null ? String(compassDisplayLabel) : '—'}</div>
+      <div style={{ marginTop: 12, marginBottom: 4, fontWeight: 600, color: '#888' }}>All timeframes</div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: 'left', padding: '4px 8px 4px 0', borderBottom: '1px solid #444' }}>
+              Timeframe
+            </th>
+            <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>rawX</th>
+            <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>rawY</th>
+            <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>angle</th>
+            <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>
+              sector (raw)
+            </th>
+            <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>display</th>
+            <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>strength</th>
+          </tr>
+        </thead>
+        <tbody>
+          {compassDebugByTimeframe.map((row) => (
+            <tr
+              key={row.tf}
+              style={{
+                background:
+                  row.tf === selectedTimeframe ? 'rgba(255,255,255,0.06)' : 'transparent',
+              }}
+            >
+              <td style={{ padding: '4px 8px 4px 0', borderBottom: '1px solid #333' }}>{row.tf}</td>
+              <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.rawX}</td>
+              <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.rawY}</td>
+              <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.angleDeg}</td>
+              <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.sectorLabel}</td>
+              <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.displayLabel}</td>
+              <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.strength}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function IconMapSwitch() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -88,16 +176,10 @@ export default function MetabolicUnifiedView({
     lineProjection,
     lineTrend,
     lineConfidence,
-    compassDirection,
-    rawVector,
-    visualVector,
-    rawMagnitude,
-    compassSectorLabel,
-    compassSignalStrength,
-    compassDisplayLabel,
   } = mapData;
 
   const compassDebugByTimeframe = useMemo(() => {
+    if (!SHOW_COMPASS_DEBUG) return [];
     const base = {
       dailyHistory,
       bodyMetricsHistory,
@@ -309,78 +391,13 @@ export default function MetabolicUnifiedView({
             visualVectorFromBundle={mapData.visualVector}
             compassDisplayLabelFromBundle={mapData.compassDisplayLabel}
           />
-          <div style={{ marginTop: 16, fontSize: 12, color: '#aaa' }}>
-            <div style={{ fontWeight: 600, marginBottom: 8, color: '#888' }}>Compass debug</div>
-            <div>selectedTimeframe: {String(selectedTimeframe)}</div>
-            <div>mapData.rawVector.x: {rawVector != null ? String(rawVector.x) : '—'}</div>
-            <div>mapData.rawVector.y: {rawVector != null ? String(rawVector.y) : '—'}</div>
-            <div>
-              |raw| (hypot):{' '}
-              {rawVector != null
-                ? String(Math.hypot(Number(rawVector.x) || 0, Number(rawVector.y) || 0))
-                : '—'}
-            </div>
-            <div>mapData.visualVector.visualX: {visualVector != null ? String(visualVector.visualX) : '—'}</div>
-            <div>mapData.visualVector.visualY: {visualVector != null ? String(visualVector.visualY) : '—'}</div>
-            <div>
-              |visual| (hypot):{' '}
-              {visualVector != null
-                ? String(
-                    Math.hypot(
-                      Number(visualVector.visualX) || 0,
-                      Number(visualVector.visualY) || 0
-                    )
-                  )
-                : '—'}
-            </div>
-            <div>
-              mapData.compassDirection.angleDeg:{' '}
-              {compassDirection != null ? String(compassDirection.angleDeg) : '—'}
-            </div>
-            <div>
-              mapData.rawMagnitude: {rawMagnitude != null ? String(rawMagnitude) : '—'}
-            </div>
-            <div>mapData.compassSectorLabel (raw): {compassSectorLabel != null ? String(compassSectorLabel) : '—'}</div>
-            <div>mapData.compassSignalStrength: {compassSignalStrength != null ? String(compassSignalStrength) : '—'}</div>
-            <div>mapData.compassDisplayLabel: {compassDisplayLabel != null ? String(compassDisplayLabel) : '—'}</div>
-            <div style={{ marginTop: 12, marginBottom: 4, fontWeight: 600, color: '#888' }}>All timeframes</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', padding: '4px 8px 4px 0', borderBottom: '1px solid #444' }}>
-                    Timeframe
-                  </th>
-                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>rawX</th>
-                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>rawY</th>
-                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>angle</th>
-                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>
-                    sector (raw)
-                  </th>
-                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>display</th>
-                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>strength</th>
-                </tr>
-              </thead>
-              <tbody>
-                {compassDebugByTimeframe.map((row) => (
-                  <tr
-                    key={row.tf}
-                    style={{
-                      background:
-                        row.tf === selectedTimeframe ? 'rgba(255,255,255,0.06)' : 'transparent',
-                    }}
-                  >
-                    <td style={{ padding: '4px 8px 4px 0', borderBottom: '1px solid #333' }}>{row.tf}</td>
-                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.rawX}</td>
-                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.rawY}</td>
-                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.angleDeg}</td>
-                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.sectorLabel}</td>
-                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.displayLabel}</td>
-                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.strength}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {SHOW_COMPASS_DEBUG && (
+            <CompassDebugPanel
+              selectedTimeframe={selectedTimeframe}
+              mapData={mapData}
+              compassDebugByTimeframe={compassDebugByTimeframe}
+            />
+          )}
         </div>
 
         <div
