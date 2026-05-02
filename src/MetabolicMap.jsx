@@ -437,6 +437,8 @@ export default function MetabolicMap({
   const suppressLongevityWarn =
     resolvedPresentation?.suppressLongevityWarning ??
     (mapSignalStrength === 'very_weak' || mapSignalStrength === 'weak');
+  const hidePositionalLongevityScore =
+    resolvedPresentation?.suppressRiskNarrative === true || mapSignalStrength === 'very_weak';
 
   const panelRadialDistance =
     resolvedPresentation != null || mapSignalStrength != null
@@ -970,10 +972,16 @@ export default function MetabolicMap({
                 Longevity Score (Ancora):{' '}
                 <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
               </span>
-              <span>
-                Longevity Score (indicatore posizione):{' '}
-                <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
-              </span>
+              {hidePositionalLongevityScore ? (
+                <span style={{ color: 'rgba(200, 208, 216, 0.78)' }}>
+                  Indicatore posizione: non significativo con il segnale attuale
+                </span>
+              ) : (
+                <span>
+                  Longevity Score (indicatore posizione):{' '}
+                  <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
+                </span>
+              )}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
               Distanza indicativa: {panelRadialDistance.toFixed(1)} · Aura glicemica (indicatore):{' '}
@@ -1038,10 +1046,16 @@ export default function MetabolicMap({
                 Longevity Score (Ancora):{' '}
                 <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
               </span>
-              <span>
-                Longevity Score (Posizione finale):{' '}
-                <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
-              </span>
+              {hidePositionalLongevityScore ? (
+                <span style={{ color: 'rgba(200, 208, 216, 0.78)' }}>
+                  Indicatore posizione: non significativo con il segnale attuale
+                </span>
+              ) : (
+                <span>
+                  Longevity Score (Posizione finale):{' '}
+                  <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
+                </span>
+              )}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
               Distanza dal centro: {panelRadialDistance.toFixed(1)} · Aura glicemica:{' '}
