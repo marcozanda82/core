@@ -213,6 +213,7 @@ export default function MetabolicUnifiedView({
     mapData,
     userTargets,
     selectedTimeframe,
+    dailyHistory,
   });
 
   const reducedMotion =

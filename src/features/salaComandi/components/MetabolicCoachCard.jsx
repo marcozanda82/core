@@ -9,6 +9,7 @@ import React from 'react';
  *     title: string,
  *     message: string,
  *     guidanceSteps?: string[] | null,
+ *     actions?: string[] | null,
  *     reason: string | null,
  *     actionLabel: string | null,
  *   } | null | undefined,
@@ -21,6 +22,9 @@ export default function MetabolicCoachCard({ insight } = {}) {
     Array.isArray(insight.guidanceSteps) && insight.guidanceSteps.length > 0
       ? insight.guidanceSteps
       : [];
+
+  const checklist =
+    Array.isArray(insight.actions) && insight.actions.length > 0 ? insight.actions : [];
 
   const borderTint =
     insight.severity === 'warning'
@@ -93,6 +97,46 @@ export default function MetabolicCoachCard({ insight } = {}) {
           {steps.map((s) => (
             <li key={s} style={{ marginBottom: 4 }}>
               {s}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {checklist.length > 0 ? (
+        <ul
+          className="metabolic-coach-actions"
+          style={{
+            margin: steps.length > 0 ? '6px 0 0' : '8px 0 0',
+            padding: 0,
+            listStyle: 'none',
+            fontSize: 11,
+            lineHeight: 1.4,
+            color: 'rgba(190, 205, 218, 0.9)',
+            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+          }}
+        >
+          {checklist.map((line) => (
+            <li
+              key={`action-${line}`}
+              style={{
+                display: 'flex',
+                gap: 8,
+                alignItems: 'flex-start',
+                marginBottom: 4,
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 11,
+                  height: 11,
+                  marginTop: 2,
+                  flexShrink: 0,
+                  borderRadius: 3,
+                  border: '1.5px solid rgba(140, 168, 195, 0.55)',
+                  background: 'rgba(255,255,255,0.04)',
+                }}
+              />
+              <span>{line}</span>
             </li>
           ))}
         </ul>

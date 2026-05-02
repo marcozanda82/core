@@ -6,16 +6,23 @@ import { buildMetabolicCoachInsight } from '../engines/metabolicCoachEngine';
  *   mapData: object | null | undefined,
  *   userTargets?: object | null,
  *   selectedTimeframe?: string,
+ *   dailyHistory?: Array<{ date?: string, sleepHours?: number | null }>,
  * }} props
  */
-export default function useMetabolicCoach({ mapData, userTargets = null, selectedTimeframe = '7d' }) {
+export default function useMetabolicCoach({
+  mapData,
+  userTargets = null,
+  selectedTimeframe = '7d',
+  dailyHistory = [],
+} = {}) {
   return useMemo(
     () =>
       buildMetabolicCoachInsight({
         mapData,
         userTargets,
         selectedTimeframe,
+        dailyHistory,
       }),
-    [mapData, userTargets, selectedTimeframe],
+    [mapData, userTargets, selectedTimeframe, dailyHistory],
   );
 }
