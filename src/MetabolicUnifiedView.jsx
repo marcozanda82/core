@@ -1,14 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { METABOLIC_GOAL } from './metabolicDirection';
-import { historyFingerprint } from './metabolicDirectionEngine';
-import { getStructuralBaselineOffsetFromHistory } from './biometricHistory';
-import {
-  calculateBaselineOffset,
-  calculateMetabolicMapPosition,
-  getLastBiometricData,
-} from './metabolicMapEngine';
-import { computeMetabolicMapInputsAndAudit } from './metabolicMapPeriodInputs';
-import { computeWeightProjectionFromInputs, formatWeightProjectionUI } from './weightProjectionEngine';
 import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
 import MetabolicMap from './MetabolicMap';
@@ -20,73 +11,6 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '14d', label: '14G' },
   { value: '30d', label: '30G' },
 ];
-
-function mapZoneToGlowRgba(zone) {
-  if (zone === 'red') return 'rgba(120, 88, 92, 0.28)';
-  if (zone === 'orange') return 'rgba(125, 100, 82, 0.28)';
-  if (zone === 'green') return 'rgba(88, 108, 128, 0.28)';
-  return '';
-}
-
-function clampAxis(v) {
-  return Math.max(-100, Math.min(100, Number(v) || 0));
-}
-
-function dailyTrainingToMapAxis(dayTrainingLoad) {
-  const t = Math.max(0, Math.min(100, Number(dayTrainingLoad) || 0));
-  return clampAxis(((t - 35) / 65) * 100);
-}
-
-function buildDailyPointFromLogDay(day, baselineOffset) {
-  const kcalBalance = Number(day?.kcalBalance) || 0;
-  const trainingLoadAxis = dailyTrainingToMapAxis(day?.trainingLoad);
-  const sleepHours = Number(day?.sleepHours);
-  const safeSleep = Number.isFinite(sleepHours) && sleepHours > 0 ? sleepHours : 8;
-  const surplusFactor = Math.max(0, Math.min(1, kcalBalance / 500));
-  const sleepStress = safeSleep < 7.5 ? Math.max(0, Math.min(1, (7.5 - safeSleep) / 7.5)) : 0;
-  const glycemicInstability = Math.max(0, Math.min(100, (0.4 * surplusFactor + 0.45 * sleepStress) * 100));
-  return calculateMetabolicMapPosition({
-    energyBalance: clampAxis(kcalBalance / 5),
-    trainingLoad: trainingLoadAxis,
-    sleepHours: safeSleep,
-    glycemicInstability,
-    baselineOffsetX: baselineOffset.x,
-    baselineOffsetY: baselineOffset.y,
-  });
-}
-
-function buildTrajectoryProjection(dailyPositions) {
-  const arr = Array.isArray(dailyPositions) ? dailyPositions : [];
-  const fallback = { projected: { x: 0, y: 0 }, velocity: 0 };
-  if (arr.length === 0) return fallback;
-  const current = arr[arr.length - 1];
-  if (arr.length < 2) return { projected: { x: current.x, y: current.y }, velocity: 0 };
-
-  let vx = 0;
-  let vy = 0;
-  let count = 0;
-  for (let i = Math.max(1, arr.length - 3); i < arr.length; i += 1) {
-    const prev = arr[i - 1];
-    const next = arr[i];
-    vx += (Number(next?.x) || 0) - (Number(prev?.x) || 0);
-    vy += (Number(next?.y) || 0) - (Number(prev?.y) || 0);
-    count += 1;
-  }
-  if (count > 0) {
-    vx /= count;
-    vy /= count;
-  }
-  const velocity = Math.hypot(vx, vy);
-  const projectionScale = Math.max(1.6, Math.min(3.2, velocity * 0.9 + 1.6));
-  return {
-    projected: {
-      x: clampAxis((Number(current.x) || 0) + vx * projectionScale),
-      y: clampAxis((Number(current.y) || 0) + vy * projectionScale),
-    },
-    velocity,
-  };
-}
-
 
 function IconMapSwitch() {
   return (
@@ -125,74 +49,43 @@ function IconCompassSwitch() {
  * Bussola + mappa metabolica in un unico flusso: traiettoria storica, mini-freccia allineata alla bussola,
  * alone bezel dalla zona dell’ultimo giorno della finestra.
  *
- * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null }>, bodyMetricsHistory?: Array<Record<string, unknown>>, compassScreenActive?: boolean, fullHistory?: object | null, userTargets?: { kcal?: number } | null, projectionAnchorDate?: string | null }} props
+ * @param {object} props
+ * @param {object} props.mapData — risultato di {@link computeMetabolicMapCompassBundle} (hook `useMetabolicMapEngine`).
  */
 export default function MetabolicUnifiedView({
+  mapData,
   dailyHistory: dailyHistoryProp = [],
   bodyMetricsHistory: bodyMetricsHistoryProp = [],
   compassScreenActive = true,
   fullHistory = null,
   userTargets = null,
   projectionAnchorDate = null,
+  selectedTimeframe: selectedTimeframeProp,
+  onTimeframeChange,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
   const [viewMode, setViewMode] = useState('compass');
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
-  const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_TIMEFRAME);
+  const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_TIMEFRAME);
   const [mapZoom, setMapZoom] = useState(1);
 
-  const compassHistoryKey = useMemo(
-    () => historyFingerprint(dailyHistory, selectedTimeframe),
-    [dailyHistory, selectedTimeframe]
-  );
+  const isTfControlled =
+    selectedTimeframeProp !== undefined && typeof onTimeframeChange === 'function';
+  const selectedTimeframe = isTfControlled ? selectedTimeframeProp : timeframeInternal;
+  const setSelectedTimeframe = isTfControlled ? onTimeframeChange : setTimeframeInternal;
 
-  const { mapInputs: metabolicMapInputs, rawDetails: metabolicMapRawDetails } = useMemo(
-    () => computeMetabolicMapInputsAndAudit(dailyHistory, selectedTimeframe),
-    [compassHistoryKey]
-  );
-
-  const baselineOffset = useMemo(() => {
-    const fromScale = getStructuralBaselineOffsetFromHistory(bodyMetricsHistory);
-    if (fromScale) return fromScale;
-    const biometrics = getLastBiometricData(dailyHistory);
-    return calculateBaselineOffset(biometrics);
-  }, [bodyMetricsHistory, dailyHistory]);
-
-  const mapZoneColor = useMemo(() => {
-    const { zone } = calculateMetabolicMapPosition({
-      energyBalance: metabolicMapInputs.energyBalance,
-      trainingLoad: metabolicMapInputs.trainingLoad,
-      sleepHours: metabolicMapInputs.sleepHours,
-      glycemicInstability: metabolicMapInputs.glycemicInstability,
-      baselineOffsetX: baselineOffset.x,
-      baselineOffsetY: baselineOffset.y,
-    });
-    return mapZoneToGlowRgba(zone);
-  }, [metabolicMapInputs, baselineOffset]);
-
-  const weightProjection = useMemo(
-    () =>
-      computeWeightProjectionFromInputs({
-        bodyMetricsHistory,
-        fullHistory,
-        userTargets: userTargets || undefined,
-        anchorDateStr: projectionAnchorDate,
-      }),
-    [bodyMetricsHistory, fullHistory, userTargets, projectionAnchorDate]
-  );
-  const { lineProjection, lineTrend, lineConfidence } = useMemo(
-    () => formatWeightProjectionUI(weightProjection),
-    [weightProjection]
-  );
-  const dailyMapPositions = useMemo(() => {
-    const slice = Array.isArray(dailyHistory) ? dailyHistory.slice(-7) : [];
-    return slice.map((day) => buildDailyPointFromLogDay(day, baselineOffset));
-  }, [dailyHistory, baselineOffset]);
-  const projectedTrajectory = useMemo(
-    () => buildTrajectoryProjection(dailyMapPositions),
-    [dailyMapPositions]
-  );
+  const {
+    metabolicMapInputs,
+    metabolicMapRawDetails,
+    baselineOffset,
+    mapZoneColor,
+    dailyMapPositions,
+    projectedTrajectory,
+    lineProjection,
+    lineTrend,
+    lineConfidence,
+  } = mapData;
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;

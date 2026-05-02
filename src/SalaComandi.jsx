@@ -142,6 +142,7 @@ import {
   normalizeGhostFoodsForTimelineNode,
 } from './features/salaComandi/utils/timelineUtils';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
+import useMetabolicMapEngine from './features/salaComandi/hooks/useMetabolicMapEngine';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { buildMacroSplitFromKcal } from './targetsEngine';
 import { computeMetabolicNotification } from './notificationEngine';
@@ -2210,6 +2211,16 @@ export default function SalaComandi() {
       ),
     [fullHistory, currentTrackerDate, userTargets]
   );
+
+  const [metabolicCompassTimeframe, setMetabolicCompassTimeframe] = useState('7d');
+  const metabolicMapData = useMetabolicMapEngine({
+    dailyHistory: metabolicCompassDailyHistory,
+    bodyMetricsHistory,
+    fullHistory,
+    userTargets,
+    projectionAnchorDate: currentTrackerDate,
+    selectedTimeframe: metabolicCompassTimeframe,
+  });
 
   // Alias semantico: livello SNC usato in UI / allarmi.
   const sncStressLevel = accumuloSNC;
@@ -11357,12 +11368,15 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           }}
         >
           <MetabolicUnifiedView
+            mapData={metabolicMapData}
             dailyHistory={metabolicCompassDailyHistory}
             bodyMetricsHistory={bodyMetricsHistory}
             compassScreenActive={activeBottomTab === 'bussola'}
             fullHistory={fullHistory}
             userTargets={userTargets}
             projectionAnchorDate={currentTrackerDate}
+            selectedTimeframe={metabolicCompassTimeframe}
+            onTimeframeChange={setMetabolicCompassTimeframe}
           />
         </div>
       )}
