@@ -21,6 +21,13 @@ const getYesterdayString = () => {
 /** Conservative % energy when the daily log has no recognized sleep row (aligned with NO_DATA / missing baseline). */
 export const DEFAULT_NO_SLEEP_ENERGY = 35;
 
+/** Dev-only: set `window.KENTU_DEBUG_ENERGY = true` in the console to log energy simulation details. */
+function kentuDebugEnergyLog(...args) {
+  if (import.meta.env.DEV && typeof window !== 'undefined' && window.KENTU_DEBUG_ENERGY) {
+    console.log(...args);
+  }
+}
+
 /**
  * True if `dailyLog` contains at least one `type === 'sleep'` entry with usable sleep fields.
  * Matches the condition for getSleepStatus === 'OK' (avoids false positives from e.g. workout `duration`).
@@ -223,7 +230,7 @@ function computeBaselineEnergy(dailyLog, timelineNodes) {
     sleepEntry.sleepHours ??
     7;
 
-  console.log("Sleep entry detected:", sleepEntry);
+  kentuDebugEnergyLog("Sleep entry detected:", sleepEntry);
 
   const deepMinutes =
     sleepEntry.deepMin ??
@@ -499,11 +506,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   let peakEnergyAtWake = null;
   let peakNeuroAtWake = null;
 
-  console.log("initialEnergy:", initialEnergy);
-  console.log("realBaseline:", realBaseline);
-  console.log("baselineEnergy:", baselineEnergy);
-  console.log("nightStartEnergy:", nightStartEnergy);
-  console.log("REAL baseline energy:", realBaseline);
+  kentuDebugEnergyLog("initialEnergy:", initialEnergy);
+  kentuDebugEnergyLog("realBaseline:", realBaseline);
+  kentuDebugEnergyLog("baselineEnergy:", baselineEnergy);
+  kentuDebugEnergyLog("nightStartEnergy:", nightStartEnergy);
+  kentuDebugEnergyLog("REAL baseline energy:", realBaseline);
 
   for (let h = 0; h <= 24; h++) {
     glycemicMemory *= 0.92;
@@ -697,7 +704,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     currentEnergy = Math.min(currentEnergy, maxEnergyCap);
     previousEnergy = currentEnergy;
 
-    console.log("Simulated energy:", currentEnergy);
+    kentuDebugEnergyLog("Simulated energy:", currentEnergy);
 
     let cortisolBase;
     if (h < wake) {
