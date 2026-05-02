@@ -289,6 +289,7 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
  *   compassDirectionFromBundle?: { angleDeg: number, magnitude: number, x: number, y: number } | null,
  *   visualVectorFromBundle?: { visualX: number, visualY: number, visualMagnitude: number, rawMagnitude: number } | null,
  *   compassDisplayLabelFromBundle?: string | null,
+ *   mapSignalStrengthFromBundle?: 'very_weak' | 'weak' | 'moderate' | 'strong' | null,
  * }} props
  * `dailyHistory`: serie dal tracker (ultimo = ieri; oggi escluso dal motore). Passare `[]` se assente.
  * `compassScreenActive`: quando passa da false a true, ripristina il periodo al default (es. rientro tab bussola).
@@ -308,6 +309,7 @@ export default function MetabolicCompass({
   compassDirectionFromBundle = null,
   visualVectorFromBundle = null,
   compassDisplayLabelFromBundle = null,
+  mapSignalStrengthFromBundle = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
@@ -848,6 +850,7 @@ export default function MetabolicCompass({
           glycemicInstability={metabolicMapInputs.glycemicInstability}
           realSleepDays={metabolicMapInputs.realSleepDays}
           totalWindowDays={metabolicMapInputs.totalWindowDays}
+          mapSignalStrength={mapSignalStrengthFromBundle}
         />
       </div>
       )}

@@ -390,6 +390,7 @@ export default function MetabolicUnifiedView({
             compassDirectionFromBundle={mapData.compassDirection}
             visualVectorFromBundle={mapData.visualVector}
             compassDisplayLabelFromBundle={mapData.compassDisplayLabel}
+            mapSignalStrengthFromBundle={mapData.mapSignalStrength}
           />
           {SHOW_COMPASS_DEBUG && (
             <CompassDebugPanel
@@ -471,6 +472,7 @@ export default function MetabolicUnifiedView({
               currentPosition={dailyMapPositions[dailyMapPositions.length - 1] || null}
               projectedPosition={projectedTrajectory.projected}
               trajectoryVelocity={projectedTrajectory.velocity}
+              mapSignalStrength={mapData.mapSignalStrength}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}

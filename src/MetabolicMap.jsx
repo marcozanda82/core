@@ -181,6 +181,51 @@ const QUADRANT_RISK_LABELS = {
   SE: 'FEGATO GRASSO / INSULINA',
 };
 
+/**
+ * Stessi livelli del motore bussola (rawMagnitude); solo resa visiva / copy.
+ * @param {'very_weak' | 'weak' | 'moderate' | 'strong' | null | undefined} mapSignalStrength
+ */
+function mapSignalVisualStyle(mapSignalStrength) {
+  const s = mapSignalStrength || 'strong';
+  if (s === 'very_weak') {
+    return {
+      markerOpacity: 0.38,
+      outerGlowHexAlpha: '0a',
+      activeRingStrokeMul: 0.42,
+      cornerLabelOpacityMul: 0.55,
+      showNeutralCircle: true,
+    };
+  }
+  if (s === 'weak') {
+    return {
+      markerOpacity: 0.72,
+      outerGlowHexAlpha: '12',
+      activeRingStrokeMul: 0.72,
+      cornerLabelOpacityMul: 0.82,
+      showNeutralCircle: false,
+    };
+  }
+  return {
+    markerOpacity: 1,
+    outerGlowHexAlpha: '1a',
+    activeRingStrokeMul: 1,
+    cornerLabelOpacityMul: 1,
+    showNeutralCircle: false,
+  };
+}
+
+function mapMetabolicSignalCaption(mapSignalStrength, quadrantKey) {
+  if (mapSignalStrength == null) return '';
+  if (mapSignalStrength === 'very_weak') {
+    return 'Segnale metabolico debole: i dati non indicano una direzione chiara';
+  }
+  if (mapSignalStrength === 'weak') {
+    const q = QUADRANT_RISK_LABELS[quadrantKey] || String(quadrantKey || '');
+    return `Tendenza metabolica leggera verso ${q}`;
+  }
+  return 'Direzione metabolica definita';
+}
+
 function buildMapBackground() {
   const b0 = ZONE_GRADIENTS.blue[0];
   const b1 = ZONE_GRADIENTS.blue[4];
@@ -296,6 +341,8 @@ export default function MetabolicMap({
   currentPosition = null,
   projectedPosition = null,
   trajectoryVelocity = 0,
+  /** Opzionale: da {@link computeMetabolicMapCompassBundle}.mapSignalStrength (stesso rawMagnitude bussola). */
+  mapSignalStrength = null,
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
@@ -340,6 +387,15 @@ export default function MetabolicMap({
   const { zone: effectiveZone, quadrant: effectiveQuadrant, distance: effectiveDistance } = useMemo(
     () => classifyMapPoint(shiftedX, shiftedY),
     [shiftedX, shiftedY],
+  );
+
+  const signalVisual = useMemo(
+    () => mapSignalVisualStyle(mapSignalStrength),
+    [mapSignalStrength],
+  );
+  const signalCaption = useMemo(
+    () => mapMetabolicSignalCaption(mapSignalStrength, effectiveQuadrant),
+    [mapSignalStrength, effectiveQuadrant],
   );
 
   const displayAura = finalAura;
@@ -456,6 +512,7 @@ export default function MetabolicMap({
 
   const sleepReliabilityLine = sleepDataReliabilityText(realSleepDays, totalWindowDays);
   const dynamicCompassBorder = getColorFromValue(longevityScoreFinal);
+  const cornerLabelRgb = `rgba(200, 210, 220, ${(0.17 * signalVisual.cornerLabelOpacityMul).toFixed(3)})`;
   const radarRingRadii = useMemo(
     () => Array.from({ length: 10 }, (_, i) => 5 + i * 4.5),
     []
@@ -484,7 +541,7 @@ export default function MetabolicMap({
     >
       <div
         role="img"
-        aria-label={`Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(effectiveDistance)}`}
+        aria-label={`Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(effectiveDistance)}${mapSignalStrength != null ? `, segnale ${mapSignalStrength}` : ''}`}
         style={{
           position: 'relative',
           width: '100%',
@@ -493,7 +550,7 @@ export default function MetabolicMap({
           borderRadius: 16,
           overflow: 'hidden',
           background: buildMapBackground(),
-          boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.04), 0 8px 32px rgba(0,0,0,0.5), 0 0 14px ${dynamicCompassBorder}1a`,
+          boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.04), 0 8px 32px rgba(0,0,0,0.5), 0 0 14px ${dynamicCompassBorder}${signalVisual.outerGlowHexAlpha}`,
           touchAction: 'none',
         }}
         onWheel={(e) => {
@@ -632,13 +689,25 @@ export default function MetabolicMap({
                 />
               );
             })}
+            {signalVisual.showNeutralCircle ? (
+              <circle
+                cx={50}
+                cy={50}
+                r={10.5}
+                fill="none"
+                stroke="rgba(235, 240, 248, 0.085)"
+                strokeWidth={0.32}
+                strokeDasharray="1.2 2.4"
+                vectorEffect="nonScalingStroke"
+              />
+            ) : null}
             {activeRingRadius != null ? (
               <circle
                 cx={50}
                 cy={50}
                 r={activeRingRadius}
                 fill="none"
-                stroke="rgba(225,235,245,0.22)"
+                stroke={`rgba(225,235,245,${0.22 * signalVisual.activeRingStrokeMul})`}
                 strokeWidth={0.28}
                 filter={`url(#${uid}-ring-glow)`}
                 vectorEffect="nonScalingStroke"
@@ -674,8 +743,16 @@ export default function MetabolicMap({
             })}
           </g>
           <motion.g
-            initial={{ x: compassCenter.x, y: compassCenter.y }}
-            animate={{ x: compassCenter.x, y: compassCenter.y }}
+            initial={{
+              x: compassCenter.x,
+              y: compassCenter.y,
+              opacity: signalVisual.markerOpacity,
+            }}
+            animate={{
+              x: compassCenter.x,
+              y: compassCenter.y,
+              opacity: signalVisual.markerOpacity,
+            }}
             transition={vectorTransition}
             style={{ transformOrigin: '0px 0px' }}
             data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
@@ -724,19 +801,88 @@ export default function MetabolicMap({
 
         </svg>
 
-        <span style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
+        <span
+          style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5, color: cornerLabelRgb }}
+        >
           BURNOUT / CORTISOLO
         </span>
-        <span style={{ ...labelStyle, top: 8, right: 8, textAlign: 'right', zIndex: 5 }}>
+        <span
+          style={{ ...labelStyle, top: 8, right: 8, textAlign: 'right', zIndex: 5, color: cornerLabelRgb }}
+        >
           INFIAMMAZIONE / BULK
         </span>
-        <span style={{ ...labelStyle, bottom: 8, left: 8, textAlign: 'left', zIndex: 5 }}>
+        <span
+          style={{
+            ...labelStyle,
+            bottom: 8,
+            left: 8,
+            textAlign: 'left',
+            zIndex: 5,
+            color: cornerLabelRgb,
+          }}
+        >
           DEPERIMENTO / CATABOLISMO
         </span>
-        <span style={{ ...labelStyle, bottom: 8, right: 8, textAlign: 'right', zIndex: 5 }}>
+        <span
+          style={{
+            ...labelStyle,
+            bottom: 8,
+            right: 8,
+            textAlign: 'right',
+            zIndex: 5,
+            color: cornerLabelRgb,
+          }}
+        >
           FEGATO GRASSO / INSULINA
         </span>
+        {mapSignalStrength === 'very_weak' || mapSignalStrength === 'weak' ? (
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: '50%',
+              bottom: 36,
+              transform: 'translateX(-50%)',
+              zIndex: 6,
+              maxWidth: '88%',
+              textAlign: 'center',
+              fontSize: '0.65rem',
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+              color:
+                mapSignalStrength === 'very_weak'
+                  ? 'rgba(210, 218, 228, 0.42)'
+                  : 'rgba(210, 218, 228, 0.48)',
+              lineHeight: 1.3,
+              pointerEvents: 'none',
+              userSelect: 'none',
+              fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+            }}
+          >
+            {mapSignalStrength === 'very_weak'
+              ? 'Zona neutra / segnale debole'
+              : 'Tendenza leggera'}
+          </div>
+        ) : null}
       </div>
+
+      {mapSignalStrength != null && signalCaption ? (
+        <p
+          style={{
+            margin: '12px 0 0',
+            padding: '0 10px',
+            fontSize: 11,
+            lineHeight: 1.45,
+            fontWeight: 500,
+            letterSpacing: '0.02em',
+            color: 'rgba(200, 210, 222, 0.78)',
+            textAlign: 'center',
+            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+          }}
+        >
+          {signalCaption}
+        </p>
+      ) : null}
 
       <div
         style={{

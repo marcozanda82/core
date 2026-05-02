@@ -271,6 +271,8 @@ export function computeMetabolicMapCompassBundle({
     rawMagnitude,
     compassSectorLabel,
     compassSignalStrength,
+    /** Stessa soglia del motore bussola (rawMagnitude su rawVector). */
+    mapSignalStrength: compassSignalStrength,
     compassDisplayLabel,
     x: mapPosition.x,
     y: mapPosition.y,
@@ -291,6 +293,7 @@ export function computeMetabolicMapCompassBundle({
       rawMagnitude,
       compassSectorLabel,
       compassSignalStrength,
+      mapSignalStrength: compassSignalStrength,
       compassDisplayLabel,
       mapInputs,
     },
