@@ -1,5 +1,11 @@
-import React, { useState } from 'react';
-import { METABOLIC_GOAL } from './metabolicDirection';
+import React, { useMemo, useState } from 'react';
+import {
+  METABOLIC_GOAL,
+  METABOLIC_COMPASS_DIRECTIONS,
+  metabolicAngleDegToCompassBearingDeg,
+  normalizeDeg180,
+} from './metabolicDirection';
+import { computeMetabolicMapCompassBundle } from './features/salaComandi/engines/metabolicMapEngine';
 import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
 import MetabolicMap from './MetabolicMap';
@@ -11,6 +17,23 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '14d', label: '14G' },
   { value: '30d', label: '30G' },
 ];
+
+const COMPASS_DEBUG_ALL_TIMEFRAMES = ['1d', '7d', '14d', '30d'];
+
+/** Vicino settore rosa (stessa convenzione angoli delle etichette). Solo debug. */
+function nearestCompassSectorFromBearing(bearingDeg) {
+  let best = METABOLIC_COMPASS_DIRECTIONS[0];
+  let bestDist = Infinity;
+  for (let i = 0; i < METABOLIC_COMPASS_DIRECTIONS.length; i += 1) {
+    const d = METABOLIC_COMPASS_DIRECTIONS[i];
+    const dist = Math.abs(normalizeDeg180(bearingDeg - d.angle));
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = d;
+    }
+  }
+  return { label: best.label, roseAngleDeg: best.angle, deltaToSectorDeg: bestDist };
+}
 
 function IconMapSwitch() {
   return (
@@ -85,7 +108,41 @@ export default function MetabolicUnifiedView({
     lineProjection,
     lineTrend,
     lineConfidence,
+    compassDirection,
+    rawVector,
+    visualVector,
   } = mapData;
+
+  const compassDebugByTimeframe = useMemo(() => {
+    const base = {
+      dailyHistory,
+      bodyMetricsHistory,
+      fullHistory,
+      userTargets,
+      projectionAnchorDate,
+    };
+    return COMPASS_DEBUG_ALL_TIMEFRAMES.map((tf) => {
+      const b = computeMetabolicMapCompassBundle({ ...base, selectedTimeframe: tf });
+      const bearing = metabolicAngleDegToCompassBearingDeg(b.compassDirection.angleDeg);
+      const sector = nearestCompassSectorFromBearing(bearing);
+      return {
+        tf,
+        rawX: b.rawVector.x,
+        rawY: b.rawVector.y,
+        angleDeg: b.compassDirection.angleDeg,
+        label: sector.label,
+      };
+    });
+  }, [dailyHistory, bodyMetricsHistory, fullHistory, userTargets, projectionAnchorDate]);
+
+  const selectedSectorDebug = useMemo(() => {
+    if (!compassDirection) return null;
+    const bearing = metabolicAngleDegToCompassBearingDeg(compassDirection.angleDeg);
+    return {
+      bearingDeg: bearing,
+      ...nearestCompassSectorFromBearing(bearing),
+    };
+  }, [compassDirection]);
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -276,6 +333,67 @@ export default function MetabolicUnifiedView({
             compassDirectionFromBundle={mapData.compassDirection}
             visualVectorFromBundle={mapData.visualVector}
           />
+          <div style={{ marginTop: 16, fontSize: 12, color: '#aaa' }}>
+            <div style={{ fontWeight: 600, marginBottom: 8, color: '#888' }}>Compass debug</div>
+            <div>selectedTimeframe: {String(selectedTimeframe)}</div>
+            <div>mapData.rawVector.x: {rawVector != null ? String(rawVector.x) : '—'}</div>
+            <div>mapData.rawVector.y: {rawVector != null ? String(rawVector.y) : '—'}</div>
+            <div>
+              |raw| (hypot):{' '}
+              {rawVector != null
+                ? String(Math.hypot(Number(rawVector.x) || 0, Number(rawVector.y) || 0))
+                : '—'}
+            </div>
+            <div>mapData.visualVector.visualX: {visualVector != null ? String(visualVector.visualX) : '—'}</div>
+            <div>mapData.visualVector.visualY: {visualVector != null ? String(visualVector.visualY) : '—'}</div>
+            <div>
+              |visual| (hypot):{' '}
+              {visualVector != null
+                ? String(
+                    Math.hypot(
+                      Number(visualVector.visualX) || 0,
+                      Number(visualVector.visualY) || 0
+                    )
+                  )
+                : '—'}
+            </div>
+            <div>
+              mapData.compassDirection.angleDeg:{' '}
+              {compassDirection != null ? String(compassDirection.angleDeg) : '—'}
+            </div>
+            <div>current label (sector): {selectedSectorDebug != null ? selectedSectorDebug.label : '—'}</div>
+            <div style={{ marginTop: 12, marginBottom: 4, fontWeight: 600, color: '#888' }}>All timeframes</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '4px 8px 4px 0', borderBottom: '1px solid #444' }}>
+                    Timeframe
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>rawX</th>
+                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>rawY</th>
+                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>angle</th>
+                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>label</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compassDebugByTimeframe.map((row) => (
+                  <tr
+                    key={row.tf}
+                    style={{
+                      background:
+                        row.tf === selectedTimeframe ? 'rgba(255,255,255,0.06)' : 'transparent',
+                    }}
+                  >
+                    <td style={{ padding: '4px 8px 4px 0', borderBottom: '1px solid #333' }}>{row.tf}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.rawX}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.rawY}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.angleDeg}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.label}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div
