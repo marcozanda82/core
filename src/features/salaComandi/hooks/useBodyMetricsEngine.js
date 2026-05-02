@@ -210,8 +210,13 @@ export default function useBodyMetricsEngine({
           'normal_variation',
         ];
         const outlierBlocked = result.blockRecalibration === true || result.latestIsOutlier === true;
+        const discrepancyMag = Math.abs(Number(result.discrepancy) || 0);
+        const passesMeaningfulThreshold =
+          result.confidence === 'high' || discrepancyMag > 0.8;
         shouldShow = Boolean(
-          !outlierBlocked && informativeDiagnoses.includes(result.diagnosisType),
+          !outlierBlocked &&
+          informativeDiagnoses.includes(result.diagnosisType) &&
+          passesMeaningfulThreshold,
         );
 
         if (!shouldShow) {
@@ -219,6 +224,8 @@ export default function useBodyMetricsEngine({
             reason = 'blocked_outlier';
           } else if (!informativeDiagnoses.includes(result.diagnosisType)) {
             reason = 'no_diagnosis';
+          } else if (!passesMeaningfulThreshold) {
+            reason = 'prompt_filtered';
           } else if (result.confidence === 'low') {
             reason = 'low_confidence';
           } else if (result.suggestion?.type === 'no_change' || !Number.isFinite(kcalAdj) || kcalAdj === 0) {
@@ -241,6 +248,13 @@ export default function useBodyMetricsEngine({
             daysWindow,
           });
         }
+      }
+      if (result) {
+        console.log('[RecalibrationPromptFiltered]', {
+          confidence: result.confidence,
+          discrepancy: result.discrepancy,
+          shouldShow,
+        });
       }
       console.log('[RecalibrationPromptDecision]', {
         shouldShow,
