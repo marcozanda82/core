@@ -1,10 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import {
-  METABOLIC_GOAL,
-  METABOLIC_COMPASS_DIRECTIONS,
-  metabolicAngleDegToCompassBearingDeg,
-  normalizeDeg180,
-} from './metabolicDirection';
+import { METABOLIC_GOAL } from './metabolicDirection';
 import { computeMetabolicMapCompassBundle } from './features/salaComandi/engines/metabolicMapEngine';
 import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
@@ -19,21 +14,6 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
 ];
 
 const COMPASS_DEBUG_ALL_TIMEFRAMES = ['1d', '7d', '14d', '30d'];
-
-/** Vicino settore rosa (stessa convenzione angoli delle etichette). Solo debug. */
-function nearestCompassSectorFromBearing(bearingDeg) {
-  let best = METABOLIC_COMPASS_DIRECTIONS[0];
-  let bestDist = Infinity;
-  for (let i = 0; i < METABOLIC_COMPASS_DIRECTIONS.length; i += 1) {
-    const d = METABOLIC_COMPASS_DIRECTIONS[i];
-    const dist = Math.abs(normalizeDeg180(bearingDeg - d.angle));
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = d;
-    }
-  }
-  return { label: best.label, roseAngleDeg: best.angle, deltaToSectorDeg: bestDist };
-}
 
 function IconMapSwitch() {
   return (
@@ -111,6 +91,10 @@ export default function MetabolicUnifiedView({
     compassDirection,
     rawVector,
     visualVector,
+    rawMagnitude,
+    compassSectorLabel,
+    compassSignalStrength,
+    compassDisplayLabel,
   } = mapData;
 
   const compassDebugByTimeframe = useMemo(() => {
@@ -123,26 +107,17 @@ export default function MetabolicUnifiedView({
     };
     return COMPASS_DEBUG_ALL_TIMEFRAMES.map((tf) => {
       const b = computeMetabolicMapCompassBundle({ ...base, selectedTimeframe: tf });
-      const bearing = metabolicAngleDegToCompassBearingDeg(b.compassDirection.angleDeg);
-      const sector = nearestCompassSectorFromBearing(bearing);
       return {
         tf,
         rawX: b.rawVector.x,
         rawY: b.rawVector.y,
         angleDeg: b.compassDirection.angleDeg,
-        label: sector.label,
+        sectorLabel: b.compassSectorLabel,
+        displayLabel: b.compassDisplayLabel,
+        strength: b.compassSignalStrength,
       };
     });
   }, [dailyHistory, bodyMetricsHistory, fullHistory, userTargets, projectionAnchorDate]);
-
-  const selectedSectorDebug = useMemo(() => {
-    if (!compassDirection) return null;
-    const bearing = metabolicAngleDegToCompassBearingDeg(compassDirection.angleDeg);
-    return {
-      bearingDeg: bearing,
-      ...nearestCompassSectorFromBearing(bearing),
-    };
-  }, [compassDirection]);
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -332,6 +307,7 @@ export default function MetabolicUnifiedView({
             metabolicMapInputsFromBundle={mapData.metabolicMapInputs}
             compassDirectionFromBundle={mapData.compassDirection}
             visualVectorFromBundle={mapData.visualVector}
+            compassDisplayLabelFromBundle={mapData.compassDisplayLabel}
           />
           <div style={{ marginTop: 16, fontSize: 12, color: '#aaa' }}>
             <div style={{ fontWeight: 600, marginBottom: 8, color: '#888' }}>Compass debug</div>
@@ -361,7 +337,12 @@ export default function MetabolicUnifiedView({
               mapData.compassDirection.angleDeg:{' '}
               {compassDirection != null ? String(compassDirection.angleDeg) : '—'}
             </div>
-            <div>current label (sector): {selectedSectorDebug != null ? selectedSectorDebug.label : '—'}</div>
+            <div>
+              mapData.rawMagnitude: {rawMagnitude != null ? String(rawMagnitude) : '—'}
+            </div>
+            <div>mapData.compassSectorLabel (raw): {compassSectorLabel != null ? String(compassSectorLabel) : '—'}</div>
+            <div>mapData.compassSignalStrength: {compassSignalStrength != null ? String(compassSignalStrength) : '—'}</div>
+            <div>mapData.compassDisplayLabel: {compassDisplayLabel != null ? String(compassDisplayLabel) : '—'}</div>
             <div style={{ marginTop: 12, marginBottom: 4, fontWeight: 600, color: '#888' }}>All timeframes</div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
               <thead>
@@ -372,7 +353,11 @@ export default function MetabolicUnifiedView({
                   <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>rawX</th>
                   <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>rawY</th>
                   <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>angle</th>
-                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>label</th>
+                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>
+                    sector (raw)
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>display</th>
+                  <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #444' }}>strength</th>
                 </tr>
               </thead>
               <tbody>
@@ -388,7 +373,9 @@ export default function MetabolicUnifiedView({
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.rawX}</td>
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.rawY}</td>
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.angleDeg}</td>
-                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.label}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.sectorLabel}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.displayLabel}</td>
+                    <td style={{ padding: '4px 8px', borderBottom: '1px solid #333' }}>{row.strength}</td>
                   </tr>
                 ))}
               </tbody>

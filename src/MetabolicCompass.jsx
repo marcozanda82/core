@@ -288,6 +288,7 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
  *   metabolicMapInputsFromBundle?: { energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number } | null,
  *   compassDirectionFromBundle?: { angleDeg: number, magnitude: number, x: number, y: number } | null,
  *   visualVectorFromBundle?: { visualX: number, visualY: number, visualMagnitude: number, rawMagnitude: number } | null,
+ *   compassDisplayLabelFromBundle?: string | null,
  * }} props
  * `dailyHistory`: serie dal tracker (ultimo = ieri; oggi escluso dal motore). Passare `[]` se assente.
  * `compassScreenActive`: quando passa da false a true, ripristina il periodo al default (es. rientro tab bussola).
@@ -306,6 +307,7 @@ export default function MetabolicCompass({
   metabolicMapInputsFromBundle = null,
   compassDirectionFromBundle = null,
   visualVectorFromBundle = null,
+  compassDisplayLabelFromBundle = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
@@ -447,6 +449,16 @@ export default function MetabolicCompass({
     [angleDeg, targetMetabolicAngle]
   );
 
+  const suggestionLineText = useMemo(() => {
+    if (
+      typeof compassDisplayLabelFromBundle === 'string' &&
+      compassDisplayLabelFromBundle.trim().length > 0
+    ) {
+      return compassDisplayLabelFromBundle.trim();
+    }
+    return microSuggestionText;
+  }, [compassDisplayLabelFromBundle, microSuggestionText]);
+
   const bezelBoxShadow = useMemo(() => {
     const base = `
             inset 0 1px 0 rgba(255,255,255,0.1),
@@ -460,7 +472,7 @@ export default function MetabolicCompass({
   }, [mapZoneColor]);
 
   const suggestionMountedRef = useRef(false);
-  const [displaySuggestion, setDisplaySuggestion] = useState(microSuggestionText);
+  const [displaySuggestion, setDisplaySuggestion] = useState(suggestionLineText);
   const [suggestionLineOpacity, setSuggestionLineOpacity] = useState(MICRO_SUGGESTION_FINAL_OPACITY);
 
   useEffect(() => {
@@ -472,17 +484,17 @@ export default function MetabolicCompass({
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reducedMotion) {
-      setDisplaySuggestion(microSuggestionText);
+      setDisplaySuggestion(suggestionLineText);
       setSuggestionLineOpacity(MICRO_SUGGESTION_FINAL_OPACITY);
       return;
     }
     setSuggestionLineOpacity(0);
     const t = window.setTimeout(() => {
-      setDisplaySuggestion(microSuggestionText);
+      setDisplaySuggestion(suggestionLineText);
       setSuggestionLineOpacity(MICRO_SUGGESTION_FINAL_OPACITY);
     }, MICRO_SUGGESTION_FADE_MS);
     return () => window.clearTimeout(t);
-  }, [microSuggestionText]);
+  }, [suggestionLineText]);
 
   /** Angolo rosa dell’obiettivo (da {@link METABOLIC_COMPASS_DIRECTIONS}). */
   const targetAngle = useMemo(() => getCompassTargetAngleForGoal(goal), [goal]);
@@ -792,7 +804,11 @@ export default function MetabolicCompass({
           fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           color: 'rgb(232, 235, 242)',
           textAlign: 'center',
-          textTransform: 'lowercase',
+          textTransform:
+            compassDisplayLabelFromBundle != null &&
+            String(compassDisplayLabelFromBundle).trim().length > 0
+              ? 'none'
+              : 'lowercase',
           background: 'none',
           border: 'none',
           padding: 0,

@@ -1,6 +1,11 @@
 import { getStructuralBaselineOffsetFromHistory } from '../../../biometricHistory';
 import { computeMetabolicEngineTargetVec } from '../../../metabolicDirectionEngine';
 import {
+  METABOLIC_COMPASS_DIRECTIONS,
+  metabolicAngleDegToCompassBearingDeg,
+  normalizeDeg180,
+} from '../../../metabolicDirection';
+import {
   calculateBaselineOffset,
   calculateMetabolicMapPosition,
   getLastBiometricData,
@@ -96,6 +101,38 @@ function calculateMetabolicScore(mapX, mapY) {
   }
   const rounded = Math.round(raw);
   return Math.min(100, Math.max(1, rounded));
+}
+
+function nearestCompassSectorLabelFromMetabolicAngleDeg(angleDeg) {
+  const bearing = metabolicAngleDegToCompassBearingDeg(angleDeg);
+  let best = METABOLIC_COMPASS_DIRECTIONS[0];
+  let bestDist = Infinity;
+  for (let i = 0; i < METABOLIC_COMPASS_DIRECTIONS.length; i += 1) {
+    const d = METABOLIC_COMPASS_DIRECTIONS[i];
+    const dist = Math.abs(normalizeDeg180(bearing - d.angle));
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = d;
+    }
+  }
+  return best.label;
+}
+
+/** Allineato alle soglie richieste (solo copy / confidenza, non il vettore). */
+export function computeCompassSignalStrength(rawMagnitude) {
+  const m = Number(rawMagnitude);
+  if (!Number.isFinite(m)) return 'very_weak';
+  if (m < 0.5) return 'very_weak';
+  if (m < 1.5) return 'weak';
+  if (m < 5) return 'moderate';
+  return 'strong';
+}
+
+export function computeCompassDisplayLabel(sectorLabel, signalStrength) {
+  if (signalStrength === 'very_weak') return 'Segnale debole / quasi neutro';
+  if (signalStrength === 'weak') return `Tendenza lieve verso ${sectorLabel}`;
+  if (signalStrength === 'moderate') return `Tendenza verso ${sectorLabel}`;
+  return sectorLabel;
 }
 
 function computeMetabolicCompassDirectionPure(dailyHistory, timeframe) {
@@ -205,6 +242,11 @@ export function computeMetabolicMapCompassBundle({
     console.log('[CompassVisualLayer]', { raw: rawVector, visual: visualVector });
   }
 
+  const rawMagnitude = Math.hypot(rawVector.x, rawVector.y);
+  const compassSectorLabel = nearestCompassSectorLabelFromMetabolicAngleDeg(compassDirection.angleDeg);
+  const compassSignalStrength = computeCompassSignalStrength(rawMagnitude);
+  const compassDisplayLabel = computeCompassDisplayLabel(compassSectorLabel, compassSignalStrength);
+
   const currentMapPoint = dailyMapPositions.length ? dailyMapPositions[dailyMapPositions.length - 1] : null;
   const longevityScore = currentMapPoint
     ? calculateMetabolicScore(currentMapPoint.x, currentMapPoint.y)
@@ -226,6 +268,10 @@ export function computeMetabolicMapCompassBundle({
     compassDirection,
     rawVector,
     visualVector,
+    rawMagnitude,
+    compassSectorLabel,
+    compassSignalStrength,
+    compassDisplayLabel,
     x: mapPosition.x,
     y: mapPosition.y,
     energyBalance: mapInputs.energyBalance,
@@ -242,6 +288,10 @@ export function computeMetabolicMapCompassBundle({
       compassDirection,
       rawVector,
       visualVector,
+      rawMagnitude,
+      compassSectorLabel,
+      compassSignalStrength,
+      compassDisplayLabel,
       mapInputs,
     },
   };
