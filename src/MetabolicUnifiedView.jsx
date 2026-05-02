@@ -274,6 +274,7 @@ export default function MetabolicUnifiedView({
             onTimeframeChange={setSelectedTimeframe}
             metabolicMapInputsFromBundle={mapData.metabolicMapInputs}
             compassDirectionFromBundle={mapData.compassDirection}
+            visualVectorFromBundle={mapData.visualVector}
           />
         </div>
 

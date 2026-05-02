@@ -287,11 +287,12 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
  *   onTimeframeChange?: (t: string) => void,
  *   metabolicMapInputsFromBundle?: { energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number } | null,
  *   compassDirectionFromBundle?: { angleDeg: number, magnitude: number, x: number, y: number } | null,
+ *   visualVectorFromBundle?: { visualX: number, visualY: number, visualMagnitude: number, rawMagnitude: number } | null,
  * }} props
  * `dailyHistory`: serie dal tracker (ultimo = ieri; oggi escluso dal motore). Passare `[]` se assente.
  * `compassScreenActive`: quando passa da false a true, ripristina il periodo al default (es. rientro tab bussola).
  * `goal` / `onGoalChange` e `selectedTimeframe` / `onTimeframeChange`: modalità controllata (es. vista unificata).
- * Con `metabolicMapInputsFromBundle` e `compassDirectionFromBundle` (stesso output di `computeMetabolicMapCompassBundle` nel feature engine) evita il ricalcolo locale.
+ * Con `visualVectorFromBundle` la bussola usa `visualMagnitude` (e vettore visivo) mantenendo `angleDeg` da `compassDirectionFromBundle`.
  */
 export default function MetabolicCompass({
   dailyHistory: dailyHistoryProp = [],
@@ -304,6 +305,7 @@ export default function MetabolicCompass({
   onTimeframeChange,
   metabolicMapInputsFromBundle = null,
   compassDirectionFromBundle = null,
+  visualVectorFromBundle = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
@@ -400,7 +402,19 @@ export default function MetabolicCompass({
 
   const compassSnapshot = compassDirectionFromBundle ?? internalCompassSnapshot;
   const angleDeg = compassSnapshot?.angleDeg ?? 0;
-  const magnitude = compassSnapshot?.magnitude ?? 0;
+  const hasVisualLayer =
+    usesEngineCompassBundle &&
+    visualVectorFromBundle != null &&
+    Number.isFinite(Number(visualVectorFromBundle.visualMagnitude));
+  const visualX = hasVisualLayer
+    ? Number(visualVectorFromBundle.visualX)
+    : Number(compassSnapshot?.x ?? 0);
+  const visualY = hasVisualLayer
+    ? Number(visualVectorFromBundle.visualY)
+    : Number(compassSnapshot?.y ?? 0);
+  const magnitude = hasVisualLayer
+    ? Math.hypot(visualX, visualY)
+    : compassSnapshot?.magnitude ?? 0;
 
   /** TEMPORARY: verifica finestra date in test */
   const compassDebugRangeLine = useMemo(() => {

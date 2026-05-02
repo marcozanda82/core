@@ -106,6 +106,36 @@ function computeMetabolicCompassDirectionPure(dailyHistory, timeframe) {
   return { angleDeg, magnitude, x, y };
 }
 
+/**
+ * Layer VISUAL sulla bussola: stessa direzione di (x,y), magnitudo riscalata per leggibilità.
+ * Non altera `compassDirection` RAW (angleDeg / x,y engine restano nel bundle separatamente).
+ *
+ * @param {{ x?: number, y?: number }} param0
+ * @returns {{ visualX: number, visualY: number, visualMagnitude: number, rawMagnitude: number }}
+ */
+export function computeVisualCompassVector({ x: xIn, y: yIn } = {}) {
+  const x = Number(xIn) || 0;
+  const y = Number(yIn) || 0;
+  const rawMagnitude = Math.hypot(x, y);
+  if (rawMagnitude <= 0 || !Number.isFinite(rawMagnitude)) {
+    return { visualX: 0, visualY: 0, visualMagnitude: 0, rawMagnitude: 0 };
+  }
+
+  let m = rawMagnitude;
+  if (m < 5) {
+    m = 0.75 + (m / 5) * (5 - 0.75);
+  }
+  m = Math.pow(m, 0.8);
+  const visualMagnitude = Math.min(m, 100);
+  const scale = visualMagnitude / rawMagnitude;
+  return {
+    visualX: x * scale,
+    visualY: y * scale,
+    visualMagnitude,
+    rawMagnitude,
+  };
+}
+
 function resolveBaselineOffset(bodyMetricsHistory, dailyHistory) {
   const fromScale = getStructuralBaselineOffsetFromHistory(bodyMetricsHistory);
   if (fromScale) return fromScale;
@@ -169,6 +199,12 @@ export function computeMetabolicMapCompassBundle({
 
   const compassDirection = computeMetabolicCompassDirectionPure(dailyHistory, selectedTimeframe);
 
+  const rawVector = { x: compassDirection.x, y: compassDirection.y };
+  const visualVector = computeVisualCompassVector(rawVector);
+  if (import.meta.env.DEV) {
+    console.log('[CompassVisualLayer]', { raw: rawVector, visual: visualVector });
+  }
+
   const currentMapPoint = dailyMapPositions.length ? dailyMapPositions[dailyMapPositions.length - 1] : null;
   const longevityScore = currentMapPoint
     ? calculateMetabolicScore(currentMapPoint.x, currentMapPoint.y)
@@ -188,6 +224,8 @@ export function computeMetabolicMapCompassBundle({
     lineTrend,
     lineConfidence,
     compassDirection,
+    rawVector,
+    visualVector,
     x: mapPosition.x,
     y: mapPosition.y,
     energyBalance: mapInputs.energyBalance,
@@ -202,6 +240,8 @@ export function computeMetabolicMapCompassBundle({
       finalAura: mapPosition.finalAura,
       rawDetails,
       compassDirection,
+      rawVector,
+      visualVector,
       mapInputs,
     },
   };
