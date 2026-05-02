@@ -276,10 +276,22 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
 }
 
 /**
- * @param {{ dailyHistory?: Array<{ date?: string, kcalBalance: number, trainingLoad: number }>, compassScreenActive?: boolean, mapZoneColor?: string, hideMetabolicMapSection?: boolean, goal?: string, onGoalChange?: (g: string) => void, selectedTimeframe?: string, onTimeframeChange?: (t: string) => void }} props
+ * @param {{
+ *   dailyHistory?: Array<{ date?: string, kcalBalance: number, trainingLoad: number }>,
+ *   compassScreenActive?: boolean,
+ *   mapZoneColor?: string,
+ *   hideMetabolicMapSection?: boolean,
+ *   goal?: string,
+ *   onGoalChange?: (g: string) => void,
+ *   selectedTimeframe?: string,
+ *   onTimeframeChange?: (t: string) => void,
+ *   metabolicMapInputsFromBundle?: { energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number } | null,
+ *   compassDirectionFromBundle?: { angleDeg: number, magnitude: number, x: number, y: number } | null,
+ * }} props
  * `dailyHistory`: serie dal tracker (ultimo = ieri; oggi escluso dal motore). Passare `[]` se assente.
  * `compassScreenActive`: quando passa da false a true, ripristina il periodo al default (es. rientro tab bussola).
  * `goal` / `onGoalChange` e `selectedTimeframe` / `onTimeframeChange`: modalità controllata (es. vista unificata).
+ * Con `metabolicMapInputsFromBundle` e `compassDirectionFromBundle` (stesso output di `computeMetabolicMapCompassBundle` nel feature engine) evita il ricalcolo locale.
  */
 export default function MetabolicCompass({
   dailyHistory: dailyHistoryProp = [],
@@ -290,6 +302,8 @@ export default function MetabolicCompass({
   onGoalChange,
   selectedTimeframe: timeframeControlled,
   onTimeframeChange,
+  metabolicMapInputsFromBundle = null,
+  compassDirectionFromBundle = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
 
@@ -306,7 +320,7 @@ export default function MetabolicCompass({
     timeframeControlled !== undefined && typeof onTimeframeChange === 'function';
   const selectedTimeframe = isTfControlled ? timeframeControlled : timeframeInternal;
 
-  const [snapshot, setSnapshot] = useState(null);
+  const [internalCompassSnapshot, setInternalCompassSnapshot] = useState(null);
 
   useEffect(() => {
     if (!compassScreenActive) {
@@ -328,20 +342,65 @@ export default function MetabolicCompass({
     [dailyHistory, selectedTimeframe]
   );
 
-  /** Medie periodo + instabilità glicemica teorica per la mappa (stessa finestra della bussola). */
-  const metabolicMapInputs = useMemo(
+  const usesEngineCompassBundle =
+    metabolicMapInputsFromBundle != null && compassDirectionFromBundle != null;
+
+  const fallbackMetabolicMapInputs = useMemo(
     () => computeMetabolicMapInputsFromDailyHistory(dailyHistory, selectedTimeframe),
     [compassHistoryKey]
   );
+  /** Medie periodo + instabilità glicemica teorica per la mappa (stessa finestra della bussola). */
+  const metabolicMapInputs = metabolicMapInputsFromBundle ?? fallbackMetabolicMapInputs;
 
   useEffect(() => {
+    if (usesEngineCompassBundle) return;
     const result = computeMetabolicCompassDirection(dailyHistory, selectedTimeframe);
-    setSnapshot(result);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- compassHistoryKey = historyFingerprint(dailyHistory, selectedTimeframe)
-  }, [compassHistoryKey]);
+    setInternalCompassSnapshot(result);
+  }, [compassHistoryKey, usesEngineCompassBundle]);
 
-  const angleDeg = snapshot?.angleDeg ?? 0;
-  const magnitude = snapshot?.magnitude ?? 0;
+  useEffect(() => {
+    if (!import.meta.env.DEV || !usesEngineCompassBundle) return;
+    const oldInternalSnapshot = computeMetabolicCompassDirection(dailyHistory, selectedTimeframe);
+    const oldInternalMapInputs = computeMetabolicMapInputsFromDailyHistory(
+      dailyHistory,
+      selectedTimeframe
+    );
+    const snapshotMatch =
+      JSON.stringify(oldInternalSnapshot) === JSON.stringify(compassDirectionFromBundle);
+    const inputsMatch =
+      JSON.stringify(oldInternalMapInputs) === JSON.stringify(metabolicMapInputsFromBundle);
+    console.log('[CompassParityCheck]', {
+      oldInternal: {
+        snapshot: oldInternalSnapshot,
+        metabolicMapInputs: oldInternalMapInputs,
+      },
+      newFromMapData: {
+        snapshot: compassDirectionFromBundle,
+        metabolicMapInputs: metabolicMapInputsFromBundle,
+      },
+      snapshotMatch,
+      inputsMatch,
+    });
+    if (!snapshotMatch || !inputsMatch) {
+      console.warn('[CompassParityCheck] mismatch', {
+        snapshotMatch,
+        inputsMatch,
+        oldInternalSnapshot,
+        compassDirectionFromBundle,
+      });
+    }
+  }, [
+    compassHistoryKey,
+    usesEngineCompassBundle,
+    dailyHistory,
+    selectedTimeframe,
+    compassDirectionFromBundle,
+    metabolicMapInputsFromBundle,
+  ]);
+
+  const compassSnapshot = compassDirectionFromBundle ?? internalCompassSnapshot;
+  const angleDeg = compassSnapshot?.angleDeg ?? 0;
+  const magnitude = compassSnapshot?.magnitude ?? 0;
 
   /** TEMPORARY: verifica finestra date in test */
   const compassDebugRangeLine = useMemo(() => {
