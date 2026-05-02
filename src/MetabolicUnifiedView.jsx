@@ -473,6 +473,7 @@ export default function MetabolicUnifiedView({
               projectedPosition={projectedTrajectory.projected}
               trajectoryVelocity={projectedTrajectory.velocity}
               mapSignalStrength={mapData.mapSignalStrength}
+              mapPresentation={mapData.mapPresentation}
             />
             <MetabolicDataAudit
               rawDetails={metabolicMapRawDetails}

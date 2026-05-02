@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { calculateMetabolicMapPosition } from './metabolicMapEngine';
+import { buildMapSignalPresentation } from './features/salaComandi/engines/metabolicMapEngine';
 
 /** viewBox 0–100: stesso sistema di posizionamento del marker (50 ± x/2, 50 ∓ y/2). */
 function mapPointToSvgCoords(x, y) {
@@ -182,10 +183,9 @@ const QUADRANT_RISK_LABELS = {
 };
 
 /**
- * Scala solo il layer di display (marker / proiezione), allineato alla bussola.
- * @param {'very_weak' | 'weak' | 'moderate' | 'strong' | null | undefined} mapSignalStrength
+ * Scala proiezione tip (stessi fattori di {@link buildMapSignalPresentation}).
  */
-function mapSignalDisplayScale(mapSignalStrength) {
+function mapProjectionScaleFromSignal(mapSignalStrength) {
   if (mapSignalStrength === 'very_weak') return 0.3;
   if (mapSignalStrength === 'weak') return 0.6;
   return 1;
@@ -222,18 +222,6 @@ function mapSignalVisualStyle(mapSignalStrength) {
     cornerLabelOpacityMul: 1,
     showNeutralCircle: false,
   };
-}
-
-function mapMetabolicSignalCaption(mapSignalStrength, quadrantKey) {
-  if (mapSignalStrength == null) return '';
-  if (mapSignalStrength === 'very_weak') {
-    return 'Segnale metabolico debole: i dati non indicano una direzione chiara';
-  }
-  if (mapSignalStrength === 'weak') {
-    const q = QUADRANT_RISK_LABELS[quadrantKey] || String(quadrantKey || '');
-    return `Possibile tendenza verso ${q}`;
-  }
-  return 'Direzione metabolica definita';
 }
 
 function buildMapBackground() {
@@ -353,6 +341,8 @@ export default function MetabolicMap({
   trajectoryVelocity = 0,
   /** Opzionale: da {@link computeMetabolicMapCompassBundle}.mapSignalStrength (stesso rawMagnitude bussola). */
   mapSignalStrength = null,
+  /** Opzionale: da {@link computeMetabolicMapCompassBundle}.mapPresentation — preferito se disponibile. */
+  mapPresentation: mapPresentationProp = null,
 }) {
   const uid = useId().replace(/:/g, '');
   const glowFilterId = `${uid}-anchor-glow`;
@@ -403,10 +393,6 @@ export default function MetabolicMap({
     () => mapSignalVisualStyle(mapSignalStrength),
     [mapSignalStrength],
   );
-  const signalCaption = useMemo(
-    () => mapMetabolicSignalCaption(mapSignalStrength, effectiveQuadrant),
-    [mapSignalStrength, effectiveQuadrant],
-  );
 
   const rawDisplayX = Number.isFinite(Number(currentPosition?.x))
     ? Number(currentPosition.x)
@@ -414,42 +400,63 @@ export default function MetabolicMap({
   const rawDisplayY = Number.isFinite(Number(currentPosition?.y))
     ? Number(currentPosition.y)
     : shiftedY;
-  const signalPosScale =
-    mapSignalStrength != null ? mapSignalDisplayScale(mapSignalStrength) : 1;
 
-  const displayX = useMemo(
-    () => Math.max(-100, Math.min(100, rawDisplayX * signalPosScale)),
-    [rawDisplayX, signalPosScale],
-  );
-  const displayY = useMemo(
-    () => Math.max(-100, Math.min(100, rawDisplayY * signalPosScale)),
-    [rawDisplayY, signalPosScale],
-  );
+  const longevityDrop = useMemo(() => {
+    const anchor = calculateMetabolicScore(baselineX, baselineY);
+    const fin = calculateMetabolicScore(rawDisplayX, rawDisplayY);
+    return Math.max(0, anchor - fin);
+  }, [baselineX, baselineY, rawDisplayX, rawDisplayY]);
 
-  const displayAuraForUi = useMemo(() => {
-    const a = Number(finalAura) || 0;
-    if (mapSignalStrength === 'very_weak') return a * 0.35;
-    if (mapSignalStrength === 'weak') return a * 0.65;
-    return a;
-  }, [finalAura, mapSignalStrength]);
+  const resolvedPresentation = useMemo(() => {
+    if (mapPresentationProp != null) return mapPresentationProp;
+    if (mapSignalStrength == null) return null;
+    return buildMapSignalPresentation({
+      x: rawDisplayX,
+      y: rawDisplayY,
+      mapSignalStrength,
+      quadrant: effectiveQuadrant,
+      riskLabel: QUADRANT_RISK_LABELS[effectiveQuadrant],
+      longevityDrop,
+      glycemicAura: finalAura,
+    });
+  }, [
+    mapPresentationProp,
+    mapSignalStrength,
+    rawDisplayX,
+    rawDisplayY,
+    effectiveQuadrant,
+    longevityDrop,
+    finalAura,
+  ]);
+
+  const displayX = resolvedPresentation ? resolvedPresentation.displayX : rawDisplayX;
+  const displayY = resolvedPresentation ? resolvedPresentation.displayY : rawDisplayY;
+  const displayAuraForUi = resolvedPresentation ? resolvedPresentation.displayAura : finalAura;
+
+  const suppressRisk = resolvedPresentation?.suppressRiskNarrative ?? false;
+  const suppressLongevityWarn =
+    resolvedPresentation?.suppressLongevityWarning ??
+    (mapSignalStrength === 'very_weak' || mapSignalStrength === 'weak');
 
   const panelRadialDistance =
-    mapSignalStrength != null ? Math.hypot(displayX, displayY) : effectiveDistance;
+    resolvedPresentation != null || mapSignalStrength != null
+      ? Math.hypot(displayX, displayY)
+      : effectiveDistance;
 
   const mapAriaLabel = useMemo(() => {
-    if (mapSignalStrength === 'very_weak') {
-      return `Mappa metabolica (${selectedTimeframe}): segnale debole, posizione non ancora significativa`;
+    if (resolvedPresentation?.suppressRiskNarrative) {
+      return `Mappa metabolica (${selectedTimeframe}): ${resolvedPresentation.presentationTitle} — ${resolvedPresentation.presentationCaption}`;
     }
     if (mapSignalStrength === 'weak') {
-      return `Mappa metabolica (${selectedTimeframe}): possibile tendenza, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(panelRadialDistance)}`;
+      return `Mappa metabolica (${selectedTimeframe}): ${resolvedPresentation?.presentationTitle || 'tendenza leggera'}, distanza ${Math.round(panelRadialDistance)}`;
     }
-    return `Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(mapSignalStrength != null ? panelRadialDistance : effectiveDistance)}${mapSignalStrength != null ? `, segnale ${mapSignalStrength}` : ''}`;
+    return `Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(panelRadialDistance)}${mapSignalStrength != null ? `, segnale ${mapSignalStrength}` : ''}`;
   }, [
     selectedTimeframe,
     mapSignalStrength,
     effectiveZone,
     effectiveQuadrant,
-    effectiveDistance,
+    resolvedPresentation,
     panelRadialDistance,
   ]);
   const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
@@ -495,8 +502,7 @@ export default function MetabolicMap({
 
   const projectedSvg = useMemo(() => {
     if (!projectedPosition) return null;
-    const scale =
-      mapSignalStrength != null ? mapSignalDisplayScale(mapSignalStrength) : 1;
+    const scale = mapSignalStrength != null ? mapProjectionScaleFromSignal(mapSignalStrength) : 1;
     const sx = clampMapAxis(Number(projectedPosition.x) * scale);
     const sy = clampMapAxis(Number(projectedPosition.y) * scale);
     return mapPointToSvgCoords(sx, sy);
@@ -855,7 +861,7 @@ export default function MetabolicMap({
 
         </svg>
 
-        {mapSignalStrength !== 'very_weak' ? (
+        {mapSignalStrength !== 'very_weak' && !suppressRisk ? (
           <>
         <span
           style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5, color: cornerLabelRgb }}
@@ -893,7 +899,7 @@ export default function MetabolicMap({
         </span>
           </>
         ) : null}
-        {mapSignalStrength === 'very_weak' || mapSignalStrength === 'weak' ? (
+        {mapSignalStrength === 'very_weak' || mapSignalStrength === 'weak' || suppressRisk ? (
           <div
             aria-hidden
             style={{
@@ -908,7 +914,7 @@ export default function MetabolicMap({
               fontWeight: 600,
               letterSpacing: '0.06em',
               color:
-                mapSignalStrength === 'very_weak'
+                mapSignalStrength === 'very_weak' || suppressRisk
                   ? 'rgba(210, 218, 228, 0.42)'
                   : 'rgba(210, 218, 228, 0.48)',
               lineHeight: 1.3,
@@ -917,30 +923,12 @@ export default function MetabolicMap({
               fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
             }}
           >
-            {mapSignalStrength === 'very_weak'
-              ? 'Zona neutra / segnale debole'
-              : 'Tendenza leggera'}
+            {(mapSignalStrength === 'very_weak' || suppressRisk
+              ? (resolvedPresentation?.presentationTitle || 'Segnale metabolico debole')
+              : (resolvedPresentation?.presentationTitle || 'Tendenza leggera'))}
           </div>
         ) : null}
       </div>
-
-      {mapSignalStrength != null && signalCaption ? (
-        <p
-          style={{
-            margin: '12px 0 0',
-            padding: '0 10px',
-            fontSize: 11,
-            lineHeight: 1.45,
-            fontWeight: 500,
-            letterSpacing: '0.02em',
-            color: 'rgba(200, 210, 222, 0.78)',
-            textAlign: 'center',
-            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-          }}
-        >
-          {signalCaption}
-        </p>
-      ) : null}
 
       <div
         style={{
@@ -954,10 +942,19 @@ export default function MetabolicMap({
           color: 'rgba(230, 235, 240, 0.92)',
         }}
       >
-        {mapSignalStrength === 'very_weak' ? (
+        {suppressRisk ? (
           <>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              Segnale metabolico debole: la posizione non è ancora significativa
+              {resolvedPresentation.presentationTitle}
+            </div>
+            <div
+              style={{
+                fontSize: '0.78rem',
+                color: 'rgba(200, 208, 216, 0.88)',
+                marginBottom: 6,
+              }}
+            >
+              {resolvedPresentation.presentationCaption}
             </div>
             <div
               style={{
@@ -986,8 +983,16 @@ export default function MetabolicMap({
         ) : mapSignalStrength === 'weak' ? (
           <>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              Possibile tendenza verso {QUADRANT_RISK_LABELS[effectiveQuadrant]} —{' '}
-              {ZONE_LABELS[effectiveZone]}
+              {resolvedPresentation?.presentationTitle}
+            </div>
+            <div
+              style={{
+                fontSize: '0.78rem',
+                color: 'rgba(200, 208, 216, 0.88)',
+                marginBottom: 6,
+              }}
+            >
+              {resolvedPresentation?.presentationCaption}
             </div>
             <div
               style={{
@@ -1012,40 +1017,6 @@ export default function MetabolicMap({
               Distanza dal centro: {panelRadialDistance.toFixed(1)} · Aura glicemica:{' '}
               {Math.round(displayAuraForUi)}
             </div>
-            {surplusCaloricMap > 0 && (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  background: 'rgba(60, 42, 38, 0.45)',
-                  border: '1px solid rgba(150, 110, 95, 0.35)',
-                  color: 'rgba(210, 195, 185, 0.92)',
-                  fontWeight: 600,
-                  fontSize: '0.78rem',
-                }}
-              >
-                Surplus calorico (mappa): la posizione finale è più lontana dal centro dell’Ancora —
-                calo di Longevity Score potenziale fino a ~{surplusCaloricMap} punti rispetto
-                all’Ancora.
-              </div>
-            )}
-            {displayAuraForUi > 50 && (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  background: 'rgba(55, 38, 40, 0.45)',
-                  border: '1px solid rgba(130, 90, 92, 0.35)',
-                  color: 'rgba(215, 190, 188, 0.92)',
-                  fontWeight: 600,
-                  fontSize: '0.78rem',
-                }}
-              >
-                Allarme Infiammazione Glicemica in corso
-              </div>
-            )}
           </>
         ) : (
           <>
@@ -1076,7 +1047,7 @@ export default function MetabolicMap({
               Distanza dal centro: {panelRadialDistance.toFixed(1)} · Aura glicemica:{' '}
               {Math.round(mapSignalStrength != null ? displayAuraForUi : finalAura)}
             </div>
-            {surplusCaloricMap > 0 && (
+            {surplusCaloricMap > 0 ? (
               <div
                 style={{
                   marginTop: 10,
@@ -1093,8 +1064,8 @@ export default function MetabolicMap({
                 calo di Longevity Score potenziale fino a ~{surplusCaloricMap} punti rispetto
                 all’Ancora.
               </div>
-            )}
-            {(mapSignalStrength != null ? displayAuraForUi : finalAura) > 50 && (
+            ) : null}
+            {(mapSignalStrength != null ? displayAuraForUi : finalAura) > 50 ? (
               <div
                 style={{
                   marginTop: 10,
@@ -1109,7 +1080,7 @@ export default function MetabolicMap({
               >
                 Allarme Infiammazione Glicemica in corso
               </div>
-            )}
+            ) : null}
           </>
         )}
       </div>

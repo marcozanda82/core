@@ -135,6 +135,78 @@ export function computeCompassDisplayLabel(sectorLabel, signalStrength) {
   return sectorLabel;
 }
 
+const MAP_QUADRANT_RISK_LABELS = {
+  NW: 'BURNOUT / CORTISOLO',
+  NE: 'INFIAMMAZIONE / BULK',
+  SW: 'DEPERIMENTO / CATABOLISMO',
+  SE: 'FEGATO GRASSO / INSULINA',
+};
+
+/**
+ * Pure presentation layer: coordinates and copy for weak bussola signal vs mappa (x/y motore invariati a monte).
+ *
+ * @param {{
+ *   x: number,
+ *   y: number,
+ *   mapSignalStrength: ReturnType<typeof computeCompassSignalStrength> | null | undefined,
+ *   quadrant: string,
+ *   riskLabel: string,
+ *   longevityDrop: number,
+ *   glycemicAura: number,
+ * }} p
+ */
+export function buildMapSignalPresentation({
+  x,
+  y,
+  mapSignalStrength,
+  quadrant,
+  riskLabel,
+  longevityDrop: _longevityDrop,
+  glycemicAura,
+}) {
+  const gx = Number(x) || 0;
+  const gy = Number(y) || 0;
+  const aura = Number(glycemicAura) || 0;
+  const rl =
+    riskLabel ||
+    MAP_QUADRANT_RISK_LABELS[quadrant] ||
+    String(quadrant || '');
+
+  const s = mapSignalStrength;
+  if (s === 'very_weak') {
+    return {
+      displayX: clampAxis(gx * 0.3),
+      displayY: clampAxis(gy * 0.3),
+      displayAura: aura * 0.3,
+      presentationTitle: 'Segnale metabolico debole',
+      presentationCaption: 'La posizione non è ancora significativa.',
+      suppressRiskNarrative: true,
+      suppressLongevityWarning: true,
+    };
+  }
+  if (s === 'weak') {
+    return {
+      displayX: clampAxis(gx * 0.6),
+      displayY: clampAxis(gy * 0.6),
+      displayAura: aura * 0.6,
+      presentationTitle: 'Tendenza metabolica leggera',
+      presentationCaption: `Possibile tendenza verso ${rl}`,
+      suppressRiskNarrative: false,
+      suppressLongevityWarning: true,
+    };
+  }
+
+  return {
+    displayX: clampAxis(gx),
+    displayY: clampAxis(gy),
+    displayAura: aura,
+    presentationTitle: null,
+    presentationCaption: null,
+    suppressRiskNarrative: false,
+    suppressLongevityWarning: false,
+  };
+}
+
 function computeMetabolicCompassDirectionPure(dailyHistory, timeframe) {
   const { x, y } = computeMetabolicEngineTargetVec(dailyHistory, timeframe);
   const angleRad = Math.atan2(y, x);
@@ -252,6 +324,30 @@ export function computeMetabolicMapCompassBundle({
     ? calculateMetabolicScore(currentMapPoint.x, currentMapPoint.y)
     : calculateMetabolicScore(0, 0);
 
+  const mapPointX = Number.isFinite(Number(currentMapPoint?.x))
+    ? Number(currentMapPoint.x)
+    : mapPosition.x;
+  const mapPointY = Number.isFinite(Number(currentMapPoint?.y))
+    ? Number(currentMapPoint.y)
+    : mapPosition.y;
+
+  const longevityScoreAnchorForDrop = calculateMetabolicScore(
+    baselineOffset.x,
+    baselineOffset.y
+  );
+  const longevityScoreFinalForDrop = calculateMetabolicScore(mapPointX, mapPointY);
+  const longevityDrop = Math.max(0, longevityScoreAnchorForDrop - longevityScoreFinalForDrop);
+
+  const mapPresentation = buildMapSignalPresentation({
+    x: mapPointX,
+    y: mapPointY,
+    mapSignalStrength: compassSignalStrength,
+    quadrant: mapPosition.quadrant,
+    riskLabel: MAP_QUADRANT_RISK_LABELS[mapPosition.quadrant] || '',
+    longevityDrop,
+    glycemicAura: mapPosition.finalAura,
+  });
+
   const sleepPenalty =
     mapInputs.sleepHours < 7.5 ? Math.max(0, 7.5 - mapInputs.sleepHours) : 0;
 
@@ -283,6 +379,8 @@ export function computeMetabolicMapCompassBundle({
     distance: mapPosition.distance,
     quadrant: mapPosition.quadrant,
     longevityScore,
+    /** Allineamento bussola–mappa: coordinate e copy solo presentazione. */
+    mapPresentation,
     debug: {
       zone: mapPosition.zone,
       finalAura: mapPosition.finalAura,
@@ -295,6 +393,7 @@ export function computeMetabolicMapCompassBundle({
       compassSignalStrength,
       mapSignalStrength: compassSignalStrength,
       compassDisplayLabel,
+      mapPresentation,
       mapInputs,
     },
   };
