@@ -67,7 +67,7 @@ export function buildMetabolicCoachInsight({
   if (strength === 'very_weak') {
     return {
       severity: 'info',
-      title: 'Segnale stabile',
+      title: 'Nessuna direzione chiara',
       message: 'I dati non indicano una direzione metabolica significativa.',
       reason: `Periodo analizzato: ${tf}`,
       actionLabel: null,
