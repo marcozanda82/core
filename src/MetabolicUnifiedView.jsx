@@ -389,6 +389,7 @@ export default function MetabolicUnifiedView({
             dailyHistory={dailyHistory}
             compassScreenActive={compassScreenActive}
             mapZoneColor={mapZoneColor}
+            compassAmbientStyle={mapData.compassAmbientStyle}
             hideMetabolicMapSection
             goal={goal}
             onGoalChange={setGoal}

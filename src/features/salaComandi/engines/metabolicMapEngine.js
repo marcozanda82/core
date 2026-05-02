@@ -22,6 +22,71 @@ function mapZoneToGlowRgba(zone) {
   return '';
 }
 
+/** Fascia opacità ambiente bussola (midpoint tra min/max richiesti). */
+const MAP_SIGNAL_STRENGTH_AMBIENT_OPACITY = {
+  very_weak: 0.25,
+  weak: 0.475,
+  moderate: 0.725,
+  strong: 0.925,
+};
+
+/** Blu cobalto = Blue Zone / longevity; ambra = adattamento; rosso morbido = rischio. */
+const COMPASS_AMBIENT_ZONE_RGB = {
+  green: { r: 64, g: 132, b: 218 },
+  orange: { r: 232, g: 168, b: 82 },
+  red: { r: 204, g: 108, b: 104 },
+  fallback: { r: 118, g: 136, b: 158 },
+};
+
+const COMPASS_AMBIENT_INTENSITY_LABEL = {
+  very_weak: 'Molto debole',
+  weak: 'Debole',
+  moderate: 'Moderato',
+  strong: 'Forte',
+};
+
+/**
+ * Alone / anello bussola da zona mappa (stesso timeframe) + intensità segnale.
+ * Solo presentazione — non altera angoli né coordinate mappa.
+ *
+ * @param {'green'|'orange'|'red'|string|null|undefined} zone
+ * @param {'very_weak'|'weak'|'moderate'|'strong'|string|null|undefined} mapSignalStrength
+ * @returns {{
+ *   color: string,
+ *   glowColor: string,
+ *   opacity: number,
+ *   ringOpacity: number,
+ *   intensityLabel: string,
+ * }}
+ */
+export function buildCompassAmbientStyle(zone, mapSignalStrength) {
+  const zKey =
+    zone === 'green' || zone === 'orange' || zone === 'red' ? zone : 'fallback';
+  const rgb = COMPASS_AMBIENT_ZONE_RGB[zKey];
+
+  const s =
+    mapSignalStrength === 'very_weak' ||
+    mapSignalStrength === 'weak' ||
+    mapSignalStrength === 'moderate' ||
+    mapSignalStrength === 'strong'
+      ? mapSignalStrength
+      : 'very_weak';
+
+  const opacity = MAP_SIGNAL_STRENGTH_AMBIENT_OPACITY[s] ?? 0.25;
+  const ringOpacity = Math.min(0.92, 0.18 + opacity * 0.52);
+
+  const color = `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+  const glowColor = color;
+
+  return {
+    color,
+    glowColor,
+    opacity,
+    ringOpacity,
+    intensityLabel: COMPASS_AMBIENT_INTENSITY_LABEL[s] ?? COMPASS_AMBIENT_INTENSITY_LABEL.very_weak,
+  };
+}
+
 function clampAxis(v) {
   return Math.max(-100, Math.min(100, Number(v) || 0));
 }
@@ -348,6 +413,11 @@ export function computeMetabolicMapCompassBundle({
     glycemicAura: mapPosition.finalAura,
   });
 
+  const compassAmbientStyle = buildCompassAmbientStyle(
+    mapPosition.zone,
+    compassSignalStrength
+  );
+
   const sleepPenalty =
     mapInputs.sleepHours < 7.5 ? Math.max(0, 7.5 - mapInputs.sleepHours) : 0;
 
@@ -381,6 +451,7 @@ export function computeMetabolicMapCompassBundle({
     longevityScore,
     /** Allineamento bussola–mappa: coordinate e copy solo presentazione. */
     mapPresentation,
+    compassAmbientStyle,
     debug: {
       zone: mapPosition.zone,
       finalAura: mapPosition.finalAura,
@@ -394,6 +465,7 @@ export function computeMetabolicMapCompassBundle({
       mapSignalStrength: compassSignalStrength,
       compassDisplayLabel,
       mapPresentation,
+      compassAmbientStyle,
       mapInputs,
     },
   };

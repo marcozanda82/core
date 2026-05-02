@@ -55,6 +55,15 @@ function isCardinalCompassAngle(angle) {
   return angle === 0 || angle === 90 || angle === 180 || angle === -90;
 }
 
+/** @param {string} color @returns {{ r: number, g: number, b: number } | null} */
+function rgbStringToComponents(color) {
+  const m = String(color || '')
+    .trim()
+    .match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (!m) return null;
+  return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+}
+
 function CompassDialGrid({ directions }) {
   return (
     <svg
@@ -283,6 +292,13 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
  *   dailyHistory?: Array<{ date?: string, kcalBalance: number, trainingLoad: number }>,
  *   compassScreenActive?: boolean,
  *   mapZoneColor?: string,
+ *   compassAmbientStyle?: {
+ *     color: string,
+ *     glowColor: string,
+ *     opacity: number,
+ *     ringOpacity: number,
+ *     intensityLabel: string,
+ *   } | null,
  *   hideMetabolicMapSection?: boolean,
  *   goal?: string,
  *   onGoalChange?: (g: string) => void,
@@ -303,6 +319,7 @@ export default function MetabolicCompass({
   dailyHistory: dailyHistoryProp = [],
   compassScreenActive = true,
   mapZoneColor = '',
+  compassAmbientStyle = null,
   hideMetabolicMapSection = false,
   goal: goalControlled,
   onGoalChange,
@@ -469,6 +486,27 @@ export default function MetabolicCompass({
     return microSuggestionText;
   }, [usesEngineCompassBundle, compassDisplayLabelFromBundle, microSuggestionText]);
 
+  const compassAmbientLayer = useMemo(() => {
+    const a = compassAmbientStyle;
+    if (!a || typeof a !== 'object') return null;
+    const rgb = rgbStringToComponents(a.color);
+    const gRgb = rgbStringToComponents(a.glowColor || a.color) || rgb;
+    if (!rgb || !gRgb) return null;
+    const opacity = Number(a.opacity);
+    const ringOpacity = Number(a.ringOpacity);
+    if (!Number.isFinite(opacity) || !Number.isFinite(ringOpacity)) return null;
+    const o = Math.max(0, Math.min(1, opacity));
+    const ro = Math.max(0, Math.min(1, ringOpacity));
+
+    const bezelExtra = `, 0 0 18px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.42}), 0 0 38px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.3}), 0 0 56px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.18})`;
+
+    const faceAmbientShadow = `inset 0 0 0 1px rgba(${rgb.r},${rgb.g},${rgb.b},${ro * 0.55}), inset 0 0 48px rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.14})`;
+
+    const faceGradient = `radial-gradient(ellipse 80% 80% at 50% 38%, rgba(${gRgb.r},${gRgb.g},${gRgb.b},${o * 0.1}) 0%, transparent 56%)`;
+
+    return { bezelExtra, faceAmbientShadow, faceGradient };
+  }, [compassAmbientStyle]);
+
   const bezelBoxShadow = useMemo(() => {
     const base = `
             inset 0 1px 0 rgba(255,255,255,0.1),
@@ -476,10 +514,22 @@ export default function MetabolicCompass({
             0 20px 50px rgba(0,0,0,0.5),
             0 4px 16px rgba(0,0,0,0.35)
           `;
+    if (compassAmbientLayer) {
+      return `${base}${compassAmbientLayer.bezelExtra}`;
+    }
     const z = typeof mapZoneColor === 'string' ? mapZoneColor.trim() : '';
     if (!z) return base;
     return `${base}, 0 0 26px ${z}, 0 0 48px ${z}`;
-  }, [mapZoneColor]);
+  }, [mapZoneColor, compassAmbientLayer]);
+
+  const faceBoxShadow = useMemo(() => {
+    const base = `
+              inset 0 0 0 1px rgba(255,255,255,0.05),
+              inset 0 2px 24px rgba(0,0,0,0.45)
+            `;
+    if (!compassAmbientLayer) return base;
+    return `${base}, ${compassAmbientLayer.faceAmbientShadow}`;
+  }, [compassAmbientLayer]);
 
   const suggestionMountedRef = useRef(false);
   const [displaySuggestion, setDisplaySuggestion] = useState(suggestionLineText);
@@ -657,12 +707,22 @@ export default function MetabolicCompass({
             aspectRatio: '1',
             borderRadius: '50%',
             overflow: 'hidden',
-            boxShadow: `
-              inset 0 0 0 1px rgba(255,255,255,0.05),
-              inset 0 2px 24px rgba(0,0,0,0.45)
-            `,
+            boxShadow: faceBoxShadow,
           }}
         >
+          {compassAmbientLayer?.faceGradient ? (
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                pointerEvents: 'none',
+                zIndex: 0,
+                background: compassAmbientLayer.faceGradient,
+              }}
+            />
+          ) : null}
           <div
             style={{
               position: 'absolute',
@@ -671,6 +731,7 @@ export default function MetabolicCompass({
               transformOrigin: '50% 50%',
               transform: `rotate(${compassRotation}deg)`,
               transition: COMPASS_ROTATION_TRANSITION,
+              zIndex: 1,
               background: `
                 radial-gradient(ellipse 72% 72% at 50% 38%, rgba(35, 42, 54, 0.95) 0%, #12151c 48%, #07080c 100%),
                 radial-gradient(circle at 50% 35%, rgba(120, 140, 165, 0.06) 0%, transparent 55%)
