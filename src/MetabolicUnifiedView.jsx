@@ -366,141 +366,142 @@ export default function MetabolicUnifiedView({
 
       <div
         style={{
-          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'stretch',
+          gap: 16,
           width: '100%',
-          minHeight: 480,
           paddingTop: 4,
           boxSizing: 'border-box',
         }}
       >
         <div
-          aria-hidden={viewMode !== 'compass'}
           style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: 0,
-            opacity: viewMode === 'compass' ? 1 : 0,
-            transform:
-              viewMode === 'compass'
-                ? 'translateY(0) scale(1)'
-                : 'translateY(6px) scale(0.99)',
-            pointerEvents: viewMode === 'compass' ? 'auto' : 'none',
-            transition: reducedMotion
-              ? 'none'
-              : 'opacity 0.42s ease, transform 0.42s cubic-bezier(0.4, 0, 0.2, 1)',
+            display: 'grid',
+            gridTemplateColumns: '1fr',
             width: '100%',
+            boxSizing: 'border-box',
           }}
         >
-          <MetabolicCompass
-            dailyHistory={dailyHistory}
-            compassScreenActive={compassScreenActive}
-            mapZoneColor={mapZoneColor}
-            compassAmbientStyle={mapData.compassAmbientStyle}
-            hideMetabolicMapSection
-            goal={goal}
-            onGoalChange={setGoal}
-            selectedTimeframe={selectedTimeframe}
-            onTimeframeChange={setSelectedTimeframe}
-            metabolicMapInputsFromBundle={mapData.metabolicMapInputs}
-            compassDirectionFromBundle={mapData.compassDirection}
-            visualVectorFromBundle={mapData.visualVector}
-            compassDisplayLabelFromBundle={mapData.compassDisplayLabel}
-            mapSignalStrengthFromBundle={mapData.mapSignalStrength}
-          />
-          {SHOW_METABOLIC_DEBUG && (
-            <CompassDebugPanel
+          <div
+            aria-hidden={viewMode !== 'compass'}
+            style={{
+              gridColumn: 1,
+              gridRow: 1,
+              width: '100%',
+              justifySelf: 'center',
+              alignSelf: 'start',
+              opacity: viewMode === 'compass' ? 1 : 0,
+              pointerEvents: viewMode === 'compass' ? 'auto' : 'none',
+              zIndex: viewMode === 'compass' ? 2 : 0,
+              transition: reducedMotion ? 'none' : 'opacity 0.42s ease',
+            }}
+          >
+            <MetabolicCompass
+              dailyHistory={dailyHistory}
+              compassScreenActive={compassScreenActive}
+              mapZoneColor={mapZoneColor}
+              compassAmbientStyle={mapData.compassAmbientStyle}
+              hideMetabolicMapSection
+              goal={goal}
+              onGoalChange={setGoal}
               selectedTimeframe={selectedTimeframe}
-              mapData={mapData}
-              compassDebugByTimeframe={compassDebugByTimeframe}
+              onTimeframeChange={setSelectedTimeframe}
+              metabolicMapInputsFromBundle={mapData.metabolicMapInputs}
+              compassDirectionFromBundle={mapData.compassDirection}
+              visualVectorFromBundle={mapData.visualVector}
+              compassDisplayLabelFromBundle={mapData.compassDisplayLabel}
+              mapSignalStrengthFromBundle={mapData.mapSignalStrength}
             />
-          )}
-        </div>
-
-        <div
-          aria-hidden={viewMode !== 'map'}
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: 0,
-            opacity: viewMode === 'map' ? 1 : 0,
-            transform:
-              viewMode === 'map'
-                ? 'translateY(0) scale(1)'
-                : 'translateY(6px) scale(0.99)',
-            pointerEvents: viewMode === 'map' ? 'auto' : 'none',
-            transition: reducedMotion
-              ? 'none'
-              : 'opacity 0.42s ease, transform 0.42s cubic-bezier(0.4, 0, 0.2, 1)',
-            width: '100%',
-          }}
-        >
-          <div style={{ padding: 'clamp(0.75rem, 3vw, 1rem)', boxSizing: 'border-box' }}>
-            <h3
-              style={{
-                margin: '0 0 12px',
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                color: 'rgba(255,255,255,0.42)',
-                textAlign: 'center',
-                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-              }}
-            >
-              Analisi Stato Metabolico
-            </h3>
-            <div
-              style={{
-                margin: '0 0 10px',
-                padding: '8px 10px',
-                borderRadius: 10,
-                background: 'rgba(16, 20, 24, 0.72)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                fontSize: 12,
-                lineHeight: 1.5,
-                color: 'rgba(200, 210, 220, 0.88)',
-                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-              }}
-            >
-              {lineProjection ? (
-                <div style={{ fontWeight: 500, color: 'rgba(226, 232, 240, 0.92)', marginBottom: 4 }}>
-                  {lineProjection}
-                </div>
-              ) : null}
-              <div style={{ fontSize: 11, opacity: 0.9 }}>{lineTrend}</div>
-              <div style={{ fontSize: 11, opacity: 0.9 }}>{lineConfidence}</div>
-            </div>
-            <MetabolicMap
-              energyBalance={metabolicMapInputs.energyBalance}
-              trainingLoad={metabolicMapInputs.trainingLoad}
-              sleepHours={metabolicMapInputs.sleepHours}
-              glycemicInstability={metabolicMapInputs.glycemicInstability}
-              realSleepDays={metabolicMapInputs.realSleepDays}
-              totalWindowDays={metabolicMapInputs.totalWindowDays}
-              selectedTimeframe={selectedTimeframe}
-              baselineOffset={baselineOffset}
-              bodyMetricsHistory={bodyMetricsHistory}
-              zoomLevel={mapZoom}
-              onZoomLevelChange={setMapZoom}
-              dailyPositions={dailyMapPositions}
-              currentPosition={dailyMapPositions[dailyMapPositions.length - 1] || null}
-              projectedPosition={projectedTrajectory.projected}
-              trajectoryVelocity={projectedTrajectory.velocity}
-              mapSignalStrength={mapData.mapSignalStrength}
-              mapPresentation={mapData.mapPresentation}
-            />
-            {SHOW_METABOLIC_DEBUG ? (
-              <MetabolicDataAudit
-                rawDetails={metabolicMapRawDetails}
-                mapInputs={metabolicMapInputs}
+            {SHOW_METABOLIC_DEBUG && (
+              <CompassDebugPanel
+                selectedTimeframe={selectedTimeframe}
+                mapData={mapData}
+                compassDebugByTimeframe={compassDebugByTimeframe}
               />
-            ) : null}
+            )}
+          </div>
+
+          <div
+            aria-hidden={viewMode !== 'map'}
+            style={{
+              gridColumn: 1,
+              gridRow: 1,
+              width: '100%',
+              justifySelf: 'center',
+              alignSelf: 'start',
+              opacity: viewMode === 'map' ? 1 : 0,
+              pointerEvents: viewMode === 'map' ? 'auto' : 'none',
+              zIndex: viewMode === 'map' ? 2 : 0,
+              transition: reducedMotion ? 'none' : 'opacity 0.42s ease',
+            }}
+          >
+            <div style={{ padding: 'clamp(0.75rem, 3vw, 1rem)', boxSizing: 'border-box' }}>
+              <h3
+                style={{
+                  margin: '0 0 12px',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: '0.14em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.42)',
+                  textAlign: 'center',
+                  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+                }}
+              >
+                Analisi Stato Metabolico
+              </h3>
+              <div
+                style={{
+                  margin: '0 0 10px',
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  background: 'rgba(16, 20, 24, 0.72)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: 'rgba(200, 210, 220, 0.88)',
+                  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+                }}
+              >
+                {lineProjection ? (
+                  <div style={{ fontWeight: 500, color: 'rgba(226, 232, 240, 0.92)', marginBottom: 4 }}>
+                    {lineProjection}
+                  </div>
+                ) : null}
+                <div style={{ fontSize: 11, opacity: 0.9 }}>{lineTrend}</div>
+                <div style={{ fontSize: 11, opacity: 0.9 }}>{lineConfidence}</div>
+              </div>
+              <MetabolicMap
+                energyBalance={metabolicMapInputs.energyBalance}
+                trainingLoad={metabolicMapInputs.trainingLoad}
+                sleepHours={metabolicMapInputs.sleepHours}
+                glycemicInstability={metabolicMapInputs.glycemicInstability}
+                realSleepDays={metabolicMapInputs.realSleepDays}
+                totalWindowDays={metabolicMapInputs.totalWindowDays}
+                selectedTimeframe={selectedTimeframe}
+                baselineOffset={baselineOffset}
+                bodyMetricsHistory={bodyMetricsHistory}
+                zoomLevel={mapZoom}
+                onZoomLevelChange={setMapZoom}
+                dailyPositions={dailyMapPositions}
+                currentPosition={dailyMapPositions[dailyMapPositions.length - 1] || null}
+                projectedPosition={projectedTrajectory.projected}
+                trajectoryVelocity={projectedTrajectory.velocity}
+                mapSignalStrength={mapData.mapSignalStrength}
+                mapPresentation={mapData.mapPresentation}
+              />
+              {SHOW_METABOLIC_DEBUG ? (
+                <MetabolicDataAudit
+                  rawDetails={metabolicMapRawDetails}
+                  mapInputs={metabolicMapInputs}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
+        <MetabolicCoachCard insight={coachInsight} />
       </div>
-      <MetabolicCoachCard insight={coachInsight} />
     </div>
   );
 }
