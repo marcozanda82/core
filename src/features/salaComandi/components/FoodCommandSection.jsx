@@ -1,6 +1,17 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { parseFoodCommandIntent } from '@/features/salaComandi/engines/foodCommandEngine';
 import FoodCommandReview from '@/features/salaComandi/components/FoodCommandReview';
+
+function cloneSerializable(value) {
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value);
+    } catch {
+      /* fallback */
+    }
+  }
+  return JSON.parse(JSON.stringify(value));
+}
 
 /**
  * @param {object} props
@@ -11,17 +22,22 @@ import FoodCommandReview from '@/features/salaComandi/components/FoodCommandRevi
 export default function FoodCommandSection({ foodDb, flatLog, onAddFoods }) {
   const [input, setInput] = useState('');
   const [commandResult, setCommandResult] = useState(null);
+  /** Snapshot dell’ultimo parse (stesso contenuto mostrato in review); la Conferma legge questo, non stato potenzialmente desincronizzato. */
+  const reviewSnapshotRef = useRef(null);
 
   const analyze = () => {
-    const result = parseFoodCommandIntent({
-      text: input,
+    const text = input == null ? '' : String(input);
+    const parsed = parseFoodCommandIntent({
+      text,
       foodDb:
         foodDb != null && typeof foodDb === 'object' && !Array.isArray(foodDb)
           ? foodDb
           : {},
       flatLog: Array.isArray(flatLog) ? flatLog : [],
     });
-    setCommandResult(result);
+    const frozen = cloneSerializable(parsed);
+    reviewSnapshotRef.current = frozen;
+    setCommandResult(frozen);
   };
 
   const wrapStyle = {
@@ -79,12 +95,16 @@ export default function FoodCommandSection({ foodDb, flatLog, onAddFoods }) {
         <FoodCommandReview
           data={commandResult}
           onConfirm={() => {
-            const readyItems = commandResult.items.filter((i) => i.status === 'ready');
-            onAddFoods?.(readyItems);
+            const snap = reviewSnapshotRef.current;
+            const rows = snap && Array.isArray(snap.items) ? snap.items : [];
+            const readyItems = rows.filter((i) => i.status === 'ready');
+            onAddFoods?.(cloneSerializable(readyItems));
+            reviewSnapshotRef.current = null;
             setCommandResult(null);
             setInput('');
           }}
           onCancel={() => {
+            reviewSnapshotRef.current = null;
             setCommandResult(null);
           }}
         />
