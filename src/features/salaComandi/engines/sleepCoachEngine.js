@@ -334,9 +334,11 @@ const SEVERITY_ORDER = { high: 3, moderate: 2, low: 1 };
 
 function sortCauses(cs) {
   return [...cs].sort((a, b) => {
+    const cd = Number(b.confidence ?? 0) - Number(a.confidence ?? 0);
+    if (cd !== 0) return cd;
     const sd = SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity];
     if (sd !== 0) return sd;
-    return Number(b.confidence ?? 0) - Number(a.confidence ?? 0);
+    return String(a.id || '').localeCompare(String(b.id || ''));
   });
 }
 
@@ -587,11 +589,16 @@ export function analyzeSleepCoach(input) {
   const guidanceSteps = [];
   const seen = new Set();
   for (const c of likelyCauses) {
-    const line = `${c.recommendation.title}: ${c.recommendation.action}`;
-    if (!seen.has(line)) {
-      seen.add(line);
-      guidanceSteps.push(line);
-    }
+    const rec = c.recommendation;
+    if (!rec || typeof rec !== 'object') continue;
+    const key = `${String(rec.title ?? '')}\0${String(rec.action ?? '')}\0${String(rec.reason ?? '')}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    guidanceSteps.push({
+      title: rec.title ?? '',
+      action: rec.action ?? '',
+      reason: rec.reason ?? '',
+    });
   }
 
   const sleepsUnknown =

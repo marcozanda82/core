@@ -12,8 +12,8 @@
 
 import {
   analyzeSleepCoach,
-  buildSleepCoachInputFromDailyLog,
-} from '@/features/salaComandi/engines/sleepCoachEngine';
+  buildSleepCoachInputFromDailyLog
+} from '../features/salaComandi/engines/sleepCoachEngine.js';
 
 /** Campi sonno compatibili col motore: wakeHour, bedtimeApprox, sleepStartHour, hours, quality… */
 const testCases = [
