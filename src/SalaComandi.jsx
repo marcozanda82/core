@@ -142,6 +142,8 @@ import {
   normalizeGhostFoodsForTimelineNode,
 } from './features/salaComandi/utils/timelineUtils';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
+import SleepCoachCompact from '@/features/salaComandi/components/SleepCoachCompact';
+import { useSleepCoach } from '@/features/salaComandi/hooks/useSleepCoach';
 import useMetabolicMapEngine from './features/salaComandi/hooks/useMetabolicMapEngine';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { buildMacroSplitFromKcal } from './targetsEngine';
@@ -8317,6 +8319,12 @@ ${dbKeys || 'n/d'}`;
   const burnedKcal = activeLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
   const dynamicDailyKcal =
     applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) + burnedKcal;
+  const sleepCoach = useSleepCoach({
+    activeLog,
+    totali,
+    dynamicDailyKcal,
+    userProfile,
+  });
   const targetKcalChart = dynamicDailyKcal;
   // --- NUOVI ALLARMI PREDITTIVI PERCENTUALI ---
   const targetKcalForAlerts = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
@@ -11378,6 +11386,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             selectedTimeframe={metabolicCompassTimeframe}
             onTimeframeChange={setMetabolicCompassTimeframe}
           />
+          <div style={{ width: '100%', marginTop: 14, flexShrink: 0 }}>
+            <SleepCoachCompact data={sleepCoach} />
+          </div>
         </div>
       )}
       </div>
