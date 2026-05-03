@@ -141,9 +141,9 @@ function enrichDailyCoachWithTrends(result, trends, ctx, patches) {
     if (
       ctx.sleepDisrupted &&
       hasTrendPatternById(trends, 'repeated_sleep_disruption') &&
-      !summaryNext.toLowerCase().includes('sonno è stato instabile')
+      !summaryNext.toLowerCase().includes('negli ultimi giorni il sonno')
     ) {
-      summaryNext = `Negli ultimi giorni il sonno è stato instabile. ${summaryNext}`.trim();
+      summaryNext = `Negli ultimi giorni il recupero del sonno è stato irregolare. ${summaryNext}`.trim();
       pushTrendDetailUnique('Trend', 'Sonno fragile ricorrente', 'dailyCoachTrends');
     }
   }
@@ -154,10 +154,10 @@ function enrichDailyCoachWithTrends(result, trends, ctx, patches) {
     if (
       hasTrendPatternById(trends, 'repeated_late_caffeine') &&
       sleepProblems &&
-      !summaryNext.toLowerCase().includes('caffeina')
+      !summaryNext.toLowerCase().includes('caffeina dopo')
     ) {
       summaryNext =
-        `${summaryNext} La caffeina in orari tardi ricorre nei dati recenti: valuta di anticiparla.`.trim();
+        `${summaryNext} Spesso registri caffeina dopo le 14: prova ad anticiparla di qualche ora.`.trim();
       pushTrendDetailUnique('Trend', 'Caffeina tardiva ricorrente', 'dailyCoachTrends');
     }
   }
@@ -170,10 +170,11 @@ function enrichDailyCoachWithTrends(result, trends, ctx, patches) {
   }
 
   if (patches.omega && hasTrendPatternById(trends, 'repeated_low_omega3') && ctx.omegaLowNow) {
-    summaryNext = 'Omega-3 basso da più giorni';
+    summaryNext =
+      'Gli Omega-3 risultano bassi da più giorni: oggi conviene correggere la qualità nutrizionale.';
     if (ctx.protLow) {
       summaryNext +=
-        ' Proteine giornaliere lontane dal fabbisogno indicativo nei totali consegnati.';
+        ' Anche le proteine restano dietro alla quota giornaliera che ti sei dato nei target.';
     }
     pushTrendDetailUnique('Trend', 'Omega-3 basso ricorrente', 'dailyCoachTrends');
   }
@@ -181,7 +182,7 @@ function enrichDailyCoachWithTrends(result, trends, ctx, patches) {
   if (trends.status === 'patterns_detected' && patches.confidence) {
     pushTrendDetailUnique(
       'Confidenza',
-      'Rafforzata da storico multi-giorno',
+      'Più salda perché confermata nei giorni scorsi',
       'dailyCoachTrends',
     );
   }
@@ -287,19 +288,19 @@ export function analyzeDailyCoach(input = {}) {
     let summary = narrative;
     if (!summary && deficitStress && !sleepDisrupted) {
       summary =
-        'Divario giornaliero ampio tra assunzione calorica e target: migliori margini recupero riducendo la pressione aggiuntiva.';
+        'Oggi il divario calorie è netto sul totale giornaliero: ha più senso allentare il freno che spingere oltre il deficit.';
     }
     if (!summary && sleepDisrupted && causesPresent) {
       summary =
-        'Sonno segnato come disturbato con correlati nei log: preferisci attenzione al recupero rispetto a obiettivi aggressivi.';
+        'Il recupero oggi conta più del target: il sonno è fragile e i segnali serali nei log suggeriscono prudenza.';
     }
     if (!summary && recoverySoft) {
       summary =
-        'Recupero e sonno meritano attenzione: segnali deboli o limitati nei dati disponibili oggi.';
+        'Il sonno segnala attenzione, ma dai dati oggi le evidenze restano contenute — resta su carichi sobri.';
     }
     if (!summary) {
       summary =
-        'Segnali di recupero o interferenze serali sulla notte: evita ulteriormente di forzare la giornata.';
+        'I segnali su recupero o sulla serata suggeriscono di non forzare obiettivi troppo stretti oggi.';
     }
 
     /** @type {{ label: string, value: string, source: string }[]} */
@@ -330,12 +331,12 @@ export function analyzeDailyCoach(input = {}) {
       {
         status: 'recovery_focus',
         priority: 'recovery',
-        title: 'Priorità recupero',
+        title: 'Il recupero viene prima',
         summary,
         action:
-          'Evita di stringere ulteriormente il deficit calorico o sessioni pesanti serali finché non recuperi ritmo.',
+          'Mantieni carichi contenuti ed evita di stringere deficit o allenamenti impegnativi la sera finché non torni più lucido sul sonno.',
         reason:
-          'Decisione basata su sonno/disturbi nei log e/o correlati recupero e deficit giornaliero o eventi serali segnalati dai motori di sonno.',
+          'Combinazione dei dati su sonno con segnali serali o calorie nei log porta a dare più spazio al recupero prima del target.',
         severity: 'warning',
         overridesGoal: Boolean(goalConflict),
         source:
@@ -360,10 +361,11 @@ export function analyzeDailyCoach(input = {}) {
     let summary = aiSugg?.message != null ? String(aiSugg.message).trim().slice(0, 380) : '';
     if (!summary && energyLow) {
       summary =
-        'Energia serale molto bassa nel modello giornaliero: attenzione a sessioni impegnative a digiuno.';
+        'Alle ~20 vedi ancora pochissima riserva sul modello: valuta nutriente prima dello sforzo se devi caricare dopo.';
     }
     if (!summary)
-      summary = 'Rischio di energia limitata prima dell’allenamento o dopo una finestra lunga vuota di cibo.';
+      summary =
+        'Dopo una fascia lunga senza pasto la riserva scende veloce: aggiungi un supporto calorie vicino allo sforzo.';
 
     const overridesGoal = catabLike && strategySuggestsAggressiveDeficit(strategyLabel);
 
@@ -398,12 +400,12 @@ export function analyzeDailyCoach(input = {}) {
       {
         status: 'performance_focus',
         priority: 'performance',
-        title: 'Priorità energia',
+        title: 'Gestisci l’energia oggi',
         summary,
         action:
-          'Preferisci un supporto nutriente mirato prima dell’allenamento o della fascia più critica (senza cambi drastici fuori dai dati disponibili).',
+          'Metti uno spuntino o un pasto leggero con proteine e carboidrati poco prima della parte più impegnativa della giornata.',
         reason:
-          'Messaggio combinato dai flag energia giornaliero e dal coach AI giornaliero o dal modello energetico serale quando presente.',
+          'Emergono sia i flag di energia serale giornaliero sia suggerimenti del coach AI o del metabolismo nei dati attuali.',
         severity: 'warning',
         overridesGoal,
         source: src,
@@ -419,9 +421,9 @@ export function analyzeDailyCoach(input = {}) {
   /** ------- 3 · Qualità nutrizionale ------- */
   if (omegaLow || protLow) {
     const parts = [];
-    if (omegaLow) parts.push('Omega‑3 giornaliero sotto soglia osservabile (< 1 g nell’aggregate fornito).');
+    if (omegaLow) parts.push('Gli Omega-3 nel totale di oggi restano chiaramente bassi sulla soglia che usiamo nei dati.');
     if (protLow)
-      parts.push('Proteine giornaliere lontane dal fabbisogno indicativo nei totali consegnati.');
+      parts.push('Le proteine sono ancora lontane dalla quota utile nei target che hai caricato nei totali giornalieri.');
 
     /** @type {{ label: string, value: string, source: string }[]} */
     const details = [];
@@ -447,11 +449,14 @@ export function analyzeDailyCoach(input = {}) {
         status: 'nutrition_focus',
         priority: 'nutrition_quality',
         title: 'Priorità micronutrienti',
-        summary: parts.join(' ') || 'Serve un miglioramento mirato sul fronte micro/macro nei dati forniti.',
+        title: 'Nutrizione da sistemare',
+        summary:
+          parts.join(' ') ||
+          'Nel totale di oggi manca equilibrio su micro e macro nei numeri disponibili: conviene sistemare nei prossimi pasti.',
         action:
-          'Valorizza fonti ricche di Omega‑3 e distribuzione proteica nei pasti rimanenti, mantenendo coerenza generale dei target.',
+          'Nei pasti che restano porta pesce ricco di Omega-3 (o quota equivalente) e riparti le proteine in porzioni più piene.',
         reason:
-          'Soglie dai soli aggregati giornalieri (Omega‑3 e/o rapporto proteine) senza ulteriori inferenze esterne.',
+          'Abbiamo solo i totali giornalieri caricati dall’app, senza nulla fuori dai numeri Omega-3/proteine che vedi sopra.',
         severity: 'info',
         overridesGoal: false,
         source: omegaLow ? 'omega3_threshold' : 'protein_totals',
@@ -481,21 +486,21 @@ export function analyzeDailyCoach(input = {}) {
 
   const summaryNeutral =
     strategyLabel.length > 0
-      ? `La giornata appare ordinata nei segnali forniti: continua "${strategyLabel}" finché nuovi dati non cambiano le priorità.`
-      : 'La giornata è coerente con il piano.';
+      ? `Ti ritrovi nei segnali registrati: tieni "${strategyLabel}" finché nuovi dati non spostano davvero la priorità.`
+      : 'I segnali di oggi restano allineati senza spia netta su recupero, energia o micro.';
 
   return enrichDailyCoachWithTrends(
     {
       status: 'continuity_ok',
       priority: 'continuity',
-      title: 'Continuità',
+      title: 'Continua così',
       summary: summaryNeutral,
       action:
         strategyLabel && strategyLabel !== 'standard'
-          ? `Prosegui allineando i pasti a "${strategyLabel}" senza correzioni forzate.`
-          : 'Prosegui senza correzioni importanti.',
+          ? `Allinea i prossimi pasti a "${strategyLabel}" senza forzare cambi bruschi fuori dal piano.`
+          : 'Continua così: oggi non servono correzioni importanti.',
       reason:
-        'Nessun campanello forte da recupero, energia o micro nei dati passati — raccomandazione prudenziale neutra.',
+        'Dai dati passati oggi non salta fuori alcun campanello alto su recupero, energia serale o micronutrienti.',
       severity: 'good',
       overridesGoal: false,
       source: 'continuity',
