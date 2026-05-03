@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 const FONT = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
@@ -55,6 +55,25 @@ export default function DailyCoachCard({ data }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [hover, setHover] = useState(false);
   const closeBtnRef = useRef(null);
+
+  const overridesGoal = data != null && typeof data === 'object' && data.overridesGoal === true;
+  const goalIntroRanRef = useRef(false);
+  const [goalIntroHighlight, setGoalIntroHighlight] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!overridesGoal) return;
+    if (goalIntroRanRef.current) return;
+    goalIntroRanRef.current = true;
+    setGoalIntroHighlight(true);
+  }, [overridesGoal]);
+
+  useEffect(() => {
+    if (!overridesGoal || !goalIntroHighlight) return undefined;
+    const t = window.setTimeout(() => {
+      setGoalIntroHighlight(false);
+    }, 720);
+    return () => window.clearTimeout(t);
+  }, [overridesGoal, goalIntroHighlight]);
 
   const closeModal = useCallback(() => {
     setModalOpen(false);
@@ -308,14 +327,30 @@ export default function DailyCoachCard({ data }) {
           style={{
             padding: '7px 10px',
             borderRadius: 10,
-            border: `1px solid ${hover ? 'rgba(255,255,255,0.14)' : tint}`,
-            borderLeft: `3px solid ${visual.color}`,
+            border: `1px solid ${
+              hover
+                ? 'rgba(255,255,255,0.14)'
+                : overridesGoal && goalIntroHighlight
+                  ? 'rgba(253, 186, 116, 0.58)'
+                  : tint
+            }`,
+            borderLeft: `3px solid ${
+              overridesGoal && goalIntroHighlight
+                ? 'rgba(252, 211, 150, 0.95)'
+                : visual.color
+            }`,
             background: hover ? 'rgba(24, 30, 38, 0.92)' : 'rgba(18, 22, 26, 0.88)',
-            boxShadow: hover ? '0 2px 10px rgba(0, 0, 0, 0.3)' : 'none',
+            boxShadow:
+              hover && !(overridesGoal && goalIntroHighlight)
+                ? '0 2px 10px rgba(0, 0, 0, 0.3)'
+                : overridesGoal && goalIntroHighlight
+                  ? '0 0 22px rgba(251, 146, 60, 0.22), 0 2px 8px rgba(0, 0, 0, 0.35)'
+                  : 'none',
             cursor: 'pointer',
             boxSizing: 'border-box',
             outline: 'none',
-            transition: 'background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease',
+            transition:
+              'border-color 720ms ease-out, box-shadow 720ms ease-out, background 0.2s ease, border-left-color 720ms ease-out',
           }}
         >
           <div
