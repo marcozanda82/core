@@ -2,6 +2,64 @@ import React from 'react';
 import MealBuilder from '../../MealBuilder';
 import FoodCommandSection from '@/features/salaComandi/components/FoodCommandSection';
 
+function normalizeName(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function draftMatchKey(row) {
+  if (row?.key != null && String(row.key).trim() !== '') {
+    return String(row.key).trim();
+  }
+  return normalizeName(row?.desc ?? row?.name ?? '');
+}
+
+function readDraftGrams(row) {
+  const n = Number(row?.qty ?? row?.quantity ?? row?.qta ?? row?.weight ?? 0);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+/**
+ * Unisce le righe bozza pasto quando arrivano da FoodCommandSection (solo addedFoods).
+ */
+function mergeFoodDraftItems(prevItems, incomingItems) {
+  const merged = Array.isArray(prevItems) ? [...prevItems] : [];
+
+  if (!Array.isArray(incomingItems)) return merged;
+
+  incomingItems.forEach((incoming) => {
+    if (!incoming || typeof incoming !== 'object') return;
+
+    const incomingKey = draftMatchKey(incoming);
+
+    const existingIndex = merged.findIndex((item) => {
+      if (!item || typeof item !== 'object') return false;
+      return draftMatchKey(item) === incomingKey;
+    });
+
+    const incomingQty = readDraftGrams(incoming);
+
+    if (existingIndex >= 0) {
+      const currentQty = readDraftGrams(merged[existingIndex]);
+      const total = Math.round(currentQty + incomingQty);
+
+      merged[existingIndex] = {
+        ...merged[existingIndex],
+        qty: total,
+        qta: total,
+        weight: total,
+      };
+    } else {
+      merged.push(incoming);
+    }
+  });
+
+  return merged;
+}
+
 export default function PastoDrawer({
   activeAction,
   onClose,
@@ -125,7 +183,7 @@ export default function PastoDrawer({
                   ),
                 ),
               }));
-            setAddedFoods((prev) => [...prev, ...newFoods]);
+            setAddedFoods((prev) => mergeFoodDraftItems(prev, newFoods));
           }}
         />
       </div>
