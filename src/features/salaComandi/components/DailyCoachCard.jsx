@@ -3,6 +3,25 @@ import { createPortal } from 'react-dom';
 
 const FONT = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
 
+const priorityVisual = {
+  recovery: {
+    color: '#facc15',
+    icon: '🌙',
+  },
+  performance: {
+    color: '#60a5fa',
+    icon: '⚡',
+  },
+  nutrition_quality: {
+    color: '#34d399',
+    icon: '🥗',
+  },
+  continuity: {
+    color: '#9ca3af',
+    icon: '✅',
+  },
+};
+
 function borderForSeverity(severity) {
   const s = String(severity || '').toLowerCase();
   if (s === 'warning') return 'rgba(250, 204, 121, 0.35)';
@@ -65,6 +84,7 @@ export default function DailyCoachCard({ data }) {
 
   if (!data || typeof data !== 'object') return null;
 
+  const visual = priorityVisual[data.priority] ?? priorityVisual.continuity;
   const tint = borderForSeverity(data.severity);
   const details = Array.isArray(data.details) ? data.details.filter((d) => d && typeof d === 'object') : [];
   const reasonText = String(data.reason ?? '').trim();
@@ -289,6 +309,7 @@ export default function DailyCoachCard({ data }) {
             padding: '7px 10px',
             borderRadius: 10,
             border: `1px solid ${hover ? 'rgba(255,255,255,0.14)' : tint}`,
+            borderLeft: `3px solid ${visual.color}`,
             background: hover ? 'rgba(24, 30, 38, 0.92)' : 'rgba(18, 22, 26, 0.88)',
             boxShadow: hover ? '0 2px 10px rgba(0, 0, 0, 0.3)' : 'none',
             cursor: 'pointer',
@@ -299,22 +320,29 @@ export default function DailyCoachCard({ data }) {
         >
           <div
             style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
               fontSize: 9,
               fontWeight: 650,
               letterSpacing: '0.1em',
               color: 'rgba(180, 195, 210, 0.55)',
               marginBottom: 4,
               textTransform: 'uppercase',
+              lineHeight: 1,
             }}
           >
+            <span style={{ fontSize: 11, lineHeight: 1 }} aria-hidden>
+              {visual.icon}
+            </span>
             Coach oggi
           </div>
           <h4
             style={{
               margin: '0 0 4px',
-              fontSize: 12.5,
-              fontWeight: 600,
-              color: 'rgba(236, 240, 245, 0.96)',
+              fontSize: 13,
+              fontWeight: 700,
+              color: 'rgba(246, 248, 251, 0.98)',
               lineHeight: 1.28,
               display: '-webkit-box',
               WebkitLineClamp: 1,
@@ -330,7 +358,7 @@ export default function DailyCoachCard({ data }) {
               margin: 0,
               fontSize: 11,
               lineHeight: 1.35,
-              color: 'rgba(200, 210, 220, 0.88)',
+              color: 'rgba(184, 198, 214, 0.82)',
               display: '-webkit-box',
               WebkitLineClamp: 2,
               WebkitBoxOrient: 'vertical',
@@ -344,13 +372,20 @@ export default function DailyCoachCard({ data }) {
             <div
               style={{
                 marginTop: 6,
-                fontSize: 10,
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '2px 6px',
+                borderRadius: 4,
+                border: '1px solid rgba(251, 146, 60, 0.35)',
+                background: 'rgba(251, 146, 60, 0.12)',
+                fontSize: 9,
                 fontWeight: 600,
-                color: 'rgba(250, 204, 121, 0.95)',
-                lineHeight: 1.3,
+                letterSpacing: '0.02em',
+                color: 'rgba(254, 200, 150, 0.95)',
+                lineHeight: 1.25,
               }}
             >
-              ⚠️ Priorità supera obiettivo
+              ⚠️ supera obiettivo
             </div>
           ) : null}
         </div>
