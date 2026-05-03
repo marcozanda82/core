@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 const CARD = {
   maxWidth: 420,
@@ -56,6 +56,51 @@ const BTN_SECONDARY = {
   color: 'rgba(200, 210, 220, 0.9)',
 };
 
+function safeFiniteNumber(n) {
+  const x = Number(n);
+  return Number.isFinite(x) && x > 0 ? Math.round(x) : null;
+}
+
+/**
+ * Snapshot compatibile con meal / foodCommandItem (stesso spirito di foodCommandEngine).
+ * @param {string} key
+ * @param {Record<string, object> | null | undefined} foodDb
+ * @param {string} [fallbackDesc]
+ */
+function matchedFoodFromCandidateKey(key, foodDb, fallbackDesc = '') {
+  const row = foodDb != null && typeof foodDb === 'object' ? foodDb[key] : null;
+  if (!row || typeof row !== 'object') {
+    return {
+      key,
+      desc: String(fallbackDesc || key).trim() || key,
+      defaultQty: null,
+    };
+  }
+  const desc = String(row.desc ?? row.name ?? '').trim();
+  return {
+    key,
+    desc: desc || key,
+    defaultQty: safeFiniteNumber(row.defaultQty),
+    kcal: row.kcal,
+    prot: row.prot,
+    carb: row.carb,
+    fat: row.fat,
+    fatTotal: row.fatTotal ?? row.fat,
+    fibre: row.fibre,
+  };
+}
+
+function cloneItem(item) {
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(item);
+    } catch {
+      /* fall through */
+    }
+  }
+  return JSON.parse(JSON.stringify(item));
+}
+
 function quantityOriginText(source) {
   if (!source) return '';
   switch (source) {
@@ -66,24 +111,131 @@ function quantityOriginText(source) {
       return 'da storico';
     case 'default_qty':
       return 'dal database';
+    case 'selected_candidate':
+      return 'da selezione';
     default:
       return '';
   }
 }
 
-/** @param {object} props */
-export default function FoodCommandReview({ data, onConfirm, onCancel }) {
-  if (!data || typeof data !== 'object') return null;
-  const items = Array.isArray(data.items) ? data.items : [];
+function isConfirmableRow(item, idx, selectedCandidates) {
+  const st = item?.status;
+  if (st === 'ready') return !!item?.matchedFood;
+  if (st === 'needs_review') return !!item?.matchedFood;
+  if (st === 'ambiguous') {
+    const cand = Array.isArray(item?.candidates) ? item.candidates : [];
+    return cand.length > 0 && !!selectedCandidates[idx];
+  }
+  return false;
+}
+
+/**
+ * @param {object} props
+ * @param {object} [props.data]
+ * @param {Record<string, object>} [props.foodDb]
+ * @param {(items: object[]) => void} [props.onConfirm]
+ * @param {() => void} [props.onCancel]
+ */
+export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel }) {
+  /** @type {Record<number, { key: string, desc: string, score?: number }>} */
+  const [selectedCandidates, setSelectedCandidates] = useState({});
+  /** @type {Record<number, true>} indici degli item no_match marcati come ignorati */
+  const [ignoredItems, setIgnoredItems] = useState({});
+
+  const safeData = data != null && typeof data === 'object' ? data : null;
+  const items = Array.isArray(safeData?.items) ? safeData.items : [];
+
+  useEffect(() => {
+    setSelectedCandidates({});
+    setIgnoredItems({});
+  }, [data]);
 
   const noop = () => {};
 
-  const handleConfirm =
-    typeof onConfirm === 'function' ? onConfirm : noop;
-  const handleCancel =
-    typeof onCancel === 'function' ? onCancel : noop;
+  const handleCancel = typeof onCancel === 'function' ? onCancel : noop;
+
+  const canConfirm = useMemo(() => {
+    if (items.length === 0) return false;
+
+    let addableCount = 0;
+
+    for (let i = 0; i < items.length; i += 1) {
+      const it = items[i];
+      const st = it?.status;
+
+      if (st === 'ambiguous') {
+        const cand = Array.isArray(it?.candidates) ? it.candidates : [];
+        if (cand.length === 0) return false;
+        if (!selectedCandidates[i]) return false;
+        addableCount += 1;
+        continue;
+      }
+
+      if (st === 'no_match') {
+        if (!ignoredItems[i]) return false;
+        continue;
+      }
+
+      if (isConfirmableRow(it, i, selectedCandidates)) addableCount += 1;
+    }
+
+    return addableCount >= 1;
+  }, [items, selectedCandidates, ignoredItems]);
+
+  const buildConfirmedItems = () => {
+    const out = [];
+    for (let idx = 0; idx < items.length; idx += 1) {
+      const item = items[idx];
+      const status = item?.status;
+
+      if (status === 'no_match') continue;
+
+      if (status === 'ambiguous') {
+        const sel = selectedCandidates[idx];
+        const candSlice = Array.isArray(item?.candidates) ? item.candidates.slice(0, 3) : [];
+        if (!sel && candSlice.length === 0) continue;
+        if (!sel) continue;
+        const fallbackDesc =
+          typeof sel.desc === 'string' && sel.desc.trim() ? sel.desc.trim() : '';
+        const matchedFood = matchedFoodFromCandidateKey(String(sel.key), foodDb, fallbackDesc);
+        const dq = matchedFood.defaultQty;
+        out.push({
+          ...item,
+          status: 'ready',
+          matchedFood,
+          quantity: item.quantity ?? item.suggestedQuantity ?? dq ?? null,
+          suggestedQuantity: item.suggestedQuantity ?? dq ?? null,
+          quantitySource: item.quantitySource ?? 'selected_candidate',
+        });
+        continue;
+      }
+
+      if (
+        status === 'ready'
+        || status === 'needs_review'
+      ) {
+        if (item?.matchedFood) out.push(cloneItem(item));
+      }
+    }
+    return out;
+  };
+
+  const handleConfirm = () => {
+    if (!canConfirm) return;
+    const list = buildConfirmedItems();
+    if (typeof onConfirm === 'function') onConfirm(list);
+  };
+
+  if (!safeData) return null;
 
   const lastIdx = items.length - 1;
+
+  const primaryBtnStyle = {
+    ...BTN_PRIMARY,
+    ...(!canConfirm
+      ? { opacity: 0.45, cursor: 'not-allowed' }
+      : {}),
+  };
 
   return (
     <div style={CARD} role="region" aria-labelledby="food-command-review-title">
@@ -111,6 +263,7 @@ export default function FoodCommandReview({ data, onConfirm, onCancel }) {
             const cand = Array.isArray(item?.candidates)
               ? item.candidates.slice(0, 3)
               : [];
+            const selected = selectedCandidates[idx];
             body = (
               <>
                 <div style={{ fontSize: 14, fontWeight: 620 }}>{raw || 'Alimento'}</div>
@@ -128,12 +281,47 @@ export default function FoodCommandReview({ data, onConfirm, onCancel }) {
                         typeof c?.desc === 'string' && c.desc.trim()
                           ? c.desc.trim()
                           : String(c?.key ?? `Opzione ${i + 1}`);
+                      const isSel =
+                        selected != null && String(selected.key) === String(c?.key);
                       return (
-                        <div key={String(c?.key ?? i)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                        <div
+                          key={String(c?.key ?? i)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 10,
+                            padding: '8px 10px',
+                            borderRadius: 8,
+                            border: isSel
+                              ? '1px solid rgba(120, 175, 255, 0.65)'
+                              : '1px solid rgba(255, 255, 255, 0.08)',
+                            background: isSel ? 'rgba(94, 160, 255, 0.12)' : 'transparent',
+                          }}
+                        >
                           <span style={{ fontSize: 13, color: 'rgba(215, 222, 230, 0.9)' }}>
                             {label}
+                            {isSel ? (
+                              <span style={{ marginLeft: 8, color: '#a5c8ff', fontWeight: 650 }}>
+                                {' '}
+                                ✓ Selezionato
+                              </span>
+                            ) : null}
                           </span>
-                          <button type="button" style={BTN_GHOST}>
+                          <button
+                            type="button"
+                            style={BTN_GHOST}
+                            onClick={() => {
+                              setSelectedCandidates((prev) => ({
+                                ...prev,
+                                [idx]: {
+                                  key: String(c.key),
+                                  desc: typeof c.desc === 'string' ? c.desc : label,
+                                  score: c.score,
+                                },
+                              }));
+                            }}
+                          >
                             Seleziona
                           </button>
                         </div>
@@ -148,22 +336,48 @@ export default function FoodCommandReview({ data, onConfirm, onCancel }) {
               typeof item?.rawName === 'string'
                 ? item.rawName.trim()
                 : '';
+            const ignored = !!ignoredItems[idx];
             body = (
               <>
                 <div style={{ fontSize: 14, fontWeight: 620 }}>{raw || 'Voce sconosciuta'}</div>
-                <div style={{ ...MUTED, marginBottom: 10 }}>Non trovato</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  <button type="button" style={BTN_GHOST}>
-                    Stima con AI
-                  </button>
-                  <button type="button" style={BTN_GHOST}>
-                    Inserisci manualmente
-                  </button>
-                </div>
+                <div style={{ ...MUTED, marginBottom: 8 }}>Non trovato</div>
+                {ignored ? (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 650,
+                      color: 'rgba(180, 190, 200, 0.9)',
+                      padding: '6px 10px',
+                      borderRadius: 8,
+                      border: '1px dashed rgba(255,255,255,0.12)',
+                      display: 'inline-block',
+                      marginBottom: 6,
+                    }}
+                  >
+                    Ignorato · non verrà aggiunto
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                      <button
+                        type="button"
+                        style={BTN_GHOST}
+                        onClick={() => {
+                          setIgnoredItems((prev) => ({ ...prev, [idx]: true }));
+                        }}
+                      >
+                        Ignora
+                      </button>
+                    </div>
+                    <div style={{ ...MUTED, marginBottom: 6, fontSize: 11, lineHeight: 1.4 }}>
+                      Stima con AI e inserimento manuale:{' '}
+                      <span style={{ color: 'rgba(200,210,225,0.55)' }}>in arrivo (presto)</span>
+                    </div>
+                  </>
+                )}
               </>
             );
           } else {
-            /** ready | needs_review o altri con matchedFood */
             const desc =
               item?.matchedFood != null &&
               typeof item.matchedFood === 'object' &&
@@ -232,7 +446,13 @@ export default function FoodCommandReview({ data, onConfirm, onCancel }) {
         <button type="button" style={BTN_SECONDARY} onClick={handleCancel}>
           Annulla
         </button>
-        <button type="button" style={BTN_PRIMARY} onClick={handleConfirm}>
+        <button
+          type="button"
+          style={primaryBtnStyle}
+          onClick={handleConfirm}
+          disabled={!canConfirm}
+          aria-disabled={!canConfirm}
+        >
           Conferma
         </button>
       </div>

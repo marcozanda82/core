@@ -94,11 +94,13 @@ export default function FoodCommandSection({ foodDb, flatLog, onAddFoods }) {
       {commandResult != null ? (
         <FoodCommandReview
           data={commandResult}
-          onConfirm={() => {
-            const snap = reviewSnapshotRef.current;
-            const rows = snap && Array.isArray(snap.items) ? snap.items : [];
-            const readyItems = rows.filter((i) => i.status === 'ready');
-            onAddFoods?.(cloneSerializable(readyItems));
+          foodDb={
+            foodDb != null && typeof foodDb === 'object' && !Array.isArray(foodDb)
+              ? foodDb
+              : undefined
+          }
+          onConfirm={(confirmedItems) => {
+            onAddFoods?.(cloneSerializable(confirmedItems));
             reviewSnapshotRef.current = null;
             setCommandResult(null);
             setInput('');
