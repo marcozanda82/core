@@ -700,39 +700,50 @@ export default function MetabolicCompass({
           zIndex: 0,
         }}
       >
+        {/* Wrapper quadrato: il centro geometrico coincide con la bussola; l&apos;alone non usa l&apos;altezza del blocco debug sotto */}
         <div
-          aria-hidden
-          className="metabolic-compass-ambient-ring"
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 'calc(100% + 22px)',
-            aspectRatio: '1',
-            boxSizing: 'border-box',
-            borderRadius: '50%',
-            pointerEvents: 'none',
-            zIndex: 0,
-            border: `${compassAmbientVisual.ringWidthPx}px solid ${compassAmbientVisual.borderColor}`,
-            boxShadow: compassAmbientVisual.boxShadow,
-          }}
-        />
-        <div
-          className="metabolic-compass-bezel"
+          className="metabolic-compass-bezel-square"
           style={{
             position: 'relative',
-            zIndex: 1,
             width: '100%',
-            padding: '2.25%',
-            borderRadius: '50%',
-            boxSizing: 'border-box',
-            background:
-              'linear-gradient(155deg, rgba(58,64,76,0.5) 0%, rgba(22,24,32,0.92) 38%, rgba(10,11,16,1) 100%)',
-            boxShadow: bezelBoxShadow,
-            transition: 'box-shadow 0.55s ease',
+            aspectRatio: '1 / 1',
+            overflow: 'visible',
           }}
         >
+          <div
+            aria-hidden
+            className="metabolic-compass-ambient-ring"
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: 'calc(100% + 22px)',
+              height: 'calc(100% + 22px)',
+              aspectRatio: '1 / 1',
+              boxSizing: 'border-box',
+              borderRadius: 9999,
+              pointerEvents: 'none',
+              zIndex: 0,
+              border: `${compassAmbientVisual.ringWidthPx}px solid ${compassAmbientVisual.borderColor}`,
+              boxShadow: compassAmbientVisual.boxShadow,
+            }}
+          />
+          <div
+            className="metabolic-compass-bezel"
+            style={{
+              position: 'relative',
+              zIndex: 1,
+              width: '100%',
+              padding: '2.25%',
+              borderRadius: '50%',
+              boxSizing: 'border-box',
+              background:
+                'linear-gradient(155deg, rgba(58,64,76,0.5) 0%, rgba(22,24,32,0.92) 38%, rgba(10,11,16,1) 100%)',
+              boxShadow: bezelBoxShadow,
+              transition: 'box-shadow 0.55s ease',
+            }}
+          >
         <div
           role="group"
           aria-label="Bussola metabolica"
@@ -856,6 +867,7 @@ export default function MetabolicCompass({
               }}
             />
           </div>
+        </div>
         </div>
         </div>
         <div
