@@ -48,7 +48,7 @@ import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import LongevityView from './LongevityView';
 import HomeView from './components/HomeView';
-import MetabolicPhaseCompact from './components/MetabolicPhaseCompact';
+import DailyCoachSection from '@/features/salaComandi/components/DailyCoachSection';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
   WORKOUT_ACTIVITY_SELECTOR_IDS,
@@ -143,6 +143,7 @@ import {
 } from './features/salaComandi/utils/timelineUtils';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import SleepCoachCompact from '@/features/salaComandi/components/SleepCoachCompact';
+import DailyIndicatorsBar from '@/features/salaComandi/components/DailyIndicatorsBar';
 import { useSleepCoach } from '@/features/salaComandi/hooks/useSleepCoach';
 import useMetabolicMapEngine from './features/salaComandi/hooks/useMetabolicMapEngine';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
@@ -8900,15 +8901,6 @@ ${dbKeys || 'n/d'}`;
 
   const energyAt20Percent = energyAt20 ?? 50;
 
-  // Radar metabolico: stato attuale da glicemia e digestione
-  const gl = typeof dotGlicemia === 'number' && !Number.isNaN(dotGlicemia) ? dotGlicemia : 85;
-  const dig = typeof dotDigestione === 'number' && !Number.isNaN(dotDigestione) ? dotDigestione : 0;
-  const metabolicState = (() => {
-    if (gl < 85 && dig < 25) return { key: 'autofagia', label: 'Autofagia', color: '#22c55e' };
-    if (gl >= 85 && gl < 140 && dig < 50) return { key: 'lipolisi', label: 'Lipolisi', color: '#eab308' };
-    return { key: 'anabolismo', label: 'Anabolismo', color: '#3b82f6' };
-  })();
-
   const currentMealTotals = addedFoods.reduce((acc, food) => ({
     kcal: acc.kcal + (Number(food.kcal) || Number(food.cal) || 0),
     prot: acc.prot + (Number(food.prot) || 0),
@@ -10220,19 +10212,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}>
       {/* Barra Telemetria Rapida Premium - wrap attivato e centrato (solo tab Oggi) */}
       {activeBottomTab === 'oggi' && (
-      <div onClick={() => setShowSpieInfo(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: 'max(8px, 1vh)', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
-          <span style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.35)', padding: '8px 12px', borderRadius: '20px', color: '#7dd3fc', whiteSpace: 'nowrap', fontSize: '0.62rem' }} title="Strategia calorica da Kentu (chat)">
-            🎯 Target oggi: {calorieStrategyShortLabelIt(kentuDailyCalorieStrategy)}
-          </span>
-          <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676'}`, padding: '8px 12px', borderRadius: '20px', color: ((Number(totali?.omega3) ?? 0) < 1) ? '#ff5555' : '#00e676', boxShadow: `0 0 10px ${((Number(totali?.omega3) ?? 0) < 1) ? 'rgba(255,85,85,0.2)' : 'rgba(0,230,118,0.1)'}`, whiteSpace: 'nowrap' }}>
-            {((Number(totali?.omega3) ?? 0) < 1) ? '🔴 Carenza Micro' : '🟢 Micro OK'}
-          </span>
-          <span style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${energyAt20Percent < 40 ? '#ff9800' : '#00e676'}`, padding: '8px 12px', borderRadius: '20px', color: energyAt20Percent < 40 ? '#ff9800' : '#00e676', boxShadow: `0 0 10px ${energyAt20Percent < 40 ? 'rgba(255,152,0,0.2)' : 'rgba(0,230,118,0.1)'}`, whiteSpace: 'nowrap' }}>
-            {energyAt20Percent < 40 ? '🟠 Rischio Serali' : '🟢 Serali OK'}
-          </span>
-        </div>
-      </div>
+      <DailyIndicatorsBar
+        calorieStrategyLabel={calorieStrategyShortLabelIt(kentuDailyCalorieStrategy)}
+        omega3={totali?.omega3}
+        energyAt20Percent={energyAt20Percent}
+        onClick={() => setShowSpieInfo(true)}
+      />
       )}
 
       {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
@@ -10353,13 +10338,21 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               })()}
             </div>
           )}
-          <MetabolicPhaseCompact
-            stateLabel={metabolicState.label}
-            stateColor={metabolicState.color}
-            glycemiaValue={gl}
-            digestionValue={dig}
-            style={{ marginTop: '6px' }}
-          />
+          <div style={{ marginTop: '6px' }}>
+            <DailyCoachSection
+              activeLog={activeLog}
+              totali={totali}
+              dynamicDailyKcal={dynamicDailyKcal}
+              userProfile={userProfile}
+              metabolicMapData={metabolicMapData}
+              userTargets={userTargets}
+              metabolicCompassTimeframe={metabolicCompassTimeframe}
+              metabolicCompassDailyHistory={metabolicCompassDailyHistory}
+              energyAt20Percent={energyAt20Percent}
+              kentuDailyCalorieStrategy={kentuDailyCalorieStrategy}
+              aiDayCoach={aiCoachEval}
+            />
+          </div>
           <div
             role="button"
             tabIndex={0}
@@ -11135,11 +11128,18 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     </div>
                   </div>
                   {/* Widget Fase Metabolica (versione compatta Analisi) */}
-                  <MetabolicPhaseCompact
-                    stateLabel={metabolicState.label}
-                    stateColor={metabolicState.color}
-                    glycemiaValue={gl}
-                    digestionValue={dig}
+                  <DailyCoachSection
+                    activeLog={activeLog}
+                    totali={totali}
+                    dynamicDailyKcal={dynamicDailyKcal}
+                    userProfile={userProfile}
+                    metabolicMapData={metabolicMapData}
+                    userTargets={userTargets}
+                    metabolicCompassTimeframe={metabolicCompassTimeframe}
+                    metabolicCompassDailyHistory={metabolicCompassDailyHistory}
+                    energyAt20Percent={energyAt20Percent}
+                    kentuDailyCalorieStrategy={kentuDailyCalorieStrategy}
+                    aiDayCoach={aiCoachEval}
                   />
                 </div>
               </div>
