@@ -1,5 +1,6 @@
 import React from 'react';
 
+import SleepCoachCard from '@/features/salaComandi/components/SleepCoachCard';
 import { useSleepCoach } from '@/features/salaComandi/hooks/useSleepCoach';
 
 const testLog = [
@@ -31,31 +32,9 @@ export default function SleepCoachDebug() {
   });
 
   return (
-    <div
-      style={{
-        padding: 20,
-        color: 'rgba(248,250,252,0.94)',
-        background: '#0f1118',
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-        fontSize: 12,
-        lineHeight: 1.45,
-        minHeight: '100%',
-        boxSizing: 'border-box',
-      }}
-    >
-      <h2 style={{ margin: '0 0 12px', fontSize: 16, fontFamily: 'system-ui, sans-serif' }}>
-        Sleep Coach Debug
-      </h2>
-      <pre
-        style={{
-          margin: 0,
-          padding: 12,
-          overflow: 'auto',
-          borderRadius: 8,
-          background: '#151823',
-          border: '1px solid rgba(255,255,255,0.08)',
-        }}
-      >
+    <div style={{ padding: 24 }}>
+      <SleepCoachCard data={sleepCoach} />
+      <pre style={{ marginTop: 24 }}>
         {JSON.stringify(sleepCoach, null, 2)}
       </pre>
     </div>
