@@ -59,12 +59,20 @@ function normalizeFoodText(fragment) {
 
 /**
  * @param {string} segment
- * @returns {{ explicitGrams: number | null, countHint: number | null, strippedName: string, rawRemainder: string }}
+ * @returns {{
+ *   explicitGrams: number | null,
+ *   countHint: number | null,
+ *   countHintFromArticle: boolean,
+ *   strippedName: string,
+ *   rawRemainder: string
+ * }}
  */
 function extractQuantity(segment) {
   const raw = normalizeFoodText(segment);
   let explicitGrams = null;
   let countHint = null;
+  /** true solo per "un/una caffè" — l'habit vince sul count 1; i numeri scritti (2, due) hanno priorità */
+  let countHintFromArticle = false;
   let rest = raw;
 
   let m = /^(\d+(?:[.,]\d+)?)\s*g(?:ramm[io])?\s+(.+)$/i.exec(rest);
@@ -85,6 +93,18 @@ function extractQuantity(segment) {
   }
 
   if (explicitGrams == null) {
+    m = /^(.+)\s+(\d+(?:[.,]\d+)?)\s*g(?:ramm[io])?\s*$/i.exec(rest);
+    if (m && m[1] != null && m[2] != null) {
+      const g = Number(String(m[2]).replace(',', '.'));
+      const head = normalizeFoodText(String(m[1]));
+      if (Number.isFinite(g) && g > 0 && head.length > 0) {
+        explicitGrams = Math.round(g);
+        rest = head;
+      }
+    }
+  }
+
+  if (explicitGrams == null) {
     m = /^(\d+(?:[.,]\d+)?)\s*tazzine?\b(.*)$/i.exec(rest);
     if (m && m[2] != null) {
       const c = Number(String(m[1]).replace(',', '.'));
@@ -97,12 +117,15 @@ function extractQuantity(segment) {
   }
 
   if (explicitGrams == null && countHint == null) {
-    m = /^(\d+)\s*uov(?:a|o)?(?:\s|$)(.*)$/i.exec(rest);
-    if (m) {
+    m = /^(\d+)\s+(uova|uovi|uovo)\b(.*)$/i.exec(rest);
+    if (m && m[2]) {
       const c = Number(m[1]);
-      const tail = normalizeFoodText(String(m[2] ?? ''));
-      if (Number.isFinite(c) && c > 0) countHint = Math.round(c);
-      rest = tail.length > 0 ? tail : normalizeFoodText('uovo');
+      const eggWord = String(m[2]).trim();
+      const tail = normalizeFoodText(String(m[3] ?? ''));
+      if (Number.isFinite(c) && c > 0) {
+        countHint = Math.round(c);
+        rest = tail.length > 0 ? tail : normalizeFoodText(eggWord);
+      }
     }
   }
 
@@ -110,6 +133,7 @@ function extractQuantity(segment) {
     if (IT_ARTICLE_ONE.test(rest)) {
       const tail = normalizeFoodText(rest.replace(IT_ARTICLE_ONE, ''));
       countHint = 1;
+      countHintFromArticle = true;
       if (tail) rest = tail;
     }
   }
@@ -144,6 +168,7 @@ function extractQuantity(segment) {
   return {
     explicitGrams,
     countHint,
+    countHintFromArticle,
     strippedName,
     rawRemainder: strippedName.length > 0 ? strippedName : raw,
   };
@@ -292,6 +317,15 @@ function buildFoodCommandItem({ rawSegment, foodDb, flatLog, mealContext }) {
     suggestedQuantity = quantity;
     quantitySource = 'explicit';
   } else if (
+    extracted.countHint != null
+    && !extracted.countHintFromArticle
+    && itemStatus !== 'ambiguous'
+    && (itemStatus === 'ready' || itemStatus === 'needs_review')
+  ) {
+    suggestedQuantity = extracted.countHint;
+    quantity = extracted.countHint;
+    quantitySource = 'count_hint';
+  } else if (
     itemStatus !== 'ambiguous'
     && topKey
     && habit
@@ -324,6 +358,7 @@ function buildFoodCommandItem({ rawSegment, foodDb, flatLog, mealContext }) {
   if (
     quantity == null
     && extracted.countHint != null
+    && extracted.countHintFromArticle
     && itemStatus !== 'ambiguous'
     && (itemStatus === 'ready' || itemStatus === 'needs_review')
   ) {
