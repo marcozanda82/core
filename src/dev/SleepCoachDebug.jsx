@@ -1,36 +1,34 @@
 import React from 'react';
 
-import {
-  analyzeSleepCoach,
-  buildSleepCoachInputFromDailyLog,
-} from '@/features/salaComandi/engines/sleepCoachEngine';
+import { useSleepCoach } from '@/features/salaComandi/hooks/useSleepCoach';
 
-/** Mock giornaliero: `wakeHour` / `bedtimeApprox` sono i campi letti dal motore (equiv. a bedtime/wakeTime numerici dell’intent). */
 const testLog = [
   {
     type: 'sleep',
-    bedtimeApprox: 23.5,
-    wakeHour: 5.5,
+    bedtime: 23.5,
+    wakeTime: 5.5,
     hours: 6,
     quality: 'scarsa',
   },
   {
     type: 'food',
     name: 'caffè',
-    desc: 'coffee',
     time: 17.5,
   },
   {
     type: 'workout',
     time: 21,
     kcal: 400,
-    duration: 40,
-    desc: 'HIIT',
   },
 ];
 
 export default function SleepCoachDebug() {
-  const result = analyzeSleepCoach(buildSleepCoachInputFromDailyLog(testLog));
+  const sleepCoach = useSleepCoach({
+    activeLog: testLog,
+    totali: { kcal: 2000 },
+    dynamicDailyKcal: 2500,
+    userProfile: {},
+  });
 
   return (
     <div
@@ -58,7 +56,7 @@ export default function SleepCoachDebug() {
           border: '1px solid rgba(255,255,255,0.08)',
         }}
       >
-        {JSON.stringify(result, null, 2)}
+        {JSON.stringify(sleepCoach, null, 2)}
       </pre>
     </div>
   );

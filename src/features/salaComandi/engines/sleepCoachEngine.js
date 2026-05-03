@@ -10,16 +10,14 @@ import { getTodayString } from '../../../coreEngine';
 
 /** @typedef {{ kind: string, decimalHour: number | null, kcalTotal?: number, label?: string, meta?: object }} SleepIncident */
 
-const CAFFEINE_RE =
-  /\b(caffein|caffè|caffe\b|coffee|espresso|ristretto|macchiato|americano|energy drink|monster|red bull|mate\b|guaranà)\b/i;
 const ALCOHOL_WORD_RE =
   /\b(alcol|birra|vino|prosecco|champagne|whisk(e)?y|vodka|gin|rum|tequila|cocktail|spritz|aperol|liqueur|beer|wine|shot)\b/i;
 const INTENSE_WORKOUT_RE =
   /\b(hiit|tabata|circuit|spinning|spin\b|crossfit|corsa|run|running|sprint|trail|trail run|lifting heavy|squat|corsa\b|allenamento\s+intenso)/i;
 
 function clampDec(h) {
-  const n = Number(h);
-  if (!Number.isFinite(n)) return null;
+  const n = numericHourRaw(h);
+  if (n === null) return null;
   if (n < 0 || n >= 24) return null;
   return n;
 }
@@ -31,17 +29,46 @@ function parseIsoHour(isoLike) {
   return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
 }
 
-function decimalHourFromEntry(e) {
+/** Ora del giorno in decimale [0,24); accetta stringhe con virgola e valori null/NaN → null. */
+function numericHourRaw(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) {
+    const h = v.getHours() + v.getMinutes() / 60 + v.getSeconds() / 3600;
+    return Number.isFinite(h) ? h : null;
+  }
+  if (typeof v === 'string') {
+    const s = v.trim().replace(',', '.');
+    if (!s) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Ora di clock per food / workout / stimulant / alcohol / meal (non usare duration come clock). */
+function eventClockHourFromEntry(e) {
   if (!e || typeof e !== 'object') return null;
-  const mt = clampDec(e.mealTime);
-  if (mt != null) return mt;
-  const t = clampDec(e.time);
-  if (t != null) return t;
+  const keys = [e.mealTime, e.time, e.startTime, e.hour];
+  for (let i = 0; i < keys.length; i += 1) {
+    const c = clampDec(keys[i]);
+    if (c != null) return c;
+  }
   if (typeof e.timeLabel === 'string') {
     const m = String(e.timeLabel).match(/\b(\d{1,2})[:.](\d{2})\b/);
     if (m) return clampDec(parseInt(m[1], 10) + parseInt(m[2], 10) / 60);
   }
   return null;
+}
+
+function decimalHourFromEntry(e) {
+  return eventClockHourFromEntry(e);
+}
+
+function incidentClockHour(inc) {
+  if (!inc || typeof inc !== 'object') return null;
+  const raw = inc.decimalHour != null ? inc.decimalHour : inc.time;
+  return clampDec(raw);
 }
 
 function numericOrNull(v) {
@@ -78,11 +105,73 @@ function mentionsAlcohol(entry) {
   return ALCOHOL_WORD_RE.test(lbl);
 }
 
-function mentionsCaffeine(entry) {
-  const lbl =
-    `${entryPrimaryLabel(entry)} ${String(entry.type || '')} ${String(entry.subtype || '')}`.toLowerCase();
-  if (entry.type === 'stimulant') return true;
-  return CAFFEINE_RE.test(lbl);
+function normalizeLabel(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function caffeineEntryTextBlob(e) {
+  if (!e || typeof e !== 'object') return '';
+  return [
+    e.name,
+    e.label,
+    e.title,
+    e.foodName,
+    e.description,
+    e.desc,
+    e.microDesc,
+  ]
+    .map((p) => String(p ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
+function caffeineClockNumberForLog(entry) {
+  const c = eventClockHourFromEntry(entry);
+  if (c != null && Number.isFinite(Number(c))) return Number(c);
+  const v = numericHourRaw(entry.time ?? entry.mealTime ?? entry.startTime ?? entry.hour);
+  return v != null && Number.isFinite(v) ? Number(v) : Number.NaN;
+}
+
+/**
+ * Rilevamento caffeina su food/recipe/meal/stimulant (testo + orologio + mg).
+ * @returns {{ isCaffeine: boolean, caffeineLog: { time: number, amountMg: number } | null }}
+ */
+function normalizeCaffeineFromEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return { isCaffeine: false, caffeineLog: null };
+  }
+  const type = String(entry.type || '').trim().toLowerCase();
+  const amountMg = numericOrNull(entry.caffeineMg ?? entry.caffeinaMg) ?? 80;
+  const time = caffeineClockNumberForLog(entry);
+
+  const make = (isCaffeine) => ({
+    isCaffeine,
+    caffeineLog: isCaffeine ? { time, amountMg } : null,
+  });
+
+  if (type === 'stimulant') {
+    return make(true);
+  }
+
+  const blob = normalizeLabel(caffeineEntryTextBlob(entry));
+  if (!blob) return make(false);
+
+  let hit = false;
+  if (blob.includes('energy drink')) hit = true;
+  else if (blob.includes('cappuccino')) hit = true;
+  else if (blob.includes('espresso')) hit = true;
+  else if (blob.includes('coffee')) hit = true;
+  else if (blob.includes('caffeine')) hit = true;
+  else if (blob.includes('caffeina')) hit = true;
+  else if (blob.includes('red bull') || blob.includes('monster')) hit = true;
+  else if (/\bmate\b/.test(blob)) hit = true;
+  /** Dopo strip accenti: "caffè" → "caffe" */
+  else if (blob.includes('caffe')) hit = true;
+
+  return make(hit);
 }
 
 function workoutIsIntense(e) {
@@ -94,14 +183,9 @@ function workoutIsIntense(e) {
   const dur = numericOrNull(e.duration);
   const kcal = numericOrNull(e.kcal ?? e.cal);
   if (dur != null && kcal != null && dur >= 35 && kcal >= 380) return true;
+  /** Stessa soglia kcal della coppia dur+kcal quando la durata non è nel log. */
+  if (kcal != null && kcal >= 380 && (dur == null || !Number.isFinite(Number(e.duration)))) return true;
   return false;
-}
-
-function normalizeLabel(s) {
-  return String(s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
 }
 
 /** ore positive da event serale a orario letto nominale (same-day model) */
@@ -158,6 +242,21 @@ function deriveSleepQualityTier(sleepEntry) {
   return 'unknown';
 }
 
+function normalizeSleepLog(entry) {
+  const sleepStart = entry.sleepStart ?? entry.bedtime ?? entry.time ?? null;
+
+  const sleepEnd = entry.sleepEnd ?? entry.wakeTime ?? null;
+
+  const durationHours = entry.hours ?? entry.duration ?? entry.sleepHours ?? null;
+
+  return {
+    sleepStart: Number(sleepStart),
+    sleepEnd: Number(sleepEnd),
+    durationHours: Number(durationHours),
+    subjectiveQuality: entry.quality ?? null,
+  };
+}
+
 function extractSleepPrimitives(sleepEntries, fallbackBedDecimal) {
   let duration = null;
   let sleepStartHour = null;
@@ -166,17 +265,32 @@ function extractSleepPrimitives(sleepEntries, fallbackBedDecimal) {
   const first = sleepEntries.find(Boolean);
   for (const s of sleepEntries) {
     if (!s || typeof s !== 'object') continue;
-    const h = numericOrNull(s.hours ?? s.durationHours ?? (s.duration && s.duration < 48 ? s.duration : null));
+
+    const n = normalizeSleepLog(s);
+
+    let h = numericOrNull(n.durationHours);
+    if (h == null)
+      h = numericOrNull(s.hours ?? s.durationHours ?? (s.duration && s.duration < 48 ? s.duration : null));
     if (h != null && h > 0 && h <= 18) duration = duration == null ? h : Math.max(duration, h);
 
-    const ss = numericOrNull(s.sleepStartHour) ?? parseIsoHour(s.sleepStart ?? s.sleepStartTs);
+    let ss = clampDec(numericOrNull(n.sleepStart));
+    if (ss == null) {
+      const raw =
+        numericOrNull(s.sleepStartHour) ?? parseIsoHour(s.sleepStart ?? s.sleepStartTs);
+      if (raw != null) ss = clampDec(raw);
+    }
     if (ss != null) sleepStartHour = ss;
 
-    const we = numericOrNull(s.wakeHour) ?? parseIsoHour(s.wakeTime ?? s.sleepEnd ?? s.wakeTs);
+    let we = clampDec(numericOrNull(n.sleepEnd));
+    if (we == null) {
+      const raw = numericOrNull(s.wakeHour) ?? parseIsoHour(s.wakeTime ?? s.sleepEnd ?? s.wakeTs);
+      if (raw != null) we = clampDec(raw);
+    }
     if (we != null) wakeHour = we;
   }
 
-  let bedtimeApprox = clampDec(first?.bedtimeApprox ?? fallbackBedDecimal);
+  let bedtimeApprox = clampDec(first?.bedtimeApprox);
+  if (bedtimeApprox == null) bedtimeApprox = clampDec(sleepStartHour);
   if (bedtimeApprox == null && wakeHour != null && duration != null) {
     let b = wakeHour - duration;
     while (b < 0) b += 24;
@@ -185,6 +299,7 @@ function extractSleepPrimitives(sleepEntries, fallbackBedDecimal) {
   } else if (bedtimeApprox == null && sleepStartHour != null) {
     bedtimeApprox = clampDec(sleepStartHour);
   }
+  if (bedtimeApprox == null) bedtimeApprox = clampDec(fallbackBedDecimal);
 
   const qualityTier = deriveSleepQualityTier(first);
 
@@ -227,12 +342,16 @@ export function buildSleepCoachInputFromDailyLog(activeLog, options = {}) {
     }
 
     if (t === 'nap') {
-      const dh = decimalHourFromEntry(e);
-      const mins = numericOrNull(e.durationMin ?? e.minutes ?? (e.duration && e.duration < 24 ? e.duration * 60 : null));
-      const hours = mins != null ? mins / 60 : numericOrNull(e.duration);
+      const clock = eventClockHourFromEntry(e);
+      const dNum = numericOrNull(e.duration);
+      const mins =
+        numericOrNull(e.durationMin ?? e.minutes) ??
+        (dNum != null && dNum >= 0 && dNum < 24 ? dNum * 60 : null);
+      const hours = mins != null ? mins / 60 : dNum;
       incidents.push({
         kind: 'nap',
-        decimalHour: dh,
+        decimalHour: clock,
+        time: clock,
         durationHours: hours,
         durationMin: mins,
         label: entryPrimaryLabel(e) || 'nap',
@@ -241,9 +360,11 @@ export function buildSleepCoachInputFromDailyLog(activeLog, options = {}) {
     }
 
     if (t === 'workout' || t === 'work' || t === 'activity') {
+      const clock = eventClockHourFromEntry(e);
       incidents.push({
         kind: 'workout',
-        decimalHour: decimalHourFromEntry(e),
+        decimalHour: clock,
+        time: clock,
         intensity: workoutIsIntense(e) ? 'high' : 'moderate',
         kcalBurn: numericOrNull(e.kcal ?? e.cal),
         label: entryPrimaryLabel(e) || String(e.desc || 'workout'),
@@ -253,18 +374,25 @@ export function buildSleepCoachInputFromDailyLog(activeLog, options = {}) {
     }
 
     if (t === 'stimulant') {
+      const clock = eventClockHourFromEntry(e);
+      const cafS = normalizeCaffeineFromEntry(e);
       incidents.push({
         kind: 'stimulant',
-        decimalHour: decimalHourFromEntry(e),
+        decimalHour: clock,
+        time: clock,
         label: entryPrimaryLabel(e) || 'stimolo',
+        hasCaffeineGuess: true,
+        caffeineLog: cafS.caffeineLog,
       });
       continue;
     }
 
     if (t === 'alcohol') {
+      const clock = eventClockHourFromEntry(e);
       incidents.push({
         kind: 'alcohol',
-        decimalHour: decimalHourFromEntry(e),
+        decimalHour: clock,
+        time: clock,
         label: entryPrimaryLabel(e) || 'alcol',
       });
       continue;
@@ -272,12 +400,16 @@ export function buildSleepCoachInputFromDailyLog(activeLog, options = {}) {
 
     if (t === 'food' || t === 'recipe') {
       const k = sumFoodKcalFromEntry(e);
+      const clock = eventClockHourFromEntry(e);
+      const cafNorm = normalizeCaffeineFromEntry(e);
       incidents.push({
         kind: 'food',
-        decimalHour: decimalHourFromEntry(e),
+        decimalHour: clock,
+        time: clock,
         kcalTotal: k,
         hasAlcoholGuess: mentionsAlcohol(e),
-        hasCaffeineGuess: mentionsCaffeine(e),
+        hasCaffeineGuess: cafNorm.isCaffeine,
+        caffeineLog: cafNorm.caffeineLog,
         mealTypeHint: String(e.mealType || e.mealId || ''),
         label: entryPrimaryLabel(e) || t,
       });
@@ -287,20 +419,34 @@ export function buildSleepCoachInputFromDailyLog(activeLog, options = {}) {
     if (t === 'meal' && Array.isArray(e.items)) {
       let total = 0;
       let alc = false;
-      let caf = false;
+      let cafItem = false;
       let labelBits = '';
       for (const it of e.items) {
         total += numericOrNull(it?.kcal ?? it?.cal) ?? 0;
         labelBits += ` ${entryPrimaryLabel(it)}`;
         if (mentionsAlcohol(it)) alc = true;
-        if (mentionsCaffeine(it)) caf = true;
+        if (normalizeCaffeineFromEntry(it).isCaffeine) cafItem = true;
       }
+      const clock = eventClockHourFromEntry(e);
+      const cafMerged = normalizeCaffeineFromEntry({
+        ...e,
+        desc: `${e.desc || ''}${labelBits}`.trim(),
+      });
+      const isCaffeine = cafItem || cafMerged.isCaffeine;
+      const caffeineLog = isCaffeine
+        ? {
+            time: caffeineClockNumberForLog(e),
+            amountMg: numericOrNull(e.caffeineMg ?? e.caffeinaMg) ?? 80,
+          }
+        : null;
       incidents.push({
         kind: 'meal_aggregate',
-        decimalHour: decimalHourFromEntry(e),
+        decimalHour: clock,
+        time: clock,
         kcalTotal: Math.max(total, numericOrNull(e.kcal ?? e.cal) ?? 0),
         hasAlcoholGuess: alc || mentionsAlcohol({ desc: `${e.desc}${labelBits}` }),
-        hasCaffeineGuess: caf || mentionsCaffeine({ desc: `${e.desc}${labelBits}` }),
+        hasCaffeineGuess: isCaffeine,
+        caffeineLog,
         mealTypeHint: String(e.mealId || ''),
         label: String(e.desc || 'pasto'),
       });
@@ -368,11 +514,9 @@ function causeLateCaffeine(incidents, bedtimeDec, wakeDec) {
     const stimOk = inc.kind === 'food' || inc.kind === 'meal_aggregate' || inc.kind === 'stimulant';
     if (!stimOk) continue;
     const guessed =
-      inc.kind === 'stimulant'
-        ? true
-        : inc.hasCaffeineGuess || mentionsCaffeine({ desc: inc.label }) === true;
+      inc.kind === 'stimulant' ? true : Boolean(inc.hasCaffeineGuess) || inc.caffeineLog != null;
     if (!guessed) continue;
-    const dh = clampDec(inc.decimalHour);
+    const dh = incidentClockHour(inc);
     if (dh == null) continue;
     /** regola combinata cutoff 14:00 + vicinanza sera per confidenza */
     const hrsBefore = hoursBeforeApproxBedtime(dh, bedtimeDec ?? 23, wakeDec);
@@ -412,7 +556,7 @@ function causeLateWorkout(incidents, bedtimeDec, wakeDec) {
   for (const inc of incidents) {
     if (inc.kind !== 'workout') continue;
     if (inc.intensity !== 'high') continue;
-    const dh = clampDec(inc.decimalHour);
+    const dh = incidentClockHour(inc);
     if (dh == null) continue;
     const gap = hoursBeforeApproxBedtime(dh, bedtimeDec ?? 23, wakeDec);
     if (gap != null && gap <= 4) {
@@ -442,7 +586,7 @@ function causeLateHeavyMeal(incidents, bedtimeDec, wakeDec) {
     if (inc.kind !== 'food' && inc.kind !== 'meal_aggregate') continue;
     const k = numericOrNull(inc.kcalTotal);
     if (k == null || k <= 700) continue;
-    const dh = clampDec(inc.decimalHour);
+    const dh = incidentClockHour(inc);
     if (dh == null) continue;
     const gap = hoursBeforeApproxBedtime(dh, bedtimeDec ?? 23, wakeDec);
     if (gap != null && gap <= 3) {
@@ -475,13 +619,13 @@ function causeEveningAlcohol(incidents, bedtimeDec, wakeDec) {
 
   for (const inc of incidents) {
     if (inc.kind === 'alcohol') {
-      const dh = clampDec(inc.decimalHour);
+      const dh = incidentClockHour(inc);
       if (dh != null) pushHit(dh, inc.label);
       continue;
     }
     const guess = Boolean(inc.hasAlcoholGuess) || mentionsAlcohol(inc);
     if (!(inc.kind === 'food' || inc.kind === 'meal_aggregate') || !guess) continue;
-    const dh = clampDec(inc.decimalHour);
+    const dh = incidentClockHour(inc);
     if (dh != null) pushHit(dh, inc.label || 'consumo inferito da nome/ricetta');
   }
 
@@ -511,7 +655,7 @@ function causeLateNap(incidents) {
   let score = 0;
   for (const n of suspects) {
     const dur = numericOrNull(n.durationHours ?? (n.durationMin != null ? n.durationMin / 60 : null));
-    const dh = clampDec(n.decimalHour);
+    const dh = incidentClockHour(n);
     const long = dur != null && dur > 90 / 60;
     const late = dh != null && dh >= 15;
     if (!long && !late) continue;
