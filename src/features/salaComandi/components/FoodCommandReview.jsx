@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+import { lookupFoodCandidate } from '@/features/salaComandi/engines/foodLookupEngine';
+
 const CARD = {
   maxWidth: 420,
   margin: '0 auto',
@@ -140,6 +142,10 @@ function quantityOriginText(source) {
       return 'da selezione';
     case 'manual':
       return 'inserimento manuale';
+    case 'lookup':
+      return 'da ricerca database';
+    case 'provisional_estimate':
+      return 'stima provvisoria (non verificata)';
     default:
       return '';
   }
@@ -166,13 +172,40 @@ function parseManualQuantity(n, fallback) {
 function isConfirmableRow(item, idx, selectedCandidates) {
   const st = item?.status;
   if (st === 'ready') return !!item?.matchedFood;
-  if (st === 'needs_review') return !!item?.matchedFood;
   if (st === 'ambiguous') {
     const cand = Array.isArray(item?.candidates) ? item.candidates : [];
     return cand.length > 0 && !!selectedCandidates[idx];
   }
   return false;
 }
+
+function itemHasSelectableCandidates(item) {
+  const c = item?.candidates;
+  return Array.isArray(c) && c.length > 0;
+}
+
+/**
+ * Come trattare la riga in UI e conferma (needs_review → ambiguous se ha candidates, altrimenti no_match).
+ * @returns {'ready' | 'ambiguous' | 'no_match' | 'unknown'}
+ */
+function effectiveRowKind(item) {
+  const st = item?.status;
+  if (st === 'ready') return 'ready';
+  if (st === 'ambiguous') return 'ambiguous';
+  if (st === 'needs_review' && itemHasSelectableCandidates(item)) return 'ambiguous';
+  if (st === 'no_match') return 'no_match';
+  if (st === 'needs_review') return 'no_match';
+  return 'unknown';
+}
+
+const STATUS_DEBUG = {
+  fontSize: 10,
+  fontFamily: 'ui-monospace, monospace',
+  color: 'rgba(255, 190, 120, 0.95)',
+  marginTop: 8,
+  paddingTop: 6,
+  borderTop: '1px dashed rgba(255,255,255,0.12)',
+};
 
 /**
  * @param {object} props
@@ -194,9 +227,15 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
    * @type {Record<number, { nome: string, quantity: string|number, kcal: string|number, prot: string|number, carb: string|number, fat: string|number }>}
    */
   const [manualDraftByIdx, setManualDraftByIdx] = useState({});
+  /** @type {Record<number, 'manual' | 'provisional'>} */
+  const [manualFormModeByIdx, setManualFormModeByIdx] = useState({});
+  const [lookupResults, setLookupResults] = useState({});
+  /** @type {Record<number, object>} no_match risolti con lookup (item pronti per onConfirm) */
+  const [lookupConfirmedByIdx, setLookupConfirmedByIdx] = useState({});
 
   const safeData = data != null && typeof data === 'object' ? data : null;
   const items = Array.isArray(safeData?.items) ? safeData.items : [];
+  const safeFoodDb = foodDb != null && typeof foodDb === 'object' ? foodDb : {};
 
   useEffect(() => {
     setSelectedCandidates({});
@@ -204,6 +243,9 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
     setManualConfirmedByIdx({});
     setManualFormOpen({});
     setManualDraftByIdx({});
+    setManualFormModeByIdx({});
+    setLookupResults({});
+    setLookupConfirmedByIdx({});
   }, [data]);
 
   const noop = () => {};
@@ -217,9 +259,9 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
 
     for (let i = 0; i < items.length; i += 1) {
       const it = items[i];
-      const st = it?.status;
+      const kind = effectiveRowKind(it);
 
-      if (st === 'ambiguous') {
+      if (kind === 'ambiguous') {
         const cand = Array.isArray(it?.candidates) ? it.candidates : [];
         if (cand.length === 0) return false;
         if (!selectedCandidates[i]) return false;
@@ -227,35 +269,46 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
         continue;
       }
 
-      if (st === 'no_match') {
+      if (kind === 'no_match') {
         if (ignoredItems[i]) continue;
         if (manualConfirmedByIdx[i]) {
+          addableCount += 1;
+          continue;
+        }
+        if (lookupConfirmedByIdx[i]) {
           addableCount += 1;
           continue;
         }
         return false;
       }
 
-      if (isConfirmableRow(it, i, selectedCandidates)) addableCount += 1;
+      if (kind === 'ready' && isConfirmableRow(it, i, selectedCandidates)) {
+        addableCount += 1;
+        continue;
+      }
+
+      if (kind === 'unknown') return false;
     }
 
     return addableCount >= 1;
-  }, [items, selectedCandidates, ignoredItems, manualConfirmedByIdx]);
+  }, [items, selectedCandidates, ignoredItems, manualConfirmedByIdx, lookupConfirmedByIdx]);
 
   const buildConfirmedItems = () => {
     const out = [];
     for (let idx = 0; idx < items.length; idx += 1) {
       const item = items[idx];
-      const status = item?.status;
+      const kind = effectiveRowKind(item);
 
-      if (status === 'no_match') {
+      if (kind === 'no_match') {
         if (ignoredItems[idx]) continue;
         const manualItem = manualConfirmedByIdx[idx];
-        if (manualItem) out.push(cloneItem(manualItem));
+        const lookupItem = lookupConfirmedByIdx[idx];
+        if (lookupItem) out.push(cloneItem(lookupItem));
+        else if (manualItem) out.push(cloneItem(manualItem));
         continue;
       }
 
-      if (status === 'ambiguous') {
+      if (kind === 'ambiguous') {
         const sel = selectedCandidates[idx];
         const candSlice = Array.isArray(item?.candidates) ? item.candidates.slice(0, 3) : [];
         if (!sel && candSlice.length === 0) continue;
@@ -275,11 +328,8 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
         continue;
       }
 
-      if (
-        status === 'ready'
-        || status === 'needs_review'
-      ) {
-        if (item?.matchedFood) out.push(cloneItem(item));
+      if (kind === 'ready' && item?.matchedFood) {
+        out.push(cloneItem(item));
       }
     }
     return out;
@@ -317,10 +367,11 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
       >
         {items.map((item, idx) => {
           const status = item?.status;
+          const rowKind = effectiveRowKind(item);
           const isLast = idx === lastIdx;
 
           let body = null;
-          if (status === 'ambiguous') {
+          if (rowKind === 'ambiguous') {
             const raw =
               typeof item?.rawName === 'string'
                 ? item.rawName.trim()
@@ -396,16 +447,18 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
                 )}
               </>
             );
-          } else if (status === 'no_match') {
+          } else if (rowKind === 'no_match') {
             const raw =
               typeof item?.rawName === 'string'
                 ? item.rawName.trim()
                 : '';
+            const notFoundLabel = 'Non trovato';
             const ignored = !!ignoredItems[idx];
             const manualItem = manualConfirmedByIdx[idx];
             const formOpen = !!manualFormOpen[idx];
             const defaultQty = item.quantity ?? item.suggestedQuantity ?? 100;
             const draft = manualDraftByIdx[idx];
+            const formMode = manualFormModeByIdx[idx] ?? 'manual';
 
             const emptyDraft = () => ({
               nome: raw || '',
@@ -416,47 +469,83 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
               fat: '',
             });
 
+            const provisionalDraft = () => ({
+              nome: raw || '',
+              quantity: 100,
+              kcal: 0,
+              prot: 0,
+              carb: 0,
+              fat: 0,
+            });
+
             const openManualForm = () => {
+              setManualFormModeByIdx((prev) => ({ ...prev, [idx]: 'manual' }));
               setManualFormOpen((prev) => ({ ...prev, [idx]: true }));
+              setManualDraftByIdx((prev) => ({
+                ...prev,
+                [idx]: emptyDraft(),
+              }));
+            };
+
+            const openProvisionalForm = () => {
+              setManualFormModeByIdx((prev) => ({ ...prev, [idx]: 'provisional' }));
+              setManualFormOpen((prev) => ({ ...prev, [idx]: true }));
+              setManualDraftByIdx((prev) => ({
+                ...prev,
+                [idx]: provisionalDraft(),
+              }));
+            };
+
+            const updateDraft = (field, value) => {
               setManualDraftByIdx((prev) => {
-                if (prev[idx]) return prev;
+                const cur = prev[idx];
+                const fb = formMode === 'provisional' ? provisionalDraft() : emptyDraft();
                 return {
                   ...prev,
-                  [idx]: emptyDraft(),
+                  [idx]: { ...(cur || fb), [field]: value },
                 };
               });
             };
 
-            const updateDraft = (field, value) => {
-              setManualDraftByIdx((prev) => ({
-                ...prev,
-                [idx]: { ...(prev[idx] || emptyDraft()), [field]: value },
-              }));
-            };
-
             const applyManualFood = () => {
-              const d = manualDraftByIdx[idx] || emptyDraft();
+              const mode = manualFormModeByIdx[idx] ?? 'manual';
+              const baseDraft = mode === 'provisional' ? provisionalDraft() : emptyDraft();
+              const d = manualDraftByIdx[idx] || baseDraft;
               const nomeTrim = String(d.nome ?? '').trim() || raw || 'Alimento';
-              const quantity = parseManualQuantity(d.quantity, defaultQty);
+              const qtyFallback = mode === 'provisional' ? 100 : defaultQty;
+              const quantity = parseManualQuantity(d.quantity, qtyFallback);
               const kcal = parseManualMacro(d.kcal);
               const prot = parseManualMacro(d.prot);
               const carb = parseManualMacro(d.carb);
               const fat = parseManualMacro(d.fat);
+              const isProv = mode === 'provisional';
               const built = {
                 ...item,
                 status: 'ready',
-                matchedFood: {
-                  key: `manual_${normalizeManualKeyName(nomeTrim)}_${Date.now()}`,
-                  desc: nomeTrim,
-                  kcal,
-                  prot,
-                  carb,
-                  fat,
-                  defaultQty: quantity,
-                },
+                matchedFood: isProv
+                  ? {
+                      key: `provisional_${normalizeManualKeyName(nomeTrim)}_${Date.now()}`,
+                      desc: nomeTrim,
+                      kcal,
+                      prot,
+                      carb,
+                      fat,
+                      defaultQty: quantity,
+                      source: 'USER_ESTIMATE',
+                      estimated: true,
+                    }
+                  : {
+                      key: `manual_${normalizeManualKeyName(nomeTrim)}_${Date.now()}`,
+                      desc: nomeTrim,
+                      kcal,
+                      prot,
+                      carb,
+                      fat,
+                      defaultQty: quantity,
+                    },
                 quantity,
                 suggestedQuantity: quantity,
-                quantitySource: 'manual',
+                quantitySource: isProv ? 'provisional_estimate' : 'manual',
               };
               setManualConfirmedByIdx((prev) => ({ ...prev, [idx]: built }));
               setManualFormOpen((prev) => {
@@ -464,23 +553,109 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
                 delete n[idx];
                 return n;
               });
+              setManualFormModeByIdx((prev) => {
+                const n = { ...prev };
+                delete n[idx];
+                return n;
+              });
+              setLookupResults((prev) => {
+                const n = { ...prev };
+                delete n[idx];
+                return n;
+              });
+              setLookupConfirmedByIdx((prev) => {
+                const n = { ...prev };
+                delete n[idx];
+                return n;
+              });
             };
 
-            if (manualItem) {
-              const mf = manualItem.matchedFood;
+            const lookupItem = lookupConfirmedByIdx[idx];
+            const lookupRes = lookupResults[idx];
+
+            const runLookup = () => {
+              const q = typeof item?.rawName === 'string' ? item.rawName : '';
+              console.log('[FoodLookup debug] query', item.rawName);
+              console.log('[FoodLookup debug] foodDb exists', Boolean(foodDb));
+              console.log('[FoodLookup debug] foodDb size', foodDb ? Object.keys(foodDb).length : 0);
+              console.log('[FoodLookup debug] sample keys', foodDb ? Object.keys(foodDb).slice(0, 5) : []);
+              console.log(
+                '[FoodLookup debug] sample values',
+                foodDb ? Object.values(foodDb).slice(0, 3).map((f) => f?.desc ?? f?.name) : [],
+              );
+              const result = lookupFoodCandidate({
+                query: q,
+                creaDb: safeFoodDb,
+                usdaDb: null,
+              });
+              console.log('[FoodLookup debug] result', result);
+              setLookupResults((prev) => ({ ...prev, [idx]: result }));
+            };
+
+            const applyLookupChoice = (result) => {
+              if (!result || result.status !== 'matched' || !result.candidate) return;
+              const cand = result.candidate;
+              const quantity =
+                item.quantity ?? item.suggestedQuantity ?? cand.defaultQty ?? 100;
+              const suggestedQuantity = cand.defaultQty ?? 100;
+              const built = {
+                ...item,
+                status: 'ready',
+                matchedFood: cand,
+                quantity,
+                suggestedQuantity,
+                quantitySource: 'lookup',
+              };
+              setLookupConfirmedByIdx((prev) => ({ ...prev, [idx]: built }));
+              setLookupResults((prev) => {
+                const n = { ...prev };
+                delete n[idx];
+                return n;
+              });
+              setManualConfirmedByIdx((prev) => {
+                const n = { ...prev };
+                delete n[idx];
+                return n;
+              });
+              setManualFormOpen((prev) => {
+                const n = { ...prev };
+                delete n[idx];
+                return n;
+              });
+              setManualFormModeByIdx((prev) => {
+                const n = { ...prev };
+                delete n[idx];
+                return n;
+              });
+              setManualDraftByIdx((prev) => {
+                const n = { ...prev };
+                delete n[idx];
+                return n;
+              });
+            };
+
+            if (lookupItem) {
+              const mf = lookupItem.matchedFood;
               const desc =
                 mf && typeof mf === 'object' && typeof mf.desc === 'string'
                   ? mf.desc.trim()
                   : raw || 'Alimento';
+              const src =
+                mf && typeof mf === 'object' && typeof mf.source === 'string'
+                  ? mf.source
+                  : '';
               const qtyDisp =
-                manualItem.quantity != null && Number(manualItem.quantity) > 0
-                  ? Number(manualItem.quantity)
+                lookupItem.quantity != null && Number(lookupItem.quantity) > 0
+                  ? Number(lookupItem.quantity)
                   : null;
               body = (
                 <>
                   <div style={{ fontSize: 14, fontWeight: 620 }}>
                     {desc || raw || 'Alimento'}
                   </div>
+                  {src ? (
+                    <div style={{ ...MUTED, marginBottom: 4 }}>Fonte: {src}</div>
+                  ) : null}
                   {qtyDisp != null && (
                     <div style={{ fontSize: 13, marginTop: 6, color: 'rgba(215, 222, 230, 0.92)' }}>
                       Quantità: {qtyDisp}
@@ -499,7 +674,60 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
                     }}
                   >
                     <span aria-hidden>✅</span>
-                    Aggiunto manualmente
+                    Trovato nel database
+                  </div>
+                </>
+              );
+            } else if (manualItem) {
+              const mf = manualItem.matchedFood;
+              const desc =
+                mf && typeof mf === 'object' && typeof mf.desc === 'string'
+                  ? mf.desc.trim()
+                  : raw || 'Alimento';
+              const isProvisional =
+                manualItem.quantitySource === 'provisional_estimate'
+                || (mf && typeof mf === 'object' && mf.estimated === true);
+              const qtyDisp =
+                manualItem.quantity != null && Number(manualItem.quantity) > 0
+                  ? Number(manualItem.quantity)
+                  : null;
+              body = (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 620 }}>
+                    {desc || raw || 'Alimento'}
+                  </div>
+                  {qtyDisp != null && (
+                    <div style={{ fontSize: 13, marginTop: 6, color: 'rgba(215, 222, 230, 0.92)' }}>
+                      Quantità: {qtyDisp}
+                      {' g'}
+                    </div>
+                  )}
+                  {isProvisional ? (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: 'rgba(255, 200, 120, 0.95)',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      ⚠️ Stima provvisoria · valori NON verificati
+                    </div>
+                  ) : null}
+                  <div
+                    style={{
+                      marginTop: 10,
+                      fontSize: 13,
+                      fontWeight: 650,
+                      color: 'rgba(130, 210, 160, 0.95)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <span aria-hidden>✅</span>
+                    {isProvisional ? 'Stima provvisoria registrata' : 'Aggiunto manualmente'}
                   </div>
                 </>
               );
@@ -507,7 +735,7 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
               body = (
                 <>
                   <div style={{ fontSize: 14, fontWeight: 620 }}>{raw || 'Voce sconosciuta'}</div>
-                  <div style={{ ...MUTED, marginBottom: 8 }}>Non trovato</div>
+                  <div style={{ ...MUTED, marginBottom: 8 }}>{notFoundLabel}</div>
                   <div
                     style={{
                       fontSize: 12,
@@ -528,7 +756,7 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
               body = (
                 <>
                   <div style={{ fontSize: 14, fontWeight: 620 }}>{raw || 'Voce sconosciuta'}</div>
-                  <div style={{ ...MUTED, marginBottom: 8 }}>Non trovato</div>
+                  <div style={{ ...MUTED, marginBottom: 8 }}>{notFoundLabel}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                     <button
                       type="button"
@@ -540,7 +768,22 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
                           delete n[idx];
                           return n;
                         });
+                        setManualFormModeByIdx((prev) => {
+                          const n = { ...prev };
+                          delete n[idx];
+                          return n;
+                        });
                         setManualDraftByIdx((prev) => {
+                          const n = { ...prev };
+                          delete n[idx];
+                          return n;
+                        });
+                        setLookupResults((prev) => {
+                          const n = { ...prev };
+                          delete n[idx];
+                          return n;
+                        });
+                        setLookupConfirmedByIdx((prev) => {
                           const n = { ...prev };
                           delete n[idx];
                           return n;
@@ -549,20 +792,114 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
                     >
                       Ignora
                     </button>
+                    <button type="button" style={BTN_SECONDARY} onClick={runLookup}>
+                      Trova alimento simile
+                    </button>
                     <button type="button" style={BTN_PRIMARY} onClick={openManualForm}>
                       Inserisci manualmente
                     </button>
+                    {item?.status === 'no_match' ? (
+                      <button type="button" style={BTN_SECONDARY} onClick={openProvisionalForm}>
+                        Stima provvisoria
+                      </button>
+                    ) : null}
                   </div>
+                  {lookupRes && !lookupItem ? (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: 10,
+                        borderRadius: 8,
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        background: 'rgba(0,0,0,0.18)',
+                      }}
+                    >
+                      {lookupRes.status === 'matched' && lookupRes.candidate ? (
+                        <>
+                          <div style={{ fontSize: 14, fontWeight: 620 }}>
+                            {String(lookupRes.candidate.desc || '').trim() || 'Alimento'}
+                          </div>
+                          {lookupRes.source ? (
+                            <div style={{ ...MUTED, marginTop: 4 }}>
+                              Fonte: {lookupRes.source}
+                            </div>
+                          ) : null}
+                          <button
+                            type="button"
+                            style={{ ...BTN_PRIMARY, marginTop: 10 }}
+                            onClick={() => applyLookupChoice(lookupRes)}
+                          >
+                            Usa questo
+                          </button>
+                        </>
+                      ) : null}
+                      {lookupRes.status === 'needs_ai_estimate' ? (
+                        <>
+                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                            Nessun match preciso trovato
+                          </div>
+                          {Array.isArray(lookupRes.alternatives) && lookupRes.alternatives.length > 0 ? (
+                            <ul
+                              style={{
+                                margin: 0,
+                                paddingLeft: 18,
+                                fontSize: 12,
+                                color: 'rgba(205, 215, 225, 0.92)',
+                              }}
+                            >
+                              {lookupRes.alternatives.map((alt, j) => (
+                                <li key={`${String(alt?.key ?? j)}-${j}`} style={{ marginBottom: 6 }}>
+                                  {typeof alt?.desc === 'string' && alt.desc.trim()
+                                    ? alt.desc.trim()
+                                    : String(alt?.key ?? 'Voce')}
+                                  {alt?.source ? (
+                                    <span style={{ color: 'rgba(160, 175, 190, 0.8)' }}>
+                                      {' '}
+                                      · {alt.source}
+                                    </span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </>
+                      ) : null}
+                      {lookupRes.status === 'not_found' ? (
+                        <div style={{ fontSize: 13 }}>
+                          Nessuna corrispondenza trovata nei database
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {formOpen && draft ? (
                     <div
                       style={{
                         marginTop: 6,
                         padding: 12,
                         borderRadius: 10,
-                        border: '1px solid rgba(120, 175, 255, 0.35)',
-                        background: 'rgba(94, 160, 255, 0.06)',
+                        border:
+                          formMode === 'provisional'
+                            ? '1px solid rgba(255, 193, 7, 0.45)'
+                            : '1px solid rgba(120, 175, 255, 0.35)',
+                        background:
+                          formMode === 'provisional'
+                            ? 'rgba(255, 193, 7, 0.08)'
+                            : 'rgba(94, 160, 255, 0.06)',
                       }}
                     >
+                      {formMode === 'provisional' ? (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 650,
+                            color: 'rgba(255, 210, 120, 0.98)',
+                            marginBottom: 10,
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          ⚠️ Stima non verificata: modifica i valori prima di confermare.
+                        </div>
+                      ) : null}
                       <div style={INPUT_ROW}>
                         <label style={INPUT_LABEL} htmlFor={`manual-nome-${idx}`}>
                           Nome alimento
@@ -659,6 +996,11 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
                               delete n[idx];
                               return n;
                             });
+                            setManualFormModeByIdx((prev) => {
+                              const n = { ...prev };
+                              delete n[idx];
+                              return n;
+                            });
                           }}
                         >
                           Chiudi
@@ -669,7 +1011,7 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
                 </>
               );
             }
-          } else {
+          } else if (rowKind === 'ready') {
             const desc =
               item?.matchedFood != null &&
               typeof item.matchedFood === 'object' &&
@@ -706,6 +1048,17 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
                 </div>
               </>
             );
+          } else {
+            const rawFallback =
+              typeof item?.rawName === 'string' ? item.rawName.trim() : '';
+            body = (
+              <>
+                <div style={{ fontSize: 14, fontWeight: 620 }}>{rawFallback || 'Voce'}</div>
+                <div style={{ ...MUTED, marginBottom: 8 }}>
+                  Stato non gestito (kind: {String(rowKind)}, status: {String(status)})
+                </div>
+              </>
+            );
           }
 
           const itemStyle = {
@@ -719,6 +1072,11 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
           return (
             <li key={`food-review-${idx}`} style={itemStyle}>
               {body}
+              <div style={STATUS_DEBUG}>
+                status:
+                {' '}
+                {String(status)}
+              </div>
             </li>
           );
         })}

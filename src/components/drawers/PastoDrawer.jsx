@@ -120,6 +120,8 @@ export default function PastoDrawer({
   editingMealId,
   callGeminiAPIWithRotation,
   saveCustomRecipeToFoodDb,
+  /** Database CREA/CSV completo (es. ~900 voci da useFoodDb). */
+  csvFoodDb,
   foodDb,
   saveFoodEntryPer100ToFoodDb,
   deleteRecipeFromFoodDb,
@@ -132,6 +134,13 @@ export default function PastoDrawer({
   onMealBuilderBarcodeBootstrapConsumed,
   persistBarcodeNutritionCorrection,
 }) {
+  /** CREA completo + voci utente Firebase: lookup e parse comando vedono tutto il catalogo. */
+  const foodDbForCommand = React.useMemo(() => {
+    const base = csvFoodDb != null && typeof csvFoodDb === 'object' && !Array.isArray(csvFoodDb) ? csvFoodDb : {};
+    const user = foodDb != null && typeof foodDb === 'object' && !Array.isArray(foodDb) ? foodDb : {};
+    return { ...base, ...user };
+  }, [csvFoodDb, foodDb]);
+
   const flatLogFromHabits = React.useMemo(() => {
     if (!Array.isArray(abitudiniIeri) || abitudiniIeri.length === 0) return [];
     return abitudiniIeri
@@ -150,7 +159,7 @@ export default function PastoDrawer({
     <>
       <div style={{ marginBottom: 14 }}>
         <FoodCommandSection
-          foodDb={foodDb}
+          foodDb={foodDbForCommand}
           flatLog={flatLogFromHabits}
           onAddFoods={(items) => {
             const newFoods = items

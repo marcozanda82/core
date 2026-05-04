@@ -3,6 +3,11 @@
  */
 
 import { findBestFoodMatch, findRecentFoodHabit } from '@/features/salaComandi/utils/foodUtils';
+import {
+  compoundCarrierConfidencePenalty,
+  expandItalianFoodVariants,
+  simpleIngredientConfidenceBoost,
+} from '@/features/salaComandi/engines/italianFoodVariants';
 
 const AMBIGUITY_SCORE_GAP = 100;
 const READY_MIN_TOP_SCORE = 350;
@@ -183,14 +188,77 @@ function safeFiniteNumber(n) {
 }
 
 /**
+ * Query lower + spazi singoli (allineato al matching su desc DB).
+ * @param {string} q
+ */
+function compactLowerQuery(q) {
+  return String(q || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Varianti query: originale + sing/plur italiano per token (prodotto cartesiano limitato).
+ * @param {string} queryAlreadyLower compact lower query
+ */
+function expandCommandQueryVariants(queryAlreadyLower) {
+  const qn = compactLowerQuery(queryAlreadyLower);
+  if (!qn) return [];
+  const tokens = qn.split(/\s+/).filter(Boolean);
+  const expandedPerTok = tokens.map((tok) => {
+    const s = new Set([tok]);
+    expandItalianFoodVariants(tok).forEach((v) => s.add(v));
+    return [...s];
+  });
+  /** @type {string[][]} */
+  let combos = [[]];
+  for (let ti = 0; ti < expandedPerTok.length; ti += 1) {
+    const opts = expandedPerTok[ti];
+    const next = [];
+    for (let ci = 0; ci < combos.length; ci += 1) {
+      const prefix = combos[ci];
+      for (let oi = 0; oi < opts.length; oi += 1) {
+        next.push(prefix.concat(opts[oi]));
+        if (next.length > 48) break;
+      }
+      if (next.length > 48) break;
+    }
+    combos = next;
+  }
+  const out = new Set([qn]);
+  for (let i = 0; i < combos.length; i += 1) {
+    out.add(combos[i].join(' ').trim());
+  }
+  return Array.from(out).filter(Boolean);
+}
+
+/**
+ * Score grezzo nome DB vs una variante query (stessa scala legacy).
+ * @param {string} dbNameLower
+ * @param {string} qv
+ */
+function scoreDbNameAgainstQueryVariant(dbNameLower, qv) {
+  if (!dbNameLower || !qv) return -1;
+  if (dbNameLower === qv) return 10000;
+  if (dbNameLower.startsWith(qv)) return 900 - Math.abs(dbNameLower.length - qv.length);
+  if (qv.length >= 2 && (dbNameLower.includes(qv) || qv.includes(dbNameLower))) {
+    return 800 - Math.abs(dbNameLower.length - qv.length);
+  }
+  return -1;
+}
+
+/**
  * @param {string} query
  * @param {Record<string, object>} foodDb
  * @param {number} max
  */
 function collectFoodCandidates(query, foodDb, max = 8) {
   if (!query || !foodDb || typeof foodDb !== 'object') return [];
-  const q = query.toLowerCase().trim();
+  const q = compactLowerQuery(query);
   if (!q) return [];
+
+  const queryVariants = expandCommandQueryVariants(q);
 
   /** @type {{ key: string, score: number, item: object }[]} */
   const list = [];
@@ -203,12 +271,17 @@ function collectFoodCandidates(query, foodDb, max = 8) {
     if (!dbName) continue;
 
     let score = -1;
-    if (dbName === q) score = 10000;
-    else if (dbName.startsWith(q)) score = 900 - Math.abs(dbName.length - q.length);
-    else if (q.length >= 2 && (dbName.includes(q) || q.includes(dbName))) {
-      score = 800 - Math.abs(dbName.length - q.length);
+    for (let vi = 0; vi < queryVariants.length; vi += 1) {
+      const qv = queryVariants[vi];
+      const s = scoreDbNameAgainstQueryVariant(dbName, qv);
+      if (s > score) score = s;
     }
     if (score < 0) continue;
+
+    const boostPoints = Math.round(simpleIngredientConfidenceBoost(dbName, q) * 2500);
+    const penaltyPoints = Math.round(compoundCarrierConfidencePenalty(dbName, q) * 2500);
+    score += boostPoints - penaltyPoints;
+
     list.push({ key, score, item });
   }
 
