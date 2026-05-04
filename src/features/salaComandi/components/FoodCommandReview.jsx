@@ -56,6 +56,31 @@ const BTN_SECONDARY = {
   color: 'rgba(200, 210, 220, 0.9)',
 };
 
+const INPUT_ROW = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  marginTop: 8,
+};
+
+const INPUT_LABEL = {
+  fontSize: 11,
+  fontWeight: 600,
+  color: 'rgba(175, 185, 198, 0.95)',
+};
+
+const INPUT_FIELD = {
+  width: '100%',
+  boxSizing: 'border-box',
+  fontSize: 13,
+  padding: '8px 10px',
+  borderRadius: 8,
+  border: '1px solid rgba(255, 255, 255, 0.12)',
+  background: 'rgba(0, 0, 0, 0.25)',
+  color: 'rgba(245, 248, 252, 0.95)',
+  fontFamily: 'inherit',
+};
+
 function safeFiniteNumber(n) {
   const x = Number(n);
   return Number.isFinite(x) && x > 0 ? Math.round(x) : null;
@@ -113,9 +138,29 @@ function quantityOriginText(source) {
       return 'dal database';
     case 'selected_candidate':
       return 'da selezione';
+    case 'manual':
+      return 'inserimento manuale';
     default:
       return '';
   }
+}
+
+function normalizeManualKeyName(name) {
+  const s = String(name || '').trim().toLowerCase().replace(/\s+/g, '_');
+  const slug = s.replace(/[^a-z0-9_]/g, '').slice(0, 48);
+  return slug || 'item';
+}
+
+function parseManualMacro(n) {
+  const x = Number(String(n).replace(',', '.'));
+  if (!Number.isFinite(x) || x < 0) return 0;
+  return x;
+}
+
+function parseManualQuantity(n, fallback) {
+  const x = Number(String(n).replace(',', '.'));
+  if (!Number.isFinite(x) || x <= 0) return fallback;
+  return Math.round(x);
 }
 
 function isConfirmableRow(item, idx, selectedCandidates) {
@@ -141,6 +186,14 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
   const [selectedCandidates, setSelectedCandidates] = useState({});
   /** @type {Record<number, true>} indici degli item no_match marcati come ignorati */
   const [ignoredItems, setIgnoredItems] = useState({});
+  /** @type {Record<number, object>} no_match confermati manualmente (item completi pronti per onConfirm) */
+  const [manualConfirmedByIdx, setManualConfirmedByIdx] = useState({});
+  /** @type {Record<number, true>} form manuale aperto per riga */
+  const [manualFormOpen, setManualFormOpen] = useState({});
+  /**
+   * @type {Record<number, { nome: string, quantity: string|number, kcal: string|number, prot: string|number, carb: string|number, fat: string|number }>}
+   */
+  const [manualDraftByIdx, setManualDraftByIdx] = useState({});
 
   const safeData = data != null && typeof data === 'object' ? data : null;
   const items = Array.isArray(safeData?.items) ? safeData.items : [];
@@ -148,6 +201,9 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
   useEffect(() => {
     setSelectedCandidates({});
     setIgnoredItems({});
+    setManualConfirmedByIdx({});
+    setManualFormOpen({});
+    setManualDraftByIdx({});
   }, [data]);
 
   const noop = () => {};
@@ -172,15 +228,19 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
       }
 
       if (st === 'no_match') {
-        if (!ignoredItems[i]) return false;
-        continue;
+        if (ignoredItems[i]) continue;
+        if (manualConfirmedByIdx[i]) {
+          addableCount += 1;
+          continue;
+        }
+        return false;
       }
 
       if (isConfirmableRow(it, i, selectedCandidates)) addableCount += 1;
     }
 
     return addableCount >= 1;
-  }, [items, selectedCandidates, ignoredItems]);
+  }, [items, selectedCandidates, ignoredItems, manualConfirmedByIdx]);
 
   const buildConfirmedItems = () => {
     const out = [];
@@ -188,7 +248,12 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
       const item = items[idx];
       const status = item?.status;
 
-      if (status === 'no_match') continue;
+      if (status === 'no_match') {
+        if (ignoredItems[idx]) continue;
+        const manualItem = manualConfirmedByIdx[idx];
+        if (manualItem) out.push(cloneItem(manualItem));
+        continue;
+      }
 
       if (status === 'ambiguous') {
         const sel = selectedCandidates[idx];
@@ -337,11 +402,112 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
                 ? item.rawName.trim()
                 : '';
             const ignored = !!ignoredItems[idx];
-            body = (
-              <>
-                <div style={{ fontSize: 14, fontWeight: 620 }}>{raw || 'Voce sconosciuta'}</div>
-                <div style={{ ...MUTED, marginBottom: 8 }}>Non trovato</div>
-                {ignored ? (
+            const manualItem = manualConfirmedByIdx[idx];
+            const formOpen = !!manualFormOpen[idx];
+            const defaultQty = item.quantity ?? item.suggestedQuantity ?? 100;
+            const draft = manualDraftByIdx[idx];
+
+            const emptyDraft = () => ({
+              nome: raw || '',
+              quantity: defaultQty,
+              kcal: '',
+              prot: '',
+              carb: '',
+              fat: '',
+            });
+
+            const openManualForm = () => {
+              setManualFormOpen((prev) => ({ ...prev, [idx]: true }));
+              setManualDraftByIdx((prev) => {
+                if (prev[idx]) return prev;
+                return {
+                  ...prev,
+                  [idx]: emptyDraft(),
+                };
+              });
+            };
+
+            const updateDraft = (field, value) => {
+              setManualDraftByIdx((prev) => ({
+                ...prev,
+                [idx]: { ...(prev[idx] || emptyDraft()), [field]: value },
+              }));
+            };
+
+            const applyManualFood = () => {
+              const d = manualDraftByIdx[idx] || emptyDraft();
+              const nomeTrim = String(d.nome ?? '').trim() || raw || 'Alimento';
+              const quantity = parseManualQuantity(d.quantity, defaultQty);
+              const kcal = parseManualMacro(d.kcal);
+              const prot = parseManualMacro(d.prot);
+              const carb = parseManualMacro(d.carb);
+              const fat = parseManualMacro(d.fat);
+              const built = {
+                ...item,
+                status: 'ready',
+                matchedFood: {
+                  key: `manual_${normalizeManualKeyName(nomeTrim)}_${Date.now()}`,
+                  desc: nomeTrim,
+                  kcal,
+                  prot,
+                  carb,
+                  fat,
+                  defaultQty: quantity,
+                },
+                quantity,
+                suggestedQuantity: quantity,
+                quantitySource: 'manual',
+              };
+              setManualConfirmedByIdx((prev) => ({ ...prev, [idx]: built }));
+              setManualFormOpen((prev) => {
+                const n = { ...prev };
+                delete n[idx];
+                return n;
+              });
+            };
+
+            if (manualItem) {
+              const mf = manualItem.matchedFood;
+              const desc =
+                mf && typeof mf === 'object' && typeof mf.desc === 'string'
+                  ? mf.desc.trim()
+                  : raw || 'Alimento';
+              const qtyDisp =
+                manualItem.quantity != null && Number(manualItem.quantity) > 0
+                  ? Number(manualItem.quantity)
+                  : null;
+              body = (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 620 }}>
+                    {desc || raw || 'Alimento'}
+                  </div>
+                  {qtyDisp != null && (
+                    <div style={{ fontSize: 13, marginTop: 6, color: 'rgba(215, 222, 230, 0.92)' }}>
+                      Quantità: {qtyDisp}
+                      {' g'}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      marginTop: 10,
+                      fontSize: 13,
+                      fontWeight: 650,
+                      color: 'rgba(130, 210, 160, 0.95)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <span aria-hidden>✅</span>
+                    Aggiunto manualmente
+                  </div>
+                </>
+              );
+            } else if (ignored) {
+              body = (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 620 }}>{raw || 'Voce sconosciuta'}</div>
+                  <div style={{ ...MUTED, marginBottom: 8 }}>Non trovato</div>
                   <div
                     style={{
                       fontSize: 12,
@@ -356,27 +522,153 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
                   >
                     Ignorato · non verrà aggiunto
                   </div>
-                ) : (
-                  <>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                      <button
-                        type="button"
-                        style={BTN_GHOST}
-                        onClick={() => {
-                          setIgnoredItems((prev) => ({ ...prev, [idx]: true }));
-                        }}
-                      >
-                        Ignora
-                      </button>
+                </>
+              );
+            } else {
+              body = (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 620 }}>{raw || 'Voce sconosciuta'}</div>
+                  <div style={{ ...MUTED, marginBottom: 8 }}>Non trovato</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      style={BTN_GHOST}
+                      onClick={() => {
+                        setIgnoredItems((prev) => ({ ...prev, [idx]: true }));
+                        setManualFormOpen((prev) => {
+                          const n = { ...prev };
+                          delete n[idx];
+                          return n;
+                        });
+                        setManualDraftByIdx((prev) => {
+                          const n = { ...prev };
+                          delete n[idx];
+                          return n;
+                        });
+                      }}
+                    >
+                      Ignora
+                    </button>
+                    <button type="button" style={BTN_PRIMARY} onClick={openManualForm}>
+                      Inserisci manualmente
+                    </button>
+                  </div>
+                  {formOpen && draft ? (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        padding: 12,
+                        borderRadius: 10,
+                        border: '1px solid rgba(120, 175, 255, 0.35)',
+                        background: 'rgba(94, 160, 255, 0.06)',
+                      }}
+                    >
+                      <div style={INPUT_ROW}>
+                        <label style={INPUT_LABEL} htmlFor={`manual-nome-${idx}`}>
+                          Nome alimento
+                        </label>
+                        <input
+                          id={`manual-nome-${idx}`}
+                          type="text"
+                          style={INPUT_FIELD}
+                          value={draft.nome}
+                          onChange={(e) => updateDraft('nome', e.target.value)}
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div style={INPUT_ROW}>
+                        <label style={INPUT_LABEL} htmlFor={`manual-qty-${idx}`}>
+                          Quantità (g)
+                        </label>
+                        <input
+                          id={`manual-qty-${idx}`}
+                          type="number"
+                          min={1}
+                          step={1}
+                          style={INPUT_FIELD}
+                          value={draft.quantity}
+                          onChange={(e) => updateDraft('quantity', e.target.value)}
+                        />
+                      </div>
+                      <div style={INPUT_ROW}>
+                        <label style={INPUT_LABEL} htmlFor={`manual-kcal-${idx}`}>
+                          kcal
+                        </label>
+                        <input
+                          id={`manual-kcal-${idx}`}
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          style={INPUT_FIELD}
+                          value={draft.kcal}
+                          onChange={(e) => updateDraft('kcal', e.target.value)}
+                        />
+                      </div>
+                      <div style={INPUT_ROW}>
+                        <label style={INPUT_LABEL} htmlFor={`manual-prot-${idx}`}>
+                          Proteine
+                        </label>
+                        <input
+                          id={`manual-prot-${idx}`}
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          style={INPUT_FIELD}
+                          value={draft.prot}
+                          onChange={(e) => updateDraft('prot', e.target.value)}
+                        />
+                      </div>
+                      <div style={INPUT_ROW}>
+                        <label style={INPUT_LABEL} htmlFor={`manual-carb-${idx}`}>
+                          Carboidrati
+                        </label>
+                        <input
+                          id={`manual-carb-${idx}`}
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          style={INPUT_FIELD}
+                          value={draft.carb}
+                          onChange={(e) => updateDraft('carb', e.target.value)}
+                        />
+                      </div>
+                      <div style={INPUT_ROW}>
+                        <label style={INPUT_LABEL} htmlFor={`manual-fat-${idx}`}>
+                          Grassi
+                        </label>
+                        <input
+                          id={`manual-fat-${idx}`}
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          style={INPUT_FIELD}
+                          value={draft.fat}
+                          onChange={(e) => updateDraft('fat', e.target.value)}
+                        />
+                      </div>
+                      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        <button type="button" style={BTN_PRIMARY} onClick={applyManualFood}>
+                          Usa questo alimento
+                        </button>
+                        <button
+                          type="button"
+                          style={BTN_SECONDARY}
+                          onClick={() => {
+                            setManualFormOpen((prev) => {
+                              const n = { ...prev };
+                              delete n[idx];
+                              return n;
+                            });
+                          }}
+                        >
+                          Chiudi
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ ...MUTED, marginBottom: 6, fontSize: 11, lineHeight: 1.4 }}>
-                      Stima con AI e inserimento manuale:{' '}
-                      <span style={{ color: 'rgba(200,210,225,0.55)' }}>in arrivo (presto)</span>
-                    </div>
-                  </>
-                )}
-              </>
-            );
+                  ) : null}
+                </>
+              );
+            }
           } else {
             const desc =
               item?.matchedFood != null &&
