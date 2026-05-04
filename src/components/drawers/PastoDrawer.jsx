@@ -160,6 +160,14 @@ export default function PastoDrawer({
       <div style={{ marginBottom: 14 }}>
         <FoodCommandSection
           foodDb={foodDbForCommand}
+          baseFoodDb={
+            csvFoodDb != null && typeof csvFoodDb === 'object' && !Array.isArray(csvFoodDb)
+              ? csvFoodDb
+              : {}
+          }
+          userFoodDb={
+            foodDb != null && typeof foodDb === 'object' && !Array.isArray(foodDb) ? foodDb : {}
+          }
           flatLog={flatLogFromHabits}
           onAddFoods={(items) => {
             const newFoods = items

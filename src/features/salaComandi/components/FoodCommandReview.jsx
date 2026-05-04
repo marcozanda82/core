@@ -210,11 +210,13 @@ const STATUS_DEBUG = {
 /**
  * @param {object} props
  * @param {object} [props.data]
- * @param {Record<string, object>} [props.foodDb]
+ * @param {Record<string, object>} [props.foodDb] mappa unificata per risolvere le chiavi candidate
+ * @param {Record<string, object>} [props.baseFoodDb] catalogo globale per lookupFoodCandidate (opzionale)
+ * @param {Record<string, object>} [props.userFoodDb] DB utente per lookupFoodCandidate (opzionale)
  * @param {(items: object[]) => void} [props.onConfirm]
  * @param {() => void} [props.onCancel]
  */
-export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel }) {
+export default function FoodCommandReview({ data, foodDb, baseFoodDb, userFoodDb, onConfirm, onCancel }) {
   /** @type {Record<number, { key: string, desc: string, score?: number }>} */
   const [selectedCandidates, setSelectedCandidates] = useState({});
   /** @type {Record<number, true>} indici degli item no_match marcati come ignorati */
@@ -236,6 +238,14 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
   const safeData = data != null && typeof data === 'object' ? data : null;
   const items = Array.isArray(safeData?.items) ? safeData.items : [];
   const safeFoodDb = foodDb != null && typeof foodDb === 'object' ? foodDb : {};
+  const safeBaseFoodDb =
+    baseFoodDb != null && typeof baseFoodDb === 'object' && !Array.isArray(baseFoodDb) ? baseFoodDb : null;
+  const safeUserFoodDb =
+    userFoodDb != null && typeof userFoodDb === 'object' && !Array.isArray(userFoodDb) ? userFoodDb : null;
+  const useSplitFoodLookup =
+    safeBaseFoodDb != null &&
+    safeUserFoodDb != null &&
+    (Object.keys(safeBaseFoodDb).length > 0 || Object.keys(safeUserFoodDb).length > 0);
 
   useEffect(() => {
     setSelectedCandidates({});
@@ -575,20 +585,18 @@ export default function FoodCommandReview({ data, foodDb, onConfirm, onCancel })
 
             const runLookup = () => {
               const q = typeof item?.rawName === 'string' ? item.rawName : '';
-              console.log('[FoodLookup debug] query', item.rawName);
-              console.log('[FoodLookup debug] foodDb exists', Boolean(foodDb));
-              console.log('[FoodLookup debug] foodDb size', foodDb ? Object.keys(foodDb).length : 0);
-              console.log('[FoodLookup debug] sample keys', foodDb ? Object.keys(foodDb).slice(0, 5) : []);
-              console.log(
-                '[FoodLookup debug] sample values',
-                foodDb ? Object.values(foodDb).slice(0, 3).map((f) => f?.desc ?? f?.name) : [],
-              );
-              const result = lookupFoodCandidate({
-                query: q,
-                creaDb: safeFoodDb,
-                usdaDb: null,
-              });
-              console.log('[FoodLookup debug] result', result);
+              const result = useSplitFoodLookup
+                ? lookupFoodCandidate({
+                    query: q,
+                    creaDb: safeBaseFoodDb,
+                    userFoodDb: safeUserFoodDb,
+                    usdaDb: null,
+                  })
+                : lookupFoodCandidate({
+                    query: q,
+                    creaDb: safeFoodDb,
+                    usdaDb: null,
+                  });
               setLookupResults((prev) => ({ ...prev, [idx]: result }));
             };
 

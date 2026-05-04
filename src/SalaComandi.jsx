@@ -152,6 +152,7 @@ import { computeMetabolicNotification } from './notificationEngine';
 import { setBarcodeNutritionOverride as setBarcodeNutritionOverrideStorage } from './barcodeFoodOverrides';
 import {
   evaluateAiDayCoach,
+  getCoachPeriod,
   consumeCoachPeriod,
   recordCoachIgnore,
   recordCoachAccept,
@@ -1168,6 +1169,59 @@ function tryAcquireMealConfirmGuard(guardRef) {
 function releaseMealConfirmGuard(guardRef) {
   guardRef.current.busy = false;
 }
+
+/** Snapshot stabile delle voci food/recipe per il coach (stesso contenuto → stessa stringa anche con array nuovo). */
+function buildAiCoachFoodLogFingerprint(log) {
+  const arr = log || [];
+  const parts = [];
+  for (let i = 0; i < arr.length; i += 1) {
+    const e = arr[i];
+    if (!e || (e.type !== 'food' && e.type !== 'recipe')) continue;
+    const id = e.id ?? e.entryId ?? e.logId ?? `idx${i}`;
+    const mtRaw = String(e.mealType || 'snack').split('_')[0];
+    const kcal = Number(e.kcal ?? e.cal) || 0;
+    const prot = Number(e.prot ?? e.proteine) || 0;
+    parts.push(`${id}:${e.type}:${mtRaw}:${kcal}:${prot}`);
+  }
+  return parts.join('|');
+}
+
+function coachEvalSemanticEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.period !== b.period) return false;
+  const sa = a.suggestion;
+  const sb = b.suggestion;
+  if ((sa == null) !== (sb == null)) return false;
+  if (sa && sb) {
+    if (sa.ruleId !== sb.ruleId || sa.message !== sb.message || Number(sa.priority) !== Number(sb.priority)) {
+      return false;
+    }
+    const am = sa.action?.mealType ?? null;
+    const bm = sb.action?.mealType ?? null;
+    if (am !== bm) return false;
+  }
+  const xa = a.state;
+  const xb = b.state;
+  if ((xa == null) !== (xb == null)) return false;
+  if (xa && xb) {
+    if (
+      Number(xa.totalCalories) !== Number(xb.totalCalories)
+      || Number(xa.mealCount) !== Number(xb.mealCount)
+      || Number(xa.totalProt ?? 0) !== Number(xb.totalProt ?? 0)
+      || Number(xa.foodCount ?? 0) !== Number(xb.foodCount ?? 0)
+      || Number(xa.targetCalories ?? -1) !== Number(xb.targetCalories ?? -1)
+      || Number(xa.breakfastShare ?? -1) !== Number(xb.breakfastShare ?? -1)
+      || Number(xa.protPerKcal ?? -1) !== Number(xb.protPerKcal ?? -1)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const AI_COACH_EVAL_INACTIVE = Object.freeze({ suggestion: null, state: null, period: null });
+const AI_COACH_EMPTY_HISTORY = Object.freeze([]);
 
 export default function SalaComandi() {
   const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
@@ -8332,28 +8386,88 @@ ${dbKeys || 'n/d'}`;
   const targetMacros = { prot: userTargets?.prot ?? 150, carb: userTargets?.carb ?? 200, fat: userTargets?.fatTotal ?? userTargets?.fat ?? 65 };
   const totalMacrosTimeline = { prot: totali?.prot ?? 0, carb: totali?.carb ?? 0, fat: totali?.fatTotal ?? totali?.fat ?? 0 };
 
-  const aiCoachEval = useMemo(() => {
-    if (!activeLog || currentTrackerDate !== getTodayString() || isSimulationMode) {
-      return { suggestion: null, state: null, period: null };
+  const aiCoachFoodLogFingerprint = useMemo(
+    () => buildAiCoachFoodLogFingerprint(activeLog),
+    [activeLog],
+  );
+
+  const todayLogForCoachRef = useRef([]);
+  const activeLogForCoachSyncRef = useRef(activeLog);
+  activeLogForCoachSyncRef.current = activeLog;
+  useEffect(() => {
+    const a = activeLogForCoachSyncRef.current;
+    todayLogForCoachRef.current = a == null ? [] : a;
+  }, [aiCoachFoodLogFingerprint]);
+  todayLogForCoachRef.current =
+    activeLogForCoachSyncRef.current == null ? [] : activeLogForCoachSyncRef.current;
+
+  const aiCoachCurrentTimeRef = useRef(currentTime);
+  aiCoachCurrentTimeRef.current = currentTime;
+
+  const aiCoachDecimalHour = isAuthenticated ? currentTime : getWallClockDecimalHour();
+  const aiCoachPeriodKey = useMemo(() => getCoachPeriod(aiCoachDecimalHour), [aiCoachDecimalHour]);
+
+  const aiCoachTargetKcalKey = useMemo(
+    () => Math.round(Number(dynamicDailyKcal) || Number(targetKcalForAlerts) || 0),
+    [dynamicDailyKcal, targetKcalForAlerts],
+  );
+
+  const aiCoachEvalCacheRef = useRef({
+    key: '',
+    value: AI_COACH_EVAL_INACTIVE,
+  });
+
+  const aiCoachEvalKey = useMemo(
+    () =>
+      [
+        aiCoachFoodLogFingerprint,
+        aiCoachTargetKcalKey,
+        coachPrefsTick,
+        aiCoachPeriodKey,
+        currentTrackerDate,
+        isAuthenticated ? 'auth' : 'guest',
+        isSimulationMode ? 'sim' : 'real',
+      ].join('|'),
+    [
+      aiCoachFoodLogFingerprint,
+      aiCoachTargetKcalKey,
+      coachPrefsTick,
+      aiCoachPeriodKey,
+      currentTrackerDate,
+      isAuthenticated,
+      isSimulationMode,
+    ],
+  );
+
+  const aiCoachEvalComputed = useMemo(() => {
+    const cache = aiCoachEvalCacheRef.current;
+    if (cache.key === aiCoachEvalKey) {
+      return cache.value;
     }
-    const tCal = Math.round(Number(dynamicDailyKcal) || Number(targetKcalForAlerts) || 0);
-    return evaluateAiDayCoach({
-      todayLog: activeLog,
-      userHistory: [],
-      targetCalories: tCal,
-      decimalHour: getWallClockDecimalHour(),
+
+    const log = todayLogForCoachRef.current;
+    if (!log || currentTrackerDate !== getTodayString() || isSimulationMode) {
+      aiCoachEvalCacheRef.current = { key: aiCoachEvalKey, value: AI_COACH_EVAL_INACTIVE };
+      return AI_COACH_EVAL_INACTIVE;
+    }
+    const decimalHour = isAuthenticated ? aiCoachCurrentTimeRef.current : getWallClockDecimalHour();
+    const result = evaluateAiDayCoach({
+      todayLog: log,
+      userHistory: AI_COACH_EMPTY_HISTORY,
+      targetCalories: aiCoachTargetKcalKey,
+      decimalHour,
       todayStr: getTodayString(),
       toCanonicalMealType,
     });
-  }, [
-    activeLog,
-    coachPrefsTick,
-    currentTrackerDate,
-    dynamicDailyKcal,
-    isSimulationMode,
-    targetKcalForAlerts,
-    toCanonicalMealType,
-  ]);
+    aiCoachEvalCacheRef.current = { key: aiCoachEvalKey, value: result };
+    return result;
+  }, [aiCoachEvalKey]);
+
+  const aiCoachEvalStableRef = useRef(AI_COACH_EVAL_INACTIVE);
+  if (!coachEvalSemanticEqual(aiCoachEvalStableRef.current, aiCoachEvalComputed)) {
+    aiCoachEvalStableRef.current = aiCoachEvalComputed;
+  }
+  const aiCoachEval = aiCoachEvalStableRef.current;
 
   const isAiCoachSuggestionEligible =
     activeBottomTab === 'oggi'
@@ -8430,18 +8544,18 @@ ${dbKeys || 'n/d'}`;
     }
 
     if (!isAiCoachSuggestionActive || !aiCoachSuggestionDismissKey) {
-      setHasNewInsight(false);
-      setAiCoachBulbPulseCycles(0);
-      setIsAiCoachInsightArmed(false);
+      setHasNewInsight((v) => (v ? false : v));
+      setAiCoachBulbPulseCycles((c) => (c !== 0 ? 0 : c));
+      setIsAiCoachInsightArmed((v) => (v ? false : v));
       aiCoachLastInsightKeyRef.current = null;
       return;
     }
 
     const inCooldown = Date.now() < aiCoachCooldownUntilRef.current;
     if (inCooldown) {
-      setHasNewInsight(false);
-      setAiCoachBulbPulseCycles(0);
-      setIsAiCoachInsightArmed(false);
+      setHasNewInsight((v) => (v ? false : v));
+      setAiCoachBulbPulseCycles((c) => (c !== 0 ? 0 : c));
+      setIsAiCoachInsightArmed((v) => (v ? false : v));
       return;
     }
 
@@ -8516,11 +8630,11 @@ ${dbKeys || 'n/d'}`;
 
   useEffect(() => {
     if (!aiCoachSuggestion || !aiCoachSuggestionDismissKey || !isAiCoachInsightArmed) {
-      setIsAiCoachSuggestionModalOpen(false);
+      setIsAiCoachSuggestionModalOpen((open) => (open ? false : open));
       return;
     }
     if (dismissedAiCoachInsights[aiCoachSuggestionDismissKey]) {
-      setIsAiCoachSuggestionModalOpen(false);
+      setIsAiCoachSuggestionModalOpen((open) => (open ? false : open));
       return;
     }
   }, [aiCoachSuggestion, aiCoachSuggestionDismissKey, dismissedAiCoachInsights, isAiCoachInsightArmed]);

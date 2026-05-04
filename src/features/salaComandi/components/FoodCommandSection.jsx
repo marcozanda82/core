@@ -15,11 +15,13 @@ function cloneSerializable(value) {
 
 /**
  * @param {object} props
- * @param {Record<string, object>} [props.foodDb]
+ * @param {Record<string, object>} [props.foodDb] unione globali+utente (parse comando e risoluzione chiavi)
+ * @param {Record<string, object>} [props.baseFoodDb] solo catalogo globale/CREA (priorità in lookup a parola singola)
+ * @param {Record<string, object>} [props.userFoodDb] solo voci utente
  * @param {unknown[]} [props.flatLog]
  * @param {(items: object[]) => void} [props.onAddFoods]
  */
-export default function FoodCommandSection({ foodDb, flatLog, onAddFoods }) {
+export default function FoodCommandSection({ foodDb, baseFoodDb, userFoodDb, flatLog, onAddFoods }) {
   const [input, setInput] = useState('');
   const [commandResult, setCommandResult] = useState(null);
   /** Snapshot dell’ultimo parse (stesso contenuto mostrato in review); la Conferma legge questo, non stato potenzialmente desincronizzato. */
@@ -97,6 +99,16 @@ export default function FoodCommandSection({ foodDb, flatLog, onAddFoods }) {
           foodDb={
             foodDb != null && typeof foodDb === 'object' && !Array.isArray(foodDb)
               ? foodDb
+              : undefined
+          }
+          baseFoodDb={
+            baseFoodDb != null && typeof baseFoodDb === 'object' && !Array.isArray(baseFoodDb)
+              ? baseFoodDb
+              : undefined
+          }
+          userFoodDb={
+            userFoodDb != null && typeof userFoodDb === 'object' && !Array.isArray(userFoodDb)
+              ? userFoodDb
               : undefined
           }
           onConfirm={(confirmedItems) => {

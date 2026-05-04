@@ -6,8 +6,13 @@
 import {
   compoundCarrierConfidencePenalty,
   expandItalianFoodVariants,
+  isStrictBaseFoodLabelForVariants,
   simpleIngredientConfidenceBoost,
+  singleTokenFromNormalizedQuery,
+  strictSingleWordBaseMatchConfidence,
 } from './italianFoodVariants';
+
+/** @typedef {'CREA' | 'USDA' | 'USER'} LookupSnapshotSource */
 
 const DEFAULT_CONFIDENCE_MATCH = 0.75;
 const MAX_ALTERNATIVES = 5;
@@ -146,6 +151,264 @@ function buildQueryVariants(normalizedQuery) {
     variants.add(combos[i].join(' ').trim());
   }
   return Array.from(variants).filter(Boolean);
+}
+
+/**
+ * Varianti con cui eseguire ricerche separate nel DB (singola parola: base + italiano sing/plur;
+ * più parole: combinazioni da sinonimi + morfologia come buildQueryVariants).
+ * @param {string} normalizedQuery
+ * @returns {string[]}
+ */
+function buildMorphologicalLookupVariants(normalizedQuery) {
+  const q = String(normalizedQuery || '').trim();
+  if (!q) return [];
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (tokens.length === 1) {
+    const base = normalizeFoodName(tokens[0]);
+    const set = new Set([base]);
+    const exp = expandItalianFoodVariants(base);
+    for (let i = 0; i < exp.length; i += 1) {
+      const nv = normalizeFoodName(exp[i]);
+      if (nv) set.add(nv);
+    }
+    return [...set].filter(Boolean);
+  }
+  return buildQueryVariants(q);
+}
+
+/**
+ * Unisce hit da più ricerche (stessa key → tiene confidence massima).
+ * @param {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean }[][]} batches
+ * @param {string} originalNormalizedQuery
+ * @returns {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean }[]}
+ */
+function mergeSearchBatchesByKey(batches, originalNormalizedQuery) {
+  /** @type {Map<string, { key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean }>} */
+  const byKey = new Map();
+  for (let bi = 0; bi < batches.length; bi += 1) {
+    const batch = batches[bi];
+    for (let hi = 0; hi < batch.length; hi += 1) {
+      const h = batch[hi];
+      const prev = byKey.get(h.key);
+      if (!prev || h.confidence > prev.confidence) {
+        byKey.set(h.key, h);
+      } else if (prev && h.confidence === prev.confidence) {
+        const preferH =
+          h.matchedViaVariant === originalNormalizedQuery &&
+          prev.matchedViaVariant !== originalNormalizedQuery;
+        if (preferH) byKey.set(h.key, h);
+      }
+    }
+  }
+  const merged = [...byKey.values()];
+  merged.sort((a, b) => {
+    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    return String(a.key).localeCompare(String(b.key));
+  });
+  return merged;
+}
+
+/**
+ * Per ogni variante morfologica esegue una scansione completa con scoring solo su quella stringa, poi unisce per key.
+ * @param {unknown} db
+ * @param {string} originalNormalizedQuery query utente normalizzata (boost/penalty + synonymMatch)
+ * @param {string[]} lookupVariants
+ */
+function searchFoodDbMultiPass(db, originalNormalizedQuery, lookupVariants) {
+  const list = Array.isArray(lookupVariants) ? lookupVariants : [];
+  if (!originalNormalizedQuery || list.length === 0) return [];
+
+  /** @type {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean }[][]} */
+  const batches = [];
+  for (let vi = 0; vi < list.length; vi += 1) {
+    const v = list[vi];
+    if (!v) continue;
+    batches.push(searchFoodDb(db, originalNormalizedQuery, [v]));
+  }
+
+  return mergeSearchBatchesByKey(batches, originalNormalizedQuery);
+}
+
+/**
+ * Tier prioritario: solo nomi "base" (sing/plur) per query a una parola.
+ * @param {unknown} db
+ * @param {string} normalizedQuery
+ * @param {string[]} variantList da tokenExpansionForLookup(singleTok)
+ * @returns {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean }[]}
+ */
+function searchFoodDbStrictSingleWordBase(db, normalizedQuery, variantList) {
+  if (!singleTokenFromNormalizedQuery(normalizedQuery) || !Array.isArray(variantList) || variantList.length === 0) {
+    return [];
+  }
+
+  const variantSet = new Set(variantList);
+  const rows = flattenFoodDb(db);
+  /** @type {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean }[]} */
+  const hits = [];
+
+  for (let ri = 0; ri < rows.length; ri += 1) {
+    const { key, item } = rows[ri];
+    const normD = normalizeFoodName(rowPrimaryLabel(item));
+    if (!normD) continue;
+    if (!isStrictBaseFoodLabelForVariants(normD, variantSet)) continue;
+
+    const conf = strictSingleWordBaseMatchConfidence(normD, normalizedQuery, variantList);
+    let matchedViaVariant = normalizedQuery;
+    for (let vi = 0; vi < variantList.length; vi += 1) {
+      const v = variantList[vi];
+      if (v && (normD === v || normD.startsWith(`${v},`) || normD.startsWith(`${v} `))) {
+        matchedViaVariant = v;
+        break;
+      }
+    }
+    const synonymMatch = matchedViaVariant !== normalizedQuery;
+    hits.push({
+      key,
+      item,
+      confidence: conf,
+      normLabel: normD,
+      matchedViaVariant,
+      synonymMatch,
+    });
+  }
+
+  hits.sort((a, b) => {
+    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    return String(a.key).localeCompare(String(b.key));
+  });
+  return hits;
+}
+
+/**
+ * Unisce hit strict (ordinate per prime) con fuzzy senza duplicare key.
+ * @param {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean }[]} strictHits
+ * @param {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean }[]} fuzzyHits
+ */
+function mergeStrictBaseThenFuzzy(strictHits, fuzzyHits) {
+  if (!strictHits || strictHits.length === 0) return fuzzyHits;
+  const seen = new Set(strictHits.map((h) => h.key));
+  const rest = [];
+  for (let i = 0; i < fuzzyHits.length; i += 1) {
+    const h = fuzzyHits[i];
+    if (!seen.has(h.key)) rest.push(h);
+  }
+  return [...strictHits, ...rest];
+}
+
+/**
+ * Demotare risultati utente composti quando la query è un solo ingrediente (es. fragola vs gelato alla fragola).
+ * @param {{ normLabel: string }} hit
+ * @param {string} normalizedQuery
+ */
+function isUserHitDemotedForSingleWordQuery(hit, normalizedQuery) {
+  const tok = singleTokenFromNormalizedQuery(normalizedQuery);
+  if (!tok || !hit?.normLabel) return false;
+  const variantList = tokenExpansionForLookup(tok);
+  if (isStrictBaseFoodLabelForVariants(hit.normLabel, new Set(variantList))) return false;
+  return compoundCarrierConfidencePenalty(hit.normLabel, normalizedQuery) > 0;
+}
+
+/**
+ * Incrocia CREA globale + DB utente per query a una parola: base globale, base utente, fuzzy globale, utente non composto, utente composto.
+ * @param {unknown} creaDb
+ * @param {unknown} userFoodDb
+ * @param {string} normalizedQuery
+ * @param {string[]} variants
+ * @param {string[]} singleTokVariantList
+ */
+function mergeSingleWordLookupHits(creaDb, userFoodDb, normalizedQuery, variants, singleTokVariantList) {
+  const gStrict = searchFoodDbStrictSingleWordBase(creaDb, normalizedQuery, singleTokVariantList);
+  const gFuzzy = searchFoodDbMultiPass(creaDb, normalizedQuery, variants);
+  const gAll = mergeStrictBaseThenFuzzy(gStrict, gFuzzy);
+
+  const uStrict = searchFoodDbStrictSingleWordBase(userFoodDb, normalizedQuery, singleTokVariantList);
+  const uFuzzy = searchFoodDbMultiPass(userFoodDb, normalizedQuery, variants);
+  const uAll = mergeStrictBaseThenFuzzy(uStrict, uFuzzy);
+
+  const seen = new Set();
+  /** @type {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean, __lookupSource: 'global' | 'user' }[]} */
+  const out = [];
+
+  const pushGlobal = (h) => {
+    out.push({ ...h, __lookupSource: 'global' });
+    seen.add(h.key);
+  };
+  const pushUser = (h) => {
+    out.push({ ...h, __lookupSource: 'user' });
+    seen.add(h.key);
+  };
+
+  for (let i = 0; i < gStrict.length; i += 1) pushGlobal(gStrict[i]);
+
+  for (let i = 0; i < uStrict.length; i += 1) {
+    const h = uStrict[i];
+    if (!seen.has(h.key)) pushUser(h);
+  }
+
+  for (let i = 0; i < gAll.length; i += 1) {
+    const h = gAll[i];
+    if (!seen.has(h.key)) pushGlobal(h);
+  }
+
+  for (let i = 0; i < uAll.length; i += 1) {
+    const h = uAll[i];
+    if (seen.has(h.key)) continue;
+    if (isUserHitDemotedForSingleWordQuery(h, normalizedQuery)) continue;
+    pushUser(h);
+  }
+  for (let i = 0; i < uAll.length; i += 1) {
+    const h = uAll[i];
+    if (seen.has(h.key)) continue;
+    pushUser(h);
+  }
+  return out;
+}
+
+/**
+ * Unisce hit globali e utente per query multi-parola: stessa key → confidence max; parità → preferisci globale.
+ * @param {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean }[]} globalHits
+ * @param {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean }[]} userHits
+ */
+function mergeHitsPreferGlobalOnTie(globalHits, userHits) {
+  /** @type {Map<string, { key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean, __lookupSource: 'global' | 'user' }>} */
+  const map = new Map();
+  for (let i = 0; i < globalHits.length; i += 1) {
+    const h = globalHits[i];
+    map.set(h.key, { ...h, __lookupSource: 'global' });
+  }
+  for (let i = 0; i < userHits.length; i += 1) {
+    const h = userHits[i];
+    const prev = map.get(h.key);
+    const tagged = { ...h, __lookupSource: 'user' };
+    if (!prev) {
+      map.set(h.key, tagged);
+    } else if (h.confidence > prev.confidence) {
+      map.set(h.key, tagged);
+    }
+  }
+  const merged = [...map.values()];
+  merged.sort((a, b) => {
+    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    if (a.__lookupSource !== b.__lookupSource) return a.__lookupSource === 'global' ? -1 : 1;
+    return String(a.key).localeCompare(String(b.key));
+  });
+  return merged;
+}
+
+/**
+ * Pipeline strict+fuzzy su un solo database (senza tag sorgente).
+ * @param {unknown} db
+ * @param {string} normalizedQuery
+ * @param {string[]} variants
+ * @param {string[] | null} singleTokVariantList
+ */
+function computeDbHits(db, normalizedQuery, variants, singleTokVariantList) {
+  const fuzzy = searchFoodDbMultiPass(db, normalizedQuery, variants);
+  const strict =
+    singleTokVariantList && singleTokVariantList.length > 0
+      ? searchFoodDbStrictSingleWordBase(db, normalizedQuery, singleTokVariantList)
+      : [];
+  return mergeStrictBaseThenFuzzy(strict, fuzzy);
 }
 
 /**
@@ -314,10 +577,21 @@ function searchFoodDb(db, normalizedQuery, queryVariants) {
 }
 
 /**
+ * @param {{ __lookupSource?: 'global' | 'user' }} h
+ * @param {LookupSnapshotSource} fallback
+ * @returns {LookupSnapshotSource}
+ */
+function snapshotSourceFromLookupHit(h, fallback) {
+  if (h && h.__lookupSource === 'user') return 'USER';
+  if (h && h.__lookupSource === 'global') return 'CREA';
+  return fallback;
+}
+
+/**
  * Snapshot candidato senza inventare nutrienti (solo valori finiti nel record).
  * @param {string} key
  * @param {object} item
- * @param {'CREA' | 'USDA'} source
+ * @param {LookupSnapshotSource} source
  */
 function buildCandidateSnapshot(key, item, source) {
   const descRaw = rowPrimaryLabel(item) || String(key || '').trim();
@@ -360,17 +634,17 @@ function buildCandidateSnapshot(key, item, source) {
 }
 
 /**
- * @param {{ key: string, item: object, confidence: number, normLabel: string }[]} hits
- * @param {'CREA' | 'USDA'} source
+ * @param {{ key: string, item: object, confidence: number, normLabel: string, __lookupSource?: 'global' | 'user' }[]} hits
+ * @param {LookupSnapshotSource} fallbackSource
  * @param {number} start offset (salta primi N per alternatives)
  * @param {number} limit
  */
-function snapshotsFromHits(hits, source, start, limit) {
+function snapshotsFromHits(hits, fallbackSource, start, limit) {
   const out = [];
   const max = Math.min(hits.length, start + limit);
   for (let i = start; i < max; i += 1) {
     const h = hits[i];
-    out.push(buildCandidateSnapshot(h.key, h.item, source));
+    out.push(buildCandidateSnapshot(h.key, h.item, snapshotSourceFromLookupHit(h, fallbackSource)));
   }
   return out;
 }
@@ -378,13 +652,14 @@ function snapshotsFromHits(hits, source, start, limit) {
 /**
  * @param {object} params
  * @param {string} params.query
- * @param {unknown} params.creaDb
+ * @param {unknown} params.creaDb database globale / CREA (solo CSV se passi anche userFoodDb)
  * @param {unknown} [params.usdaDb]
+ * @param {unknown} [params.userFoodDb] voci personali: con creaDb separato, la query a una parola preferisce il catalogo globale
  * @param {object} [params.options]
  * @param {number} [params.options.confidenceThreshold]
  * @param {number} [params.options.minWeakConfidence] soglia minima per alternatives / stima
  */
-export function lookupFoodCandidate({ query, creaDb, usdaDb, options }) {
+export function lookupFoodCandidate({ query, creaDb, usdaDb, userFoodDb, options }) {
   const opts = options != null && typeof options === 'object' ? options : {};
   const threshold =
     typeof opts.confidenceThreshold === 'number' && opts.confidenceThreshold > 0 && opts.confidenceThreshold <= 1
@@ -422,35 +697,68 @@ export function lookupFoodCandidate({ query, creaDb, usdaDb, options }) {
     return baseNotFound;
   }
 
-  const queryVariants = buildQueryVariants(normalizedQuery);
-  debug.queryVariants = queryVariants;
+  const variants = buildMorphologicalLookupVariants(normalizedQuery);
+  const singleTok = singleTokenFromNormalizedQuery(normalizedQuery);
+  const singleTokVariantList = singleTok ? tokenExpansionForLookup(singleTok) : null;
 
-  const creaHits = searchFoodDb(creaDb, normalizedQuery, queryVariants);
+  debug.queryVariants = variants;
+  debug.lookupVariants = variants;
+
+  const userDb =
+    userFoodDb != null && typeof userFoodDb === 'object' && !Array.isArray(userFoodDb) ? userFoodDb : null;
+
+  /** @type {{ key: string, item: object, confidence: number, normLabel: string, matchedViaVariant: string, synonymMatch: boolean, __lookupSource?: 'global' | 'user' }[]} */
+  let creaHits;
+  if (userDb) {
+    if (singleTokVariantList && singleTokVariantList.length > 0) {
+      creaHits = mergeSingleWordLookupHits(creaDb, userDb, normalizedQuery, variants, singleTokVariantList);
+    } else {
+      const gHits = computeDbHits(creaDb, normalizedQuery, variants, singleTokVariantList);
+      const uHits = computeDbHits(userDb, normalizedQuery, variants, singleTokVariantList);
+      creaHits = mergeHitsPreferGlobalOnTie(gHits, uHits);
+    }
+    debug.splitUserDb = true;
+  } else {
+    creaHits = computeDbHits(creaDb, normalizedQuery, variants, singleTokVariantList);
+  }
+
   debug.creaHitCount = creaHits.length;
   debug.creaTop = creaHits[0] ? { key: creaHits[0].key, confidence: creaHits[0].confidence } : null;
 
   const topCrea = creaHits[0];
   if (topCrea && topCrea.confidence >= threshold) {
-    const candidate = buildCandidateSnapshot(topCrea.key, topCrea.item, 'CREA');
+    const topSource = snapshotSourceFromLookupHit(topCrea, 'CREA');
+    const candidate = buildCandidateSnapshot(topCrea.key, topCrea.item, topSource);
     const alternatives = snapshotsFromHits(creaHits, 'CREA', 1, MAX_ALTERNATIVES);
     const via = topCrea.matchedViaVariant;
     const syn =
       topCrea.synonymMatch && via && via !== normalizedQuery
         ? `Trovato tramite sinonimo: ${via}. `
         : '';
+    const dbLabel =
+      topSource === 'USER'
+        ? 'nel tuo database alimenti'
+        : topSource === 'CREA'
+          ? 'nel database CREA'
+          : 'nel catalogo';
     return {
       status: 'matched',
-      source: 'CREA',
+      source: topSource,
       confidence: topCrea.confidence,
       candidate,
       alternatives,
-      explanation: `${syn}Match affidabile nel database CREA (confidence ${topCrea.confidence}).`,
+      explanation: `${syn}Match affidabile ${dbLabel} (confidence ${topCrea.confidence}).`,
       needsReview: false,
       debug,
     };
   }
 
-  const usdaHits = searchFoodDb(usdaDb, normalizedQuery, queryVariants);
+  const usdaFuzzy = searchFoodDbMultiPass(usdaDb, normalizedQuery, variants);
+  const strictUsda =
+    singleTokVariantList && singleTokVariantList.length > 0
+      ? searchFoodDbStrictSingleWordBase(usdaDb, normalizedQuery, singleTokVariantList)
+      : [];
+  const usdaHits = mergeStrictBaseThenFuzzy(strictUsda, usdaFuzzy);
   debug.usdaHitCount = usdaHits.length;
   debug.usdaTop = usdaHits[0] ? { key: usdaHits[0].key, confidence: usdaHits[0].confidence } : null;
 
@@ -475,20 +783,25 @@ export function lookupFoodCandidate({ query, creaDb, usdaDb, options }) {
     };
   }
 
-  /** @type {{ key: string, item: object, confidence: number, source: 'CREA' | 'USDA', normLabel: string }[]} */
+  /** @type {{ key: string, item: object, confidence: number, source: LookupSnapshotSource, normLabel: string }[]} */
   const merged = [];
   for (let i = 0; i < creaHits.length; i += 1) {
     const h = creaHits[i];
-    merged.push({ ...h, source: 'CREA' });
+    merged.push({ ...h, source: snapshotSourceFromLookupHit(h, 'CREA') });
   }
   for (let i = 0; i < usdaHits.length; i += 1) {
     const h = usdaHits[i];
     merged.push({ ...h, source: 'USDA' });
   }
+  const sourceRank = (s) => {
+    if (s === 'CREA') return 0;
+    if (s === 'USER') return 1;
+    return 2;
+  };
   merged.sort((a, b) => {
     if (b.confidence !== a.confidence) return b.confidence - a.confidence;
-    const ks = String(a.source).localeCompare(String(b.source));
-    if (ks !== 0) return ks;
+    const dr = sourceRank(a.source) - sourceRank(b.source);
+    if (dr !== 0) return dr;
     return String(a.key).localeCompare(String(b.key));
   });
 

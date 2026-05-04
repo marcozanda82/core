@@ -208,8 +208,7 @@ export function evaluateAiDayCoach(input) {
 
   if (budget[period]) {
     if (import.meta.env?.DEV) {
-      // eslint-disable-next-line no-console
-      console.log('[AI COACH]', state, null, { reason: 'period_budget', period });
+      logAiCoachDevOnce(state, null, { reason: 'period_budget', period });
     }
     return { suggestion: null, state, period };
   }
@@ -282,9 +281,28 @@ export function evaluateAiDayCoach(input) {
     : null;
 
   if (import.meta.env?.DEV) {
-    // eslint-disable-next-line no-console
-    console.log('[AI COACH]', state, suggestion, { period });
+    logAiCoachDevOnce(state, suggestion, { period });
   }
 
   return { suggestion, state, period };
+}
+
+/** Evita log DEV ripetuti con stesso stato/suggerimento tra re-render React. */
+let __aiCoachDevLogKey = '';
+function logAiCoachDevOnce(state, suggestion, extra) {
+  if (!import.meta.env?.DEV) return;
+  const key = [
+    extra?.reason ?? '',
+    extra?.period ?? '',
+    state?.totalCalories ?? '',
+    state?.mealCount ?? '',
+    state?.foodCount ?? '',
+    state?.totalProt ?? '',
+    suggestion?.ruleId ?? '',
+    suggestion?.message ?? '',
+  ].join('|');
+  if (key === __aiCoachDevLogKey) return;
+  __aiCoachDevLogKey = key;
+  // eslint-disable-next-line no-console
+  console.log('[AI COACH]', state, suggestion, extra);
 }

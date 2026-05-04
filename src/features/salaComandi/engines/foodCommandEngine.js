@@ -2,17 +2,159 @@
  * Parsing puro di comandi tipo "ho mangiato X e Y": niente React, storage, API, Firebase.
  */
 
-import { findBestFoodMatch, findRecentFoodHabit } from '@/features/salaComandi/utils/foodUtils';
-import {
-  compoundCarrierConfidencePenalty,
-  expandItalianFoodVariants,
-  simpleIngredientConfidenceBoost,
-} from '@/features/salaComandi/engines/italianFoodVariants';
+import { findRecentFoodHabit } from '@/features/salaComandi/utils/foodUtils';
 
-const AMBIGUITY_SCORE_GAP = 100;
-const READY_MIN_TOP_SCORE = 350;
+const ACCENT_REGEX = /[\u0300-\u036f]/g;
+
+const READY_BIDIRECT_MIN = 0.92;
+const READY_DESC_COVERAGE_MIN = 0.75;
+const AMBIGUITY_BIDIRECT_GAP = 0.055;
+/** Seconda opzione comunque ragionevole (evita ambiguity spuria su residue scarse) */
+const AMBIGUITY_SECOND_MIN_SCORE = 0.72;
+const SKIP_TOKENS = [
+  'alla',
+  'allo',
+  'al',
+  'ai',
+  'agli',
+  'alle',
+  'con',
+  'di',
+  'del',
+  'della',
+  'delle',
+  'dei',
+];
+
+/** @returns {boolean} true se lemma di token è un variant ortografico comune yogurt/yoghurt (non richiesto in spec ma stabile sul DB italiano). */
+function alternateSpellingEquivalent(a, b) {
+  if (a === b) return true;
+  const yz = ['yogurt', 'yoghurt'];
+  if (yz.includes(a) && yz.includes(b)) return true;
+  return false;
+}
+
+/**
+ * Tokenizza nome alimento per pertinenza bidirezionale.
+ * @param {unknown} value
+ */
+function tokenizeFoodName(value) {
+  /** @type {string[]} */
+  const rawParts = String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(ACCENT_REGEX, '')
+    .replace(/[''`´]/g, ' ')
+    .split(/\s+/);
+
+  /** @type {string[]} */
+  const out = [];
+  for (let i = 0; i < rawParts.length; i += 1) {
+    let t = rawParts[i]
+      .replace(/^[^a-z0-9àèéìòù]+/gi, '')
+      .replace(/[^a-z0-9àèéìòù]+$/gi, '');
+    if (t.length === 0) continue;
+    if (SKIP_TOKENS.includes(t)) continue;
+    out.push(t);
+  }
+  return out;
+}
+
+/**
+ * @returns {{ score: number, queryCoverage: number, descCoverage: number }}
+ */
+function scoreBidirectionalMatch(query, desc) {
+  const qTokens = tokenizeFoodName(query);
+  const dTokens = tokenizeFoodName(desc);
+
+  const matchToken = (a, b) => {
+    if (a === b) return true;
+    if (alternateSpellingEquivalent(a, b)) return true;
+    if (a.endsWith('a') && b === a.slice(0, -1) + 'e') return true;
+    if (a.endsWith('e') && b === a.slice(0, -1) + 'a') return true;
+    if (a.endsWith('o') && b === a.slice(0, -1) + 'i') return true;
+    if (a.endsWith('i') && b === a.slice(0, -1) + 'o') return true;
+    return false;
+  };
+
+  let queryMatches = 0;
+  qTokens.forEach((q) => {
+    if (dTokens.some((d) => matchToken(q, d))) {
+      queryMatches += 1;
+    }
+  });
+
+  let descMatches = 0;
+  dTokens.forEach((d) => {
+    if (qTokens.some((q) => matchToken(q, d))) {
+      descMatches += 1;
+    }
+  });
+
+  const queryCoverage = qTokens.length ? queryMatches / qTokens.length : 0;
+  const descCoverage = dTokens.length ? descMatches / dTokens.length : 0;
+
+  const lengthPenalty = dTokens.length > qTokens.length ? (dTokens.length - qTokens.length) * 0.1 : 0;
+
+  const score = queryCoverage * 0.6 + descCoverage * 0.4 - lengthPenalty;
+
+  return {
+    score,
+    queryCoverage,
+    descCoverage,
+  };
+}
+
+/**
+ * Query lower + spazi singoli.
+ * @param {string} q
+ */
+function compactLowerQuery(q) {
+  return String(q || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Compare stringa comando con desc DB dopo strip accenti/apici coerenti con ranking.
+ */
+function normalizeComparableFoodString(s) {
+  let t = String(s ?? '')
+    .normalize('NFD')
+    .replace(ACCENT_REGEX, '');
+  t = t.replace(/[''`´]/g, '');
+  return compactLowerQuery(t);
+}
+
+/** True se comando e voce sono sostanzialmente la stessa etichetta. */
+function practicallyEqualFoodLabel(query, desc) {
+  const qa = normalizeComparableFoodString(query);
+  const da = normalizeComparableFoodString(desc);
+  if (!qa.length || !da.length) return false;
+  if (qa === da) return true;
+  const qTok = tokenizeFoodName(query);
+  const dTok = tokenizeFoodName(desc);
+  if (!qTok.length || !dTok.length) return false;
+  const qs = [...qTok].slice().sort().join(' ');
+  const ds = [...dTok].slice().sort().join(' ');
+  return qs === ds;
+}
+
+/**
+ * Ready secondo soglie bidirezionali o uguaglianza pratica.
+ * @param {*} bm
+ * @param {string} query
+ * @param {string} descText
+ */
+function passesBidirectReadyGate(bm, query, descText) {
+  if (practicallyEqualFoodLabel(query, descText)) return true;
+  if (!bm || typeof bm !== 'object') return false;
+  return bm.score >= READY_BIDIRECT_MIN && bm.descCoverage >= READY_DESC_COVERAGE_MIN;
+}
 
 const IT_ARTICLE_ONE = /^(?:un[ao']\s+|un\s+|una\s+|uno\s+)/i;
+
 const NUM_WORD_MAP = Object.freeze({
   un: 1,
   una: 1,
@@ -76,7 +218,6 @@ function extractQuantity(segment) {
   const raw = normalizeFoodText(segment);
   let explicitGrams = null;
   let countHint = null;
-  /** true solo per "un/una caffè" — l'habit vince sul count 1; i numeri scritti (2, due) hanno priorità */
   let countHintFromArticle = false;
   let rest = raw;
 
@@ -188,64 +329,21 @@ function safeFiniteNumber(n) {
 }
 
 /**
- * Query lower + spazi singoli (allineato al matching su desc DB).
- * @param {string} q
+ * Preferenza morfologica leggerissima quando query e desc sono compatibili fragola→fragole.
+ * Evita pareggio lessicografico “fragola” prima di “fragole” con score identico.
+ * @param {string} queryNormalized
+ * @param {string} descText
  */
-function compactLowerQuery(q) {
-  return String(q || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-}
-
-/**
- * Varianti query: originale + sing/plur italiano per token (prodotto cartesiano limitato).
- * @param {string} queryAlreadyLower compact lower query
- */
-function expandCommandQueryVariants(queryAlreadyLower) {
-  const qn = compactLowerQuery(queryAlreadyLower);
-  if (!qn) return [];
-  const tokens = qn.split(/\s+/).filter(Boolean);
-  const expandedPerTok = tokens.map((tok) => {
-    const s = new Set([tok]);
-    expandItalianFoodVariants(tok).forEach((v) => s.add(v));
-    return [...s];
-  });
-  /** @type {string[][]} */
-  let combos = [[]];
-  for (let ti = 0; ti < expandedPerTok.length; ti += 1) {
-    const opts = expandedPerTok[ti];
-    const next = [];
-    for (let ci = 0; ci < combos.length; ci += 1) {
-      const prefix = combos[ci];
-      for (let oi = 0; oi < opts.length; oi += 1) {
-        next.push(prefix.concat(opts[oi]));
-        if (next.length > 48) break;
-      }
-      if (next.length > 48) break;
-    }
-    combos = next;
+function singularQueryPluralDescBonus(queryNormalized, descText) {
+  const qTok = tokenizeFoodName(queryNormalized);
+  const dTok = tokenizeFoodName(descText);
+  if (qTok.length !== 1 || dTok.length !== 1) return 0;
+  const qa = qTok[0];
+  const db = dTok[0];
+  if (qa.endsWith('a') && !qa.endsWith('ia') && db === qa.slice(0, -1) + 'e') {
+    return 4e-6;
   }
-  const out = new Set([qn]);
-  for (let i = 0; i < combos.length; i += 1) {
-    out.add(combos[i].join(' ').trim());
-  }
-  return Array.from(out).filter(Boolean);
-}
-
-/**
- * Score grezzo nome DB vs una variante query (stessa scala legacy).
- * @param {string} dbNameLower
- * @param {string} qv
- */
-function scoreDbNameAgainstQueryVariant(dbNameLower, qv) {
-  if (!dbNameLower || !qv) return -1;
-  if (dbNameLower === qv) return 10000;
-  if (dbNameLower.startsWith(qv)) return 900 - Math.abs(dbNameLower.length - qv.length);
-  if (qv.length >= 2 && (dbNameLower.includes(qv) || qv.includes(dbNameLower))) {
-    return 800 - Math.abs(dbNameLower.length - qv.length);
-  }
-  return -1;
+  return 0;
 }
 
 /**
@@ -255,38 +353,54 @@ function scoreDbNameAgainstQueryVariant(dbNameLower, qv) {
  */
 function collectFoodCandidates(query, foodDb, max = 8) {
   if (!query || !foodDb || typeof foodDb !== 'object') return [];
-  const q = compactLowerQuery(query);
-  if (!q) return [];
+  const q = normalizeFoodText(query);
+  if (!q.trim()) return [];
 
-  const queryVariants = expandCommandQueryVariants(q);
+  const qTok = tokenizeFoodName(q);
+  const widen = Math.max(max, Math.min(24, 8 + Math.max(qTok.length - 1, 0) * 4));
 
-  /** @type {{ key: string, score: number, item: object }[]} */
+  /** @type {{ key: string, score: number, item: object, bm: ReturnType<typeof scoreBidirectionalMatch> }[]} */
   const list = [];
+
   for (const key in foodDb) {
     if (!Object.prototype.hasOwnProperty.call(foodDb, key)) continue;
     const item = foodDb[key];
     const dbName = String(item?.desc ?? item?.name ?? '')
-      .toLowerCase()
       .trim();
     if (!dbName) continue;
 
-    let score = -1;
-    for (let vi = 0; vi < queryVariants.length; vi += 1) {
-      const qv = queryVariants[vi];
-      const s = scoreDbNameAgainstQueryVariant(dbName, qv);
-      if (s > score) score = s;
+    const bm = scoreBidirectionalMatch(q, dbName);
+
+    const qCov = bm.queryCoverage;
+    if (qCov <= 0 && !practicallyEqualFoodLabel(q, dbName)) {
+      continue;
     }
-    if (score < 0) continue;
 
-    const boostPoints = Math.round(simpleIngredientConfidenceBoost(dbName, q) * 2500);
-    const penaltyPoints = Math.round(compoundCarrierConfidencePenalty(dbName, q) * 2500);
-    score += boostPoints - penaltyPoints;
+    const sortScore = bm.score + singularQueryPluralDescBonus(q, dbName);
 
-    list.push({ key, score, item });
+    /** sortKey alto = migliore; tiebreak: desc più corta poi desc lessicografica */
+    const dLen = tokenizeFoodName(dbName).length;
+    const secondary = -dLen * 0.001;
+    list.push({
+      key,
+      score: sortScore + secondary,
+      item,
+      bm,
+    });
   }
 
-  list.sort((a, b) => b.score - a.score);
-  return list.slice(0, max);
+  list.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const da = String(a.item?.desc ?? a.item?.name ?? '');
+    const dbb = String(b.item?.desc ?? b.item?.name ?? '');
+    return da.localeCompare(dbb, 'it');
+  });
+
+  /** normalizza campo score pubblico sugli estratti bm puri ripristinando valore ordinamento principale senza fractional tiebreak rumoroso */
+  return list.slice(0, widen).map((row) => ({
+    ...row,
+    score: row.bm.score,
+  }));
 }
 
 /**
@@ -311,10 +425,6 @@ function buildMatchedFoodSnapshot(key, item) {
 
 /**
  * @param {object} params
- * @param {string} params.rawSegment
- * @param {Record<string, object>} params.foodDb
- * @param {unknown[]} params.flatLog
- * @param {object | null | undefined} params.mealContext
  */
 function buildFoodCommandItem({ rawSegment, foodDb, flatLog, mealContext }) {
   void mealContext;
@@ -324,10 +434,12 @@ function buildFoodCommandItem({ rawSegment, foodDb, flatLog, mealContext }) {
   const displayRawName = nameForMatch || normalizeFoodText(rawSegment);
 
   const candidatesFull = collectFoodCandidates(nameForMatch, foodDb, 8);
+
+  /** score esposto: scala 0–10000 per lettura nell’UI / debug senza rotture */
   const candidates = candidatesFull.map((c) => ({
     key: c.key,
     desc: String(c.item?.desc ?? c.item?.name ?? c.key).trim(),
-    score: c.score,
+    score: Math.max(0, Math.round(Math.min(1.5, Math.max(-0.5, c.bm.score)) * 10000)),
   }));
 
   const firstByScore = candidatesFull[0] ?? null;
@@ -338,43 +450,70 @@ function buildFoodCommandItem({ rawSegment, foodDb, flatLog, mealContext }) {
   let confidence = 0;
   let reason = '';
 
-  if (candidates.length === 0) {
+  if (!firstByScore) {
     itemStatus = 'no_match';
     reason = 'Nessuna voce nel database si avvicina al testo indicato.';
-  } else if (
-    candidates.length >= 2
-    && firstByScore
-    && secondByScore
-    && firstByScore.score - secondByScore.score <= AMBIGUITY_SCORE_GAP
-  ) {
-    itemStatus = 'ambiguous';
-    confidence = Math.min(0.92, Math.max(0.2, firstByScore.score / 10500));
-    reason = 'Più voci hanno punteggio simile: serve una scelta.';
-  } else if (firstByScore && firstByScore.score >= READY_MIN_TOP_SCORE) {
-    itemStatus = 'ready';
-    confidence = Math.min(1, firstByScore.score / 10000);
-    reason = 'Match coerente con il database alimenti.';
-  } else if (firstByScore) {
-    itemStatus = 'needs_review';
-    confidence = Math.min(0.88, Math.max(0.15, firstByScore.score / 1200));
-    reason = 'Match debole: conviene verificare la voce corretta.';
+  } else {
+    const bm1 = firstByScore.bm;
+    const desc1 = String(firstByScore.item?.desc ?? firstByScore.item?.name ?? '').trim();
+    const firstReadyGate = passesBidirectReadyGate(bm1, nameForMatch, desc1);
+
+    const gap =
+      secondByScore != null ? firstByScore.bm.score - secondByScore.bm.score : 1;
+
+    const secondDesc = secondByScore
+      ? String(secondByScore.item?.desc ?? secondByScore.item?.name ?? '')
+      : '';
+    const secondReadyGate = secondByScore
+      ? passesBidirectReadyGate(secondByScore.bm, nameForMatch, secondDesc)
+      : false;
+
+    if (
+      secondByScore
+      && gap <= AMBIGUITY_BIDIRECT_GAP
+      && secondByScore.bm.score >= AMBIGUITY_SECOND_MIN_SCORE
+      && firstReadyGate
+      && secondReadyGate
+    ) {
+      itemStatus = 'ambiguous';
+      confidence = Math.min(0.9, Math.max(0.35, bm1.score + 0.05));
+      reason = 'Più voci equivalgono al comando: scegli quella corretta.';
+    } else if (
+      secondByScore
+      && gap <= AMBIGUITY_BIDIRECT_GAP
+      && bm1.score >= 0.58
+      && secondByScore.bm.score >= 0.58
+    ) {
+      itemStatus = 'ambiguous';
+      confidence = Math.min(0.88, Math.max(0.3, (bm1.score + secondByScore.bm.score) / 2));
+      reason = 'Punteggi molto vicini tra le prime voci: conferma quella giusta.';
+    } else if (firstReadyGate) {
+      itemStatus = 'ready';
+      confidence = Math.min(1, Math.max(0.72, bm1.score));
+      reason = practicallyEqualFoodLabel(nameForMatch, desc1)
+        ? 'Corrispondenza diretta con il database.'
+        : 'Score di pertinenza alto e sufficiente coincidenza con la descrizione.';
+    } else if (bm1.score >= 0.28 || bm1.queryCoverage >= 0.5 || practicallyEqualFoodLabel(nameForMatch, desc1)) {
+      itemStatus = 'needs_review';
+      confidence = Math.min(0.85, Math.max(0.2, bm1.score + 0.12));
+      reason = 'Match non sufficientemente univoco per procedere senza conferma.';
+    } else {
+      itemStatus = 'no_match';
+      reason = 'Nessuna voce nel database si avvicina al testo indicato.';
+    }
   }
 
-  const canonicalKey = findBestFoodMatch(nameForMatch, foodDb);
-  const canonicalRow =
-    canonicalKey && itemStatus !== 'ambiguous' && itemStatus !== 'no_match'
-      ? candidatesFull.find((c) => c.key === canonicalKey)
-      : null;
-  const top = canonicalRow ?? firstByScore;
+  const top = firstByScore;
 
   const matched =
     top && itemStatus !== 'no_match' && itemStatus !== 'ambiguous'
       ? buildMatchedFoodSnapshot(top.key, top.item)
       : null;
 
-  const habit = nameForMatch && foodDb && Object.keys(foodDb).length > 0
-    ? findRecentFoodHabit(nameForMatch, foodDb, flatLog)
-    : null;
+  const habit =
+    nameForMatch && foodDb && Object.keys(foodDb).length > 0
+      ? findRecentFoodHabit(nameForMatch, foodDb, flatLog)
+      : null;
 
   /** @type {number | null} */
   let quantity = null;
@@ -463,10 +602,6 @@ function buildFoodCommandItem({ rawSegment, foodDb, flatLog, mealContext }) {
 
 /**
  * @param {object} input
- * @param {string} [input.text]
- * @param {Record<string, object>} [input.foodDb]
- * @param {unknown[]} [input.flatLog]
- * @param {object} [input.mealContext]
  */
 export function parseFoodCommandIntent(input = {}) {
   const text = input.text != null ? String(input.text) : '';
