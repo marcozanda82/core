@@ -38,8 +38,8 @@ function topDesc(text) {
   assert.notStrictEqual(r.itemStatus, 'no_match');
   const td = String(r.topCandidate ?? '');
   assert.ok(
-    /\bfragole?\b/i.test(td),
-    `atteso fragola/fragole in cima alla lista candidates, primi=${JSON.stringify(td)}`,
+    /^(fragola|fragole)$/i.test(td.trim()),
+    `atteso fragola o fragole in cima, primi=${JSON.stringify(td)}`,
   );
 }
 
@@ -66,7 +66,7 @@ function topDesc(text) {
 {
   const r = topDesc('fragole');
   assert.notStrictEqual(r.itemStatus, 'no_match');
-  assert.ok(/\bfragole?\b/i.test(String(r.topCandidate ?? '')));
+  assert.ok(/^(fragola|fragole)$/i.test(String(r.topCandidate ?? '').trim()));
 }
 
 console.log('foodCommandRankingSmoke OK');
