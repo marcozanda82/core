@@ -146,6 +146,19 @@ export function getCreaFusionPayload(creaDb, query, options = {}) {
     if (fb !== fa) return fb - fa;
     return String(a.name).localeCompare(String(b.name), 'it');
   });
+  if (import.meta.env?.DEV) {
+    const q = String(query || '').trim();
+    const creaKeys =
+      creaDb != null && typeof creaDb === 'object' && !Array.isArray(creaDb)
+        ? Object.keys(creaDb).length
+        : 0;
+    // eslint-disable-next-line no-console
+    console.log('[foodSourceFusion:DEV:getCreaFusionPayload]', {
+      query: q,
+      csvFoodDbKeyCount: creaKeys,
+      creaHits: creaNormalized.length,
+    });
+  }
   return {
     creaNormalized,
     uiItems: sorted.map(fusionItemToUi),
@@ -199,6 +212,22 @@ export async function fuseUsdaIntoCrea(creaNormalized, query, options = {}) {
 
   // eslint-disable-next-line no-console
   console.log('[fusion]', { crea: creaNormalized.length, usda: usdaNormalized.length });
+
+  if (import.meta.env?.DEV) {
+    const top10 = merged.slice(0, 10).map((it) => ({
+      source: it.source,
+      name: it.name,
+      score: Math.round((it.finalScore ?? finalScore(it)) * 1000) / 1000,
+    }));
+    // eslint-disable-next-line no-console
+    console.log('[foodSourceFusion:DEV:fuseUsdaIntoCrea]', {
+      query: q,
+      poolCreaCount: creaNormalized.length,
+      poolUsdaCount: usdaNormalized.length,
+      mergedCount: merged.length,
+      top10,
+    });
+  }
 
   return merged.map(fusionItemToUi);
 }

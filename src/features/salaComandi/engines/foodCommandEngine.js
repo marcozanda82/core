@@ -3,6 +3,7 @@
  */
 
 import { findRecentFoodHabit } from '@/features/salaComandi/utils/foodUtils';
+import { toConceptTokenList } from '@/features/salaComandi/engines/foodCommandConcepts';
 
 const ACCENT_REGEX = /[\u0300-\u036f]/g;
 
@@ -11,6 +12,18 @@ const READY_DESC_COVERAGE_MIN = 0.75;
 const AMBIGUITY_BIDIRECT_GAP = 0.055;
 /** Seconda opzione comunque ragionevole (evita ambiguity spuria su residue scarse) */
 const AMBIGUITY_SECOND_MIN_SCORE = 0.72;
+/**
+ * Solo DEV: euristica sorgente chiave (parseFoodIntent riceve spesso un DB già unito senza metadata).
+ * @param {string} key
+ * @returns {'USER_LIKELY' | 'USDA' | 'GLOBAL_OR_UNKNOWN'}
+ */
+function devGuessFoodKeySource(key) {
+  const k = String(key ?? '');
+  if (/^USDA_/i.test(k)) return 'USDA';
+  if (/^(food_|local_)/i.test(k)) return 'USER_LIKELY';
+  return 'GLOBAL_OR_UNKNOWN';
+}
+
 const SKIP_TOKENS = [
   'alla',
   'allo',
@@ -24,6 +37,10 @@ const SKIP_TOKENS = [
   'della',
   'delle',
   'dei',
+  'e',
+  'ed',
+  'oppure',
+  'ecc',
 ];
 
 /** @returns {boolean} true se lemma di token è un variant ortografico comune yogurt/yoghurt (non richiesto in spec ma stabile sul DB italiano). */
@@ -34,38 +51,15 @@ function alternateSpellingEquivalent(a, b) {
   return false;
 }
 
-/**
- * Tokenizza nome alimento per pertinenza bidirezionale.
- * @param {unknown} value
- */
-function tokenizeFoodName(value) {
-  /** @type {string[]} */
-  const rawParts = String(value ?? '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(ACCENT_REGEX, '')
-    .replace(/[''`´]/g, ' ')
-    .split(/\s+/);
-
-  /** @type {string[]} */
-  const out = [];
-  for (let i = 0; i < rawParts.length; i += 1) {
-    let t = rawParts[i]
-      .replace(/^[^a-z0-9àèéìòù]+/gi, '')
-      .replace(/[^a-z0-9àèéìòù]+$/gi, '');
-    if (t.length === 0) continue;
-    if (SKIP_TOKENS.includes(t)) continue;
-    out.push(t);
-  }
-  return out;
-}
+/** Scala di normalizzazione: allinea il nuovo score (max teorico ~1.8) alle soglie storiche 0–1 */
+const SCORE_FORMULA_SCALE = 1.8;
 
 /**
- * @returns {{ score: number, queryCoverage: number, descCoverage: number }}
+ * @returns {{ score: number, queryCoverage: number, descCoverage: number, foodCoverage: number, matchedQueryTokens: number }}
  */
 function scoreBidirectionalMatch(query, desc) {
-  const qTokens = tokenizeFoodName(query);
-  const dTokens = tokenizeFoodName(desc);
+  const qTokens = toConceptTokenList(query, SKIP_TOKENS);
+  const dTokens = toConceptTokenList(desc, SKIP_TOKENS);
 
   const matchToken = (a, b) => {
     if (a === b) return true;
@@ -91,17 +85,34 @@ function scoreBidirectionalMatch(query, desc) {
     }
   });
 
-  const queryCoverage = qTokens.length ? queryMatches / qTokens.length : 0;
-  const descCoverage = dTokens.length ? descMatches / dTokens.length : 0;
+  const totalQueryTokens = qTokens.length;
+  const totalFoodTokens = dTokens.length;
 
-  const lengthPenalty = dTokens.length > qTokens.length ? (dTokens.length - qTokens.length) * 0.1 : 0;
+  const queryCoverage = totalQueryTokens ? queryMatches / totalQueryTokens : 0;
+  const foodCoverage = totalFoodTokens ? descMatches / totalFoodTokens : 0;
 
-  const score = queryCoverage * 0.6 + descCoverage * 0.4 - lengthPenalty;
+  const lengthPenalty =
+    totalFoodTokens > totalQueryTokens ? (totalFoodTokens - totalQueryTokens) * 0.1 : 0;
+
+  const baseScore = queryCoverage * 0.6 + foodCoverage * 0.4 - lengthPenalty;
+
+  let combined = baseScore + queryCoverage * 0.5 + foodCoverage * 0.3;
+
+  if (totalQueryTokens >= 2 && queryMatches < totalQueryTokens) {
+    combined -= 0.3;
+  }
+
+  const score = Math.min(
+    1,
+    Math.max(0, combined / SCORE_FORMULA_SCALE),
+  );
 
   return {
     score,
     queryCoverage,
-    descCoverage,
+    descCoverage: foodCoverage,
+    foodCoverage,
+    matchedQueryTokens: queryMatches,
   };
 }
 
@@ -127,14 +138,63 @@ function normalizeComparableFoodString(s) {
   return compactLowerQuery(t);
 }
 
+/** Testo desc normalizzato per prefix-match e pattern derivati (stessa base del matching). */
+function normalizeFoodSearchText(s) {
+  return normalizeComparableFoodString(s);
+}
+
+const DERIVED_RANK_PREFIXES = ['farina', 'crema', 'latte', 'biscotti', 'pomodori'];
+
+/**
+ * Bonus/penalità deterministiche solo per query a un concept-token (non altera bm).
+ * @param {string} dbName
+ * @param {string[]} qTok
+ * @param {string[]} dTok
+ */
+function singleConceptRankingAdjustments(dbName, qTok, dTok) {
+  if (qTok.length !== 1) {
+    return {
+      startsWithPrimaryConcept: false,
+      simplicityBonus: 0,
+      derivedPenalty: 0,
+      total: 0,
+    };
+  }
+
+  const normalizedDesc = normalizeFoodSearchText(dbName);
+  const qt0 = qTok[0];
+  const d0 = dTok.length ? dTok[0] : '';
+  const startsWithPrimaryConcept =
+    normalizedDesc.startsWith(qt0) || (dTok.length > 0 && d0 === qt0);
+
+  let total = 0;
+  if (startsWithPrimaryConcept) total += 0.18;
+
+  const foodTokensLen = dTok.length;
+  const simplicityBonus = Math.max(0, 0.12 - foodTokensLen * 0.015);
+  total += simplicityBonus;
+
+  const derivedPenalty = DERIVED_RANK_PREFIXES.some((p) => normalizedDesc.startsWith(p))
+    ? 0.12
+    : 0;
+  total -= derivedPenalty;
+
+  return {
+    startsWithPrimaryConcept,
+    simplicityBonus,
+    derivedPenalty,
+    total,
+  };
+}
+
 /** True se comando e voce sono sostanzialmente la stessa etichetta. */
 function practicallyEqualFoodLabel(query, desc) {
   const qa = normalizeComparableFoodString(query);
   const da = normalizeComparableFoodString(desc);
   if (!qa.length || !da.length) return false;
   if (qa === da) return true;
-  const qTok = tokenizeFoodName(query);
-  const dTok = tokenizeFoodName(desc);
+  const qTok = toConceptTokenList(query, SKIP_TOKENS);
+  const dTok = toConceptTokenList(desc, SKIP_TOKENS);
   if (!qTok.length || !dTok.length) return false;
   const qs = [...qTok].slice().sort().join(' ');
   const ds = [...dTok].slice().sort().join(' ');
@@ -329,21 +389,15 @@ function safeFiniteNumber(n) {
 }
 
 /**
- * Preferenza morfologica leggerissima quando query e desc sono compatibili fragola→fragole.
- * Evita pareggio lessicografico “fragola” prima di “fragole” con score identico.
+ * Preferenza quando query e desc sono un solo token-concetto coincidente o meno (tie-break ordinamento).
  * @param {string} queryNormalized
  * @param {string} descText
  */
 function singularQueryPluralDescBonus(queryNormalized, descText) {
-  const qTok = tokenizeFoodName(queryNormalized);
-  const dTok = tokenizeFoodName(descText);
+  const qTok = toConceptTokenList(queryNormalized, SKIP_TOKENS);
+  const dTok = toConceptTokenList(descText, SKIP_TOKENS);
   if (qTok.length !== 1 || dTok.length !== 1) return 0;
-  const qa = qTok[0];
-  const db = dTok[0];
-  if (qa.endsWith('a') && !qa.endsWith('ia') && db === qa.slice(0, -1) + 'e') {
-    return 4e-6;
-  }
-  return 0;
+  return qTok[0] === dTok[0] ? 0.08 : 0;
 }
 
 /**
@@ -356,7 +410,7 @@ function collectFoodCandidates(query, foodDb, max = 8) {
   const q = normalizeFoodText(query);
   if (!q.trim()) return [];
 
-  const qTok = tokenizeFoodName(q);
+  const qTok = toConceptTokenList(q, SKIP_TOKENS);
   const widen = Math.max(max, Math.min(24, 8 + Math.max(qTok.length - 1, 0) * 4));
 
   /** @type {{ key: string, score: number, item: object, bm: ReturnType<typeof scoreBidirectionalMatch> }[]} */
@@ -376,30 +430,35 @@ function collectFoodCandidates(query, foodDb, max = 8) {
       continue;
     }
 
-    const sortScore = bm.score + singularQueryPluralDescBonus(q, dbName);
+    const dTok = toConceptTokenList(dbName, SKIP_TOKENS);
+    const singular = singularQueryPluralDescBonus(q, dbName);
+    const rankAdj = singleConceptRankingAdjustments(dbName, qTok, dTok);
+    const compositeRankScore = bm.score + singular + rankAdj.total;
 
     /** sortKey alto = migliore; tiebreak: desc più corta poi desc lessicografica */
-    const dLen = tokenizeFoodName(dbName).length;
+    const dLen = dTok.length;
     const secondary = -dLen * 0.001;
     list.push({
       key,
-      score: sortScore + secondary,
+      sortKey: compositeRankScore + secondary,
+      rankAdj: import.meta.env?.DEV ? rankAdj : undefined,
       item,
       bm,
+      compositeRankScore,
     });
   }
 
   list.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
+    if (b.sortKey !== a.sortKey) return b.sortKey - a.sortKey;
     const da = String(a.item?.desc ?? a.item?.name ?? '');
     const dbb = String(b.item?.desc ?? b.item?.name ?? '');
     return da.localeCompare(dbb, 'it');
   });
 
-  /** normalizza campo score pubblico sugli estratti bm puri ripristinando valore ordinamento principale senza fractional tiebreak rumoroso */
+  /** score esposto = ranking composito (bm + tie-break singolo + bonus query semplice); bm resta per soglie ready/ambiguous */
   return list.slice(0, widen).map((row) => ({
     ...row,
-    score: row.bm.score,
+    score: row.compositeRankScore,
   }));
 }
 
@@ -439,7 +498,7 @@ function buildFoodCommandItem({ rawSegment, foodDb, flatLog, mealContext }) {
   const candidates = candidatesFull.map((c) => ({
     key: c.key,
     desc: String(c.item?.desc ?? c.item?.name ?? c.key).trim(),
-    score: Math.max(0, Math.round(Math.min(1.5, Math.max(-0.5, c.bm.score)) * 10000)),
+    score: Math.max(0, Math.round(Math.min(1.5, Math.max(-0.5, c.score)) * 10000)),
   }));
 
   const firstByScore = candidatesFull[0] ?? null;
@@ -488,11 +547,20 @@ function buildFoodCommandItem({ rawSegment, foodDb, flatLog, mealContext }) {
       confidence = Math.min(0.88, Math.max(0.3, (bm1.score + secondByScore.bm.score) / 2));
       reason = 'Punteggi molto vicini tra le prime voci: conferma quella giusta.';
     } else if (firstReadyGate) {
-      itemStatus = 'ready';
-      confidence = Math.min(1, Math.max(0.72, bm1.score));
-      reason = practicallyEqualFoodLabel(nameForMatch, desc1)
-        ? 'Corrispondenza diretta con il database.'
-        : 'Score di pertinenza alto e sufficiente coincidenza con la descrizione.';
+      const singleConceptQuery =
+        toConceptTokenList(nameForMatch, SKIP_TOKENS).length === 1;
+      if (singleConceptQuery && candidatesFull.length > 1) {
+        itemStatus = 'ambiguous';
+        confidence = Math.min(0.9, Math.max(0.35, bm1.score + 0.05));
+        reason =
+          'Più voci plausibili per un termine generico: scegli quella corretta.';
+      } else {
+        itemStatus = 'ready';
+        confidence = Math.min(1, Math.max(0.72, bm1.score));
+        reason = practicallyEqualFoodLabel(nameForMatch, desc1)
+          ? 'Corrispondenza diretta con il database.'
+          : 'Score di pertinenza alto e sufficiente coincidenza con la descrizione.';
+      }
     } else if (bm1.score >= 0.28 || bm1.queryCoverage >= 0.5 || practicallyEqualFoodLabel(nameForMatch, desc1)) {
       itemStatus = 'needs_review';
       confidence = Math.min(0.85, Math.max(0.2, bm1.score + 0.12));
@@ -585,6 +653,33 @@ function buildFoodCommandItem({ rawSegment, foodDb, flatLog, mealContext }) {
 
   if (habit?.qty != null && suggestedQuantity == null) {
     suggestedQuantity = safeFiniteNumber(habit.qty);
+  }
+
+  if (import.meta.env?.DEV) {
+    const queryTokens = toConceptTokenList(nameForMatch, SKIP_TOKENS);
+    const habitDbKey = habit?.dbKey ?? null;
+    // eslint-disable-next-line no-console
+    console.log('[foodSmart:DEV]', {
+      input: displayRawName,
+      queryTokens,
+      foodDbKeyCount: Object.keys(foodDb || {}).length,
+      habit: habitDbKey ? { dbKey: habitDbKey, qty: habit.qty } : null,
+      candidates: candidatesFull.slice(0, 8).map((c, idx) => ({
+        rank: idx + 1,
+        key: c.key,
+        name: String(c.item?.desc ?? c.item?.name ?? ''),
+        candidateSource: devGuessFoodKeySource(c.key),
+        userMatch: devGuessFoodKeySource(c.key) === 'USER_LIKELY',
+        habitScore: habitDbKey && c.key === habitDbKey ? 1 : 0,
+        sourceBoost: null,
+        bmScore: c.bm?.score,
+        compositeRank: c.score,
+        sortKey: c.sortKey ?? c.score,
+        queryCoverage: c.bm?.queryCoverage,
+        foodCoverage: c.bm?.foodCoverage,
+        rankAdj: c.rankAdj,
+      })),
+    });
   }
 
   return {

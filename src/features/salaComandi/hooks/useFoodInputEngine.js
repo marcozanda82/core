@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ref, set } from 'firebase/database';
-import { searchFoods } from '../../../foodSearch';
+import { searchFoodsDetailed } from '../../../foodSearch';
 import { getCreaFusionPayload, fuseUsdaIntoCrea } from '../../../foodSourceFusion';
 import { TARGETS, getDefaultNutrientValue } from '../../../useBiochimico';
 import { getBarcodeNutritionOverride } from '../../../barcodeFoodOverrides';
 import { enrichDbRowWithFoodUnits } from '../../../foodUnits';
 import { estraiDatiFoodDb, getAverageEstimate } from '../engines/foodDataEngine';
+import { orchestrateFoodInput } from '../engines/foodInputOrchestrator.js';
+import { parseFoodCommandIntent } from '../engines/foodCommandEngine.js';
 
 export default function useFoodInputEngine({
   foodDb,
@@ -22,10 +24,12 @@ export default function useFoodInputEngine({
   setMealBuilderBarcodeBootstrap,
   getLastQuantityForFoodRef,
   callGeminiAPIWithRotationRef,
+  flatLog,
 }) {
   const [foodNameInput, setFoodNameInput] = useState('');
   const [foodWeightInput, setFoodWeightInput] = useState('');
   const [foodDropdownSuggestions, setFoodDropdownSuggestions] = useState([]);
+  const [foodInputOrchestration, setFoodInputOrchestration] = useState(null);
   const [creaResults, setCreaResults] = useState([]);
   const [isCreaLoading, setIsCreaLoading] = useState(false);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
@@ -43,20 +47,53 @@ export default function useFoodInputEngine({
     const q = (foodNameInput || '').trim();
     if (!q) {
       setFoodDropdownSuggestions([]);
+      setFoodInputOrchestration(null);
       return;
     }
 
-    const matches = searchFoods(foodDb, q, {
+    const detailedCandidates = searchFoodsDetailed(foodDb, q, {
       mode: 'autocomplete',
-      limit: 5,
+      limit: 8,
       includeUserHistory: true,
-    }).map((item) => ({
+    });
+
+    const matches = detailedCandidates.slice(0, 5).map((item) => ({
       key: item.id,
       desc: item.name || item.id,
     }));
 
     setFoodDropdownSuggestions(matches);
-  }, [foodNameInput, foodDb]);
+
+    const safeFlatLog = Array.isArray(flatLog) ? flatLog : [];
+    const safeFoodDb =
+      foodDb != null && typeof foodDb === 'object' && !Array.isArray(foodDb) ? foodDb : {};
+    const orchestration = orchestrateFoodInput({
+      query: q,
+      foodDb: safeFoodDb,
+      flatLog: safeFlatLog,
+      maxClassicResults: 8,
+      classicSearchFn: () => detailedCandidates,
+      smartParseFn: ({ text, foodDb: fd, flatLog: fl }) =>
+        parseFoodCommandIntent({
+          text,
+          foodDb: fd && typeof fd === 'object' && !Array.isArray(fd) ? fd : {},
+          flatLog: Array.isArray(fl) ? fl : [],
+          mealContext: null,
+        }),
+    });
+    setFoodInputOrchestration(orchestration);
+
+    if (import.meta.env?.DEV) {
+      // eslint-disable-next-line no-console
+      console.log('[foodInputOrchestration:DEV]', {
+        query: orchestration.query,
+        mode: orchestration.mode,
+        shouldShowSmartSuggestion: orchestration.shouldShowSmartSuggestion,
+        classicCount: orchestration.classicCandidates?.length ?? 0,
+        smartStatus: orchestration.smartSuggestion?.status ?? null,
+      });
+    }
+  }, [foodNameInput, foodDb, flatLog]);
 
   const fetchOpenFoodFactsProduct = useCallback(async (barcode) => {
     const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json?fields=product_name,ingredients_text_it,ingredients_text,nutriments`);
@@ -311,6 +348,25 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     const q = String(query || '').trim();
     if (!q) return;
 
+    if (import.meta.env?.DEV) {
+      const userN =
+        foodDb != null && typeof foodDb === 'object' && !Array.isArray(foodDb)
+          ? Object.keys(foodDb).length
+          : 0;
+      const csvN =
+        csvFoodDb != null && typeof csvFoodDb === 'object' && !Array.isArray(csvFoodDb)
+          ? Object.keys(csvFoodDb).length
+          : 0;
+      // eslint-disable-next-line no-console
+      console.log('[useFoodInputEngine:DEV:triggerCreaSearch]', {
+        input: q,
+        opts,
+        foodDbUserKeys: userN,
+        csvFoodDbKeys: csvN,
+        csvFoodDbLoading,
+      });
+    }
+
     const onlyUsda = opts.onlyUsda === true;
     if (onlyUsda) {
       if (lastCreaQueryRef.current !== q || !Array.isArray(lastCreaNormalizedRef.current)) {
@@ -359,6 +415,32 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       setShowFoodDropdown(true);
       setIsCreaLoading(false);
 
+      if (import.meta.env?.DEV) {
+        const sourceBoost = (s) => (s === 'CREA' ? 20 : s === 'USDA' ? 5 : 0);
+        const fuseOrdering = (n) =>
+          Number(n.textScore ?? n.matchScore ?? 0) * 100
+          + Number(n.recencyScore ?? 0) * 100
+          + Number(n.frequencyScore ?? 0) * 100
+          + sourceBoost(n.source);
+        // eslint-disable-next-line no-console
+        console.log('[classicFoodSearch:DEV]', {
+          path: 'creaDropdown',
+          query: q,
+          includeUserHistory: false,
+          dbScope: 'csvFoodDb (solo catalogo CREA locale)',
+          top: creaNormalized.slice(0, 10).map((n, i) => ({
+            rank: i + 1,
+            id: n.id,
+            candidateSource: n.source ?? 'CREA',
+            textMatch100: Number(n.textScore ?? n.matchScore ?? 0) * 100,
+            recency100: Number(n.recencyScore ?? 0) * 100,
+            frequency100: Number(n.frequencyScore ?? 0) * 100,
+            sourceBoost: sourceBoost(n.source),
+            orderingScore: fuseOrdering(n),
+          })),
+        });
+      }
+
       const loadUsda = opts.loadUsda !== false && q.length >= 3;
       if (!loadUsda) return;
 
@@ -370,6 +452,20 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         if (!ac.signal.aborted) {
           setCreaResults(merged);
           usdaFusionDoneForQueryRef.current = q;
+          if (import.meta.env?.DEV) {
+            // uiItems da fuseUsdaIntoCrea: ordine finale = fusion; punteggi interni non esposti su row UI
+            // eslint-disable-next-line no-console
+            console.log('[classicFoodSearch:DEV]', {
+              path: 'creaUsdaMerged',
+              query: q,
+              top: merged.slice(0, 10).map((it, i) => ({
+                rank: i + 1,
+                id: it.id,
+                name: it.name,
+                candidateSource: it.foodSource ?? it.row?.foodSource ?? 'unknown',
+              })),
+            });
+          }
         }
       } catch {
         /* USDA opzionale: lista CREA già mostrata */
@@ -402,6 +498,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
     foodWeightInput,
     setFoodWeightInput,
     foodDropdownSuggestions,
+    foodInputOrchestration,
     creaResults,
     isCreaLoading,
     isBarcodeScannerOpen,
