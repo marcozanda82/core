@@ -1,5 +1,10 @@
 import { getStructuralBaselineOffsetFromHistory } from '../../../biometricHistory';
-import { computeMetabolicEngineTargetVec } from '../../../metabolicDirectionEngine';
+import {
+  computeMetabolicEngineTargetVec,
+  computeOutsideEnergyDeadbandDayFraction,
+  computeEnergyDeadBandHalfWidthKcal,
+  applyEnergyDeadBandToKcalBalance,
+} from '../../../metabolicDirectionEngine';
 import {
   METABOLIC_COMPASS_DIRECTIONS,
   metabolicAngleDegToCompassBearingDeg,
@@ -96,8 +101,9 @@ function dailyTrainingToMapAxis(dayTrainingLoad) {
   return clampAxis(((t - 35) / 65) * 100);
 }
 
-function buildDailyPointFromLogDay(day, baselineOffset) {
-  const kcalBalance = Number(day?.kcalBalance) || 0;
+function buildDailyPointFromLogDay(day, baselineOffset, referenceTdee = 2000) {
+  const kcalBalanceRaw = Number(day?.kcalBalance) || 0;
+  const { adjusted: kcalBalance } = applyEnergyDeadBandToKcalBalance(kcalBalanceRaw, referenceTdee);
   const trainingLoadAxis = dailyTrainingToMapAxis(day?.trainingLoad);
   const sleepHours = Number(day?.sleepHours);
   const safeSleep = Number.isFinite(sleepHours) && sleepHours > 0 ? sleepHours : 8;
@@ -200,11 +206,176 @@ export function computeCompassDisplayLabel(sectorLabel, signalStrength) {
   return sectorLabel;
 }
 
+/** Oltre questo raggio (coordinate mappa −100…100) zona neutra semantica — no copy quadranti “ansiogeni”. */
+const SEMANTIC_NEAR_CENTER_MAP_DISTANCE = 34;
+
+/** Magnitudine normalizzata bussola sotto cui si considera praticamente equilibrio energetico (post dead-band). */
+const COMPASS_MAGNITUDE_NEAR_ZERO = 0.058;
+
+/** Giorni con |bilancio| fuori dead-band / finestra — soglie per label estreme. */
+const PERSIST_FRAC_EXTREME_SOFT = 0.38;
+const PERSIST_FRAC_EXTREME_FULL = 0.52;
+
+/** Settori bussola con copy storico aggressivo: richiedono persistenza e ampiezza per nominarli. */
+const EXTREME_COMPASS_SECTOR_LABELS = new Set([
+  'Accumulo Grasso',
+  'Surplus Disfunzionale',
+  'Catabolismo',
+  'Digiuno / Autofagia',
+]);
+
+/** Settori “costruttivi” da non nominare in modo pieno se energia neutra (dead-band) ma stimolo allenamento alto. */
+const ANABOLIC_STRONG_SECTOR_LABELS = new Set(['Massa Pulita', 'Ricomposizione']);
+
+/** Coerente col range x normalizzato post dead-band (~±500 kcal full scale): piccolo residuo = ancora “energia neutra”. */
+const NEUTRAL_COMPASS_X_EPS = 0.035;
+
+/** y normalizzato (0–1) sopra cui il training conta come stimolo significativo per il downgrade semantico. */
+const TRAINING_SIGNIFICANT_Y = 0.3;
+
+/**
+ * Energia in dead-band sul periodo O vettore quasi neutro su x (fallback se audit assente).
+ *
+ * @param {boolean | null | undefined} deadBandAppliedOnMean
+ * @param {number} compassX
+ */
+function isInsideEnergyDeadbandSemantic(deadBandAppliedOnMean, compassX) {
+  const cx = Number(compassX) || 0;
+  if (deadBandAppliedOnMean === true) return true;
+  return Math.abs(cx) <= NEUTRAL_COMPASS_X_EPS;
+}
+
+/**
+ * Label leggere quando geometria punta al quadrante costruttivo ma senza surplus energetico sostenuto.
+ *
+ * @param {'very_weak'|'weak'|'moderate'|'strong'} signalStrength
+ */
+function neutralEnergyTrainingAnabolicDisplayLabel(signalStrength) {
+  if (signalStrength === 'very_weak') return 'Equilibrio con stimolo allenante';
+  if (signalStrength === 'weak') return 'Ricomposizione lieve';
+  if (signalStrength === 'moderate') return 'Mantenimento attivo';
+  return 'Stimolo costruttivo moderato';
+}
+
+/**
+ * Fase A — gating semantico: label estreme e tono “kentu” solo con segnale e persistenza sufficienti.
+ * Refinement — energia neutra + training: no wording bulk/anabolico pieno su settori costruttivi.
+ *
+ * @param {{
+ *   sectorLabel: string,
+ *   rawMagnitude: number,
+ *   signalStrength: ReturnType<typeof computeCompassSignalStrength>,
+ *   persistFrac: number,
+ *   mapDistance: number,
+ *   compassX: number,
+ *   compassY: number,
+ *   deadBandAppliedOnMean: boolean | null | undefined,
+ * }} p
+ * @returns {{
+ *   displayLabel: string,
+ *   anabolicLabelDowngraded: boolean,
+ *   insideEnergyDeadband: boolean,
+ * }}
+ */
+function gateMetabolicCompassDisplayLabel({
+  sectorLabel,
+  rawMagnitude,
+  signalStrength,
+  persistFrac,
+  mapDistance,
+  compassX,
+  compassY,
+  deadBandAppliedOnMean,
+}) {
+  const mapDist = Number(mapDistance);
+  const mag = Number(rawMagnitude) || 0;
+  const persist = Number(persistFrac) || 0;
+  const cy = Number(compassY) || 0;
+
+  const insideEnergyDeadband = isInsideEnergyDeadbandSemantic(deadBandAppliedOnMean, compassX);
+  const trainingSignificant = cy >= TRAINING_SIGNIFICANT_Y;
+
+  const persistNotElevated = persist < PERSIST_FRAC_EXTREME_FULL;
+  const magnitudeNotStrong = signalStrength !== 'strong';
+
+  const shouldDowngradeAnabolicConstructive =
+    ANABOLIC_STRONG_SECTOR_LABELS.has(sectorLabel) &&
+    insideEnergyDeadband &&
+    trainingSignificant &&
+    (magnitudeNotStrong || persistNotElevated);
+
+  if (shouldDowngradeAnabolicConstructive) {
+    return {
+      displayLabel: neutralEnergyTrainingAnabolicDisplayLabel(signalStrength),
+      anabolicLabelDowngraded: true,
+      insideEnergyDeadband,
+    };
+  }
+
+  const nearMapCenter =
+    Number.isFinite(mapDist) && mapDist >= 0 && mapDist <= SEMANTIC_NEAR_CENTER_MAP_DISTANCE;
+  const nearEnergyNeutral = mag <= COMPASS_MAGNITUDE_NEAR_ZERO;
+
+  if (nearMapCenter || nearEnergyNeutral) {
+    if (signalStrength === 'very_weak' || nearEnergyNeutral) {
+      return {
+        displayLabel: 'Equilibrio metabolico',
+        anabolicLabelDowngraded: false,
+        insideEnergyDeadband,
+      };
+    }
+    return {
+      displayLabel: 'Segnale lieve',
+      anabolicLabelDowngraded: false,
+      insideEnergyDeadband,
+    };
+  }
+
+  const isExtreme = EXTREME_COMPASS_SECTOR_LABELS.has(sectorLabel);
+  if (!isExtreme) {
+    return {
+      displayLabel: computeCompassDisplayLabel(sectorLabel, signalStrength),
+      anabolicLabelDowngraded: false,
+      insideEnergyDeadband,
+    };
+  }
+
+  if (signalStrength === 'very_weak' || signalStrength === 'weak') {
+    return {
+      displayLabel: computeCompassDisplayLabel(sectorLabel, signalStrength),
+      anabolicLabelDowngraded: false,
+      insideEnergyDeadband,
+    };
+  }
+
+  if (persist < PERSIST_FRAC_EXTREME_SOFT) {
+    return {
+      displayLabel: 'Oscillazioni fisiologiche',
+      anabolicLabelDowngraded: false,
+      insideEnergyDeadband,
+    };
+  }
+
+  if (persist < PERSIST_FRAC_EXTREME_FULL) {
+    return {
+      displayLabel: computeCompassDisplayLabel(sectorLabel, 'weak'),
+      anabolicLabelDowngraded: false,
+      insideEnergyDeadband,
+    };
+  }
+
+  return {
+    displayLabel: computeCompassDisplayLabel(sectorLabel, signalStrength),
+    anabolicLabelDowngraded: false,
+    insideEnergyDeadband,
+  };
+}
+
 const MAP_QUADRANT_RISK_LABELS = {
-  NW: 'BURNOUT / CORTISOLO',
-  NE: 'INFIAMMAZIONE / BULK',
-  SW: 'DEPERIMENTO / CATABOLISMO',
-  SE: 'FEGATO GRASSO / INSULINA',
+  NW: 'Carico elevato e recupero ridotto',
+  NE: 'Tendenza a surplus protratto',
+  SW: 'Tendenza a deficit prolungato',
+  SE: 'Surplus con scarso stimolo fisico',
 };
 
 /**
@@ -218,6 +389,7 @@ const MAP_QUADRANT_RISK_LABELS = {
  *   riskLabel: string,
  *   longevityDrop: number,
  *   glycemicAura: number,
+ *   mapDistance?: number,
  * }} p
  */
 export function buildMapSignalPresentation({
@@ -228,6 +400,7 @@ export function buildMapSignalPresentation({
   riskLabel,
   longevityDrop: _longevityDrop,
   glycemicAura,
+  mapDistance,
 }) {
   const gx = Number(x) || 0;
   const gy = Number(y) || 0;
@@ -237,7 +410,34 @@ export function buildMapSignalPresentation({
     MAP_QUADRANT_RISK_LABELS[quadrant] ||
     String(quadrant || '');
 
-  const s = mapSignalStrength;
+  const s =
+    mapSignalStrength === 'very_weak' ||
+    mapSignalStrength === 'weak' ||
+    mapSignalStrength === 'moderate' ||
+    mapSignalStrength === 'strong'
+      ? mapSignalStrength
+      : 'very_weak';
+
+  const md = Number(mapDistance);
+  const nearCenter =
+    Number.isFinite(md) && md >= 0 && md <= SEMANTIC_NEAR_CENTER_MAP_DISTANCE;
+
+  if (nearCenter) {
+    const strongish = s === 'moderate' || s === 'strong';
+    const scale = s === 'very_weak' ? 0.3 : s === 'weak' ? 0.6 : 1;
+    return {
+      displayX: clampAxis(gx * scale),
+      displayY: clampAxis(gy * scale),
+      displayAura: aura * scale,
+      presentationTitle: strongish ? 'Direzione stabile' : 'Equilibrio metabolico',
+      presentationCaption: strongish
+        ? 'Assetto neutro: oscillazioni fisiologiche nell’area centrale.'
+        : 'Oscillazioni fisiologiche nell’area centrale.',
+      suppressRiskNarrative: true,
+      suppressLongevityWarning: true,
+    };
+  }
+
   if (s === 'very_weak') {
     return {
       displayX: clampAxis(gx * 0.3),
@@ -272,8 +472,8 @@ export function buildMapSignalPresentation({
   };
 }
 
-function computeMetabolicCompassDirectionPure(dailyHistory, timeframe) {
-  const { x, y } = computeMetabolicEngineTargetVec(dailyHistory, timeframe);
+function computeMetabolicCompassDirectionPure(dailyHistory, timeframe, referenceTdee = 2000) {
+  const { x, y } = computeMetabolicEngineTargetVec(dailyHistory, timeframe, referenceTdee);
   const angleRad = Math.atan2(y, x);
   const angleDeg = Number.isFinite(angleRad) ? angleRad * METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG : 0;
   const magnitude = Math.hypot(x, y);
@@ -341,7 +541,14 @@ export function computeMetabolicMapCompassBundle({
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
 
-  const { mapInputs, rawDetails } = computeMetabolicMapInputsAndAudit(dailyHistory, selectedTimeframe);
+  const utKcal = Number(userTargets?.kcal);
+  const referenceTdee = Number.isFinite(utKcal) && utKcal > 0 ? utKcal : 2000;
+
+  const { mapInputs, rawDetails } = computeMetabolicMapInputsAndAudit(
+    dailyHistory,
+    selectedTimeframe,
+    referenceTdee,
+  );
 
   const baselineOffset = resolveBaselineOffset(bodyMetricsHistory, dailyHistory);
 
@@ -358,7 +565,7 @@ export function computeMetabolicMapCompassBundle({
 
   const dailyMapPositions = (() => {
     const slice = dailyHistory.slice(-7);
-    return slice.map((day) => buildDailyPointFromLogDay(day, baselineOffset));
+    return slice.map((day) => buildDailyPointFromLogDay(day, baselineOffset, referenceTdee));
   })();
 
   const projectedTrajectory = buildTrajectoryProjection(dailyMapPositions);
@@ -371,18 +578,20 @@ export function computeMetabolicMapCompassBundle({
   });
   const { lineProjection, lineTrend, lineConfidence } = formatWeightProjectionUI(weightProjection);
 
-  const compassDirection = computeMetabolicCompassDirectionPure(dailyHistory, selectedTimeframe);
+  const compassDirection = computeMetabolicCompassDirectionPure(
+    dailyHistory,
+    selectedTimeframe,
+    referenceTdee,
+  );
+
+  const persistFracOutsideDeadband = computeOutsideEnergyDeadbandDayFraction(
+    dailyHistory,
+    selectedTimeframe,
+    referenceTdee,
+  );
 
   const rawVector = { x: compassDirection.x, y: compassDirection.y };
   const visualVector = computeVisualCompassVector(rawVector);
-  if (import.meta.env.DEV) {
-    console.log('[CompassVisualLayer]', { raw: rawVector, visual: visualVector });
-  }
-
-  const rawMagnitude = Math.hypot(rawVector.x, rawVector.y);
-  const compassSectorLabel = nearestCompassSectorLabelFromMetabolicAngleDeg(compassDirection.angleDeg);
-  const compassSignalStrength = computeCompassSignalStrength(rawMagnitude);
-  const compassDisplayLabel = computeCompassDisplayLabel(compassSectorLabel, compassSignalStrength);
 
   const currentMapPoint = dailyMapPositions.length ? dailyMapPositions[dailyMapPositions.length - 1] : null;
   const longevityScore = currentMapPoint
@@ -395,6 +604,38 @@ export function computeMetabolicMapCompassBundle({
   const mapPointY = Number.isFinite(Number(currentMapPoint?.y))
     ? Number(currentMapPoint.y)
     : mapPosition.y;
+
+  const mapDistanceSemantic = Math.hypot(mapPointX, mapPointY);
+
+  const rawMagnitude = Math.hypot(rawVector.x, rawVector.y);
+  const compassSectorLabel = nearestCompassSectorLabelFromMetabolicAngleDeg(compassDirection.angleDeg);
+  const compassSignalStrength = computeCompassSignalStrength(rawMagnitude);
+  const compassGating = gateMetabolicCompassDisplayLabel({
+    sectorLabel: compassSectorLabel,
+    rawMagnitude,
+    signalStrength: compassSignalStrength,
+    persistFrac: persistFracOutsideDeadband,
+    mapDistance: mapDistanceSemantic,
+    compassX: compassDirection.x,
+    compassY: compassDirection.y,
+    deadBandAppliedOnMean: rawDetails.deadBandAppliedOnMean,
+  });
+  const compassDisplayLabel = compassGating.displayLabel;
+
+  if (import.meta.env.DEV) {
+    console.log('[metabolicCompass:DEV]', {
+      rawEnergyBalance: rawDetails.meanKcal,
+      normalizedX: compassDirection.x,
+      deadBandApplied: rawDetails.deadBandAppliedOnMean,
+      energyDeadBandHalfWidthKcal: rawDetails.energyDeadBandHalfWidthKcal,
+      persistFracOutsideDeadband,
+      signalStrength: compassSignalStrength,
+      finalLabel: compassDisplayLabel,
+      rawSectorLabel: compassSectorLabel,
+      anabolicLabelDowngraded: compassGating.anabolicLabelDowngraded,
+      insideEnergyDeadband: compassGating.insideEnergyDeadband,
+    });
+  }
 
   const longevityScoreAnchorForDrop = calculateMetabolicScore(
     baselineOffset.x,
@@ -411,6 +652,7 @@ export function computeMetabolicMapCompassBundle({
     riskLabel: MAP_QUADRANT_RISK_LABELS[mapPosition.quadrant] || '',
     longevityDrop,
     glycemicAura: mapPosition.finalAura,
+    mapDistance: mapDistanceSemantic,
   });
 
   const compassAmbientStyle = buildCompassAmbientStyle(
@@ -426,6 +668,10 @@ export function computeMetabolicMapCompassBundle({
     mapInputs.sleepHours < 7.5 ? Math.max(0, 7.5 - mapInputs.sleepHours) : 0;
 
   return {
+    selectedTimeframe,
+    referenceTdeeKcal: referenceTdee,
+    impactMultiplier: rawDetails.impactMultiplier ?? null,
+    persistFracOutsideDeadband,
     metabolicMapInputs: mapInputs,
     metabolicMapRawDetails: rawDetails,
     baselineOffset,

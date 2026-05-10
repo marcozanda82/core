@@ -16,6 +16,11 @@ const TIMEFRAME_DAY_WINDOW = {
 const SMOOTH_ALPHA = 0.15;
 const ANGLE_NOISE_HALF_SPAN_DEG = 2;
 
+/** Fascia neutra sul bilancio kcal (intake − TDEE): max tra minimo assoluto e % TDEE, cappata. */
+const METABOLIC_ENERGY_DEADBAND_MIN_KCAL = 75;
+const METABOLIC_ENERGY_DEADBAND_TDEE_FRAC = 0.04;
+const METABOLIC_ENERGY_DEADBAND_MAX_KCAL = 125;
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -35,26 +40,92 @@ function compassHistoryForEngine(days) {
 }
 
 /**
+ * Metà larghezza dead-band energetica (kcal) rispetto al TDEE di riferimento.
+ * Esempio: TDEE 2500 → max(75, 100) cappato a 125 → |±100| kcal ≈ neutri.
+ *
+ * @param {number} [referenceTdee]
+ * @returns {number}
+ */
+export function computeEnergyDeadBandHalfWidthKcal(referenceTdee = 2000) {
+  const tdee = Number(referenceTdee);
+  if (!Number.isFinite(tdee) || tdee <= 0) return METABOLIC_ENERGY_DEADBAND_MIN_KCAL;
+  const fromPct = Math.abs(tdee) * METABOLIC_ENERGY_DEADBAND_TDEE_FRAC;
+  return Math.min(
+    METABOLIC_ENERGY_DEADBAND_MAX_KCAL,
+    Math.max(METABOLIC_ENERGY_DEADBAND_MIN_KCAL, fromPct),
+  );
+}
+
+/**
+ * @param {number} kcalBalance intake − TDEE
+ * @param {number} [referenceTdee]
+ * @returns {{ adjusted: number, deadBandApplied: boolean, halfWidthKcal: number }}
+ */
+export function applyEnergyDeadBandToKcalBalance(kcalBalance, referenceTdee = 2000) {
+  const half = computeEnergyDeadBandHalfWidthKcal(referenceTdee);
+  const kb = Number(kcalBalance) || 0;
+  if (Math.abs(kb) <= half) {
+    return { adjusted: 0, deadBandApplied: true, halfWidthKcal: half };
+  }
+  return { adjusted: kb, deadBandApplied: false, halfWidthKcal: half };
+}
+
+/**
+ * Finestra giorni effettiva del motore bussola (senza oggi).
+ *
+ * @param {Array<{ date?: string, kcalBalance?: number, trainingLoad?: number }>} days
+ * @param {MetabolicTimeframe} [timeframe='7d']
+ */
+export function getMetabolicDirectionWindowSlice(days, timeframe = '7d') {
+  const windowDays = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
+  const safeDays = compassHistoryForEngine(days);
+  if (!safeDays.length) return [];
+  return safeDays.length <= windowDays ? safeDays : safeDays.slice(-windowDays);
+}
+
+/**
+ * Frazione di giorni nella finestra con |bilancio kcal| oltre la dead-band (persistenza direzione energetica).
+ *
+ * @param {Array<{ date?: string, kcalBalance?: number }>} dailyHistory
+ * @param {MetabolicTimeframe} timeframe
+ * @param {number} [referenceTdee]
+ * @returns {number} in [0, 1]
+ */
+export function computeOutsideEnergyDeadbandDayFraction(dailyHistory, timeframe, referenceTdee = 2000) {
+  const slice = getMetabolicDirectionWindowSlice(dailyHistory, timeframe);
+  if (!slice.length) return 0;
+  const half = computeEnergyDeadBandHalfWidthKcal(referenceTdee);
+  let n = 0;
+  for (let i = 0; i < slice.length; i += 1) {
+    if (Math.abs(Number(slice[i]?.kcalBalance) || 0) > half) n += 1;
+  }
+  return n / slice.length;
+}
+
+/**
  * @param {{ kcalBalance: number, trainingLoad: number }} day
+ * @param {number} [referenceTdee=2000]
  * @returns {{ x: number, y: number }}
  */
-export function normalizeMetabolicDay(day) {
-  const x = clamp(day.kcalBalance / 500, -1, 1);
+export function normalizeMetabolicDay(day, referenceTdee = 2000) {
+  const { adjusted } = applyEnergyDeadBandToKcalBalance(day.kcalBalance, referenceTdee);
+  const x = clamp(adjusted / 500, -1, 1);
   const y = clamp(day.trainingLoad / 100, 0, 1);
   return { x, y };
 }
 
 /**
  * @param {Array<{ kcalBalance: number, trainingLoad: number }>} days
+ * @param {number} [referenceTdee=2000]
  * @returns {{ x: number, y: number }}
  */
-export function averageNormalizedVec(days) {
+export function averageNormalizedVec(days, referenceTdee = 2000) {
   const n = days.length;
   if (n === 0) return { x: 0, y: 0 };
   let sx = 0;
   let sy = 0;
   for (let i = 0; i < n; i += 1) {
-    const v = normalizeMetabolicDay(days[i]);
+    const v = normalizeMetabolicDay(days[i], referenceTdee);
     sx += v.x;
     sy += v.y;
   }
@@ -62,10 +133,10 @@ export function averageNormalizedVec(days) {
   return { x: sx * k, y: sy * k };
 }
 
-function tailAverage(days, maxLen) {
+function tailAverage(days, maxLen, referenceTdee = 2000) {
   if (!days.length) return { x: 0, y: 0 };
   const slice = days.length <= maxLen ? days : days.slice(-maxLen);
-  return averageNormalizedVec(slice);
+  return averageNormalizedVec(slice, referenceTdee);
 }
 
 /**
@@ -75,12 +146,13 @@ function tailAverage(days, maxLen) {
  *
  * @param {Array<{ date?: string, kcalBalance: number, trainingLoad: number }>} days — più vecchio → più recente; ultimo = ieri (calendario)
  * @param {MetabolicTimeframe} [timeframe='7d']
+ * @param {number} [referenceTdee=2000] TDEE utente per dead-band energetica (allineato a buildMetabolicCompassDailyHistory).
  * @returns {{ x: number, y: number }}
  */
-export function computeMetabolicEngineTargetVec(days, timeframe = '7d') {
+export function computeMetabolicEngineTargetVec(days, timeframe = '7d', referenceTdee = 2000) {
   const windowDays = TIMEFRAME_DAY_WINDOW[timeframe] ?? TIMEFRAME_DAY_WINDOW['7d'];
   const safeDays = compassHistoryForEngine(days);
-  let { x, y } = tailAverage(safeDays, windowDays);
+  let { x, y } = tailAverage(safeDays, windowDays, referenceTdee);
 
   if (x > 0 && y < 0.3) y *= 0.72;
   if (x < 0 && y > 0.8) y *= 0.94;
@@ -133,7 +205,7 @@ export function useMetabolicDirectionEngine(dailyHistory, timeframe = '7d') {
   const [smoothed, setSmoothed] = useState({ x: 0, y: 0 });
 
   useLayoutEffect(() => {
-    const target = computeMetabolicEngineTargetVec(dailyHistory, timeframe);
+    const target = computeMetabolicEngineTargetVec(dailyHistory, timeframe, 2000);
     const next = lerpVec(previousVecRef.current, target, SMOOTH_ALPHA);
     previousVecRef.current = next;
     setSmoothed(next);

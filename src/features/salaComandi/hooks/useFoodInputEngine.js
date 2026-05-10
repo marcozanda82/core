@@ -6,7 +6,7 @@ import { TARGETS, getDefaultNutrientValue } from '../../../useBiochimico';
 import { getBarcodeNutritionOverride } from '../../../barcodeFoodOverrides';
 import { enrichDbRowWithFoodUnits } from '../../../foodUnits';
 import { estraiDatiFoodDb, getAverageEstimate } from '../engines/foodDataEngine';
-import { orchestrateFoodInput } from '../engines/foodInputOrchestrator.js';
+import { deriveClassicSearchQuery, orchestrateFoodInput } from '../engines/foodInputOrchestrator.js';
 import { parseFoodCommandIntent } from '../engines/foodCommandEngine.js';
 
 export default function useFoodInputEngine({
@@ -51,7 +51,8 @@ export default function useFoodInputEngine({
       return;
     }
 
-    const detailedCandidates = searchFoodsDetailed(foodDb, q, {
+    const classicQuery = deriveClassicSearchQuery(q);
+    const detailedCandidates = searchFoodsDetailed(foodDb, classicQuery, {
       mode: 'autocomplete',
       limit: 8,
       includeUserHistory: true,
@@ -87,6 +88,7 @@ export default function useFoodInputEngine({
       // eslint-disable-next-line no-console
       console.log('[foodInputOrchestration:DEV]', {
         query: orchestration.query,
+        classicQuery,
         mode: orchestration.mode,
         shouldShowSmartSuggestion: orchestration.shouldShowSmartSuggestion,
         classicCount: orchestration.classicCandidates?.length ?? 0,

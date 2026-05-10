@@ -176,10 +176,10 @@ export function getColorFromValue(value) {
 }
 
 const QUADRANT_RISK_LABELS = {
-  NW: 'BURNOUT / CORTISOLO',
-  NE: 'INFIAMMAZIONE / BULK',
-  SW: 'DEPERIMENTO / CATABOLISMO',
-  SE: 'FEGATO GRASSO / INSULINA',
+  NW: 'Carico elevato e recupero ridotto',
+  NE: 'Tendenza a surplus protratto',
+  SW: 'Tendenza a deficit prolungato',
+  SE: 'Surplus con scarso stimolo fisico',
 };
 
 /**
@@ -418,6 +418,7 @@ export default function MetabolicMap({
       riskLabel: QUADRANT_RISK_LABELS[effectiveQuadrant],
       longevityDrop,
       glycemicAura: finalAura,
+      mapDistance: Math.hypot(rawDisplayX, rawDisplayY),
     });
   }, [
     mapPresentationProp,
@@ -868,12 +869,12 @@ export default function MetabolicMap({
         <span
           style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5, color: cornerLabelRgb }}
         >
-          BURNOUT / CORTISOLO
+          Carico elevato e recupero ridotto
         </span>
         <span
           style={{ ...labelStyle, top: 8, right: 8, textAlign: 'right', zIndex: 5, color: cornerLabelRgb }}
         >
-          INFIAMMAZIONE / BULK
+          Tendenza a surplus protratto
         </span>
         <span
           style={{
@@ -885,7 +886,7 @@ export default function MetabolicMap({
             color: cornerLabelRgb,
           }}
         >
-          DEPERIMENTO / CATABOLISMO
+          Tendenza a deficit prolungato
         </span>
         <span
           style={{
@@ -897,7 +898,7 @@ export default function MetabolicMap({
             color: cornerLabelRgb,
           }}
         >
-          FEGATO GRASSO / INSULINA
+          Surplus con scarso stimolo fisico
         </span>
           </>
         ) : null}

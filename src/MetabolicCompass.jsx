@@ -259,8 +259,8 @@ const METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG = 180 / Math.PI;
  * @param {Array<{ date?: string, kcalBalance: number, trainingLoad: number }>} dailyHistory
  * @param {'1d' | '7d' | '14d' | '30d'} timeframe
  */
-function computeMetabolicCompassDirection(dailyHistory, timeframe) {
-  const { x, y } = computeMetabolicEngineTargetVec(dailyHistory, timeframe);
+function computeMetabolicCompassDirection(dailyHistory, timeframe, referenceTdee = 2000) {
+  const { x, y } = computeMetabolicEngineTargetVec(dailyHistory, timeframe, referenceTdee);
   const angleRad = Math.atan2(y, x);
   const angleDeg = Number.isFinite(angleRad) ? angleRad * METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG : 0;
   const magnitude = Math.hypot(x, y);
@@ -312,6 +312,7 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
  *   visualVectorFromBundle?: { visualX: number, visualY: number, visualMagnitude: number, rawMagnitude: number } | null,
  *   compassDisplayLabelFromBundle?: string | null,
  *   mapSignalStrengthFromBundle?: 'very_weak' | 'weak' | 'moderate' | 'strong' | null,
+ *   referenceTdeeKcal?: number | null,
  * }} props
  * `dailyHistory`: serie dal tracker (ultimo = ieri; oggi escluso dal motore). Passare `[]` se assente.
  * `compassScreenActive`: quando passa da false a true, ripristina il periodo al default (es. rientro tab bussola).
@@ -333,8 +334,14 @@ export default function MetabolicCompass({
   visualVectorFromBundle = null,
   compassDisplayLabelFromBundle = null,
   mapSignalStrengthFromBundle = null,
+  referenceTdeeKcal = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
+
+  const referenceTdeeResolved =
+    referenceTdeeKcal != null && Number(referenceTdeeKcal) > 0
+      ? Number(referenceTdeeKcal)
+      : 2000;
 
   const prevCompassScreenActiveRef = useRef(false);
   const [goalInternal, setGoalInternal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
@@ -375,24 +382,38 @@ export default function MetabolicCompass({
     metabolicMapInputsFromBundle != null && compassDirectionFromBundle != null;
 
   const fallbackMetabolicMapInputs = useMemo(
-    () => computeMetabolicMapInputsFromDailyHistory(dailyHistory, selectedTimeframe),
-    [compassHistoryKey]
+    () =>
+      computeMetabolicMapInputsFromDailyHistory(
+        dailyHistory,
+        selectedTimeframe,
+        referenceTdeeResolved
+      ),
+    [dailyHistory, selectedTimeframe, referenceTdeeResolved]
   );
   /** Medie periodo + instabilità glicemica teorica per la mappa (stessa finestra della bussola). */
   const metabolicMapInputs = metabolicMapInputsFromBundle ?? fallbackMetabolicMapInputs;
 
   useEffect(() => {
     if (usesEngineCompassBundle) return;
-    const result = computeMetabolicCompassDirection(dailyHistory, selectedTimeframe);
+    const result = computeMetabolicCompassDirection(
+      dailyHistory,
+      selectedTimeframe,
+      referenceTdeeResolved
+    );
     setInternalCompassSnapshot(result);
-  }, [compassHistoryKey, usesEngineCompassBundle]);
+  }, [dailyHistory, selectedTimeframe, referenceTdeeResolved, usesEngineCompassBundle]);
 
   useEffect(() => {
     if (!usesEngineCompassBundle || !import.meta.env.DEV) return;
-    const oldInternalSnapshot = computeMetabolicCompassDirection(dailyHistory, selectedTimeframe);
+    const oldInternalSnapshot = computeMetabolicCompassDirection(
+      dailyHistory,
+      selectedTimeframe,
+      referenceTdeeResolved
+    );
     const oldInternalMapInputs = computeMetabolicMapInputsFromDailyHistory(
       dailyHistory,
-      selectedTimeframe
+      selectedTimeframe,
+      referenceTdeeResolved
     );
     const snapshotMatch =
       JSON.stringify(oldInternalSnapshot) === JSON.stringify(compassDirectionFromBundle);
@@ -429,6 +450,7 @@ export default function MetabolicCompass({
     selectedTimeframe,
     compassDirectionFromBundle,
     metabolicMapInputsFromBundle,
+    referenceTdeeResolved,
   ]);
 
   const compassSnapshot = compassDirectionFromBundle ?? internalCompassSnapshot;

@@ -216,6 +216,9 @@ export default function MetabolicUnifiedView({
     dailyHistory,
   });
 
+  const referenceTdeeKcal =
+    userTargets != null && Number(userTargets?.kcal) > 0 ? Number(userTargets.kcal) : null;
+
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -412,6 +415,7 @@ export default function MetabolicUnifiedView({
               visualVectorFromBundle={mapData.visualVector}
               compassDisplayLabelFromBundle={mapData.compassDisplayLabel}
               mapSignalStrengthFromBundle={mapData.mapSignalStrength}
+              referenceTdeeKcal={referenceTdeeKcal}
             />
             {SHOW_METABOLIC_DEBUG && (
               <CompassDebugPanel

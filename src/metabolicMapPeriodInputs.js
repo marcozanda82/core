@@ -1,4 +1,8 @@
 import { getTodayString } from './coreEngine';
+import {
+  applyEnergyDeadBandToKcalBalance,
+  computeEnergyDeadBandHalfWidthKcal,
+} from './metabolicDirectionEngine';
 
 /** Allineato a {@link metabolicDirectionEngine.TIMEFRAME_DAY_WINDOW}. */
 const TIMEFRAME_DAY_WINDOW = {
@@ -19,6 +23,10 @@ const EMPTY_MAP_INPUTS = {
 
 const EMPTY_RAW_DETAILS = {
   meanKcal: null,
+  meanKcalDeadBandAdjusted: null,
+  deadBandAppliedOnMean: null,
+  energyDeadBandHalfWidthKcal: null,
+  impactMultiplier: null,
   meanTraining01: null,
   sleepRegisteredMean: null,
   realSleepDays: 0,
@@ -104,13 +112,17 @@ function trainingLoadAxisRawFromMean(mean01to100) {
  *   rawDetails: { meanKcal: number | null, meanTraining01: number | null, sleepRegisteredMean: number | null, realSleepDays: number, totalWindowDays: number }
  * }}
  */
-export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d') {
+export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d', referenceTdee = 2000) {
   const impact = timeframeImpactMultiplier(timeframe);
   const slice = getWindowSlice(dailyHistory, timeframe);
   if (slice.length === 0) {
     return {
       mapInputs: { ...EMPTY_MAP_INPUTS },
-      rawDetails: { ...EMPTY_RAW_DETAILS },
+      rawDetails: {
+        ...EMPTY_RAW_DETAILS,
+        impactMultiplier: impact,
+        energyDeadBandHalfWidthKcal: computeEnergyDeadBandHalfWidthKcal(referenceTdee),
+      },
     };
   }
 
@@ -118,7 +130,9 @@ export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d'
   const trainingLoads = slice.map((d) => clamp(Number(d.trainingLoad) || 0, 0, 100));
 
   const meanKcal = arithmeticMean(kcalBalances);
-  const energyBalance = clamp((meanKcal / 5) * impact, -100, 100);
+  const { adjusted: meanKcalForAxes, deadBandApplied: deadBandAppliedOnMean } =
+    applyEnergyDeadBandToKcalBalance(meanKcal, referenceTdee);
+  const energyBalance = clamp((meanKcalForAxes / 5) * impact, -100, 100);
 
   const meanTraining = arithmeticMean(trainingLoads);
   const trainingLoad = clamp(trainingLoadAxisRawFromMean(meanTraining) * impact, -100, 100);
@@ -142,7 +156,7 @@ export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d'
   const ebStd = stddevSample(kcalBalances);
   const varianceFactor = clamp(ebStd / 400, 0, 1);
   const sleepStress = sleepHours < 7.5 ? clamp((7.5 - sleepHours) / 7.5, 0, 1) : 0;
-  const surplusFactor = clamp(Math.max(0, meanKcal) / 500, 0, 1);
+  const surplusFactor = clamp(Math.max(0, meanKcalForAxes) / 500, 0, 1);
 
   const glycemicRaw =
     0.45 * sleepStress + 0.38 * surplusFactor + 0.22 * varianceFactor;
@@ -159,6 +173,10 @@ export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d'
     },
     rawDetails: {
       meanKcal,
+      meanKcalDeadBandAdjusted: meanKcalForAxes,
+      deadBandAppliedOnMean,
+      energyDeadBandHalfWidthKcal: computeEnergyDeadBandHalfWidthKcal(referenceTdee),
+      impactMultiplier: impact,
       meanTraining01: meanTraining,
       sleepRegisteredMean,
       realSleepDays,
@@ -175,6 +193,6 @@ export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d'
  * @param {'1d' | '7d' | '14d' | '30d'} timeframe
  * @returns {{ energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number }}
  */
-export function computeMetabolicMapInputsFromDailyHistory(dailyHistory, timeframe = '7d') {
-  return computeMetabolicMapInputsAndAudit(dailyHistory, timeframe).mapInputs;
+export function computeMetabolicMapInputsFromDailyHistory(dailyHistory, timeframe = '7d', referenceTdee = 2000) {
+  return computeMetabolicMapInputsAndAudit(dailyHistory, timeframe, referenceTdee).mapInputs;
 }
