@@ -17,6 +17,7 @@ import {
 } from '../../../metabolicMapEngine';
 import { computeMetabolicMapInputsAndAudit } from '../../../metabolicMapPeriodInputs';
 import { computeWeightProjectionFromInputs, formatWeightProjectionUI } from '../../../weightProjectionEngine';
+import { buildMetabolicStateFromBundle } from './metabolicStateBuilder.js';
 
 const METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG = 180 / Math.PI;
 
@@ -667,7 +668,7 @@ export function computeMetabolicMapCompassBundle({
   const sleepPenalty =
     mapInputs.sleepHours < 7.5 ? Math.max(0, 7.5 - mapInputs.sleepHours) : 0;
 
-  return {
+  const bundle = {
     selectedTimeframe,
     referenceTdeeKcal: referenceTdee,
     impactMultiplier: rawDetails.impactMultiplier ?? null,
@@ -719,4 +720,20 @@ export function computeMetabolicMapCompassBundle({
       mapInputs,
     },
   };
+
+  bundle.metabolicState = buildMetabolicStateFromBundle(bundle);
+
+  if (import.meta.env.DEV) {
+    const ms = bundle.metabolicState;
+    console.log('[metabolicState:DEV]', {
+      hasMetabolicState: ms != null,
+      timeframe: ms?.calibration?.timeframe ?? null,
+      signalStrength: ms?.metabolicDirection?.signalStrength ?? null,
+      persistence: ms?.persistence?.outsideEnergyDeadbandDayFraction ?? null,
+      zone: ms?.bodyState?.zone ?? null,
+      displayLabel: ms?.metabolicDirection?.displayLabel ?? null,
+    });
+  }
+
+  return bundle;
 }

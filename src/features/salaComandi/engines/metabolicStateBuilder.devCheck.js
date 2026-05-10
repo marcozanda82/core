@@ -130,11 +130,29 @@ export function runMetabolicStateBuilderDevCheck() {
     if (state.legacy.source !== 'computeMetabolicMapCompassBundle') {
       errors.push('legacy.source mismatch');
     }
-    if (state.legacy.rawBundle !== minimal) {
-      errors.push('legacy.rawBundle should reference input bundle');
+    const lb = state.legacy.rawBundle;
+    if (lb == null || typeof lb !== 'object') {
+      errors.push('legacy.rawBundle invalid');
+    } else if (Object.prototype.hasOwnProperty.call(lb, 'metabolicState')) {
+      errors.push('legacy.rawBundle must omit metabolicState');
+    } else if (lb.selectedTimeframe !== '7d') {
+      errors.push('legacy.rawBundle snapshot mismatch');
     }
     if (state.metabolicDirection.bearingDeg == null) {
       errors.push('expected bearingDeg for angleDeg 45');
+    }
+
+    /** Stesso ordine di {@link computeMetabolicMapCompassBundle}: bundle legacy poi campo parallelo. */
+    const bundleParallel = { ...minimal };
+    bundleParallel.metabolicState = buildMetabolicStateFromBundle(bundleParallel);
+    if (bundleParallel.metabolicState == null) {
+      errors.push('parallel attach: metabolicState missing');
+    } else {
+      expectKeys(bundleParallel.metabolicState, TOP_LEVEL, 'parallel metabolicState');
+      const snap = bundleParallel.metabolicState.legacy?.rawBundle;
+      if (snap != null && typeof snap === 'object' && Object.prototype.hasOwnProperty.call(snap, 'metabolicState')) {
+        errors.push('parallel attach: legacy.rawBundle must omit metabolicState');
+      }
     }
   } catch (e) {
     errors.push(`mock bundle threw: ${e?.message ?? e}`);

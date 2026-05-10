@@ -147,10 +147,27 @@ export function buildMetabolicStateFromBundle(bundle) {
     },
     legacy: {
       source: 'computeMetabolicMapCompassBundle',
-      /** @deprecated Temporaneo per migrazione — evitare persistenza su storage; rimuovere quando MetabolicState sarà fonte unica. */
-      rawBundle: b,
+      /**
+       * Snapshot shallow del bundle senza `metabolicState`, per evitare riferimento circolare
+       * quando il runtime appende `metabolicState` sul bundle.
+       *
+       * @deprecated Temporaneo per migrazione — evitare persistenza su storage; rimuovere quando MetabolicState sarà fonte unica.
+       */
+      rawBundle: bundleLegacySnapshotWithoutMetabolicState(b),
     },
   };
+}
+
+/**
+ * Esclude il campo parallelo `metabolicState` così `legacy.rawBundle` non punta al grafo circolare bundle↔state.
+ *
+ * @param {Record<string, unknown>} b
+ * @returns {Record<string, unknown>}
+ */
+function bundleLegacySnapshotWithoutMetabolicState(b) {
+  if (b == null || typeof b !== 'object') return {};
+  const { metabolicState: _omitParallel, ...rest } = b;
+  return rest;
 }
 
 /** @param {unknown} v */
