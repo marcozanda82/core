@@ -895,7 +895,7 @@ export default function SalaComandi() {
     [userProfile, userTargets]
   );
 
-  const { strategicPlan, isPlannerLoading, updateDayPlan, updateSettings } = useStrategicPlanner(
+  const { strategicPlan, isPlannerLoading, updateDayPlan, updateSettings, saveCalorieMemory } = useStrategicPlanner(
     db,
     userProfile?.uid || user?.uid
   );
@@ -7148,6 +7148,10 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
 
       <TodayStrategyBanner
         strategicPlan={strategicPlan}
+        currentProfile={dayProfile}
+        onSyncProfile={(profile) => {
+          if (profile) setDayProfile(profile);
+        }}
         onOpenPlanner={() => setShowStrategicPlanner(true)}
       />
 
@@ -8138,8 +8142,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           closeDrawer={closeDrawer}
           setShowProfile={setShowProfile}
           kentuChatNotificationBadge={kentuChatNotificationBadge}
-          dayProfile={dayProfile}
-          setDayProfile={setDayProfile}
           calorieTuning={calorieTuning}
           setCalorieTuning={setCalorieTuning}
           onOpenStrategicPlanner={() => setShowStrategicPlanner(true)}
@@ -9420,6 +9422,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         isPlannerLoading={isPlannerLoading}
         updateDayPlan={updateDayPlan}
         updateSettings={updateSettings}
+        saveCalorieMemory={saveCalorieMemory}
       />
       <TargetSettingsModal
         open={showProfile}

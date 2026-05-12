@@ -6,6 +6,7 @@ const DEFAULT_PLAN = {
     deloadFrequencyWeeks: 4, // Scarico predefinito ogni 4 settimane
     currentWeekInCycle: 1,
   },
+  calorieMemory: {}, // Dizionario per ricordare le kcal delle attività
   days: {
     lunedi: null,
     martedi: null,
@@ -35,6 +36,7 @@ export function useStrategicPlanner(db, userUid) {
         // Fonde i dati di Firebase con il default per evitare errori se mancano dei giorni
         setStrategicPlan({
           settings: { ...DEFAULT_PLAN.settings, ...(data.settings || {}) },
+          calorieMemory: { ...DEFAULT_PLAN.calorieMemory, ...(data.calorieMemory || {}) },
           days: { ...DEFAULT_PLAN.days, ...(data.days || {}) }
         });
       } else {
@@ -61,10 +63,17 @@ export function useStrategicPlanner(db, userUid) {
      await update(settingsRef, newSettings);
   }, [db, userUid]);
 
+  const saveCalorieMemory = useCallback(async (memoryKey, kcal) => {
+    if (!db || !userUid || !memoryKey) return;
+    const memRef = ref(db, `users/${userUid}/weeklyStrategicPlanner/calorieMemory/${memoryKey}`);
+    await set(memRef, kcal);
+  }, [db, userUid]);
+
   return {
     strategicPlan,
     isPlannerLoading,
     updateDayPlan,
-    updateSettings
+    updateSettings,
+    saveCalorieMemory,
   };
 }

@@ -1,6 +1,5 @@
 import React from 'react';
 import AddEventMenuGrid from '../components/AddEventMenuGrid';
-import { STRATEGY_PROFILES } from '../coreEngine';
 
 /**
  * Viste iniziali del cassetto: griglia eventi, menu secondario (link), protocollo calorico.
@@ -16,8 +15,6 @@ export default function MainMenuDrawer({
   closeDrawer,
   setShowProfile,
   kentuChatNotificationBadge,
-  dayProfile,
-  setDayProfile,
   calorieTuning,
   setCalorieTuning,
   onOpenStrategicPlanner,
@@ -107,18 +104,6 @@ export default function MainMenuDrawer({
             <h2 style={{ fontSize: '0.8rem', color: '#00e5ff', letterSpacing: '2px', margin: 0 }}>🎯 PROTOCOLLO</h2>
             <div style={{ width: '60px' }}></div>
           </div>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '25px' }}>
-            {Object.keys(STRATEGY_PROFILES).map(key => (
-              <button key={key} type="button" className={`type-btn ${dayProfile === key ? 'active blue' : ''}`} onClick={() => setDayProfile(key)}>
-                {STRATEGY_PROFILES[key].label}
-              </button>
-            ))}
-          </div>
-          <div className="burn-slider-container">
-            <span className="burn-label" style={{color: '#00e5ff'}}>TUNING CALORICO (OVERRIDE)</span>
-            <div className="burn-value tuning">{calorieTuning > 0 ? `+${calorieTuning}` : calorieTuning}</div>
-            <input type="range" min="-500" max="500" step="50" value={calorieTuning} onChange={(e) => setCalorieTuning(Number(e.target.value))} className="custom-range blue" style={{ marginTop: '20px' }} />
-          </div>
           <button
             type="button"
             onClick={() => {
@@ -127,22 +112,27 @@ export default function MainMenuDrawer({
             }}
             style={{
               width: '100%',
-              marginBottom: '12px',
-              padding: '14px 16px',
-              backgroundColor: 'rgba(15, 23, 42, 0.85)',
-              color: '#e2e8f0',
-              border: '1px solid #334155',
-              borderRadius: '12px',
-              fontSize: '0.85rem',
-              fontWeight: 700,
-              letterSpacing: '1px',
+              marginBottom: '24px',
+              padding: '18px 20px',
+              backgroundColor: '#00e5ff',
+              color: '#000',
+              border: 'none',
+              borderRadius: '15px',
+              fontSize: '0.95rem',
+              fontWeight: 'bold',
+              letterSpacing: '2px',
               cursor: 'pointer',
               transition: '0.2s',
+              boxShadow: '0 0 24px rgba(0, 229, 255, 0.45)',
             }}
           >
             📅 Settimana Strategica
           </button>
-          <button type="button" onClick={() => closeDrawer()} style={{ width: '100%', padding: '18px', backgroundColor: '#00e5ff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 0 20px rgba(0, 229, 255, 0.4)' }}>SYNC STRATEGIA</button>
+          <div className="burn-slider-container">
+            <span className="burn-label" style={{color: '#00e5ff'}}>TUNING CALORICO (OVERRIDE)</span>
+            <div className="burn-value tuning">{calorieTuning > 0 ? `+${calorieTuning}` : calorieTuning}</div>
+            <input type="range" min="-500" max="500" step="50" value={calorieTuning} onChange={(e) => setCalorieTuning(Number(e.target.value))} className="custom-range blue" style={{ marginTop: '20px' }} />
+          </div>
         </div>
       )}
     </>

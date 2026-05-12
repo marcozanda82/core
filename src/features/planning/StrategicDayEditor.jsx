@@ -9,10 +9,33 @@ const ACTIVITY_TYPES = [
 
 const MUSCLE_GROUPS = ['Petto', 'Schiena', 'Gambe', 'Spalle', 'Bicipiti', 'Tricipiti', 'ABS'];
 
-export default function StrategicDayEditor({ dayKey, initialData, onSave, onClose }) {
+function buildStrategicCalorieMemoryKey(type, focusArr) {
+  const t = String(type || 'WORKOUT');
+  const f = t === 'WORKOUT' && Array.isArray(focusArr) ? [...focusArr].sort().filter(Boolean) : [];
+  if (t === 'WORKOUT' && f.length > 0) return `${t}_${f.join('_')}`;
+  return t;
+}
+
+function samePlanAsInitial(initialData, t, f) {
+  if (!initialData) return false;
+  const it = initialData.type || 'WORKOUT';
+  const ia = [...(initialData.focus || [])].sort().join('\u0001');
+  const fa = [...(f || [])].sort().join('\u0001');
+  return it === t && ia === fa;
+}
+
+export default function StrategicDayEditor({
+  dayKey,
+  initialData,
+  calorieMemory = {},
+  saveCalorieMemory: _saveCalorieMemory,
+  onSave,
+  onClose,
+}) {
   const [type, setType] = useState('WORKOUT');
   const [focus, setFocus] = useState([]);
   const [hour, setHour] = useState('18:00');
+  const [kcal, setKcal] = useState('');
 
   useEffect(() => {
     if (initialData) {
@@ -26,12 +49,31 @@ export default function StrategicDayEditor({ dayKey, initialData, onSave, onClos
     }
   }, [initialData]);
 
+  useEffect(() => {
+    const key = buildStrategicCalorieMemoryKey(type, focus);
+    if (samePlanAsInitial(initialData, type, focus) && initialData?.kcal != null && String(initialData.kcal) !== '') {
+      setKcal(String(initialData.kcal));
+      return;
+    }
+    const mem = calorieMemory?.[key];
+    setKcal(mem != null && mem !== '' ? String(mem) : '');
+  }, [initialData, type, focus, calorieMemory]);
+
   const toggleMuscleGroup = (group) => {
     setFocus(prev => prev.includes(group) ? prev.filter(g => g !== group) : [...prev, group]);
   };
 
   const handleSave = () => {
-    onSave({ type, focus: type === 'WORKOUT' ? focus : [], hour });
+    const memoryKey = buildStrategicCalorieMemoryKey(type, focus);
+    const raw = String(kcal).trim();
+    const kcalNum = raw === '' ? NaN : Number(raw);
+    onSave({
+      type,
+      focus: type === 'WORKOUT' ? focus : [],
+      hour,
+      memoryKey,
+      kcal: Number.isFinite(kcalNum) ? kcalNum : undefined,
+    });
   };
 
   const handleClear = () => {
@@ -43,7 +85,7 @@ export default function StrategicDayEditor({ dayKey, initialData, onSave, onClos
       <div style={styles.modal}>
         <div style={styles.header}>
           <h3 style={{ margin: 0, textTransform: 'capitalize', color: '#fff' }}>Pianifica {dayKey}</h3>
-          <button onClick={onClose} style={styles.iconBtn}>✕</button>
+          <button type="button" onClick={onClose} style={styles.iconBtn}>✕</button>
         </div>
 
         <div style={styles.content}>
@@ -53,7 +95,10 @@ export default function StrategicDayEditor({ dayKey, initialData, onSave, onClos
             {ACTIVITY_TYPES.map(act => (
               <div 
                 key={act.id} 
+                role="button"
+                tabIndex={0}
                 onClick={() => setType(act.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setType(act.id); }}
                 style={{
                   ...styles.typeCard,
                   borderColor: type === act.id ? '#deff9a' : '#334155',
@@ -75,6 +120,7 @@ export default function StrategicDayEditor({ dayKey, initialData, onSave, onClos
                   const isSelected = focus.includes(group);
                   return (
                     <button
+                      type="button"
                       key={group}
                       onClick={() => toggleMuscleGroup(group)}
                       style={{
@@ -101,12 +147,27 @@ export default function StrategicDayEditor({ dayKey, initialData, onSave, onClos
               style={styles.timeInput} 
             />
           </div>
+
+          {/* KCAL STIMATE (Cervello calorico) */}
+          <div style={{ marginTop: '20px' }}>
+            <label style={styles.label}>Kcal stimate (allenamento)</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={10}
+              value={kcal}
+              onChange={(e) => setKcal(e.target.value)}
+              placeholder="es. 350"
+              style={styles.timeInput}
+            />
+          </div>
         </div>
 
         {/* AZIONI */}
         <div style={styles.footer}>
-          <button onClick={handleClear} style={{ ...styles.actionBtn, backgroundColor: '#ef4444' }}>Azzera</button>
-          <button onClick={handleSave} style={{ ...styles.actionBtn, backgroundColor: '#deff9a', color: '#000', flex: 1 }}>Salva Giornata</button>
+          <button type="button" onClick={handleClear} style={{ ...styles.actionBtn, backgroundColor: '#ef4444' }}>Azzera</button>
+          <button type="button" onClick={handleSave} style={{ ...styles.actionBtn, backgroundColor: '#deff9a', color: '#000', flex: 1 }}>Salva Giornata</button>
         </div>
       </div>
     </div>
@@ -114,8 +175,8 @@ export default function StrategicDayEditor({ dayKey, initialData, onSave, onClos
 }
 
 const styles = {
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 10, display: 'flex', alignItems: 'flex-end' },
-  modal: { backgroundColor: '#0f172a', width: '100%', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', borderTop: '1px solid #334155' },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 10, display: 'flex', alignItems: 'flex-end', overflow: 'hidden' },
+  modal: { backgroundColor: '#0f172a', width: '100%', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', paddingBottom: '40px', borderTop: '1px solid #334155', maxHeight: '85vh', overflowY: 'auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   iconBtn: { background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer' },
   content: { marginBottom: '24px' },
@@ -123,7 +184,7 @@ const styles = {
   typeGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' },
   typeCard: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '12px', borderRadius: '12px', border: '1px solid', cursor: 'pointer', transition: 'all 0.2s' },
   pillBtn: { border: '1px solid #334155', borderRadius: '20px', padding: '6px 12px', fontSize: '14px', cursor: 'pointer', fontWeight: '500', transition: 'all 0.2s' },
-  timeInput: { width: '100%', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #334155', borderRadius: '8px', padding: '12px', fontSize: '16px', outline: 'none' },
+  timeInput: { width: '100%', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #334155', borderRadius: '8px', padding: '12px', fontSize: '16px', outline: 'none', boxSizing: 'border-box' },
   footer: { display: 'flex', gap: '12px' },
   actionBtn: { padding: '14px', borderRadius: '12px', border: 'none', color: '#fff', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }
 };

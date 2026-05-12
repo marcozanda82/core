@@ -20,6 +20,7 @@ export default function StrategicPlannerOverlay({
   isPlannerLoading,
   updateDayPlan,
   updateSettings,
+  saveCalorieMemory,
 }) {
   const [selectedDay, setSelectedDay] = useState(null); // Servirà per aprire l'editor del singolo giorno
 
@@ -88,8 +89,8 @@ export default function StrategicPlannerOverlay({
                   <div style={styles.dayBody}>
                     {dayData ? (
                       <>
-                        <div style={{ color: actType.color, fontSize: '14px', fontWeight: '500' }}>
-                          {actType.label}
+                        <div style={{ color: actType?.color, fontSize: '14px', fontWeight: '500' }}>
+                          {actType?.label}
                         </div>
                         {dayData.focus && (
                           <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>
@@ -120,9 +121,25 @@ export default function StrategicPlannerOverlay({
         <StrategicDayEditor
           dayKey={selectedDay}
           initialData={strategicPlan.days?.[selectedDay]}
+          calorieMemory={strategicPlan.calorieMemory || {}}
+          saveCalorieMemory={saveCalorieMemory}
           onClose={() => setSelectedDay(null)}
           onSave={(newData) => {
-            updateDayPlan(selectedDay, newData);
+            if (newData) {
+              // 1. Salva la pianificazione del giorno
+              updateDayPlan(selectedDay, { 
+                type: newData.type, 
+                focus: newData.focus, 
+                hour: newData.hour, 
+                kcal: newData.kcal 
+              });
+              // 2. Salva il valore nel dizionario della memoria per il futuro
+              if (newData.memoryKey && newData.kcal) {
+                saveCalorieMemory(newData.memoryKey, newData.kcal);
+              }
+            } else {
+              updateDayPlan(selectedDay, null);
+            }
             setSelectedDay(null);
           }}
         />
@@ -146,7 +163,7 @@ const styles = {
     background: 'none', border: 'none', color: '#fff', fontSize: '24px', cursor: 'pointer'
   },
   content: {
-    padding: '20px', overflowY: 'auto', flex: 1
+    padding: '20px', paddingBottom: '120px', overflowY: 'auto', flex: 1
   },
   settingsCard: {
     backgroundColor: '#1e293b', borderRadius: '12px', padding: '16px',

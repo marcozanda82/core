@@ -9,14 +9,28 @@ const ACTIVITY_TYPES = {
 
 const DAYS_MAP = ['domenica', 'lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato'];
 
-export default function TodayStrategyBanner({ strategicPlan, onOpenPlanner }) {
+export default function TodayStrategyBanner({ strategicPlan, currentProfile, onSyncProfile, onOpenPlanner }) {
   if (!strategicPlan) return null;
 
   const todayStr = DAYS_MAP[new Date().getDay()];
   const todayPlan = strategicPlan.days?.[todayStr];
 
   // Se per oggi non c'è nulla pianificato, non mostriamo il banner per non ingombrare la UI
-  if (!todayPlan) return null; 
+  if (!todayPlan) return null;
+
+  // Traduce la pianificazione strategica nei vecchi profili del motore calorico
+  const deriveProfileFromPlan = (plan) => {
+    if (!plan) return null;
+    if (plan.type === 'REST' || plan.type === 'RECOVERY' || plan.type === 'CARDIO') return 'riposo';
+    if (plan.type === 'WORKOUT') {
+      if (plan.focus && plan.focus.includes('Gambe')) return 'gambe';
+      return 'upper'; // Default per gli altri workout pesi (Petto, Schiena, ecc.)
+    }
+    return null;
+  };
+
+  const targetProfile = deriveProfileFromPlan(todayPlan);
+  const isOutOfSync = targetProfile && currentProfile && targetProfile !== currentProfile;
 
   const actType = ACTIVITY_TYPES[todayPlan.type];
 
@@ -50,11 +64,37 @@ export default function TodayStrategyBanner({ strategicPlan, onOpenPlanner }) {
           </div>
         </div>
       </div>
-      {todayPlan.hour && (
-        <div style={{ color: '#cbd5e1', fontSize: '13px', fontWeight: 'bold', backgroundColor: '#0f172a', padding: '6px 10px', borderRadius: '8px' }}>
-          {todayPlan.hour}
-        </div>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        {isOutOfSync && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSyncProfile?.(targetProfile);
+            }}
+            style={{
+              padding: '8px 12px',
+              borderRadius: '10px',
+              border: 'none',
+              backgroundColor: '#00e5ff',
+              color: '#000',
+              fontSize: '12px',
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 0 12px rgba(0, 229, 255, 0.35)',
+            }}
+          >
+            Allinea profilo
+          </button>
+        )}
+        {todayPlan.hour && (
+          <div style={{ color: '#cbd5e1', fontSize: '13px', fontWeight: 'bold', backgroundColor: '#0f172a', padding: '6px 10px', borderRadius: '8px' }}>
+            {todayPlan.hour}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
