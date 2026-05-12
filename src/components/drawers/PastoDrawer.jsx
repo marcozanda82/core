@@ -79,7 +79,9 @@ export default function PastoDrawer({
   dynamicDailyKcal,
   renderLiveProgressBar,
   renderMiniBar,
-  renderProgressBar,
+  drilldownKey,
+  onToggleNutrientDrilldown,
+  drilldownFoodEntriesForToday,
   renderRatioBar,
   mealTotaliFull,
   targetMacrosPasto,
@@ -223,7 +225,9 @@ export default function PastoDrawer({
         dynamicDailyKcal={dynamicDailyKcal}
         renderLiveProgressBar={renderLiveProgressBar}
         renderMiniBar={renderMiniBar}
-        renderProgressBar={renderProgressBar}
+        drilldownKey={drilldownKey}
+        onToggleNutrientDrilldown={onToggleNutrientDrilldown}
+        drilldownFoodEntriesForToday={drilldownFoodEntriesForToday}
         renderRatioBar={renderRatioBar}
         mealTotaliFull={mealTotaliFull}
         targetMacrosPasto={targetMacrosPasto}

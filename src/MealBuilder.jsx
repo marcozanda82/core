@@ -3,6 +3,7 @@
  * Estratto da SalaComandi.jsx. La logica saveMealToDiary resta nel genitore; qui solo rendering e onClick.
  */
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import NutrientProgressBar from './telemetry/NutrientProgressBar';
 import { TARGETS } from './useBiochimico';
 import {
   MEAL_TYPES,
@@ -43,6 +44,7 @@ import {
   UNIT_TYPES,
 } from './smartFoodUnits';
 import { generatePracticalMeal } from './autoMealGenerator';
+import FoodSearchView from './drawers/vistas/FoodSearchView';
 
 /** Icona barcode (stile scan) — nessuna dipendenza esterna. */
 function BarcodeScanIcon({ size = 22 }) {
@@ -1143,7 +1145,9 @@ export default function MealBuilder({
   dynamicDailyKcal,
   renderLiveProgressBar,
   renderMiniBar,
-  renderProgressBar,
+  drilldownKey = null,
+  onToggleNutrientDrilldown = () => {},
+  drilldownFoodEntriesForToday = [],
   renderRatioBar,
   mealTotaliFull,
   targetMacrosPasto,
@@ -1255,6 +1259,22 @@ export default function MealBuilder({
   const mealBuilderScrollAnchorRef = useRef(null);
   const foodDropdownContainerRef = useRef(null);
   const { foodDb: localFoodDb } = useFoodDb();
+
+  const nutrientBar = useCallback(
+    (label, current, target, unit = 'g', nutrientKey = null) => (
+      <NutrientProgressBar
+        label={label}
+        current={current}
+        target={target}
+        unit={unit}
+        nutrientKey={nutrientKey}
+        drilldownKey={drilldownKey}
+        onToggleNutrientDrilldown={onToggleNutrientDrilldown}
+        drilldownFoodEntriesForToday={drilldownFoodEntriesForToday}
+      />
+    ),
+    [drilldownKey, onToggleNutrientDrilldown, drilldownFoodEntriesForToday],
+  );
 
   useEffect(() => {
     const onUpd = () => setOverrideVersion((v) => v + 1);
@@ -2252,6 +2272,84 @@ export default function MealBuilder({
     setShowFoodDropdown(false);
     setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
   }, [foodDb, getLastQuantityForFood, localFoodDb, setFoodNameInput, setFoodWeightInput, setShowFoodDropdown, trackRecentFood]);
+
+  const foodSearchDropdownOpen = useMemo(
+    () =>
+      showFoodDropdown &&
+      Boolean(
+        String(foodNameInput || '').trim() ||
+          (Array.isArray(foodDropdownSuggestions) && foodDropdownSuggestions.length > 0) ||
+          visibleRecentFoodEntries.length > 0 ||
+          visibleFrequentFoodEntries.length > 0 ||
+          pairedFoodSuggestions.length > 0 ||
+          smartSuggestedFoods.length > 0
+      ),
+    [
+      showFoodDropdown,
+      foodNameInput,
+      foodDropdownSuggestions,
+      visibleRecentFoodEntries,
+      visibleFrequentFoodEntries,
+      pairedFoodSuggestions,
+      smartSuggestedFoods,
+    ]
+  );
+
+  const handleFoodSearchSelectLocalSuggestion = useCallback(
+    (s) => {
+      setFoodNameInput(s.desc);
+      setFoodWeightInput(getLastQuantityForFood(s.desc) || '');
+      setSelectedFoodMatch({
+        id: s.key,
+        desc: s.desc,
+        row: foodDb?.[s.key] || localFoodDb?.[s.key] || null,
+      });
+      trackRecentFood({ id: s.key, name: s.desc });
+      setShowFoodDropdown(false);
+      setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
+    },
+    [
+      foodDb,
+      getLastQuantityForFood,
+      localFoodDb,
+      setFoodNameInput,
+      setFoodWeightInput,
+      setSelectedFoodMatch,
+      setShowFoodDropdown,
+      trackRecentFood,
+    ]
+  );
+
+  const handleFoodSearchSelectCatalogResult = useCallback(
+    (result, desc) => {
+      setFoodNameInput(desc);
+      setFoodWeightInput(getLastQuantityForFood(desc) || '');
+      setSelectedFoodMatch({
+        id: result?.id || null,
+        desc,
+        row: result?.row || localFoodDb?.[result?.id] || foodDb?.[result?.id] || null,
+      });
+      trackRecentFood({ id: result?.id || desc, name: desc });
+      setShowFoodDropdown(false);
+      setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
+    },
+    [
+      foodDb,
+      getLastQuantityForFood,
+      localFoodDb,
+      setFoodNameInput,
+      setFoodWeightInput,
+      setSelectedFoodMatch,
+      setShowFoodDropdown,
+      trackRecentFood,
+    ]
+  );
+
+  const handleFoodSearchGenerateWithAi = useCallback(() => {
+    if (!isGeneratingFood && String(foodNameInput || '').trim()) {
+      void generateFoodWithAI(String(foodNameInput).trim());
+    }
+  }, [isGeneratingFood, foodNameInput, generateFoodWithAI]);
 
   const handleApplySuggestedMeal = useCallback((mealFoodsOverride) => {
     const mealFoods = Array.isArray(mealFoodsOverride) && mealFoodsOverride.length > 0
@@ -4123,363 +4221,31 @@ export default function MealBuilder({
                         </div>
                       </div>
                     ) : null}
-                    {showFoodDropdown && (
-                      foodNameInput.trim()
-                      || (foodDropdownSuggestions && foodDropdownSuggestions.length > 0)
-                      || visibleRecentFoodEntries.length > 0
-                      || visibleFrequentFoodEntries.length > 0
-                      || pairedFoodSuggestions.length > 0
-                      || smartSuggestedFoods.length > 0
-                    ) && (
-                      <div
-                        onMouseDown={(e) => e.preventDefault()}
-                        style={{
-                          position: 'absolute',
-                          top: '100%',
-                          left: 0,
-                          right: 0,
-                          background: '#1a1a1a',
-                          border: '1px solid #333',
-                          borderRadius: '0 0 12px 12px',
-                          maxHeight: '220px',
-                          overflowY: 'auto',
-                          zIndex: 50,
-                          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                        }}
-                      >
-                        {isShortFoodQuery && visibleFrequentFoodEntries.length > 0 ? (
-                          <>
-                            <div
-                              style={{
-                                padding: '10px 16px 8px',
-                                color: '#94a3b8',
-                                fontSize: '0.68rem',
-                                fontWeight: '600',
-                                letterSpacing: '0.08em',
-                                textTransform: 'uppercase',
-                                borderBottom: '1px solid #2a2a2a',
-                              }}
-                            >
-                              {`⭐ I tuoi preferiti ${mealSuggestionLabel}`}
-                            </div>
-                            {visibleFrequentFoodEntries.map((entry) => (
-                              <button
-                                key={`frequent-${entry.id}-${entry.count}-${entry.lastUsed}`}
-                                type="button"
-                                style={{
-                                  width: '100%',
-                                  padding: '12px 16px',
-                                  textAlign: 'left',
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#fff',
-                                  cursor: 'pointer',
-                                  fontSize: '0.9rem',
-                                  borderBottom: '1px solid #2a2a2a',
-                                }}
-                                onMouseDown={() => handleSelectRecentFood(entry)}
-                              >
-                                {renderFoodOptionLabel(entry.name, foodNameInput, entry.id)}
-                              </button>
-                            ))}
-                          </>
-                        ) : null}
-                        {isShortFoodQuery && visibleRecentFoodEntries.length > 0 ? (
-                          <>
-                            <div
-                              style={{
-                                padding: '10px 16px 8px',
-                                color: '#94a3b8',
-                                fontSize: '0.68rem',
-                                fontWeight: '600',
-                                letterSpacing: '0.08em',
-                                textTransform: 'uppercase',
-                                borderBottom: '1px solid #2a2a2a',
-                              }}
-                            >
-                              {`🕒 Recenti ${mealSuggestionLabel}`}
-                            </div>
-                            {visibleRecentFoodEntries.map((entry) => (
-                              <button
-                                key={`recent-${entry.id}-${entry.lastUsed}`}
-                                type="button"
-                                style={{
-                                  width: '100%',
-                                  padding: '12px 16px',
-                                  textAlign: 'left',
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#fff',
-                                  cursor: 'pointer',
-                                  fontSize: '0.9rem',
-                                  borderBottom: '1px solid #2a2a2a',
-                                }}
-                                onMouseDown={() => handleSelectRecentFood(entry)}
-                              >
-                                {renderFoodOptionLabel(entry.name, foodNameInput, entry.id)}
-                              </button>
-                            ))}
-                          </>
-                        ) : null}
-                        {isShortFoodQuery && pairedFoodSuggestions.length > 0 ? (
-                          <>
-                            <div
-                              style={{
-                                padding: '10px 16px 8px',
-                                color: '#94a3b8',
-                                fontSize: '0.68rem',
-                                fontWeight: '600',
-                                letterSpacing: '0.08em',
-                                textTransform: 'uppercase',
-                                borderBottom: '1px solid #2a2a2a',
-                              }}
-                            >
-                              Spesso mangi insieme
-                            </div>
-                            {pairedFoodSuggestions.map((entry) => (
-                              <button
-                                key={`pair-${entry.id}`}
-                                type="button"
-                                style={{
-                                  width: '100%',
-                                  padding: '12px 16px',
-                                  textAlign: 'left',
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#fff',
-                                  cursor: 'pointer',
-                                  fontSize: '0.9rem',
-                                  borderBottom: '1px solid #2a2a2a',
-                                }}
-                                onMouseDown={() => handleSelectRecentFood(entry)}
-                              >
-                                {renderFoodOptionLabel(entry.name, foodNameInput, entry.id)}
-                              </button>
-                            ))}
-                          </>
-                        ) : null}
-                        {isShortFoodQuery && smartSuggestedFoods.length > 0 ? (
-                          <>
-                            <div
-                              style={{
-                                padding: '10px 16px 8px',
-                                color: '#94a3b8',
-                                fontSize: '0.68rem',
-                                fontWeight: '600',
-                                letterSpacing: '0.08em',
-                                textTransform: 'uppercase',
-                                borderBottom: '1px solid #2a2a2a',
-                              }}
-                            >
-                              🍽 Suggeriti
-                            </div>
-                            {smartSuggestedFoods.map((entry) => (
-                              <button
-                                key={`suggested-${entry.id}`}
-                                type="button"
-                                style={{
-                                  width: '100%',
-                                  padding: '12px 16px',
-                                  textAlign: 'left',
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#fff',
-                                  cursor: 'pointer',
-                                  fontSize: '0.9rem',
-                                  borderBottom: '1px solid #2a2a2a',
-                                }}
-                                onMouseDown={() => handleSelectRecentFood(entry)}
-                              >
-                                {renderFoodOptionLabel(entry.name, foodNameInput, entry.id)}
-                              </button>
-                            ))}
-                          </>
-                        ) : null}
-                        {(foodDropdownSuggestions || []).map((s) => (
-                          <button
-                            key={s.key}
-                            type="button"
-                            style={{
-                              width: '100%',
-                              padding: '12px 16px',
-                              textAlign: 'left',
-                              background: 'none',
-                              border: 'none',
-                              color: '#fff',
-                              cursor: 'pointer',
-                              fontSize: '0.9rem',
-                              borderBottom: '1px solid #2a2a2a',
-                            }}
-                            onMouseDown={() => {
-                              setFoodNameInput(s.desc);
-                              setFoodWeightInput(getLastQuantityForFood(s.desc) || '');
-                              setSelectedFoodMatch({
-                                id: s.key,
-                                desc: s.desc,
-                                row: foodDb?.[s.key] || localFoodDb?.[s.key] || null,
-                              });
-                              trackRecentFood({ id: s.key, name: s.desc });
-                              setShowFoodDropdown(false);
-                              setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
-                            }}
-                          >
-                            {renderFoodOptionLabel(s.desc, foodNameInput, s.key)}
-                          </button>
-                        ))}
-                        {(foodSearchSources || []).map((source) => {
-                          const results = source.results || [];
-                          const isVisible = source.key === 'crea' ? isCreaExpanded : false;
-
-                          return (
-                            <React.Fragment key={source.key}>
-                              {foodNameInput.trim() ? (
-                                <button
-                                  type="button"
-                                  className="dropdown-action-button"
-                                  style={{
-                                    width: '100%',
-                                    padding: '12px 16px',
-                                    textAlign: 'left',
-                                    background: 'rgba(56, 189, 248, 0.12)',
-                                    border: 'none',
-                                    borderTop: '1px solid #2a2a2a',
-                                    color: '#67e8f9',
-                                    cursor: 'pointer',
-                                    fontSize: '0.9rem',
-                                    fontWeight: '600',
-                                  }}
-                                  onMouseDown={() => {
-                                    if (source.key === 'crea') {
-                                      setIsCreaExpanded((prev) => !prev);
-                                    }
-                                  }}
-                                >
-                                  {`${source.label} (${results.length} risultati)`}
-                                  <span style={{ marginLeft: 8, color: '#94a3b8', fontWeight: 500 }}>
-                                    {isVisible ? '▾' : '▸'}
-                                  </span>
-                                </button>
-                              ) : null}
-                              {foodNameInput.trim() && source.isLoading ? (
-                                <div
-                                  style={{
-                                    borderTop: '1px solid #2a2a2a',
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      width: '100%',
-                                      padding: '12px 16px',
-                                      color: '#94a3b8',
-                                      fontSize: '0.88rem',
-                                    }}
-                                  >
-                                    Caricamento...
-                                  </div>
-                                </div>
-                              ) : null}
-                              {foodNameInput.trim() && isVisible ? (
-                                <div
-                                  style={{
-                                    borderTop: '1px solid #2a2a2a',
-                                    maxHeight: 320,
-                                    overflowY: 'auto',
-                                  }}
-                                  onScroll={(e) => {
-                                    const el = e.currentTarget;
-                                    if (el.scrollHeight - el.scrollTop - el.clientHeight > 72) return;
-                                    const q = String(foodNameInput || '').trim();
-                                    if (q.length >= 3 && typeof triggerCreaSearch === 'function') {
-                                      triggerCreaSearch(q, { onlyUsda: true });
-                                    }
-                                  }}
-                                >
-                                  {results.map((result, index) => {
-                                    const desc = String(
-                                      result?.name_it || result?.desc || result?.name || result?.product_name || ''
-                                    ).trim();
-                                    if (!desc) return null;
-
-                                    return (
-                                      <button
-                                        key={`${source.key}-${result?.id || `${desc}-${index}`}`}
-                                        type="button"
-                                        style={{
-                                          width: '100%',
-                                          padding: '12px 16px',
-                                          textAlign: 'left',
-                                          background: 'rgba(103, 232, 249, 0.06)',
-                                          border: 'none',
-                                          borderBottom: '1px solid #2a2a2a',
-                                          color: '#e2e8f0',
-                                          cursor: 'pointer',
-                                          fontSize: '0.9rem',
-                                        }}
-                                        onMouseDown={() => {
-                                          setFoodNameInput(desc);
-                                          setFoodWeightInput(getLastQuantityForFood(desc) || '');
-                                          setSelectedFoodMatch({
-                                            id: result?.id || null,
-                                            desc,
-                                            row: result?.row || localFoodDb?.[result?.id] || foodDb?.[result?.id] || null,
-                                          });
-                                          trackRecentFood({ id: result?.id || desc, name: desc });
-                                          setShowFoodDropdown(false);
-                                          setTimeout(() => document.getElementById('weight-input')?.focus(), 50);
-                                        }}
-                                      >
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                          {renderFoodOptionLabel(desc, foodNameInput, result?.id || desc)}
-                                          {result?.sourceBadgeLabel ? (
-                                            <span
-                                              style={{
-                                                fontSize: '0.62rem',
-                                                fontWeight: 700,
-                                                letterSpacing: '0.04em',
-                                                textTransform: 'uppercase',
-                                                padding: '2px 6px',
-                                                borderRadius: 6,
-                                                background: result?.foodSource === 'USDA' ? 'rgba(148, 163, 184, 0.2)' : 'rgba(34, 197, 94, 0.18)',
-                                                color: result?.foodSource === 'USDA' ? '#94a3b8' : '#4ade80',
-                                              }}
-                                            >
-                                              {result.sourceBadgeLabel}
-                                            </span>
-                                          ) : null}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : null}
-                            </React.Fragment>
-                          );
-                        })}
-                        <button
-                          type="button"
-                          title={foodNameInput.trim() ? `Genera con AI: "${foodNameInput.trim()}"` : 'Inserisci un nome per generare con AI'}
-                          disabled={isGeneratingFood || !foodNameInput.trim()}
-                          onMouseDown={() => {
-                            if (!isGeneratingFood && foodNameInput.trim()) void generateFoodWithAI(foodNameInput.trim());
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: '12px 16px',
-                            textAlign: 'left',
-                            background: 'rgba(179, 136, 255, 0.14)',
-                            border: 'none',
-                            borderTop: '1px solid #2a2a2a',
-                            color: '#e9d5ff',
-                            cursor: isGeneratingFood || !foodNameInput.trim() ? 'not-allowed' : 'pointer',
-                            fontSize: '0.9rem',
-                            fontWeight: 600,
-                            opacity: isGeneratingFood || !foodNameInput.trim() ? 0.55 : 1,
-                          }}
-                        >
-                          {isGeneratingFood ? '⏳ Generazione AI in corso...' : '✨ Genera con AI'}
-                        </button>
-                      </div>
-                    )}
+                    {foodSearchDropdownOpen ? (
+                      <FoodSearchView
+                        foodNameInput={foodNameInput}
+                        foodDropdownSuggestions={foodDropdownSuggestions}
+                        visibleRecentFoodEntries={visibleRecentFoodEntries}
+                        visibleFrequentFoodEntries={visibleFrequentFoodEntries}
+                        pairedFoodSuggestions={pairedFoodSuggestions}
+                        smartSuggestedFoods={smartSuggestedFoods}
+                        isShortFoodQuery={isShortFoodQuery}
+                        mealSuggestionLabel={mealSuggestionLabel}
+                        foodSearchSources={foodSearchSources}
+                        isCreaExpanded={isCreaExpanded}
+                        setIsCreaExpanded={setIsCreaExpanded}
+                        triggerCreaSearch={triggerCreaSearch}
+                        getLastQuantityForFood={getLastQuantityForFood}
+                        foodDb={foodDb}
+                        localFoodDb={localFoodDb}
+                        renderFoodOptionLabel={renderFoodOptionLabel}
+                        onSelectHabitEntry={handleSelectRecentFood}
+                        onSelectLocalSuggestion={handleFoodSearchSelectLocalSuggestion}
+                        onSelectCatalogResult={handleFoodSearchSelectCatalogResult}
+                        onGenerateWithAi={handleFoodSearchGenerateWithAi}
+                        isGeneratingFood={isGeneratingFood}
+                      />
+                    ) : null}
                   </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
@@ -5579,13 +5345,13 @@ export default function MealBuilder({
                       <div className="telemetry-carousel" ref={mealCarouselRef} onScroll={handleMealCarouselScroll} style={{ height: '220px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none' }}>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                           <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                            {renderProgressBar('Calorie', safeBarCurrent(mealTotaliFull.kcal), safeBarTarget(targetMacrosPasto?.kcal ?? targetMacros?.kcal, 500), 'kcal', 'kcal')}
-                            {renderProgressBar('PROTEINE', safeBarCurrent(mealTotaliFull?.prot), safeBarTarget(targetMacrosPasto?.prot ?? targetMacros?.prot, 38), 'g', 'prot')}
-                            {renderProgressBar('CARBOIDRATI', safeBarCurrent(mealTotaliFull.carb), safeBarTarget(targetMacrosPasto?.carb ?? targetMacros?.carb, 50), 'g', 'carb')}
-                            {renderProgressBar('GRASSI', safeBarCurrent(mealTotaliFull.fatTotal ?? mealTotaliFull.fat), safeBarTarget(targetMacrosPasto?.fat ?? targetMacros?.fat, 15), 'g', 'fatTotal')}
-                            {renderProgressBar('FIBRE', safeBarCurrent(mealTotaliFull.fibre), safeBarTarget(targetMacrosPasto?.fibre ?? targetMacros?.fibre, 8), 'g', 'fibre')}
+                            {nutrientBar('Calorie', safeBarCurrent(mealTotaliFull.kcal), safeBarTarget(targetMacrosPasto?.kcal ?? targetMacros?.kcal, 500), 'kcal', 'kcal')}
+                            {nutrientBar('PROTEINE', safeBarCurrent(mealTotaliFull?.prot), safeBarTarget(targetMacrosPasto?.prot ?? targetMacros?.prot, 38), 'g', 'prot')}
+                            {nutrientBar('CARBOIDRATI', safeBarCurrent(mealTotaliFull.carb), safeBarTarget(targetMacrosPasto?.carb ?? targetMacros?.carb, 50), 'g', 'carb')}
+                            {nutrientBar('GRASSI', safeBarCurrent(mealTotaliFull.fatTotal ?? mealTotaliFull.fat), safeBarTarget(targetMacrosPasto?.fat ?? targetMacros?.fat, 15), 'g', 'fatTotal')}
+                            {nutrientBar('FIBRE', safeBarCurrent(mealTotaliFull.fibre), safeBarTarget(targetMacrosPasto?.fibre ?? targetMacros?.fibre, 8), 'g', 'fibre')}
                             {targetMacrosPasto?.maxSimpleSugarG != null &&
-                              renderProgressBar(
+                              nutrientBar(
                                 'ZUCCH. SEMPL.',
                                 safeBarCurrent(currentMealMacros.zuccheri),
                                 safeBarTarget(targetMacrosPasto.maxSimpleSugarG, 8),
@@ -5603,23 +5369,23 @@ export default function MealBuilder({
                         </div>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                           <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                            {Object.keys(TARGETS.amino || {}).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.amino[k] || 0) * ratio, 'mg', k))}
+                            {Object.keys(TARGETS.amino || {}).map(k => nutrientBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.amino[k] || 0) * ratio, 'mg', k))}
                           </div>
                         </div>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                           <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                            {Object.keys(TARGETS.vit || {}).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.vit[k] || 0) * ratio, k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))}
+                            {Object.keys(TARGETS.vit || {}).map(k => nutrientBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.vit[k] || 0) * ratio, k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))}
                           </div>
                         </div>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                           <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                            {Object.keys(TARGETS.min || {}).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.min[k] || 0) * ratio, k === 'se' ? 'µg' : 'mg', k))}
+                            {Object.keys(TARGETS.min || {}).map(k => nutrientBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.min[k] || 0) * ratio, k === 'se' ? 'µg' : 'mg', k))}
                           </div>
                         </div>
                         <div className="telemetry-carousel-slide" style={{ flex: '0 0 100%', scrollSnapAlign: 'start', minWidth: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                           <div style={{ background: '#111', padding: '12px', borderRadius: '12px' }}>
-                            {renderProgressBar('Grassi tot.', safeBarCurrent(mealTotaliFull.fatTotal ?? mealTotaliFull.fat), safeBarTarget(targetMacrosPasto?.fat ?? targetMacros?.fat, 15), 'g', 'fatTotal')}
-                            {Object.keys(TARGETS.fat || {}).map(k => renderProgressBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.fat[k] || 0) * ratio, 'g', k))}
+                            {nutrientBar('Grassi tot.', safeBarCurrent(mealTotaliFull.fatTotal ?? mealTotaliFull.fat), safeBarTarget(targetMacrosPasto?.fat ?? targetMacros?.fat, 15), 'g', 'fatTotal')}
+                            {Object.keys(TARGETS.fat || {}).map(k => nutrientBar(k.toUpperCase(), mealTotaliFull[k] || 0, (TARGETS.fat[k] || 0) * ratio, 'g', k))}
                           </div>
                         </div>
                       </div>
@@ -5634,10 +5400,10 @@ export default function MealBuilder({
               {isCena ? 'Rimanenza Giornaliera' : 'Quota Prevista Pasto'}
             </h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {renderProgressBar('Kcal', safeBarCurrent(currentMealMacros.kcal), safeBarTarget(targetMacros.kcal, 500), 'kcal', 'kcal')}
-              {renderProgressBar('Proteine', safeBarCurrent(currentMealMacros.prot), safeBarTarget(targetMacros.prot, 38), 'g', 'prot')}
-              {renderProgressBar('Carboidrati', safeBarCurrent(currentMealMacros.carb), safeBarTarget(targetMacros.carb, 50), 'g', 'carb')}
-              {renderProgressBar('Grassi', safeBarCurrent(currentMealMacros.fat), safeBarTarget(targetMacros.fat, 15), 'g', 'fatTotal')}
+              {nutrientBar('Kcal', safeBarCurrent(currentMealMacros.kcal), safeBarTarget(targetMacros.kcal, 500), 'kcal', 'kcal')}
+              {nutrientBar('Proteine', safeBarCurrent(currentMealMacros.prot), safeBarTarget(targetMacros.prot, 38), 'g', 'prot')}
+              {nutrientBar('Carboidrati', safeBarCurrent(currentMealMacros.carb), safeBarTarget(targetMacros.carb, 50), 'g', 'carb')}
+              {nutrientBar('Grassi', safeBarCurrent(currentMealMacros.fat), safeBarTarget(targetMacros.fat, 15), 'g', 'fatTotal')}
             </div>
           </div>
           <button type="button" onClick={saveMealToDiary} style={{ width: '100%', padding: '18px', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', opacity: addedFoods.length > 0 ? 1 : 0.5 }}>SALVA NEL DIARIO</button>

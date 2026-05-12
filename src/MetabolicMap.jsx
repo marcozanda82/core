@@ -319,6 +319,54 @@ function chaikinSmooth(points, iterations = 2) {
   return arr;
 }
 
+/**
+ * Quanto del trend (proiezione) influenza l’angolo del mini-ago. Il timeframe corto resta quasi neutrale;
+ * 7G/14G/30G restano vicini così il cambio TF non simula un “viaggio” diverso.
+ */
+function computeDirectionWeight(selectedTimeframe) {
+  const tf = String(selectedTimeframe ?? '7d');
+  if (tf === '1d') return 0.05;
+  if (tf === '7d') return 0.54;
+  if (tf === '14d') return 0.57;
+  if (tf === '30d') return 0.6;
+  return 0.54;
+}
+
+/** Opacità/confidenza visiva mini-bussola (non direzione). */
+function computeVisualConfidence({ selectedTimeframe, signalStrength, persistence } = {}) {
+  const tf = String(selectedTimeframe ?? '7d');
+  let c =
+    tf === '1d'
+      ? 0.34
+      : tf === '7d'
+        ? 0.76
+        : tf === '14d'
+          ? 0.84
+          : tf === '30d'
+            ? 0.93
+            : 0.76;
+  if (signalStrength === 'very_weak') c *= 0.87;
+  else if (signalStrength === 'weak') c *= 0.92;
+  const p = Number(persistence);
+  if (Number.isFinite(p)) {
+    if (p < 0.25) c *= 0.91;
+    else if (p < 0.38) c *= 0.96;
+  }
+  return Math.min(1, Math.max(0.2, c));
+}
+
+/** Neutrale SVG (−Y): direzione “cardio” con peso basso sul TF corto. */
+const NEEDLE_NEUTRAL_DIR = { x: 0, y: -1 };
+
+function blendNeedleDirection(rawDirX, rawDirY, weight) {
+  const w = Math.max(0, Math.min(1, Number(weight) || 0));
+  const bx = rawDirX * w + NEEDLE_NEUTRAL_DIR.x * (1 - w);
+  const by = rawDirY * w + NEEDLE_NEUTRAL_DIR.y * (1 - w);
+  const mag = Math.hypot(bx, by);
+  if (mag < 1e-9) return { x: NEEDLE_NEUTRAL_DIR.x, y: NEEDLE_NEUTRAL_DIR.y, mag: 0 };
+  return { x: bx / mag, y: by / mag, mag };
+}
+
 
 /**
  * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
@@ -337,10 +385,14 @@ export default function MetabolicMap({
   onZoomLevelChange = null,
   dailyPositions = null,
   currentPosition = null,
+  /** Punto lento (es. 30g nel bundle); se presente sostituisce currentPosition per il marker principale. */
+  mapPositionInertial = null,
   projectedPosition = null,
   trajectoryVelocity = 0,
   /** Opzionale: da {@link computeMetabolicMapCompassBundle}.mapSignalStrength (stesso rawMagnitude bussola). */
   mapSignalStrength = null,
+  /** Opzionale: frazione giorni fuori dead-band (bundle); solo confidenza visiva mini-bussola. */
+  persistFracOutsideDeadband = null,
   /** Opzionale: da {@link computeMetabolicMapCompassBundle}.mapPresentation — preferito se disponibile. */
   mapPresentation: mapPresentationProp = null,
 }) {
@@ -384,22 +436,40 @@ export default function MetabolicMap({
     [y, baselineY],
   );
 
-  const { zone: effectiveZone, quadrant: effectiveQuadrant, distance: effectiveDistance } = useMemo(
-    () => classifyMapPoint(shiftedX, shiftedY),
-    [shiftedX, shiftedY],
-  );
-
   const signalVisual = useMemo(
     () => mapSignalVisualStyle(mapSignalStrength),
     [mapSignalStrength],
   );
 
-  const rawDisplayX = Number.isFinite(Number(currentPosition?.x))
-    ? Number(currentPosition.x)
-    : shiftedX;
-  const rawDisplayY = Number.isFinite(Number(currentPosition?.y))
-    ? Number(currentPosition.y)
-    : shiftedY;
+  const directionWeight = useMemo(() => computeDirectionWeight(selectedTimeframe), [selectedTimeframe]);
+  const visualConfidence = useMemo(
+    () =>
+      computeVisualConfidence({
+        selectedTimeframe,
+        signalStrength: mapSignalStrength,
+        persistence: persistFracOutsideDeadband,
+      }),
+    [selectedTimeframe, mapSignalStrength, persistFracOutsideDeadband],
+  );
+
+  const rawDisplayX = Number.isFinite(Number(mapPositionInertial?.x))
+    ? Number(mapPositionInertial.x)
+    : Number.isFinite(Number(currentPosition?.x))
+      ? Number(currentPosition.x)
+      : shiftedX;
+  const rawDisplayY = Number.isFinite(Number(mapPositionInertial?.y))
+    ? Number(mapPositionInertial.y)
+    : Number.isFinite(Number(currentPosition?.y))
+      ? Number(currentPosition.y)
+      : shiftedY;
+
+  const { zone: effectiveZone, quadrant: effectiveQuadrant, distance: effectiveDistance } = useMemo(
+    () =>
+      Number.isFinite(Number(mapPositionInertial?.x)) && Number.isFinite(Number(mapPositionInertial?.y))
+        ? classifyMapPoint(rawDisplayX, rawDisplayY)
+        : classifyMapPoint(shiftedX, shiftedY),
+    [mapPositionInertial, rawDisplayX, rawDisplayY, shiftedX, shiftedY],
+  );
 
   const longevityDrop = useMemo(() => {
     const anchor = calculateMetabolicScore(baselineX, baselineY);
@@ -493,8 +563,9 @@ export default function MetabolicMap({
   const lifestyleDx = shiftedX - baselineX;
   const lifestyleDy = shiftedY - baselineY;
   const trajectorySpeed = Number.isFinite(Number(trajectoryVelocity)) ? Number(trajectoryVelocity) : 0;
-  const lifestyleLen = Math.max(Math.hypot(lifestyleDx, lifestyleDy), trajectorySpeed);
-  const lifestyleNearlyIdle = lifestyleLen < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
+  const lifestyleLenRaw = Math.max(Math.hypot(lifestyleDx, lifestyleDy), trajectorySpeed);
+  const trailNearlyIdle = lifestyleLenRaw < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
+  const needleNearlyIdle = trailNearlyIdle;
   const compassCenter = useMemo(
     () => ({ x: inertialTipSvg.cx, y: inertialTipSvg.cy }),
     [inertialTipSvg.cx, inertialTipSvg.cy]
@@ -510,16 +581,49 @@ export default function MetabolicMap({
     const sy = clampMapAxis(Number(projectedPosition.y) * scale);
     return mapPointToSvgCoords(sx, sy);
   }, [projectedPosition, mapSignalStrength]);
-  const directionVector = useMemo(() => {
-    const target = projectedSvg || inertialTipSvg;
-    const dx = (target?.cx ?? compassCenter.x) - compassCenter.x;
-    const dy = (target?.cy ?? compassCenter.y) - compassCenter.y;
-    const mag = Math.hypot(dx, dy);
-    if (mag < 1e-6) return { x: 0, y: -1, mag: 0 };
-    return { x: dx / mag, y: dy / mag, mag };
-  }, [projectedSvg, compassCenter.x, compassCenter.y, inertialTipSvg]);
+
+  const { directionVector, directionSource } = useMemo(() => {
+    const cx = compassCenter.x;
+    const cy = compassCenter.y;
+    let rawX = NEEDLE_NEUTRAL_DIR.x;
+    let rawY = NEEDLE_NEUTRAL_DIR.y;
+    let src = 'neutral';
+
+    if (projectedSvg) {
+      const dx = projectedSvg.cx - cx;
+      const dy = projectedSvg.cy - cy;
+      const mag = Math.hypot(dx, dy);
+      if (mag > 1e-6) {
+        rawX = dx / mag;
+        rawY = dy / mag;
+        src = 'projection';
+      }
+    }
+
+    const vec = blendNeedleDirection(rawX, rawY, directionWeight);
+    return { directionVector: vec, directionSource: src };
+  }, [projectedSvg, compassCenter.x, compassCenter.y, directionWeight]);
+
   const needleRotateDeg = rotationDegFromDirection(directionVector.x, directionVector.y);
-  const needleBladeOpacity = lifestyleNearlyIdle ? 0.32 : 0.86;
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log('[metabolicMapMotion:DEV]', {
+      selectedTimeframe,
+      directionSource,
+      directionWeight,
+      visualConfidence,
+      angleDeg: Math.round(needleRotateDeg * 10) / 10,
+      note: 'timeframe affects confidence, not travel distance',
+    });
+  }, [
+    selectedTimeframe,
+    directionSource,
+    directionWeight,
+    visualConfidence,
+    needleRotateDeg,
+  ]);
+  const needleBladeOpacity = needleNearlyIdle ? 0.32 : 0.86;
 
   const distAnchor = Math.hypot(
     anchorSvg.cx - MAP_CENTER_SVG.cx,
@@ -540,20 +644,20 @@ export default function MetabolicMap({
       : 'rgba(100, 140, 158, 0.82)';
 
   const needleBladeLen = useMemo(() => {
-    if (lifestyleNearlyIdle) return NEEDLE_BLADE_LEN_IDLE;
-    const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
+    if (needleNearlyIdle) return NEEDLE_BLADE_LEN_IDLE;
+    const t = Math.min(1, lifestyleLenRaw / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
     return NEEDLE_BLADE_LEN_MIN + t * (NEEDLE_BLADE_LEN_MAX - NEEDLE_BLADE_LEN_MIN);
-  }, [lifestyleNearlyIdle, lifestyleLen]);
+  }, [needleNearlyIdle, lifestyleLenRaw]);
   const trailLen = useMemo(() => {
-    if (lifestyleNearlyIdle) return NEEDLE_TRAIL_LEN_MIN;
-    const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
+    if (trailNearlyIdle) return NEEDLE_TRAIL_LEN_MIN;
+    const t = Math.min(1, lifestyleLenRaw / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
     return NEEDLE_TRAIL_LEN_MIN + t * (NEEDLE_TRAIL_LEN_MAX - NEEDLE_TRAIL_LEN_MIN);
-  }, [lifestyleNearlyIdle, lifestyleLen]);
+  }, [trailNearlyIdle, lifestyleLenRaw]);
   const trailOpacity = useMemo(() => {
-    if (lifestyleNearlyIdle) return 0.08;
-    const t = Math.min(1, lifestyleLen / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
+    if (trailNearlyIdle) return 0.08;
+    const t = Math.min(1, lifestyleLenRaw / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
     return 0.1 + t * 0.1;
-  }, [lifestyleNearlyIdle, lifestyleLen]);
+  }, [trailNearlyIdle, lifestyleLenRaw]);
 
   const needlePolygonPoints = useMemo(() => {
     const halfW = Math.min(0.62, 0.28 + needleBladeLen * 0.035);
@@ -809,12 +913,12 @@ export default function MetabolicMap({
             initial={{
               x: compassCenter.x,
               y: compassCenter.y,
-              opacity: signalVisual.markerOpacity,
+              opacity: signalVisual.markerOpacity * visualConfidence,
             }}
             animate={{
               x: compassCenter.x,
               y: compassCenter.y,
-              opacity: signalVisual.markerOpacity,
+              opacity: signalVisual.markerOpacity * visualConfidence,
             }}
             transition={vectorTransition}
             style={{ transformOrigin: '0px 0px' }}

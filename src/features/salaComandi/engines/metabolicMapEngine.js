@@ -562,7 +562,28 @@ export function computeMetabolicMapCompassBundle({
     baselineOffsetY: baselineOffset.y,
   });
 
-  const mapZoneColor = mapZoneToGlowRgba(mapPosition.zone);
+  const { mapInputs: mapInputs30d } = computeMetabolicMapInputsAndAudit(
+    dailyHistory,
+    '30d',
+    referenceTdee,
+  );
+  let mapPositionInertial;
+  let mapPositionInertialSource = 'fallback_period';
+  if ((mapInputs30d.totalWindowDays ?? 0) > 0) {
+    mapPositionInertial = calculateMetabolicMapPosition({
+      energyBalance: mapInputs30d.energyBalance,
+      trainingLoad: mapInputs30d.trainingLoad,
+      sleepHours: mapInputs30d.sleepHours,
+      glycemicInstability: mapInputs30d.glycemicInstability,
+      baselineOffsetX: baselineOffset.x,
+      baselineOffsetY: baselineOffset.y,
+    });
+    mapPositionInertialSource = 'inertial_30d';
+  } else {
+    mapPositionInertial = { ...mapPosition };
+  }
+
+  const mapZoneColor = mapZoneToGlowRgba(mapPositionInertial.zone);
 
   const dailyMapPositions = (() => {
     const slice = dailyHistory.slice(-7);
@@ -595,18 +616,12 @@ export function computeMetabolicMapCompassBundle({
   const visualVector = computeVisualCompassVector(rawVector);
 
   const currentMapPoint = dailyMapPositions.length ? dailyMapPositions[dailyMapPositions.length - 1] : null;
-  const longevityScore = currentMapPoint
-    ? calculateMetabolicScore(currentMapPoint.x, currentMapPoint.y)
-    : calculateMetabolicScore(0, 0);
+  const longevityScore = calculateMetabolicScore(mapPositionInertial.x, mapPositionInertial.y);
 
-  const mapPointX = Number.isFinite(Number(currentMapPoint?.x))
-    ? Number(currentMapPoint.x)
-    : mapPosition.x;
-  const mapPointY = Number.isFinite(Number(currentMapPoint?.y))
-    ? Number(currentMapPoint.y)
-    : mapPosition.y;
+  const markerPrincipalX = mapPositionInertial.x;
+  const markerPrincipalY = mapPositionInertial.y;
 
-  const mapDistanceSemantic = Math.hypot(mapPointX, mapPointY);
+  const mapDistanceSemantic = Math.hypot(markerPrincipalX, markerPrincipalY);
 
   const rawMagnitude = Math.hypot(rawVector.x, rawVector.y);
   const compassSectorLabel = nearestCompassSectorLabelFromMetabolicAngleDeg(compassDirection.angleDeg);
@@ -642,22 +657,22 @@ export function computeMetabolicMapCompassBundle({
     baselineOffset.x,
     baselineOffset.y
   );
-  const longevityScoreFinalForDrop = calculateMetabolicScore(mapPointX, mapPointY);
+  const longevityScoreFinalForDrop = calculateMetabolicScore(markerPrincipalX, markerPrincipalY);
   const longevityDrop = Math.max(0, longevityScoreAnchorForDrop - longevityScoreFinalForDrop);
 
   const mapPresentation = buildMapSignalPresentation({
-    x: mapPointX,
-    y: mapPointY,
+    x: markerPrincipalX,
+    y: markerPrincipalY,
     mapSignalStrength: compassSignalStrength,
-    quadrant: mapPosition.quadrant,
-    riskLabel: MAP_QUADRANT_RISK_LABELS[mapPosition.quadrant] || '',
+    quadrant: mapPositionInertial.quadrant,
+    riskLabel: MAP_QUADRANT_RISK_LABELS[mapPositionInertial.quadrant] || '',
     longevityDrop,
-    glycemicAura: mapPosition.finalAura,
+    glycemicAura: mapPositionInertial.finalAura,
     mapDistance: mapDistanceSemantic,
   });
 
   const compassAmbientStyle = buildCompassAmbientStyle(
-    mapPosition.zone,
+    mapPositionInertial.zone,
     compassSignalStrength
   );
 
@@ -673,6 +688,8 @@ export function computeMetabolicMapCompassBundle({
     referenceTdeeKcal: referenceTdee,
     impactMultiplier: rawDetails.impactMultiplier ?? null,
     persistFracOutsideDeadband,
+    /** Posizione mappa lenta (finestra 30g + baseline); marker principale — non l’ultimo giorno trail. */
+    mapPositionInertial,
     metabolicMapInputs: mapInputs,
     metabolicMapRawDetails: rawDetails,
     baselineOffset,
@@ -706,6 +723,8 @@ export function computeMetabolicMapCompassBundle({
     debug: {
       zone: mapPosition.zone,
       finalAura: mapPosition.finalAura,
+      mapPositionInertialZone: mapPositionInertial.zone,
+      mapPositionInertialFinalAura: mapPositionInertial.finalAura,
       rawDetails,
       compassDirection,
       rawVector,
@@ -722,6 +741,19 @@ export function computeMetabolicMapCompassBundle({
   };
 
   bundle.metabolicState = buildMetabolicStateFromBundle(bundle);
+
+  if (import.meta.env.DEV) {
+    const dailyLast =
+      dailyMapPositions.length > 0 ? dailyMapPositions[dailyMapPositions.length - 1] : null;
+    console.log('[metabolicMapPosition:DEV]', {
+      selectedTimeframe,
+      markerSource: mapPositionInertialSource,
+      inertialX: mapPositionInertial.x,
+      inertialY: mapPositionInertial.y,
+      dailyCurrentX: dailyLast != null ? dailyLast.x : null,
+      dailyCurrentY: dailyLast != null ? dailyLast.y : null,
+    });
+  }
 
   if (import.meta.env.DEV) {
     const ms = bundle.metabolicState;

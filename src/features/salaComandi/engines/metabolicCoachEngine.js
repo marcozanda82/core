@@ -16,6 +16,82 @@ function zoneFromMapDistance(distance) {
   return 'green';
 }
 
+/**
+ * Access layer coach: preferisce `bundle.metabolicState`, fallback campi legacy sul bundle.
+ *
+ * @param {Record<string, unknown> | null | undefined} bundle
+ * @returns {'green' | 'orange' | 'red'}
+ */
+export function getCoachZone(bundle) {
+  const ms = bundle?.metabolicState;
+  const z = ms?.bodyState?.zone;
+  if (z === 'green' || z === 'orange' || z === 'red') return z;
+  const distMs = Number(ms?.bodyState?.distance);
+  if (Number.isFinite(distMs)) return zoneFromMapDistance(distMs);
+  return zoneFromMapDistance(bundle?.distance);
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} bundle
+ * @returns {string}
+ */
+export function getCoachDirectionLabel(bundle) {
+  const ms = bundle?.metabolicState;
+  const fromMs = ms?.metabolicDirection?.displayLabel;
+  if (typeof fromMs === 'string' && fromMs.trim()) return fromMs.trim();
+  return String(bundle?.compassDisplayLabel ?? '').trim();
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} bundle
+ * @returns {'very_weak' | 'weak' | 'moderate' | 'strong' | null}
+ */
+export function getCoachSignalStrength(bundle) {
+  const ms = bundle?.metabolicState;
+  const fromMs =
+    ms?.metabolicDirection?.signalStrength ?? ms?.confidence?.compassSignalStrength;
+  if (
+    fromMs === 'very_weak' ||
+    fromMs === 'weak' ||
+    fromMs === 'moderate' ||
+    fromMs === 'strong'
+  ) {
+    return fromMs;
+  }
+  const leg = bundle?.mapSignalStrength ?? bundle?.compassSignalStrength;
+  if (
+    leg === 'very_weak' ||
+    leg === 'weak' ||
+    leg === 'moderate' ||
+    leg === 'strong'
+  ) {
+    return leg;
+  }
+  return null;
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} bundle
+ * @returns {boolean}
+ */
+export function getCoachSuppressRisk(bundle) {
+  const ms = bundle?.metabolicState;
+  const pres = ms?.confidence?.mapPresentation ?? bundle?.mapPresentation;
+  return pres?.suppressRiskNarrative === true;
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} bundle
+ * @returns {number | null}
+ */
+export function getCoachPersistenceFrac(bundle) {
+  const ms = bundle?.metabolicState;
+  const p = Number(ms?.persistence?.outsideEnergyDeadbandDayFraction);
+  if (Number.isFinite(p)) return p;
+  const leg = Number(bundle?.persistFracOutsideDeadband);
+  return Number.isFinite(leg) ? leg : null;
+}
+
 function isSoftCompassDisplayLabel(label) {
   const s = String(label || '').toLowerCase();
   return (
@@ -132,11 +208,25 @@ export function buildMetabolicCoachInsight({
 
   const sleepCtx = { mapData, dailyHistory, selectedTimeframe: tf };
 
-  const strength = mapData.mapSignalStrength ?? mapData.compassSignalStrength ?? null;
-  const displayLabel = String(mapData.compassDisplayLabel ?? '').trim();
-  const presentation = mapData.mapPresentation;
-  const suppressRisk = presentation?.suppressRiskNarrative === true;
-  const zone = zoneFromMapDistance(mapData.distance);
+  const ms = mapData.metabolicState ?? null;
+  const usingMetabolicState = ms != null && typeof ms === 'object';
+
+  const strength = getCoachSignalStrength(mapData);
+  const displayLabel = getCoachDirectionLabel(mapData);
+  const suppressRisk = getCoachSuppressRisk(mapData);
+  const zone = getCoachZone(mapData);
+  const persistenceFrac = getCoachPersistenceFrac(mapData);
+
+  if (import.meta.env.DEV) {
+    console.log('[metabolicCoach:DEV]', {
+      usingMetabolicState,
+      zone,
+      displayLabel,
+      signalStrength: strength,
+      persistence: persistenceFrac,
+    });
+  }
+
   const glycemic = Number(mapData.glycemic ?? mapData.metabolicMapInputs?.glycemicInstability ?? 0) || 0;
   const longevity = Number(mapData.longevityScore);
   const kcalTarget = userTargets?.kcal;

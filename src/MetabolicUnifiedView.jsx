@@ -490,9 +490,11 @@ export default function MetabolicUnifiedView({
                 onZoomLevelChange={setMapZoom}
                 dailyPositions={dailyMapPositions}
                 currentPosition={dailyMapPositions[dailyMapPositions.length - 1] || null}
+                mapPositionInertial={mapData.mapPositionInertial ?? null}
                 projectedPosition={projectedTrajectory.projected}
                 trajectoryVelocity={projectedTrajectory.velocity}
                 mapSignalStrength={mapData.mapSignalStrength}
+                persistFracOutsideDeadband={mapData.persistFracOutsideDeadband ?? null}
                 mapPresentation={mapData.mapPresentation}
               />
               {SHOW_METABOLIC_DEBUG ? (

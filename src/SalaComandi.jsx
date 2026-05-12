@@ -8,11 +8,12 @@
  * 
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
-import React, { useState, useEffect, useMemo, useRef, useCallback, useId } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import './styles/SalaComandiInline.css';
 import { createPortal } from 'react-dom';
-import { ComposedChart, LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, ReferenceDot, CartesianGrid, Area, BarChart, Bar, Tooltip, ReferenceArea, PieChart, Pie, Cell, Sector } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, PieChart, Pie, Cell, Sector } from 'recharts';
 
-import { ref, get, set, push, onValue, update, remove } from 'firebase/database';
+import { ref, get, set, push, onValue, remove } from 'firebase/database';
 
 import {
   calculateConsolidatedAverageScore,
@@ -24,6 +25,10 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
+import { useKentuChatHandler } from './hooks/useKentuChatHandler';
+import { useProfileAndTargets } from './hooks/useProfileAndTargets';
+import { useTimelineDrag } from './hooks/useTimelineDrag';
+import MainDashboardCharts from './features/charts/MainDashboardCharts';
 import { recordMealFoodCooccurrence } from './foodCooccurrence';
 import { recordMealSuggestionHabits } from './mealSuggestionHabits';
 import {
@@ -33,7 +38,9 @@ import {
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
-import AiCluster from './AiCluster';
+import KentuChatUI from './features/chat/KentuChatUI';
+import TargetSettingsModal from './components/modals/TargetSettingsModal';
+import MainMenuDrawer from './layout/MainMenuDrawer';
 import { UserNutritionGoalsProvider } from './UserNutritionGoalsContext';
 import { mergeProfileNutritionFromServer, buildNutritionGoalsSnapshot } from './userNutritionGoals';
 import {
@@ -42,23 +49,38 @@ import {
   CHART_AXIS_GUTTER_LEFT_PX,
   CHART_AXIS_GUTTER_RIGHT_PX,
 } from './timeLayout';
-import NowVerticalLineOverlay from './NowVerticalLineOverlay';
-import TimeAlignmentChartDebugOverlay from './TimeAlignmentDebugOverlay';
 import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
+import FirebaseDataLoadingLayer from './components/FirebaseDataLoadingLayer';
+import TimelineNodeReport from './components/TimelineNodeReport';
+import BodyBatteryModal from './components/BodyBatteryModal';
+import CustomDateTick from './components/CustomDateTick';
+import {
+  MAIN_BOTTOM_TAB_ORDER,
+  BOTTOM_NAV_ITEMS,
+  ACTIVE_BOTTOM_TAB_LS_KEY,
+  AI_COACH_DISMISSED_INSIGHTS_LS_KEY,
+  EVENT_USAGE_LS_KEY,
+  EVENT_USAGE_DEFAULT,
+  NODE_DRAG_ARM_CANCEL_MOVE_PX,
+  REPORT_NUTRIENT_KEYS,
+  EMPTY_ENERGY_CHART_DATA,
+  LONGEVITY_NIGHT_PENDING_ENERGY_SIM,
+  ADD_MENU_ORDER_LS_KEY,
+  AI_COACH_EVAL_INACTIVE,
+  AI_COACH_EMPTY_HISTORY,
+} from './constants/salaComandiConstants';
 import LongevityView from './LongevityView';
-import HomeView from './components/HomeView';
 import DailyCoachSection from '@/features/salaComandi/components/DailyCoachSection';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
-  WORKOUT_ACTIVITY_SELECTOR_IDS,
   getWorkoutActivityTypeDef,
   getWorkoutActivityLogDescription,
   getCognitiveMetForActivity,
-  WORKOUT_MUSCLE_GROUP_DEFS,
   normalizeMuscleGroupArray,
   resolveWorkoutActivityTypeId,
 } from './activityCatalog';
+import WorkoutView, { workoutActivityRequiresStrengthDetailNote } from './drawers/vistas/WorkoutView';
 import {
   createInitialWeeklyPlan,
   getWeekStartMondayKeyLocal,
@@ -66,10 +88,11 @@ import {
   weeklyPlanStableJson,
   weeklyPlanToFirebasePayload,
 } from './weeklyPlanning';
-import AddEventMenuGrid from './components/AddEventMenuGrid';
 import WeeklyPlanning from './components/WeeklyPlanning';
-import PastoDrawer from './components/drawers/PastoDrawer';
-import BottomChrome from './features/salaComandi/BottomChrome';
+import MealBuilderOverlay from './features/mealBuilder/MealBuilderOverlay';
+import AppBottomNavigation from './layout/AppBottomNavigation';
+import AppHeader from './layout/AppHeader';
+import FullscreenGraphView from './features/charts/FullscreenGraphView';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
 import OverlayHost from './features/salaComandi/OverlayHost';
 import ChoiceModalOverlay from './features/salaComandi/overlays/ChoiceModalOverlay';
@@ -81,6 +104,15 @@ import SleepModalOverlay from './features/salaComandi/overlays/SleepModalOverlay
 import SpieInfoOverlay from './features/salaComandi/overlays/SpieInfoOverlay';
 import SleepPromptOverlay from './features/salaComandi/overlays/SleepPromptOverlay';
 import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
+import WaterActionModal from './components/modals/WaterActionModal';
+import {
+  FastChargeNapQuickPanel,
+  FastChargeMeditationQuickPanel,
+  FastChargeSupplementsQuickPanel,
+} from './components/modals/FastChargeQuickActionPanels';
+import TimelineInsertOverlay from './components/modals/TimelineInsertOverlay';
+import FoodInspectorModal from './components/modals/FoodInspectorModal';
+import HealthspanOverlay from './features/longevity/HealthspanOverlay';
 import useFoodInputEngine from './features/salaComandi/hooks/useFoodInputEngine';
 import useBodyMetricsEngine from './features/salaComandi/hooks/useBodyMetricsEngine';
 import {
@@ -92,13 +124,11 @@ import {
   deriveCurrentBodyMetricsFromHistory,
   resolveTargetConfigForDate,
   upsertTargetHistoryEntry,
-  mergeDuplicateBiometrics,
 } from './features/salaComandi/engines/bodyMetricsEngine';
 import {
   findBestFoodMatch,
   findRecentFoodHabit,
   draftStringsToFoods,
-  ghostMealModalFoodRows,
   parsePlanMealDraftAiResponse,
   structuredFoodsToProposalItems,
   ghostSurfaceDraftToProposalItems,
@@ -121,13 +151,6 @@ import {
 } from './features/salaComandi/utils/aiContextUtils';
 import { normalizeAddMenuOrderState } from './features/salaComandi/utils/menuUtils';
 import {
-  formatBodyBatteryValue,
-  extractNumber,
-  normalizeCsvTimeFragment,
-  parseUniversalDate,
-  buildBodyMetricsColumnMap,
-} from './features/salaComandi/utils/bodyMetricsUtils';
-import {
   getMealTimeFromLogItem,
   normalizeWorkoutSearchKey,
   formatDecimalHourIt,
@@ -147,7 +170,6 @@ import DailyIndicatorsBar from '@/features/salaComandi/components/DailyIndicator
 import { useSleepCoach } from '@/features/salaComandi/hooks/useSleepCoach';
 import useMetabolicMapEngine from './features/salaComandi/hooks/useMetabolicMapEngine';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
-import { buildMacroSplitFromKcal } from './targetsEngine';
 import { computeMetabolicNotification } from './notificationEngine';
 import { setBarcodeNutritionOverride as setBarcodeNutritionOverrideStorage } from './barcodeFoodOverrides';
 import {
@@ -216,7 +238,6 @@ import {
   getLogFromStoricoTree,
   STRATEGY_PROFILES,
   PIANO_SETTIMANALE,
-  CustomChartTooltip,
   MealPieTooltip,
   DEFAULT_USER_MODEL,
   clampModelValue,
@@ -246,447 +267,31 @@ import {
   generateLocalHabitScanner,
 } from './coreEngine';
 
-/** Pesi: gruppi muscolari via chip (nessun campo testuale obbligatorio). Altri strength: nota opzionale legacy. */
-function workoutActivityRequiresStrengthDetailNote(typeId) {
-  const def = getWorkoutActivityTypeDef(typeId);
-  if (typeId === 'pesi') return false;
-  if (def?.category === 'strength') return true;
-  const raw = String(typeId || '').toLowerCase();
-  return raw.includes('strength') || raw.includes('bodybuilding');
-}
-
-function migrateIdealStrategy(raw) {
-  const defaults = {
-    colazione: 400,
-    snack: 250,
-    pranzo: 700,
-    cena: 500,
-    allenamento: 300,
-  };
-  if (!raw || typeof raw !== 'object') return { ...defaults };
-  const legacySnack =
-    Number(raw.snack ?? raw.merenda_pm ?? raw.merenda_am ?? raw.spuntino) || 250;
-  const next = { ...defaults, ...raw };
-  if (next.snack == null || Number.isNaN(Number(next.snack))) next.snack = legacySnack;
-  delete next.merenda_am;
-  delete next.merenda_pm;
-  delete next.spuntino;
-  return next;
-}
-
-/** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
-const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola', 'longevita'];
-
-/** Voci barra inferiore (sempre tutte visibili; non condizionare al caricamento dati). */
-const BOTTOM_NAV_ITEMS = [
-  { id: 'oggi', label: 'Oggi', icon: '🏠' },
-  { id: 'analisi', label: 'Timeline', icon: '🕒' },
-  { id: 'bussola', label: 'Salute', icon: '❤️' },
-  { id: 'longevita', label: 'Progressi', icon: '📈' },
-  { id: 'menu', label: 'Menu', icon: '≡' },
-];
-
-const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
-const AI_COACH_DISMISSED_INSIGHTS_LS_KEY = 'kentu_ai_coach_dismissed_insights_v1';
-const EVENT_USAGE_LS_KEY = 'kentu_event_usage';
-const EVENT_USAGE_DEFAULT = {
-  pasto: 0,
-  allenamento: 0,
-  acqua: 0,
-  nap: 0,
-  supplements: 0,
-};
-const MANUAL_TARGET_EDIT_EXCLUDED_KEYS = new Set(['autoCalculated', 'targetHistory']);
-
-/** Movimento prima del long-press su nodo timeline: oltre soglia → annulla drag e lascia swipe/scroll (allineato a `MOVE_THRESHOLD_PX` in TimelineNodi). */
-const NODE_DRAG_ARM_CANCEL_MOVE_PX = 6;
-
-function readPersistedActiveBottomTab() {
-  if (typeof localStorage === 'undefined') return 'oggi';
-  try {
-    const v = localStorage.getItem(ACTIVE_BOTTOM_TAB_LS_KEY);
-    if (v && MAIN_BOTTOM_TAB_ORDER.includes(v)) return v;
-  } catch {
-    /* ignore */
-  }
-  return 'oggi';
-}
-
-function readPersistedEventUsage() {
-  if (typeof localStorage === 'undefined') return { ...EVENT_USAGE_DEFAULT };
-  try {
-    const raw = localStorage.getItem(EVENT_USAGE_LS_KEY);
-    if (!raw) return { ...EVENT_USAGE_DEFAULT };
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return { ...EVENT_USAGE_DEFAULT };
-    return {
-      pasto: Math.max(0, Number(parsed.pasto) || 0),
-      allenamento: Math.max(0, Number(parsed.allenamento) || 0),
-      acqua: Math.max(0, Number(parsed.acqua) || 0),
-      nap: Math.max(0, Number(parsed.nap) || 0),
-      supplements: Math.max(0, Number(parsed.supplements) || 0),
-    };
-  } catch {
-    return { ...EVENT_USAGE_DEFAULT };
-  }
-}
-
-function readDismissedAiCoachInsights() {
-  if (typeof localStorage === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(AI_COACH_DISMISSED_INSIGHTS_LS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-
-/** Totali kcal/P/C/F solo da voci food/recipe nel log giornaliero. */
-function aggregateFoodRecipeDayTotals(log) {
-  const list = normalizeLogData(Array.isArray(log) ? log : Object.values(log || {}));
-  let kcal = 0;
-  let prot = 0;
-  let carb = 0;
-  let fat = 0;
-  for (let i = 0; i < list.length; i++) {
-    const item = list[i];
-    if (!item || (item.type !== 'food' && item.type !== 'recipe')) continue;
-    kcal += Number(item.kcal ?? item.cal) || 0;
-    prot += Number(item.prot ?? item.proteine) || 0;
-    carb += Number(item.carb ?? item.carboidrati) || 0;
-    fat += Number(item.fatTotal ?? item.fat ?? item.grassi) || 0;
-  }
-  return { kcal, prot, carb, fat };
-}
-
-/**
- * Prompt nascosto per Quick Action "Briefing": solo numeri locali, niente domanda generica.
- */
-function buildQuickBriefingSecretPrompt({
-  bodyBatteryPercent,
-  dynamicDailyKcal,
-  totali,
-  userTargets,
-}) {
-  const bb = Math.round(Number(bodyBatteryPercent) || 0);
-  const dynK = Math.round(Number(dynamicDailyKcal) || 0);
-  const eatenK = Math.round(Number(totali?.kcal) || 0);
-  const kcalSurplus = eatenK > dynK ? Math.round(eatenK - dynK) : 0;
-  const resKcal = Math.max(0, dynK - eatenK);
-  const kcalBalanceSnippet =
-    kcalSurplus > 0 ? `SURPLUS +${kcalSurplus} kcal` : `residuo ~${resKcal}kcal`;
-  const tProt = Number(userTargets?.prot ?? 150);
-  const tCarb = Number(userTargets?.carb ?? 200);
-  const tFat = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 65);
-  const eProt = Number(totali?.prot) || 0;
-  const eCarb = Number(totali?.carb) || 0;
-  const eFat = Number(totali?.fatTotal ?? totali?.fat) || 0;
-  const rProt = Math.max(0, Math.round((tProt - eProt) * 10) / 10);
-  const rCarb = Math.max(0, Math.round((tCarb - eCarb) * 10) / 10);
-  const rFat = Math.max(0, Math.round((tFat - eFat) * 10) / 10);
-  return (
-    `QUICK_ACTION=BRIEFING. Sintesi operativa solo da questi dati (non chiedere altri dati): ` +
-    `BB ${bb}% · budget kcal giornaliero ~${dynK} · assunte ${eatenK}kcal · ${kcalBalanceSnippet} · ` +
-    `macro residui ${rProt}g P / ${rCarb}g C / ${rFat}g F. ` +
-    `Applica REGOLE DI STILE Quick Action (Lavagna, max 3 elenchi, zero intro/outro).`
-  );
-}
-
-/**
- * Prompt nascosto "Analisi ieri": solo scostamenti vs target da log storico (local-first).
- */
-function buildYesterdayGapSecretPrompt(fullHistory, anchorDateStr, userTargets) {
-  const anchor = anchorDateStr || getTodayString();
-  const yStr = addDays(anchor, -1);
-  const rawLog = getLogFromStoricoTree(fullHistory, yStr) || [];
-  const agg = aggregateFoodRecipeDayTotals(rawLog);
-  const tK = Number(userTargets?.kcal ?? 2000);
-  const tP = Number(userTargets?.prot ?? 150);
-  const tC = Number(userTargets?.carb ?? 200);
-  const tF = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 65);
-  const thin = agg.kcal < 5 && agg.prot < 1 && agg.carb < 1 && agg.fat < 1;
-  const gaps = [];
-  if (thin) {
-    gaps.push('log alimenti vuoto o quasi per quel giorno');
-  } else {
-    const dk = agg.kcal - tK;
-    if (Math.abs(dk) > 120) gaps.push(`kcal ${Math.round(agg.kcal)} vs target ${Math.round(tK)} (${dk > 0 ? '+' : ''}${Math.round(dk)})`);
-    const dp = agg.prot - tP;
-    if (Math.abs(dp) > 15) gaps.push(`prot ${Math.round(agg.prot)}g vs ${Math.round(tP)}g (${dp > 0 ? '+' : ''}${Math.round(dp)}g)`);
-    const dc = agg.carb - tC;
-    if (Math.abs(dc) > 30) gaps.push(`carb ${Math.round(agg.carb)}g vs ${Math.round(tC)}g (${dc > 0 ? '+' : ''}${Math.round(dc)}g)`);
-    const df = agg.fat - tF;
-    if (Math.abs(df) > 15) gaps.push(`grassi ${Math.round(agg.fat)}g vs ${Math.round(tF)}g (${df > 0 ? '+' : ''}${Math.round(df)}g)`);
-  }
-  if (gaps.length === 0) gaps.push('nessuno scostamento macro/kcal rilevante vs target');
-  return (
-    `QUICK_ACTION=ANALISI_IERI. Giorno ${yStr}. Solo questi fatti (non inventare, non elencare ogni pasto): ${gaps.join(' · ')}. ` +
-    `Interpreta come coach: cosa correggere oggi. REGOLE DI STILE Quick Action (Lavagna, max 3 elenchi, zero intro/outro).`
-  );
-}
-
-/** Quick Action "Idea pasto": forza solo MEAL_PROPOSAL; Dispensa e macro sono in [CONTEXT_LIVE]. */
-function buildMealIdeaFromDispensaSecretPrompt() {
-  return (
-    `QUICK_ACTION=IDEA_PASTO. Usa ESCLUSIVAMENTE [CONTEXT_LIVE] per macro residui e Dispensa probabile. ` +
-    `Rispetta i vincoli Smart in [CONTEXT_LIVE] (pranzo: tetto zuccheri semplici e fibre minime; cena: tetto grassi fisso). ` +
-    `Priorità ingredienti: pranzo = verdure fibrose e proteine magre; cena = carboidrati complessi e proteine magre, grassi bassi. ` +
-    `Se nessun alimento in Dispensa è ideale, stima quantità con macro credibili (fallback) e non bloccare la proposta. ` +
-    `Proponi UN pasto con ingredienti prioritariamente dalla Dispensa. ` +
-    `Rispondi SOLO con il blocco [MEAL_PROPOSAL:{...}] su una riga (CARTA MENU), zero testo prima o dopo.`
-  );
-}
-
-/** Arco semicircolare Body Battery — look neon sottile; 💤 cyan se boost sonnellino. */
-function EnergyArc({ percentage, size = 'small', hasNapBoost = false, showText = true }) {
-  const filterUid = useId().replace(/:/g, '');
-  const energyVal = Number(percentage);
-  const arcP = Math.min(100, Math.max(0, Number.isFinite(energyVal) ? energyVal : 0));
-  const large = size === 'large';
-  const w = large ? 200 : 52;
-  const h = large ? 118 : 38;
-  const r = large ? 82 : 21;
-  const sw = large ? 5 : 2.25;
-  const cx = w / 2;
-  const cy = h - (large ? 10 : 7);
-  const x1 = cx - r;
-  const x2 = cx + r;
-  const arcLen = Math.PI * r;
-  const dashOffset = arcLen * (1 - arcP / 100);
-  const gid = `${large ? 'eaL' : 'eaS'}_${filterUid}`;
-  const pctRounded = Math.round(Number.isFinite(energyVal) ? energyVal : 0);
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: large ? 8 : 2,
-      }}
-    >
-      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: large ? 8 : 4 }}>
-        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', overflow: 'visible' }} aria-hidden>
-          <defs>
-            <filter id={gid} x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation={large ? 3.2 : 1.4} result="b" />
-              <feMerge>
-                <feMergeNode in="b" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-          <path
-            d={`M ${x1} ${cy} A ${r} ${r} 0 0 1 ${x2} ${cy}`}
-            fill="none"
-            stroke="#27272a"
-            strokeWidth={sw + 1}
-            strokeLinecap="round"
-            opacity={0.95}
-          />
-          <path
-            d={`M ${x1} ${cy} A ${r} ${r} 0 0 1 ${x2} ${cy}`}
-            fill="none"
-            stroke="#4ade80"
-            strokeWidth={sw}
-            strokeLinecap="round"
-            strokeDasharray={arcLen}
-            strokeDashoffset={dashOffset}
-            style={{ transition: 'stroke-dashoffset 0.55s ease-out', filter: `url(#${gid})` }}
-          />
-        </svg>
-        {hasNapBoost ? (
-          <span
-            style={{
-              fontSize: large ? '1.75rem' : '0.85rem',
-              lineHeight: 1,
-              filter: 'drop-shadow(0 0 6px rgba(34,211,238,0.85))',
-              color: '#22d3ee',
-              marginBottom: large ? 18 : 4,
-            }}
-            title="Boost sonnellino"
-            aria-hidden
-          >
-            💤
-          </span>
-        ) : null}
-      </div>
-      {showText ? (
-        <span
-          style={{
-            fontSize: large ? '1.35rem' : '0.62rem',
-            fontWeight: 800,
-            color: '#ecfdf5',
-            letterSpacing: large ? '0.06em' : '-0.02em',
-            textShadow: '0 0 12px rgba(74,222,128,0.45)',
-            lineHeight: 1,
-          }}
-        >
-          {pctRounded}%
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function BodyBatteryModal({ onClose, batteryData }) {
-  if (!batteryData) return null;
-  const { currentEnergy, maxCapacity, breakdown, hasNapBoost } = batteryData;
-  return (
-    <div
-      role="presentation"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.72)',
-        zIndex: 100030,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        backdropFilter: 'blur(5px)',
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="body-battery-title"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'linear-gradient(165deg, #18181b 0%, #0c0c0f 100%)',
-          border: '1px solid #3f3f46',
-          borderRadius: '18px',
-          padding: '24px 20px 20px',
-          width: '100%',
-          maxWidth: '360px',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          boxShadow: '0 24px 48px rgba(0,0,0,0.55)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-8px' }}>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', color: '#71717a', fontSize: '1.35rem', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}
-            aria-label="Chiudi"
-          >
-            ✕
-          </button>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '14px' }}>
-          <EnergyArc percentage={currentEnergy} size="large" hasNapBoost={!!hasNapBoost} />
-        </div>
-        {hasNapBoost ? (
-          <p style={{ margin: '0 0 8px 0', fontSize: '0.72rem', color: '#22d3ee', textAlign: 'center', fontWeight: 600 }}>
-            Sonnellino attivo — recupero extra
-          </p>
-        ) : null}
-        <p style={{ margin: '0 0 6px 0', fontSize: '0.7rem', color: '#71717a', textAlign: 'center' }}>
-          Tetto teorico {maxCapacity}% · energia attuale {currentEnergy}%
-        </p>
-        <h3
-          id="body-battery-title"
-          style={{
-            margin: '0 0 14px 0',
-            color: '#e4e4e7',
-            fontSize: '0.88rem',
-            fontWeight: 700,
-            textAlign: 'center',
-            letterSpacing: '0.04em',
-          }}
-        >
-          Estratto Conto Energia
-        </h3>
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-          {(breakdown || []).map((row, i) => (
-            <li
-              key={i}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '10px 0',
-                borderBottom: i < (breakdown || []).length - 1 ? '1px solid #27272a' : 'none',
-              }}
-            >
-              <span style={{ color: '#d4d4d8', fontSize: '0.8rem', lineHeight: 1.35 }}>{row.label}</span>
-              <span
-                style={{
-                  fontWeight: 600,
-                  fontSize: '0.8rem',
-                  textAlign: 'right',
-                  whiteSpace: 'nowrap',
-                  color:
-                    row.type === 'positive' ? '#22d3ee' : row.type === 'negative' ? '#f97316' : '#a1a1aa',
-                }}
-              >
-                {formatBodyBatteryValue(row.value)}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{
-            width: '100%',
-            marginTop: '20px',
-            padding: '12px',
-            background: '#3f3f46',
-            color: '#fafafa',
-            border: 'none',
-            borderRadius: '10px',
-            fontWeight: 600,
-            fontSize: '0.88rem',
-            cursor: 'pointer',
-          }}
-        >
-          Chiudi
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const CustomDateTick = ({ x, y, payload }) => {
-  if (!payload || !payload.value) return null;
-  const parts = String(payload.value).split('-');
-  if (parts.length !== 3) return null;
-  const [yyyy, mm, dd] = parts;
-
-  const mesi = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
-  const nomeMese = mesi[parseInt(mm, 10) - 1] || mm;
-
-  return (
-    <g transform={`translate(${x},${y})`}>
-      <text x={0} y={0} dy={14} textAnchor="middle" fill="#fff" fontSize="0.9rem" fontWeight="bold">
-        {dd}
-      </text>
-      <text
-        x={0}
-        y={0}
-        dy={28}
-        textAnchor="middle"
-        fill="#00e5ff"
-        fontSize="0.75rem"
-        fontWeight="600"
-        style={{ textTransform: 'uppercase' }}
-      >
-        {nomeMese}
-      </text>
-      <text x={0} y={0} dy={40} textAnchor="middle" fill="#555" fontSize="0.65rem">
-        {yyyy}
-      </text>
-    </g>
-  );
-};
+import {
+  buildQuickBriefingSecretPrompt,
+  buildYesterdayGapSecretPrompt,
+  buildMealIdeaFromDispensaSecretPrompt,
+  buildRecentMealsContextForDinner,
+  buildAiMealConstraintsPromptBlock,
+  buildLast7DaysMealLinesForDraftPrompt,
+  buildRecentActivitiesContext,
+  buildKentuAgendaSecretPrompt,
+  buildAiCoachFoodLogFingerprint,
+} from './features/chat/aiPromptBuilders';
+import {
+  migrateIdealStrategy,
+  readPersistedActiveBottomTab,
+  readPersistedEventUsage,
+  readDismissedAiCoachInsights,
+  computeSleepDurationHours,
+  kentuChatStorageKey,
+  readKentuChatHistoryFromLocalStorage,
+  kentuChatHistoryForPersistence,
+  getNowDecimalHourForPlanMerge,
+  tryAcquireMealConfirmGuard,
+  releaseMealConfirmGuard,
+  coachEvalSemanticEqual,
+} from './utils/salaComandiUtils';
 
 const ZEN_SUN_MAX = 2.2;
 
@@ -743,360 +348,6 @@ function getZenBreathAudioFade(phaseName, phaseMs) {
   return null;
 }
 
-/**
- * Pasti unici (ultimi 30 giorni) dal diario storico: label compatta + macro medi per occorrenza (contesto agenda Kentu).
- */
-function buildRecentMealsContextForDinner(fullHistory, anchorDateStr) {
-  if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr) return '';
-
-  const byNorm = new Map();
-
-  for (let i = 0; i < 30; i++) {
-    const dStr = addDays(anchorDateStr, -i);
-    const log = getLogFromStoricoTree(fullHistory, dStr) || [];
-    const foods = log.filter(
-      (item) => item && (item.type === 'food' || item.type === 'recipe' || item.type === 'meal')
-    );
-    if (foods.length === 0) continue;
-
-    const groups = {};
-    foods.forEach((item) => {
-      const timeKey = typeof item.mealTime === 'number' ? String(item.mealTime) : 'unknown';
-      const typeKey = item.mealType || 'pasto';
-      const gid = `${typeKey}_${timeKey}`;
-      if (!groups[gid]) groups[gid] = [];
-      groups[gid].push(item);
-    });
-
-    Object.values(groups).forEach((items) => {
-      if (!items.length) return;
-      const names = [];
-      const seen = new Set();
-      for (const it of items) {
-        const raw = (it.desc || it.name || '').trim();
-        if (!raw) continue;
-        const low = raw.toLowerCase();
-        if (seen.has(low)) continue;
-        seen.add(low);
-        names.push(raw);
-        if (names.length >= 4) break;
-      }
-      if (!names.length) return;
-
-      const displayName = names.slice(0, 3).join(' e ');
-      const norm = displayName
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      let kcal = 0;
-      let prot = 0;
-      let carb = 0;
-      let fat = 0;
-      items.forEach((it) => {
-        kcal += Number(it.kcal || it.cal || 0) || 0;
-        prot += Number(it.prot || it.proteine || 0) || 0;
-        carb += Number(it.carb || it.carboidrati || 0) || 0;
-        fat += Number(it.fatTotal || it.fat || it.grassi || 0) || 0;
-      });
-
-      if (kcal < 10 && prot < 2 && carb < 2 && fat < 2) return;
-
-      const prev = byNorm.get(norm);
-      if (prev) {
-        prev.n += 1;
-        prev.kcal += kcal;
-        prev.prot += prot;
-        prev.carb += carb;
-        prev.fat += fat;
-        if (displayName.length > prev.label.length) prev.label = displayName;
-      } else {
-        byNorm.set(norm, { label: displayName, n: 1, kcal, prot, carb, fat });
-      }
-    });
-  }
-
-  const rows = Array.from(byNorm.values())
-    .map((v) => ({
-      label: v.label.length > 72 ? `${v.label.slice(0, 69)}…` : v.label,
-      n: v.n,
-      kcal: Math.round(v.kcal / v.n),
-      prot: Math.round(v.prot / v.n),
-      carb: Math.round(v.carb / v.n),
-      fat: Math.round(v.fat / v.n)
-    }))
-    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
-    .slice(0, 25);
-
-  return rows.map((r) => `- ${r.label} (~${r.kcal} kcal, P${r.prot} / C${r.carb} / F${r.fat} g)`).join('\n');
-}
-
-const AI_MEAL_CONSTRAINTS_MAX_ITEMS = 20;
-
-function normalizeAiMealConstraintList(value) {
-  if (value == null) return [];
-  if (Array.isArray(value)) {
-    return value
-      .map((x) => String(x).trim())
-      .filter(Boolean)
-      .slice(0, AI_MEAL_CONSTRAINTS_MAX_ITEMS);
-  }
-  if (typeof value === 'string') {
-    return value
-      .split(/[,;\n]/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, AI_MEAL_CONSTRAINTS_MAX_ITEMS);
-  }
-  return [];
-}
-
-/**
- * Blocco testo per prompt Gemini: fissi / esclusi / preferiti.
- * @param {object} [constraints]
- * @param {string|string[]} [constraints.fixedFoods]
- * @param {string|string[]} [constraints.excludedFoods]
- * @param {string|string[]} [constraints.preferredFoods]
- */
-function buildAiMealConstraintsPromptBlock(constraints) {
-  const c = constraints && typeof constraints === 'object' ? constraints : {};
-  const fixed = normalizeAiMealConstraintList(c.fixedFoods ?? c.fixed);
-  const excluded = normalizeAiMealConstraintList(c.excludedFoods ?? c.excluded);
-  const preferred = normalizeAiMealConstraintList(c.preferredFoods ?? c.preferred);
-  if (fixed.length === 0 && excluded.length === 0 && preferred.length === 0) return '';
-  const lines = [
-    '',
-    'VINCOLI MENU (OBBLIGATORI — applica alla lista alimenti che generi):',
-  ];
-  if (fixed.length > 0) {
-    lines.push(
-      `- INCLUDI OBBLIGATORIAMENTE questi alimenti (grammi realistici per porzione; ogni nome deve comparire come voce distinta nell'output): ${fixed.join('; ')}`
-    );
-  }
-  if (excluded.length > 0) {
-    lines.push(
-      `- NON includere né sostituti stretti di: ${excluded.join('; ')} (niente derivati oculati dello stesso ingrediente).`
-    );
-  }
-  if (preferred.length > 0) {
-    lines.push(
-      `- PREFERISCI dove compatibile con target e storico (includi almeno uno se sensato): ${preferred.join('; ')}`
-    );
-  }
-  lines.push(
-    'Verifica prima di rispondere: tutti i fissi presenti; nessun escluso; preferiti rispettati se possibile senza violare i target.'
-  );
-  return lines.join('\n');
-}
-
-/** Righe compatte pasti ultimi 7 giorni (prompt generazione draftFoods). */
-function buildLast7DaysMealLinesForDraftPrompt(fullHistory, anchorDateStr) {
-  if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr) return '(nessuno storico)';
-  const lines = [];
-  for (let i = 0; i < 7; i++) {
-    const dStr = addDays(anchorDateStr, -i);
-    const log = getLogFromStoricoTree(fullHistory, dStr) || [];
-    log.forEach((item) => {
-      if (!item || (item.type !== 'food' && item.type !== 'recipe' && item.type !== 'meal')) return;
-      const d = String(item.desc || item.name || '').trim();
-      if (!d) return;
-      const mt = item.mealType || '';
-      const kcal = Math.round(Number(item.kcal || item.cal) || 0);
-      lines.push(`- ${d} (${mt}, ~${kcal} kcal)`);
-    });
-  }
-  return lines.slice(0, 45).join('\n') || '(nessun pasto negli ultimi 7 giorni)';
-}
-
-/**
- * Ultime ~30 giorni: attività / allenamenti dal diario storico, medie durata e kcal per tipo.
- */
-function buildRecentActivitiesContext(fullHistory, anchorDateStr) {
-  if (!fullHistory || typeof fullHistory !== 'object' || !anchorDateStr) return '';
-
-  const byNorm = new Map();
-
-  for (let i = 0; i < 30; i++) {
-    const dStr = addDays(anchorDateStr, -i);
-    const log = getLogFromStoricoTree(fullHistory, dStr) || [];
-    const acts = log.filter(
-      (item) =>
-        item &&
-        (item.type === 'workout' ||
-          item.type === 'work' ||
-          item.type === 'activity' ||
-          item.type === 'cognitive')
-    );
-    acts.forEach((item) => {
-      const raw = (item.desc || item.name || item.label || '').trim();
-      if (!raw) return;
-      const norm = raw
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      const durH = Number(item.duration);
-      const hours = Number.isFinite(durH) && durH > 0 ? durH : null;
-      const kcal = Number(item.kcal || item.cal || 0) || 0;
-      const prev = byNorm.get(norm);
-      if (prev) {
-        prev.n += 1;
-        if (hours != null) {
-          prev.durSum += hours;
-          prev.durCount += 1;
-        }
-        prev.kcal += kcal;
-        if (raw.length > prev.label.length) prev.label = raw;
-      } else {
-        byNorm.set(norm, {
-          label: raw,
-          n: 1,
-          durSum: hours != null ? hours : 0,
-          durCount: hours != null ? 1 : 0,
-          kcal,
-        });
-      }
-    });
-  }
-
-  const rows = Array.from(byNorm.values())
-    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
-    .slice(0, 20)
-    .map((v) => {
-      const avgK = Math.round(v.kcal / Math.max(1, v.n));
-      let durPart = 'n/d';
-      if (v.durCount > 0) {
-        const avgH = v.durSum / v.durCount;
-        if (avgH >= 1) durPart = `${avgH.toFixed(1).replace(/\.0$/, '')}h`;
-        else if (avgH > 0) durPart = `${Math.round(avgH * 60)}min`;
-      }
-      return `- ${v.label.length > 56 ? `${v.label.slice(0, 53)}…` : v.label} (media ${durPart}, ~${avgK} kcal)`;
-    });
-
-  return rows.join('\n');
-}
-
-function buildKentuAgendaSecretPrompt(userMessage, activitiesContext, mealsContext) {
-  const act =
-    activitiesContext && String(activitiesContext).trim()
-      ? String(activitiesContext).trim()
-      : '(nessuna attività strutturata negli ultimi 30 giorni nel diario)';
-  const meals =
-    mealsContext && String(mealsContext).trim()
-      ? String(mealsContext).trim()
-      : '(nessun pasto recente rilevante nel diario)';
-  const safeUser = String(userMessage || '').trim() || '(nessun dettaglio fornito)';
-  return `L'utente ha questi piani per oggi: ${safeUser}
-
-STORICO ATTIVITÀ:
-${act}
-
-STORICO PASTI:
-${meals}
-
-DIRETTIVE:
-1. Trova le attività nello storico che combaciano con i piani di oggi. Se non ci sono, stima tu calorie e durata.
-2. Genera una strategia nutrizionale rapida per supportare questo specifico carico di lavoro (es. quando inserire i carboidrati per l'allenamento gambe), usando i pasti dello storico se possibile.
-3. Rispondi in modo discorsivo ma conciso.
-4. Alla fine, allega un blocco JSON chiamato agenda_options contenente un array delle attività individuate, con "name", "duration" (in minuti) e "kcal" stimate.
-
-Formato esatto dell'ultima riga (solo JSON valido, senza markdown):
-{"agenda_options":[{"name":"etichetta breve","duration":90,"kcal":300}]}`;
-}
-
-/** Ore decimali di sonno da addormentamento a risveglio (attraversa mezzanotte). */
-function computeSleepDurationHours(bedDecimal, wakeDecimal) {
-  const b = Number(bedDecimal);
-  const w = Number(wakeDecimal);
-  if (!Number.isFinite(b) || !Number.isFinite(w)) return 0;
-  let dur = w - b;
-  if (dur <= 0) dur += 24;
-  return Math.round(Math.min(24, Math.max(0, dur)) * 100) / 100;
-}
-
-const FIREBASE_LOAD_OVERLAY_FADE_MS = 800;
-
-/** Riferimenti stabili per chart vuoto / notte in sospeso (evita ricalcoli longevity ad ogni render). */
-const EMPTY_ENERGY_CHART_DATA = [];
-const LONGEVITY_NIGHT_PENDING_ENERGY_SIM = {
-  chartData: EMPTY_ENERGY_CHART_DATA,
-  realTotals: {},
-  hasCrashRisk: false,
-  hasCortisolRisk: false,
-  hasDigestionRisk: false,
-  nervousSystemLoad: 0
-};
-
-/** Overlay fullscreen: unico piano visibile finché auth/data non sono pronti per la dashboard/login. */
-function FirebaseDataLoadingLayer({ blocking }) {
-  const [introPhrase] = useState(() => takeNextKentuIntroPhrase());
-  const [mounted, setMounted] = useState(false);
-  const [opaque, setOpaque] = useState(true);
-
-  useEffect(() => {
-    if (blocking) {
-      setMounted(true);
-      setOpaque(true);
-      return;
-    }
-    if (mounted) {
-      setOpaque(false);
-      const t = window.setTimeout(() => setMounted(false), FIREBASE_LOAD_OVERLAY_FADE_MS);
-      return () => window.clearTimeout(t);
-    }
-  }, [blocking, mounted]);
-
-  if (!mounted) return null;
-
-  return createPortal(
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100%',
-        minHeight: '100dvh',
-        zIndex: 200000,
-        boxSizing: 'border-box',
-        background: 'linear-gradient(165deg, #0f2847 0%, #0a1a2e 42%, #050e1a 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding:
-          'max(20px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left))',
-        opacity: opaque ? 1 : 0,
-        transition: `opacity ${FIREBASE_LOAD_OVERLAY_FADE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
-        pointerEvents: blocking ? 'auto' : 'none',
-      }}
-      aria-live="polite"
-      aria-busy={blocking}
-    >
-      <p
-        className="kentu-intro-phrase-text kentu-intro-phrase-text--glow"
-        style={{
-          margin: 0,
-          maxWidth: 'min(24rem, 90vw)',
-          textAlign: 'center',
-          fontFamily: 'ui-serif, Georgia, "Times New Roman", serif',
-          fontWeight: 300,
-          fontSize: 'clamp(0.95rem, 3.5vw, 1.18rem)',
-          letterSpacing: '0.06em',
-          lineHeight: 1.75,
-          color: 'rgba(248, 250, 252, 0.95)',
-        }}
-      >
-        {introPhrase}
-      </p>
-    </div>,
-    document.body
-  );
-}
-
 /** Età in anni interi dalla data di nascita (formato YYYY-MM-DD). */
 export function calculateAge(dobString) {
   if (!dobString) return null;
@@ -1110,118 +361,6 @@ export function calculateAge(dobString) {
   }
   return age;
 }
-
-function kentuChatStorageKey(dateStr) {
-  return `kentu_chat_${dateStr}`;
-}
-
-function readKentuChatHistoryFromLocalStorage(dateStr) {
-  try {
-    const raw = localStorage.getItem(kentuChatStorageKey(dateStr));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    const cleaned = parsed.filter(
-      (m) => m && (m.sender === 'user' || m.sender === 'ai') && !m.isTyping
-    );
-    return cleaned.length > 0 ? cleaned : null;
-  } catch {
-    return null;
-  }
-}
-
-function isKentuChatPersistableMessage(m) {
-  if (!m || m.isTyping) return false;
-  const t = (m.text || '').trim();
-  if (
-    m.sender === 'ai' &&
-    (t.startsWith('❌') || t.includes('Errore Server') || t.includes('Nessuna API Key'))
-  ) {
-    return false;
-  }
-  return true;
-}
-
-function kentuChatHistoryForPersistence(messages) {
-  return (messages || []).filter(isKentuChatPersistableMessage);
-}
-
-const ADD_MENU_ORDER_LS_KEY = 'kentu_add_menu_order';
-
-
-function getNowDecimalHourForPlanMerge() {
-  const d = new Date();
-  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
-}
-
-/** Debounce conferma pasti (wizard / piano giornaliero): evita doppio insert su click rapidi. */
-const MEAL_CONFIRM_DEBOUNCE_MS = 900;
-
-function tryAcquireMealConfirmGuard(guardRef) {
-  const g = guardRef.current;
-  const now = Date.now();
-  if (g.busy || now - g.lastAt < MEAL_CONFIRM_DEBOUNCE_MS) return false;
-  g.busy = true;
-  g.lastAt = now;
-  return true;
-}
-
-function releaseMealConfirmGuard(guardRef) {
-  guardRef.current.busy = false;
-}
-
-/** Snapshot stabile delle voci food/recipe per il coach (stesso contenuto → stessa stringa anche con array nuovo). */
-function buildAiCoachFoodLogFingerprint(log) {
-  const arr = log || [];
-  const parts = [];
-  for (let i = 0; i < arr.length; i += 1) {
-    const e = arr[i];
-    if (!e || (e.type !== 'food' && e.type !== 'recipe')) continue;
-    const id = e.id ?? e.entryId ?? e.logId ?? `idx${i}`;
-    const mtRaw = String(e.mealType || 'snack').split('_')[0];
-    const kcal = Number(e.kcal ?? e.cal) || 0;
-    const prot = Number(e.prot ?? e.proteine) || 0;
-    parts.push(`${id}:${e.type}:${mtRaw}:${kcal}:${prot}`);
-  }
-  return parts.join('|');
-}
-
-function coachEvalSemanticEqual(a, b) {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  if (a.period !== b.period) return false;
-  const sa = a.suggestion;
-  const sb = b.suggestion;
-  if ((sa == null) !== (sb == null)) return false;
-  if (sa && sb) {
-    if (sa.ruleId !== sb.ruleId || sa.message !== sb.message || Number(sa.priority) !== Number(sb.priority)) {
-      return false;
-    }
-    const am = sa.action?.mealType ?? null;
-    const bm = sb.action?.mealType ?? null;
-    if (am !== bm) return false;
-  }
-  const xa = a.state;
-  const xb = b.state;
-  if ((xa == null) !== (xb == null)) return false;
-  if (xa && xb) {
-    if (
-      Number(xa.totalCalories) !== Number(xb.totalCalories)
-      || Number(xa.mealCount) !== Number(xb.mealCount)
-      || Number(xa.totalProt ?? 0) !== Number(xb.totalProt ?? 0)
-      || Number(xa.foodCount ?? 0) !== Number(xb.foodCount ?? 0)
-      || Number(xa.targetCalories ?? -1) !== Number(xb.targetCalories ?? -1)
-      || Number(xa.breakfastShare ?? -1) !== Number(xb.breakfastShare ?? -1)
-      || Number(xa.protPerKcal ?? -1) !== Number(xb.protPerKcal ?? -1)
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
-const AI_COACH_EVAL_INACTIVE = Object.freeze({ suggestion: null, state: null, period: null });
-const AI_COACH_EMPTY_HISTORY = Object.freeze([]);
 
 export default function SalaComandi() {
   const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
@@ -2299,7 +1438,6 @@ export default function SalaComandi() {
   const manualNodesRef = useRef(manualNodes);
   manualNodesRef.current = manualNodes;
   const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
-  const [draggingNode, setDraggingNode] = useState(null);
   const [touchingNodeId, setTouchingNodeId] = useState(null);
   const [historyStack, setHistoryStack] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -2307,18 +1445,6 @@ export default function SalaComandi() {
   /** Modale trascina-in-zona-cancella per ghost_meal / ghost_workout */
   const [ghostProgramDeleteModal, setGhostProgramDeleteModal] = useState(null);
   const [programmingRemovedToast, setProgrammingRemovedToast] = useState(false);
-  const [dragOffsetY, setDragOffsetY] = useState(0);
-  const [dragLiveTime, setDragLiveTime] = useState(null);
-  const dragEngine = useRef({
-    isActive: false,
-    nodeId: null,
-    nodeType: null,
-    startX: 0,
-    initialTime: 0,
-    lastX: 0,
-    lastTime: 0,
-    currentLiveTime: 0
-  });
   const timelineContainerRef = useRef(null);
   const chartScrollRef = useRef(null);
   const initialPinchDistance = useRef(null);
@@ -2329,7 +1455,6 @@ export default function SalaComandi() {
   const pendingClickRef = useRef(null);
   const historyStackRef = useRef([]);
   const historyIndexRef = useRef(-1);
-  const dragOffsetYRef = useRef(0);
   const miniTimelinePastoRef = useRef(null);
   const miniTimelineActivityRef = useRef(null);
   const miniTimelineWaterRef = useRef(null);
@@ -2353,6 +1478,30 @@ export default function SalaComandi() {
     setShowUndoToast(true);
     setTimeout(() => setShowUndoToast(false), 4000);
   }, []);
+
+  const {
+    handleCSVUpload,
+    calculateSmartTargets,
+    navigateToDate,
+    changeDate,
+    generateReportData,
+  } = useProfileAndTargets({
+    userUid,
+    db,
+    userProfile,
+    birthDate,
+    userTargets,
+    fullHistory,
+    reportPeriod,
+    currentDateObj,
+    setUserProfile,
+    applyTargetModeUpdate,
+    applyAutomaticTargetRecalibration,
+    setCurrentDateObj,
+    setDailyLog,
+    setManualNodes,
+    calculateAge,
+  });
 
   // Weekly adaptive calibration of physiological coefficients
   // The simulation gradually learns the user's metabolic responses.
@@ -2388,15 +1537,6 @@ export default function SalaComandi() {
       console.warn('Weekly calibration skipped:', err);
     }
   }, [fullHistory, currentTrackerDate]);
-
-  useEffect(() => {
-    if (draggingNode) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => { document.body.style.overflow = ''; };
-  }, [draggingNode]);
 
   const CURRENT_TIME_VIEW_OFFSET = 0.3; // ora attuale al 30% da sinistra (più spazio a destra per la proiezione)
 
@@ -3075,6 +2215,25 @@ export default function SalaComandi() {
     }
   }, [currentTrackerDate, isSimulationMode]);
 
+  const {
+    draggingNode,
+    setDraggingNode,
+    dragOffsetY,
+    dragOffsetYRef,
+    dragLiveTime,
+  } = useTimelineDrag({
+    timelineContainerRef,
+    dailyLogRef,
+    manualNodesRef,
+    isSimulationMode,
+    pushTimelineUndoSnapshot,
+    syncDatiFirebase,
+    setDailyLog,
+    setManualNodes,
+    setGhostProgramDeleteModal,
+    setTouchingNodeId,
+  });
+
   const saveProfileToFirebase = (newProfile, newTargets) => {
     const currentUser = auth.currentUser;
     if (!currentUser) return;
@@ -3103,443 +2262,6 @@ export default function SalaComandi() {
     const pvf = p?.visceral_fat ?? p?.visceralFat ?? p?.visceral;
     setDrawerVisceralFat(pvf != null && pvf !== '' ? String(pvf) : '');
   }, [showWeightModal, getTodayString]);
-
-  const handleCSVUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result;
-        if (!text || typeof text !== 'string') {
-          alert('File CSV vuoto o non valido.');
-          return;
-        }
-
-        const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-        if (lines.length < 2) {
-          alert('File CSV vuoto o non valido.');
-          return;
-        }
-
-        const uid = userUid;
-        if (!uid) {
-          alert('Accedi per importare le misurazioni.');
-          return;
-        }
-
-        const { columnMap } = buildBodyMetricsColumnMap(lines[0]);
-        const mappedIndices = Object.values(columnMap).filter((idx) => idx >= 0);
-        const maxColIdx = mappedIndices.length ? Math.max(...mappedIndices) : 0;
-
-        const payloads = [];
-
-        for (let i = 1; i < lines.length; i++) {
-          const cols = lines[i].replace(/"/g, '').split(',');
-          if (cols.length <= maxColIdx) continue;
-
-          const dateRaw = (cols[columnMap.date] ?? '').trim();
-          const parsed = parseUniversalDate(dateRaw);
-          const weight = extractNumber(cols[columnMap.weight]);
-          if (parsed == null || weight == null) continue;
-
-          const payload = {
-            date: parsed.isoDate,
-            timestamp: parsed.timestamp,
-            weight,
-          };
-          if (columnMap.fat !== -1) payload.bodyFat = extractNumber(cols[columnMap.fat]);
-          if (columnMap.muscle !== -1) payload.muscle = extractNumber(cols[columnMap.muscle]);
-          if (columnMap.water !== -1) payload.water = extractNumber(cols[columnMap.water]);
-          if (columnMap.visceral !== -1) payload.visceral = extractNumber(cols[columnMap.visceral]);
-
-          payloads.push(payload);
-        }
-
-        const mergedPayloads = mergeDuplicateBiometrics(payloads);
-
-        if (mergedPayloads.length === 0) {
-          alert('Nessuna riga valida trovata nel CSV.');
-          return;
-        }
-
-        const metricsRef = ref(db, `users/${uid}/body_metrics`);
-        const batch = {};
-        for (const p of mergedPayloads) {
-          const entry = {
-            date: p.date,
-            timestamp: p.timestamp,
-            weight: p.weight,
-          };
-          if ('bodyFat' in p) entry.bodyFat = p.bodyFat;
-          if ('muscle' in p) entry.muscle = p.muscle;
-          if ('water' in p) entry.water = p.water;
-          if ('visceral' in p) entry.visceral = p.visceral;
-          batch[push(metricsRef).key] = entry;
-        }
-        await update(metricsRef, batch);
-
-        let latest = mergedPayloads[0];
-        for (let i = 1; i < mergedPayloads.length; i += 1) {
-          if (mergedPayloads[i].timestamp > latest.timestamp) latest = mergedPayloads[i];
-        }
-        if (userTargets?.autoCalculated === true) {
-          await applyAutomaticTargetRecalibration({
-            weight: latest.weight,
-            bodyFat: latest.bodyFat,
-            muscle: latest.muscle,
-            water: latest.water,
-            visceral: latest.visceral,
-            date: latest.date,
-            timestamp: latest.timestamp,
-          });
-        }
-        setUserProfile((prev) => ({
-          ...prev,
-          weight: latest.weight,
-          ...(latest.bodyFat != null && Number.isFinite(Number(latest.bodyFat))
-            ? { bodyFat: latest.bodyFat }
-            : {}),
-        }));
-
-        const dupNote =
-          payloads.length > mergedPayloads.length
-            ? ` (${payloads.length} righe CSV → ${mergedPayloads.length} giorni dopo unione duplicati)`
-            : '';
-        alert(`✅ Importazione completata! ${mergedPayloads.length} misurazioni salvate nel database.${dupNote}`);
-      } catch (err) {
-        console.error('Errore importazione CSV body metrics:', err);
-        alert(
-          err?.message?.startsWith('CSV:')
-            ? err.message
-            : '❌ Errore durante la conversione o il salvataggio del CSV. Controlla la console.'
-        );
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  const calculateSmartTargets = () => {
-    const weightKg = Number.parseFloat(String(userProfile?.weight ?? ''));
-    const heightCm = Number.parseFloat(String(userProfile?.height ?? ''));
-    const computedAge = calculateAge(birthDate);
-    const ageYears =
-      Number.isFinite(Number(computedAge)) && Number(computedAge) > 0
-        ? Number(computedAge)
-        : Number.parseInt(String(userProfile?.age ?? ''), 10);
-    const safeWeight = Number.isFinite(weightKg) && weightKg > 0 ? weightKg : 75;
-    const safeHeight = Number.isFinite(heightCm) && heightCm > 0 ? heightCm : 175;
-    const safeAge = Number.isFinite(ageYears) && ageYears > 0 ? ageYears : 30;
-
-    const genderRaw = String(userProfile?.gender ?? 'M').trim().toUpperCase();
-    const isFemale = genderRaw === 'F' || genderRaw === 'FEMALE' || genderRaw === 'DONNA';
-
-    const activityRaw = String(userProfile?.activityLevel ?? '1.55').trim().toLowerCase();
-    const activityFactorMap = {
-      sedentary: 1.2,
-      light: 1.375,
-      moderate: 1.55,
-      active: 1.725,
-      very_active: 1.9,
-    };
-    const activityFromLabel = activityFactorMap[activityRaw];
-    const activityFromNumeric = Number.parseFloat(activityRaw);
-    const activityFactor =
-      Number.isFinite(activityFromLabel) ? activityFromLabel
-        : Number.isFinite(activityFromNumeric) ? activityFromNumeric
-        : 1.55;
-
-    const goalRaw = String(userProfile?.nutritionGoal || userProfile?.goal || 'maintain')
-      .trim()
-      .toLowerCase();
-    const goalAdjustmentMap = {
-      maintain: 0,
-      maintenance: 0,
-      mantenimento: 0,
-      cut: -300,
-      lose: -300,
-      perdita_grasso: -300,
-      dimagrimento: -300,
-      recomp: -100,
-      recomposition: -100,
-      ricomposizione: -100,
-      bulk: 250,
-      gain: 250,
-      massa: 250,
-    };
-    const goalAdjustment = goalAdjustmentMap[goalRaw] ?? 0;
-
-    const bmr = (10 * safeWeight) + (6.25 * safeHeight) - (5 * safeAge) + (isFemale ? -161 : 5);
-    const tdee = bmr * activityFactor;
-    const unclampedGoalKcal = tdee + goalAdjustment;
-    const clampedGoalKcal = Math.min(5000, Math.max(1200, unclampedGoalKcal));
-    const goalAdjustedKcal = Math.round(clampedGoalKcal / 10) * 10;
-
-    if (import.meta.env.DEV) {
-      console.log('[UniversalSettings] auto target', {
-        bmr,
-        tdee,
-        goalAdjustedKcal,
-        activityFactor,
-      });
-    }
-
-    const m = buildMacroSplitFromKcal(safeWeight, goalAdjustedKcal);
-    const normalizedNutritionGoal =
-      userProfile?.nutritionGoal
-      || (userProfile?.goal === 'lose' ? 'cut' : userProfile?.goal === 'gain' ? 'bulk' : 'maintain');
-    setUserProfile((prev) => ({
-      ...prev,
-      age: safeAge,
-      nutritionGoal: normalizedNutritionGoal,
-      goal: normalizedNutritionGoal === 'cut' ? 'lose' : normalizedNutritionGoal === 'bulk' ? 'gain' : 'maintain',
-      targetCalories: m.kcal,
-      proteinTarget: prev.proteinTarget,
-    }));
-    applyTargetModeUpdate({
-      updater: (prev) => ({
-        ...prev,
-        kcal: m.kcal,
-        prot: m.prot,
-        carb: m.carb,
-        fatTotal: m.fat,
-        fat: m.fat,
-        water: m.water,
-      }),
-      mode: 'auto',
-      source: 'universal-auto-calc',
-    });
-  };
-
-  const navigateToDate = useCallback((dateInput) => {
-    const nextDate = dateInput instanceof Date ? new Date(dateInput) : new Date(`${dateInput}T12:00:00`);
-    if (!Number.isFinite(nextDate.getTime())) return;
-    setCurrentDateObj(nextDate);
-    const offset = nextDate.getTimezoneOffset() * 60000;
-    const dateStr = new Date(nextDate.getTime() - offset).toISOString().slice(0, 10);
-    const dayData = fullHistory[`trackerStorico_${dateStr}`];
-
-    if (dayData) {
-      const rawLog = Array.isArray(dayData.log) ? dayData.log : Object.values(dayData.log || {});
-      const normalized = normalizeLogData(rawLog);
-      setDailyLog(applyMealTimes(normalized, dayData.mealTimes ?? {}));
-      setManualNodes(Array.isArray(dayData.manualNodes) ? dayData.manualNodes : []);
-    } else {
-      setDailyLog([]);
-      setManualNodes([]);
-    }
-  }, [fullHistory]);
-
-  const changeDate = (daysOffset) => {
-    const newDate = new Date(currentDateObj);
-    newDate.setDate(newDate.getDate() + daysOffset);
-    navigateToDate(newDate);
-  };
-
-  const REPORT_NUTRIENT_KEYS = ['kcal', 'prot', 'carb', 'fatTotal', 'fibre', 'vitc', 'vitD', 'omega3', 'mg', 'k', 'fe', 'ca'];
-  const generateReportData = () => {
-    const days = parseInt(reportPeriod, 10) || 7;
-    const now = new Date();
-    let totalDaysFound = 0;
-    const aggregated = {};
-    REPORT_NUTRIENT_KEYS.forEach(k => { aggregated[k] = 0; });
-
-    for (let i = 0; i < days; i++) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      const dayData = fullHistory[`trackerStorico_${dateStr}`];
-
-      if (dayData && dayData.log) {
-        const rawLog = Array.isArray(dayData.log) ? dayData.log : Object.values(dayData.log || []);
-        const flatLog = normalizeLogData(rawLog);
-        const foodItems = flatLog.filter(item => item.type === 'food' || item.type === 'recipe');
-        if (foodItems.length > 0) totalDaysFound++;
-        foodItems.forEach(food => {
-          REPORT_NUTRIENT_KEYS.forEach(key => {
-            const val = key === 'kcal' ? (food.kcal ?? food.cal) : food[key];
-            aggregated[key] += (parseFloat(val) || 0);
-          });
-        });
-      }
-    }
-
-    if (totalDaysFound === 0) return null;
-    const averages = {};
-    REPORT_NUTRIENT_KEYS.forEach(key => {
-      averages[key] = aggregated[key] / totalDaysFound;
-    });
-    return { averages, daysFound: totalDaysFound };
-  };
-
-  useEffect(() => {
-    if (!draggingNode) return;
-    setDragOffsetY(0);
-    dragOffsetYRef.current = 0;
-    const el = timelineContainerRef.current;
-    const { id: dragId, edge: dragEdge, type: dragType, originalTime, originalDuration } = draggingNode;
-    const initialTime = dragType === 'work' && dragEdge === 'end' ? (originalTime + (originalDuration ?? 0)) : originalTime;
-    dragEngine.current = {
-      isActive: true,
-      nodeId: dragId,
-      nodeType: dragType,
-      startX: 0,
-      initialTime,
-      lastX: 0,
-      lastTime: 0,
-      currentLiveTime: initialTime
-    };
-    setDragLiveTime(initialTime);
-
-    const onMove = (e) => {
-      if (!el || !draggingNode) return;
-      const rect = el.getBoundingClientRect();
-      const centerY = rect.top + rect.height / 2;
-      const offsetY = e.clientY - centerY;
-      dragOffsetYRef.current = offsetY;
-      setDragOffsetY(offsetY);
-
-      const currentX = e.clientX;
-      const currentT = performance.now();
-      const { lastX, lastTime, currentLiveTime } = dragEngine.current;
-      const pixelsPerHour = rect.width / 24;
-
-      if (dragEngine.current.lastTime === 0) {
-        dragEngine.current.lastX = currentX;
-        dragEngine.current.lastTime = currentT;
-        return;
-      }
-      const dx = currentX - lastX;
-      const deltaT = currentT - lastTime;
-      const velocity = deltaT > 0 ? Math.abs(dx) / deltaT : 0;
-      const VELOCITY_THRESHOLD = 0.4;
-      const FRICTION = 0.3;
-      const effectiveDx = velocity > VELOCITY_THRESHOLD ? dx : dx * FRICTION;
-      const deltaHours = effectiveDx / pixelsPerHour;
-      let newTime = currentLiveTime + deltaHours;
-      if (newTime < 0) newTime = 0;
-      if (newTime > 24) newTime = 24;
-      dragEngine.current.currentLiveTime = newTime;
-      dragEngine.current.lastX = currentX;
-      dragEngine.current.lastTime = currentT;
-      setDragLiveTime(Math.round(newTime * 60) / 60);
-    };
-
-    const onUp = () => {
-      if (isSimulationMode) {
-        dragEngine.current.isActive = false;
-        setDragLiveTime(null);
-        setDragOffsetY(0);
-        dragOffsetYRef.current = 0;
-        setTouchingNodeId(null);
-        setDraggingNode(null);
-        return;
-      }
-      const isOutside = Math.abs(dragOffsetYRef.current) > 50;
-      const finalTimeRaw = dragEngine.current.currentLiveTime;
-      const finalTimeRounded = Math.round(finalTimeRaw * 12) / 12;
-      const isGhostDrag = dragType === 'ghost_meal' || dragType === 'ghost_workout';
-      const dlSnap = dailyLogRef.current;
-      const mnSnap = manualNodesRef.current;
-
-      if (isOutside) {
-        if (isGhostDrag) {
-          setGhostProgramDeleteModal({ nodeId: dragId, dragType });
-        } else {
-          const confirmDelete = window.confirm('Vuoi eliminare questo elemento?');
-          if (confirmDelete) {
-            if (dragType === 'meal') {
-              const { itemIds } = draggingNode;
-              const idSet = new Set((itemIds || []).map((x) => String(x)));
-              const newLog = dlSnap.filter((item) => !idSet.has(String(item.id)));
-              const newNodes = mnSnap;
-              setDailyLog(newLog);
-              syncDatiFirebase(newLog, newNodes);
-              pushTimelineUndoSnapshot(newLog, newNodes);
-            } else {
-              const newLog = dlSnap.filter(item => item.id !== dragId);
-              const newNodes = mnSnap.filter(n => n.id !== dragId);
-              setDailyLog(newLog);
-              setManualNodes(newNodes);
-              syncDatiFirebase(newLog, newNodes);
-              pushTimelineUndoSnapshot(newLog, newNodes);
-            }
-          } else {
-            if (dragType === 'meal') {
-              const { itemIds, originalTime: origTime } = draggingNode;
-              const idSet = new Set((itemIds || []).map((x) => String(x)));
-              const next = dlSnap.map((item) =>
-                idSet.has(String(item.id)) ? { ...item, mealTime: origTime } : item
-              );
-              setDailyLog(next);
-              syncDatiFirebase(next, mnSnap);
-            } else {
-              const next = mnSnap.map(n =>
-                n.id === dragId ? { ...n, time: originalTime, duration: originalDuration ?? n.duration } : n
-              );
-              setManualNodes(next);
-              syncDatiFirebase(dlSnap, next);
-            }
-          }
-        }
-      } else {
-        if (dragType === 'meal') {
-          const { itemIds } = draggingNode;
-          const idSet = new Set((itemIds || []).map((x) => String(x)));
-          const nextLog = dlSnap.map((item) =>
-            idSet.has(String(item.id)) ? { ...item, mealTime: finalTimeRounded } : item
-          );
-          setDailyLog(nextLog);
-          syncDatiFirebase(nextLog, mnSnap);
-          pushTimelineUndoSnapshot(nextLog, mnSnap);
-        } else if (dragType === 'ghost_meal') {
-          const nextLog = dlSnap.map((item) =>
-            item.id === dragId && item.type === 'ghost_meal'
-              ? { ...item, mealTime: finalTimeRounded, time: finalTimeRounded }
-              : item
-          );
-          setDailyLog(nextLog);
-          syncDatiFirebase(nextLog, mnSnap);
-          pushTimelineUndoSnapshot(nextLog, mnSnap);
-        } else {
-          const next = mnSnap.map(n => {
-            if (n.id !== dragId) return n;
-            if (n.type === 'work' || n.type === 'cognitive') {
-              if (dragEdge === 'start') {
-                const end = n.time + (n.duration || 1);
-                const newTime = Math.min(finalTimeRounded, end - 0.25);
-                return { ...n, time: newTime, duration: end - newTime };
-              }
-              if (dragEdge === 'end') {
-                const newEnd = Math.max(finalTimeRounded, n.time + 0.25);
-                return { ...n, duration: newEnd - n.time };
-              }
-              return { ...n, time: finalTimeRounded };
-            }
-            return { ...n, time: finalTimeRounded };
-          });
-          setManualNodes(next);
-          syncDatiFirebase(dlSnap, next);
-          pushTimelineUndoSnapshot(dlSnap, next);
-        }
-      }
-      dragEngine.current.isActive = false;
-      setDragLiveTime(null);
-      setDragOffsetY(0);
-      dragOffsetYRef.current = 0;
-      setTouchingNodeId(null);
-      setDraggingNode(null);
-    };
-
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-  }, [draggingNode, isSimulationMode, pushTimelineUndoSnapshot, syncDatiFirebase]);
 
   useEffect(() => { if (!isDrawerOpen) setIsZenActive(false); }, [isDrawerOpen]);
 
@@ -5633,1427 +4355,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     }
   }, []);
 
-  const handleChatSubmit = async (optionalReply, sendMeta) => {
-    const meta = sendMeta && typeof sendMeta === 'object' ? sendMeta : null;
-    const trimQuick = optionalReply != null ? String(optionalReply).trim() : '';
-
-    const flushWorkoutLogFromChat = (decimalHour, displayDesc, activity) => {
-      const t = Math.round(Math.min(23.75, Math.max(0, Number(decimalHour))) * 100) / 100;
-      const label = (String(displayDesc || 'Allenamento').trim() || 'Allenamento');
-      const upper = label.toUpperCase();
-      const kcal = activity === 'cardio' ? 350 : 280;
-      const duration = activity === 'cardio' ? 0.75 : 1;
-      const newItem = {
-        id: `wk_chat_${Date.now()}`,
-        type: 'workout',
-        workoutType: activity === 'cardio' ? 'cardio' : 'pesi',
-        desc: upper,
-        name: label,
-        kcal,
-        cal: kcal,
-        duration,
-        mealTime: t,
-        time: t,
-      };
-      const anchor = currentTrackerDate || getTodayString();
-      const yStatus = getYesterdayCalorieStatus(fullHistory, userTargets, anchor);
-      const coach = buildPostWorkoutCoachMessage(yStatus, activity, label);
-      const nowDec = new Date().getHours() + new Date().getMinutes() / 60;
-      if (anchor === getTodayString() && t > nowDec + 0.2) {
-        scheduledWorkoutContextRef.current = { workoutDecimalHour: t, label, dateStr: anchor };
-      } else if (anchor === getTodayString()) {
-        scheduledWorkoutContextRef.current = null;
-      }
-      if (isSimulationMode) {
-        setSimulatedLog((prev) => [newItem, ...(prev || [])]);
-        setChatHistory((prev) => [...prev, { sender: 'ai', text: `Registrato (sandbox) alle ${formatDecimalHourIt(t)}. ${coach}` }]);
-        return;
-      }
-      const nuovoLog = [newItem, ...(dailyLog || [])];
-      setDailyLog(nuovoLog);
-      syncDatiFirebase(nuovoLog, manualNodes);
-      setChatHistory((prev) => [...prev, { sender: 'ai', text: `Allenamento salvato alle ${formatDecimalHourIt(t)}. ${coach}` }]);
-    };
-
-    if (meta?.fromQuickReply && meta?.workoutTimeReply && pendingWorkoutFlowRef.current?.kind === 'await_confirm') {
-      const p = pendingWorkoutFlowRef.current;
-      pendingWorkoutFlowRef.current = null;
-      const userText = trimQuick || 'Ok';
-      if (meta.workoutTimeReply === 'accept') {
-        setChatHistory((prev) => {
-          const stripped = prev.map((m) =>
-            m.workoutTimeConfirm && Array.isArray(m.quickReplies) ? { ...m, quickReplies: undefined } : m
-          );
-          return [...stripped, { sender: 'user', text: userText }];
-        });
-        flushWorkoutLogFromChat(p.suggestedDecimal, p.displayLabel, p.activity);
-      } else {
-        pendingWorkoutFlowRef.current = {
-          kind: 'await_custom_time',
-          displayLabel: p.displayLabel,
-          activity: p.activity,
-          searchKeys: p.searchKeys || [],
-        };
-        setChatHistory((prev) => {
-          const stripped = prev.map((m) =>
-            m.workoutTimeConfirm && Array.isArray(m.quickReplies) ? { ...m, quickReplies: undefined } : m
-          );
-          return [
-            ...stripped,
-            { sender: 'user', text: userText },
-            { sender: 'ai', text: 'Ok. A che ora lo programmiamo oggi? (es. 19:30 o 19,45)' },
-          ];
-        });
-      }
-      if (optionalReply == null) setChatInput('');
-      return;
-    }
-
-    if (meta?.morningBriefingReply && meta?.fromQuickReply) {
-      const { status, activity } = meta.morningBriefingReply;
-      if (
-        (status === 'deficit' || status === 'surplus') &&
-        (activity === 'weights' || activity === 'cardio' || activity === 'rest')
-      ) {
-        const verdict = getMorningBriefingVerdict(status, activity);
-        const userText = trimQuick;
-        setChatHistory((prev) => {
-          const stripped = prev.map((m) =>
-            m.morningBriefing && Array.isArray(m.quickReplies)
-              ? { ...m, quickReplies: undefined }
-              : m
-          );
-          return [...stripped, { sender: 'user', text: userText }, { sender: 'ai', text: verdict }];
-        });
-        if (optionalReply == null) setChatInput('');
-        return;
-      }
-    }
-
-    if (meta?.fromQuickReply && meta?.eveningBriefingReply) {
-      const { action, missingKcal, missingPro } = meta.eveningBriefingReply;
-      const userText = trimQuick || '';
-      const dateEv = currentTrackerDate || getTodayString();
-      markEveningBriefingShown(dateEv);
-      if (action === 'no') {
-        setChatHistory((prev) => {
-          const stripped = prev.map((m) =>
-            m.eveningBriefing && Array.isArray(m.quickReplies) ? { ...m, quickReplies: undefined } : m
-          );
-          return [...stripped, { sender: 'user', text: userText }, { sender: 'ai', text: 'Perfetto, buona serata! 🌙' }];
-        });
-        if (optionalReply == null) setChatInput('');
-        return;
-      }
-      if (action === 'yes') {
-        const mk = Math.max(0, Math.round(Number(missingKcal) || 0));
-        const mp = Math.max(0, Math.round(Number(missingPro) || 0));
-        const secretPrompt = `L'utente vuole un consiglio per la cena. Deve rientrare in ${mk} kcal e contenere circa ${mp}g di proteine. Fornisci un'unica ricetta bilanciata e semplice, e alla fine chiedi 'Vuoi che la registri nel diario?'`;
-        setChatHistory((prev) =>
-          prev.map((m) => (m.eveningBriefing && Array.isArray(m.quickReplies) ? { ...m, quickReplies: undefined } : m))
-        );
-        if (optionalReply == null) setChatInput('');
-        await handleChatSubmit(null, {
-          secretPrompt,
-          displayText: userText || '🍽️ Sì, proponi la cena perfetta',
-        });
-        return;
-      }
-    }
-
-    if (trimQuick === 'Ho dormito 7h bene' || trimQuick === 'Ho dormito male') {
-      dismissKentuSleepTrigger();
-      const hours = trimQuick === 'Ho dormito 7h bene' ? 7 : 5.5;
-      const quality = trimQuick === 'Ho dormito 7h bene' ? 'buona' : 'scarsa';
-      const wakeTime = 7.5;
-      let bedtime = wakeTime - hours;
-      if (bedtime < 0) bedtime += 24;
-      const sleepEntry = {
-        type: 'sleep',
-        id: `sleep_smart_${Date.now()}`,
-        wakeTime,
-        bedtime,
-        sleepStart: bedtime,
-        sleepEnd: wakeTime,
-        hours,
-        duration: hours,
-        sleepHours: hours,
-        deepMin: 45,
-        remMin: 90,
-        hr: 58,
-        quality,
-      };
-      if (isSimulationMode) {
-        setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
-        setChatHistory((prev) => [...prev, { sender: 'user', text: trimQuick }, { sender: 'ai', text: 'Registrato una stima del sonno (sandbox). Dal diario puoi rifinire i valori.' }]);
-        return;
-      }
-      const nuovoLog = [...(dailyLog || []), sleepEntry];
-      setDailyLog(nuovoLog);
-      syncDatiFirebase(nuovoLog, manualNodes);
-      setChatHistory((prev) => [...prev, { sender: 'user', text: trimQuick }, { sender: 'ai', text: 'Perfetto, ho salvato una stima del sonno. Puoi correggere i dettagli dal diario se serve.' }]);
-      return;
-    }
-
-    const secretPrompt = meta?.secretPrompt != null && String(meta.secretPrompt).trim() ? String(meta.secretPrompt).trim() : '';
-    const displayOverride = meta?.displayText != null && String(meta.displayText).trim() ? String(meta.displayText).trim() : '';
-
-    let userMessage;
-    let apiUserContent;
-
-    if (secretPrompt) {
-      userMessage = displayOverride || 'Richiesta assistente';
-      apiUserContent = secretPrompt;
-    } else if (kentuAgendaAwaitingRef.current) {
-      const agendaText =
-        optionalReply != null && String(optionalReply).trim()
-          ? String(optionalReply).trim()
-          : chatInput.trim();
-      if (agendaText) {
-        userMessage = agendaText;
-        const anchorAg = currentTrackerDate || getTodayString();
-        const actCtx = buildRecentActivitiesContext(fullHistory, anchorAg);
-        const mealCtx = buildRecentMealsContextForDinner(fullHistory, anchorAg);
-        apiUserContent = buildKentuAgendaSecretPrompt(agendaText, actCtx, mealCtx);
-        kentuAgendaAwaitingRef.current = false;
-        if (typeof window !== 'undefined') {
-          window.sessionStorage.setItem(`kentu_agenda_secret_sent_${anchorAg}`, '1');
-        }
-      } else {
-        userMessage = '';
-        apiUserContent = '';
-      }
-    } else {
-      userMessage = optionalReply != null && String(optionalReply).trim() ? String(optionalReply).trim() : chatInput.trim();
-      apiUserContent = userMessage;
-    }
-
-    const NUTR_CHECK_TRIGGER = '⚖️ Check Oggi';
-    const NUTR_CHECK_TRIGGER_LEGACY = '⚖️ Check Alimentare';
-    const userTrim = String(userMessage || '').trim();
-    if (!secretPrompt && (userTrim === NUTR_CHECK_TRIGGER || userTrim === NUTR_CHECK_TRIGGER_LEGACY)) {
-      const auditLog = activeLog || [];
-      const auditText = generateLocalNutritionalAudit(auditLog, userTargets);
-      const userLine = userTrim === NUTR_CHECK_TRIGGER_LEGACY ? NUTR_CHECK_TRIGGER_LEGACY : NUTR_CHECK_TRIGGER;
-      setChatHistory((prev) => [...prev, { sender: 'user', text: userLine }]);
-      if (optionalReply == null) setChatInput('');
-      window.setTimeout(() => {
-        setChatHistory((prev) => [...prev, { sender: 'ai', text: auditText }]);
-      }, 300);
-      return;
-    }
-
-    const TRAINING_LOCAL_TRIGGER = '🏃‍♂️ Posso allenarmi?';
-    if (!secretPrompt && String(userMessage || '').trim() === TRAINING_LOCAL_TRIGGER) {
-      const advice = generateLocalTrainingAdvice(trainingWaveResult);
-      setChatHistory((prev) => [...prev, { sender: 'user', text: TRAINING_LOCAL_TRIGGER }]);
-      if (optionalReply == null) setChatInput('');
-      window.setTimeout(() => {
-        setChatHistory((prev) => [...prev, { sender: 'ai', text: advice }]);
-      }, 300);
-      return;
-    }
-
-    const MONTHLY_AUDIT_TRIGGER = '📅 Report Mese';
-    const MONTHLY_AUDIT_TRIGGER_LEGACY = '📅 Report Mensile';
-    if (!secretPrompt && (userTrim === MONTHLY_AUDIT_TRIGGER || userTrim === MONTHLY_AUDIT_TRIGGER_LEGACY)) {
-      const reportText = generateLocalMonthlyAudit(fullHistory, userTargets, bodyMetricsHistory);
-      const userLine = userTrim === MONTHLY_AUDIT_TRIGGER_LEGACY ? MONTHLY_AUDIT_TRIGGER_LEGACY : MONTHLY_AUDIT_TRIGGER;
-      setChatHistory((prev) => [...prev, { sender: 'user', text: userLine }]);
-      if (optionalReply == null) setChatInput('');
-      window.setTimeout(() => {
-        setChatHistory((prev) => [...prev, { sender: 'ai', text: reportText }]);
-      }, 300);
-      return;
-    }
-
-    const METABOLIC_SCAN_TRIGGER = '🧬 Scanner Metabolico';
-    const HABIT_SCAN_TRIGGER_LEGACY = '🔍 Analisi Abitudini';
-    if (!secretPrompt && (userTrim === METABOLIC_SCAN_TRIGGER || userTrim === HABIT_SCAN_TRIGGER_LEGACY)) {
-      const habitText = generateLocalHabitScanner(fullHistory);
-      const userLine = userTrim === HABIT_SCAN_TRIGGER_LEGACY ? HABIT_SCAN_TRIGGER_LEGACY : METABOLIC_SCAN_TRIGGER;
-      setChatHistory((prev) => [...prev, { sender: 'user', text: userLine }]);
-      if (optionalReply == null) setChatInput('');
-      window.setTimeout(() => {
-        setChatHistory((prev) => [...prev, { sender: 'ai', text: habitText }]);
-      }, 400);
-      return;
-    }
-
-    if (pendingHabit && userMessage && !secretPrompt) {
-      const userTextLower = userMessage.trim().toLowerCase();
-      const isHabitYes =
-        userTextLower === 'si' ||
-        userTextLower === 'sì' ||
-        userTextLower === 'confermo' ||
-        userTextLower === 'ok' ||
-        userTextLower === 'va bene';
-      const isHabitNo =
-        userTextLower === 'no' ||
-        userTextLower.includes('cambia') ||
-        userTextLower.includes('annulla');
-      if (isHabitYes) {
-        const ph = pendingHabit;
-        setPendingHabit(null);
-        commitAddFoodChatPayload(ph);
-        const summary = (ph.items || [])
-          .map((it) => `${it.qty}g di ${it.name}`)
-          .join(', ');
-        setChatHistory((prev) => [
-          ...prev,
-          { sender: 'user', text: userMessage },
-          { sender: 'ai', text: `Perfetto! Ho registrato ${summary || 'il pasto'}. 🥗` },
-        ]);
-        if (optionalReply == null) setChatInput('');
-        return;
-      }
-      if (isHabitNo) {
-        setPendingHabit(null);
-        setChatHistory((prev) => [
-          ...prev,
-          { sender: 'user', text: userMessage },
-          {
-            sender: 'ai',
-            text: 'Nessun problema. Quanti grammi e quale alimento esattamente?',
-          },
-        ]);
-        if (optionalReply == null) setChatInput('');
-        return;
-      }
-      setPendingHabit(null);
-    }
-
-    if (!secretPrompt && pendingWorkoutFlowRef.current?.kind === 'await_custom_time' && userMessage) {
-      const parsedT = parseFlexibleTimeToDecimal(userMessage);
-      if (parsedT == null) {
-        setChatHistory((prev) => [
-          ...prev,
-          { sender: 'user', text: userMessage },
-          { sender: 'ai', text: 'Non ho capito l\'orario. Prova con il formato 19:30 o 19,45.' },
-        ]);
-        if (optionalReply == null) setChatInput('');
-        return;
-      }
-      const p = pendingWorkoutFlowRef.current;
-      pendingWorkoutFlowRef.current = null;
-      setChatHistory((prev) => [...prev, { sender: 'user', text: userMessage }]);
-      flushWorkoutLogFromChat(parsedT, p.displayLabel, p.activity);
-      if (optionalReply == null) setChatInput('');
-      return;
-    }
-
-    if (!apiUserContent && chatImages.length === 0) return;
-
-    const logPastoKw = /\b(logga\s+pasto|salva(?:\s+la)?\s+cena|registra(?:\s+la)?\s+cena)\b/i;
-    if (!secretPrompt && logPastoKw.test(userMessage) && Array.isArray(lastDinnerOptionsRef.current) && lastDinnerOptionsRef.current.length) {
-      const low = userMessage.toLowerCase();
-      let idx = 0;
-      const n = userMessage.match(/(?:opzione|scelta|#)\s*([1-3])\b/);
-      if (n) idx = Math.min(2, Math.max(0, parseInt(n[1], 10) - 1));
-      else if (/\bseconda\b|\b2\b/.test(low)) idx = 1;
-      else if (/\bterza\b|\b3\b/.test(low)) idx = 2;
-      else if (/\bprima\b|\buno\b/.test(low)) idx = 0;
-      const opts = lastDinnerOptionsRef.current;
-      const chosen = opts[idx];
-      if (chosen) {
-        setChatHistory((prev) => [...prev, { sender: 'user', text: userMessage }]);
-        if (optionalReply == null) setChatInput('');
-        handleAutoLogDinner(chosen);
-        return;
-      }
-    }
-
-    if (pendingAiBatch && userMessage) {
-      const lowerMsg = userMessage.toLowerCase();
-      const isConfirm = lowerMsg.includes('conferm') || lowerMsg.includes('sì') || lowerMsg.includes('si ');
-      const isCancel = lowerMsg.includes('annulla') || lowerMsg.includes('no');
-
-      if (pendingAiBatch.type === 'sleep' && isConfirm && pendingAiBatch.data) {
-        const d = pendingAiBatch.data;
-        const bed = Number(d.bedtime ?? d.sleepStart);
-        const wake = Number(d.wakeTime ?? d.sleepEnd);
-        let hoursVal = Number(d.hours ?? d.duration ?? d.sleepHours);
-        if (!Number.isFinite(hoursVal) || hoursVal <= 0) {
-          hoursVal = computeSleepDurationHours(bed, wake);
-        }
-        if (!Number.isFinite(hoursVal) || hoursVal <= 0) hoursVal = 7;
-        const sleepEntry = {
-          type: 'sleep',
-          id: `sleep_${Date.now()}`,
-          wakeTime: Number.isFinite(wake) ? wake : 7.5,
-          bedtime: Number.isFinite(bed) ? bed : undefined,
-          sleepStart: Number.isFinite(bed) ? bed : undefined,
-          sleepEnd: Number.isFinite(wake) ? wake : undefined,
-          hours: hoursVal,
-          duration: hoursVal,
-          sleepHours: hoursVal,
-          deepMin: d.deepMin,
-          remMin: d.remMin,
-          hr: d.hr,
-        };
-        if (isSimulationMode) {
-          setSimulatedLog(prev => [...(prev || []), sleepEntry]);
-          setPendingAiBatch(null);
-          dismissKentuSleepTrigger();
-          setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Ho registrato i dati del sonno (sandbox).' }]);
-          if (optionalReply == null) setChatInput('');
-          return;
-        }
-        const nuovoLog = [...(dailyLog || []), sleepEntry];
-        setDailyLog(nuovoLog);
-        syncDatiFirebase(nuovoLog, manualNodes);
-        setPendingAiBatch(null);
-        dismissKentuSleepTrigger();
-        setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Ho registrato i dati del sonno nel diario. La curva del cortisolo terrà conto dell\'ora di risveglio.' }]);
-        if (optionalReply == null) setChatInput('');
-        return;
-      }
-      if (pendingAiBatch.type === 'sleep' && isCancel) {
-        setPendingAiBatch(null);
-        setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Operazione annullata. Cosa vuoi fare ora?' }]);
-        if (optionalReply == null) setChatInput('');
-        return;
-      }
-
-      if (Array.isArray(pendingAiBatch) && isConfirm) {
-        const baseMealTime = getCurrentTimeRoundedTo15Min();
-        const predictedType = predictMealType(baseMealTime);
-        const sharedMealTime = typeof pendingAiBatch[0]?.mealTime === 'number' ? pendingAiBatch[0].mealTime : baseMealTime;
-        const rawMt0 = pendingAiBatch[0]?.mealType;
-        const dominantMealType =
-          rawMt0 != null && String(rawMt0).trim() !== ''
-            ? normalizeAiMealTypeToStorageId(rawMt0, sharedMealTime)
-            : predictedType;
-        const batchGhostType = getGhostMealType(dominantMealType, dailyLog || []);
-        const batchId = `batch_${Date.now()}`;
-        const alimentiProcessati = pendingAiBatch
-          .map((item, index) => {
-            const desc = item.desc || item.name || '';
-            if (!desc) return null;
-            const qta = Math.max(1, parseFloat(item.weight ?? item.qta) || 100);
-            const datiNutrizionali = estraiDatiFoodDb(desc, qta, batchGhostType);
-            return {
-              ...datiNutrizionali,
-              id: datiNutrizionali.id || `ai_${batchId}_${index}`,
-              type: 'food',
-              mealType: batchGhostType,
-              mealTime: sharedMealTime,
-              batchId
-            };
-          })
-          .filter(Boolean);
-        if (isSimulationMode) {
-          setSimulatedLog(prev => [...alimentiProcessati, ...(prev || [])]);
-          setPendingAiBatch(null);
-          setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Perfetto, ho salvato tutto (sandbox). 📝' }]);
-          if (optionalReply == null) setChatInput('');
-          return;
-        }
-        const nuovoLog = [...alimentiProcessati, ...(dailyLog || [])];
-        setDailyLog(nuovoLog);
-        syncDatiFirebase(nuovoLog, manualNodes);
-        setPendingAiBatch(null);
-        setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Perfetto, ho salvato tutto nel diario! 📝' }]);
-        if (optionalReply == null) setChatInput('');
-        return;
-      }
-      if (lowerMsg.includes('annulla') || lowerMsg.includes('no')) {
-        setPendingAiBatch(null);
-        setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Operazione annullata. Cosa vuoi fare ora?' }]);
-        if (optionalReply == null) setChatInput('');
-        return;
-      }
-    }
-
-    const isTrackerToday = (currentTrackerDate || getTodayString()) === getTodayString();
-    if (
-      !secretPrompt &&
-      isTrackerToday &&
-      userMessage &&
-      chatImages.length === 0 &&
-      !kentuAgendaAwaitingRef.current
-    ) {
-      const wIntent = detectWorkoutIntentFromChat(userMessage);
-      if (wIntent) {
-        const slot = findLastMatchingWorkoutSlot(fullHistory, currentTrackerDate || getTodayString(), wIntent.searchKeys);
-        if (slot) {
-          pendingWorkoutFlowRef.current = {
-            kind: 'await_confirm',
-            displayLabel: wIntent.displayLabel,
-            activity: wIntent.activity,
-            searchKeys: wIntent.searchKeys,
-            suggestedDecimal: slot.decimalHour,
-          };
-          const timeStr = formatDecimalHourIt(slot.decimalHour);
-          setChatHistory((prev) => [
-            ...prev,
-            { sender: 'user', text: userMessage },
-            {
-              sender: 'ai',
-              text: `Ricevuto, preparo il piano per l'allenamento ${wIntent.displayLabel}. Di solito ti alleni alle ${timeStr}, va bene questo orario anche per oggi?`,
-              quickReplies: ['Sì, va bene', 'No, un altro orario'],
-              workoutTimeConfirm: true,
-            },
-          ]);
-          if (optionalReply == null) setChatInput('');
-          return;
-        }
-      }
-    }
-
-    const historyMessage = userMessage || (chatImages.length > 0 ? `📷 ${chatImages.length} immagine/i allegata/e` : '');
-    setChatHistory(prev => [...prev, { sender: 'user', text: historyMessage }]);
-    if (optionalReply == null) setChatInput('');
-    setChatHistory(prev => [...prev, { sender: 'ai', isTyping: true }]);
-
-    try {
-      const foodDbNames = Object.keys(foodDb || {}).map(k => foodDb[k]?.desc || foodDb[k]?.name || k).filter(Boolean).slice(0, 150);
-      const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad, currentTime, accumuloSNC);
-      const chartData = energyResult?.chartData || [];
-      const energyAt20 = chartData[20]?.energy;
-      const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Kentu' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
-
-      const currentDecimalTime = new Date().getHours() + (new Date().getMinutes() / 60);
-      const roundedTime = Math.round(currentDecimalTime * 2) / 2;
-      const currentCortisolScore = cortisolCurve?.find(c => c?.time === roundedTime)?.cortisolScore ?? 0;
-
-      const piccoAnabolico = Math.max(0, ...(anabolicCurve?.map(c => c.anabolicScore) ?? [0]));
-      const piccoCortisolo = Math.max(0, ...(cortisolCurve?.map(c => c.cortisolScore) ?? [0]));
-
-      const anchorAi = currentTrackerDate || getTodayString();
-      const lastBodyEntry =
-        deriveEffectiveBodyMetricsForDate(bodyMetricsHistory, anchorAi, getTodayString()) ||
-        deriveCurrentBodyMetricsFromHistory(bodyMetricsHistory, getTodayString());
-      const weightKgForAi =
-        lastBodyEntry?.weight != null && Number.isFinite(Number(lastBodyEntry.weight))
-          ? Number(lastBodyEntry.weight)
-          : userProfile?.weight != null && Number.isFinite(Number(userProfile.weight))
-            ? Number(userProfile.weight)
-            : null;
-      let bodyFatPctForAi = null;
-      if (lastBodyEntry?.bodyFat != null && lastBodyEntry.bodyFat !== '') {
-        const n = Number(lastBodyEntry.bodyFat);
-        if (Number.isFinite(n)) bodyFatPctForAi = n;
-      } else if (userProfile?.bodyFat != null && userProfile.bodyFat !== '') {
-        const n = Number(userProfile.bodyFat);
-        if (Number.isFinite(n)) bodyFatPctForAi = n;
-      }
-
-      const avgLong30ForAi = calculateConsolidatedAverageScore(30, anchorAi, longevityScoreHistory);
-      const avgLong7ForAi = calculateConsolidatedAverageScore(7, anchorAi, longevityScoreHistory);
-      const userAgeForAi = calculateAge(birthDate);
-      let projectedAgeForAi = null;
-      if (typeof userAgeForAi === 'number' && !Number.isNaN(userAgeForAi)) {
-        if (avgLong30ForAi != null) projectedAgeForAi = calculateProjectedAge(userAgeForAi, avgLong30ForAi);
-        else if (avgLong7ForAi != null) projectedAgeForAi = calculateProjectedAge(userAgeForAi, avgLong7ForAi);
-      }
-      const longevityMasterFallbackForAi =
-        (typeof longevityEngineScore?.score === 'number' && !Number.isNaN(longevityEngineScore.score)
-          ? longevityEngineScore.score
-          : null) ??
-        (typeof longevityData?.masterScore === 'number' && !Number.isNaN(longevityData.masterScore)
-          ? longevityData.masterScore
-          : null);
-
-      const aiVitalsContextParagraph = buildKentuAiVitalsContextParagraph({
-        weightKg: weightKgForAi,
-        bodyFatPct: bodyFatPctForAi,
-        projectedAge: projectedAgeForAi,
-        avgScore30: avgLong30ForAi,
-        avgScore7: avgLong7ForAi,
-        longevityMasterScoreFallback: longevityMasterFallbackForAi,
-      });
-
-      const currentTdeeForAi =
-        userTargets?.kcal != null &&
-        Number.isFinite(Number(userTargets.kcal)) &&
-        Number(userTargets.kcal) > 0
-          ? Number(userTargets.kcal)
-          : null;
-      const metabolicVarianceForAi = calculateMetabolicVariance(
-        bodyMetricsHistory,
-        fullHistory,
-        currentTdeeForAi
-      );
-      const metabolicRecompositionContext =
-        buildKentuAiMetabolicRecompositionContext(metabolicVarianceForAi);
-
-      const swCtx = scheduledWorkoutContextRef.current;
-      const swAnchor = currentTrackerDate || getTodayString();
-      let scheduledWorkoutPromptExtra = '';
-      if (
-        swCtx &&
-        swCtx.dateStr === swAnchor &&
-        typeof swCtx.workoutDecimalHour === 'number'
-      ) {
-        const wh = formatDecimalHourIt(swCtx.workoutDecimalHour);
-        const nowDecAi = new Date().getHours() + new Date().getMinutes() / 60;
-        if (swCtx.workoutDecimalHour > nowDecAi - 0.5) {
-          const safeLab = String(swCtx.label || '').replace(/"/g, "'").slice(0, 80);
-          scheduledWorkoutPromptExtra = `\n\nREGOLA ORARIO ALLENAMENTO: L'utente ha confermato un allenamento «${safeLab}» alle ${wh} di oggi. Finché non è passata quell'ora (finestra pre-workout ~90 min prima della sessione), NON proporre pasti "adesso", colazione immediata o spuntini fuori contesto: ragiona solo in termini di pre-workout (prima della sessione) e post-workout (dopo), con orari dei pasti allineati all'allenamento.`;
-        }
-      }
-
-      const baseSystemPrompt = `Sei l'assistente di KentuOS. Il tuo scopo è dialogare con l'utente in italiano.
-
-TONO (CO-PILOTA METABOLICO): Sei un Co-Pilota Metabolico di altissimo livello. Sii assertivo, tecnico ma immediato. NON usare toni timidi o accomodanti (es. "Vuoi che ti aiuti?", "Fammi sapere se ti va"). Usa toni direttivi (es. "Ottimizzo i macronutrienti per il recupero", "Sposta 15g di grassi a pranzo"). Chiudi con un'azione netta o una scelta binaria, senza ipersimpatia.
-
-FORMATO "AI CARD" / DASHBOARD TESTUALE: Rispondi come una dashboard leggibile nel testo. Usa separatori tra blocchi (riga vuota tra sezioni), intestazioni chiare con emoji (es. riga dedicata "📊 STRATEGIA NUTRIZIONALE"). Quando riassumi macronutrienti, metriche, stress o allineamento agli obiettivi, usa SEMPRE barre visive fatte di caratteri/emoji per indicare riempimento o allerta, con una riga per metrica.
-Esempio di formato obbligatorio (adatta numeri e testi al contesto):
-📊 STRATEGIA NUTRIZIONALE
-🔻 Carbo: [███░░░░░░░] Riduci zuccheri serali
-🔺 Fibre: [████████░░] Focus ottimale
-⚖️ Grassi: [█████░░░░░] Sotto controllo
-👉 Azione: Sposta 15g di grassi a pranzo.
-Combina questo stile con elenchi puntati dove serve; niente muri di testo.
-
-REGOLE DI STILE (PRIORITÀ): Sintesi brutale. Al massimo 3 elenchi puntati per messaggio (quando usi elenchi). Vietate introduzioni tipo "Ecco il tuo briefing" / "Ecco un riepilogo" e conclusioni tipo "Spero di esserti stato utile" / "Fammi sapere": vai dritto al sodo.
-FORMATTAZIONE OBBLIGATORIA: Devi essere chiarissimo e massimizzare la leggibilità. Quando dai consigli, spieghi concetti, elenchi alimenti o fai riepiloghi, usa SEMPRE gli elenchi puntati. Evita muri di testo. Usa frasi brevi, dirette e separate visivamente.
-QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=BRIEFING o QUICK_ACTION=ANALISI_IERI: rispondi ESCLUSIVAMENTE in formato Lavagna (emoji + dato per riga, elenchi puntati essenziali), rispettando il tetto di 3 elenchi e le REGOLE DI STILE sopra.
-QUICK ACTION — Se l'ultimo messaggio utente inizia con QUICK_ACTION=IDEA_PASTO: rispondi ESCLUSIVAMENTE con il blocco [MEAL_PROPOSAL:{...}] su una riga come da CARTA MENU; nessun altro testo (la Dispensa è in [CONTEXT_LIVE]).
-
-MODALITÀ PIANIFICAZIONE: Se l'utente chiede di pianificare o programmare la giornata (testo libero o tramite wizard), entra in modalità pianificazione. Se il messaggio utente inizia con "PIANIFICAZIONE GUIDATA:", ha già scelto attività e fasce (Mattina / Pomeriggio / Sera): NON chiedere altro, NON fare elenchi lunghi. Rispondi generando ESATTAMENTE il token [DAILY_PLAN:{...}] su una riga, con orari concreti HH:MM coerenti con le fasce (es. Mattina → 08:00–11:30, Pomeriggio → 12:00–17:30, Sera → 18:00–22:00; se l'allenamento è in Sera usa tipicamente 18:30 o 19:00 come workoutTime e nella lista activities). Il JSON DEVE includere anche "ghostMeals": array di pasti pianificati (Nodi Fantasma) che l'utente vedrà in timeline finché non li converte in pasti veri: ogni elemento include {"mealType":"colazione|snack|pranzo|cena", "time":"HH:MM", "title":"Titolo breve", "microDesc":"Suggerimento micronutrienti (es. fibre, omega-3) per lucidità e sonno", "draftFoods":["200g Pollo","150g Riso"]} — draftFoods è un array di stringhe (abbozzo alimenti con pesi stimati). Per i pasti futuri nel token, calcola i target e COMPILA draftFoods con un abbozzo realistico di alimenti. Dai MASSIMA PRIORITÀ copiando pasti simili che l'utente ha consumato in passato (presenti nello storico) o cibi dal suo database/dispensa in [CONTEXT_LIVE]. Inserisci pesi stimati per centrare il target. Esempio forma completa: [DAILY_PLAN:{"target":"pari", "workoutTime":"19:00", "activities":[...], "ghostMeals":[{"mealType":"cena", "time":"20:00", "title":"Cena Recupero", "microDesc":"Focus proteine", "draftFoods":["200g Pollo","150g Riso"]}]}]. Scegli "target" (deficit, pari o surplus) in base a [CONTEXT_LIVE]. Altrimenti, in conversazione aperta, chiedi le attività; quando l'utente risponde, genera lo stesso token con ghostMeals coerenti col piano. Il token deve essere da solo su una riga. ATTENZIONE: DEVI OBBLIGATORIAMENTE riempire l'array draftFoods per OGNI nodo fantasma ('ghostMeals'). Se non sai cosa inserire, inventa un pasto coerente coi target (es. ['200g Pollo', '10g Olio']). L'array NON DEVE MAI essere vuoto. GERARCHIA COMPOSIZIONE draftFoods (ordine tassativo): (1) RECENTI — pasti identici o molto simili consumati negli ultimi 3–7 giorni; (2) STORICO — abitudini e pattern a più lungo termine se i recenti non bastano; (3) DISPENSA / DATABASE — attingi da foodDb e da alimenti noti in contesto, rispettando i target (es. pasto proteico → fonti proteiche coerenti); (4) NEW ENTRY — solo come ultima spiaggia, combinazione nuova e bilanciata. Ogni voce deve avere grammatura precisa per centrare i target ricalcolati. È SEVERAMENTE VIETATO GENERARE UN NODO FANTASMA SENZA CIBI. DEVI SEMPRE COMPILARE L'ARRAY 'draftFoods' (ES. ["200G POLLO", "10G OLIO"]) PER OGNI PASTO FUTURO, SIMULANDO LA COMPOSIZIONE IDEALE BASATA SUI TARGET.
-
-REGOLA DI BILANCIAMENTO METABOLICO: Il tuo scopo primario è coprire il fabbisogno giornaliero. Se dopo aver inserito i pasti/attività esistenti noti che c'è un deficit calorico rimanente significativo (es. mancano più di 200 kcal ai target), DEVI ASSOLUTAMENTE inserire uno o più 'ghostMeals' (es. Cena o Spuntino) nell'array JSON per colmare il gap. NON TERMINARE MAI la pianificazione lasciando l'utente in grave deficit calorico.
-
-ATTENZIONE TEMPORALE: Se nel prompt utente ricevi l'ora attuale e gli eventi già registrati, DEVI rispettarli. Proponi solo Nodi Fantasma futuri. Se la colazione o il pranzo sono già stati fatti, concentrati solo sugli spuntini e la cena, bilanciando i macro rimanenti.
-
-LOGICA DI RACCOMANDAZIONE INTELLIGENTE: Quando l'utente chiede consigli su cosa mangiare (es. "Cosa mangio per cena?"):
-1. Analizza i macro residui dal blocco [CONTEXT_LIVE] nell'ultimo messaggio utente per avvicinarti al fabbisogno giornaliero (senza ignorare equilibrio e contesto).
-2. Dai priorità assoluta agli ingredienti elencati in "Dispensa" in [CONTEXT_LIVE]: è molto probabile che l'utente li abbia già in casa.
-3. Se è ora di cena o il tema è serale, proponi pasti coerenti con la Nota in [CONTEXT_LIVE] sul cortisolo: carboidrati complessi, evita eccessi di grassi saturi o caffeina serale.
-4. Presenta la proposta in STILE LAVAGNA con i macro totali stimati della ricetta (kcal e grammi P/C/F se possibile).
-5. DIGESTIVE SAFETY GATE — Quando consigli un workout, calcola la somma tra i macro residui (da [CONTEXT_LIVE]) e il costo del workout. Se il totale calorico risultante per la cena supera le 900-1000 kcal (o se il volume di cibo previsto è eccessivo per l'orario), sconsiglia l'allenamento intenso. Spiega chiaramente che un pasto troppo pesante comprometterebbe il recupero e la gestione del cortisolo serale, suggerendo invece un pasto bilanciato e il rinvio dell'attività.
-6. TRAINING WAVE (ORARIO ALLENAMENTO): In [CONTEXT_LIVE] c'è la riga «Finestra allenamento ideale: dalle HH:mm alle HH:mm.» oppure «Finestra allenamento ideale: Domani.» (nessuna finestra nelle prossime 4h del modello). Quando l'utente chiede se può allenarsi o quando conviene, usa quell'orario e l'ora attuale del messaggio.
-- Prima dell'inizio della finestra: sconsiglia l'immediato; spiega in modo telegrafico (digestione/recupero) e indica di spostare l'allenamento dentro la finestra indicata.
-- Con ora attuale dentro HH:mm–HH:mm: via libera per sessione ben pianificata; ricorda che è la finestra prevista dal modello.
-- Dopo la fine o se compare solo «Domani»: niente finestra utile nell'orizzonte — evita HIIT intenso, preferisci riposo attivo o ripresa il giorno dopo.
-
-CARTA MENU (MEAL_PROPOSAL): Quando proponi una cena concreta con ingredienti e grammi (contesto consiglio pasto / cena), NON scrivere una ricetta lunga in prose. Rispondi SOLO con il blocco dati su UNA riga così (nessun altro testo prima o dopo): [MEAL_PROPOSAL:{"title":"Proposta Cena Anti-Cortisolo","timeString":"HH:mm","items":[{"id":"id_univoco","name":"Nome alimento","qty":grammi,"dbKey":"chiave_opzionale_foodDb","why":"motivo breve","estKcal":n,"estPro":n,"estCar":n,"estFat":n}]}] — id univoco per ogni voce (es. salmone_1); qty in grammi; stime macro per quella quantità; dbKey solo se corrisponde al database noto.
-
-STILE DI COMUNICAZIONE TASSATIVO (STILE LAVAGNA/COACH + AI CARD): Non usare MAI paragrafi lunghi o muri di testo. Sei un coach operativo. Le risposte devono essere visive, telegrafiche, come lavagna tattica in formato dashboard (vedi TONO e FORMATO "AI CARD" sopra).
-Per ogni messaggio di testo normale (non vale quando un'altra regola impone SOLO JSON o SOLO array, senza testo libero):
-1. Titolo sezione con emoji su riga propria (es. 📊 … oppure **🎯 Status** se usi markdown).
-2. Metriche chiave: dove possibile, una riga con barra [████░░] + etichetta breve.
-3. Elenchi puntati sintetici per dettagli o opzioni.
-4. Grassetti su numeri, kcal, grammi P/C/F quando usi markdown.
-5. Chiusura assertiva: imperativo o scelta A/B (coerente col TONO Co-Pilota), non inviti vaghi.
-
-Se l'utente inserisce alimenti (anche in lista, es. "ho mangiato 3 gallette e 1 mela per spuntino") SENZA indicare un orario del pasto in modo da poter usare add_food (vedi PASTI ZERO FORM), devi rispondere ESCLUSIVAMENTE con un array JSON di oggetti. Formato: [{"name": "Nome alimento", "weight": peso_totale_grammi, "mealType": "pranzo"}]. Usa "name" o "desc", "weight" o "qta" (in grammi).
-
-VOCABOLARIO PASTI (campo mealType — TASSATIVO): usa solo questi quattro valori: "colazione", "snack", "pranzo", "cena".
-Qualsiasi spuntino o merenda (mattina o pomeriggio) → "snack". Pasto principale di mezzogiorno → "pranzo". Cena → "cena". Colazione → "colazione".
-Compatibilità deprecata accettata dal parser: "merenda1"→colazione, "merenda_am"/"merenda_pm"/"merenda2"/"spuntino"→snack.
-
-REGOLA MOLTIPLICATORE: Se l'utente indica quantità a pezzi (es. "3 gallette di riso", "2 uova"), stima il peso di UNA singola unità, moltiplicalo per la quantità, e inserisci il PESO TOTALE IN GRAMMI nel campo "weight" (es. 2 uova ≈ 120g, 3 gallette ≈ 30g totali). Un solo alimento = array con un elemento [{"name":"...", "weight": N, "mealType":"..."}].
-
-Puoi anche proporre alternative dal database e chiedere conferma; alla conferma restituisci l'array JSON. In alternativa, per un singolo inserimento legacy, puoi usare {"action":"insert","food":{"desc":"nome","qta":grammi,"mealType":"pranzo"}} (mealType sempre uno dei cinque slot ufficiali sopra).
-
-COMANDI DI SISTEMA (INVISIBILI): Se l'utente dichiara nel testo l'intenzione di cambiare strategia calorica (es. andare in deficit, mantenimento/pari, o surplus) OPPURE dichiara un orario in cui si allenerà, DEVI inserire alla FINE ASSOLUTA della tua risposta testuale un blocco dati formattato esattamente così: ===CMD:{"target":"deficit|pari|surplus", "workoutTime":"HH:MM"|null}===. Se l'utente non menziona modifiche strategiche né un orario di allenamento, non inserire il comando. Per solo orario di allenamento senza cambio strategia usa "pari" come target. workoutTime in 24h (es. "18:30") o null se non applichi un orario; null cancella l'orario programmato nel sistema quando l'utente lo revoca esplicitamente.
-
-SONNO (ZERO FORM — solo messaggio testuale, niente screenshot Mi Fitness): Se l'utente riferisce di aver dormito (sonno notturno o sonnellino/pisolino), estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). Restituisci RIGOROSAMENTE un JSON con questo formato: {"action":"add_sleep","hours":<numero_ore>}. Non aggiungere alcun testo fuori dal JSON.
-
-ALLENAMENTO (ZERO FORM — solo messaggio testuale): Se l'utente riferisce di essersi allenato o di aver fatto un'attività fisica, estrai titolo, orario di INIZIO esatto e durata in minuti. SLOT FILLING SEVERO: se mancano dati cruciali (orario esatto di inizio o durata in minuti), NON inventarli: imposta "timeString" a null o "" e "duration" a null. Non usare add_workout finché l'utente non ha fornito entrambi in modo chiaro nel messaggio. Se le calorie non sono note, puoi stimarle solo quando durata e orario sono entrambi presenti; altrimenti "calories" può essere null. Formato JSON obbligatorio: {"action":"add_workout","title":"nome_attività","timeString":"HH:mm","duration":<minuti_intero>,"calories":<kcal_o_null>}. timeString in 24h (es. "18:30"). Restituisci RIGOROSAMENTE solo questo JSON senza altro testo. Non usare add_workout nella stessa risposta di add_sleep o log_sleep.
-
-PASTI (ZERO FORM — add_food): Se l'utente riferisce di aver mangiato, estrai l'orario del pasto (timeString HH:mm) e una lista di alimenti con le rispettive quantità in grammi. Per ogni alimento fornisci anche una tua stima biochimica dei macronutrienti per quella specifica quantità nei campi estKcal (kcal), estPro (proteine g), estCar (carboidrati g), estFat (grassi g). SLOT FILLING SEVERO: se manca l'orario o la quantità in grammi di un alimento, NON inventarli: usa timeString null o "" e qty null. Restituisci RIGOROSAMENTE solo questo JSON senza altro testo: {"action":"add_food","timeString":"HH:mm","items":[{"name":"nome_alimento","qty":grammi,"estKcal":stima,"estPro":stima,"estCar":stima,"estFat":stima}]}. Non mischiare add_food con add_sleep, add_workout o log_sleep. Per elenchi senza orario/chiarezza per add_food usa l'array JSON legacy descritto sopra.
-
-Database alimenti noti: ${foodDbNames.length ? foodDbNames.join(', ') : 'nessuno'}.
-
-Contesto: Pagina ${paginaAttuale}. Rischio stress serale ${energyAt20 != null && energyAt20 < 40 ? 'ALTO' : 'Basso'}. [STRATEGIA: ...]. [ALLENAMENTO: desc | kcal]. Applica lo STILE LAVAGNA/COACH sopra.
-
-QUICK REPLIES (OBBLIGATORIO QUANDO SERVE UNA SCELTA): Se chiedi conferma, proponi opzioni o un bivio, includi SEMPRE il blocco JSON quick_replies in coda. Nel testo visibile, invita perentoriamente a usare i pulsanti rapidi sotto il messaggio (es. «Scegli sotto», «Tocca un'opzione») e NON a riscrivere la stessa cosa a mano, salvo correzioni numeriche. Le etichette dei quick_replies devono coincidere con le azioni che proponi. Formato esatto su una riga finale: {"quick_replies": ["Sì, confermo", "Modifica quantità", "No, annulla"]}.`;
-
-      const dynamicSystemPrompt = `${baseSystemPrompt}
-
-DATI BIOCHIMICI IN TEMPO REALE DELL'UTENTE:
-- Ora locale: ${new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
-- Livello di Cortisolo stimato (0-100): ${Math.round(currentCortisolScore)}
-
-REGOLA BIOCHIMICA FONDAMENTALE (RECUPERO NERVOSO):
-Se l'utente chiede consigli per un pasto (in particolar modo la cena) o valuta opzioni alimentari, devi analizzare il livello di Cortisolo. Se il cortisolo è medio-alto in orario serale, è un segnale di allarme per il sistema nervoso. In questo caso, DEVI prioritizzare suggerimenti nutrizionali calmanti: proponi fonti di carboidrati complessi (che aiutano ad abbassare il cortisolo e favoriscono il sonno), alimenti ricchi di magnesio, omega 3 o triptofano. Evita di proporre pasti serali composti solo da proteine magre se lo stress è alto. Tono assertivo e focalizzato sul recupero: niente linguaggio timido o ipersimpatia.
-
-LETTURA DEI GRAFICI ODIERNI:
-- Picco massimo Sintesi Proteica oggi: ${Math.round(piccoAnabolico)}%
-- Picco massimo Cortisolo oggi: ${Math.round(piccoCortisolo)}
-
-REGOLA PER SPIEGAZIONE GRAFICI:
-Se l'utente ti chiede spiegazioni sui suoi grafici, sulle sue curve o sui suoi livelli (es. "spiegami il grafico viola", "perché l'anabolismo è basso?"), usa i dati forniti per fargli un'analisi personalizzata. Spiega che il grafico viola (Cortisolo) indica lo stress nervoso (che sale con lavoro e allenamento), mentre la curva azzurra/verde (Sintesi proteica) indica il nutrimento muscolare. Sii chiaro e diretto ma SEMPRE in formato lavagna: titolo+emoji, elenco puntato sintetico, grassetti sui numeri, domanda finale — niente paragrafi lunghi.
-
-RICONOSCIMENTO SONNO CONVERSAZIONALE (solo durata, senza screenshot Mi Fitness):
-Se l'utente descrive solo quanto ha dormito (notte o pisolino) e NON stai estraendo un report Mi Fitness con sveglia/addormentamento/deep/REM, applica la regola SONNO (ZERO FORM) del prompt base: solo il JSON add_sleep, senza testo extra. Non usare add_sleep insieme a log_sleep nella stessa risposta.
-
-TRACCIAMENTO DEL SONNO E VISION:
-Se l'utente allega uno screenshot di un'app di tracciamento del sonno (es. Mi Fitness) o scrive i dati testualmente, estrai questi valori chiave: Ora di risveglio (es. 06:18 diventa 6.3 in ore decimali), Ore totali di sonno (es. 6 ore e 34 min diventa 6.56), Tempo in fase Profonda in minuti (es. 2h 14m = 134), Tempo in fase REM in minuti, Frequenza cardiaca media (BPM). Rispondi con un breve riepilogo testuale ("Ho letto i dati: hai dormito 6h 34m, recupero profondo ottimo...") e includi un JSON strutturato su una riga: {"action": "log_sleep", "sleepData": {"wakeTime": 6.3, "hours": 6.56, "sleepStart": 23.5, "sleepEnd": 6.3, "deepMin": 134, "remMin": 94, "hr": 56}}. Usa SEMPRE i quick_replies: {"quick_replies": ["Sì, confermo", "No, annulla"]} per la conferma prima del salvataggio.
-${SLEEP_AI_MI_FITNESS_INSTRUCTIONS}${aiVitalsContextParagraph ? `\n\nCOMPOSIZIONE CORPORALE E LONGEVITÀ (contesto utente):\n${aiVitalsContextParagraph}` : ''}${metabolicRecompositionContext ? `\n\n${metabolicRecompositionContext}` : ''}${scheduledWorkoutPromptExtra}`;
-
-      const previousMessages = (chatHistory || []).filter(m => !m.isTyping);
-      const recentHistory = previousMessages.slice(-CHAT_HISTORY_WINDOW);
-      const isLocalError = (text) => {
-        const t = (text || '').trim();
-        return t.startsWith('❌') || t.includes('Errore Server') || t.includes('Nessuna API Key');
-      };
-      const filtered = recentHistory.filter(m => !isLocalError(m.text));
-      const conversationLines = filtered.map((m) => {
-        const raw = (m.text || '').trim();
-        const lineText =
-          m.sender === 'user' ? stripInvisibleContextFromVisibleUserText(raw) : raw;
-        return (m.sender === 'user' ? 'Utente: ' : 'Assistente: ') + lineText;
-      });
-      const burnedKcalContext = (activeLog || [])
-        .filter((item) => item.type === 'workout')
-        .reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
-      const dynamicDailyKcalContext =
-        applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) +
-        burnedKcalContext;
-      const contextString = getInvisibleContext({
-        bodyBatteryPercent: bodyBattery?.currentEnergy ?? 0,
-        dynamicDailyKcal: dynamicDailyKcalContext,
-        totali,
-        userTargets,
-        fullHistory,
-        anchorDateStr: currentTrackerDate || getTodayString(),
-        trainingWaveSnippet: buildTrainingWaveContextSnippet(trainingWaveResult),
-        mealTypeForSmart: activeAction === 'pasto' ? mealType : undefined,
-        dailyLogForSmart: activeAction === 'pasto' ? (activeLog || dailyLog) : undefined,
-        kentuCalorieStrategy: kentuDailyCalorieStrategy,
-      });
-      const rawLastUserForApi =
-        apiUserContent || (chatImages.length > 0 ? `[Allegati ${chatImages.length} screenshot da analizzare]` : '');
-      const apiMessage = rawLastUserForApi
-        ? `${contextString} ${rawLastUserForApi}`.trim()
-        : contextString;
-      conversationLines.push('Utente: ' + apiMessage);
-      const conversationText = conversationLines.join('\n');
-      const fullPrompt = dynamicSystemPrompt + '\n\n---\nConversazione (rispondi come Assistente all\'ultimo messaggio):\n' + conversationText;
-
-      let responseText = await callGeminiAPIWithRotation(fullPrompt, { images: chatImages.length > 0 ? chatImages : undefined });
-      setChatImages([]);
-      {
-        const cmdCut = parseKentuInvisibleCmd(responseText);
-        responseText = cmdCut.stripped;
-        if (cmdCut.cmd) applyKentuChatCmd(cmdCut.cmd);
-      }
-
-      let insertPayload = null;
-      let itemsArray = null;
-
-      const insertStart = responseText.indexOf('{"action":"insert"');
-      if (insertStart !== -1) {
-        let depth = 0;
-        let end = insertStart;
-        for (let i = insertStart; i < responseText.length; i++) {
-          if (responseText[i] === '{') depth++;
-          else if (responseText[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
-        }
-        try {
-          const parsed = JSON.parse(responseText.slice(insertStart, end + 1));
-          if (parsed.action === 'insert' && parsed.food && (parsed.food.desc || parsed.food.name)) {
-            insertPayload = parsed.food;
-          }
-        } catch (_) {}
-      }
-
-      const arrayStart = responseText.indexOf('[');
-      if (itemsArray == null && arrayStart !== -1 && responseText.indexOf('"add_food"') === -1) {
-        let depth = 0;
-        let arrayEnd = arrayStart;
-        for (let i = arrayStart; i < responseText.length; i++) {
-          if (responseText[i] === '[' || responseText[i] === '{') depth++;
-          else if (responseText[i] === ']' || responseText[i] === '}') { depth--; if (depth === 0 && responseText[i] === ']') { arrayEnd = i; break; } }
-        }
-        try {
-          const parsed = JSON.parse(responseText.slice(arrayStart, arrayEnd + 1));
-          if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(x => x && (x.name || x.desc) && (x.weight != null || x.qta != null))) {
-            itemsArray = parsed;
-          }
-        } catch (_) {}
-      }
-
-      let addSleepHours = null;
-      const addSleepMarker = responseText.indexOf('"add_sleep"');
-      if (addSleepMarker !== -1) {
-        let addObjStart = responseText.lastIndexOf('{', addSleepMarker);
-        if (addObjStart !== -1) {
-          let depthAs = 0;
-          let addObjEnd = addObjStart;
-          for (let i = addObjStart; i < responseText.length; i++) {
-            if (responseText[i] === '{') depthAs++;
-            else if (responseText[i] === '}') {
-              depthAs--;
-              if (depthAs === 0) {
-                addObjEnd = i;
-                break;
-              }
-            }
-          }
-          try {
-            const addParsed = JSON.parse(responseText.slice(addObjStart, addObjEnd + 1));
-            if (addParsed && addParsed.action === 'add_sleep') {
-              const sleepHoursParsed = Number(addParsed.hours) || 0;
-              if (Number.isFinite(sleepHoursParsed) && sleepHoursParsed > 0 && sleepHoursParsed <= 24) {
-                addSleepHours = Math.round(sleepHoursParsed * 1000) / 1000;
-              }
-            }
-          } catch (_) {}
-        }
-      }
-
-      let addWorkoutPayload = null;
-      let addWorkoutSlotError = false;
-      const addWorkoutMarker = responseText.indexOf('"add_workout"');
-      if (addWorkoutMarker !== -1) {
-        let woObjStart = responseText.lastIndexOf('{', addWorkoutMarker);
-        if (woObjStart !== -1) {
-          let depthWo = 0;
-          let woObjEnd = woObjStart;
-          for (let i = woObjStart; i < responseText.length; i++) {
-            if (responseText[i] === '{') depthWo++;
-            else if (responseText[i] === '}') {
-              depthWo--;
-              if (depthWo === 0) {
-                woObjEnd = i;
-                break;
-              }
-            }
-          }
-          try {
-            const woParsed = JSON.parse(responseText.slice(woObjStart, woObjEnd + 1));
-            if (woParsed && woParsed.action === 'add_workout') {
-              const timeStrRaw = woParsed.timeString != null ? String(woParsed.timeString).trim() : '';
-              const timeDecFromSlot = timeStrRaw ? parseFlexibleTimeToDecimal(timeStrRaw) : null;
-              const durRaw = woParsed.duration;
-              const wDuration =
-                durRaw === null || durRaw === undefined || durRaw === ''
-                  ? NaN
-                  : Number(durRaw);
-              const hasValidDuration = Number.isFinite(wDuration) && wDuration > 0;
-              const hasValidTimeString = timeStrRaw.length > 0 && timeDecFromSlot != null;
-              if (!hasValidDuration || !hasValidTimeString) {
-                addWorkoutSlotError = true;
-              } else {
-                const wTitle =
-                  woParsed.title != null && String(woParsed.title).trim()
-                    ? String(woParsed.title).trim()
-                    : 'Allenamento';
-                let wCalories = Number(woParsed.calories);
-                if (!Number.isFinite(wCalories) || wCalories <= 0) {
-                  wCalories = Math.max(80, Math.round(wDuration * 8));
-                }
-                addWorkoutPayload = {
-                  title: wTitle,
-                  duration: wDuration,
-                  calories: wCalories,
-                  timeString: timeStrRaw,
-                  timeDec: timeDecFromSlot,
-                };
-              }
-            }
-          } catch (_) {}
-        }
-      }
-
-      let addFoodPayload = null;
-      let addFoodHabitProposal = null;
-      let addFoodSlotError = false;
-      const habitLogFlat = normalizeLogData([
-        ...(Array.isArray(dailyLog) ? dailyLog : []),
-        ...(Array.isArray(simulatedLog) ? simulatedLog : []),
-      ]);
-      const addFoodMarker = responseText.indexOf('"add_food"');
-      if (addFoodMarker !== -1) {
-        let afObjStart = responseText.lastIndexOf('{', addFoodMarker);
-        if (afObjStart !== -1) {
-          let depthAf = 0;
-          let afObjEnd = afObjStart;
-          for (let i = afObjStart; i < responseText.length; i++) {
-            if (responseText[i] === '{') depthAf++;
-            else if (responseText[i] === '}') {
-              depthAf--;
-              if (depthAf === 0) {
-                afObjEnd = i;
-                break;
-              }
-            }
-          }
-          try {
-            const afParsed = JSON.parse(responseText.slice(afObjStart, afObjEnd + 1));
-            if (afParsed && afParsed.action === 'add_food') {
-              const timeStrRaw = afParsed.timeString != null ? String(afParsed.timeString).trim() : '';
-              const mealDecFromSlot = timeStrRaw ? parseFlexibleTimeToDecimal(timeStrRaw) : null;
-              const hasValidTimeString = timeStrRaw.length > 0 && mealDecFromSlot != null;
-              const itemsRaw = afParsed.items;
-              const itemsArr = Array.isArray(itemsRaw) ? itemsRaw : [];
-              if (!hasValidTimeString || itemsArr.length === 0) {
-                addFoodSlotError = true;
-              } else {
-                let slotInvalid = false;
-                let needsHabitConfirm = false;
-                const normalizedItems = [];
-                for (const it of itemsArr) {
-                  const nm = it?.name != null ? String(it.name).trim() : '';
-                  if (!nm) {
-                    slotInvalid = true;
-                    break;
-                  }
-                  const qtyN = Number(it?.qty);
-                  const qtyOk = Number.isFinite(qtyN) && qtyN > 0;
-                  if (qtyOk) {
-                    normalizedItems.push({
-                      name: nm,
-                      qty: qtyN,
-                      estKcal: it?.estKcal,
-                      estPro: it?.estPro,
-                      estCar: it?.estCar,
-                      estFat: it?.estFat,
-                    });
-                  } else {
-                    const habit = findRecentFoodHabit(nm, foodDb, habitLogFlat);
-                    if (!habit) {
-                      slotInvalid = true;
-                      break;
-                    }
-                    needsHabitConfirm = true;
-                    normalizedItems.push({
-                      name: habit.name,
-                      qty: habit.qty,
-                      estKcal: it?.estKcal,
-                      estPro: it?.estPro,
-                      estCar: it?.estCar,
-                      estFat: it?.estFat,
-                      matchedKey: habit.dbKey,
-                    });
-                  }
-                }
-                if (slotInvalid) addFoodSlotError = true;
-                else if (needsHabitConfirm) {
-                  addFoodHabitProposal = {
-                    timeString: timeStrRaw,
-                    mealDec: mealDecFromSlot,
-                    items: normalizedItems,
-                  };
-                } else {
-                  addFoodPayload = {
-                    timeString: timeStrRaw,
-                    mealDec: mealDecFromSlot,
-                    items: normalizedItems,
-                  };
-                }
-              }
-            }
-          } catch (_) {}
-        }
-      }
-
-      if (addFoodHabitProposal != null) {
-        setPendingHabit(addFoodHabitProposal);
-        const bullets = addFoodHabitProposal.items
-          .map((it) => `- **Alimento:** ${it.name}\n- **Quantità:** ${it.qty}g`)
-          .join('\n\n');
-        const msg = `🎯 **Conferma Abitudine**\n${bullets}\n\nConfermi questo inserimento? (Sì/No)`;
-        setChatHistory((prev) => {
-          const next = [...prev];
-          next.pop();
-          next.push({ sender: 'ai', text: msg });
-          return next;
-        });
-        return;
-      }
-
-      let sleepDataPayload = null;
-      const logSleepIdx = responseText.indexOf('"log_sleep"');
-      if (logSleepIdx === -1) {
-        const altIdx = responseText.indexOf('log_sleep');
-        if (altIdx !== -1) {
-          let objStart = responseText.lastIndexOf('{', altIdx);
-          if (objStart !== -1) {
-            let depth = 0;
-            let objEnd = objStart;
-            for (let i = objStart; i < responseText.length; i++) {
-              if (responseText[i] === '{') depth++;
-              else if (responseText[i] === '}') { depth--; if (depth === 0) { objEnd = i; break; } }
-            }
-            try {
-              const parsed = JSON.parse(responseText.slice(objStart, objEnd + 1));
-              if (parsed.action === 'log_sleep' && parsed.sleepData && typeof parsed.sleepData === 'object') {
-                sleepDataPayload = parsed.sleepData;
-              }
-            } catch (_) {}
-          }
-        }
-      } else {
-        let objStart = responseText.lastIndexOf('{', logSleepIdx);
-        if (objStart !== -1) {
-          let depth = 0;
-          let objEnd = objStart;
-          for (let i = objStart; i < responseText.length; i++) {
-            if (responseText[i] === '{') depth++;
-            else if (responseText[i] === '}') { depth--; if (depth === 0) { objEnd = i; break; } }
-          }
-          try {
-            const parsed = JSON.parse(responseText.slice(objStart, objEnd + 1));
-            if (parsed.action === 'log_sleep' && parsed.sleepData && typeof parsed.sleepData === 'object') {
-              sleepDataPayload = parsed.sleepData;
-            }
-          } catch (_) {}
-        }
-      }
-      if (sleepDataPayload && addSleepHours == null) {
-        setPendingAiBatch({ type: 'sleep', data: sleepDataPayload });
-      }
-
-      if (addSleepHours != null) {
-        const sleepHours = addSleepHours;
-        const timeDec = new Date().getHours() + new Date().getMinutes() / 60;
-        const sleepEntry = {
-          id: Date.now().toString(),
-          type: 'sleep',
-          hours: sleepHours,
-          duration: sleepHours,
-          sleepHours: sleepHours,
-          time: timeDec,
-        };
-        const hoursDisplay = String(Math.round(sleepHours * 100) / 100).replace('.', ',');
-        const testoRisposta =
-          sleepHours < 3
-            ? `Ho registrato il tuo sonnellino di ${Math.round(sleepHours * 60)} minuti. Body Battery ricalcolata!`
-            : `Ho registrato ${hoursDisplay} ore di sonno. Body Battery aggiornata!`;
-        if (isSimulationMode) {
-          setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
-        } else {
-          const nuovoLogSleep = [...(dailyLog || []), sleepEntry];
-          setDailyLog(nuovoLogSleep);
-          syncDatiFirebase(nuovoLogSleep, manualNodes);
-        }
-        dismissKentuSleepTrigger();
-        setChatHistory((prev) => {
-          const next = [...prev];
-          next.pop();
-          next.push({
-            sender: 'ai',
-            text: testoRisposta,
-          });
-          return next;
-        });
-        return;
-      }
-
-      if (addWorkoutSlotError) {
-        const missingText =
-          "Mi mancano alcuni dettagli per registrare l'allenamento. A che ora hai iniziato e quanto è durato?";
-        setChatHistory((prev) => {
-          const next = [...prev];
-          next.pop();
-          next.push({ sender: 'ai', text: missingText });
-          return next;
-        });
-        return;
-      }
-
-      if (addFoodSlotError) {
-        const missingFoodText =
-          'Mi mancano dei dettagli per registrare il pasto. A che ora hai mangiato e quanti grammi erano all\'incirca?';
-        setChatHistory((prev) => {
-          const next = [...prev];
-          next.pop();
-          next.push({ sender: 'ai', text: missingFoodText });
-          return next;
-        });
-        return;
-      }
-
-      if (addWorkoutPayload != null) {
-        const { title: wTitle, duration: wDuration, calories: wCalories, timeString: oraString, timeDec } = addWorkoutPayload;
-        const durationHours = Math.max(1 / 60, wDuration / 60);
-        const titleLower = wTitle.toLowerCase();
-        const isCardioHint = /corr|corsa|run|bike|cicl|spinning|nuot|swim|remier|rowing|ellitt|walk|cammin|cardio|hiit|saltell|jump/i.test(wTitle);
-        const isPcOrCognitive = /lavoro\s*(al\s*)?pc|pc\b|smart\s*working|scrivania|studio|desk|videocal|zoom|call da|programm/i.test(titleLower);
-        const isWorkGeneric = /(\blavoro\b|meeting|riunione|ufficio\b)/i.test(titleLower) && !/lavoro\s*al\s*pc|pc\b|scrivania/i.test(titleLower);
-        let workoutTypeForLog = isCardioHint ? 'cardio' : 'pesi';
-        let timelineNodeType = 'workout';
-        if (isPcOrCognitive) {
-          timelineNodeType = 'cognitive';
-          workoutTypeForLog = /studio|studiare|leggere|libro/i.test(titleLower) ? 'studio' : 'lavoro_pc';
-        } else if (isWorkGeneric) {
-          timelineNodeType = 'work';
-          workoutTypeForLog = 'lavoro';
-        }
-        const workoutId = Date.now().toString();
-        const workoutEntry = {
-          id: workoutId,
-          type: 'workout',
-          title: wTitle,
-          name: wTitle,
-          desc: wTitle.toUpperCase(),
-          durationMinutes: wDuration,
-          duration: durationHours,
-          calories: wCalories,
-          kcal: wCalories,
-          cal: wCalories,
-          workoutType: workoutTypeForLog,
-          time: timeDec,
-          mealTime: timeDec,
-          ora: oraString,
-          timeString: oraString,
-        };
-        const timelineNode = {
-          id: workoutId,
-          type: timelineNodeType,
-          time: timeDec,
-          duration: durationHours,
-          kcal: wCalories,
-          icon:
-            timelineNodeType === 'cognitive'
-              ? workoutTypeForLog === 'studio'
-                ? '📚'
-                : '💻'
-              : timelineNodeType === 'work'
-                ? '💼'
-                : '🏋️',
-          subType: workoutTypeForLog,
-          name: wTitle,
-          muscles: [],
-        };
-        const testoRisposta = `🎯 **Workout Registrato**
-- **Attività:** ${wTitle}
-- **Durata:** ${wDuration} min
-- **Spesa energetica:** ~${wCalories} kcal
-
-Ottimo lavoro! Body Battery e parametri aggiornati. 💪`;
-        const anchorWo = currentTrackerDate || getTodayString();
-        if (anchorWo === getTodayString()) {
-          scheduledWorkoutContextRef.current = null;
-        }
-        if (isSimulationMode) {
-          setSimulatedLog((prev) => [workoutEntry, ...(prev || [])]);
-          setSimulationNodes((prev) =>
-            [...(prev || []), timelineNode].sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
-          );
-        } else {
-          const nuovoLogWo = [workoutEntry, ...(dailyLog || [])];
-          const nextManual = [...manualNodes, timelineNode].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
-          setDailyLog(nuovoLogWo);
-          setManualNodes(nextManual);
-          syncDatiFirebase(nuovoLogWo, nextManual);
-        }
-        setChatHistory((prev) => {
-          const next = [...prev];
-          next.pop();
-          next.push({
-            sender: 'ai',
-            text: testoRisposta,
-          });
-          return next;
-        });
-        return;
-      }
-
-      if (addFoodPayload != null) {
-        const testoRispostaFood = commitAddFoodChatPayload(addFoodPayload);
-        setChatHistory((prev) => {
-          const next = [...prev];
-          next.pop();
-          next.push({
-            sender: 'ai',
-            text: testoRispostaFood || 'Pasto registrato. 🥗',
-          });
-          return next;
-        });
-        return;
-      }
-
-      const itemsToSave = itemsArray != null ? itemsArray : (insertPayload ? [insertPayload] : []);
-
-      if (itemsToSave.length > 0) {
-        const baseMealTime = getCurrentTimeRoundedTo15Min();
-        const predictedType = predictMealType(baseMealTime);
-        const sharedMealTime = typeof itemsToSave[0]?.mealTime === 'number' ? itemsToSave[0].mealTime : baseMealTime;
-        const rawMtSave = itemsToSave[0]?.mealType;
-        const dominantMealType =
-          rawMtSave != null && String(rawMtSave).trim() !== ''
-            ? normalizeAiMealTypeToStorageId(rawMtSave, sharedMealTime)
-            : predictedType;
-        const batchGhostType = getGhostMealType(dominantMealType, dailyLog || []);
-        const batchId = `batch_${Date.now()}`;
-
-        const alimentiProcessati = itemsToSave
-          .map((item, index) => {
-            const desc = item.desc || item.name || '';
-            if (!desc) return null;
-            const qta = Math.max(1, parseFloat(item.weight ?? item.qta) || 100);
-            const datiNutrizionali = estraiDatiFoodDb(desc, qta, batchGhostType);
-            return {
-              ...datiNutrizionali,
-              id: datiNutrizionali.id || `ai_${batchId}_${index}`,
-              type: 'food',
-              mealType: batchGhostType,
-              mealTime: sharedMealTime,
-              batchId
-            };
-          })
-          .filter(Boolean);
-
-        const nuovoLog = [...alimentiProcessati, ...(dailyLog || [])];
-        setDailyLog(nuovoLog);
-        syncDatiFirebase(nuovoLog, manualNodes);
-        setChatHistory(prev => {
-          const next = [...prev];
-          next.pop();
-          next.push({ sender: 'ai', text: alimentiProcessati.length > 1 ? `Perfetto, ho inserito ${alimentiProcessati.length} alimenti nel diario!` : 'Perfetto, ho inserito l\'alimento nel diario!' });
-          return next;
-        });
-        return;
-      }
-
-      const regexStrategia = /\[STRATEGIA:\s*(.+?)\]/gi;
-      let matchStrategia;
-      while ((matchStrategia = regexStrategia.exec(responseText)) !== null) {
-        const pairs = matchStrategia[1].split(',');
-        const newStrategy = { ...idealStrategy };
-        pairs.forEach(pair => {
-          const [key, val] = pair.split('=').map(s => (s || '').trim().toLowerCase());
-          const numVal = parseFloat(val);
-          if (isNaN(numVal) || !key) return;
-          const stratKey = key === 'spuntino' || key === 'merenda_pm' || key === 'merenda_am' ? 'snack' : key;
-          if (newStrategy[stratKey] !== undefined) newStrategy[stratKey] = numVal;
-        });
-        setIdealStrategy(newStrategy);
-      }
-
-      const regexWorkout = /\[ALLENAMENTO:\s*([^|\]]+?)\s*\|\s*([0-9.,]+)\]/gi;
-      let matchWorkout;
-      while ((matchWorkout = regexWorkout.exec(responseText)) !== null) {
-        const kcal = Math.max(0, parseFloat((matchWorkout[2] || '').replace(',', '.')) || 300);
-        const newItem = { id: Date.now() + Math.random(), type: 'workout', workoutType: 'misto', desc: (matchWorkout[1] || '').trim().toUpperCase(), kcal, duration: Math.floor(kcal / 6) };
-        if (isSimulationMode) {
-          setSimulatedLog(prev => [newItem, ...(prev || [])]);
-        } else {
-          setDailyLog(prev => {
-            const newLog = [newItem, ...(prev || [])];
-            syncDatiFirebase(newLog, manualNodes);
-            return newLog;
-          });
-        }
-      }
-
-      const mealProposalExtract = extractAndStripMealProposal(responseText);
-      let cleanText = mealProposalExtract.stripped;
-      const mealProposalForUi = mealProposalExtract.proposal;
-      const dailyPlanExtract = extractAndStripDailyPlan(cleanText);
-      cleanText = dailyPlanExtract.stripped;
-      const dailyPlanForUi = mealProposalForUi ? null : dailyPlanExtract.plan;
-      const stripInsertStart = cleanText.indexOf('{"action":"insert"');
-      if (stripInsertStart !== -1) {
-        let depth = 0;
-        let stripEnd = stripInsertStart;
-        for (let i = stripInsertStart; i < cleanText.length; i++) {
-          if (cleanText[i] === '{') depth++;
-          else if (cleanText[i] === '}') { depth--; if (depth === 0) { stripEnd = i; break; } }
-        }
-        cleanText = (cleanText.slice(0, stripInsertStart) + cleanText.slice(stripEnd + 1)).trim();
-      }
-      if (itemsArray != null && itemsArray.length > 0) {
-        const arrStart = cleanText.indexOf('[');
-        if (arrStart !== -1) {
-          let depth = 0;
-          let arrEnd = arrStart;
-          for (let i = arrStart; i < cleanText.length; i++) {
-            if (cleanText[i] === '[' || cleanText[i] === '{') depth++;
-            else if (cleanText[i] === ']' || cleanText[i] === '}') { depth--; if (depth === 0 && cleanText[i] === ']') { arrEnd = i; break; } }
-          }
-          cleanText = (cleanText.slice(0, arrStart) + cleanText.slice(arrEnd + 1)).trim();
-        }
-      }
-      if (sleepDataPayload) {
-        const lsIdx = cleanText.indexOf('"log_sleep"');
-        const lsAlt = cleanText.indexOf('log_sleep');
-        const idx = lsIdx !== -1 ? cleanText.lastIndexOf('{', lsIdx) : (lsAlt !== -1 ? cleanText.lastIndexOf('{', lsAlt) : -1);
-        if (idx !== -1) {
-          let depth = 0;
-          let end = idx;
-          for (let i = idx; i < cleanText.length; i++) {
-            if (cleanText[i] === '{') depth++;
-            else if (cleanText[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
-          }
-          cleanText = (cleanText.slice(0, idx) + cleanText.slice(end + 1)).trim();
-        }
-      }
-      {
-        const asIdx = cleanText.indexOf('"add_sleep"');
-        if (asIdx !== -1) {
-          const idxAs = cleanText.lastIndexOf('{', asIdx);
-          if (idxAs !== -1) {
-            let depthAs = 0;
-            let endAs = idxAs;
-            for (let i = idxAs; i < cleanText.length; i++) {
-              if (cleanText[i] === '{') depthAs++;
-              else if (cleanText[i] === '}') {
-                depthAs--;
-                if (depthAs === 0) {
-                  endAs = i;
-                  break;
-                }
-              }
-            }
-            cleanText = (cleanText.slice(0, idxAs) + cleanText.slice(endAs + 1)).trim();
-          }
-        }
-      }
-      {
-        const awIdx = cleanText.indexOf('"add_workout"');
-        if (awIdx !== -1) {
-          const idxAw = cleanText.lastIndexOf('{', awIdx);
-          if (idxAw !== -1) {
-            let depthAw = 0;
-            let endAw = idxAw;
-            for (let i = idxAw; i < cleanText.length; i++) {
-              if (cleanText[i] === '{') depthAw++;
-              else if (cleanText[i] === '}') {
-                depthAw--;
-                if (depthAw === 0) {
-                  endAw = i;
-                  break;
-                }
-              }
-            }
-            cleanText = (cleanText.slice(0, idxAw) + cleanText.slice(endAw + 1)).trim();
-          }
-        }
-      }
-      {
-        const afIdx = cleanText.indexOf('"add_food"');
-        if (afIdx !== -1) {
-          const idxAf = cleanText.lastIndexOf('{', afIdx);
-          if (idxAf !== -1) {
-            let depthAf = 0;
-            let endAf = idxAf;
-            for (let i = idxAf; i < cleanText.length; i++) {
-              if (cleanText[i] === '{') depthAf++;
-              else if (cleanText[i] === '}') {
-                depthAf--;
-                if (depthAf === 0) {
-                  endAf = i;
-                  break;
-                }
-              }
-            }
-            cleanText = (cleanText.slice(0, idxAf) + cleanText.slice(endAf + 1)).trim();
-          }
-        }
-      }
-      cleanText = cleanText.replace(/\[STRATEGIA:\s*[^\]]+\]/gi, '').replace(/\[ALLENAMENTO:\s*[^\]]+\]/gi, '').trim();
-
-      let quickReplies = [];
-      const qrIdx = cleanText.indexOf('"quick_replies"');
-      if (qrIdx !== -1) {
-        const objStart = cleanText.lastIndexOf('{', qrIdx);
-        if (objStart !== -1) {
-          let depth = 0;
-          let objEnd = objStart;
-          for (let i = objStart; i < cleanText.length; i++) {
-            if (cleanText[i] === '{') depth++;
-            else if (cleanText[i] === '}') { depth--; if (depth === 0) { objEnd = i; break; } }
-          }
-          try {
-            const parsedQR = JSON.parse(cleanText.slice(objStart, objEnd + 1));
-            if (Array.isArray(parsedQR.quick_replies)) quickReplies = parsedQR.quick_replies;
-            cleanText = (cleanText.slice(0, objStart) + cleanText.slice(objEnd + 1)).trim();
-          } catch (_) {}
-        }
-      }
-
-      let dinnerOptions = null;
-      const doIdx = cleanText.indexOf('"dinner_options"');
-      if (doIdx !== -1) {
-        const objStartDo = cleanText.lastIndexOf('{', doIdx);
-        if (objStartDo !== -1) {
-          let depthDo = 0;
-          let objEndDo = objStartDo;
-          for (let i = objStartDo; i < cleanText.length; i++) {
-            if (cleanText[i] === '{') depthDo++;
-            else if (cleanText[i] === '}') {
-              depthDo--;
-              if (depthDo === 0) {
-                objEndDo = i;
-                break;
-              }
-            }
-          }
-          try {
-            const parsedDo = JSON.parse(cleanText.slice(objStartDo, objEndDo + 1));
-            if (Array.isArray(parsedDo.dinner_options) && parsedDo.dinner_options.length) {
-              dinnerOptions = parsedDo.dinner_options.slice(0, 3).filter((o) => o && (o.label || o.description));
-            }
-            cleanText = (cleanText.slice(0, objStartDo) + cleanText.slice(objEndDo + 1)).trim();
-          } catch (_) {}
-        }
-      }
-
-      let agendaOptions = null;
-      const aoIdx = cleanText.indexOf('"agenda_options"');
-      if (aoIdx !== -1) {
-        const objStartAo = cleanText.lastIndexOf('{', aoIdx);
-        if (objStartAo !== -1) {
-          let depthAo = 0;
-          let objEndAo = objStartAo;
-          for (let i = objStartAo; i < cleanText.length; i++) {
-            if (cleanText[i] === '{') depthAo++;
-            else if (cleanText[i] === '}') {
-              depthAo--;
-              if (depthAo === 0) {
-                objEndAo = i;
-                break;
-              }
-            }
-          }
-          try {
-            const parsedAo = JSON.parse(cleanText.slice(objStartAo, objEndAo + 1));
-            if (Array.isArray(parsedAo.agenda_options) && parsedAo.agenda_options.length) {
-              agendaOptions = parsedAo.agenda_options.filter((o) => o && (o.name || o.label));
-            }
-            cleanText = (cleanText.slice(0, objStartAo) + cleanText.slice(objEndAo + 1)).trim();
-          } catch (_) {}
-        }
-      }
-
-      if (!cleanText && !mealProposalForUi && !dailyPlanForUi) cleanText = '✨ Operazione completata.';
-      if (mealProposalForUi) cleanText = '';
-      if (dailyPlanForUi) cleanText = '';
-
-      if (dinnerOptions && dinnerOptions.length) {
-        lastDinnerOptionsRef.current = dinnerOptions;
-      }
-      if (agendaOptions && agendaOptions.length) {
-        lastAgendaOptionsRef.current = agendaOptions;
-      }
-
-      setChatHistory(prev => {
-        const newHist = [...prev];
-        newHist.pop();
-        newHist.push({
-          sender: 'ai',
-          text: cleanText,
-          mealProposal: mealProposalForUi || undefined,
-          dailyPlan: dailyPlanForUi || undefined,
-          quickReplies:
-            mealProposalForUi || dailyPlanForUi || quickReplies.length === 0 ? undefined : quickReplies,
-          dinnerOptions:
-            mealProposalForUi || dailyPlanForUi || !dinnerOptions || dinnerOptions.length === 0
-              ? undefined
-              : dinnerOptions,
-          agendaOptions: agendaOptions && agendaOptions.length > 0 ? agendaOptions : undefined,
-        });
-        return newHist;
-      });
-    } catch (e) {
-      setChatHistory(prev => {
-        const newHist = [...prev];
-        newHist.pop();
-        newHist.push({ sender: 'ai', text: `❌ ${e.message || String(e)}` });
-        return newHist;
-      });
-    }
-  };
-
   /** Conferma [MEAL_PROPOSAL]: scrive alimenti reali in dailyLog (non solo ghost timeline). */
   const handleMealProposalConfirm = useCallback(
     (proposal, selectedItems) => {
@@ -7182,14 +4483,6 @@ Ottimo! Diario aggiornato. 🥗`;
   const handleMealProposalCancel = useCallback(() => {
     setChatHistory((prev) => prev.filter((m) => !m.mealProposal));
   }, []);
-
-  const handleMealProposalSwap = useCallback(
-    (itemId) => {
-      const safe = String(itemId ?? '').replace(/'/g, "'");
-      handleChatSubmit(`Sostituisci l'ingrediente con ID: '${safe}'`, { fromInput: true });
-    },
-    [handleChatSubmit]
-  );
 
   const handleDailyPlanConfirm = useCallback(
     (plan) => {
@@ -9194,6 +6487,91 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
     });
   }, [fullHistory, currentTrackerDate, displayTime, userTargets?.sveglia, accumuloSNC]);
 
+  const metabolicVarianceForAi = useMemo(() => {
+    const currentTdeeForAi =
+      typeof userTargets?.kcal === 'number' && Number.isFinite(userTargets.kcal) ? userTargets.kcal : null;
+    if (currentTdeeForAi == null) return null;
+    return calculateMetabolicVariance(bodyMetricsHistory, fullHistory, currentTdeeForAi);
+  }, [bodyMetricsHistory, fullHistory, userTargets?.kcal]);
+
+  const { handleChatSubmit } = useKentuChatHandler({
+    CHAT_HISTORY_WINDOW,
+    accumuloSNC,
+    activeAction,
+    activeLog,
+    anabolicCurve,
+    applyKentuChatCmd,
+    birthDate,
+    bodyBattery,
+    bodyMetricsHistory,
+    buildKentuAgendaSecretPrompt,
+    buildRecentActivitiesContext,
+    buildRecentMealsContextForDinner,
+    calculateAge,
+    callGeminiAPIWithRotation,
+    chatHistory,
+    chatImages,
+    chatInput,
+    commitAddFoodChatPayload,
+    computeSleepDurationHours,
+    cortisolCurve,
+    currentTime,
+    currentTrackerDate,
+    dailyLog,
+    dailyLogForEnergy,
+    dismissKentuSleepTrigger,
+    estraiDatiFoodDb,
+    foodDb,
+    fullHistory,
+    getCurrentTimeRoundedTo15Min,
+    handleAutoLogDinner,
+    idealStrategy,
+    isSimulationMode,
+    kentuAgendaAwaitingRef,
+    kentuDailyCalorieStrategy,
+    lastAgendaOptionsRef,
+    lastDinnerOptionsRef,
+    longevityData,
+    longevityEngineScore,
+    longevityScoreHistory,
+    manualNodes,
+    mealType,
+    metabolicVarianceForAi,
+    nervousSystemLoad,
+    nodesForEnergySimulation,
+    normalizeAiMealTypeToStorageId,
+    pendingAiBatch,
+    pendingHabit,
+    pendingWorkoutFlowRef,
+    predictMealType,
+    scheduledWorkoutContextRef,
+    setChatHistory,
+    setChatImages,
+    setChatInput,
+    setDailyLog,
+    setIdealStrategy,
+    setManualNodes,
+    setPendingAiBatch,
+    setPendingHabit,
+    setSimulatedLog,
+    setSimulationNodes,
+    simulatedLog,
+    syncDatiFirebase,
+    totali,
+    trainingWaveResult,
+    userModel,
+    userProfile,
+    userTargets,
+  });
+
+  const handleMealProposalSwap = useCallback(
+    (itemId) => {
+      const safe = String(itemId ?? '').replace(/'/g, "'");
+      handleChatSubmit(`Sostituisci l'ingrediente con ID: '${safe}'`, { fromInput: true });
+    },
+    [handleChatSubmit]
+  );
+
   const renderCustomizedLabel = (props) => {
     const { cx, cy, midAngle, outerRadius, value, name, fill, payload } = props;
     if (name === 'Rimanenti' || value === 0) return null;
@@ -9412,7 +6790,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
   // ========================================================
   /** Barra Kentu + navigazione: sempre montata dopo login, anche durante caricamento dati (Bussola sempre visibile). */
   const fixedAppBottomChrome = (
-    <BottomChrome
+    <AppBottomNavigation
       kentuChatNotificationBadge={kentuChatNotificationBadge}
       setActiveAction={setActiveAction}
       setIsDrawerOpen={setIsDrawerOpen}
@@ -9503,519 +6881,67 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       </>
     );
   } else if (isFullScreenGraph) {
-    const currentChartType = availableFullscreenCharts[fullscreenChartIndex] || 'percent';
-    const fullscreenChartLabel = currentChartType === 'percent' ? 'Energia SNC %' : currentChartType === 'cortisolo' ? 'Cortisolo' : currentChartType === 'calorieTimeline' ? 'Bilancio Calorico' : currentChartType === 'glicemia' ? 'Glicemia' : currentChartType === 'idratazione' ? 'Idratazione' : currentChartType === 'neuro' ? 'Recupero Neurologico' : currentChartType === 'digestione' ? 'Digestione' : currentChartType === 'kcal' ? 'Kcal' : 'Grafico';
-
     salaContent = (
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100dvw', height: '100dvh', maxHeight: '100dvh', backgroundColor: '#121212', zIndex: 100020, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
-        {/* HEADER COMANDI (fisso) */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#1e1e1e', borderBottom: '1px solid #333', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <button type="button" onClick={() => setFullscreenChartIndex(prev => prev > 0 ? prev - 1 : availableFullscreenCharts.length - 1)} style={{ background: '#333', color: '#00e5ff', border: 'none', width: '40px', height: '40px', borderRadius: '50%', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer' }}>◀</button>
-            <h2 style={{ color: '#fff', margin: 0, fontSize: '1.2rem', textTransform: 'uppercase' }}>{fullscreenChartLabel}</h2>
-            <button type="button" onClick={() => setFullscreenChartIndex(prev => prev < availableFullscreenCharts.length - 1 ? prev + 1 : 0)} style={{ background: '#333', color: '#00e5ff', border: 'none', width: '40px', height: '40px', borderRadius: '50%', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer' }}>▶</button>
-          </div>
-          <button type="button" onClick={exitFullscreen} style={{ backgroundColor: '#ff0000', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>✖ Chiudi</button>
-        </div>
-
-        {/* SCROLL WRAPPER ORIZZONTALE */}
-        <div ref={fullscreenChartScrollRef} style={{ flex: 1, minHeight: 0, width: '100%', overflowX: 'auto', overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {/* INNER WIDE CONTAINER (zoom) */}
-          <div style={{ width: `${220 * zoomLevel}%`, minWidth: `${800 * zoomLevel}px`, flex: 1, display: 'flex', flexDirection: 'column', paddingBottom: 'env(safe-area-inset-bottom, 10px)' }}>
-            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-            {currentChartType === 'percent' && (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
-                  <defs>
-                    <linearGradient id="colorEnergiaFullscreen" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
-                      <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
-                    </linearGradient>
-                    <linearGradient id="colorRiservaFullscreen" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#00e676" stopOpacity={0.5}/>
-                      <stop offset="100%" stopColor="#00e676" stopOpacity={0.0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                  <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#1a1a1c', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
-                    formatter={(value, name) => {
-                      const formattedValue = typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—');
-                      const displayName = name === 'energyPast' || name === 'Energia SNC' ? 'Energia SNC' : name === 'riservaFisica' ? 'Riserva Fisica' : name === 'energyFuture' ? 'Previsione' : name;
-                      return [formattedValue, displayName];
-                    }}
-                    labelFormatter={(label) => {
-                      if (typeof label === 'number') {
-                        const ore = Math.floor(label);
-                        const min = Math.round((label - ore) * 60);
-                        return `Ore ${String(ore).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-                      }
-                      return label;
-                    }}
-                  />
-                  {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
-                    <ReferenceLine key={`fs-sleep-${node.id ?? index}`} x={node.wakeTime ?? 7.5} stroke="#00e5ff" strokeDasharray="3 3" strokeWidth={1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
-                  ))}
-                  <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
-                  <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiservaFullscreen)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergiaFullscreen)" connectNulls={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="energyFuture" name="Previsione" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
-                  <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
-                  <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-            {currentChartType === 'cortisolo' && (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
-                  <defs>
-                    <linearGradient id="colorCortisoloFullscreen" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#9c27b0" stopOpacity={0.8}/>
-                      <stop offset="100%" stopColor="#9c27b0" stopOpacity={0.2}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                  <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [value, 'Cortisolo']} labelFormatter={(label) => `Ore ${label}:00`} />
-                  <ReferenceDot x={displayTime} y={dotCortisolo} isFront r={10} fill="#9c27b0" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
-                  <Area type="monotone" dataKey="cortisoloPast" stroke="#9c27b0" fill="url(#colorCortisoloFullscreen)" strokeWidth={2} connectNulls={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="cortisoloFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-            {currentChartType === 'calorieTimeline' && (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={safeCalorieTimelineData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                  <XAxis dataKey="time" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                  <YAxis domain={[0, 'auto']} stroke="#666" fontSize={11} tickFormatter={(v) => Math.round(v)} width={35} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [Math.round(value), 'kcal']} labelFormatter={(label) => `Ore ${label}:00`} />
-                  <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={3} dot={false} connectNulls isAnimationActive={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-            {currentChartType === 'glicemia' && (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                  <YAxis domain={[40, 220]} stroke="#666" fontSize={11} tickFormatter={(tick) => tick} width={35} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [value != null ? Number(value).toFixed(0) : '—', 'Glicemia']} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
-                  <ReferenceDot x={displayTime} y={dotGlicemia} isFront r={10} fill="#ef4444" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
-                  <Area type="monotone" dataKey="glicemiaPast" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="glicemiaFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-            {currentChartType === 'idratazione' && (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                  <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—'), name === 'idratazionePast' ? 'Idratazione' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
-                  <ReferenceDot x={displayTime} y={dotIdratazione} isFront r={10} fill="#00e5ff" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
-                  <Area type="monotone" dataKey="idratazionePast" stroke="#00e5ff" fill="#00e5ff" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="idratazioneFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-            {currentChartType === 'neuro' && (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                  <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—'), name === 'neuroPast' ? 'Neuro' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
-                  <ReferenceDot x={displayTime} y={dotNeuro} isFront r={10} fill="#6366f1" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
-                  <Area type="monotone" dataKey="neuroPast" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="neuroFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-            {currentChartType === 'digestione' && (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                  <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—'), name === 'digestionePast' ? 'Digestione' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
-                  <ReferenceDot x={displayTime} y={dotDigestione} isFront r={10} fill="#9333ea" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
-                  <Area type="monotone" dataKey="digestionePast" stroke="#9333ea" fill="#9333ea" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="digestioneFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-            {currentChartType === 'kcal' && (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                  <YAxis domain={[0, Math.max(targetKcalChart || 2500, totalCaloriesTimeline || 0)]} stroke="#666" fontSize={11} tickFormatter={(v) => Math.round(v)} width={35} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value, name) => [value != null ? Math.round(Number(value)) : '—', name === 'kcalPast' ? 'Kcal' : name]} labelFormatter={(label) => typeof label === 'number' ? `Ore ${String(Math.floor(label)).padStart(2, '0')}:${String(Math.round((label % 1) * 60)).padStart(2, '0')}` : label} />
-                  <ReferenceDot x={displayTime} y={scale(dotY)} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
-                  <Area type="monotone" dataKey="kcalPast" stroke="#00e676" fill="#00e676" fillOpacity={0.3} strokeWidth={2} connectNulls={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="kcalFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-            {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
-            <TimeAlignmentChartDebugOverlay />
-            </div>
-
-            <div
-              style={{
-                flexShrink: 0,
-                position: 'relative',
-                width: '100%',
-                paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
-                paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
-                boxSizing: 'border-box',
-                marginTop: 10,
-                marginBottom: 10,
-              }}
-            >
-              <TimelineNodi
-                activeNodesWithStack={activeNodesWithStack}
-                chartUnit={chartUnit}
-                activeAction={activeAction}
-                analysisTabActive={activeBottomTab === 'analisi'}
-                idealStrategy={idealStrategy}
-                realTotals={realTotals}
-                NODE_IMPORTANCE={NODE_IMPORTANCE}
-                NODE_TYPE_ICON={NODE_TYPE_ICON}
-                draggingNode={draggingNode}
-                touchingNodeId={touchingNodeId}
-                dragOffsetY={dragOffsetY}
-                dragLiveTime={dragLiveTime}
-                timelineContainerRef={timelineContainerRef}
-                startNodeDrag={startNodeDrag}
-                releaseNodePointer={releaseNodePointer}
-                onNodeClick={onTimelineNodeClick}
-                onTimelineTrackClick={openTimelineQuickAddAtPointer}
-                onTimelineTrackLongPress={openTimelineQuickAddAtPointer}
-                handleNodeTap={handleNodeTap}
-                decimalToTimeStr={decimalToTimeStr}
-                syncDatiFirebase={syncDatiFirebase}
-                setManualNodes={setManualNodes}
-                setDailyLog={setDailyLog}
-                energyPercent={bodyBattery?.currentEnergy ?? 0}
-                nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
-                timelineEnergySeries={timelineEnergySeries}
-                timelineQualityChartData={chartData}
-                updateMealTime={updateMealTime}
-                onStripDragChartPreviewStart={onTimelineStripPreviewDragStart}
-                onStripDragChartPreview={scheduleTimelineStripEnergyPreview}
-                onStripDragChartPreviewEnd={clearTimelineStripEnergyPreview}
-                onStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
-              />
-            </div>
-            </div>
-          </div>
-        </div>
-        {/* Pulsantiera Zoom ancorata al bordo destro, indipendente dallo scroll (position: fixed) */}
-        <div
-          role="group"
-          aria-label="Controlli zoom fullscreen"
-          style={{
-            position: 'fixed',
-            right: '15px',
-            top: '40%',
-            transform: 'translateY(-50%)',
-            zIndex: 50,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '15px',
-            background: 'rgba(20, 20, 20, 0.7)',
-            padding: '10px',
-            borderRadius: '30px',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.15)'
-          }}
-        >
-          <button
-            type="button"
-            className="zoom-btn-vertical"
-            onClick={openTimelineQuickAddAtCenter}
-            title="Aggiungi sulla timeline (ora centrale striscia)"
-            aria-label="Aggiungi sulla timeline"
-            style={{
-              background: 'linear-gradient(145deg, rgba(0,229,255,0.35), rgba(0,120,140,0.45))',
-              borderColor: 'rgba(0,229,255,0.45)',
-            }}
-          >
-            ⊕
-          </button>
-          <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
-          <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
-          <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
-        </div>
-      </div>
+      <FullscreenGraphView
+        fullscreenChartScrollRef={fullscreenChartScrollRef}
+        availableFullscreenCharts={availableFullscreenCharts}
+        fullscreenChartIndex={fullscreenChartIndex}
+        setFullscreenChartIndex={setFullscreenChartIndex}
+        exitFullscreen={exitFullscreen}
+        zoomLevel={zoomLevel}
+        setZoomLevel={setZoomLevel}
+        handleCenterZoomAndPan={handleCenterZoomAndPan}
+        openTimelineQuickAddAtCenter={openTimelineQuickAddAtCenter}
+        openTimelineQuickAddAtPointer={openTimelineQuickAddAtPointer}
+        finalChartData={finalChartData}
+        safeCalorieTimelineData={safeCalorieTimelineData}
+        displayTime={displayTime}
+        dotY={dotY}
+        dotCortisolo={dotCortisolo}
+        dotGlicemia={dotGlicemia}
+        dotIdratazione={dotIdratazione}
+        dotNeuro={dotNeuro}
+        dotDigestione={dotDigestione}
+        nodesForEnergySimulation={nodesForEnergySimulation}
+        targetKcalChart={targetKcalChart}
+        totalCaloriesTimeline={totalCaloriesTimeline}
+        scale={scale}
+        isViewingPastDate={isViewingPastDate}
+        currentTime={currentTime}
+        chartUnit={chartUnit}
+        activeBottomTab={activeBottomTab}
+        activeNodesWithStack={activeNodesWithStack}
+        idealStrategy={idealStrategy}
+        realTotals={realTotals}
+        draggingNode={draggingNode}
+        touchingNodeId={touchingNodeId}
+        dragOffsetY={dragOffsetY}
+        dragLiveTime={dragLiveTime}
+        timelineContainerRef={timelineContainerRef}
+        startNodeDrag={startNodeDrag}
+        releaseNodePointer={releaseNodePointer}
+        onTimelineNodeClick={onTimelineNodeClick}
+        handleNodeTap={handleNodeTap}
+        decimalToTimeStr={decimalToTimeStr}
+        syncDatiFirebase={syncDatiFirebase}
+        setManualNodes={setManualNodes}
+        setDailyLog={setDailyLog}
+        bodyBattery={bodyBattery}
+        timelineEnergySeries={timelineEnergySeries}
+        chartData={chartData}
+        updateMealTime={updateMealTime}
+        onTimelineStripPreviewDragStart={onTimelineStripPreviewDragStart}
+        scheduleTimelineStripEnergyPreview={scheduleTimelineStripEnergyPreview}
+        clearTimelineStripEnergyPreview={clearTimelineStripEnergyPreview}
+        onTimelineStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
+        activeAction={activeAction}
+        NODE_IMPORTANCE={NODE_IMPORTANCE}
+        NODE_TYPE_ICON={NODE_TYPE_ICON}
+      />
     );
   } else {
     salaContent = (
     <div style={{ backgroundColor: isSimulationMode ? '#1a1625' : '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: 0, fontFamily: 'sans-serif', overflow: 'hidden' }}>
-      
-      <style>
-        {`
-          html, body {
-            touch-action: pan-x pan-y;
-            overscroll-behavior: none;
-          }
-          * { touch-action: manipulation; }
-
-          /* Scrollbar nascosta per contenitori scorrevoli generici */
-          .scrollbar-hide { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; -ms-overflow-style: none; }
-          .scrollbar-hide::-webkit-scrollbar { display: none; }
-
-          .future { stroke-dasharray: 4 6; animation: f-flow 2s linear infinite; opacity: 0.2; }
-          @keyframes f-flow { from { stroke-dashoffset: 20; } to { stroke-dashoffset: 0; } }
-
-          /* Mini-timeline: hitbox 44x44 e feedback :active stile iOS */
-          .mini-timeline-hitbox { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; touch-action: none; cursor: grab; transition: transform 0.15s ease-out; }
-          .mini-timeline-hitbox:active { transform: scale(1.08); cursor: grabbing; }
-          .mini-timeline-bar-wrap { transition: transform 0.15s ease-out; }
-          .mini-timeline-bar-wrap:active { transform: scale(1.03); }
-          .mini-timeline-point-bubble { transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
-          .mini-timeline-point-bubble:active { transform: translate(-50%, -50%) scale(2); }
-
-          /* Tasti header più grandi per il pollice */
-          
-          .drawer-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity 0.4s ease; z-index: 99998; }
-          .drawer-overlay.open { opacity: 1; pointer-events: all; }
-          
-          /* Ottimizzazione Drawer per Mobile */
-          .drawer-content { position: fixed; bottom: -100%; left: 0; right: 0; background: rgba(15, 15, 15, 0.95); border-top: 1px solid #2a2a2a; border-radius: 25px 25px 0 0 !important; padding: 30px 20px !important; padding-bottom: max(20px, env(safe-area-inset-bottom)); transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.05); z-index: 99999; box-shadow: 0 -10px 50px rgba(0,0,0,0.9); max-height: 92dvh !important; overflow-y: auto; backdrop-filter: blur(25px); -webkit-overflow-scrolling: touch; }
-          .drawer-content.open { bottom: 0; }
-          
-          /* Barra zoom verticale (pollice-friendly, bordo destro) - stessa definizione in index.css */
-          .zoom-vertical-bar { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 14px; z-index: 50; background: rgba(0, 0, 0, 0.5); padding: 10px 6px; border-radius: 30px; backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.12); pointer-events: auto; }
-          .zoom-btn-vertical { width: 40px; height: 40px; border-radius: 50%; background: #2c2c2e; color: white; border: 1px solid #444; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; }
-          .zoom-btn-vertical:active { background: #444; transform: scale(0.9); }
-          @keyframes pulseDot {
-            0%, 100% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 3px rgba(0, 229, 255, 0.35)); }
-            50% { transform: scale(1.1); opacity: 0.94; filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.5)) drop-shadow(0 0 14px rgba(255, 255, 255, 0.12)); }
-          }
-          .pulsing-dot { animation: pulseDot 2.8s infinite ease-in-out; transform-box: fill-box; transform-origin: center; }
-          @media (prefers-reduced-motion: reduce) {
-            .pulsing-dot { animation: none; filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.45)); }
-          }
-          .tachimeter-center.tachimeter-center-reset:hover { filter: brightness(1.08); box-shadow: 0 0 45px rgba(255,255,255,0.12); }
-
-          /* Macro widgets: ~30% più piccoli, formato assunto/obiettivo */
-          .macro-widget { position: absolute; width: 63px; height: 63px; z-index: 10; pointer-events: none; border-radius: 12px; overflow: hidden; }
-          .macro-widget svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
-          .macro-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; pointer-events: none; }
-          .macro-widget.macro-tl .macro-text { align-items: flex-start; padding: 6px 0 0 6px; }
-          .macro-widget.macro-tr .macro-text { align-items: flex-end; padding: 6px 6px 0 0; }
-          .macro-widget.macro-bl .macro-text { align-items: flex-start; padding: 0 0 6px 6px; }
-          .macro-widget.macro-br .macro-text { align-items: flex-end; padding: 0 6px 6px 0; }
-          .macro-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; }
-          .macro-value { font-size: 0.9rem; font-weight: bold; color: #fff; }
-
-          .macrosRow {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-          }
-          .macrosRow .macroBox {
-            min-width: 0;
-            text-align: center;
-          }
-          
-          /* Contenitore per lo scroll del grafico */
-          .chart-scroll-container { width: 100%; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; cursor: grab; }
-          .chart-scroll-container::-webkit-scrollbar { display: none; }
-
-          .chartTitle {
-            position: sticky;
-            top: 0;
-            z-index: 5;
-            background: #0f1115;
-            padding: 6px 0;
-            font-weight: 600;
-          }
-          
-          /* Super FAB Menu */
-          .fab-container { position: fixed; bottom: 25px; right: 25px; z-index: 1000; }
-          .fab-main { width: 65px; height: 65px; background: #00e5ff; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 2rem; color: #000; box-shadow: 0 4px 20px rgba(0,229,255,0.5); border: none; transition: 0.3s; z-index: 2; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-          .fab-main.open { transform: rotate(45deg); background: #ff4d4d; }
-          .fab-menu { position: absolute; bottom: 80px; right: 5px; display: flex; flex-direction: column; gap: 15px; pointer-events: none; opacity: 0; transition: 0.3s; transform: translateY(20px); }
-          .fab-menu.open { pointer-events: all; opacity: 1; transform: translateY(0); }
-          .fab-item { position: relative; width: 50px; height: 50px; background: #1a1a1a; border: 1px solid #333; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; box-shadow: 0 4px 15px rgba(0,0,0,0.5); cursor: pointer; }
-          .fab-label { position: absolute; right: 65px; background: #000; padding: 5px 12px; border-radius: 8px; font-size: 0.7rem; color: #00e5ff; white-space: nowrap; border: 1px solid #00e5ff; }
-          
-          @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-          .view-animate { animation: fadeIn 0.3s ease forwards; }
-
-          /* Carosello Telemetria: scroll orizzontale con snap */
-          .telemetry-carousel { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; scroll-behavior: smooth; }
-          .telemetry-carousel::-webkit-scrollbar { display: none; }
-          .telemetry-carousel-slide { flex: 0 0 100%; scroll-snap-align: start; scroll-snap-stop: always; min-width: 100%; box-sizing: border-box; }
-          .telemetry-carousel.finecorsa { scroll-snap-type: none; }
-
-          .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-          .action-btn { background: rgba(255,255,255,0.04); border: 1px solid #2a2a2a; color: #fff; padding: 18px 16px; min-height: 48px; min-width: 48px; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: 0.2s; -webkit-tap-highlight-color: transparent; }
-          .action-btn:active { transform: scale(0.95); border-color: #555; background: rgba(255,255,255,0.08); }
-          .action-btn.full-width { grid-column: 1 / -1; flex-direction: row; padding: 20px; gap: 15px; }
-          .action-btn.full-width .action-icon { font-size: 2rem; }
-          .action-icon { font-size: 1.6rem; filter: drop-shadow(0 0 5px rgba(255,255,255,0.1)); }
-          .action-icon-img { width: 1.6rem; height: 1.6rem; object-fit: contain; display: block; flex-shrink: 0; }
-          .action-icon-img-lg { width: 1.8rem; height: 1.8rem; }
-          .action-icon-img-fab { width: 1.35rem; height: 1.35rem; }
-          .action-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1.5px; color: #aaa; font-weight: 600; }
-
-          .type-btn { flex: 1; background: transparent; border: 1px solid #333; color: #777; padding: 12px 0; border-radius: 14px; font-size: 0.7rem; letter-spacing: 1px; cursor: pointer; transition: 0.3s; text-align: center; }
-          .type-btn.active { background: #fff; color: #000; border-color: #fff; font-weight: bold; box-shadow: 0 0 15px rgba(255,255,255,0.2); }
-          .type-btn.active.orange { background: #ff6d00; color: #000; border-color: #ff6d00; box-shadow: 0 0 15px rgba(255, 109, 0, 0.4); }
-          .type-btn.active.blue { background: #00e5ff; color: #000; border-color: #00e5ff; box-shadow: 0 0 15px rgba(0, 229, 255, 0.4); }
-
-          .burn-slider-container { background: #111; padding: 30px 20px; border-radius: 20px; border: 1px solid #222; text-align: center; margin-bottom: 20px; position: relative; overflow: hidden; }
-          .burn-value { font-size: 3.5rem; font-weight: bold; color: #fff; line-height: 1; margin-bottom: 5px; }
-          .burn-value.tuning { color: #00e5ff; text-shadow: 0 0 20px rgba(0,229,255,0.3); }
-          .burn-value.workout { color: #ff6d00; text-shadow: 0 0 20px rgba(255,109,0,0.3); }
-          .burn-label { font-size: 0.75rem; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 25px; display: block; }
-          .custom-range { -webkit-appearance: none; width: 100%; height: 8px; border-radius: 4px; background: #2a2a2a; outline: none; position: relative; z-index: 2; }
-          .custom-range.orange::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 26px; height: 26px; border-radius: 50%; background: #ff6d00; cursor: pointer; box-shadow: 0 0 15px #ff6d00, inset 0 0 5px rgba(255,255,255,0.8); border: 2px solid #fff; }
-          .custom-range.blue::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 26px; height: 26px; border-radius: 50%; background: #00e5ff; cursor: pointer; box-shadow: 0 0 15px #00e5ff, inset 0 0 5px rgba(255,255,255,0.8); border: 2px solid #fff; }
-
-          .food-pill { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.5); border: 1px solid #2a2a2a; padding: 12px 15px; border-radius: 14px; margin-bottom: 8px; animation: fadeIn 0.2s ease; }
-          .food-pill-name { font-size: 0.85rem; font-weight: 500; color: #eee; }
-          .food-pill-weight { font-size: 0.75rem; color: #00e5ff; margin-left: 10px; font-weight: bold; }
-          .food-pill-actions { display: flex; gap: 10px; align-items: center; }
-          .food-pill-btn { background: none; border: none; cursor: pointer; font-size: 1rem; opacity: 0.6; transition: 0.2s; padding: 0; }
-          .food-pill-btn:hover { opacity: 1; }
-          .btn-info { color: #fff; } .btn-delete { color: #ff4d4d; }
-          .calibration-btn { min-width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(0, 229, 255, 0.4); background: rgba(0, 229, 255, 0.1); color: #00e5ff; font-size: 1.1rem; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: transform 0.15s, background 0.2s; -webkit-tap-highlight-color: transparent; }
-          .calibration-btn:active { transform: scale(0.92); background: rgba(0, 229, 255, 0.25); }
-          .quick-add-bar { display: flex; width: 100%; background: rgba(255,255,255,0.05); border-radius: 18px; border: 1px solid #333; overflow: hidden; margin-bottom: 20px; transition: border-color 0.3s; }
-          .quick-add-bar:focus-within { border-color: #00e5ff; box-shadow: 0 0 15px rgba(0, 229, 255, 0.1); }
-          .quick-input { background: transparent; border: none; color: #fff; padding: 16px; font-size: 0.9rem; outline: none; }
-          .input-name { flex: 2; min-width: 0; border-right: 1px solid #333; }
-          .input-weight { flex: 1; min-width: 0; text-align: center; }
-          .quick-add-btn { flex-shrink: 0; padding: 0 18px; background: #00e5ff; color: #000; border: none; font-weight: bold; font-size: 1.2rem; cursor: pointer; transition: 0.2s; }
-          
-          /* Tasto Vyta AI in basso a sinistra */
-          .ai-chat-btn { position: fixed; bottom: 25px; left: 20px; background: linear-gradient(135deg, #b388ff, #00e5ff); color: #000; border: none; border-radius: 25px; padding: 12px 20px; font-weight: bold; font-size: 0.9rem; box-shadow: 0 4px 15px rgba(179, 136, 255, 0.3); z-index: 1000; display: flex; align-items: center; gap: 8px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-          
-          /* Blocca lo scroll del grafico quando si trascina un nodo */
-          .chart-scroll-container.dragging { overflow-x: hidden !important; }
-          
-          .diary-group-title { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 2px; margin: 20px 0 10px 10px; border-left: 2px solid #00e5ff; padding-left: 10px; }
-          
-          .water-fill-container { height: 12px; background: #222; border-radius: 6px; overflow: hidden; margin: 20px 0 40px 0; position: relative; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); }
-          .water-fill-bar { height: 100%; background: linear-gradient(90deg, #007aff, #00e5ff); border-radius: 6px; transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 0 15px rgba(0, 229, 255, 0.6); position: relative; }
-          .water-quick-btn { background: rgba(0, 229, 255, 0.05); border: 1px solid rgba(0, 229, 255, 0.2); color: #00e5ff; padding: 25px 0; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer; transition: 0.2s; flex: 1; }
-          .water-rectify-btn { background: transparent; border: 1px solid #333; color: #888; border-radius: 12px; padding: 8px 15px; font-size: 0.75rem; cursor: pointer; transition: 0.2s; }
-          
-          /* Modulo Acqua: Glassmorphism + Sfera con onda */
-          .water-glass { background: rgba(255, 255, 255, 0.06); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 24px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-          .water-sphere { position: relative; width: 180px; height: 180px; border-radius: 50%; background: rgba(0, 30, 50, 0.4); border: 2px solid rgba(0, 229, 255, 0.35); box-shadow: inset 0 0 40px rgba(0, 229, 255, 0.1), 0 0 40px rgba(0, 229, 255, 0.15); overflow: hidden; }
-          .water-sphere-inner { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; }
-          .water-wave { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, rgba(0, 150, 255, 0.5) 0%, rgba(0, 229, 255, 0.85) 50%, rgba(0, 234, 255, 0.95) 100%); transition: height 0.8s cubic-bezier(0.33, 1, 0.68, 1); }
-          .water-wave::before { content: ''; position: absolute; left: -50%; top: -100%; width: 200%; height: 200%; background: radial-gradient(ellipse 60% 40% at 50% 100%, rgba(255,255,255,0.15) 0%, transparent 60%); animation: waterShine 4s ease-in-out infinite; }
-          .water-wave::after { content: ''; position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0 60 Q300 20 600 60 T1200 60 L1200 120 L0 120 Z' fill='rgba(255,255,255,0.08)'/%3E%3C/svg%3E") repeat-x bottom center/200% 80px; animation: waveDrift 6s linear infinite; pointer-events: none; }
-          @keyframes waterShine { 0%, 100% { opacity: 0.5; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-5px); } }
-          @keyframes waveDrift { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-          
-          .chat-container { display: flex; flex-direction: column; flex: 1; min-height: 0; height: auto; max-height: none; }
-          .chat-messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; padding-right: 5px; padding-bottom: 20px; -webkit-overflow-scrolling: touch; }
-          .chat-bubble { max-width: 88%; padding: 16px 18px; border-radius: 20px; font-size: 1.0625rem; line-height: 1.65; white-space: pre-wrap; word-break: break-word; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-          .bubble-ai { background: #1f1f1f; border: 1px solid #333; color: #eee; border-bottom-left-radius: 4px; align-self: flex-start; }
-          .bubble-user { background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.14); color: #e2e8f0; font-weight: 500; border-bottom-right-radius: 4px; align-self: flex-end; box-shadow: 0 2px 16px rgba(0, 0, 0, 0.25); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-          .typing-indicator { display: flex; gap: 4px; padding: 5px; }
-          .dot { width: 6px; height: 6px; background: #888; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
-          .dot:nth-child(1) { animation-delay: -0.32s; } .dot:nth-child(2) { animation-delay: -0.16s; }
-          @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); background: #fff; } }
-          .chat-input-wrapper { display: flex; align-items: center; gap: 10px; background: #1a1a1a; border-radius: 30px; padding: 6px 6px 6px 20px; border: 1px solid #333; margin-top: 10px; }
-          .chat-input { flex: 1; background: transparent; border: none; color: #fff; font-size: 1.05rem; line-height: 1.5; outline: none; }
-          .chat-send-btn { background: #fff; color: #000; border: none; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: 0.2s; font-size: 1.1rem; }
-          .chat-send-btn.has-text { background: #b388ff; color: #fff; }
-
-          .delete-overlay { position: fixed; inset: 0; background: radial-gradient(circle, rgba(220, 38, 38, 0.0) 40%, rgba(220, 38, 38, 0.25) 100%); z-index: 45; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; display: flex; align-items: center; justify-content: center; flex-direction: column; }
-          .delete-overlay.active { opacity: 1; }
-          .delete-icon { font-size: 5rem; filter: drop-shadow(0 0 20px rgba(220, 38, 38, 0.8)); opacity: 0.5; transform: scale(0.8); transition: transform 0.2s ease; }
-          .delete-overlay.active .delete-icon { transform: scale(1); opacity: 0.8; }
-          .delete-text { color: #ef4444; font-size: 1.2rem; letter-spacing: 4px; font-weight: bold; margin-top: 20px; text-shadow: 0 0 10px rgba(220, 38, 38, 0.5); }
-
-          /* Blocco selezione nativa e preparazione animazione nodi timeline */
-          .timeline-node, .meal-node {
-            touch-action: none;
-            user-select: none;
-            -webkit-user-select: none;
-            -webkit-touch-callout: none;
-            -webkit-user-drag: none;
-            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease;
-            cursor: grab;
-          }
-          .timeline-node.is-dragging, .meal-node.is-dragging {
-            z-index: 10 !important;
-            box-shadow: 0 15px 25px rgba(0,0,0,0.6);
-            cursor: grabbing;
-            transition: box-shadow 0.2s ease;
-          }
-          .node-time-label {
-            pointer-events: none;
-            user-select: none;
-            -webkit-user-select: none;
-          }
-          .is-dragging .node-time-label {
-            font-size: 1.2rem;
-            font-weight: bold;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-          }
-
-          @media print {
-            body * { visibility: hidden; }
-            .report-modal-overlay, .report-modal-overlay * { visibility: visible; }
-            .report-modal-overlay { position: absolute; left: 0; top: 0; padding: 0; background: white; }
-            .report-no-print { display: none !important; }
-          }
-          
-          /* Tooltip grafico invisibile di default, visibile solo con tap prolungato */
-          .hide-tooltip .recharts-tooltip-wrapper { visibility: hidden !important; opacity: 0 !important; transition: opacity 0.2s ease; }
-          .show-tooltip .recharts-tooltip-wrapper { visibility: visible !important; opacity: 1 !important; transition: opacity 0.2s ease; }
-
-          /* Console di Telemetria */
-          .telemetry-btn { padding: 4px 10px; font-size: 0.7rem; border-radius: 8px; border: 1px solid #333; background: transparent; color: #666; cursor: pointer; transition: 0.3s; font-weight: normal; -webkit-tap-highlight-color: transparent; }
-          .telemetry-btn.active { background: rgba(0, 229, 255, 0.15); border-color: #00e5ff; color: #00e5ff; font-weight: bold; }
-          .telemetry-btn.active.blood { background: rgba(239, 68, 68, 0.15); border-color: #ef4444; color: #ef4444; }
-          .pulse-alert { animation: pulseAlert 1.5s infinite; color: #ef4444; border-color: #ef4444; font-weight: bold; }
-          @keyframes pulseAlert { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
-          .telemetry-btn.active.water { background: rgba(0, 229, 255, 0.15); border-color: #00e5ff; color: #00e5ff; }
-          .pulse-alert-water { animation: pulseWater 1.5s infinite; color: #00e5ff; border-color: #00e5ff; font-weight: bold; }
-          @keyframes pulseWater { 0% { box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(0, 229, 255, 0); } 100% { box-shadow: 0 0 0 0 rgba(0, 229, 255, 0); } }
-          .telemetry-btn.active.cortisol { background: rgba(245, 158, 11, 0.15); border-color: #f59e0b; color: #f59e0b; }
-          .pulse-alert-cortisol { animation: pulseCortisol 1.5s infinite; color: #f59e0b; border-color: #f59e0b; font-weight: bold; }
-          @keyframes pulseCortisol { 0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); } 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); } }
-          .telemetry-btn-alarm { box-shadow: 0 0 8px rgba(255, 50, 50, 0.8); border: 1px solid #ff4444 !important; animation: pulseAlertOpacity 2s infinite; }
-          @keyframes pulseAlertOpacity { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
-
-          /* Barre Live Telemetria */
-          @keyframes neonPulse {
-            0% { filter: brightness(1); opacity: 0.8; }
-            100% { filter: brightness(1.3); opacity: 1; box-shadow: 0 0 10px currentColor; }
-          }
-          .live-bar-addition {
-            animation: neonPulse 1s infinite alternate;
-            background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 5px, transparent 5px, transparent 10px);
-            border-left: 1px solid rgba(0,0,0,0.5);
-          }
-          .live-bar-overflow { background: #ff1744 !important; box-shadow: 0 0 10px #ff1744; }
-
-          /* Ottimizzazione Desktop per Costruttore */
-          @media (min-width: 768px) {
-            .drawer-content.open { height: 95dvh; max-height: 95dvh !important; display: flex; flex-direction: column; }
-            .pasto-container { display: flex; gap: 30px; height: 100%; }
-            .pasto-telemetry-panel { flex: 1; border-right: 1px solid #333; padding-right: 20px; overflow-y: auto; }
-            .pasto-builder-panel { flex: 1.5; overflow-y: auto; padding-left: 10px; }
-          }
-        `}
-      </style>
 
       <div
         className={`delete-overlay ${isReadyToDelete ? 'active' : ''}`}
@@ -10169,148 +7095,35 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         </div>
       )}
 
-      {/* Header compatto: logo | data | energia (spazio per futura bottom bar) */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '6px 4px 8px', marginBottom: '8px', gap: '6px', boxSizing: 'border-box' }}>
-          <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={() => { handleCoreOsClick(); setActiveAction(null); setIsDrawerOpen(false); setShowChoiceModal(false); setShowReport(false); setShowProfile(false); setSelectedNodeReport(null); setShowReportModal(false); }}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: '2px 4px',
-                margin: 0,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-start',
-                maxWidth: 'min(46vw, 168px)',
-              }}
-            >
-              <img
-                src="/nuovo%20logo%20trasparente2.png"
-                alt="Kentuos Logo"
-                decoding="async"
-                draggable={false}
-                style={{
-                  maxHeight: 52,
-                  height: 'auto',
-                  width: 'auto',
-                  maxWidth: '100%',
-                  objectFit: 'contain',
-                  objectPosition: 'left center',
-                  display: 'block',
-                }}
-              />
-            </button>
-          </div>
-          <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
-              <button
-                type="button"
-                onClick={() => changeDate(-1)}
-                style={{ background: 'none', border: 'none', color: '#00e5ff', fontSize: '1.1rem', padding: '6px', flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                aria-label="Giorno precedente"
-              >
-                ◀
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setCalendarMonthIso(currentTrackerDate.slice(0, 7));
-                  setShowDateCalendarModal(true);
-                }}
-                style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap', padding: '0 6px', textAlign: 'center', background: 'none', border: 'none', cursor: 'pointer' }}
-                aria-label="Apri calendario storico"
-                title="Apri calendario storico"
-              >
-                {currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
-              </button>
-              <button
-                type="button"
-                onClick={() => changeDate(1)}
-                disabled={currentTrackerDate === getTodayString()}
-                style={{ background: 'none', border: 'none', color: '#00e5ff', fontSize: '1.1rem', padding: '6px', flexShrink: 0, cursor: currentTrackerDate === getTodayString() ? 'default' : 'pointer', opacity: currentTrackerDate === getTodayString() ? 0.3 : 1, display: 'flex', alignItems: 'center' }}
-                aria-label="Giorno successivo"
-              >
-                ▶
-              </button>
-            </div>
-          </div>
-          <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '6px' }}>
-            {sncStressLevel > 65 && (
-              <button
-                type="button"
-                onClick={() => setShowSncPopup(true)}
-                title={sncStressLevel >= 85 ? 'Allarme overtraining SNC' : 'Affaticamento SNC'}
-                aria-label={sncStressLevel >= 85 ? 'Allarme overtraining SNC' : 'Affaticamento SNC'}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  fontSize: '1.15rem',
-                  cursor: 'pointer',
-                  padding: '4px',
-                  lineHeight: 1,
-                  animation: sncStressLevel >= 85 ? 'pulseDot 1.5s infinite ease-in-out' : 'none',
-                  flexShrink: 0,
-                }}
-              >
-                {sncStressLevel >= 85 ? '⚠️' : '⚡'}
-              </button>
-            )}
-            <div
-              role="button"
-              tabIndex={0}
-              aria-label={`Body Battery ${bodyBattery?.currentEnergy ?? 0} per cento. Apri dettaglio.`}
-              title="Body Battery — dettaglio"
-              onClick={() => setShowBatteryModal(true)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setShowBatteryModal(true);
-                }
-              }}
-              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, position: 'relative' }}
-            >
-              <EnergyArc
-                percentage={bodyBattery?.currentEnergy ?? 0}
-                size="small"
-                hasNapBoost={!!bodyBattery?.hasNapBoost}
-                showText={false}
-              />
-              <span style={{ fontSize: '0.7rem', color: '#a1a1aa', marginTop: '4px', fontWeight: '600', whiteSpace: 'nowrap' }}>
-                🔋 Energia {bodyBattery?.currentEnergy ?? 0}%
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {isSimulationMode && (
-          <div style={{
-            background: 'linear-gradient(90deg, #6200ea, #b388ff)',
-            color: '#fff',
-            padding: '8px 15px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontWeight: 'bold',
-            fontSize: '0.9rem',
-            boxShadow: '0 4px 15px rgba(98, 0, 234, 0.4)',
-            zIndex: 100
-          }}>
-            <span>🧪 MODALITÀ SIMULAZIONE ATTIVA</span>
-            <button
-              type="button"
-              onClick={() => {
-                setIsSimulationMode(false);
-                setSimulatedLog(null);
-              }}
-              style={{ background: 'rgba(0,0,0,0.3)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
-            >
-              ESCI ✖
-            </button>
-          </div>
-        )}
+      <AppHeader
+        onLogoClick={() => {
+          handleCoreOsClick();
+          setActiveAction(null);
+          setIsDrawerOpen(false);
+          setShowChoiceModal(false);
+          setShowReport(false);
+          setShowProfile(false);
+          setSelectedNodeReport(null);
+          setShowReportModal(false);
+        }}
+        dateLabel={currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
+        onPrevDay={() => changeDate(-1)}
+        onNextDay={() => changeDate(1)}
+        onOpenCalendar={() => {
+          setCalendarMonthIso(currentTrackerDate.slice(0, 7));
+          setShowDateCalendarModal(true);
+        }}
+        nextDayDisabled={currentTrackerDate === getTodayString()}
+        sncStressLevel={sncStressLevel}
+        onSncStressClick={() => setShowSncPopup(true)}
+        bodyBattery={bodyBattery}
+        onBatteryClick={() => setShowBatteryModal(true)}
+        simulationActive={isSimulationMode}
+        onExitSimulation={() => {
+          setIsSimulationMode(false);
+          setSimulatedLog(null);
+        }}
+      />
 
       {MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab) && (
       <div
@@ -10555,239 +7368,18 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 style={{ flex: 1, minHeight: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', position: 'relative' }}
                 aria-label="Apri grafico a tutto schermo"
               >
-                {chartUnit === 'percent' ? (
-              <div style={{ background: '#111', paddingTop: 15, paddingBottom: 15, borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                <div style={{ position: 'relative', width: '100%', height: '280px', paddingBottom: '60px' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
-                      <defs>
-                        <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
-                          <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
-                        </linearGradient>
-                        <linearGradient id="colorRiserva" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#00e676" stopOpacity={0.5}/>
-                          <stop offset="100%" stopColor="#00e676" stopOpacity={0.0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                      <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} width={35} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1a1a1c', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
-                        itemStyle={{ color: '#00e676', fontWeight: 'bold' }}
-                        formatter={(value, name) => {
-                          const formattedValue = typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—');
-                          const displayName = name === 'energyPast' || name === 'Energia SNC' ? 'Energia SNC' : name === 'riservaFisica' ? 'Riserva Fisica' : name === 'energyFuture' ? 'Previsione' : name;
-                          return [formattedValue, displayName];
-                        }}
-                        labelFormatter={(label) => {
-                          if (typeof label === 'number') {
-                            const ore = Math.floor(label);
-                            const min = Math.round((label - ore) * 60);
-                            return `Ore ${String(ore).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-                          }
-                          return label;
-                        }}
-                      />
-                      {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
-                        <ReferenceLine
-                          key={`snc-sleep-${node.id ?? index}`}
-                          x={node.wakeTime ?? 7.5}
-                          stroke="#00e5ff"
-                          strokeDasharray="3 3"
-                          strokeWidth={1.5}
-                          label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11, fontWeight: 'bold' }}
-                        />
-                      ))}
-                      <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
-                      <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiserva)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
-                      <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
-                      <Area type="monotone" dataKey="energyFuture" name="Previsione" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
-                      <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
-                      <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                  {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
-                  <TimeAlignmentChartDebugOverlay />
-                </div>
-              </div>
-                ) : (
-                <>
-                <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
-                  <defs>
-                    <linearGradient id="colorEnergy" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
-                      <stop offset="50%" stopColor="#047857" stopOpacity={0.7} />
-                      <stop offset="100%" stopColor="#dc2626" stopOpacity={0.6} />
-                    </linearGradient>
-                    <linearGradient id="colorKcal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
-                      <stop offset="50%" stopColor="#047857" stopOpacity={0.7} />
-                      <stop offset="100%" stopColor="#dc2626" stopOpacity={0.6} />
-                    </linearGradient>
-                    <linearGradient id="vitalFlow" x1="0" y1="0" x2="1" y2="0">
-                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="4s" repeatCount="indefinite" />
-                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="4s" repeatCount="indefinite" />
-                      <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.8" />
-                      <stop offset="50%" stopColor="#b388ff" stopOpacity="1" />
-                      <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.8" />
-                    </linearGradient>
-                    <linearGradient id="colorGlicemia" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#ef4444" stopOpacity={0.9} />
-                      <stop offset="50%" stopColor="#f59e0b" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="#ef4444" stopOpacity={0.0} />
-                    </linearGradient>
-                    <linearGradient id="bloodFlow" x1="0" y1="0" x2="1" y2="0">
-                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
-                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
-                      <stop offset="0%" stopColor="#ef4444" stopOpacity="0.8" />
-                      <stop offset="50%" stopColor="#fca5a5" stopOpacity="1" />
-                      <stop offset="100%" stopColor="#ef4444" stopOpacity="0.8" />
-                    </linearGradient>
-                    <linearGradient id="colorWater" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#007aff" stopOpacity={0.9} />
-                      <stop offset="50%" stopColor="#00e5ff" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="#007aff" stopOpacity={0.0} />
-                    </linearGradient>
-                    <linearGradient id="waterFlow" x1="0" y1="0" x2="1" y2="0">
-                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
-                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
-                      <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.8" />
-                      <stop offset="50%" stopColor="#007aff" stopOpacity="1" />
-                      <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.8" />
-                    </linearGradient>
-                    <linearGradient id="colorCortisol" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} />
-                      <stop offset="50%" stopColor="#fbbf24" stopOpacity={0.5} />
-                      <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.0} />
-                    </linearGradient>
-                    <linearGradient id="cortisolFlow" x1="0" y1="0" x2="1" y2="0">
-                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
-                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
-                      <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.8" />
-                      <stop offset="50%" stopColor="#fcd34d" stopOpacity="1" />
-                      <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.8" />
-                    </linearGradient>
-                    <linearGradient id="colorAnabolic" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#00e5ff" stopOpacity={0.6} />
-                      <stop offset="95%" stopColor="#00e5ff" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="colorCortisol" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#9c27b0" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#9c27b0" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="colorDigestion" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#9333ea" stopOpacity={0.9} />
-                      <stop offset="50%" stopColor="#a855f7" stopOpacity={0.5} />
-                      <stop offset="100%" stopColor="#9333ea" stopOpacity={0.0} />
-                    </linearGradient>
-                    <linearGradient id="digestionFlow" x1="0" y1="0" x2="1" y2="0">
-                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
-                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
-                      <stop offset="0%" stopColor="#9333ea" stopOpacity="0.8" />
-                      <stop offset="50%" stopColor="#c084fc" stopOpacity="1" />
-                      <stop offset="100%" stopColor="#9333ea" stopOpacity="0.8" />
-                    </linearGradient>
-                    <linearGradient id="colorNeuro" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#6366f1" stopOpacity={0.9} />
-                      <stop offset="50%" stopColor="#818cf8" stopOpacity={0.5} />
-                      <stop offset="100%" stopColor="#6366f1" stopOpacity={0.0} />
-                    </linearGradient>
-                    <linearGradient id="neuroFlow" x1="0" y1="0" x2="1" y2="0">
-                      <animate attributeName="x1" values="-0.3;1.3;-0.3" dur="3s" repeatCount="indefinite" />
-                      <animate attributeName="x2" values="0.7;2.3;0.7" dur="3s" repeatCount="indefinite" />
-                      <stop offset="0%" stopColor="#6366f1" stopOpacity="0.8" />
-                      <stop offset="50%" stopColor="#818cf8" stopOpacity="1" />
-                      <stop offset="100%" stopColor="#6366f1" stopOpacity="0.8" />
-                    </linearGradient>
-                    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-                      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-                      <feMerge>
-                        <feMergeNode in="blur" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
-                  <XAxis dataKey={chartUnit === 'calorieTimeline' ? 'time' : 'hour'} type="number" domain={[0, 24]} allowDataOverflow={true} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 13 }} padding={{ left: 0, right: 0 }} />
-                  <YAxis domain={chartUnit === 'glicemia' ? [40, 220] : (chartUnit === 'kcal' || chartUnit === 'calorieTimeline' ? [0, Math.max(targetKcalChart, totalCaloriesTimeline || 0)] : [0, 100])} tickFormatter={(val) => (chartUnit === 'kcal' || chartUnit === 'calorieTimeline') ? Math.round(Number(val)) : (chartUnit === 'glicemia' ? val : `${val}%`)} tick={{ fill: '#555', fontSize: 12 }} axisLine={false} tickLine={false} width={35} />
-                  <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} width={0} hide />
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
-                  {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
-                    <ReferenceLine
-                      key={`sleep-ref-${node.id ?? index}`}
-                      x={node.wakeTime ?? 7.5}
-                      stroke="#00e5ff"
-                      strokeDasharray="3 3"
-                      strokeWidth={1.5}
-                      label={{
-                        position: 'insideTopLeft',
-                        value: '🌅 Sveglia',
-                        fill: '#4ba3e3',
-                        fontSize: 11,
-                        fontWeight: 'bold'
-                      }}
-                    />
-                  ))}
-                  {chartUnit !== 'calorieTimeline' && (
-                    <>
-                      <Area type="monotone" dataKey="anabolicScore" fill="url(#colorAnabolic)" stroke="transparent" strokeWidth={0} fillOpacity={0.35} yAxisId="anabolic" isAnimationActive={!draggingNode} />
-                      <Area type="monotone" dataKey="cortisolScore" fill="url(#colorCortisol)" stroke="#9c27b0" strokeWidth={2} strokeDasharray="5 5" fillOpacity={0.3} yAxisId="anabolic" isAnimationActive={!draggingNode} />
-                    </>
-                  )}
-                  {chartUnit === 'glicemia' && (
-                    <>
-                      <ReferenceArea y1={40} y2={85} fill="#22c55e20" stroke="none" />
-                      <ReferenceArea y1={85} y2={140} fill="#eab30820" stroke="none" />
-                      <ReferenceArea y1={140} y2={220} fill="#3b82f620" stroke="none" />
-                    </>
-                  )}
-                  <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                  {chartUnit === 'calorieTimeline' ? (
-                    <Line type="monotone" dataKey="kcal" stroke="#ff9800" strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
-                  ) : (
-                    <>
-                      <Area type="monotone"
-                        dataKey={chartUnit === 'kcal' ? 'kcalPast' : (chartUnit === 'glicemia' ? 'glicemiaPast' : (chartUnit === 'idratazione' ? 'idratazionePast' : chartUnit === 'cortisolo' ? 'cortisoloPast' : chartUnit === 'digestione' ? 'digestionePast' : chartUnit === 'neuro' ? 'neuroPast' : 'energyPast'))}
-                        stroke={chartUnit === 'glicemia' ? 'url(#bloodFlow)' : (chartUnit === 'idratazione' ? 'url(#waterFlow)' : chartUnit === 'cortisolo' ? 'url(#cortisolFlow)' : chartUnit === 'digestione' ? 'url(#digestionFlow)' : chartUnit === 'neuro' ? 'url(#neuroFlow)' : 'url(#vitalFlow)')}
-                        strokeWidth={6}
-                        fill={chartUnit === 'glicemia' ? 'url(#colorGlicemia)' : (chartUnit === 'idratazione' ? 'url(#colorWater)' : chartUnit === 'cortisolo' ? 'url(#colorCortisol)' : chartUnit === 'digestione' ? 'url(#colorDigestion)' : chartUnit === 'neuro' ? 'url(#colorNeuro)' : 'url(#colorEnergy)')}
-                        filter="url(#glow)" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false}
-                      />
-                      <Area type="monotone"
-                        dataKey={chartUnit === 'kcal' ? 'kcalFuture' : (chartUnit === 'glicemia' ? 'glicemiaFuture' : (chartUnit === 'idratazione' ? 'idratazioneFuture' : chartUnit === 'cortisolo' ? 'cortisoloFuture' : chartUnit === 'digestione' ? 'digestioneFuture' : chartUnit === 'neuro' ? 'neuroFuture' : 'energyFuture'))}
-                        stroke={chartUnit === 'glicemia' ? '#7f1d1d' : (chartUnit === 'idratazione' ? '#003a8c' : chartUnit === 'cortisolo' ? '#78350f' : chartUnit === 'digestione' ? '#581c87' : chartUnit === 'neuro' ? '#3730a3' : '#444')}
-                        strokeWidth={4} strokeDasharray="10 10" fill="transparent" isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" connectNulls={false} className="future"
-                      />
-                    </>
-                  )}
-                  {chartUnit === 'glicemia' ? (
-                    <ReferenceLine y={85} stroke="rgba(255, 255, 255, 0.2)" strokeDasharray="5 5" label={{ position: 'insideTopLeft', value: 'Basale', fill: '#555', fontSize: 10 }} />
-                  ) : chartUnit === 'calorieTimeline' || chartUnit === 'kcal' ? null : (
-                    <Line type="monotone" dataKey="idealEnergy" stroke="rgba(255, 255, 255, 0.2)" strokeWidth={4} strokeDasharray="8 8" dot={false} isAnimationActive={!draggingNode} animationDuration={600} animationEasing="ease-in-out" />
-                  )}
-                  <ReferenceDot x={displayTime} y={finalDotY} isFront shape={(props) => {
-                    const cx = props?.cx;
-                    const cy = props?.cy;
-                    if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') return <path d="M0 0" />;
-                    const fillColor = chartUnit === 'glicemia' ? '#ef4444' : (chartUnit === 'cortisolo' ? '#f59e0b' : chartUnit === 'digestione' ? '#9333ea' : chartUnit === 'neuro' ? '#6366f1' : chartUnit === 'calorieTimeline' ? '#ff9800' : '#00e5ff');
-                    return (
-                      <g className="pulsing-dot">
-                        <circle cx={cx} cy={cy} r={10} fill={fillColor} />
-                        <circle cx={cx} cy={cy} r={10} fill="none" stroke={fillColor} strokeWidth={3} opacity={0.5}>
-                          <animate attributeName="r" values="10;17;10" dur="2.8s" repeatCount="indefinite" />
-                          <animate attributeName="opacity" values="0.5;0;0.5" dur="2.8s" repeatCount="indefinite" />
-                        </circle>
-                      </g>
-                    );
-                  }} />
-                </ComposedChart>
-              </ResponsiveContainer>
-                {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
-                <TimeAlignmentChartDebugOverlay />
-                </>
-                )}
+                <MainDashboardCharts
+                  chartUnit={chartUnit}
+                  mainChartData={mainChartData}
+                  draggingNode={draggingNode}
+                  nodesForEnergySimulation={nodesForEnergySimulation}
+                  displayTime={displayTime}
+                  finalDotY={finalDotY}
+                  isViewingPastDate={isViewingPastDate}
+                  currentTime={currentTime}
+                  targetKcalChart={targetKcalChart}
+                  totalCaloriesTimeline={totalCaloriesTimeline}
+                />
               </div>
               <div
                 style={{
@@ -11509,164 +8101,42 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
       <MenuDrawerShell isDrawerOpen={isDrawerOpen} onClose={closeDrawer}>
-        
-        {/* VISTA MENU PRINCIPALE */}
-        {(!activeAction || activeAction === 'home') && (
-          <div className="view-animate">
-            <AddEventMenuGrid
-              menuOrder={addEventMenuOrder}
-              onOrderCommit={commitAddEventMenuOrder}
-              onItemActivate={(id) => handleAddEventMenuItem(id, 'drawer')}
-            />
-            <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '0' }}>
-              <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.8rem' }}>⚡ Inserimento Rapido / Output AI</h4>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <input
-                  type="text"
-                  id="fast-ai-input"
-                  placeholder="Es: [Pollo | 150 | pranzo] oppure incolla qui la risposta AI"
-                  style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #444', background: '#000', color: '#fff', fontSize: '0.85rem' }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      processTestoAI(e.target.value);
-                      e.target.value = '';
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const input = document.getElementById('fast-ai-input');
-                    if (input) {
-                      processTestoAI(input.value);
-                      input.value = '';
-                    }
-                  }}
-                  style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '0 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
-                >
-                  Invia
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* VISTA MENU SECONDARIO (☰) */}
-        {activeAction === 'menu_secondary' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '2px', margin: 0 }}>☰ MENU</h2>
-              <div style={{ width: '70px' }}></div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <button className="action-btn" onClick={() => setActiveAction('storico')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(176, 190, 197, 0.5))' }}>📚</span><span className="action-label" style={{ color: '#b0bec5' }}>Archivio Storico</span></button>
-              <button className="action-btn" onClick={() => { setShowReport(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">📊</span><span className="action-label">Report</span></button>
-              <button className="action-btn" onClick={() => { setShowProfile(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">⚙️</span><span className="action-label">Profilo & Target</span></button>
-              <button className="action-btn" onClick={() => setActiveAction('strategia')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>🎯</span><span className="action-label" style={{ color: '#00e5ff' }}>Protocollo</span></button>
-              <button className="action-btn" onClick={() => setActiveAction('focus')}><img src="/icon-neural-128.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 192, 45, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#fbc02d' }}>Neural Reset</span></button>
-              <button type="button" className="action-btn" onClick={() => setActiveAction('ai_chat')} style={{ position: 'relative', background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
-                {kentuChatNotificationBadge ? (
-                  <span
-                    aria-hidden
-                    style={{
-                      position: 'absolute',
-                      top: 6,
-                      right: 8,
-                      width: 10,
-                      height: 10,
-                      borderRadius: '50%',
-                      background: '#f59e0b',
-                      boxShadow: '0 0 8px rgba(245, 158, 11, 0.65)',
-                      zIndex: 2,
-                    }}
-                  />
-                ) : null}
-                <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#b388ff' }}>Kentu</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* VISTA STRATEGIA */}
-        {activeAction === 'strategia' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; MENU</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#00e5ff', letterSpacing: '2px', margin: 0 }}>🎯 PROTOCOLLO</h2>
-              <div style={{ width: '60px' }}></div>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '25px' }}>
-              {Object.keys(STRATEGY_PROFILES).map(key => (
-                <button key={key} className={`type-btn ${dayProfile === key ? 'active blue' : ''}`} onClick={() => setDayProfile(key)}>
-                  {STRATEGY_PROFILES[key].label}
-                </button>
-              ))}
-            </div>
-            <div className="burn-slider-container">
-              <span className="burn-label" style={{color: '#00e5ff'}}>TUNING CALORICO (OVERRIDE)</span>
-              <div className="burn-value tuning">{calorieTuning > 0 ? `+${calorieTuning}` : calorieTuning}</div>
-              <input type="range" min="-500" max="500" step="50" value={calorieTuning} onChange={(e) => setCalorieTuning(Number(e.target.value))} className="custom-range blue" style={{ marginTop: '20px' }} />
-            </div>
-            <button onClick={() => closeDrawer()} style={{ width: '100%', padding: '18px', backgroundColor: '#00e5ff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 0 20px rgba(0, 229, 255, 0.4)' }}>SYNC STRATEGIA</button>
-          </div>
-        )}
+        <MainMenuDrawer
+          activeAction={activeAction}
+          setActiveAction={setActiveAction}
+          addEventMenuOrder={addEventMenuOrder}
+          commitAddEventMenuOrder={commitAddEventMenuOrder}
+          handleAddEventMenuItem={handleAddEventMenuItem}
+          processTestoAI={processTestoAI}
+          setShowReport={setShowReport}
+          closeDrawer={closeDrawer}
+          setShowProfile={setShowProfile}
+          kentuChatNotificationBadge={kentuChatNotificationBadge}
+          dayProfile={dayProfile}
+          setDayProfile={setDayProfile}
+          calorieTuning={calorieTuning}
+          setCalorieTuning={setCalorieTuning}
+        />
 
         {/* VISTA CHAT AI */}
         {activeAction === 'ai_chat' && (
-          <div
-            className="view-animate"
-            style={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              height: '100%',
-              maxHeight: '100%',
-            }}
-          >
-          <AiCluster
+          <KentuChatUI
             chatHistory={chatHistory}
             chatInput={chatInput}
             setChatInput={setChatInput}
             chatImages={chatImages}
             setChatImages={setChatImages}
-            onSendMessage={handleChatSubmit}
-            onChatQuickAction={(kind) => {
-              const anchor = currentTrackerDate || getTodayString();
-              const burnedKcalContext = (activeLog || [])
-                .filter((item) => item.type === 'workout')
-                .reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
-              const dynamicDailyKcalCtx =
-                applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) +
-                burnedKcalContext;
-              if (kind === 'briefing') {
-                const secret = buildQuickBriefingSecretPrompt({
-                  bodyBatteryPercent: bodyBattery?.currentEnergy ?? 0,
-                  dynamicDailyKcal: dynamicDailyKcalCtx,
-                  totali,
-                  userTargets,
-                });
-                void handleChatSubmit(null, { secretPrompt: secret, displayText: '📊 Briefing' });
-              } else if (kind === 'yesterday') {
-                const secret = buildYesterdayGapSecretPrompt(fullHistory, anchor, userTargets);
-                void handleChatSubmit(null, { secretPrompt: secret, displayText: '🔍 Analisi Ieri' });
-              } else if (kind === 'mealIdea') {
-                void handleChatSubmit(null, {
-                  secretPrompt: buildMealIdeaFromDispensaSecretPrompt(),
-                  displayText: '💡 Idea Pasto',
-                });
-              } else if (kind === 'checkOggi') {
-                void handleChatSubmit('⚖️ Check Oggi', { fromQuickReply: true });
-              } else if (kind === 'trainingCheck') {
-                void handleChatSubmit('🏃‍♂️ Posso allenarmi?', { fromQuickReply: true });
-              } else if (kind === 'reportMese') {
-                void handleChatSubmit('📅 Report Mese', { fromQuickReply: true });
-              } else if (kind === 'scannerMetabolico') {
-                void handleChatSubmit('🧬 Scanner Metabolico', { fromQuickReply: true });
-              }
-            }}
+            handleChatSubmit={handleChatSubmit}
+            currentTrackerDate={currentTrackerDate}
+            activeLog={activeLog}
+            userTargets={userTargets}
+            kentuDailyCalorieStrategy={kentuDailyCalorieStrategy}
+            bodyBattery={bodyBattery}
+            totali={totali}
+            fullHistory={fullHistory}
+            buildQuickBriefingSecretPrompt={buildQuickBriefingSecretPrompt}
+            buildYesterdayGapSecretPrompt={buildYesterdayGapSecretPrompt}
+            buildMealIdeaFromDispensaSecretPrompt={buildMealIdeaFromDispensaSecretPrompt}
             onLogDinnerOption={handleAutoLogDinner}
             onLoadAgenda={handleAutoLogAgenda}
             onMealProposalConfirm={handleMealProposalConfirm}
@@ -11675,7 +8145,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             onDailyPlanConfirm={handleDailyPlanConfirm}
             onDailyPlanCancel={handleDailyPlanCancel}
             onGeneratePlanGhostMealDraft={handleGeneratePlanGhostMealDraft}
-            dailyLog={activeLog || []}
             showAiSettings={showAiSettings}
             setShowAiSettings={setShowAiSettings}
             apiKeys={apiKeys}
@@ -11686,450 +8155,107 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             onBack={() => setActiveAction(null)}
             introPhrase={introPhrase}
           />
-          </div>
         )}
 
         {/* VISTA ACQUA */}
         {activeAction === 'acqua' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#00e5ff', letterSpacing: '2px', margin: 0 }}>💧 IDRATAZIONE</h2>
-              <div style={{ width: '70px' }}></div>
-            </div>
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '0.7rem', marginBottom: '8px' }}>
-                <span>0:00</span>
-                <input type="time" value={decimalToTimeStr(drawerWaterTime)} onChange={(e) => setDrawerWaterTime(parseTimeStrToDecimal(e.target.value))} style={{ width: '130px', minWidth: '110px', padding: '8px 10px', background: '#1a1a1a', border: '1px solid #00e5ff', borderRadius: '8px', color: '#00e5ff', fontSize: '1.1rem', fontWeight: 'bold', textAlign: 'center', letterSpacing: '1px' }} />
-                <span>24:00</span>
-              </div>
-              <div ref={miniTimelineWaterRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
-                {allNodes.map(n => {
-                  const isWork = n.type === 'work';
-                  const startP = getTimePositionPercent(n.time);
-                  const durP = isWork ? getTimePositionPercent(n.duration || 1) : 0;
-                  if (isWork) {
-                    return (
-                      <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, width: `${durP}%`, top: '50%', transform: 'translateY(-50%)', height: '20px', background: 'rgba(255, 234, 0, 0.2)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }} />
-                    );
-                  }
-                  return (
-                    <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(0,0,0,0.5)', border: '2px solid #666', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }} />
-                  );
-                })}
-                <div className="mini-timeline-hitbox" role="slider" aria-label="Ora acqua" onPointerDown={(e) => handleMiniTimelineDrag(e, miniTimelineWaterRef, 'point', drawerWaterTime, null, setDrawerWaterTime, null)} style={{ position: 'absolute', left: `${getTimePositionPercent(drawerWaterTime)}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '44px', height: '44px', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, touchAction: 'none' }}>
-                  <div className="mini-timeline-point-bubble" style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: '28px', height: '28px', borderRadius: '50%', background: '#00e5ff', border: '2px solid #fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px rgba(0,229,255,0.5)', pointerEvents: 'none' }}>
-                    <span style={{ fontSize: '0.5rem', fontWeight: 'bold', color: '#000' }}>{decimalToTimeStr(drawerWaterTime)}</span>
-                    <span style={{ lineHeight: 1 }}>💧</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="water-glass" style={{ padding: '28px 20px', marginBottom: '20px', textAlign: 'center' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
-                <div className="water-sphere">
-                  <div className="water-sphere-inner">
-                    <div className="water-wave" style={{ height: `${waterProgress}%` }} />
-                  </div>
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 2 }}>
-                    <span style={{ fontSize: '2rem', fontWeight: 'bold', color: 'rgba(255,255,255,0.95)', textShadow: '0 0 20px rgba(0,229,255,0.5)' }}>{Math.round(waterProgress)}%</span>
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '2.2rem', fontWeight: 'bold', color: '#fff', marginBottom: '4px' }}>{waterIntake} <span style={{ fontSize: '1rem', color: 'rgba(255,255,255,0.5)', fontWeight: 'normal' }}>ml</span></div>
-                  <div style={{ fontSize: '0.8rem', color: 'rgba(0, 229, 255, 0.9)', letterSpacing: '1px' }}>obiettivo {dailyWaterGoal} ml</div>
-                </div>
-              </div>
-            </div>
-            <div className="water-glass" style={{ padding: '16px', display: 'flex', gap: '12px', marginBottom: '12px' }}>
-              <button onClick={() => handleAddWater(250)} className="water-quick-btn" style={{ flex: 1 }}><span style={{ fontSize: '1.8rem', marginBottom: '4px' }}>🥛</span><span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>+ 250</span></button>
-              <button onClick={() => handleAddWater(500)} className="water-quick-btn" style={{ flex: 1 }}><span style={{ fontSize: '1.8rem', marginBottom: '4px' }}>🚰</span><span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>+ 500</span></button>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <button onClick={() => handleAddWater(-250)} className="water-rectify-btn">− 250</button>
-              <button onClick={() => handleAddWater(-500)} className="water-rectify-btn">− 500</button>
-              <button onClick={() => { if (isSimulationMode) return; const next = manualNodes.filter(n => n.type !== 'water'); setManualNodes(next); syncDatiFirebase(dailyLog, next); }} className="water-rectify-btn" style={{ borderColor: 'rgba(255, 77, 77, 0.4)', color: '#ff4d4d' }}>Azzera</button>
-            </div>
-          </div>
+          <WaterActionModal
+            onBack={() => setActiveAction(null)}
+            drawerWaterTime={drawerWaterTime}
+            setDrawerWaterTime={setDrawerWaterTime}
+            miniTimelineWaterRef={miniTimelineWaterRef}
+            handleMiniTimelineDrag={handleMiniTimelineDrag}
+            allNodes={allNodes}
+            getTimePositionPercent={getTimePositionPercent}
+            decimalToTimeStr={decimalToTimeStr}
+            parseTimeStrToDecimal={parseTimeStrToDecimal}
+            waterProgress={waterProgress}
+            waterIntake={waterIntake}
+            dailyWaterGoal={dailyWaterGoal}
+            handleAddWater={handleAddWater}
+            isSimulationMode={isSimulationMode}
+            manualNodes={manualNodes}
+            setManualNodes={setManualNodes}
+            dailyLog={dailyLog}
+            syncDatiFirebase={syncDatiFirebase}
+          />
         )}
 
         {/* VISTA FAST CHARGE - PISOLINO */}
         {activeAction === 'fast_charge_nap' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#818cf8', letterSpacing: '2px', margin: 0 }}>😴 PISOLINO</h2>
-              <div style={{ width: '70px' }}></div>
-            </div>
-            <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '16px', backdropFilter: 'blur(12px)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-                    Durata (Minuti)
-                  </div>
-                  <input
-                    type="number"
-                    min={5}
-                    max={1440}
-                    step={5}
-                    value={(() => {
-                      let d = Number(drawerFastChargeEnd) - Number(drawerFastChargeStart);
-                      if (d < 0) d += 24;
-                      return Math.max(0, Math.round(d * 60));
-                    })()}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      const durationMin = Number.isFinite(n) ? Math.max(5, Math.min(1440, Math.round(n))) : 30;
-                      const fixedEnd = Number(drawerFastChargeEnd) || 0;
-                      let nextStart = fixedEnd - durationMin / 60;
-                      while (nextStart < 0) nextStart += 24;
-                      while (nextStart >= 24) nextStart -= 24;
-                      setDrawerFastChargeStart(nextStart);
-                    }}
-                    style={{ width: '100%', minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }}
-                  />
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-                    Ora del risveglio
-                  </div>
-                  <input
-                    type="time"
-                    value={decimalToTimeStr(drawerFastChargeEnd)}
-                    onChange={(e) => {
-                      const nextEnd = parseTimeStrToDecimal(e.target.value);
-                      let durationHours = Number(drawerFastChargeEnd) - Number(drawerFastChargeStart);
-                      if (durationHours < 0) durationHours += 24;
-                      durationHours = Math.max(0, durationHours);
-                      let nextStart = nextEnd - durationHours;
-                      while (nextStart < 0) nextStart += 24;
-                      while (nextStart >= 24) nextStart -= 24;
-                      setDrawerFastChargeEnd(nextEnd);
-                      setDrawerFastChargeStart(nextStart);
-                    }}
-                    style={{ width: '100%', minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }}
-                  />
-                </div>
-              </div>
-              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '10px' }}>Durata: {(() => { let d = drawerFastChargeEnd - drawerFastChargeStart; if (d < 0) d += 24; d = Math.max(0, d); return `${Math.floor(d * 60)} min`; })()}</div>
-            </div>
-            <button onClick={() => handleSaveFastCharge('nap')} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(129,140,248,0.4)' }}>SALVA</button>
-          </div>
+          <FastChargeNapQuickPanel
+            onBack={() => setActiveAction(null)}
+            drawerFastChargeStart={drawerFastChargeStart}
+            setDrawerFastChargeStart={setDrawerFastChargeStart}
+            drawerFastChargeEnd={drawerFastChargeEnd}
+            setDrawerFastChargeEnd={setDrawerFastChargeEnd}
+            decimalToTimeStr={decimalToTimeStr}
+            parseTimeStrToDecimal={parseTimeStrToDecimal}
+            onSaveNap={() => handleSaveFastCharge('nap')}
+          />
         )}
 
         {/* VISTA FAST CHARGE - MEDITAZIONE */}
         {activeAction === 'fast_charge_meditation' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#22c55e', letterSpacing: '2px', margin: 0 }}>🧘 MEDITAZIONE</h2>
-              <div style={{ width: '70px' }}></div>
-            </div>
-            <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '16px', backdropFilter: 'blur(12px)' }}>
-              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '12px', textTransform: 'uppercase' }}>ORA INIZIO – ORA FINE</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <input type="time" value={decimalToTimeStr(drawerFastChargeStart)} onChange={(e) => setDrawerFastChargeStart(parseTimeStrToDecimal(e.target.value))} style={{ flex: 1, minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #22c55e', borderRadius: '10px', color: '#4ade80', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }} />
-                <span style={{ color: '#666' }}>–</span>
-                <input type="time" value={decimalToTimeStr(drawerFastChargeEnd)} onChange={(e) => setDrawerFastChargeEnd(parseTimeStrToDecimal(e.target.value))} style={{ flex: 1, minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #22c55e', borderRadius: '10px', color: '#4ade80', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }} />
-              </div>
-              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '10px' }}>Durata: {(() => { let d = drawerFastChargeEnd - drawerFastChargeStart; if (d < 0) d += 24; return `${Math.floor(Math.max(0, d) * 60)} min`; })()}</div>
-            </div>
-            <button onClick={() => handleSaveFastCharge('meditation')} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #16a34a, #22c55e)', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(34,197,94,0.4)' }}>SALVA</button>
-          </div>
+          <FastChargeMeditationQuickPanel
+            onBack={() => setActiveAction(null)}
+            drawerFastChargeStart={drawerFastChargeStart}
+            setDrawerFastChargeStart={setDrawerFastChargeStart}
+            drawerFastChargeEnd={drawerFastChargeEnd}
+            setDrawerFastChargeEnd={setDrawerFastChargeEnd}
+            decimalToTimeStr={decimalToTimeStr}
+            parseTimeStrToDecimal={parseTimeStrToDecimal}
+            onSaveMeditation={() => handleSaveFastCharge('meditation')}
+          />
         )}
 
         {/* VISTA FAST CHARGE - INTEGRAZIONE */}
         {activeAction === 'fast_charge_supplements' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#a855f7', letterSpacing: '2px', margin: 0 }}>💊 INTEGRAZIONE</h2>
-              <div style={{ width: '70px' }}></div>
-            </div>
-            <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '12px', backdropFilter: 'blur(12px)' }}>
-              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '12px', textTransform: 'uppercase' }}>ORARIO</div>
-              <input type="time" value={decimalToTimeStr(drawerFastChargeTime)} onChange={(e) => setDrawerFastChargeTime(parseTimeStrToDecimal(e.target.value))} style={{ width: '100%', padding: '10px', background: '#1a1a1a', border: '1px solid #a855f7', borderRadius: '10px', color: '#c084fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center', marginBottom: '12px' }} />
-              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '8px', textTransform: 'uppercase' }}>Nome supplemento (opzionale)</div>
-              <input type="text" value={fastChargeSupplementName} onChange={(e) => setFastChargeSupplementName(e.target.value)} placeholder="Es. Magnesio, Vitamina D..." style={{ width: '100%', padding: '10px', background: '#1a1a1a', border: '1px solid #444', borderRadius: '10px', color: '#fff', fontSize: '0.9rem' }} />
-            </div>
-            <button onClick={() => handleSaveFastCharge('supplements')} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #7c3aed, #a855f7)', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(168,85,247,0.4)' }}>SALVA</button>
-          </div>
+          <FastChargeSupplementsQuickPanel
+            onBack={() => setActiveAction(null)}
+            drawerFastChargeTime={drawerFastChargeTime}
+            setDrawerFastChargeTime={setDrawerFastChargeTime}
+            fastChargeSupplementName={fastChargeSupplementName}
+            setFastChargeSupplementName={setFastChargeSupplementName}
+            decimalToTimeStr={decimalToTimeStr}
+            parseTimeStrToDecimal={parseTimeStrToDecimal}
+            onSaveSupplements={() => handleSaveFastCharge('supplements')}
+          />
         )}
 
         {/* VISTA ALLENAMENTO */}
         {activeAction === 'allenamento' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#ff6d00', letterSpacing: '2px', margin: 0 }}>⚡ ATTIVITÀ</h2>
-              <div style={{ width: '70px' }}></div>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '30px', flexWrap: 'wrap' }}>
-              {WORKOUT_ACTIVITY_SELECTOR_IDS.map((typeId) => {
-                const ad = getWorkoutActivityTypeDef(typeId);
-                return (
-                  <button
-                    key={typeId}
-                    type="button"
-                    className={`type-btn ${workoutType === typeId ? 'active orange' : ''}`}
-                    onClick={() => setWorkoutType(typeId)}
-                  >
-                    {ad?.selectorButtonLabel ?? typeId}
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '14px', marginBottom: '10px' }}>
-                <div style={{ flex: '1 1 140px' }}>
-                  <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-                    Ora di inizio
-                  </div>
-                  <input
-                    type="time"
-                    value={decimalToTimeStr(workoutStartTime)}
-                    onChange={(e) => {
-                      const startTime = Math.min(24, Math.max(0, parseTimeStrToDecimal(e.target.value)));
-                      const durationHours = Math.max(0, Number(workoutDurationMin) || 0) / 60;
-                      let computedEndTime = startTime + durationHours;
-                      while (computedEndTime >= 24) computedEndTime -= 24;
-                      while (computedEndTime < 0) computedEndTime += 24;
-                      setWorkoutEndTime(computedEndTime);
-                    }}
-                    style={{
-                      width: '100%',
-                      maxWidth: '160px',
-                      padding: '8px 10px',
-                      background: '#1a1a1a',
-                      border: '1px solid #ff6d00',
-                      borderRadius: '8px',
-                      color: '#ff6d00',
-                      fontSize: '1.05rem',
-                      fontWeight: 'bold',
-                      textAlign: 'center',
-                    }}
-                  />
-                </div>
-                <div style={{ flex: '0 0 120px' }}>
-                  <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-                    Durata (min)
-                  </div>
-                  <input
-                    type="number"
-                    min={15}
-                    max={600}
-                    step={5}
-                    value={workoutDurationMin}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      setWorkoutDurationMin(
-                        Number.isFinite(n) ? Math.max(15, Math.min(600, Math.round(n))) : 30,
-                      );
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      background: '#1a1a1a',
-                      border: '1px solid #ff6d00',
-                      borderRadius: '8px',
-                      color: '#ff6d00',
-                      fontSize: '1.05rem',
-                      fontWeight: 'bold',
-                      textAlign: 'center',
-                    }}
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#666', fontSize: '0.65rem', marginBottom: '8px' }}>
-                <span>0:00</span>
-                <span>Inizio calcolato: {decimalToTimeStr(workoutStartTime)}</span>
-                <span>24:00</span>
-              </div>
-              <div ref={miniTimelineActivityRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
-                {allNodes.filter(n => n.id !== editingWorkoutId).map(n => {
-                  const isWork = n.type === 'work';
-                  const isCognitive = n.type === 'cognitive';
-                  const startP = getTimePositionPercent(n.time);
-                  const durP = (isWork || isCognitive) ? getTimePositionPercent(n.duration || 1) : 0;
-                  const isPesi = n.type === 'workout' && n.subType === 'pesi' && n.muscles?.length > 0;
-                  const iconContent = isPesi ? n.muscles.map(m => m.substring(0, 2).toUpperCase()).join('+') : (n.icon || '•');
-                  if (isWork) {
-                    return (
-                      <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, width: `${durP}%`, top: '50%', transform: 'translateY(-50%)', height: '20px', background: 'rgba(255, 234, 0, 0.2)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }}></div>
-                    );
-                  }
-                  if (isCognitive) {
-                    return (
-                      <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, width: `${durP}%`, top: '50%', transform: 'translateY(-50%)', height: '20px', background: 'rgba(0, 229, 255, 0.2)', borderLeft: '2px solid #00e5ff', borderRight: '2px solid #00e5ff', borderRadius: '4px', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }}></div>
-                    );
-                  }
-                  return (
-                    <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(0,0,0,0.5)', border: '2px solid #666', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none', fontSize: '0.5rem' }}>
-                      <span style={{ lineHeight: 1 }}>{iconContent}</span>
-                    </div>
-                  );
-                })}
-                <div
-                  className="mini-timeline-bar-wrap"
-                  onPointerDown={(e) =>
-                    handleMiniTimelineDrag(
-                      e,
-                      miniTimelineActivityRef,
-                      'bar-all',
-                      workoutStartTime,
-                      workoutEndTime,
-                      () => {},
-                      setWorkoutEndTime,
-                      { fixedDurationHours: workoutDurationHours },
-                    )
-                  }
-                  style={{
-                    position: 'absolute',
-                    left: `${getTimePositionPercent(workoutStartTime)}%`,
-                    width: `${getTimePositionPercent(workoutDurationHours)}%`,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    height: '24px',
-                    background: 'rgba(255, 109, 0, 0.4)',
-                    border: '1px solid #ff6d00',
-                    borderRadius: '4px',
-                    cursor: 'grab',
-                    zIndex: 10,
-                    touchAction: 'none',
-                  }}
-                >
-                  <div
-                    className="mini-timeline-hitbox"
-                    role="slider"
-                    aria-label="Fine attività"
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      handleMiniTimelineDrag(
-                        e,
-                        miniTimelineActivityRef,
-                        'bar-end',
-                        workoutStartTime,
-                        workoutEndTime,
-                        () => {},
-                        setWorkoutEndTime,
-                        { fixedDurationHours: workoutDurationHours },
-                      );
-                    }}
-                    style={{
-                      position: 'absolute',
-                      right: '-22px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      width: '44px',
-                      height: '44px',
-                      minWidth: 44,
-                      minHeight: 44,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      zIndex: 11,
-                    }}
-                  >
-                    <div style={{ width: '12px', height: '24px', background: '#ff6d00', borderRadius: '4px', pointerEvents: 'none' }}></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {workoutType === 'pesi' && (() => {
-              const pesiMuscleSet = new Set(normalizeMuscleGroupArray(workoutMuscles));
-              return (
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
-                    Gruppi muscolari
-                  </label>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
-                      gap: '8px',
-                    }}
-                  >
-                    {WORKOUT_MUSCLE_GROUP_DEFS.map(({ id: mId, label: mLabel }) => {
-                      const isActive = pesiMuscleSet.has(mId);
-                      return (
-                        <button
-                          key={mId}
-                          type="button"
-                          onClick={() => {
-                            setWorkoutMuscles((prev) => {
-                              const p = normalizeMuscleGroupArray(prev);
-                              if (p.includes(mId)) return p.filter((x) => x !== mId);
-                              return [...p, mId];
-                            });
-                          }}
-                          style={{
-                            padding: '10px 12px',
-                            fontSize: '0.75rem',
-                            borderRadius: '20px',
-                            border: `1px solid ${isActive ? '#ff6d00' : '#444'}`,
-                            background: isActive ? '#ff6d00' : '#222',
-                            color: isActive ? '#000' : '#aaa',
-                            fontWeight: isActive ? 'bold' : 'normal',
-                            cursor: 'pointer',
-                            textAlign: 'center',
-                          }}
-                        >
-                          {mLabel}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-            {workoutActivityRequiresStrengthDetailNote(workoutType) && (
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
-                  Dettaglio workout <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <textarea
-                  value={workoutStrengthDetail}
-                  onChange={(e) => setWorkoutStrengthDetail(e.target.value)}
-                  rows={3}
-                  placeholder="Es. Push day — petto + tricipiti, esercizi e volumi…"
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '10px 12px',
-                    background: '#1a1a1a',
-                    border: `1px solid ${String(workoutStrengthDetail).trim() ? '#444' : 'rgba(239,68,68,0.55)'}`,
-                    borderRadius: '10px',
-                    color: '#e8e8e8',
-                    fontSize: '0.85rem',
-                    resize: 'vertical',
-                    minHeight: '72px',
-                  }}
-                />
-              </div>
-            )}
-            <div className="burn-slider-container">
-              <span className="burn-label" style={{color: '#ff6d00'}}>OUTPUT ENERGETICO STIMATO</span>
-              <div className="burn-value workout">{Math.min(750, workoutKcal)}</div>
-              <input type="range" min="50" max="750" step="10" value={Math.min(750, workoutKcal)} onChange={(e) => setWorkoutKcal(Math.min(750, Number(e.target.value)))} className="custom-range orange" style={{ marginTop: '20px' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#666', marginTop: '6px' }}>
-                <span>0</span><span>375</span><span>750</span>
-              </div>
-            </div>
-            <button onClick={handleSaveWorkout} style={{ width: '100%', padding: '18px', backgroundColor: '#ff6d00', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 0 20px rgba(255, 109, 0, 0.4)' }}>SALVA ATTIVITÀ</button>
-            <div style={{ marginTop: '30px' }}>
-              {workoutsLog.length > 0 && <h4 style={{ fontSize: '0.65rem', color: '#666', letterSpacing: '2px', marginBottom: '10px' }}>OUTPUT REGISTRATI OGGI</h4>}
-              {workoutsLog.map(wk => (
-                <div key={wk.id} className="food-pill" style={{ borderLeft: '3px solid #ff6d00' }}>
-                  <div><span className="food-pill-name">{wk.desc || wk.name}</span><span className="food-pill-weight" style={{color: '#ff6d00'}}>{Math.round(wk.kcal)} kcal</span></div>
-                  <div className="food-pill-actions"><button className="food-pill-btn btn-delete" onClick={() => removeLogItem(wk.id)}>✕</button></div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <WorkoutView
+            onBack={() => setActiveAction(null)}
+            workoutType={workoutType}
+            setWorkoutType={setWorkoutType}
+            workoutStartTime={workoutStartTime}
+            workoutEndTime={workoutEndTime}
+            setWorkoutEndTime={setWorkoutEndTime}
+            workoutDurationMin={workoutDurationMin}
+            setWorkoutDurationMin={setWorkoutDurationMin}
+            workoutDurationHours={workoutDurationHours}
+            miniTimelineActivityRef={miniTimelineActivityRef}
+            handleMiniTimelineDrag={handleMiniTimelineDrag}
+            allNodes={allNodes}
+            getTimePositionPercent={getTimePositionPercent}
+            decimalToTimeStr={decimalToTimeStr}
+            parseTimeStrToDecimal={parseTimeStrToDecimal}
+            workoutMuscles={workoutMuscles}
+            setWorkoutMuscles={setWorkoutMuscles}
+            editingWorkoutId={editingWorkoutId}
+            workoutStrengthDetail={workoutStrengthDetail}
+            setWorkoutStrengthDetail={setWorkoutStrengthDetail}
+            workoutKcal={workoutKcal}
+            setWorkoutKcal={setWorkoutKcal}
+            handleSaveWorkout={handleSaveWorkout}
+            workoutsLog={workoutsLog}
+            removeLogItem={removeLogItem}
+          />
         )}
 
         {/* VISTA PASTO RAPIDO - CON BOTTONI CANONICI */}
-        <PastoDrawer
+        <MealBuilderOverlay
           activeAction={activeAction}
           onClose={handleAttemptCloseMeal}
           mealType={mealType}
@@ -13258,209 +9384,24 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         );
       })()}
 
-      {showProfile && (
-        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.9)', zIndex: 100020, overflowY: 'auto', padding: '20px' }}>
-          <div style={{ background: '#1e1e1e', padding: '30px', borderRadius: '16px', maxWidth: '600px', margin: '0 auto', color: '#fff' }}>
-            <h2 style={{ color: '#00e5ff', borderBottom: '1px solid #333', paddingBottom: '10px' }}>⚙️ Impostazioni Universali</h2>
-
-            <div style={{ background: '#2c2c2c', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-              <h3 style={{ margin: '0 0 15px 0' }}>1. Dati Biometrici</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                <label style={{ display: 'block' }}>Sesso: <select value={userProfile.gender} onChange={e => setUserProfile({ ...userProfile, gender: e.target.value })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}><option value="M">Uomo</option><option value="F">Donna</option></select></label>
-                <label style={{ display: 'block' }}>Data di Nascita
-                  <input
-                    type="date"
-                    value={birthDate}
-                    onChange={(e) => setBirthDate(e.target.value)}
-                    style={{ width: '100%', padding: '8px', marginTop: '4px', background: '#2c2c2e', border: '1px solid #444', color: '#fff', borderRadius: '8px', boxSizing: 'border-box' }}
-                  />
-                </label>
-                {calculateAge(birthDate) != null ? (
-                  <div style={{ gridColumn: '1 / -1', fontSize: '0.8rem', color: '#00e5ff', marginTop: '-4px', marginBottom: '4px' }}>
-                    Età calcolata: <strong>{calculateAge(birthDate)}</strong> anni
-                  </div>
-                ) : null}
-                <label style={{ display: 'block' }}>Età: <input type="number" min="1" max="120" inputMode="numeric" value={userProfile.age} onChange={e => setUserProfile({ ...userProfile, age: parseInt(e.target.value, 10) || 30 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
-                <label style={{ display: 'block' }}>Peso (kg): <input type="number" min="1" step="0.1" inputMode="decimal" value={userProfile.weight} onChange={e => setUserProfile({ ...userProfile, weight: parseFloat(e.target.value) || 75 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
-                <label style={{ display: 'block' }}>Altezza (cm): <input type="number" min="1" inputMode="decimal" value={userProfile.height} onChange={e => setUserProfile({ ...userProfile, height: parseFloat(e.target.value) || 175 })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} /></label>
-                <label style={{ display: 'block' }}>Stile di Vita:
-                  <select value={userProfile.activityLevel} onChange={e => setUserProfile({ ...userProfile, activityLevel: e.target.value })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}>
-                    <option value="1.2">Sedentario</option>
-                    <option value="1.375">Leggero (1-3 allenamenti)</option>
-                    <option value="1.55">Moderato (3-5 allenamenti)</option>
-                    <option value="1.725">Attivo (6-7 allenamenti)</option>
-                    <option value="1.9">Molto attivo</option>
-                  </select>
-                </label>
-                <label style={{ display: 'block' }}>Obiettivo nutrizionale:
-                  <select
-                    value={userProfile.nutritionGoal || 'maintain'}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setUserProfile({
-                        ...userProfile,
-                        nutritionGoal: v,
-                        goal: v === 'cut' ? 'lose' : v === 'bulk' ? 'gain' : 'maintain',
-                      });
-                    }}
-                    style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
-                  >
-                    <option value="cut">Deficit (cut)</option>
-                    <option value="recomp">Ricomposizione</option>
-                    <option value="maintain">Mantenimento</option>
-                    <option value="bulk">Surplus (bulk)</option>
-                  </select>
-                </label>
-                <label style={{ display: 'block', gridColumn: '1 / -1' }}>
-                  Calorie target (giornaliere)
-                  <input
-                    type="number"
-                    min={800}
-                    max={12000}
-                    inputMode="numeric"
-                    value={userProfile.targetCalories ?? userTargets.kcal ?? ''}
-                    onChange={(e) => {
-                      const n = parseInt(e.target.value, 10);
-                      const nextCal = Number.isFinite(n) ? n : null;
-                      setUserProfile({ ...userProfile, targetCalories: nextCal });
-                      if (Number.isFinite(n)) {
-                        applyTargetModeUpdate({
-                          updater: (prev) => ({ ...prev, kcal: n }),
-                          mode: 'manual',
-                          source: 'manual-kcal-input',
-                        });
-                      }
-                    }}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
-                  />
-                </label>
-                <label style={{ display: 'block', gridColumn: '1 / -1' }}>
-                  Proteine (g) — opzionale, lascia vuoto per usare il valore dai macro
-                  <input
-                    type="number"
-                    min={30}
-                    max={400}
-                    inputMode="numeric"
-                    placeholder="Auto"
-                    value={userProfile.proteinTarget ?? ''}
-                    onChange={(e) => {
-                      const raw = e.target.value.trim();
-                      if (raw === '') {
-                        setUserProfile({ ...userProfile, proteinTarget: null });
-                        return;
-                      }
-                      const n = parseInt(raw, 10);
-                      if (Number.isFinite(n)) {
-                        setUserProfile({ ...userProfile, proteinTarget: n });
-                        applyTargetModeUpdate({
-                          updater: (prev) => ({ ...prev, prot: n }),
-                          mode: 'manual',
-                          source: 'manual-protein-input',
-                        });
-                      }
-                    }}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
-                  />
-                </label>
-                <label style={{ display: 'block' }}>Livello interfaccia:
-                  <select value={userProfile.level || 'pro'} onChange={e => setUserProfile({ ...userProfile, level: e.target.value })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}>
-                    <option value="base">Base (semplificata)</option>
-                    <option value="pro">Pro (grafici e telemetria)</option>
-                  </select>
-                </label>
-              </div>
-              <button type="button" onClick={calculateSmartTargets} style={{ width: '100%', padding: '12px', marginTop: '15px', background: '#ff9800', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                <img src="/nuova-icona.png" alt="" width={20} height={20} decoding="async" style={{ objectFit: 'contain' }} />
-                Auto-Calcola Target
-              </button>
-            </div>
-
-            <div style={{ background: '#2c2c2c', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-              <h3 style={{ margin: '0 0 15px 0' }}>2. Modifica Manuale Target</h3>
-              <p style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '15px' }}>Correggi manualmente i valori calcolati se il tuo nutrizionista (o l'AI) ti ha fornito numeri specifici.</p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px' }}>
-                {Object.keys(userTargets)
-                  .filter((key) => !MANUAL_TARGET_EDIT_EXCLUDED_KEYS.has(key))
-                  .map(key => (
-                  <label key={key} style={{ display: 'flex', flexDirection: 'column', fontSize: '0.9rem' }}>
-                    <span style={{ textTransform: 'uppercase', color: '#00e5ff' }}>{key}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step={key === 'omega3' || key === 'vitD' ? 0.1 : 1}
-                      inputMode="decimal"
-                      value={userTargets[key] ?? ''}
-                      onChange={e => {
-                        const parsed = parseFloat(e.target.value);
-                        applyTargetModeUpdate({
-                          updater: (prev) => ({ ...prev, [key]: Number.isFinite(parsed) ? parsed : 0 }),
-                          mode: 'manual',
-                          source: 'manual-target-grid',
-                        });
-                      }}
-                      style={{ padding: '8px', border: '1px solid #444', background: '#111', color: '#fff', borderRadius: '4px' }}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ background: '#2c2c2c', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-              <h3 style={{ margin: '0 0 10px 0', color: '#00e5ff' }}>3. Sincronizzazione Bilancia (CSV)</h3>
-              <p style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '15px', lineHeight: 1.4 }}>
-                Importa lo storico delle pesate dalla tua bilancia smart. Il sistema leggerà automaticamente Peso, Massa Grassa, Massa Muscolare e Idratazione, assegnandoli ai giorni corretti nel tuo diario.
-              </p>
-              <input type="file" accept=".csv" ref={csvInputRef} style={{ display: 'none' }} onChange={handleCSVUpload} />
-              <button
-                type="button"
-                onClick={() => csvInputRef.current?.click()}
-                style={{ width: '100%', padding: '12px', background: 'rgba(0, 229, 255, 0.1)', color: '#00e5ff', border: '1px dashed #00e5ff', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}
-              >
-                <span style={{ fontSize: '1.2rem' }}>📊</span> Carica File CSV Bilancia
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
-              {longevityData && (
-                <button
-                  type="button"
-                  onClick={() => { setShowProfile(false); setShowLongevityModal(true); }}
-                  style={{ flex: '1 1 140px', padding: '10px 12px', background: 'transparent', border: `1px solid ${longevityData.color}55`, color: longevityData.color, borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
-                >
-                  🧬 Statistiche
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => auth.signOut()}
-                style={{ flex: '1 1 140px', padding: '10px 12px', background: 'rgba(244,67,54,0.12)', border: '1px solid rgba(244,67,54,0.45)', color: '#f87171', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
-              >
-                Esci
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: '15px' }}>
-              <button type="button" onClick={() => setShowProfile(false)} style={{ flex: 1, padding: '12px', background: '#444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Annulla</button>
-              <button
-                type="button"
-                onClick={() => {
-                  const computedAge = calculateAge(birthDate);
-                  let profilePayload = { ...userProfile, birthDate: birthDate || '' };
-                  if (computedAge != null) profilePayload.age = computedAge;
-                  if (profilePayload.targetCalories == null && userTargets.kcal != null) {
-                    profilePayload.targetCalories = Math.round(Number(userTargets.kcal));
-                  }
-                  profilePayload = mergeProfileNutritionFromServer(profilePayload);
-                  setUserProfile(profilePayload);
-                  saveProfileToFirebase(profilePayload, userTargets);
-                }}
-                style={{ flex: 2, padding: '12px', background: '#4caf50', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
-              >
-                💾 Salva Profilo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <TargetSettingsModal
+        open={showProfile}
+        onClose={() => setShowProfile(false)}
+        userProfile={userProfile}
+        setUserProfile={setUserProfile}
+        birthDate={birthDate}
+        setBirthDate={setBirthDate}
+        userTargets={userTargets}
+        applyTargetModeUpdate={applyTargetModeUpdate}
+        calculateAge={calculateAge}
+        calculateSmartTargets={calculateSmartTargets}
+        csvInputRef={csvInputRef}
+        handleCSVUpload={handleCSVUpload}
+        longevityData={longevityData}
+        onOpenLongevityStats={() => { setShowProfile(false); setShowLongevityModal(true); }}
+        auth={auth}
+        saveProfileToFirebase={saveProfileToFirebase}
+      />
       <DateCalendarOverlay
         showDateCalendarModal={showDateCalendarModal}
         onClose={() => setShowDateCalendarModal(false)}
@@ -13553,753 +9494,174 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         onSave={handleSaveQuickNodeEdit}
       />
 
-      {timelineInsertUI != null && (
-        <div
-          role="presentation"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 100019,
-            background: 'rgba(0,0,0,0.55)',
-            backdropFilter: 'blur(6px)',
-            WebkitBackdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-            paddingLeft: 12,
-            paddingRight: 12,
-          }}
-          onClick={() => setTimelineInsertUI(null)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Aggiungi sulla timeline"
-            onClick={(ev) => ev.stopPropagation()}
-            style={{
-              width: '100%',
-              maxWidth: 400,
-              marginBottom: 8,
-              borderRadius: 20,
-              background: 'linear-gradient(180deg, #1a1f2e 0%, #12151c 100%)',
-              border: '1px solid rgba(0,229,255,0.25)',
-              boxShadow: '0 -8px 40px rgba(0,0,0,0.45)',
-              padding: '18px 16px 20px',
-              color: '#e8f4ff',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div>
-                <div style={{ fontSize: '0.65rem', color: '#7dd3fc', letterSpacing: '0.12em', fontWeight: 700 }}>
-                  INSERIMENTO TIMELINE
-                </div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 700, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
-                  🕐 {decimalToTimeStr(timelineInsertUI.hour)}
-                </div>
-              </div>
-              <button
-                type="button"
-                aria-label="Chiudi"
-                onClick={() => setTimelineInsertUI(null)}
-                style={{
-                  width: 36,
-                  height: 36,
-                  border: 'none',
-                  borderRadius: 10,
-                  background: 'rgba(255,255,255,0.08)',
-                  color: '#cbd5e1',
-                  fontSize: '1.25rem',
-                  cursor: 'pointer',
-                  lineHeight: 1,
-                }}
-              >
-                ×
-              </button>
-            </div>
-            {timelineInsertUI.view === 'main' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const hour = timelineInsertUI.hour;
-                    setTimelineInsertUI(null);
-                    const predicted = predictMealType(hour);
-                    setAddedFoods([]);
-                    setEditingMealId(null);
-                    setMealPlannerGhostNote('');
-                    setMealType(predicted);
-                    setDrawerMealTime(hour);
-                    setDrawerMealTimeStr(decimalToTimeStr(hour));
-                    setActiveAction('pasto');
-                    setIsDrawerOpen(true);
-                    setMealBuilderSmartLaunchKey((k) => k + 1);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '14px 16px',
-                    borderRadius: 14,
-                    border: '1px solid rgba(0,229,255,0.35)',
-                    background: 'rgba(0,229,255,0.12)',
-                    color: '#e0f2fe',
-                    fontSize: '0.95rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  🍽️ Aggiungi pasto
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const hour = timelineInsertUI.hour;
-                    setTimelineInsertUI(null);
-                    setEditingWorkoutId(null);
-                    setWorkoutEndTime(Math.min(24, hour + 0.5));
-                    setWorkoutDurationMin(45);
-                    setWorkoutStrengthDetail('');
-                    setActiveAction('allenamento');
-                    setIsDrawerOpen(true);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '14px 16px',
-                    borderRadius: 14,
-                    border: '1px solid rgba(255,109,0,0.4)',
-                    background: 'rgba(255,109,0,0.12)',
-                    color: '#ffedd5',
-                    fontSize: '0.95rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  ⚡ Aggiungi attività / allenamento
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTimelineInsertUI((u) => (u ? { ...u, view: 'events' } : u))}
-                  style={{
-                    width: '100%',
-                    padding: '14px 16px',
-                    borderRadius: 14,
-                    border: '1px solid rgba(148,163,184,0.35)',
-                    background: 'rgba(255,255,255,0.05)',
-                    color: '#cbd5e1',
-                    fontSize: '0.9rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  📌 Altro evento (acqua, riposo…)
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => setTimelineInsertUI((u) => (u ? { ...u, view: 'main' } : u))}
-                  style={{
-                    fontSize: '0.8rem',
-                    color: '#94a3b8',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    marginBottom: 2,
-                    padding: '4px 0',
-                  }}
-                >
-                  ‹ Indietro
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const hour = timelineInsertUI.hour;
-                    setTimelineInsertUI(null);
-                    setDrawerWaterTime(hour);
-                    setActiveAction('acqua');
-                    setIsDrawerOpen(true);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(0,229,255,0.3)',
-                    background: 'rgba(0,229,255,0.08)',
-                    color: '#bae6fd',
-                    fontSize: '0.88rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  💧 Acqua
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const hour = timelineInsertUI.hour;
-                    setTimelineInsertUI(null);
-                    setDrawerFastChargeStart(hour);
-                    setDrawerFastChargeEnd(Math.min(24, hour + 0.5));
-                    setActiveAction('fast_charge_nap');
-                    setIsDrawerOpen(true);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(129,140,248,0.35)',
-                    background: 'rgba(99,102,241,0.1)',
-                    color: '#c7d2fe',
-                    fontSize: '0.88rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  😴 Pisolino
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const hour = timelineInsertUI.hour;
-                    setTimelineInsertUI(null);
-                    setDrawerFastChargeStart(hour);
-                    setDrawerFastChargeEnd(Math.min(24, hour + 0.5));
-                    setActiveAction('fast_charge_meditation');
-                    setIsDrawerOpen(true);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(34,197,94,0.35)',
-                    background: 'rgba(22,163,74,0.1)',
-                    color: '#bbf7d0',
-                    fontSize: '0.88rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  🧘 Meditazione
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const hour = timelineInsertUI.hour;
-                    setTimelineInsertUI(null);
-                    setDrawerFastChargeTime(hour);
-                    setActiveAction('fast_charge_supplements');
-                    setIsDrawerOpen(true);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(168,85,247,0.35)',
-                    background: 'rgba(126,34,206,0.12)',
-                    color: '#e9d5ff',
-                    fontSize: '0.88rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  💊 Integrazione
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <TimelineInsertOverlay
+        timelineInsertUI={timelineInsertUI}
+        onDismiss={() => setTimelineInsertUI(null)}
+        decimalToTimeStr={decimalToTimeStr}
+        onAddMealAtHour={(hour) => {
+          setTimelineInsertUI(null);
+          const predicted = predictMealType(hour);
+          setAddedFoods([]);
+          setEditingMealId(null);
+          setMealPlannerGhostNote('');
+          setMealType(predicted);
+          setDrawerMealTime(hour);
+          setDrawerMealTimeStr(decimalToTimeStr(hour));
+          setActiveAction('pasto');
+          setIsDrawerOpen(true);
+          setMealBuilderSmartLaunchKey((k) => k + 1);
+        }}
+        onAddWorkoutAtHour={(hour) => {
+          setTimelineInsertUI(null);
+          setEditingWorkoutId(null);
+          setWorkoutEndTime(Math.min(24, hour + 0.5));
+          setWorkoutDurationMin(45);
+          setWorkoutStrengthDetail('');
+          setActiveAction('allenamento');
+          setIsDrawerOpen(true);
+        }}
+        onShowEventsView={() => setTimelineInsertUI((u) => (u ? { ...u, view: 'events' } : u))}
+        onBackToMainView={() => setTimelineInsertUI((u) => (u ? { ...u, view: 'main' } : u))}
+        onAddWaterAtHour={(hour) => {
+          setTimelineInsertUI(null);
+          setDrawerWaterTime(hour);
+          setActiveAction('acqua');
+          setIsDrawerOpen(true);
+        }}
+        onAddNapAtHour={(hour) => {
+          setTimelineInsertUI(null);
+          setDrawerFastChargeStart(hour);
+          setDrawerFastChargeEnd(Math.min(24, hour + 0.5));
+          setActiveAction('fast_charge_nap');
+          setIsDrawerOpen(true);
+        }}
+        onAddMeditationAtHour={(hour) => {
+          setTimelineInsertUI(null);
+          setDrawerFastChargeStart(hour);
+          setDrawerFastChargeEnd(Math.min(24, hour + 0.5));
+          setActiveAction('fast_charge_meditation');
+          setIsDrawerOpen(true);
+        }}
+        onAddSupplementsAtHour={(hour) => {
+          setTimelineInsertUI(null);
+          setDrawerFastChargeTime(hour);
+          setActiveAction('fast_charge_supplements');
+          setIsDrawerOpen(true);
+        }}
+      />
 
       {selectedNodeReport && (
-        <div className="modal-overlay" onClick={() => setSelectedNodeReport(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', zIndex: 100020, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: '#1e1e1e', color: '#fff', padding: '25px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
-            <h2 style={{ margin: '0 0 20px 0', borderBottom: '1px solid #333', paddingBottom: '10px', color: '#00e5ff' }}>
-              {selectedNodeReport.type === 'meal' || selectedNodeReport.type === 'ghost_meal' ? '🍽️ Dettaglio Pasto' : '💪 Dettaglio Attività'}
-            </h2>
-            {(() => {
-              const mealSlotKey = String(selectedNodeReport.mealId || selectedNodeReport.id);
-              const nodeTime =
-                selectedNodeReport.type === 'meal' || selectedNodeReport.type === 'ghost_meal'
-                  ? (typeof selectedNodeReport.time === 'number' && !Number.isNaN(selectedNodeReport.time)
-                      ? selectedNodeReport.time
-                      : (() => {
-                          const list = getFoodItemsForMealSlot(activeLog || [], mealSlotKey);
-                          const t = list[0] != null ? getMealTimeFromLogItem(list[0]) : null;
-                          return t != null ? t : 12;
-                        })())
-                  : (selectedNodeReport.time ?? 12);
-              const currentHour = displayTime ?? currentTime;
-              const isFuture = nodeTime > currentHour;
-              return (
-                <div style={{ marginBottom: '16px' }}>
-                  {isFuture ? (
-                    <span style={{ display: 'inline-block', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px', background: 'rgba(0, 229, 255, 0.15)', color: '#00e5ff', border: '1px solid #00e5ff' }}>🔮 PIANIFICAZIONE (Futuro)</span>
-                  ) : (
-                    <span style={{ display: 'inline-block', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px', background: '#2c2c2c', color: '#9e9e9e', border: '1px solid #555' }}>⏳ STORICO (Avvenuto)</span>
-                  )}
-                </div>
+        <TimelineNodeReport
+          report={selectedNodeReport}
+          activeLog={activeLog}
+          displayTime={displayTime}
+          currentTime={currentTime}
+          onClose={() => setSelectedNodeReport(null)}
+          getFoodItemsForMealSlot={getFoodItemsForMealSlot}
+          expandedRecipes={expandedRecipes}
+          toggleRecipe={toggleRecipe}
+          setSelectedFoodForInfo={setSelectedFoodForInfo}
+          setInspectedFood={setInspectedFood}
+          setEditFoodData={setEditFoodData}
+          onEditFromReport={(node) => {
+            setSelectedNodeReport(null);
+            if (node.type === 'ghost_meal') {
+              openGhostMealEditorFromTimelineNode(node);
+              return;
+            }
+            if (node.type === 'meal') {
+              loadMealToConstructor(String(node.mealId || node.id));
+              return;
+            }
+            if (node.type === 'ghost_workout') {
+              const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 18;
+              setEditingWorkoutId(node.id);
+              const ghostSt = node.subType || 'pesi';
+              setWorkoutType(resolveWorkoutActivityTypeId(ghostSt) ?? ghostSt);
+              const durH = Math.max(0.25, Number(node.duration) || 1);
+              setWorkoutEndTime(Math.min(24, t + durH));
+              setWorkoutDurationMin(Math.max(15, Math.min(600, Math.round(durH * 60))));
+              setWorkoutKcal(node.kcal || node.cal || 300);
+              setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
+              setWorkoutMuscles(
+                normalizeMuscleGroupArray(
+                  Array.isArray(node.muscles)
+                    ? node.muscles
+                    : Array.isArray(node.workoutMuscles)
+                      ? node.workoutMuscles
+                      : []
+                )
               );
-            })()}
-            {selectedNodeReport.isGhost === true || selectedNodeReport.type === 'ghost_meal' || selectedNodeReport.type === 'ghost_workout' ? (
-              <div style={{ marginBottom: '24px' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '12px 14px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(0, 229, 255, 0.35)',
-                    background: 'rgba(0, 229, 255, 0.08)',
-                    marginBottom: 16,
-                  }}
-                >
-                  <span style={{ fontSize: '1.35rem' }} aria-hidden>🎯</span>
-                  <span style={{ color: '#00e5ff', fontWeight: 800, fontSize: '0.95rem', letterSpacing: '0.02em' }}>Pianificato da Kentu</span>
-                </div>
-                {(selectedNodeReport.name || selectedNodeReport.title) ? (
-                  <p style={{ margin: '0 0 12px 0', fontSize: '1.05rem', fontWeight: 700, color: '#e8faff' }}>
-                    {selectedNodeReport.name || selectedNodeReport.title}
-                  </p>
-                ) : null}
-                <div
-                  style={{
-                    fontSize: '0.95rem',
-                    lineHeight: 1.65,
-                    color: 'rgba(230, 245, 255, 0.92)',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {String(selectedNodeReport.microDesc || '').trim() || (
-                    <span style={{ color: '#888', fontStyle: 'italic' }}>Nessuna nota biochimica per questo slot.</span>
-                  )}
-                </div>
-                {selectedNodeReport.isGhost === true || selectedNodeReport.type === 'ghost_meal' ? (
-                  (() => {
-                    if (selectedNodeReport.type === 'ghost_workout') return null;
-                    const rows = ghostMealModalFoodRows(selectedNodeReport);
-                    const toN = (v) => {
-                      const n = Number(v);
-                      return Number.isFinite(n) ? n : 0;
-                    };
-                    const totals = rows.reduce(
-                      (acc, f) => ({
-                        kcal: acc.kcal + toN(f.kcal),
-                        prot: acc.prot + toN(f.prot),
-                        carb: acc.carb + toN(f.carb),
-                        fat: acc.fat + toN(f.fat),
-                      }),
-                      { kcal: 0, prot: 0, carb: 0, fat: 0 }
-                    );
-                    return (
-                      <div style={{ marginTop: 16, marginBottom: 4 }}>
-                        <div
-                          style={{
-                            fontSize: '0.68rem',
-                            fontWeight: 800,
-                            color: '#7dd3fc',
-                            marginBottom: 8,
-                            letterSpacing: '0.06em',
-                          }}
-                        >
-                          Alimenti
-                        </div>
-                        {rows.length === 0 ? (
-                          <span
-                            style={{
-                              color: 'rgba(255,255,255,0.38)',
-                              fontStyle: 'italic',
-                              fontSize: '0.9rem',
-                            }}
-                          >
-                            Empty meal
-                          </span>
-                        ) : (
-                          <>
-                            <div
-                              style={{
-                                display: 'flex',
-                                flexWrap: 'wrap',
-                                gap: '10px 16px',
-                                padding: '10px 12px',
-                                marginBottom: 12,
-                                background: 'rgba(0, 229, 255, 0.08)',
-                                borderRadius: 10,
-                                border: '1px solid rgba(0, 229, 255, 0.22)',
-                                fontSize: '0.78rem',
-                                color: '#bae6fd',
-                              }}
-                            >
-                              <span>
-                                <strong style={{ color: '#e0f2fe' }}>Tot.</strong>{' '}
-                                {Math.round(totals.kcal)} kcal
-                              </span>
-                              <span>P {Math.round(totals.prot * 10) / 10} g</span>
-                              <span>C {Math.round(totals.carb * 10) / 10} g</span>
-                              <span>F {Math.round(totals.fat * 10) / 10} g</span>
-                            </div>
-                            <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-                              {rows.map((f, i) => {
-                                const name = String(f.name || '').trim() || 'Alimento';
-                                const qty = Math.round(toN(f.qty));
-                                const hasQty = qty > 0;
-                                return (
-                                  <div
-                                    key={`ghost_meal_row_${i}_${name.slice(0, 24)}`}
-                                    style={{
-                                      padding: '10px 0',
-                                      borderBottom: '1px solid rgba(255,255,255,0.08)',
-                                      fontSize: '0.85rem',
-                                    }}
-                                  >
-                                    <div style={{ fontWeight: 600, color: '#e8f4ff' }}>{name}</div>
-                                    <div
-                                      style={{
-                                        display: 'flex',
-                                        flexWrap: 'wrap',
-                                        gap: '10px 14px',
-                                        marginTop: 4,
-                                        color: '#94a3b8',
-                                        fontSize: '0.78rem',
-                                      }}
-                                    >
-                                      <span>{hasQty ? `${qty} g` : '—'}</span>
-                                      <span>{Math.round(toN(f.kcal)) || '—'} kcal</span>
-                                      <span>P {toN(f.prot) ? Math.round(toN(f.prot) * 10) / 10 : '—'} g</span>
-                                      <span>C {toN(f.carb) ? Math.round(toN(f.carb) * 10) / 10 : '—'} g</span>
-                                      <span>F {toN(f.fat) ? Math.round(toN(f.fat) * 10) / 10 : '—'} g</span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()
-                ) : null}
-              </div>
-            ) : selectedNodeReport.type === 'meal' ? (
-              <div>
-                {(() => {
-                  const slotKey = String(selectedNodeReport.mealId || selectedNodeReport.id);
-                  const items =
-                    Array.isArray(selectedNodeReport.items) && selectedNodeReport.items.length > 0
-                      ? selectedNodeReport.items
-                      : Array.isArray(selectedNodeReport.foods) && selectedNodeReport.foods.length > 0
-                        ? selectedNodeReport.foods
-                        : getFoodItemsForMealSlot(activeLog || [], slotKey);
-                  if (items.length === 0) return <p>Nessun alimento trovato.</p>;
-
-                  const totals = items.reduce((acc, item) => {
-                    acc.kcal += parseFloat(item.kcal || item.cal || 0);
-                    acc.prot += parseFloat(item.prot || 0);
-                    acc.carb += parseFloat(item.carb || 0);
-                    acc.fat += parseFloat(item.fatTotal || item.fat || 0);
-                    return acc;
-                  }, { kcal: 0, prot: 0, carb: 0, fat: 0 });
-
-                  return (
-                    <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', background: '#2c2c2c', padding: '15px', borderRadius: '8px', fontWeight: 'bold' }}>
-                        <span style={{ color: '#ff9800' }}>🔥 {Math.round(totals.kcal)} kcal</span>
-                        <span style={{ color: '#f44336' }}>🥩 {Math.round(totals.prot)}g</span>
-                        <span style={{ color: '#4caf50' }}>🍞 {Math.round(totals.carb)}g</span>
-                        <span style={{ color: '#ffeb3b' }}>🥑 {Math.round(totals.fat)}g</span>
-                      </div>
-                      <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 25px 0', maxHeight: '280px', overflowY: 'auto' }}>
-                        {items.map(item => {
-                          const recipeExpandableModal = (item.type === 'recipe' || item.isRecipe === true)
-                            && Array.isArray(item.ingredients)
-                            && item.ingredients.length > 0;
-                          const rk = item.id != null ? String(item.id) : '';
-                          const recipeOpenModal = rk && !!expandedRecipes[rk];
-                          return (
-                            <li key={item.id} style={{ padding: '10px 0', borderBottom: '1px solid #333' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', minWidth: 0 }}>
-                                  {item.name || item.desc}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedFoodForInfo(item);
-                                    }}
-                                    title="Etichetta nutrizionale"
-                                    aria-label="Etichetta nutrizionale"
-                                    style={{
-                                      opacity: 0.4,
-                                      background: 'none',
-                                      border: 'none',
-                                      color: '#94a3b8',
-                                      cursor: 'pointer',
-                                      fontSize: '0.65rem',
-                                      padding: '0 4px',
-                                      lineHeight: 1,
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    ℹ
-                                  </button>
-                                  {recipeExpandableModal && (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleRecipe(item.id)}
-                                      aria-expanded={recipeOpenModal}
-                                      aria-label={recipeOpenModal ? 'Nascondi ingredienti' : 'Mostra ingredienti'}
-                                      style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.7rem', padding: '2px 6px' }}
-                                    >
-                                      {recipeOpenModal ? '▲' : '▼'}
-                                    </button>
-                                  )}
-                                </span>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                                  <span style={{ color: '#aaa' }}>{item.qta || item.weight}g</span>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setInspectedFood(item);
-                                      setEditFoodData({ ...item });
-                                    }}
-                                    style={{ background: 'transparent', border: 'none', color: '#00e5ff', cursor: 'pointer', fontSize: '1.2rem', padding: '0 5px' }}
-                                    title="Ispeziona/Modifica Nutrienti"
-                                  >
-                                    🔍
-                                  </button>
-                                </span>
-                              </div>
-                              {recipeExpandableModal && recipeOpenModal && (
-                                <div
-                                  style={{
-                                    marginTop: '8px',
-                                    marginLeft: '4px',
-                                    paddingLeft: '12px',
-                                    paddingTop: '6px',
-                                    paddingBottom: '6px',
-                                    borderLeft: '2px solid #444',
-                                    background: 'rgba(0,0,0,0.25)',
-                                    borderRadius: '0 8px 8px 0'
-                                  }}
-                                >
-                                  {item.ingredients.map((ing, ingIdx) => {
-                                    const w = Number(ing.weight);
-                                    const wg = Number.isFinite(w) ? `${Math.round(w)}g` : '—';
-                                    const kc = Math.round(Number(ing.kcal) || 0);
-                                    const p = Number(ing.prot);
-                                    const c = Number(ing.carb);
-                                    const g = Number(ing.fat);
-                                    const nm = ing.name != null ? String(ing.name) : 'Ingrediente';
-                                    return (
-                                      <div
-                                        key={ing.id != null ? String(ing.id) : `ding_${ingIdx}`}
-                                        style={{ fontSize: '0.85rem', color: '#aaa', lineHeight: 1.45, marginBottom: ingIdx < item.ingredients.length - 1 ? '6px' : 0 }}
-                                      >
-                                        {nm} · {wg} · {kc} kcal · P {(Number.isFinite(p) ? p : 0).toFixed(1)}g · C {(Number.isFinite(c) ? c : 0).toFixed(1)}g · G {(Number.isFinite(g) ? g : 0).toFixed(1)}g
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </>
-                  );
-                })()}
-              </div>
-            ) : (
-              <div style={{ marginBottom: '25px', fontSize: '1.1rem', lineHeight: '1.8' }}>
-                <p style={{ margin: '5px 0' }}><strong>Attività:</strong> {selectedNodeReport.name || selectedNodeReport.desc || 'Allenamento'}</p>
-                <p style={{ margin: '5px 0' }}><strong>Impatto:</strong> 🔥 {Math.round(selectedNodeReport.kcal || selectedNodeReport.cal || 0)} kcal bruciate</p>
-                {selectedNodeReport.duration != null && <p style={{ margin: '5px 0' }}><strong>Durata:</strong> ⏱️ {Math.round(selectedNodeReport.duration * 60)} minuti</p>}
-                {(selectedNodeReport.muscles || selectedNodeReport.workoutMuscles) && (selectedNodeReport.muscles || selectedNodeReport.workoutMuscles).length > 0 && (
-                  <p style={{ margin: '5px 0', textTransform: 'capitalize' }}>
-                    <strong>Muscoli target:</strong> 🦾 {(selectedNodeReport.muscles || selectedNodeReport.workoutMuscles).join(', ')}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '15px' }}>
-              <button type="button" onClick={() => setSelectedNodeReport(null)} style={{ flex: 1, padding: '12px', background: '#444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>
-                Chiudi
-              </button>
-              <button type="button" onClick={() => {
-                const node = selectedNodeReport;
-                setSelectedNodeReport(null);
-                if (node.type === 'ghost_meal') {
-                  openGhostMealEditorFromTimelineNode(node);
-                  return;
-                }
-                if (node.type === 'meal') {
-                  loadMealToConstructor(String(node.mealId || node.id));
-                  return;
-                }
-                if (node.type === 'ghost_workout') {
-                  const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 18;
-                  setEditingWorkoutId(node.id);
-                  const ghostSt = node.subType || 'pesi';
-                  setWorkoutType(resolveWorkoutActivityTypeId(ghostSt) ?? ghostSt);
-                  const durH = Math.max(0.25, Number(node.duration) || 1);
-                  setWorkoutEndTime(Math.min(24, t + durH));
-                  setWorkoutDurationMin(Math.max(15, Math.min(600, Math.round(durH * 60))));
-                  setWorkoutKcal(node.kcal || node.cal || 300);
-                  setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
-                  setWorkoutMuscles(
-                    normalizeMuscleGroupArray(
-                      Array.isArray(node.muscles)
-                        ? node.muscles
-                        : Array.isArray(node.workoutMuscles)
-                          ? node.workoutMuscles
-                          : []
-                    )
-                  );
-                  setActiveAction('allenamento');
-                  setIsDrawerOpen(true);
-                  return;
-                }
-                setEditingWorkoutId(node.id);
-                const editSt = node.subType || (node.type === 'work' ? 'lavoro' : 'pesi');
-                setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
-                const startT = node.time ?? 12;
-                const durH = Math.max(0.25, Number(node.duration) || 1);
-                setWorkoutEndTime(Math.min(24, startT + durH));
-                setWorkoutDurationMin(Math.max(15, Math.min(600, Math.round(durH * 60))));
-                setWorkoutKcal(node.kcal || node.cal || 300);
-                setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
-                setWorkoutMuscles(
-                  normalizeMuscleGroupArray(
-                    Array.isArray(node.muscles)
-                      ? node.muscles
-                      : Array.isArray(node.workoutMuscles)
-                        ? node.workoutMuscles
-                        : []
-                  )
-                );
-                setActiveAction('allenamento');
-                setIsDrawerOpen(true);
-              }} style={{ flex: 1, padding: '12px', background: '#00e5ff', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>
-                ✏️ Modifica
-              </button>
-            </div>
-          </div>
-        </div>
+              setActiveAction('allenamento');
+              setIsDrawerOpen(true);
+              return;
+            }
+            setEditingWorkoutId(node.id);
+            const editSt = node.subType || (node.type === 'work' ? 'lavoro' : 'pesi');
+            setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
+            const startT = node.time ?? 12;
+            const durH = Math.max(0.25, Number(node.duration) || 1);
+            setWorkoutEndTime(Math.min(24, startT + durH));
+            setWorkoutDurationMin(Math.max(15, Math.min(600, Math.round(durH * 60))));
+            setWorkoutKcal(node.kcal || node.cal || 300);
+            setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
+            setWorkoutMuscles(
+              normalizeMuscleGroupArray(
+                Array.isArray(node.muscles)
+                  ? node.muscles
+                  : Array.isArray(node.workoutMuscles)
+                    ? node.workoutMuscles
+                    : []
+              )
+            );
+            setActiveAction('allenamento');
+            setIsDrawerOpen(true);
+          }}
+        />
       )}
 
       {/* MODALE ISPEZIONE E MODIFICA ALIMENTO */}
       {inspectedFood && editFoodData && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100020, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px', backdropFilter: 'blur(5px)' }}>
-          <div style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '20px', width: '100%', maxWidth: '400px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '5px', textAlign: 'center' }}>
-              {editFoodData.name || editFoodData.nome || editFoodData.desc || 'Alimento'}
-            </h3>
-            <div style={{ textAlign: 'center', color: '#888', fontSize: '0.8rem', marginBottom: '20px' }}>
-              Modifica i valori nutrizionali
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <label style={{ color: '#aaa', fontSize: '0.8rem', marginBottom: '5px' }}>Quantità (g/ml)</label>
-                <input type="number" value={editFoodData.qty ?? editFoodData.quantita ?? editFoodData.weight ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, qty: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '8px' }} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <label style={{ color: '#aaa', fontSize: '0.8rem', marginBottom: '5px' }}>Calorie (kcal)</label>
-                <input type="number" value={editFoodData.kcal ?? editFoodData.calorie ?? editFoodData.cal ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, kcal: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '8px' }} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <label style={{ color: '#b388ff', fontSize: '0.8rem', marginBottom: '5px' }}>Proteine (g)</label>
-                <input type="number" value={editFoodData.prot ?? editFoodData.proteine ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, prot: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #b388ff55', color: '#fff', padding: '10px', borderRadius: '8px' }} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <label style={{ color: '#00e676', fontSize: '0.8rem', marginBottom: '5px' }}>Carboidrati (g)</label>
-                <input type="number" value={editFoodData.carb ?? editFoodData.carboidrati ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, carb: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #00e67655', color: '#fff', padding: '10px', borderRadius: '8px' }} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <label style={{ color: '#ffea00', fontSize: '0.8rem', marginBottom: '5px' }}>Grassi (g)</label>
-                <input type="number" value={editFoodData.fat ?? editFoodData.grassi ?? editFoodData.fatTotal ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, fat: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #ffea0055', color: '#fff', padding: '10px', borderRadius: '8px' }} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <label style={{ color: '#f97316', fontSize: '0.8rem', marginBottom: '5px' }}>Fibre (g)</label>
-                <input type="number" value={editFoodData.fibre ?? 0} onChange={(e) => setEditFoodData({ ...editFoodData, fibre: Number(e.target.value) })} style={{ background: '#222', border: '1px solid #f9731655', color: '#fff', padding: '10px', borderRadius: '8px' }} />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  const qty = editFoodData.qty ?? editFoodData.quantita ?? editFoodData.weight ?? 0;
-                  const kcal = editFoodData.kcal ?? editFoodData.calorie ?? editFoodData.cal ?? 0;
-                  const prot = editFoodData.prot ?? editFoodData.proteine ?? 0;
-                  const carb = editFoodData.carb ?? editFoodData.carboidrati ?? 0;
-                  const fat = editFoodData.fat ?? editFoodData.grassi ?? editFoodData.fatTotal ?? 0;
-                  const updated = {
-                    ...inspectedFood,
-                    weight: qty,
-                    qta: qty,
-                    kcal,
-                    cal: kcal,
-                    prot,
-                    carb,
-                    fat,
-                    fatTotal: fat,
-                    fibre: editFoodData.fibre,
-                    name: editFoodData.name ?? editFoodData.nome ?? editFoodData.desc,
-                    desc: editFoodData.desc ?? editFoodData.name ?? editFoodData.nome
-                  };
-                  if (isSimulationMode) {
-                    setSimulatedLog(prev => (prev || []).map(item => item.id === inspectedFood.id ? updated : item));
-                    setInspectedFood(null);
-                    setEditFoodData(null);
-                    return;
-                  }
-                  const nextLog = dailyLog.map(item => item.id === inspectedFood.id ? updated : item);
-                  setDailyLog(nextLog);
-                  syncDatiFirebase(nextLog, manualNodes);
-                  setInspectedFood(null);
-                  setEditFoodData(null);
-                }}
-                style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}
-              >
-                💾 Salva Modifiche
-              </button>
-              <button
-                type="button"
-                onClick={handleVerifyFoodAI}
-                disabled={isAIVerifying}
-                style={{ background: '#2a2a2a', color: isAIVerifying ? '#888' : '#00e5ff', border: `1px solid ${isAIVerifying ? '#444' : '#00e5ff'}`, padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: isAIVerifying ? 'not-allowed' : 'pointer', display: 'flex', justifyContent: 'center', gap: '8px', transition: 'all 0.3s' }}
-              >
-                {isAIVerifying ? (
-                  '⏳ Analisi in corso...'
-                ) : (
-                  <>
-                    <img src="/nuova-icona.png" alt="" width={20} height={20} decoding="async" style={{ objectFit: 'contain' }} />
-                    Verifica Correttezza (AI)
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setInspectedFood(null); setEditFoodData(null); }}
-                style={{ background: 'transparent', color: '#888', border: 'none', padding: '12px', borderRadius: '10px', fontSize: '0.9rem', cursor: 'pointer', marginTop: '5px' }}
-              >
-                Annulla
-              </button>
-            </div>
-          </div>
-        </div>
+        <FoodInspectorModal
+          inspectedFood={inspectedFood}
+          editFoodData={editFoodData}
+          setEditFoodData={setEditFoodData}
+          isAIVerifying={isAIVerifying}
+          onVerifyAI={handleVerifyFoodAI}
+          onSave={() => {
+            const qty = editFoodData.qty ?? editFoodData.quantita ?? editFoodData.weight ?? 0;
+            const kcal = editFoodData.kcal ?? editFoodData.calorie ?? editFoodData.cal ?? 0;
+            const prot = editFoodData.prot ?? editFoodData.proteine ?? 0;
+            const carb = editFoodData.carb ?? editFoodData.carboidrati ?? 0;
+            const fat = editFoodData.fat ?? editFoodData.grassi ?? editFoodData.fatTotal ?? 0;
+            const updated = {
+              ...inspectedFood,
+              weight: qty,
+              qta: qty,
+              kcal,
+              cal: kcal,
+              prot,
+              carb,
+              fat,
+              fatTotal: fat,
+              fibre: editFoodData.fibre,
+              name: editFoodData.name ?? editFoodData.nome ?? editFoodData.desc,
+              desc: editFoodData.desc ?? editFoodData.name ?? editFoodData.nome
+            };
+            if (isSimulationMode) {
+              setSimulatedLog(prev => (prev || []).map(item => item.id === inspectedFood.id ? updated : item));
+              setInspectedFood(null);
+              setEditFoodData(null);
+              return;
+            }
+            const nextLog = dailyLog.map(item => item.id === inspectedFood.id ? updated : item);
+            setDailyLog(nextLog);
+            syncDatiFirebase(nextLog, manualNodes);
+            setInspectedFood(null);
+            setEditFoodData(null);
+          }}
+          onCancel={() => { setInspectedFood(null); setEditFoodData(null); }}
+        />
       )}
 
       <ReportModalOverlay
@@ -14486,150 +9848,40 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       />
 
       {showLongevityModal && longevityData && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,12,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100000, overflowY: 'auto', padding: '20px', backdropFilter: 'blur(10px)' }}>
-          <div style={{ width: '100%', maxWidth: '500px', marginTop: '40px' }}>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
-              <div>
-                <h2 style={{ color: '#fff', margin: '0 0 5px 0', fontSize: '1.8rem' }}>Healthspan</h2>
-                <select
-                  value={longevityDays}
-                  onChange={(e) => setLongevityDays(Number(e.target.value))}
-                  style={{ background: 'transparent', color: '#00e5ff', border: 'none', borderBottom: '1px dashed #00e5ff', padding: '2px 0', cursor: 'pointer', outline: 'none', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}
-                >
-                  <option value={7} style={{ background: '#1a1a1c' }}>Ultimi 7 Giorni</option>
-                  <option value={30} style={{ background: '#1a1a1c' }}>Ultimo Mese</option>
-                  <option value={90} style={{ background: '#1a1a1c' }}>Ultimi 3 Mesi</option>
-                  <option value={365} style={{ background: '#1a1a1c' }}>Ultimo Anno</option>
-                </select>
-              </div>
-              <button type="button" onClick={() => { setShowLongevityModal(false); setExpandedRiskId(null); }} style={{ background: '#222', color: '#fff', border: 'none', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px', position: 'relative' }}>
-              <div style={{ width: '180px', height: '180px', borderRadius: '50%', border: `4px solid ${longevityData.color}`, background: `${longevityData.color}10`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 40px ${longevityData.color}30` }}>
-                <span style={{ color: longevityData.color, fontSize: '4rem', fontWeight: 'bold', lineHeight: '1' }}>{longevityData.masterScore}</span>
-                <span style={{ color: '#aaa', fontSize: '0.85rem', marginTop: '5px', textTransform: 'uppercase', letterSpacing: '1px' }}>Score statistiche</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLongevityModal(false);
-                  handleBottomNavTabSelect('analisi');
-                }}
-                aria-label="Apri timeline"
-                title="Apri Timeline"
-                style={{
-                  position: 'absolute',
-                  right: 'calc(50% - 108px)',
-                  bottom: -6,
-                  width: 34,
-                  height: 34,
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  background: 'rgba(2,6,23,0.72)',
-                  color: '#cbd5e1',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.95rem',
-                  cursor: 'pointer',
-                  boxShadow: '0 6px 16px rgba(0,0,0,0.35)',
-                  backdropFilter: 'blur(6px)',
-                }}
-              >
-                🕒
-              </button>
-            </div>
-
-            <HomeView
-              longevity={longevityEngineScore}
-              explanation={longevityExplanation}
-              dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
-              dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
-            />
-
-            <div style={{ marginBottom: '32px', color: '#e8e8e8' }}>
-              <LongevityView
-                data={longevityEngineScore}
-                minimalOnly={false}
-                showPriorityFocus={false}
-                userAge={userAge}
-                bodyMetricsHistory={bodyMetricsHistory}
-                scoreHistory={longevityScoreHistory}
-                periodAnchorDate={currentTrackerDate}
-                fullHistory={fullHistory}
-                userTargets={userTargets}
-                userProfile={userProfile}
-                onUpdateTDEE={handleUpdateTDEE}
-                tdeeHistory={tdeeHistory}
-                predictionCalibration={predictiveCalibration}
-                onBalanceCsvImport={handleCSVUpload}
-                onQuickWeighInSubmit={handleQuickWeighInFromHistory}
-                onDeleteBodyMetrics={handleDeleteBodyMetrics}
-                pastDaysStorico={pastDaysStorico}
-                weeklyTrendData={weeklyTrendData}
-                weeklyMicrosTotals={weeklyMicrosTotals}
-                weeklyKcalChartReference={weeklyKcalChartReference}
-              />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>
-              {longevityModalRiskRows.map(risk => {
-                let rColor = '#00e5ff';
-                if (risk.data.score > 40) rColor = '#f44336';
-                else if (risk.data.score > 20) rColor = '#ffb300';
-
-                const isExpanded = expandedRiskId === risk.id;
-
-                return (
-                  <div
-                    key={risk.id}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setExpandedRiskId(isExpanded ? null : risk.id);
-                      }
-                    }}
-                    onClick={() => setExpandedRiskId(isExpanded ? null : risk.id)}
-                    style={{ background: '#1a1a1c', padding: '16px', borderRadius: '16px', border: `1px solid ${isExpanded ? rColor : '#2a2a2c'}`, cursor: 'pointer', transition: 'all 0.3s ease' }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontSize: '1.5rem' }}>{risk.icon}</span>
-                        <div>
-                          <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '1rem' }}>{risk.label}</div>
-                          <div style={{ color: '#666', fontSize: '0.75rem' }}>{risk.desc}</div>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ color: rColor, fontWeight: 'bold', fontSize: '1.2rem' }}>{risk.data.score}%</span>
-                        <span style={{ color: '#555', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s ease' }}>▼</span>
-                      </div>
-                    </div>
-                    <div style={{ width: '100%', height: '6px', background: '#111', borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(100, risk.data.score)}%`, height: '100%', background: rColor, borderRadius: '3px', transition: 'width 1s ease-out' }} />
-                    </div>
-
-                    {isExpanded && (
-                      <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #2a2a2c' }}>
-                        <div style={{ fontSize: '0.75rem', color: '#00e5ff', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '1px' }}>Insight Diagnostico</div>
-                        <ul style={{ margin: 0, paddingLeft: '18px', color: '#ccc', fontSize: '0.85rem', lineHeight: '1.5' }}>
-                          {risk.data.details.map((detail, idx) => (
-                            <li key={idx} style={{ marginBottom: '6px' }}>{detail}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-          </div>
-        </div>
+        <HealthspanOverlay
+          longevityData={longevityData}
+          longevityDays={longevityDays}
+          setLongevityDays={setLongevityDays}
+          onClose={() => { setShowLongevityModal(false); setExpandedRiskId(null); }}
+          onOpenAnalisiTab={() => {
+            setShowLongevityModal(false);
+            handleBottomNavTabSelect('analisi');
+          }}
+          longevityEngineScore={longevityEngineScore}
+          longevityExplanation={longevityExplanation}
+          dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
+          dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
+          userAge={userAge}
+          bodyMetricsHistory={bodyMetricsHistory}
+          longevityScoreHistory={longevityScoreHistory}
+          currentTrackerDate={currentTrackerDate}
+          fullHistory={fullHistory}
+          userTargets={userTargets}
+          userProfile={userProfile}
+          onUpdateTDEE={handleUpdateTDEE}
+          tdeeHistory={tdeeHistory}
+          predictiveCalibration={predictiveCalibration}
+          onBalanceCsvImport={handleCSVUpload}
+          onQuickWeighInSubmit={handleQuickWeighInFromHistory}
+          onDeleteBodyMetrics={handleDeleteBodyMetrics}
+          pastDaysStorico={pastDaysStorico}
+          weeklyTrendData={weeklyTrendData}
+          weeklyMicrosTotals={weeklyMicrosTotals}
+          weeklyKcalChartReference={weeklyKcalChartReference}
+          longevityModalRiskRows={longevityModalRiskRows}
+          expandedRiskId={expandedRiskId}
+          setExpandedRiskId={setExpandedRiskId}
+        />
       )}
 
       {fixedAppBottomChrome}

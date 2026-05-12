@@ -21,16 +21,35 @@ export function buildMetabolicStateFromBundle(bundle) {
 
   const dbg = b.debug != null && typeof b.debug === 'object' ? b.debug : {};
 
-  const zoneRaw = dbg.zone;
-  const zone =
-    zoneRaw === 'green' || zoneRaw === 'orange' || zoneRaw === 'red' ? zoneRaw : null;
+  const inertial =
+    b.mapPositionInertial != null && typeof b.mapPositionInertial === 'object'
+      ? b.mapPositionInertial
+      : null;
 
-  const aura = numOrNull(dbg.finalAura);
+  let zone;
+  let aura;
+  let bodyX;
+  let bodyY;
+  let bodyDistance;
+  let quadrant;
 
-  const bodyX = numOrNull(b.x);
-  const bodyY = numOrNull(b.y);
-  const bodyDistance = numOrNull(b.distance);
-  const quadrant = typeof b.quadrant === 'string' && b.quadrant.length ? b.quadrant : null;
+  if (inertial != null && Number.isFinite(Number(inertial.x)) && Number.isFinite(Number(inertial.y))) {
+    const zRaw = inertial.zone;
+    zone = zRaw === 'green' || zRaw === 'orange' || zRaw === 'red' ? zRaw : null;
+    aura = numOrNull(inertial.finalAura);
+    bodyX = numOrNull(inertial.x);
+    bodyY = numOrNull(inertial.y);
+    bodyDistance = numOrNull(inertial.distance);
+    quadrant = typeof inertial.quadrant === 'string' && inertial.quadrant.length ? inertial.quadrant : null;
+  } else {
+    const zoneRaw = dbg.zone;
+    zone = zoneRaw === 'green' || zoneRaw === 'orange' || zoneRaw === 'red' ? zoneRaw : null;
+    aura = numOrNull(dbg.finalAura);
+    bodyX = numOrNull(b.x);
+    bodyY = numOrNull(b.y);
+    bodyDistance = numOrNull(b.distance);
+    quadrant = typeof b.quadrant === 'string' && b.quadrant.length ? b.quadrant : null;
+  }
 
   const position = {
     x: bodyX,
