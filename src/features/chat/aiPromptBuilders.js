@@ -31,7 +31,13 @@ export function buildQuickBriefingSecretPrompt({
   dynamicDailyKcal,
   totali,
   userTargets,
+  strategicPlan,
 }) {
+  const daysMap = ['domenica', 'lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato'];
+  const todayPlan = strategicPlan?.days?.[daysMap[new Date().getDay()]];
+  const strategyContext = todayPlan 
+    ? `\n\n[INFO CRITICA: L'utente ha pianificato per OGGI un'attività strategica: ${todayPlan.type} (Focus: ${todayPlan.focus?.join(', ') || 'Nessuno'}) alle ore ${todayPlan.hour}. Tieni conto di questo impegno nel tuo briefing, suggerendo come prepararsi nutrizionalmente e mentalmente.]`
+    : '';
   const bb = Math.round(Number(bodyBatteryPercent) || 0);
   const dynK = Math.round(Number(dynamicDailyKcal) || 0);
   const eatenK = Math.round(Number(totali?.kcal) || 0);
@@ -52,7 +58,8 @@ export function buildQuickBriefingSecretPrompt({
     `QUICK_ACTION=BRIEFING. Sintesi operativa solo da questi dati (non chiedere altri dati): ` +
     `BB ${bb}% · budget kcal giornaliero ~${dynK} · assunte ${eatenK}kcal · ${kcalBalanceSnippet} · ` +
     `macro residui ${rProt}g P / ${rCarb}g C / ${rFat}g F. ` +
-    `Applica REGOLE DI STILE Quick Action (Lavagna, max 3 elenchi, zero intro/outro).`
+    `Applica REGOLE DI STILE Quick Action (Lavagna, max 3 elenchi, zero intro/outro).` +
+    strategyContext
   );
 }
 

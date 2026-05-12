@@ -37,6 +37,30 @@ export function formatDecimalHourIt(dec) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+/**
+ * Ora di timeline per workout/attività/ghost_workout: solo se definita esplicitamente
+ * (`time`, `mealTime`, `hour` come numero o stringa parsabile). Nessun default a mezzogiorno.
+ * @param {object | null | undefined} entry
+ * @returns {number | null} ore decimali 0–23.99 o null se assente/invalida
+ */
+export function resolveActivityOrWorkoutTimelineHour(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const clamp = (x) => Math.max(0, Math.min(23.99, x));
+  const tNum = Number(entry.time);
+  if (Number.isFinite(tNum)) return clamp(tNum);
+  const mtNum = Number(entry.mealTime);
+  if (Number.isFinite(mtNum)) return clamp(mtNum);
+  const hNum = Number(entry.hour);
+  if (Number.isFinite(hNum)) return clamp(hNum);
+  const raw = entry.time ?? entry.mealTime ?? entry.hour;
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const p = parseFlexibleTimeToDecimal(s);
+  if (p == null || Number.isNaN(p)) return null;
+  return clamp(p);
+}
+
 export function parseFlexibleTimeToDecimal(text) {
   const s = String(text || '').trim().toLowerCase();
   const m = s.match(/\b(\d{1,2})[:h.](\d{2})\b/);

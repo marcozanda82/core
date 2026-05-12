@@ -41,6 +41,9 @@ import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
 import KentuChatUI from './features/chat/KentuChatUI';
 import TargetSettingsModal from './components/modals/TargetSettingsModal';
 import MainMenuDrawer from './layout/MainMenuDrawer';
+import StrategicPlannerOverlay from './features/planning/StrategicPlannerOverlay';
+import TodayStrategyBanner from './features/planning/TodayStrategyBanner';
+import { useStrategicPlanner } from './hooks/useStrategicPlanner';
 import { UserNutritionGoalsProvider } from './UserNutritionGoalsContext';
 import { mergeProfileNutritionFromServer, buildNutritionGoalsSnapshot } from './userNutritionGoals';
 import {
@@ -155,6 +158,7 @@ import {
   normalizeWorkoutSearchKey,
   formatDecimalHourIt,
   parseFlexibleTimeToDecimal,
+  resolveActivityOrWorkoutTimelineHour,
   extractWorkoutSearchKeysFromMessage,
   detectWorkoutIntentFromChat,
   findLastMatchingWorkoutSlot,
@@ -788,6 +792,7 @@ export default function SalaComandi() {
   }, []);
 
   const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
+  const [showStrategicPlanner, setShowStrategicPlanner] = useState(false);
   /** Incrementato ad ogni apertura wizard: consente idratazione da Firebase senza sovrascrivere durante l’editing. */
   const [planningWizardHydrateNonce, setPlanningWizardHydrateNonce] = useState(0);
   const planningWizardMealConfirmGuardRef = useRef({ busy: false, lastAt: 0 });
@@ -888,6 +893,11 @@ export default function SalaComandi() {
   const nutritionGoalsValue = useMemo(
     () => buildNutritionGoalsSnapshot(userProfile, userTargets),
     [userProfile, userTargets]
+  );
+
+  const { strategicPlan, isPlannerLoading, updateDayPlan, updateSettings } = useStrategicPlanner(
+    db,
+    userProfile?.uid || user?.uid
   );
 
   const [workoutType, setWorkoutType] = useState('pesi');
@@ -1719,13 +1729,8 @@ export default function SalaComandi() {
     return (activeLog || [])
       .filter((e) => e && (e.type === 'workout' || e.type === 'activity'))
       .map((e, idx) => {
-        let t = Number(e.time);
-        if (!Number.isFinite(t)) t = Number(e.mealTime);
-        if (!Number.isFinite(t)) {
-          const parsed = parseFlexibleTimeToDecimal(String(e.time || e.mealTime || '12:00'));
-          t = parsed != null ? parsed : 12;
-        }
-        const normalizedTime = Math.max(0, Math.min(23.99, t));
+        const normalizedTime = resolveActivityOrWorkoutTimelineHour(e);
+        if (normalizedTime == null) return null;
         const isCardio =
           String(e.workoutType || e.activity || '').toLowerCase() === 'cardio' ||
           /cardio|corsa|bike|hiit/i.test(String(e.name || e.desc || ''));
@@ -1742,13 +1747,29 @@ export default function SalaComandi() {
           desc: e.desc || e.name || '',
           icon: isCardio ? '🏃' : '🏋️',
         };
-      });
+      })
+      .filter(Boolean);
   }, [activeLog]);
 
+  const hasRealWorkoutInActiveLog = useMemo(
+    () => (activeLog || []).some((n) => n && n.type === 'workout' && n.isGhost !== true),
+    [activeLog]
+  );
+
+  /** Esclude ghost_workout senza ora definita o quando un workout reale nel diario li sostituisce. */
+  const manualNodesForTimeline = useMemo(() => {
+    return (manualNodes || []).filter((n) => {
+      if (!n) return false;
+      if (n.type !== 'ghost_workout') return true;
+      if (hasRealWorkoutInActiveLog) return false;
+      return resolveActivityOrWorkoutTimelineHour(n) != null;
+    });
+  }, [manualNodes, hasRealWorkoutInActiveLog]);
+
   const allNodes = useMemo(() => {
-    return [...computedMealNodes, ...ghostMealTimelineNodes, ...computedActivityTimelineNodes, ...manualNodes]
+    return [...computedMealNodes, ...ghostMealTimelineNodes, ...computedActivityTimelineNodes, ...manualNodesForTimeline]
       .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
-  }, [computedMealNodes, ghostMealTimelineNodes, computedActivityTimelineNodes, manualNodes]);
+  }, [computedMealNodes, ghostMealTimelineNodes, computedActivityTimelineNodes, manualNodesForTimeline]);
 
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
@@ -7125,6 +7146,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         }}
       />
 
+      <TodayStrategyBanner
+        strategicPlan={strategicPlan}
+        onOpenPlanner={() => setShowStrategicPlanner(true)}
+      />
+
       {MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab) && (
       <div
         key={activeBottomTab}
@@ -8116,6 +8142,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           setDayProfile={setDayProfile}
           calorieTuning={calorieTuning}
           setCalorieTuning={setCalorieTuning}
+          onOpenStrategicPlanner={() => setShowStrategicPlanner(true)}
         />
 
         {/* VISTA CHAT AI */}
@@ -8134,7 +8161,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             bodyBattery={bodyBattery}
             totali={totali}
             fullHistory={fullHistory}
-            buildQuickBriefingSecretPrompt={buildQuickBriefingSecretPrompt}
+            buildQuickBriefingSecretPrompt={(payload) =>
+              buildQuickBriefingSecretPrompt({ ...payload, strategicPlan })
+            }
             buildYesterdayGapSecretPrompt={buildYesterdayGapSecretPrompt}
             buildMealIdeaFromDispensaSecretPrompt={buildMealIdeaFromDispensaSecretPrompt}
             onLogDinnerOption={handleAutoLogDinner}
@@ -9384,6 +9413,14 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         );
       })()}
 
+      <StrategicPlannerOverlay
+        isOpen={showStrategicPlanner}
+        onClose={() => setShowStrategicPlanner(false)}
+        strategicPlan={strategicPlan}
+        isPlannerLoading={isPlannerLoading}
+        updateDayPlan={updateDayPlan}
+        updateSettings={updateSettings}
+      />
       <TargetSettingsModal
         open={showProfile}
         onClose={() => setShowProfile(false)}

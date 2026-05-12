@@ -1,3 +1,7 @@
+/**
+ * Hook: `remotePlanning` (RTDB `planning/{uid}/{data}`) + `weeklyPlan` (kcal/tipo per data, `weeklyPlanning/`).
+ * Non contiene slot orari allenamento: la timeline unisce `dailyLog` + `manualNodes` in SalaComandi.
+ */
 import { useEffect, useRef, useState } from 'react';
 import { onValue, ref, set } from 'firebase/database';
 import {

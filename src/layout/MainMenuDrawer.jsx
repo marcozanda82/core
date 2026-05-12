@@ -20,6 +20,7 @@ export default function MainMenuDrawer({
   setDayProfile,
   calorieTuning,
   setCalorieTuning,
+  onOpenStrategicPlanner,
 }) {
   return (
     <>
@@ -118,6 +119,29 @@ export default function MainMenuDrawer({
             <div className="burn-value tuning">{calorieTuning > 0 ? `+${calorieTuning}` : calorieTuning}</div>
             <input type="range" min="-500" max="500" step="50" value={calorieTuning} onChange={(e) => setCalorieTuning(Number(e.target.value))} className="custom-range blue" style={{ marginTop: '20px' }} />
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              onOpenStrategicPlanner?.();
+              closeDrawer();
+            }}
+            style={{
+              width: '100%',
+              marginBottom: '12px',
+              padding: '14px 16px',
+              backgroundColor: 'rgba(15, 23, 42, 0.85)',
+              color: '#e2e8f0',
+              border: '1px solid #334155',
+              borderRadius: '12px',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              letterSpacing: '1px',
+              cursor: 'pointer',
+              transition: '0.2s',
+            }}
+          >
+            📅 Settimana Strategica
+          </button>
           <button type="button" onClick={() => closeDrawer()} style={{ width: '100%', padding: '18px', backgroundColor: '#00e5ff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 0 20px rgba(0, 229, 255, 0.4)' }}>SYNC STRATEGIA</button>
         </div>
       )}
