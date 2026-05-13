@@ -69,11 +69,63 @@ export function useStrategicPlanner(db, userUid) {
     await set(memRef, kcal);
   }, [db, userUid]);
 
+  // Traslazione a Domino: sposta gli impegni in avanti fino al primo giorno di riposo
+  const shiftPlanForward = useCallback(async (startDayKey) => {
+    if (!db || !userUid || !strategicPlan.days) return;
+
+    const daysOrder = ['lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato', 'domenica'];
+    const startIndex = daysOrder.indexOf(startDayKey);
+    if (startIndex === -1) return;
+
+    // 1. Trova il primo giorno di riposo/vuoto successivo
+    let targetRestIndex = -1;
+    for (let i = 1; i <= 7; i++) {
+      const checkIndex = (startIndex + i) % 7;
+      const dayData = strategicPlan.days[daysOrder[checkIndex]];
+      if (!dayData || dayData.type === 'REST' || dayData.type === 'RECOVERY') {
+        targetRestIndex = checkIndex;
+        break;
+      }
+    }
+
+    // Se non ci sono giorni di riposo in tutta la settimana, interrompe (settimana troppo satura)
+    if (targetRestIndex === -1) {
+      console.warn("Impossibile traslare: nessun giorno di riposo disponibile.");
+      return;
+    }
+
+    // 2. Crea una copia dei giorni per manipolarli
+    const newDays = { ...strategicPlan.days };
+
+    // 3. Calcola il percorso da shiftare
+    const indicesToShift = [];
+    let curr = startIndex;
+    while (curr !== targetRestIndex) {
+      indicesToShift.push(curr);
+      curr = (curr + 1) % 7;
+    }
+
+    // 4. Esegui lo shift partendo dal fondo (per non sovrascrivere i dati)
+    for (let i = indicesToShift.length - 1; i >= 0; i--) {
+      const fromIndex = indicesToShift[i];
+      const toIndex = (fromIndex + 1) % 7;
+      newDays[daysOrder[toIndex]] = newDays[daysOrder[fromIndex]];
+    }
+
+    // 5. Il giorno di partenza diventa "Riposo" a causa dell'imprevisto
+    newDays[daysOrder[startIndex]] = { type: 'REST', focus: [], hour: '', kcal: 0 };
+
+    // 6. Salva l'intera nuova settimana su Firebase
+    const daysRef = ref(db, `users/${userUid}/weeklyStrategicPlanner/days`);
+    await set(daysRef, newDays);
+  }, [db, userUid, strategicPlan]);
+
   return {
     strategicPlan,
     isPlannerLoading,
     updateDayPlan,
     updateSettings,
     saveCalorieMemory,
+    shiftPlanForward,
   };
 }

@@ -72,7 +72,7 @@ export default function MainMenuDrawer({
             <button type="button" className="action-btn" onClick={() => setActiveAction('storico')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(176, 190, 197, 0.5))' }}>📚</span><span className="action-label" style={{ color: '#b0bec5' }}>Archivio Storico</span></button>
             <button type="button" className="action-btn" onClick={() => { setShowReport(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">📊</span><span className="action-label">Report</span></button>
             <button type="button" className="action-btn" onClick={() => { setShowProfile(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">⚙️</span><span className="action-label">Profilo & Target</span></button>
-            <button type="button" className="action-btn" onClick={() => setActiveAction('strategia')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>🎯</span><span className="action-label" style={{ color: '#00e5ff' }}>Protocollo</span></button>
+            <button type="button" className="action-btn" onClick={() => { onOpenStrategicPlanner?.(); setActiveAction(null); closeDrawer(); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>🎯</span><span className="action-label" style={{ color: '#00e5ff' }}>Protocollo</span></button>
             <button type="button" className="action-btn" onClick={() => setActiveAction('focus')}><img src="/icon-neural-128.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 192, 45, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#fbc02d' }}>Neural Reset</span></button>
             <button type="button" className="action-btn" onClick={() => setActiveAction('ai_chat')} style={{ position: 'relative', background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
               {kentuChatNotificationBadge ? (
@@ -97,44 +97,6 @@ export default function MainMenuDrawer({
         </div>
       )}
 
-      {activeAction === 'strategia' && (
-        <div className="view-animate">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-            <button type="button" onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; MENU</button>
-            <h2 style={{ fontSize: '0.8rem', color: '#00e5ff', letterSpacing: '2px', margin: 0 }}>🎯 PROTOCOLLO</h2>
-            <div style={{ width: '60px' }}></div>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              onOpenStrategicPlanner?.();
-              closeDrawer();
-            }}
-            style={{
-              width: '100%',
-              marginBottom: '24px',
-              padding: '18px 20px',
-              backgroundColor: '#00e5ff',
-              color: '#000',
-              border: 'none',
-              borderRadius: '15px',
-              fontSize: '0.95rem',
-              fontWeight: 'bold',
-              letterSpacing: '2px',
-              cursor: 'pointer',
-              transition: '0.2s',
-              boxShadow: '0 0 24px rgba(0, 229, 255, 0.45)',
-            }}
-          >
-            📅 Settimana Strategica
-          </button>
-          <div className="burn-slider-container">
-            <span className="burn-label" style={{color: '#00e5ff'}}>TUNING CALORICO (OVERRIDE)</span>
-            <div className="burn-value tuning">{calorieTuning > 0 ? `+${calorieTuning}` : calorieTuning}</div>
-            <input type="range" min="-500" max="500" step="50" value={calorieTuning} onChange={(e) => setCalorieTuning(Number(e.target.value))} className="custom-range blue" style={{ marginTop: '20px' }} />
-          </div>
-        </div>
-      )}
     </>
   );
 }

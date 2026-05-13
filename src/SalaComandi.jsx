@@ -895,7 +895,7 @@ export default function SalaComandi() {
     [userProfile, userTargets]
   );
 
-  const { strategicPlan, isPlannerLoading, updateDayPlan, updateSettings, saveCalorieMemory } = useStrategicPlanner(
+  const { strategicPlan, isPlannerLoading, updateDayPlan, updateSettings, saveCalorieMemory, shiftPlanForward } = useStrategicPlanner(
     db,
     userProfile?.uid || user?.uid
   );
@@ -1767,9 +1767,27 @@ export default function SalaComandi() {
   }, [manualNodes, hasRealWorkoutInActiveLog]);
 
   const allNodes = useMemo(() => {
-    return [...computedMealNodes, ...ghostMealTimelineNodes, ...computedActivityTimelineNodes, ...manualNodesForTimeline]
+    const todayStr = ['domenica', 'lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato'][new Date().getDay()];
+    const todayPlan = strategicPlan?.days?.[todayStr];
+
+    // Verifica se esiste già un vero allenamento registrato oggi nel log
+    const hasRealWorkoutToday = (activeLog || []).some(entry => entry.type === 'workout' && !entry.isGhost);
+
+    const plannedHourDec = todayPlan?.hour != null ? parseFlexibleTimeToDecimal(String(todayPlan.hour)) : null;
+    // Crea il fantasma solo se c'è un piano per oggi, ha un orario, e non ci siamo ancora allenati
+    const plannedStrategicNode = (plannedHourDec != null && !hasRealWorkoutToday && todayPlan?.type !== 'REST') ? {
+      id: `strategic_ghost_${todayStr}`,
+      type: 'ghost_workout',
+      isGhost: true,
+      time: plannedHourDec,
+      title: `Previsto: ${todayPlan.type === 'WORKOUT' ? 'Pesi' : todayPlan.type}`,
+      subtitle: todayPlan.focus ? todayPlan.focus.join(', ') : '',
+      kcal: todayPlan.kcal || 0
+    } : null;
+
+    return [...computedMealNodes, ...ghostMealTimelineNodes, ...computedActivityTimelineNodes, ...manualNodesForTimeline, ...(plannedStrategicNode ? [plannedStrategicNode] : [])]
       .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
-  }, [computedMealNodes, ghostMealTimelineNodes, computedActivityTimelineNodes, manualNodesForTimeline]);
+  }, [computedMealNodes, ghostMealTimelineNodes, computedActivityTimelineNodes, manualNodesForTimeline, strategicPlan, activeLog]);
 
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
@@ -7146,15 +7164,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         }}
       />
 
-      <TodayStrategyBanner
-        strategicPlan={strategicPlan}
-        currentProfile={dayProfile}
-        onSyncProfile={(profile) => {
-          if (profile) setDayProfile(profile);
-        }}
-        onOpenPlanner={() => setShowStrategicPlanner(true)}
-      />
-
       {MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab) && (
       <div
         key={activeBottomTab}
@@ -7296,18 +7305,42 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             </div>
           )}
           <div style={{ marginTop: '6px' }}>
-            <DailyCoachSection
-              activeLog={activeLog}
-              totali={totali}
-              dynamicDailyKcal={dynamicDailyKcal}
-              userProfile={userProfile}
-              metabolicMapData={metabolicMapData}
-              userTargets={userTargets}
-              metabolicCompassTimeframe={metabolicCompassTimeframe}
-              metabolicCompassDailyHistory={metabolicCompassDailyHistory}
-              energyAt20Percent={energyAt20Percent}
-              kentuDailyCalorieStrategy={kentuDailyCalorieStrategy}
-              aiDayCoach={aiCoachEval}
+            <TodayStrategyBanner
+              strategicPlan={strategicPlan}
+              currentProfile={dayProfile}
+              onSyncProfile={(profile) => {
+                if (profile) setDayProfile(profile);
+              }}
+              onOpenPlanner={() => setShowStrategicPlanner(true)}
+              onShiftPlan={(dayKey) => shiftPlanForward(dayKey)}
+              onUpdateTime={(dayKey, dayData) => updateDayPlan(dayKey, dayData)}
+              onExecute={(plan) => {
+                if (!plan || plan.type === 'REST') return;
+                const hourDec =
+                  plan.hour != null && String(plan.hour).trim() !== ''
+                    ? parseFlexibleTimeToDecimal(String(plan.hour))
+                    : null;
+                const endT =
+                  hourDec != null && !Number.isNaN(hourDec) ? hourDec : getCurrentTimeRoundedTo15Min();
+                setWorkoutEndTime(endT);
+                setWorkoutDurationMin(45);
+                const k = Number(plan.kcal);
+                setWorkoutKcal(Number.isFinite(k) && k > 0 ? Math.round(k) : 300);
+                setWorkoutStrengthDetail('');
+                setEditingWorkoutId(null);
+                if (plan.type === 'CARDIO') {
+                  setWorkoutType('cardio');
+                  setWorkoutMuscles([]);
+                } else if (plan.type === 'WORKOUT') {
+                  setWorkoutType('pesi');
+                  setWorkoutMuscles(normalizeMuscleGroupArray(Array.isArray(plan.focus) ? plan.focus : []));
+                } else if (plan.type === 'RECOVERY') {
+                  setWorkoutType('cardio');
+                  setWorkoutMuscles([]);
+                }
+                setActiveAction('allenamento');
+                setIsDrawerOpen(true);
+              }}
             />
           </div>
           <div

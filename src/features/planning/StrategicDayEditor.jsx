@@ -175,8 +175,8 @@ export default function StrategicDayEditor({
 }
 
 const styles = {
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 10, display: 'flex', alignItems: 'flex-end', overflow: 'hidden' },
-  modal: { backgroundColor: '#0f172a', width: '100%', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', paddingBottom: '40px', borderTop: '1px solid #334155', maxHeight: '85vh', overflowY: 'auto' },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 99999, display: 'flex', alignItems: 'flex-end', overflow: 'hidden' },
+  modal: { backgroundColor: '#0f172a', width: '100%', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', paddingBottom: '80px', borderTop: '1px solid #334155', maxHeight: '85vh', overflowY: 'auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   iconBtn: { background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer' },
   content: { marginBottom: '24px' },

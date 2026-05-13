@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const ACTIVITY_TYPES = {
   WORKOUT: { label: 'Pesi / Ipertrofia', icon: '🏋️', color: '#ef4444' },
@@ -9,11 +9,33 @@ const ACTIVITY_TYPES = {
 
 const DAYS_MAP = ['domenica', 'lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato'];
 
-export default function TodayStrategyBanner({ strategicPlan, currentProfile, onSyncProfile, onOpenPlanner }) {
-  if (!strategicPlan) return null;
+export default function TodayStrategyBanner({
+  strategicPlan, currentProfile, onSyncProfile, onOpenPlanner,
+  onShiftPlan, onUpdateTime, onExecute
+}) {
+  const [isEditingTime, setIsEditingTime] = useState(false);
+  const [tempTime, setTempTime] = useState('');
 
   const todayStr = DAYS_MAP[new Date().getDay()];
-  const todayPlan = strategicPlan.days?.[todayStr];
+  const todayPlan = strategicPlan?.days?.[todayStr];
+
+  const actType = todayPlan ? ACTIVITY_TYPES[todayPlan.type] : null;
+
+  const handleEditTimeClick = (e) => {
+    e.stopPropagation();
+    setTempTime(todayPlan?.hour || '');
+    setIsEditingTime(true);
+  };
+
+  const handleSaveTime = (e) => {
+    e.stopPropagation();
+    if (tempTime !== todayPlan.hour) {
+      onUpdateTime?.(todayStr, { ...todayPlan, hour: tempTime });
+    }
+    setIsEditingTime(false);
+  };
+
+  if (!strategicPlan) return null;
 
   // Se per oggi non c'è nulla pianificato, non mostriamo il banner per non ingombrare la UI
   if (!todayPlan) return null;
@@ -31,8 +53,6 @@ export default function TodayStrategyBanner({ strategicPlan, currentProfile, onS
 
   const targetProfile = deriveProfileFromPlan(todayPlan);
   const isOutOfSync = targetProfile && currentProfile && targetProfile !== currentProfile;
-
-  const actType = ACTIVITY_TYPES[todayPlan.type];
 
   return (
     <div 
@@ -64,35 +84,63 @@ export default function TodayStrategyBanner({ strategicPlan, currentProfile, onS
           </div>
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+        {/* ZONA ORARIO E RINVIO */}
+        {isEditingTime ? (
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+            <input
+              type="time"
+              value={tempTime}
+              onChange={e => setTempTime(e.target.value)}
+              style={{ backgroundColor: '#0f172a', color: '#fff', border: '1px solid #334155', borderRadius: '6px', padding: '4px' }}
+            />
+            <button type="button" onClick={handleSaveTime} style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px', cursor: 'pointer' }}>✓</button>
+          </div>
+        ) : (
+          <div
+            onClick={handleEditTimeClick}
+            style={{ color: '#cbd5e1', fontSize: '13px', fontWeight: 'bold', backgroundColor: '#0f172a', padding: '6px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', gap: '6px', alignItems: 'center' }}
+          >
+            <span>{todayPlan.hour || 'No Orario'}</span>
+            <span style={{ fontSize: '10px' }}>🕒</span>
+          </div>
+        )}
+
+        {/* ZONA AZIONI RAPIDE */}
+        {todayPlan.type !== 'REST' && (
+          <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onShiftPlan?.(todayStr); }}
+              title="Trasla in avanti (Domino)"
+              style={{ backgroundColor: '#334155', color: '#fff', border: 'none', borderRadius: '8px', padding: '6px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              ⏭️ Trasla
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onExecute?.(todayPlan); }}
+              title="Esegui ora"
+              style={{ backgroundColor: actType ? actType.color : '#deff9a', color: '#fff', border: 'none', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              ✅ Esegui
+            </button>
+          </div>
+        )}
+
+        {/* ZONA SYNC MACRO */}
         {isOutOfSync && (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSyncProfile?.(targetProfile);
-            }}
+            onClick={(e) => { e.stopPropagation(); onSyncProfile?.(targetProfile); }}
             style={{
-              padding: '8px 12px',
-              borderRadius: '10px',
-              border: 'none',
-              backgroundColor: '#00e5ff',
-              color: '#000',
-              fontSize: '12px',
-              fontWeight: 800,
-              letterSpacing: '0.04em',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              boxShadow: '0 0 12px rgba(0, 229, 255, 0.35)',
+              backgroundColor: '#deff9a', color: '#000', border: 'none', borderRadius: '20px',
+              padding: '6px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer',
+              boxShadow: '0 2px 4px rgba(222, 255, 154, 0.2)', display: 'flex', alignItems: 'center', gap: '4px'
             }}
           >
-            Allinea profilo
+            <span>⚡</span> Sync Macro
           </button>
-        )}
-        {todayPlan.hour && (
-          <div style={{ color: '#cbd5e1', fontSize: '13px', fontWeight: 'bold', backgroundColor: '#0f172a', padding: '6px 10px', borderRadius: '8px' }}>
-            {todayPlan.hour}
-          </div>
         )}
       </div>
     </div>
