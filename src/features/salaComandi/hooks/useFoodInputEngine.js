@@ -295,14 +295,14 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       const desc = data.desc || name;
       const entryPer100 = { desc };
       ['kcal', 'cal', 'prot', 'carb', 'fatTotal', 'fibre', 'leu', 'iso', 'val', 'lys', 'vitA', 'vitc', 'vitD', 'ca', 'fe', 'mg', 'zn', 'omega3'].forEach((k) => {
-        if (typeof data[k] === 'number' && data[k] > 0) entryPer100[k] = data[k];
+        if (typeof data[k] === 'number' && Number.isFinite(data[k]) && data[k] >= 0) entryPer100[k] = data[k];
       });
       Object.keys(TARGETS).forEach((g) => Object.keys(TARGETS[g]).forEach((k) => {
-        if (entryPer100[k] == null || entryPer100[k] === 0) {
+        if (entryPer100[k] == null) {
           entryPer100[k] = getAverageEstimate({ nutrientKey: k, foodDesc: desc, fullHistory: fullHistoryRef.current });
         }
       }));
-      if (entryPer100.kcal == null || entryPer100.kcal === 0) {
+      if (entryPer100.kcal == null) {
         entryPer100.kcal = entryPer100.cal ?? getAverageEstimate({ nutrientKey: 'kcal', foodDesc: desc, fullHistory: fullHistoryRef.current });
       }
       entryPer100.cal = entryPer100.cal ?? entryPer100.kcal;
@@ -329,7 +329,7 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       newItem.category = entrySaved.category;
       newItem.foodDbKey = newKey;
       Object.keys(TARGETS).forEach((g) => Object.keys(TARGETS[g]).forEach((k) => {
-        if (newItem[k] == null || newItem[k] === 0) {
+        if (newItem[k] == null) {
           newItem[k] = (getAverageEstimate({ nutrientKey: k, foodDesc: desc, fullHistory: fullHistoryRef.current }) / 100) * weight;
         }
       }));

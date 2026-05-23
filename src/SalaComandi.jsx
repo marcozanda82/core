@@ -93,6 +93,11 @@ import {
 } from './weeklyPlanning';
 import WeeklyPlanning from './components/WeeklyPlanning';
 import MealBuilderOverlay from './features/mealBuilder/MealBuilderOverlay';
+import {
+  resolveDistributionMealId,
+  sumConsumedMacrosExcludingMeal,
+  buildRemainingDistributionMeals,
+} from './utils/mealStrategy';
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
 import FullscreenGraphView from './features/charts/FullscreenGraphView';
@@ -4259,7 +4264,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       };
       Object.keys(TARGETS).forEach((g) => {
         Object.keys(TARGETS[g] || {}).forEach((k) => {
-          if (newItem[k] == null || newItem[k] === 0) {
+          if (newItem[k] == null) {
             newItem[k] = getDefaultNutrientValue(k, fullHistory);
           }
         });
@@ -6432,6 +6437,40 @@ ${dbKeys || 'n/d'}`;
     return base;
   }, [targetMacrosPasto, mealType, idealStrategy]);
 
+  const mealBuilderDailyTarget = useMemo(
+    () => ({
+      pro: effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot ?? 150,
+      carbo: effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb ?? 200,
+      fat:
+        effectiveTargetsForCurrentDate?.fatTotal ??
+        effectiveTargetsForCurrentDate?.fat ??
+        userTargets?.fatTotal ??
+        userTargets?.fat ??
+        60,
+    }),
+    [effectiveTargetsForCurrentDate, userTargets]
+  );
+
+  const mealBuilderCurrentMealId = useMemo(() => {
+    const h =
+      typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime)
+        ? drawerMealTime
+        : typeof displayTime === 'number' && !Number.isNaN(displayTime)
+          ? displayTime
+          : 12;
+    return resolveDistributionMealId(mealType, h);
+  }, [mealType, drawerMealTime, displayTime]);
+
+  const mealBuilderConsumedMacros = useMemo(() => {
+    if (!mealBuilderCurrentMealId) return { pro: 0, carbo: 0, fat: 0 };
+    return sumConsumedMacrosExcludingMeal(dailyLogForDynamicTargets, mealBuilderCurrentMealId);
+  }, [dailyLogForDynamicTargets, mealBuilderCurrentMealId]);
+
+  const mealBuilderRemainingMeals = useMemo(() => {
+    if (!mealBuilderCurrentMealId) return [];
+    return buildRemainingDistributionMeals(dailyLogForDynamicTargets, mealBuilderCurrentMealId);
+  }, [dailyLogForDynamicTargets, mealBuilderCurrentMealId]);
+
   const handleSmartMealCompletion = useCallback(
     async (currentFoods, aiMealConstraints) => {
       const foods = Array.isArray(currentFoods) ? currentFoods : [];
@@ -8391,6 +8430,10 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           mealBuilderBarcodeBootstrap={mealBuilderBarcodeBootstrap}
           onMealBuilderBarcodeBootstrapConsumed={consumeMealBuilderBarcodeBootstrap}
           persistBarcodeNutritionCorrection={persistBarcodeNutritionCorrection}
+          currentMealId={mealBuilderCurrentMealId}
+          dailyTarget={mealBuilderDailyTarget}
+          consumedMacros={mealBuilderConsumedMacros}
+          remainingMeals={mealBuilderRemainingMeals}
         />
 
         {/* VISTA DIARIO GIORNALIERO */}

@@ -135,6 +135,10 @@ export default function PastoDrawer({
   mealBuilderBarcodeBootstrap,
   onMealBuilderBarcodeBootstrapConsumed,
   persistBarcodeNutritionCorrection,
+  currentMealId,
+  dailyTarget,
+  consumedMacros,
+  remainingMeals,
 }) {
   /** CREA completo + voci utente Firebase: lookup e parse comando vedono tutto il catalogo. */
   const foodDbForCommand = React.useMemo(() => {
@@ -279,6 +283,10 @@ export default function PastoDrawer({
         mealBuilderBarcodeBootstrap={mealBuilderBarcodeBootstrap}
         onMealBuilderBarcodeBootstrapConsumed={onMealBuilderBarcodeBootstrapConsumed}
         persistBarcodeNutritionCorrection={persistBarcodeNutritionCorrection}
+        currentMealId={currentMealId}
+        dailyTarget={dailyTarget}
+        consumedMacros={consumedMacros}
+        remainingMeals={remainingMeals}
       />
     </>
   );

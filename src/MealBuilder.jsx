@@ -45,6 +45,8 @@ import {
 } from './smartFoodUnits';
 import { generatePracticalMeal } from './autoMealGenerator';
 import FoodSearchView from './drawers/vistas/FoodSearchView';
+import MacroPlateVisualizer from './features/nutrition/MacroPlateVisualizer';
+import { calculateDynamicMealTarget } from './utils/mealStrategy';
 
 /** Icona barcode (stile scan) — nessuna dipendenza esterna. */
 function BarcodeScanIcon({ size = 22 }) {
@@ -1200,6 +1202,10 @@ export default function MealBuilder({
   mealBuilderBarcodeBootstrap = null,
   onMealBuilderBarcodeBootstrapConsumed = () => {},
   persistBarcodeNutritionCorrection = null,
+  currentMealId = null,
+  dailyTarget = { pro: 150, carbo: 200, fat: 60 },
+  consumedMacros = { pro: 0, carbo: 0, fat: 0 },
+  remainingMeals = [],
 }) {
   const [isAbitudiniOpen, setIsAbitudiniOpen] = useState(false);
 
@@ -1236,6 +1242,8 @@ export default function MealBuilder({
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
   /** Valori nutrizionali /100g modificabili (scheda prodotto) quando c’è una selezione da DB / CREA / barcode. */
   const [per100Draft, setPer100Draft] = useState({ kcal: '', prot: '', carb: '', fat: '' });
+  const [inspectingFood, setInspectingFood] = useState(null);
+  const [inspectorMacroDraft, setInspectorMacroDraft] = useState({ prot: '0', carb: '0', fat: '0', fibre: '0' });
   const [userEditedWeight, setUserEditedWeight] = useState(false);
   const SHOW_ADVANCED_FOOD_UI = false;
   /** Grammi per 1× unità template (null = totale g solo dal campo peso / abitudine). */
@@ -3025,6 +3033,44 @@ export default function MealBuilder({
     };
   }, [targetMacrosPasto, dailyGoals, userTargets?.fibre, ratio]);
 
+  const computedMealTarget = useMemo(() => {
+    if (!currentMealId || !Array.isArray(remainingMeals) || remainingMeals.length === 0) {
+      return null;
+    }
+    return calculateDynamicMealTarget(currentMealId, dailyTarget, consumedMacros, remainingMeals);
+  }, [currentMealId, dailyTarget, consumedMacros, remainingMeals]);
+
+  const plateTargetMacros = useMemo(() => {
+    const fibre = targetMacrosPasto?.fibre ?? targetMacros?.fibre ?? 15;
+    if (
+      computedMealTarget &&
+      (computedMealTarget.pro > 0 || computedMealTarget.carbo > 0 || computedMealTarget.fat > 0)
+    ) {
+      return {
+        pro: computedMealTarget.pro,
+        carbo: computedMealTarget.carbo,
+        fat: computedMealTarget.fat,
+        fiber: fibre,
+      };
+    }
+    return {
+      pro: targetMacrosPasto?.prot ?? targetMacros?.prot ?? 0,
+      carbo: targetMacrosPasto?.carb ?? targetMacros?.carb ?? 0,
+      fat: targetMacrosPasto?.fat ?? targetMacrosPasto?.fatTotal ?? targetMacros?.fat ?? 0,
+      fiber: fibre,
+    };
+  }, [computedMealTarget, targetMacrosPasto, targetMacros]);
+
+  const plateMealMacros = useMemo(
+    () => ({
+      pro: mealTotaliFull?.prot ?? currentMealMacros.prot ?? 0,
+      carbo: mealTotaliFull?.carb ?? currentMealMacros.carb ?? 0,
+      fat: mealTotaliFull?.fatTotal ?? mealTotaliFull?.fat ?? currentMealMacros.fat ?? 0,
+      fiber: mealTotaliFull?.fibre ?? 0,
+    }),
+    [mealTotaliFull, currentMealMacros]
+  );
+
   const magicFillEligibleFoods = useMemo(
     () => (addedFoods || []).filter((f) => f.type !== 'recipe' && f.isRecipe !== true),
     [addedFoods]
@@ -3040,6 +3086,43 @@ export default function MealBuilder({
       prev.map((f) => (String(f.id) === String(foodId) ? { ...f, locked: !f.locked } : f))
     );
   }, [setAddedFoods]);
+
+  const openFoodInspector = useCallback((food) => {
+    if (!food) return;
+    setInspectingFood(food);
+    setInspectorMacroDraft({
+      prot: String(Number(food.prot ?? food.proteine) || 0),
+      carb: String(Number(food.carb ?? food.carboidrati) || 0),
+      fat: String(Number(food.fat ?? food.fatTotal ?? food.grassi) || 0),
+      fibre: String(Number(food.fibre ?? 0)),
+    });
+  }, []);
+
+  const handleSaveCartInspectorMacro = useCallback(() => {
+    if (!inspectingFood) return;
+    const prot = Number(inspectorMacroDraft.prot) || 0;
+    const carb = Number(inspectorMacroDraft.carb) || 0;
+    const fat = Number(inspectorMacroDraft.fat) || 0;
+    const fibre = Number(inspectorMacroDraft.fibre) || 0;
+    const targetId = String(inspectingFood.id);
+    setAddedFoods((prev) =>
+      prev.map((f) => {
+        if (String(f.id) !== targetId) return f;
+        return {
+          ...f,
+          prot,
+          proteine: prot,
+          carb,
+          carboidrati: carb,
+          fat,
+          fatTotal: fat,
+          grassi: fat,
+          fibre,
+        };
+      })
+    );
+    setInspectingFood(null);
+  }, [inspectingFood, inspectorMacroDraft, setAddedFoods]);
 
   const handleMagicFill = useCallback(() => {
     if (magicFillEligibleFoods.length < 2 || magicFillUnlockedFoods.length < 1) return;
@@ -4987,24 +5070,24 @@ export default function MealBuilder({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedFoodForInfo(food);
+                              openFoodInspector(food);
                             }}
-                            title="Etichetta nutrizionale"
-                            aria-label="Etichetta nutrizionale"
+                            title="Ispeziona e modifica macro (porzione attuale)"
+                            aria-label="Ispeziona e modifica macro"
                             style={{
                               flexShrink: 0,
-                              opacity: 0.42,
-                              background: 'none',
-                              border: 'none',
-                              color: '#94a3b8',
+                              background: 'rgba(0, 229, 255, 0.14)',
+                              border: '1px solid rgba(0, 229, 255, 0.4)',
+                              borderRadius: '8px',
+                              color: '#7dd3fc',
                               cursor: 'pointer',
-                              fontSize: '0.68rem',
-                              padding: '0 2px',
-                              lineHeight: 1,
-                              fontWeight: 600,
+                              fontSize: '0.85rem',
+                              padding: '2px 8px',
+                              lineHeight: 1.2,
+                              fontWeight: 700,
                             }}
                           >
-                            ℹ
+                            ℹ️
                           </button>
                           {isRecipeItem && (
                             <span style={{ fontSize: '0.58rem', padding: '2px 8px', borderRadius: '8px', background: 'rgba(179, 136, 255, 0.25)', color: '#c4b5fd', fontWeight: 700, letterSpacing: '0.04em' }}>RICETTA</span>
@@ -5396,19 +5479,136 @@ export default function MealBuilder({
         </>
           )}
           <div style={{ marginBottom: '20px' }}>
-            <h4 style={{ fontSize: '0.7rem', color: '#00e5ff', letterSpacing: '1px', marginBottom: '10px', textTransform: 'uppercase' }}>
+            <h4 style={{ fontSize: '0.7rem', color: '#00e5ff', letterSpacing: '1px', marginBottom: '4px', textTransform: 'uppercase', textAlign: 'center' }}>
               {isCena ? 'Rimanenza Giornaliera' : 'Quota Prevista Pasto'}
             </h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {nutrientBar('Kcal', safeBarCurrent(currentMealMacros.kcal), safeBarTarget(targetMacros.kcal, 500), 'kcal', 'kcal')}
-              {nutrientBar('Proteine', safeBarCurrent(currentMealMacros.prot), safeBarTarget(targetMacros.prot, 38), 'g', 'prot')}
-              {nutrientBar('Carboidrati', safeBarCurrent(currentMealMacros.carb), safeBarTarget(targetMacros.carb, 50), 'g', 'carb')}
-              {nutrientBar('Grassi', safeBarCurrent(currentMealMacros.fat), safeBarTarget(targetMacros.fat, 15), 'g', 'fatTotal')}
-            </div>
+            <MacroPlateVisualizer mealMacros={plateMealMacros} targetMacros={plateTargetMacros} />
           </div>
           <button type="button" onClick={saveMealToDiary} style={{ width: '100%', padding: '18px', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', opacity: addedFoods.length > 0 ? 1 : 0.5 }}>SALVA NEL DIARIO</button>
         </div>
       </div>
+
+      {inspectingFood && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cart-food-inspector-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100050,
+            background: 'rgba(0,0,0,0.88)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            backdropFilter: 'blur(6px)',
+          }}
+          onClick={() => setInspectingFood(null)}
+        >
+          <div
+            style={{
+              background: '#111',
+              border: '1px solid #333',
+              borderRadius: '16px',
+              padding: '20px',
+              width: '100%',
+              maxWidth: '380px',
+              boxShadow: '0 12px 32px rgba(0,0,0,0.55)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="cart-food-inspector-title" style={{ color: '#fff', margin: '0 0 6px', fontSize: '1rem', textAlign: 'center' }}>
+              {inspectingFood.desc || inspectingFood.name || 'Alimento'}
+            </h3>
+            <p style={{ color: '#888', fontSize: '0.75rem', textAlign: 'center', margin: '0 0 18px' }}>
+              Macro per la porzione attuale (
+              {Math.round(Number(inspectingFood.qta ?? inspectingFood.weight ?? 100) || 100)}
+              g) — non per 100g
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ color: '#b388ff', fontSize: '0.75rem' }}>Proteine (g)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={inspectorMacroDraft.prot}
+                  onChange={(e) => setInspectorMacroDraft((d) => ({ ...d, prot: e.target.value }))}
+                  style={{ background: '#222', border: '1px solid #b388ff55', color: '#fff', padding: '10px', borderRadius: '8px' }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ color: '#00e676', fontSize: '0.75rem' }}>Carboidrati (g)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={inspectorMacroDraft.carb}
+                  onChange={(e) => setInspectorMacroDraft((d) => ({ ...d, carb: e.target.value }))}
+                  style={{ background: '#222', border: '1px solid #00e67655', color: '#fff', padding: '10px', borderRadius: '8px' }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ color: '#ffea00', fontSize: '0.75rem' }}>Grassi (g)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={inspectorMacroDraft.fat}
+                  onChange={(e) => setInspectorMacroDraft((d) => ({ ...d, fat: e.target.value }))}
+                  style={{ background: '#222', border: '1px solid #ffea0055', color: '#fff', padding: '10px', borderRadius: '8px' }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ color: '#f97316', fontSize: '0.75rem' }}>Fibre (g)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={inspectorMacroDraft.fibre}
+                  onChange={(e) => setInspectorMacroDraft((d) => ({ ...d, fibre: e.target.value }))}
+                  style={{ background: '#222', border: '1px solid #f9731655', color: '#fff', padding: '10px', borderRadius: '8px' }}
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveCartInspectorMacro}
+              style={{
+                width: '100%',
+                background: '#00e5ff',
+                color: '#000',
+                border: 'none',
+                padding: '14px',
+                borderRadius: '10px',
+                fontWeight: 'bold',
+                fontSize: '0.95rem',
+                cursor: 'pointer',
+                marginBottom: '8px',
+              }}
+            >
+              Salva Modifica
+            </button>
+            <button
+              type="button"
+              onClick={() => setInspectingFood(null)}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                color: '#888',
+                border: 'none',
+                padding: '10px',
+                borderRadius: '8px',
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+              }}
+            >
+              Annulla
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
