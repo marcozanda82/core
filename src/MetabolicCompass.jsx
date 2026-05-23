@@ -9,7 +9,12 @@ import {
 import { getTodayString } from './coreEngine';
 import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
 import MetabolicMap from './MetabolicMap';
+import { sortBiometricsByTimeAsc } from './biometricHistory';
 import { computeMetabolicMapInputsFromDailyHistory } from './metabolicMapPeriodInputs';
+import {
+  calculateBodyComposition,
+  calculateMetabolicTrajectory,
+} from './features/salaComandi/engines/adaptiveTDEEEngine';
 
 /** `true` in dev: mostra intervallo date sotto la bussola. Produzione: `false`. */
 const SHOW_METABOLIC_DEBUG = false;
@@ -30,6 +35,13 @@ const MICRO_SUGGESTION_FINAL_OPACITY = 0.7;
 /** Attesa ≈ durata fade-out prima di aggiornare il testo, poi fade-in. */
 const MICRO_SUGGESTION_FADE_MS = 340;
 const MICRO_SUGGESTION_TRANSITION = 'opacity 0.34s cubic-bezier(0.4, 0, 0.2, 1)';
+
+const COMPASS_WINDOW_DAYS = {
+  '1d': 1,
+  '7d': 7,
+  '14d': 14,
+  '30d': 30,
+};
 
 /** Lunghezza fissa dal centro al vertice ≈ 75% del raggio (= 37.5% del lato del volto quadrato). */
 const ARROW_LENGTH_FRAC_OF_FACE = 0.375;
@@ -321,6 +333,8 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
  */
 export default function MetabolicCompass({
   dailyHistory: dailyHistoryProp = [],
+  bodyMetricsHistory: bodyMetricsHistoryProp = [],
+  userTargets = null,
   compassScreenActive = true,
   mapZoneColor = '',
   compassAmbientStyle = null,
@@ -337,6 +351,7 @@ export default function MetabolicCompass({
   referenceTdeeKcal = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
+  const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
 
   const referenceTdeeResolved =
     referenceTdeeKcal != null && Number(referenceTdeeKcal) > 0
@@ -392,6 +407,44 @@ export default function MetabolicCompass({
   );
   /** Medie periodo + instabilità glicemica teorica per la mappa (stessa finestra della bussola). */
   const metabolicMapInputs = metabolicMapInputsFromBundle ?? fallbackMetabolicMapInputs;
+
+  const targetWeight = useMemo(() => {
+    const profileTarget = Number(userTargets?.weight);
+    if (Number.isFinite(profileTarget) && profileTarget > 0) return profileTarget;
+    const sorted = sortBiometricsByTimeAsc(bodyMetricsHistory);
+    const latestWeight = Number(sorted[sorted.length - 1]?.weight);
+    if (Number.isFinite(latestWeight) && latestWeight > 0) return latestWeight;
+    return 75;
+  }, [userTargets, bodyMetricsHistory]);
+
+  const targetBF = useMemo(() => {
+    const profileBf = Number(userTargets?.bodyFat);
+    if (Number.isFinite(profileBf) && profileBf >= 0) return profileBf;
+    const sorted = sortBiometricsByTimeAsc(bodyMetricsHistory);
+    for (let i = sorted.length - 1; i >= 0; i -= 1) {
+      const bf = Number(sorted[i]?.bodyFat);
+      if (Number.isFinite(bf) && bf >= 0) return bf;
+    }
+    return 15;
+  }, [userTargets, bodyMetricsHistory]);
+
+  const { fatMassKg: targetFatKg, leanMassKg: targetLeanKg } = useMemo(
+    () => calculateBodyComposition(targetWeight, targetBF),
+    [targetWeight, targetBF],
+  );
+
+  const { expectedFatDelta: expectedFatDeltaKg, expectedLeanDelta: expectedLeanDeltaKg } = useMemo(() => {
+    const windowSize = COMPASS_WINDOW_DAYS[selectedTimeframe] || 7;
+    const slice = dailyHistory.slice(-windowSize);
+    const cumulativeCaloricDelta = slice.reduce(
+      (sum, day) => sum + (Number(day?.kcalBalance) || 0),
+      0,
+    );
+    const trainingAxis = Number(metabolicMapInputs?.trainingLoad);
+    const trainingStimulus =
+      Number.isFinite(trainingAxis) ? Math.max(0, Math.min(1, (trainingAxis + 100) / 200)) : 1;
+    return calculateMetabolicTrajectory(cumulativeCaloricDelta, 1, trainingStimulus);
+  }, [dailyHistory, selectedTimeframe, metabolicMapInputs]);
 
   useEffect(() => {
     if (usesEngineCompassBundle) return;
@@ -997,6 +1050,11 @@ export default function MetabolicCompass({
           realSleepDays={metabolicMapInputs.realSleepDays}
           totalWindowDays={metabolicMapInputs.totalWindowDays}
           mapSignalStrength={mapSignalStrengthFromBundle}
+          bodyMetricsHistory={bodyMetricsHistory}
+          targetFatKg={targetFatKg}
+          targetLeanKg={targetLeanKg}
+          expectedFatDeltaKg={expectedFatDeltaKg}
+          expectedLeanDeltaKg={expectedLeanDeltaKg}
         />
       </div>
       )}

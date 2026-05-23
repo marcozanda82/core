@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { onValue, push, ref, update } from 'firebase/database';
+import { onValue, push, ref, set, update } from 'firebase/database';
+import { addDays } from '../../../calendarDateUtils';
+import { TRACKER_STORICO_KEY, getLogFromStoricoTree } from '../../../coreEngine';
+import { bodyMetricCalendarDate } from '../../../metabolicEngine';
+import { computeTotali } from '../../../useBiochimico';
+import {
+  calculateBodyComposition,
+  calculateMetabolicTrajectory,
+  reconcileTDEE,
+} from '../engines/adaptiveTDEEEngine';
 import {
   analyzeEnergyVsWeightTrend,
   bodyMetricTimestampFromDate,
@@ -16,6 +25,155 @@ import {
   sortBodyMetricsHistoryByDateAsc,
   upsertTargetHistoryEntry,
 } from '../engines/bodyMetricsEngine';
+
+function combinedDayEntriesForTotals(trackerData, dateStr) {
+  if (!trackerData || !dateStr) return [];
+  const log = getLogFromStoricoTree(trackerData, dateStr) || [];
+  const node = trackerData[TRACKER_STORICO_KEY(dateStr)];
+  const manual = Array.isArray(node?.manualNodes) ? node.manualNodes : [];
+  return [...log, ...manual];
+}
+
+function calendarDaysForCaloricBalance(oldDateStr, newDateStr) {
+  const days = [];
+  let d = oldDateStr;
+  const lastInclusive = addDays(newDateStr, -1);
+  if (lastInclusive < oldDateStr) return days;
+  while (d <= lastInclusive) {
+    days.push(d);
+    d = addDays(d, 1);
+  }
+  return days;
+}
+
+function calendarDaysSpan(oldDateStr, newDateStr) {
+  const t0 = new Date(`${oldDateStr}T12:00:00`).getTime();
+  const t1 = new Date(`${newDateStr}T12:00:00`).getTime();
+  if (!Number.isFinite(t0) || !Number.isFinite(t1)) return 0;
+  return Math.max(0, Math.round((t1 - t0) / 86400000));
+}
+
+function computeCumulativeCaloricDelta(oldDateStr, newDateStr, fullHistory, referenceTdeeKcal) {
+  const tdee = Number(referenceTdeeKcal);
+  if (!Number.isFinite(tdee) || tdee <= 0 || !fullHistory || typeof fullHistory !== 'object') {
+    return 0;
+  }
+  let cumulativeCaloricDelta = 0;
+  for (const dStr of calendarDaysForCaloricBalance(oldDateStr, newDateStr)) {
+    const combined = combinedDayEntriesForTotals(fullHistory, dStr);
+    const totali = computeTotali(combined);
+    const kcalIn = Number(totali?.kcal) || 0;
+    cumulativeCaloricDelta += kcalIn - tdee;
+  }
+  return cumulativeCaloricDelta;
+}
+
+function findPreviousWeighInWithBodyFat(history, newWeighDate, excludeEntryId, metricEntryToIsoDay) {
+  let best = null;
+  let bestDate = '';
+  let bestTs = -1;
+
+  for (const entry of history || []) {
+    if (excludeEntryId && entry?.id === excludeEntryId) continue;
+    const day = metricEntryToIsoDay(entry) || bodyMetricCalendarDate(entry);
+    if (!day || day >= newWeighDate) continue;
+
+    const weight = Number(entry.weight);
+    const bfRaw = entry.bodyFat;
+    if (!Number.isFinite(weight) || weight <= 0) continue;
+    if (bfRaw == null || bfRaw === '') continue;
+    const bodyFat = Number(bfRaw);
+    if (!Number.isFinite(bodyFat) || bodyFat < 0) continue;
+
+    const ts = Number(entry.timestamp) || 0;
+    if (day > bestDate || (day === bestDate && ts > bestTs)) {
+      best = entry;
+      bestDate = day;
+      bestTs = ts;
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Salva log calibrazione predittiva su RTDB (non modifica profile_targets / TDEE).
+ */
+async function persistPredictiveCalibrationAfterWeighIn({
+  db,
+  uid,
+  newEntryKey,
+  weighDate,
+  newPayload,
+  historyAfterSave,
+  fullHistory,
+  referenceTdeeKcal,
+  metricEntryToIsoDay,
+}) {
+  if (!uid || !newEntryKey || !db) return;
+
+  const newBfRaw = newPayload?.bodyFat;
+  if (newBfRaw == null || newBfRaw === '') return;
+
+  const previousEntry = findPreviousWeighInWithBodyFat(
+    historyAfterSave,
+    weighDate,
+    newEntryKey,
+    metricEntryToIsoDay,
+  );
+  if (!previousEntry) return;
+
+  const oldDate = metricEntryToIsoDay(previousEntry) || bodyMetricCalendarDate(previousEntry);
+  if (!oldDate) return;
+
+  const daysPassed = calendarDaysSpan(oldDate, weighDate);
+  if (daysPassed < 1) return;
+
+  const oldWeight = Number(previousEntry.weight);
+  const newWeight = Number(newPayload.weight);
+  const oldBf = Number(previousEntry.bodyFat);
+  const newBf = Number(newPayload.bodyFat);
+  if (
+    !Number.isFinite(oldWeight) ||
+    !Number.isFinite(newWeight) ||
+    oldWeight <= 0 ||
+    newWeight <= 0 ||
+    !Number.isFinite(oldBf) ||
+    !Number.isFinite(newBf)
+  ) {
+    return;
+  }
+
+  const oldComposition = calculateBodyComposition(oldWeight, oldBf);
+  const newComposition = calculateBodyComposition(newWeight, newBf);
+  const realFatDelta = newComposition.fatMassKg - oldComposition.fatMassKg;
+
+  const cumulativeCaloricDelta = computeCumulativeCaloricDelta(
+    oldDate,
+    weighDate,
+    fullHistory,
+    referenceTdeeKcal,
+  );
+
+  const { expectedFatDelta } = calculateMetabolicTrajectory(cumulativeCaloricDelta);
+  const suggestedTDEECorrection = reconcileTDEE(expectedFatDelta, realFatDelta, daysPassed);
+
+  const calibrationRecord = {
+    data: weighDate,
+    date: weighDate,
+    weighInId: newEntryKey,
+    previousWeighInId: typeof previousEntry.id === 'string' ? previousEntry.id : null,
+    weightDelta: newWeight - oldWeight,
+    fatDeltaReale: realFatDelta,
+    fatDeltaAtteso: expectedFatDelta,
+    suggestedTDEECorrection,
+    daysPassed,
+    cumulativeCaloricDelta,
+    timestamp: Date.now(),
+  };
+
+  await set(ref(db, `users/${uid}/predictive_body_calibration/${newEntryKey}`), calibrationRecord);
+}
 
 function isRecalibrationApplyAllowed(analysis) {
   if (!analysis || typeof analysis !== 'object') return false;
@@ -586,6 +744,23 @@ export default function useBodyMetricsEngine({
       metricsPatch[newEntryKey] = payload;
       await update(ref(db, `users/${uid}/body_metrics`), metricsPatch);
       await syncCurrentProfileFromHistory({ uid, history: nextHistory });
+      try {
+        await persistPredictiveCalibrationAfterWeighIn({
+          db,
+          uid,
+          newEntryKey,
+          weighDate,
+          newPayload: payload,
+          historyAfterSave: nextHistory.map((entry) =>
+            typeof entry?.id === 'string' ? entry : { id: newEntryKey, ...payload },
+          ),
+          fullHistory,
+          referenceTdeeKcal: userTargets?.kcal,
+          metricEntryToIsoDay: metricEntryToIsoDaySafe,
+        });
+      } catch (calibrationErr) {
+        console.warn('[BodyMetrics] predictive calibration skipped:', calibrationErr);
+      }
       const proposalDecision = maybeCreateRecalibrationProposal({
         history: nextHistory,
         weighDate,
@@ -628,6 +803,7 @@ export default function useBodyMetricsEngine({
     bodyMetricsHistory,
     metricEntryToIsoDaySafe,
     getTodayString,
+    fullHistory,
     userTargets,
     maybeCreateRecalibrationProposal,
     syncCurrentProfileFromHistory,
@@ -685,6 +861,23 @@ export default function useBodyMetricsEngine({
         metricsPatch[newEntryKey] = payload;
         await update(ref(db, `users/${uid}/body_metrics`), metricsPatch);
         await syncCurrentProfileFromHistory({ uid, history: nextHistory });
+        try {
+          await persistPredictiveCalibrationAfterWeighIn({
+            db,
+            uid,
+            newEntryKey,
+            weighDate,
+            newPayload: payload,
+            historyAfterSave: nextHistory.map((entry) =>
+              typeof entry?.id === 'string' ? entry : { id: newEntryKey, ...payload },
+            ),
+            fullHistory,
+            referenceTdeeKcal: userTargets?.kcal,
+            metricEntryToIsoDay: metricEntryToIsoDaySafe,
+          });
+        } catch (calibrationErr) {
+          console.warn('[BodyMetrics] predictive calibration skipped:', calibrationErr);
+        }
         maybeCreateRecalibrationProposal({ history: nextHistory, weighDate, daysWindow: 14 });
         setBodyMetricsSaveToast(true);
         setTimeout(() => setBodyMetricsSaveToast(false), 3500);
@@ -704,6 +897,8 @@ export default function useBodyMetricsEngine({
       bodyMetricsHistory,
       metricEntryToIsoDaySafe,
       getTodayString,
+      fullHistory,
+      userTargets?.kcal,
       maybeCreateRecalibrationProposal,
       syncCurrentProfileFromHistory,
     ]

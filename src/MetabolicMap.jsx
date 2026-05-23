@@ -1,1226 +1,320 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
-import { calculateMetabolicMapPosition } from './metabolicMapEngine';
-import { buildMapSignalPresentation } from './features/salaComandi/engines/metabolicMapEngine';
+import React, { useMemo, useState } from 'react';
+import { sortBiometricsByTimeAsc } from './biometricHistory';
+import {
+  calculateBodyComposition,
+  calculateDynamicTarget,
+} from './features/salaComandi/engines/adaptiveTDEEEngine';
 
-/** viewBox 0–100: stesso sistema di posizionamento del marker (50 ± x/2, 50 ∓ y/2). */
-function mapPointToSvgCoords(x, y) {
-  return { cx: 50 + x / 2, cy: 50 - y / 2 };
-}
+/** Fattore di scala: quanti punti SVG vale 1 Kg di differenza dal target. */
+const KG_TO_SVG_SCALE = 2.5;
 
-/** Stesso range della mappa (−100…100) usato per i punti storici e per l’Ancora. */
-function clampMapAxis(value) {
-  return Math.max(-100, Math.min(100, value));
-}
+const DEFAULT_TARGET_FAT_KG = 15;
+const DEFAULT_TARGET_LEAN_KG = 60;
 
-/** Coordinate SVG dell’Ancora da baselineOffset (allineate allo storico). */
-function baselineOffsetToAnchorSvg(baselineX, baselineY) {
-  return mapPointToSvgCoords(clampMapAxis(baselineX), clampMapAxis(baselineY));
-}
+const ROUTE_VOCABULARY = {
+  longevity: {
+    nw: 'STRESS SISTEMICO',
+    ne: 'SOVRACCARICO',
+    sw: 'FRAGILITÀ',
+    se: 'SINDROME METABOLICA',
+    center: 'EQUILIBRIO (LONGEVITÀ)',
+  },
+  performance: {
+    nw: 'PICCO ATLETICO',
+    ne: 'BULKING SPORCO',
+    sw: 'DEALLENAMENTO',
+    se: 'FUORI FORMA',
+    center: 'TARGET STRUTTURALE',
+  },
+  definition: {
+    nw: 'TIRAGGIO ESTREMO',
+    ne: 'MASSA SPORCA',
+    sw: 'CATABOLISMO',
+    se: 'APPANNAMENTO',
+    center: 'CONDIZIONE ESTETICA',
+  },
+};
 
 /**
- * Longevity Score (1–100) da coordinate mappa (−100…100): r = distanza SVG dal centro (50,50).
+ * Converte i Kg reali in coordinate SVG (0-100), centrando il Target a (50,50).
+ * SVG Y è invertito (cresce verso il basso), quindi sottraiamo per andare "su" (più muscolo).
  */
-export function calculateMetabolicScore(mapX, mapY) {
-  const { cx, cy } = mapPointToSvgCoords(clampMapAxis(mapX), clampMapAxis(mapY));
-  const r = Math.hypot(cx - 50, cy - 50);
-  let raw;
-  if (r <= 40) {
-    raw = 100 - (r / 40) * 90;
-  } else {
-    raw = 10 - ((r - 40) / 10) * 9;
-  }
-  const rounded = Math.round(raw);
-  return Math.min(100, Math.max(1, rounded));
-}
-
-/** Raggio SVG (centro 50,50) per un dato Longevity Score (solo ramo r ≤ 40, score ≥ 10). */
-function svgRadiusForMetabolicScore(score) {
-  const s = Math.min(100, Math.max(10, score));
-  return ((100 - s) / 90) * 40;
-}
-
-
-function classifyMapPoint(x, y) {
-  const distance = Math.hypot(x, y);
-  let zone = 'green';
-  if (distance > 70) zone = 'red';
-  else if (distance > 35) zone = 'orange';
-
-  let quadrant = 'NE';
-  if (x < 0 && y >= 0) quadrant = 'NW';
-  else if (x >= 0 && y < 0) quadrant = 'SE';
-  else if (x < 0 && y < 0) quadrant = 'SW';
-  return { zone, quadrant, distance };
-}
-
-/** Soglie zona radiale: distanza ≤35 Blue Zone, ≤70 arancione, oltre rosso (coerente con classifyMapPoint). */
-const BLUE_ZONE_SVG_R = 17.5;
-
-/** Anelli di riferimento Longevity Score (solo etichette su archi con score ≥ 10 → r ≤ 40). */
-const LONGEVITY_SCORE_RING_LEVELS = [80, 60, 40, 20];
-
-/** Centro mappa / “Blue Zone” in unità SVG (viewBox). */
-const MAP_CENTER_SVG = { cx: 50, cy: 50 };
-
-/** Raggio Ancora (viewBox) — marker storici usano lo stesso raggio, senza glow. */
-const ANCHOR_CIRCLE_R = 3.5;
-
-/** Punti storici: poco contrasto, non competono con posizione attuale. */
-const HISTORIC_TRAIL_DOT_FILL = 'rgb(82, 102, 112)';
-
-/** Sotto questa lunghezza (spazio mappa −100…100) il vettore stile di vita si considera “quasi nullo”: ago verso il centro, più tenue. */
-const LIFESTYLE_VECTOR_IDLE_THRESHOLD = 4;
-
-/** Lunghezza lama ago (viewBox) quando il vettore stile di vita è quasi nullo. */
-const NEEDLE_BLADE_LEN_IDLE = 3.2;
-
-/** Estremi lama ago (viewBox) in funzione della magnitudo anchor → target (spazio mappa). */
-const NEEDLE_BLADE_LEN_MIN = 4;
-const NEEDLE_BLADE_LEN_MAX = 12.5;
-const NEEDLE_TRAIL_LEN_MIN = 0.4;
-const NEEDLE_TRAIL_LEN_MAX = 1.8;
-
-/** Valore di riferimento magnitudo (spazio mappa −100…100) per allungare l’ago al massimo. */
-const LIFESTYLE_LEN_FOR_FULL_NEEDLE = 95;
-
-const VECTOR_MOTION_TRANSITION = { duration: 0.32, ease: 'linear' };
-
-const ZONE_LABELS = {
-  green: 'Blue Zone (Longevità)',
-  orange: 'Arancione (Adattamento)',
-  red: 'Rossa (Pericolo)',
-};
-
-const ZOOM_MIN = 0.8;
-const ZOOM_MAX = 2.5;
-/** Palette desaturata: blu = ottimale, verde = transizione, arancio = attenzione, rosso = critico. */
-const ZONE_GRADIENTS = {
-  blue: [
-    '#2a343f', '#28333d', '#26323a', '#243138', '#223036',
-    '#202f33', '#1e2e31', '#1c2d2f', '#1a2c2c', '#182a2a',
-  ],
-  green: [
-    '#28393a', '#263738', '#243536', '#223334', '#203132',
-    '#1e2f30', '#1c2d2e', '#1a2b2c', '#18292a', '#162828',
-  ],
-  orange: [
-    '#332e2c', '#312c2a', '#2f2a28', '#2d2826', '#2b2624',
-    '#292422', '#272220', '#25201e', '#231e1c', '#211c1a',
-  ],
-  red: [
-    '#332d2f', '#312b2d', '#2f292b', '#2d2729', '#2b2527',
-    '#292325', '#272123', '#251f21', '#231d1f', '#211b1d',
-  ],
-};
-
-/** Morbidezza follow pinch (più alto = meno scatti). */
-const ZOOM_PINCH_SMOOTH = 0.28;
-const ZOOM_WHEEL_STEP = 0.018;
-
-function clampZoom(v) {
-  return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v));
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-function hexToRgb(hex) {
-  const h = String(hex || '').replace('#', '');
-  if (h.length !== 6) return { r: 255, g: 255, b: 255 };
+function mapKgToSvg(fatKg, leanKg, targetFatKg, targetLeanKg) {
+  const dx = (fatKg - targetFatKg) * KG_TO_SVG_SCALE;
+  const dy = (leanKg - targetLeanKg) * KG_TO_SVG_SCALE;
   return {
-    r: parseInt(h.slice(0, 2), 16),
-    g: parseInt(h.slice(2, 4), 16),
-    b: parseInt(h.slice(4, 6), 16),
+    cx: 50 + dx,
+    cy: 50 - dy,
   };
 }
 
-function rgbToHex({ r, g, b }) {
-  const toHex = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}
-
-function mixHex(a, b, t) {
-  const ca = hexToRgb(a);
-  const cb = hexToRgb(b);
-  return rgbToHex({
-    r: lerp(ca.r, cb.r, t),
-    g: lerp(ca.g, cb.g, t),
-    b: lerp(ca.b, cb.b, t),
-  });
-}
-
-function colorFromZoneArray(zone, t) {
-  const arr = ZONE_GRADIENTS[zone] || ZONE_GRADIENTS.blue;
-  const idx = Math.max(0, Math.min(arr.length - 1, Math.round(t * (arr.length - 1))));
-  return arr[idx];
-}
-
-export function getColorFromValue(value) {
-  const v = Math.max(0, Math.min(100, Number(value) || 0));
-  if (v >= 82) {
-    const t = (v - 82) / 18;
-    return colorFromZoneArray('blue', t);
+function buildHistoricalWeighInsFromBodyMetrics(bodyMetricsHistory) {
+  if (!Array.isArray(bodyMetricsHistory) || bodyMetricsHistory.length === 0) {
+    return [];
   }
-  if (v >= 62) {
-    const t = (v - 62) / 20;
-    return mixHex(colorFromZoneArray('green', 1), colorFromZoneArray('blue', 0), t);
-  }
-  if (v >= 40) {
-    const t = (v - 40) / 22;
-    return mixHex(colorFromZoneArray('orange', 1), colorFromZoneArray('green', 0), t);
-  }
-  const t = v / 40;
-  return mixHex(colorFromZoneArray('red', 1), colorFromZoneArray('orange', 0), t);
-}
 
-const QUADRANT_RISK_LABELS = {
-  NW: 'Carico elevato e recupero ridotto',
-  NE: 'Tendenza a surplus protratto',
-  SW: 'Tendenza a deficit prolungato',
-  SE: 'Surplus con scarso stimolo fisico',
-};
+  const sorted = sortBiometricsByTimeAsc(bodyMetricsHistory);
+  const out = [];
 
-/**
- * Scala proiezione tip (stessi fattori di {@link buildMapSignalPresentation}).
- */
-function mapProjectionScaleFromSignal(mapSignalStrength) {
-  if (mapSignalStrength === 'very_weak') return 0.3;
-  if (mapSignalStrength === 'weak') return 0.6;
-  return 1;
+  for (const entry of sorted) {
+    const weight = Number(entry?.weight);
+    const bfRaw = entry?.bodyFat;
+    if (!Number.isFinite(weight) || weight <= 0) continue;
+    if (bfRaw == null || bfRaw === '') continue;
+    const bodyFat = Number(bfRaw);
+    if (!Number.isFinite(bodyFat) || bodyFat < 0) continue;
+
+    const { fatMassKg, leanMassKg } = calculateBodyComposition(weight, bodyFat);
+    if (fatMassKg <= 0 && leanMassKg <= 0) continue;
+
+    out.push({
+      fatMassKg,
+      leanMassKg,
+      date: entry?.date,
+      id: entry?.id,
+    });
+  }
+
+  return out;
 }
 
 /**
- * Stessi livelli del motore bussola (rawMagnitude); solo resa visiva / copy.
- * @param {'very_weak' | 'weak' | 'moderate' | 'strong' | null | undefined} mapSignalStrength
- */
-function mapSignalVisualStyle(mapSignalStrength) {
-  const s = mapSignalStrength || 'strong';
-  if (s === 'very_weak') {
-    return {
-      markerOpacity: 0.38,
-      outerGlowHexAlpha: '0a',
-      activeRingStrokeMul: 0.42,
-      cornerLabelOpacityMul: 0.55,
-      showNeutralCircle: true,
-    };
-  }
-  if (s === 'weak') {
-    return {
-      markerOpacity: 0.72,
-      outerGlowHexAlpha: '12',
-      activeRingStrokeMul: 0.72,
-      cornerLabelOpacityMul: 0.82,
-      showNeutralCircle: false,
-    };
-  }
-  return {
-    markerOpacity: 1,
-    outerGlowHexAlpha: '1a',
-    activeRingStrokeMul: 1,
-    cornerLabelOpacityMul: 1,
-    showNeutralCircle: false,
-  };
-}
-
-function buildMapBackground() {
-  const b0 = ZONE_GRADIENTS.blue[0];
-  const b1 = ZONE_GRADIENTS.blue[4];
-  const g0 = ZONE_GRADIENTS.green[3];
-  const o0 = ZONE_GRADIENTS.orange[3];
-  const r0 = ZONE_GRADIENTS.red[3];
-  return `radial-gradient(circle at 50% 50%,
-    ${b0} 0%,
-    ${b1} 24%,
-    ${g0} 42%,
-    ${o0} 64%,
-    ${r0} 100%
-  )`;
-}
-
-/** Profondità: centro più leggibile, bordi leggermente oscurati. */
-function buildVignetteOverlay() {
-  return 'radial-gradient(circle at 50% 50%, rgba(5,6,8,0) 0%, rgba(5,6,8,0) 38%, rgba(0,0,0,0.16) 72%, rgba(0,0,0,0.48) 100%)';
-}
-
-function buildGridBackground() {
-  return `
-    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px),
-    linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)
-  `;
-}
-
-function buildGridSize() {
-  return '12.5% 12.5%, 12.5% 12.5%, 100% 100%, 100% 100%';
-}
-
-function buildGridPosition() {
-  return '0 0, 0 0, 50% 50%, 50% 50%';
-}
-
-function sleepDataReliabilityText(realSleepDays, totalWindowDays) {
-  if (totalWindowDays <= 0) return null;
-  if (realSleepDays >= totalWindowDays) return null;
-  if (realSleepDays <= 0) {
-    return 'Dati sonno non rilevati (utilizzata stima 8h)';
-  }
-  return `Affidabilità dati sonno: ${realSleepDays}/${totalWindowDays} giorni registrati`;
-}
-
-/**
- * Angolo (gradi) tra Ancora e punto finale nello spazio mappa (asse Y metabolico verso l’alto).
- * Equivale a atan2(dy_svg, dx_svg) dopo mapPointToSvgCoords.
- */
-function compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY) {
-  return (
-    Math.atan2(shiftedY - baselineY, shiftedX - baselineX) * (180 / Math.PI)
-  );
-}
-
-/**
- * Rotazione (gradi) per un ago che in stato base punta verso −Y (nord schermo).
- * Allinea la punta alla direzione anchor → target nello spazio SVG.
- */
-function needleRotationDegSvg(targetSvg, anchorSvg) {
-  const baseDeg =
-    (Math.atan2(
-      targetSvg.cy - anchorSvg.cy,
-      targetSvg.cx - anchorSvg.cx,
-    ) *
-      180) /
-    Math.PI;
-  return baseDeg + 90;
-}
-
-function rotationDegFromDirection(dirX, dirY) {
-  const baseDeg = (Math.atan2(dirY, dirX) * 180) / Math.PI;
-  return baseDeg + 90;
-}
-
-function chaikinSmooth(points, iterations = 2) {
-  let arr = Array.isArray(points) ? points.slice() : [];
-  if (arr.length < 3) return arr;
-  for (let k = 0; k < iterations; k += 1) {
-    const next = [arr[0]];
-    for (let i = 0; i < arr.length - 1; i += 1) {
-      const p0 = arr[i];
-      const p1 = arr[i + 1];
-      next.push(
-        { cx: p0.cx * 0.75 + p1.cx * 0.25, cy: p0.cy * 0.75 + p1.cy * 0.25 },
-        { cx: p0.cx * 0.25 + p1.cx * 0.75, cy: p0.cy * 0.25 + p1.cy * 0.75 },
-      );
-    }
-    next.push(arr[arr.length - 1]);
-    arr = next;
-  }
-  return arr;
-}
-
-/**
- * Quanto del trend (proiezione) influenza l’angolo del mini-ago. Il timeframe corto resta quasi neutrale;
- * 7G/14G/30G restano vicini così il cambio TF non simula un “viaggio” diverso.
- */
-function computeDirectionWeight(selectedTimeframe) {
-  const tf = String(selectedTimeframe ?? '7d');
-  if (tf === '1d') return 0.05;
-  if (tf === '7d') return 0.54;
-  if (tf === '14d') return 0.57;
-  if (tf === '30d') return 0.6;
-  return 0.54;
-}
-
-/** Opacità/confidenza visiva mini-bussola (non direzione). */
-function computeVisualConfidence({ selectedTimeframe, signalStrength, persistence } = {}) {
-  const tf = String(selectedTimeframe ?? '7d');
-  let c =
-    tf === '1d'
-      ? 0.34
-      : tf === '7d'
-        ? 0.76
-        : tf === '14d'
-          ? 0.84
-          : tf === '30d'
-            ? 0.93
-            : 0.76;
-  if (signalStrength === 'very_weak') c *= 0.87;
-  else if (signalStrength === 'weak') c *= 0.92;
-  const p = Number(persistence);
-  if (Number.isFinite(p)) {
-    if (p < 0.25) c *= 0.91;
-    else if (p < 0.38) c *= 0.96;
-  }
-  return Math.min(1, Math.max(0.2, c));
-}
-
-/** Neutrale SVG (−Y): direzione “cardio” con peso basso sul TF corto. */
-const NEEDLE_NEUTRAL_DIR = { x: 0, y: -1 };
-
-function blendNeedleDirection(rawDirX, rawDirY, weight) {
-  const w = Math.max(0, Math.min(1, Number(weight) || 0));
-  const bx = rawDirX * w + NEEDLE_NEUTRAL_DIR.x * (1 - w);
-  const by = rawDirY * w + NEEDLE_NEUTRAL_DIR.y * (1 - w);
-  const mag = Math.hypot(bx, by);
-  if (mag < 1e-9) return { x: NEEDLE_NEUTRAL_DIR.x, y: NEEDLE_NEUTRAL_DIR.y, mag: 0 };
-  return { x: bx / mag, y: by / mag, mag };
-}
-
-
-/**
- * Mappa metabolica: ancora + mini-bussola sull’ancora + vettore stile di vita.
+ * Mappa topografica cartesiana (Faro): asse X = massa grassa (kg), asse Y = massa magra (kg).
+ * Centro = obiettivo compositivo. Storico pesate, ancora (ultima pesata), cometa (previsione).
  */
 export default function MetabolicMap({
-  energyBalance = 0,
-  trainingLoad = 0,
-  sleepHours = 8,
-  glycemicInstability = 0,
-  realSleepDays = 0,
-  totalWindowDays = 0,
-  selectedTimeframe = '7d',
-  baselineOffset = null,
-  bodyMetricsHistory = null,
-  zoomLevel: zoomLevelProp = undefined,
-  onZoomLevelChange = null,
-  dailyPositions = null,
-  currentPosition = null,
-  /** Punto lento (es. 30g nel bundle); se presente sostituisce currentPosition per il marker principale. */
-  mapPositionInertial = null,
-  projectedPosition = null,
-  trajectoryVelocity = 0,
-  /** Opzionale: da {@link computeMetabolicMapCompassBundle}.mapSignalStrength (stesso rawMagnitude bussola). */
-  mapSignalStrength = null,
-  /** Opzionale: frazione giorni fuori dead-band (bundle); solo confidenza visiva mini-bussola. */
-  persistFracOutsideDeadband = null,
-  /** Opzionale: da {@link computeMetabolicMapCompassBundle}.mapPresentation — preferito se disponibile. */
-  mapPresentation: mapPresentationProp = null,
+  targetFatKg,
+  targetLeanKg,
+  historicalWeighIns: historicalWeighInsProp,
+  expectedFatDeltaKg = 0,
+  expectedLeanDeltaKg = 0,
+  bodyMetricsHistory = [],
+  userGender = 'M',
+  userHeightCm = 174,
 }) {
-  const uid = useId().replace(/:/g, '');
-  const glowFilterId = `${uid}-anchor-glow`;
-  const reduceMotion = useReducedMotion();
-  const vectorTransition = reduceMotion ? { duration: 0 } : VECTOR_MOTION_TRANSITION;
-  const [zoomLevelLocal, setZoomLevelLocal] = useState(1);
-  const [inertialTipSvg, setInertialTipSvg] = useState(MAP_CENTER_SVG);
-  const pinchRef = useRef({ active: false, startDist: 0, startZoom: 1 });
-  const targetTipRef = useRef(MAP_CENTER_SVG);
-  const inertiaVelRef = useRef(0.04);
-  const zoomLevel = typeof zoomLevelProp === 'number' ? clampZoom(zoomLevelProp) : zoomLevelLocal;
-  const setZoomLevel = (nextZoom) => {
-    const resolved = typeof nextZoom === 'function' ? nextZoom(zoomLevel) : nextZoom;
-    const clamped = clampZoom(resolved);
-    if (typeof onZoomLevelChange === 'function') onZoomLevelChange(clamped);
-    else setZoomLevelLocal(clamped);
+  const [selectedRoute, setSelectedRoute] = useState('longevity');
+
+  const historicalWeighIns = useMemo(() => {
+    if (Array.isArray(historicalWeighInsProp) && historicalWeighInsProp.length > 0) {
+      return historicalWeighInsProp;
+    }
+    return buildHistoricalWeighInsFromBodyMetrics(bodyMetricsHistory);
+  }, [historicalWeighInsProp, bodyMetricsHistory]);
+
+  // Estrai i valori dinamici in base alla rotta selezionata
+  const { targetFatKg: dynamicFatKg, targetLeanKg: dynamicLeanKg } = useMemo(() => {
+    // Se il parent passa userGender o userHeight, usali. Altrimenti fallback statici.
+    const genderResolved = typeof userGender === 'string' && userGender.trim() ? userGender : 'M';
+    const heightResolved =
+      Number.isFinite(Number(userHeightCm)) && Number(userHeightCm) > 0 ? Number(userHeightCm) : 174;
+    return calculateDynamicTarget(genderResolved, heightResolved, selectedRoute);
+  }, [selectedRoute, userGender, userHeightCm]);
+
+  // Usa i target dinamici come centro della mappa (Faro),
+  // ignorando temporaneamente i target passati dal parent.
+  const activeTargetFat = dynamicFatKg;
+  const activeTargetLean = dynamicLeanKg;
+
+  const hasHistory = historicalWeighIns.length > 0;
+  const currentPos = hasHistory
+    ? historicalWeighIns[historicalWeighIns.length - 1]
+    : { fatMassKg: activeTargetFat, leanMassKg: activeTargetLean };
+
+  const targetSvg = { cx: 50, cy: 50 };
+
+  const trailPoints = useMemo(
+    () =>
+      historicalWeighIns.map((p) =>
+        mapKgToSvg(p.fatMassKg, p.leanMassKg, activeTargetFat, activeTargetLean),
+      ),
+    [historicalWeighIns, activeTargetFat, activeTargetLean],
+  );
+
+  const anchorSvg = mapKgToSvg(
+    currentPos.fatMassKg,
+    currentPos.leanMassKg,
+    activeTargetFat,
+    activeTargetLean,
+  );
+
+  const fatDelta = Number(expectedFatDeltaKg) || 0;
+  const leanDelta = Number(expectedLeanDeltaKg) || 0;
+  // Calcoliamo la vera previsione basata sui delta (che possono essere 0)
+  const predictedFatReal = currentPos.fatMassKg + fatDelta;
+  const predictedLeanReal = currentPos.leanMassKg + leanDelta;
+  const realCometSvg = mapKgToSvg(
+    predictedFatReal,
+    predictedLeanReal,
+    activeTargetFat,
+    activeTargetLean,
+  );
+
+  // Creiamo una versione di fallback visivo se la previsione è identica all'ancora (stallo)
+  const isPrevisionStalled = fatDelta === 0 && leanDelta === 0;
+  const cometSvg = {
+    cx: isPrevisionStalled ? anchorSvg.cx + 12 : realCometSvg.cx,
+    cy: isPrevisionStalled ? anchorSvg.cy + 8 : realCometSvg.cy,
   };
 
-  const { x, y, finalAura } = useMemo(
-    () =>
-      calculateMetabolicMapPosition({
-        energyBalance,
-        trainingLoad,
-        sleepHours,
-        glycemicInstability,
-      }),
-    [energyBalance, trainingLoad, sleepHours, glycemicInstability],
-  );
+  const polylinePoints = trailPoints.map((p) => `${p.cx},${p.cy}`).join(' ');
+  const routeVocabulary = ROUTE_VOCABULARY[selectedRoute] || ROUTE_VOCABULARY.longevity;
 
-  const baselineX = Number(baselineOffset?.x) || 0;
-  const baselineY = Number(baselineOffset?.y) || 0;
-
-  const shiftedX = useMemo(
-    () => Math.max(-100, Math.min(100, x + baselineX)),
-    [x, baselineX],
-  );
-  const shiftedY = useMemo(
-    () => Math.max(-100, Math.min(100, y + baselineY)),
-    [y, baselineY],
-  );
-
-  const signalVisual = useMemo(
-    () => mapSignalVisualStyle(mapSignalStrength),
-    [mapSignalStrength],
-  );
-
-  const directionWeight = useMemo(() => computeDirectionWeight(selectedTimeframe), [selectedTimeframe]);
-  const visualConfidence = useMemo(
-    () =>
-      computeVisualConfidence({
-        selectedTimeframe,
-        signalStrength: mapSignalStrength,
-        persistence: persistFracOutsideDeadband,
-      }),
-    [selectedTimeframe, mapSignalStrength, persistFracOutsideDeadband],
-  );
-
-  const rawDisplayX = Number.isFinite(Number(mapPositionInertial?.x))
-    ? Number(mapPositionInertial.x)
-    : Number.isFinite(Number(currentPosition?.x))
-      ? Number(currentPosition.x)
-      : shiftedX;
-  const rawDisplayY = Number.isFinite(Number(mapPositionInertial?.y))
-    ? Number(mapPositionInertial.y)
-    : Number.isFinite(Number(currentPosition?.y))
-      ? Number(currentPosition.y)
-      : shiftedY;
-
-  const { zone: effectiveZone, quadrant: effectiveQuadrant, distance: effectiveDistance } = useMemo(
-    () =>
-      Number.isFinite(Number(mapPositionInertial?.x)) && Number.isFinite(Number(mapPositionInertial?.y))
-        ? classifyMapPoint(rawDisplayX, rawDisplayY)
-        : classifyMapPoint(shiftedX, shiftedY),
-    [mapPositionInertial, rawDisplayX, rawDisplayY, shiftedX, shiftedY],
-  );
-
-  const longevityDrop = useMemo(() => {
-    const anchor = calculateMetabolicScore(baselineX, baselineY);
-    const fin = calculateMetabolicScore(rawDisplayX, rawDisplayY);
-    return Math.max(0, anchor - fin);
-  }, [baselineX, baselineY, rawDisplayX, rawDisplayY]);
-
-  const resolvedPresentation = useMemo(() => {
-    if (mapPresentationProp != null) return mapPresentationProp;
-    if (mapSignalStrength == null) return null;
-    return buildMapSignalPresentation({
-      x: rawDisplayX,
-      y: rawDisplayY,
-      mapSignalStrength,
-      quadrant: effectiveQuadrant,
-      riskLabel: QUADRANT_RISK_LABELS[effectiveQuadrant],
-      longevityDrop,
-      glycemicAura: finalAura,
-      mapDistance: Math.hypot(rawDisplayX, rawDisplayY),
-    });
-  }, [
-    mapPresentationProp,
-    mapSignalStrength,
-    rawDisplayX,
-    rawDisplayY,
-    effectiveQuadrant,
-    longevityDrop,
-    finalAura,
-  ]);
-
-  const displayX = resolvedPresentation ? resolvedPresentation.displayX : rawDisplayX;
-  const displayY = resolvedPresentation ? resolvedPresentation.displayY : rawDisplayY;
-  const displayAuraForUi = resolvedPresentation ? resolvedPresentation.displayAura : finalAura;
-
-  const suppressRisk = resolvedPresentation?.suppressRiskNarrative ?? false;
-  const suppressLongevityWarn =
-    resolvedPresentation?.suppressLongevityWarning ??
-    (mapSignalStrength === 'very_weak' || mapSignalStrength === 'weak');
-  const hidePositionalLongevityScore =
-    resolvedPresentation?.suppressRiskNarrative === true || mapSignalStrength === 'very_weak';
-
-  const panelRadialDistance =
-    resolvedPresentation != null || mapSignalStrength != null
-      ? Math.hypot(displayX, displayY)
-      : effectiveDistance;
-
-  const mapAriaLabel = useMemo(() => {
-    if (resolvedPresentation?.suppressRiskNarrative) {
-      return `Mappa metabolica (${selectedTimeframe}): ${resolvedPresentation.presentationTitle} — ${resolvedPresentation.presentationCaption}`;
-    }
-    if (mapSignalStrength === 'weak') {
-      return `Mappa metabolica (${selectedTimeframe}): ${resolvedPresentation?.presentationTitle || 'tendenza leggera'}, distanza ${Math.round(panelRadialDistance)}`;
-    }
-    return `Mappa metabolica (${selectedTimeframe}): zona ${ZONE_LABELS[effectiveZone]}, quadrante ${QUADRANT_RISK_LABELS[effectiveQuadrant]}, distanza ${Math.round(panelRadialDistance)}${mapSignalStrength != null ? `, segnale ${mapSignalStrength}` : ''}`;
-  }, [
-    selectedTimeframe,
-    mapSignalStrength,
-    effectiveZone,
-    effectiveQuadrant,
-    resolvedPresentation,
-    panelRadialDistance,
-  ]);
-  const anchorSvg = baselineOffsetToAnchorSvg(baselineX, baselineY);
-  const tipSvg = mapPointToSvgCoords(displayX, displayY);
-  const movementVelocity = useMemo(() => {
-    const speed = Number.isFinite(Number(trajectoryVelocity)) ? Number(trajectoryVelocity) : 0;
-    const t = Math.max(0, Math.min(1, speed / 9));
-    return 0.02 + t * 0.06; // 0.02–0.08
-  }, [trajectoryVelocity]);
-  useEffect(() => {
-    targetTipRef.current = tipSvg;
-    inertiaVelRef.current = movementVelocity;
-  }, [tipSvg, movementVelocity]);
-  useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      setInertialTipSvg((prev) => {
-        const target = targetTipRef.current || prev;
-        const v = Math.max(0.02, Math.min(0.08, Number(inertiaVelRef.current) || 0.04));
-        return {
-          cx: prev.cx + (target.cx - prev.cx) * v,
-          cy: prev.cy + (target.cy - prev.cy) * v,
-        };
-      });
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  const lifestyleDx = shiftedX - baselineX;
-  const lifestyleDy = shiftedY - baselineY;
-  const trajectorySpeed = Number.isFinite(Number(trajectoryVelocity)) ? Number(trajectoryVelocity) : 0;
-  const lifestyleLenRaw = Math.max(Math.hypot(lifestyleDx, lifestyleDy), trajectorySpeed);
-  const trailNearlyIdle = lifestyleLenRaw < LIFESTYLE_VECTOR_IDLE_THRESHOLD;
-  const needleNearlyIdle = trailNearlyIdle;
-  const compassCenter = useMemo(
-    () => ({ x: inertialTipSvg.cx, y: inertialTipSvg.cy }),
-    [inertialTipSvg.cx, inertialTipSvg.cy]
-  );
-
-  /** Angolo (gradi) tra Ancora e punto finale nello spazio mappa — Fase 1 richiesta. */
-  const angleMapDeg = compassAngleDegMapSpace(shiftedX, shiftedY, baselineX, baselineY);
-
-  const projectedSvg = useMemo(() => {
-    if (!projectedPosition) return null;
-    const scale = mapSignalStrength != null ? mapProjectionScaleFromSignal(mapSignalStrength) : 1;
-    const sx = clampMapAxis(Number(projectedPosition.x) * scale);
-    const sy = clampMapAxis(Number(projectedPosition.y) * scale);
-    return mapPointToSvgCoords(sx, sy);
-  }, [projectedPosition, mapSignalStrength]);
-
-  const { directionVector, directionSource } = useMemo(() => {
-    const cx = compassCenter.x;
-    const cy = compassCenter.y;
-    let rawX = NEEDLE_NEUTRAL_DIR.x;
-    let rawY = NEEDLE_NEUTRAL_DIR.y;
-    let src = 'neutral';
-
-    if (projectedSvg) {
-      const dx = projectedSvg.cx - cx;
-      const dy = projectedSvg.cy - cy;
-      const mag = Math.hypot(dx, dy);
-      if (mag > 1e-6) {
-        rawX = dx / mag;
-        rawY = dy / mag;
-        src = 'projection';
-      }
-    }
-
-    const vec = blendNeedleDirection(rawX, rawY, directionWeight);
-    return { directionVector: vec, directionSource: src };
-  }, [projectedSvg, compassCenter.x, compassCenter.y, directionWeight]);
-
-  const needleRotateDeg = rotationDegFromDirection(directionVector.x, directionVector.y);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    console.log('[metabolicMapMotion:DEV]', {
-      selectedTimeframe,
-      directionSource,
-      directionWeight,
-      visualConfidence,
-      angleDeg: Math.round(needleRotateDeg * 10) / 10,
-      note: 'timeframe affects confidence, not travel distance',
-    });
-  }, [
-    selectedTimeframe,
-    directionSource,
-    directionWeight,
-    visualConfidence,
-    needleRotateDeg,
-  ]);
-  const needleBladeOpacity = needleNearlyIdle ? 0.32 : 0.86;
-
-  const distAnchor = Math.hypot(
-    anchorSvg.cx - MAP_CENTER_SVG.cx,
-    anchorSvg.cy - MAP_CENTER_SVG.cy,
-  );
-  const distTarget = Math.hypot(
-    inertialTipSvg.cx - MAP_CENTER_SVG.cx,
-    inertialTipSvg.cy - MAP_CENTER_SVG.cy,
-  );
-
-  const longevityScoreAnchor = calculateMetabolicScore(baselineX, baselineY);
-  const longevityScoreFinal = calculateMetabolicScore(displayX, displayY);
-  const surplusCaloricMap =
-    distTarget > distAnchor + 1e-6 ? longevityScoreAnchor - longevityScoreFinal : 0;
-  const needleFill =
-    distTarget > distAnchor
-      ? 'rgba(150, 95, 100, 0.78)'
-      : 'rgba(100, 140, 158, 0.82)';
-
-  const needleBladeLen = useMemo(() => {
-    if (needleNearlyIdle) return NEEDLE_BLADE_LEN_IDLE;
-    const t = Math.min(1, lifestyleLenRaw / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
-    return NEEDLE_BLADE_LEN_MIN + t * (NEEDLE_BLADE_LEN_MAX - NEEDLE_BLADE_LEN_MIN);
-  }, [needleNearlyIdle, lifestyleLenRaw]);
-  const trailLen = useMemo(() => {
-    if (trailNearlyIdle) return NEEDLE_TRAIL_LEN_MIN;
-    const t = Math.min(1, lifestyleLenRaw / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
-    return NEEDLE_TRAIL_LEN_MIN + t * (NEEDLE_TRAIL_LEN_MAX - NEEDLE_TRAIL_LEN_MIN);
-  }, [trailNearlyIdle, lifestyleLenRaw]);
-  const trailOpacity = useMemo(() => {
-    if (trailNearlyIdle) return 0.08;
-    const t = Math.min(1, lifestyleLenRaw / LIFESTYLE_LEN_FOR_FULL_NEEDLE);
-    return 0.1 + t * 0.1;
-  }, [trailNearlyIdle, lifestyleLenRaw]);
-
-  const needlePolygonPoints = useMemo(() => {
-    const halfW = Math.min(0.62, 0.28 + needleBladeLen * 0.035);
-    const baseY = 0.55;
-    return `0,-${needleBladeLen} ${halfW},${baseY} -${halfW},${baseY}`;
-  }, [needleBladeLen]);
-
-  const labelStyle = {
-    position: 'absolute',
-    fontSize: '0.62rem',
-    fontWeight: 500,
-    letterSpacing: '0.04em',
-    color: 'rgba(200, 210, 220, 0.17)',
-    lineHeight: 1.25,
-    maxWidth: '42%',
-    pointerEvents: 'none',
-    userSelect: 'none',
-  };
-
-  const sleepReliabilityLine = sleepDataReliabilityText(realSleepDays, totalWindowDays);
-  const dynamicCompassBorder = getColorFromValue(longevityScoreFinal);
-  const cornerLabelRgb = `rgba(200, 210, 220, ${(0.17 * signalVisual.cornerLabelOpacityMul).toFixed(3)})`;
-  const radarRingRadii = useMemo(
-    () => Array.from({ length: 10 }, (_, i) => 5 + i * 4.5),
-    []
-  );
-  const activeRingRadius = useMemo(() => {
-    if (!radarRingRadii.length) return null;
-    let best = radarRingRadii[0];
-    let bestDiff = Math.abs(best - distTarget);
-    for (let i = 1; i < radarRingRadii.length; i += 1) {
-      const rr = radarRingRadii[i];
-      const diff = Math.abs(rr - distTarget);
-      if (diff < bestDiff) {
-        best = rr;
-        bestDiff = diff;
-      }
-    }
-    return best;
-  }, [radarRingRadii, distTarget]);
   return (
-    <div
-      style={{
-        width: '100%',
-        maxWidth: 400,
-        margin: '0 auto',
-      }}
-    >
-      <div
+    <div style={{ width: '100%', maxWidth: 400, margin: '0 auto', position: 'relative' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '16px' }}>
+        {[
+          { id: 'longevity', label: '🌱 Longevità (Equilibrio)' },
+          { id: 'performance', label: '⚡ Performance (Massa)' },
+          { id: 'definition', label: '🔪 Definizione (Estetica)' },
+        ].map((route) => (
+          <button
+            key={route.id}
+            type="button"
+            onClick={() => setSelectedRoute(route.id)}
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.75rem',
+              fontWeight: selectedRoute === route.id ? 600 : 400,
+              color: selectedRoute === route.id ? '#fff' : 'rgba(255,255,255,0.6)',
+              background:
+                selectedRoute === route.id ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.05)',
+              border: `1px solid ${
+                selectedRoute === route.id ? 'rgba(56, 189, 248, 0.5)' : 'transparent'
+              }`,
+              borderRadius: '20px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            {route.label}
+          </button>
+        ))}
+      </div>
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="xMidYMid meet"
         role="img"
-        aria-label={mapAriaLabel}
-        style={{
-          position: 'relative',
-          width: '100%',
-          aspectRatio: '1 / 1',
-          maxWidth: 400,
-          borderRadius: 16,
-          overflow: 'hidden',
-          background: buildMapBackground(),
-          boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.04), 0 8px 32px rgba(0,0,0,0.5), 0 0 14px ${dynamicCompassBorder}${signalVisual.outerGlowHexAlpha}`,
-          touchAction: 'none',
-        }}
-        onWheel={(e) => {
-          if (!e.ctrlKey) return;
-          e.preventDefault();
-          setZoomLevel((z) => clampZoom(z - e.deltaY * ZOOM_WHEEL_STEP));
-        }}
-        onTouchStart={(e) => {
-          if (e.touches.length !== 2) return;
-          const [a, b] = [e.touches[0], e.touches[1]];
-          const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-          pinchRef.current = { active: true, startDist: dist, startZoom: zoomLevel };
-        }}
-        onTouchMove={(e) => {
-          if (!pinchRef.current.active || e.touches.length !== 2) return;
-          const [a, b] = [e.touches[0], e.touches[1]];
-          const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-          const ratio = dist / Math.max(1, pinchRef.current.startDist);
-          const targetZoom = pinchRef.current.startZoom * ratio;
-          setZoomLevel((z) => clampZoom(lerp(z, targetZoom, ZOOM_PINCH_SMOOTH)));
-        }}
-        onTouchEnd={() => {
-          pinchRef.current.active = false;
-        }}
+        aria-label="Mappa composizione corporea: massa grassa e massa magra rispetto all'obiettivo"
+        style={{ width: '100%', background: '#12181f', borderRadius: 16 }}
       >
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            inset: 0,
-            transform: `scale(${zoomLevel})`,
-            transformOrigin: '50% 50%',
-            pointerEvents: 'none',
-            zIndex: 0,
-          }}
+        {/* NW: Picco Atletico */}
+        <rect x="0" y="0" width="50" height="50" fill="rgba(16, 185, 129, 0.05)" />
+        {/* NE: Bulking Sporco */}
+        <rect x="50" y="0" width="50" height="50" fill="rgba(245, 158, 11, 0.05)" />
+        {/* SW: Sottopeso / deperimento */}
+        <rect x="0" y="50" width="50" height="50" fill="rgba(156, 163, 175, 0.05)" />
+        {/* SE: Palude sedentaria */}
+        <rect x="50" y="50" width="50" height="50" fill="rgba(225, 29, 72, 0.05)" />
+
+        <line
+          x1="50"
+          y1="0"
+          x2="50"
+          y2="100"
+          stroke="rgba(255,255,255,0.1)"
+          strokeWidth="0.5"
+          strokeDasharray="2 2"
+        />
+        <line
+          x1="0"
+          y1="50"
+          x2="100"
+          y2="50"
+          stroke="rgba(255,255,255,0.1)"
+          strokeWidth="0.5"
+          strokeDasharray="2 2"
+        />
+
+        {/* Etichette dei Quadranti (Camaleonte per rotta selezionata) */}
+        <text x="5" y="10" fill="rgba(245, 158, 11, 0.4)" fontSize="4" fontWeight="bold">
+          {routeVocabulary.nw}
+        </text>
+        <text
+          x="95"
+          y="10"
+          fill="rgba(225, 29, 72, 0.4)"
+          fontSize="4"
+          fontWeight="bold"
+          textAnchor="end"
         >
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundImage: buildGridBackground(),
-              backgroundSize: buildGridSize(),
-              backgroundPosition: buildGridPosition(),
-              opacity: 0.04,
-            }}
+          {routeVocabulary.ne}
+        </text>
+        <text x="5" y="95" fill="rgba(156, 163, 175, 0.4)" fontSize="4" fontWeight="bold">
+          {routeVocabulary.sw}
+        </text>
+        <text
+          x="95"
+          y="95"
+          fill="rgba(225, 29, 72, 0.4)"
+          fontSize="4"
+          fontWeight="bold"
+          textAnchor="end"
+        >
+          {routeVocabulary.se}
+        </text>
+
+        {/* Etichette degli Assi Cartesiani */}
+        <text x="52" y="98" fill="rgba(255,255,255,0.5)" fontSize="3.5">
+          Massa Grassa (kg) →
+        </text>
+        <text
+          x="2"
+          y="48"
+          fill="rgba(255,255,255,0.5)"
+          fontSize="3.5"
+          transform="rotate(-90 2 48)"
+        >
+          Massa Magra (kg) →
+        </text>
+
+        <circle cx={targetSvg.cx} cy={targetSvg.cy} r="3" fill="#facc15" opacity="0.2" />
+        <circle cx={targetSvg.cx} cy={targetSvg.cy} r="1" fill="#facc15" />
+        <text x="50" y="46" textAnchor="middle" fill="rgba(250, 204, 21, 0.65)" fontSize="3.2" fontWeight="bold">
+          {routeVocabulary.center}
+        </text>
+
+        {hasHistory && (
+          <polyline
+            points={polylinePoints}
+            fill="none"
+            stroke="rgba(255,255,255,0.3)"
+            strokeWidth="0.8"
+            strokeLinejoin="round"
           />
-        </div>
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: buildVignetteOverlay(),
-            pointerEvents: 'none',
-            zIndex: 1,
-          }}
-        />
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: 0,
-            bottom: 0,
-            width: 1,
-            marginLeft: -0.5,
-            background: 'rgba(255,255,255,0.045)',
-            pointerEvents: 'none',
-            zIndex: 0,
-          }}
-        />
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: 0,
-            right: 0,
-            height: 1,
-            marginTop: -0.5,
-            background: 'rgba(255,255,255,0.045)',
-            pointerEvents: 'none',
-            zIndex: 0,
-          }}
-        />
-
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="xMidYMid meet"
-          aria-hidden
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            zIndex: 4,
-            pointerEvents: 'none',
-            transform: `scale(${zoomLevel})`,
-            transformOrigin: '50% 50%',
-          }}
-        >
-          <defs>
-            <filter id={glowFilterId} x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="1.35" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <filter id={`${uid}-ring-glow`} x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" />
-            </filter>
-            <filter id={`${uid}-trail-soft`} x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="0.24" />
-            </filter>
-            <linearGradient id={`${uid}-trail-grad`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={`rgba(236,244,252,${Math.min(0.2, trailOpacity + 0.05)})`} />
-              <stop offset="100%" stopColor="rgba(236,244,252,0.02)" />
-            </linearGradient>
-          </defs>
-
-          {/* Radar rings + multi-gradient zones */}
-          <g aria-hidden>
-            {radarRingRadii.map((ringR, idx) => {
-              const ringStroke = idx % 2 === 0 ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.042)';
-              return (
-                <circle
-                  key={`radar-ring-${idx}`}
-                  cx={50}
-                  cy={50}
-                  r={ringR}
-                  fill={idx === 0 ? 'rgba(32, 42, 52, 0.04)' : 'none'}
-                  stroke={ringStroke}
-                  strokeWidth={0.18}
-                  vectorEffect="nonScalingStroke"
-                />
-              );
-            })}
-            {signalVisual.showNeutralCircle ? (
-              <circle
-                cx={50}
-                cy={50}
-                r={10.5}
-                fill="none"
-                stroke="rgba(235, 240, 248, 0.085)"
-                strokeWidth={0.32}
-                strokeDasharray="1.2 2.4"
-                vectorEffect="nonScalingStroke"
-              />
-            ) : null}
-            {activeRingRadius != null ? (
-              <circle
-                cx={50}
-                cy={50}
-                r={activeRingRadius}
-                fill="none"
-                stroke={`rgba(225,235,245,${0.22 * signalVisual.activeRingStrokeMul})`}
-                strokeWidth={0.28}
-                filter={`url(#${uid}-ring-glow)`}
-                vectorEffect="nonScalingStroke"
-              />
-            ) : null}
-            {LONGEVITY_SCORE_RING_LEVELS.map((level) => {
-              const ringR = svgRadiusForMetabolicScore(level);
-              return (
-                <g key={`longevity-ring-${level}`}>
-                  <circle
-                    cx={50}
-                    cy={50}
-                    r={ringR}
-                    fill="none"
-                    stroke="rgba(210, 218, 226, 0.075)"
-                    strokeWidth={0.18}
-                    strokeDasharray="0.9 2.2"
-                    vectorEffect="nonScalingStroke"
-                  />
-                  <text
-                    x={50}
-                    y={50 - ringR - 0.5}
-                    textAnchor="middle"
-                    fill="rgba(200, 208, 216, 0.14)"
-                    fontSize={7.75}
-                    fontWeight={500}
-                    style={{ fontFamily: 'system-ui, sans-serif', pointerEvents: 'none' }}
-                  >
-                    {level}
-                  </text>
-                </g>
-              );
-            })}
-          </g>
-          <motion.g
-            initial={{
-              x: compassCenter.x,
-              y: compassCenter.y,
-              opacity: signalVisual.markerOpacity * visualConfidence,
-            }}
-            animate={{
-              x: compassCenter.x,
-              y: compassCenter.y,
-              opacity: signalVisual.markerOpacity * visualConfidence,
-            }}
-            transition={vectorTransition}
-            style={{ transformOrigin: '0px 0px' }}
-            data-compass-angle-map-deg={Math.round(angleMapDeg * 10) / 10}
-          >
-            <motion.g animate={{ rotate: needleRotateDeg }} transition={vectorTransition}>
-              {/* Direzione+intensità: sottile scia dietro il centro, allineata all'asse del movimento. */}
-              <path
-                d={`M 0 0.42 Q 0 ${trailLen * 0.56} 0 ${trailLen}`}
-                stroke={`url(#${uid}-trail-grad)`}
-                strokeWidth={0.24}
-                strokeLinecap="round"
-                fill="none"
-                filter={`url(#${uid}-trail-soft)`}
-                vectorEffect="nonScalingStroke"
-              />
-              <circle
-                r={ANCHOR_CIRCLE_R + 0.75}
-                cx={0}
-                cy={0}
-                fill="none"
-                stroke="rgba(255,255,255,0.24)"
-                strokeWidth={0.22}
-                filter={`url(#${glowFilterId})`}
-                vectorEffect="nonScalingStroke"
-              />
-              <circle
-                r={ANCHOR_CIRCLE_R}
-                cx={0}
-                cy={0}
-                fill={mixHex(dynamicCompassBorder, '#f8fbff', 0.72)}
-                stroke={mixHex(dynamicCompassBorder, '#d9e5f2', 0.64)}
-                strokeWidth={0.42}
-                filter={`url(#${glowFilterId})`}
-                vectorEffect="nonScalingStroke"
-              />
-              <motion.polygon
-                points={needlePolygonPoints}
-                stroke="rgba(255,255,255,0.22)"
-                strokeWidth={0.1}
-                vectorEffect="nonScalingStroke"
-                animate={{ fill: needleFill, opacity: needleBladeOpacity }}
-                transition={vectorTransition}
-              />
-            </motion.g>
-          </motion.g>
-
-        </svg>
-
-        {mapSignalStrength !== 'very_weak' && !suppressRisk ? (
-          <>
-        <span
-          style={{ ...labelStyle, top: 8, left: 8, textAlign: 'left', zIndex: 5, color: cornerLabelRgb }}
-        >
-          Carico elevato e recupero ridotto
-        </span>
-        <span
-          style={{ ...labelStyle, top: 8, right: 8, textAlign: 'right', zIndex: 5, color: cornerLabelRgb }}
-        >
-          Tendenza a surplus protratto
-        </span>
-        <span
-          style={{
-            ...labelStyle,
-            bottom: 8,
-            left: 8,
-            textAlign: 'left',
-            zIndex: 5,
-            color: cornerLabelRgb,
-          }}
-        >
-          Tendenza a deficit prolungato
-        </span>
-        <span
-          style={{
-            ...labelStyle,
-            bottom: 8,
-            right: 8,
-            textAlign: 'right',
-            zIndex: 5,
-            color: cornerLabelRgb,
-          }}
-        >
-          Surplus con scarso stimolo fisico
-        </span>
-          </>
-        ) : null}
-        {mapSignalStrength === 'very_weak' || mapSignalStrength === 'weak' || suppressRisk ? (
-          <div
-            aria-hidden
-            style={{
-              position: 'absolute',
-              left: '50%',
-              bottom: 36,
-              transform: 'translateX(-50%)',
-              zIndex: 6,
-              maxWidth: '88%',
-              textAlign: 'center',
-              fontSize: '0.65rem',
-              fontWeight: 600,
-              letterSpacing: '0.06em',
-              color:
-                mapSignalStrength === 'very_weak' || suppressRisk
-                  ? 'rgba(210, 218, 228, 0.42)'
-                  : 'rgba(210, 218, 228, 0.48)',
-              lineHeight: 1.3,
-              pointerEvents: 'none',
-              userSelect: 'none',
-              fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-            }}
-          >
-            {(mapSignalStrength === 'very_weak' || suppressRisk
-              ? (resolvedPresentation?.presentationTitle || 'Segnale metabolico debole')
-              : (resolvedPresentation?.presentationTitle || 'Tendenza leggera'))}
-          </div>
-        ) : null}
-      </div>
-
-      <div
-        style={{
-          marginTop: 12,
-          padding: '12px 14px',
-          borderRadius: 12,
-          background: 'rgba(20, 24, 28, 0.85)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          fontSize: '0.8125rem',
-          lineHeight: 1.45,
-          color: 'rgba(230, 235, 240, 0.92)',
-        }}
-      >
-        {suppressRisk ? (
-          <>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              {resolvedPresentation.presentationTitle}
-            </div>
-            <div
-              style={{
-                fontSize: '0.78rem',
-                color: 'rgba(200, 208, 216, 0.88)',
-                marginBottom: 6,
-              }}
-            >
-              {resolvedPresentation.presentationCaption}
-            </div>
-            <div
-              style={{
-                fontSize: '0.78rem',
-                color: 'rgba(200, 208, 216, 0.88)',
-                marginBottom: 6,
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '6px 14px',
-              }}
-            >
-              <span>
-                Longevity Score (Ancora):{' '}
-                <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
-              </span>
-              {hidePositionalLongevityScore ? (
-                <span style={{ color: 'rgba(200, 208, 216, 0.78)' }}>
-                  Indicatore posizione: non significativo con il segnale attuale
-                </span>
-              ) : (
-                <span>
-                  Longevity Score (indicatore posizione):{' '}
-                  <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
-              Distanza indicativa: {panelRadialDistance.toFixed(1)} · Aura glicemica (indicatore):{' '}
-              {Math.round(displayAuraForUi)}
-            </div>
-          </>
-        ) : mapSignalStrength === 'weak' ? (
-          <>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              {resolvedPresentation?.presentationTitle}
-            </div>
-            <div
-              style={{
-                fontSize: '0.78rem',
-                color: 'rgba(200, 208, 216, 0.88)',
-                marginBottom: 6,
-              }}
-            >
-              {resolvedPresentation?.presentationCaption}
-            </div>
-            <div
-              style={{
-                fontSize: '0.78rem',
-                color: 'rgba(200, 208, 216, 0.88)',
-                marginBottom: 6,
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '6px 14px',
-              }}
-            >
-              <span>
-                Longevity Score (Ancora):{' '}
-                <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
-              </span>
-              <span>
-                Longevity Score (Posizione finale):{' '}
-                <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
-              </span>
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
-              Distanza dal centro: {panelRadialDistance.toFixed(1)} · Aura glicemica:{' '}
-              {Math.round(displayAuraForUi)}
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              Zona attuale: {ZONE_LABELS[effectiveZone]} — Rischio:{' '}
-              {QUADRANT_RISK_LABELS[effectiveQuadrant]}
-            </div>
-            <div
-              style={{
-                fontSize: '0.78rem',
-                color: 'rgba(200, 208, 216, 0.88)',
-                marginBottom: 6,
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '6px 14px',
-              }}
-            >
-              <span>
-                Longevity Score (Ancora):{' '}
-                <strong style={{ color: '#e2e8f0' }}>{longevityScoreAnchor}</strong>
-              </span>
-              {hidePositionalLongevityScore ? (
-                <span style={{ color: 'rgba(200, 208, 216, 0.78)' }}>
-                  Indicatore posizione: non significativo con il segnale attuale
-                </span>
-              ) : (
-                <span>
-                  Longevity Score (Posizione finale):{' '}
-                  <strong style={{ color: '#e2e8f0' }}>{longevityScoreFinal}</strong>
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'rgba(200, 208, 216, 0.75)' }}>
-              Distanza dal centro: {panelRadialDistance.toFixed(1)} · Aura glicemica:{' '}
-              {Math.round(mapSignalStrength != null ? displayAuraForUi : finalAura)}
-            </div>
-            {surplusCaloricMap > 0 ? (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  background: 'rgba(60, 42, 38, 0.45)',
-                  border: '1px solid rgba(150, 110, 95, 0.35)',
-                  color: 'rgba(210, 195, 185, 0.92)',
-                  fontWeight: 600,
-                  fontSize: '0.78rem',
-                }}
-              >
-                Surplus calorico (mappa): la posizione finale è più lontana dal centro dell’Ancora —
-                calo di Longevity Score potenziale fino a ~{surplusCaloricMap} punti rispetto
-                all’Ancora.
-              </div>
-            ) : null}
-            {(mapSignalStrength != null ? displayAuraForUi : finalAura) > 50 ? (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  background: 'rgba(55, 38, 40, 0.45)',
-                  border: '1px solid rgba(130, 90, 92, 0.35)',
-                  color: 'rgba(215, 190, 188, 0.92)',
-                  fontWeight: 600,
-                  fontSize: '0.78rem',
-                }}
-              >
-                Allarme Infiammazione Glicemica in corso
-              </div>
-            ) : null}
-          </>
         )}
-      </div>
 
-      {sleepReliabilityLine && (
-        <p
-          style={{
-            margin: '8px 0 0',
-            padding: '0 2px',
-            fontSize: 10,
-            lineHeight: 1.35,
-            fontWeight: 500,
-            letterSpacing: '0.02em',
-            color: 'rgba(230, 235, 242, 0.45)',
-            textAlign: 'center',
-            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-          }}
-        >
-          {sleepReliabilityLine}
-        </p>
-      )}
+        {hasHistory && (
+          <circle
+            cx={anchorSvg.cx}
+            cy={anchorSvg.cy}
+            r="1.5"
+            fill="#38bdf8"
+            stroke="#0284c7"
+            strokeWidth="0.5"
+          />
+        )}
+
+        {/* La Cometa (Vettore Predittivo dello Stile di Vita) */}
+        <g>
+          <line
+            x1={anchorSvg.cx}
+            y1={anchorSvg.cy}
+            x2={cometSvg.cx}
+            y2={cometSvg.cy}
+            stroke="#fb923c"
+            strokeWidth="0.8"
+            strokeLinecap="round"
+            strokeDasharray="1.5 1.5"
+          />
+          <circle
+            cx={cometSvg.cx}
+            cy={cometSvg.cy}
+            r="1.5"
+            fill="#fb923c"
+            style={{ filter: 'drop-shadow(0px 0px 3px #fb923c)' }}
+          />
+        </g>
+      </svg>
     </div>
   );
 }

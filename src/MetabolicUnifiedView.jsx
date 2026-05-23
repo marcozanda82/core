@@ -4,6 +4,10 @@ import { computeMetabolicMapCompassBundle } from './features/salaComandi/engines
 import MetabolicDataAudit from './MetabolicDataAudit';
 import MetabolicCompass from './MetabolicCompass';
 import MetabolicMap from './MetabolicMap';
+import {
+  calculateBodyComposition,
+  calculateMetabolicTrajectory,
+} from './features/salaComandi/engines/adaptiveTDEEEngine';
 import MetabolicCoachCompact from '@/features/salaComandi/components/MetabolicCoachCompact';
 import useMetabolicCoach from './features/salaComandi/hooks/useMetabolicCoach';
 
@@ -13,6 +17,12 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '7d', label: '7G' },
   { value: '14d', label: '14G' },
   { value: '30d', label: '30G' },
+];
+const MAP_HISTORY_WINDOWS = [
+  { value: '1m', label: '1M' },
+  { value: '3m', label: '3M' },
+  { value: '6m', label: '6M' },
+  { value: 'all', label: 'ALL' },
 ];
 
 const COMPASS_DEBUG_ALL_TIMEFRAMES = ['1d', '7d', '14d', '30d'];
@@ -161,6 +171,7 @@ export default function MetabolicUnifiedView({
   const [viewMode, setViewMode] = useState('compass');
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_TIMEFRAME);
+  const [mapHistoryWindow, setMapHistoryWindow] = useState('3m');
   const [mapZoom, setMapZoom] = useState(1);
 
   const isTfControlled =
@@ -218,6 +229,65 @@ export default function MetabolicUnifiedView({
 
   const referenceTdeeKcal =
     userTargets != null && Number(userTargets?.kcal) > 0 ? Number(userTargets.kcal) : null;
+
+  const targetWeight = useMemo(() => {
+    const profileTarget = Number(userTargets?.weight);
+    if (Number.isFinite(profileTarget) && profileTarget > 0) return profileTarget;
+    const latestWeight = Number(bodyMetricsHistory?.[bodyMetricsHistory.length - 1]?.weight);
+    if (Number.isFinite(latestWeight) && latestWeight > 0) return latestWeight;
+    return 75;
+  }, [userTargets, bodyMetricsHistory]);
+
+  const targetBF = useMemo(() => {
+    const profileBf = Number(userTargets?.bodyFat);
+    if (Number.isFinite(profileBf) && profileBf >= 0) return profileBf;
+    for (let i = bodyMetricsHistory.length - 1; i >= 0; i -= 1) {
+      const bf = Number(bodyMetricsHistory[i]?.bodyFat);
+      if (Number.isFinite(bf) && bf >= 0) return bf;
+    }
+    return 15;
+  }, [userTargets, bodyMetricsHistory]);
+
+  const { fatMassKg: targetFatKg, leanMassKg: targetLeanKg } = useMemo(
+    () => calculateBodyComposition(targetWeight, targetBF),
+    [targetWeight, targetBF],
+  );
+
+  const { expectedFatDelta: expectedFatDeltaKg, expectedLeanDelta: expectedLeanDeltaKg } = useMemo(() => {
+    const projectionWindow = dailyHistory.slice(-10);
+    const cumulativeCaloricDelta = projectionWindow.reduce(
+      (sum, day) => sum + (Number(day?.kcalBalance) || 0),
+      0,
+    );
+    const meanTrainingAxis =
+      projectionWindow.length > 0
+        ? projectionWindow.reduce((sum, day) => sum + (Number(day?.trainingLoad) || 0), 0) /
+          projectionWindow.length
+        : Number(metabolicMapInputs?.trainingLoad);
+    const trainingAxis = Number(meanTrainingAxis);
+    const trainingStimulus =
+      Number.isFinite(trainingAxis) ? Math.max(0, Math.min(1, (trainingAxis + 100) / 200)) : 1;
+    return calculateMetabolicTrajectory(cumulativeCaloricDelta, 1, trainingStimulus);
+  }, [dailyHistory, metabolicMapInputs]);
+
+  const filteredBodyMetricsHistory = useMemo(() => {
+    const history = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
+    if (mapHistoryWindow === 'all') return history;
+
+    const daysBack =
+      mapHistoryWindow === '1m' ? 30 : mapHistoryWindow === '3m' ? 90 : mapHistoryWindow === '6m' ? 180 : 90;
+    const now = Date.now();
+    const cutoffMs = now - daysBack * 86400000;
+
+    return history.filter((entry) => {
+      const ts = Number(entry?.timestamp);
+      if (Number.isFinite(ts) && ts > 0) return ts >= cutoffMs;
+      const rawDate = typeof entry?.date === 'string' ? entry.date.slice(0, 10) : '';
+      if (!rawDate) return false;
+      const parsed = new Date(`${rawDate}T12:00:00`).getTime();
+      return Number.isFinite(parsed) && parsed >= cutoffMs;
+    });
+  }, [bodyMetricsHistory, mapHistoryWindow]);
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -315,7 +385,7 @@ export default function MetabolicUnifiedView({
 
       <div
         role="tablist"
-        aria-label="Periodo analisi"
+        aria-label={viewMode === 'map' ? 'Storico mappa composizione' : 'Periodo analisi bussola'}
         className="metabolic-compass-timeframe"
         style={{
           position: 'relative',
@@ -331,15 +401,21 @@ export default function MetabolicUnifiedView({
           background: 'rgba(255,255,255,0.04)',
         }}
       >
-        {METABOLIC_COMPASS_TIMEFRAMES.map(({ value, label }) => {
-          const active = selectedTimeframe === value;
+        {(viewMode === 'map' ? MAP_HISTORY_WINDOWS : METABOLIC_COMPASS_TIMEFRAMES).map(({ value, label }) => {
+          const active = viewMode === 'map' ? mapHistoryWindow === value : selectedTimeframe === value;
           return (
             <button
               key={value}
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => setSelectedTimeframe(value)}
+              onClick={() => {
+                if (viewMode === 'map') {
+                  setMapHistoryWindow(value);
+                } else {
+                  setSelectedTimeframe(value);
+                }
+              }}
               style={{
                 flex: 1,
                 minWidth: 0,
@@ -402,6 +478,8 @@ export default function MetabolicUnifiedView({
           >
             <MetabolicCompass
               dailyHistory={dailyHistory}
+              bodyMetricsHistory={bodyMetricsHistory}
+              userTargets={userTargets}
               compassScreenActive={compassScreenActive}
               mapZoneColor={mapZoneColor}
               compassAmbientStyle={mapData.compassAmbientStyle}
@@ -485,7 +563,7 @@ export default function MetabolicUnifiedView({
                 totalWindowDays={metabolicMapInputs.totalWindowDays}
                 selectedTimeframe={selectedTimeframe}
                 baselineOffset={baselineOffset}
-                bodyMetricsHistory={bodyMetricsHistory}
+                bodyMetricsHistory={filteredBodyMetricsHistory}
                 zoomLevel={mapZoom}
                 onZoomLevelChange={setMapZoom}
                 dailyPositions={dailyMapPositions}
@@ -496,6 +574,10 @@ export default function MetabolicUnifiedView({
                 mapSignalStrength={mapData.mapSignalStrength}
                 persistFracOutsideDeadband={mapData.persistFracOutsideDeadband ?? null}
                 mapPresentation={mapData.mapPresentation}
+                targetFatKg={targetFatKg}
+                targetLeanKg={targetLeanKg}
+                expectedFatDeltaKg={expectedFatDeltaKg}
+                expectedLeanDeltaKg={expectedLeanDeltaKg}
               />
               {SHOW_METABOLIC_DEBUG ? (
                 <MetabolicDataAudit
