@@ -1,5 +1,40 @@
 import React from 'react';
 
+const OlioEvoCruetIcon = () => (
+  <svg width="1em" height="1em" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M16 29C9 29 7 25 7 19C7 13 13 9 13 5H19C19 9 25 13 25 19C25 25 23 29 16 29Z"
+      fill="#FBBF24"
+      stroke="#B45309"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    />
+    <path d="M8 22C8.5 26 11 28 16 28C21 28 23.5 26 24 22H8Z" fill="#65A30D" opacity="0.6" />
+    <rect x="12" y="14" width="8" height="9" rx="1.5" fill="#FAFAF9" stroke="#D1D5DB" strokeWidth="0.5" />
+    <path d="M14 16.5C14 15 17 15 17 17.5C17 19 14 19 14 16.5Z" fill="#4D7C0F" />
+    <rect x="13.5" y="3" width="5" height="2" rx="0.5" fill="#374151" />
+    <path
+      d="M16 3V1.5C16 0.5 14 0.5 13 1L10.5 1.5"
+      fill="none"
+      stroke="#D1D5DB"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+    <path
+      d="M10.5 2.5C10.5 2.5 9 4 9 5C9 5.8 9.7 6.5 10.5 6.5C11.3 6.5 12 5.8 12 5C12 4 10.5 2.5 10.5 2.5Z"
+      fill="#FBBF24"
+    />
+    <path
+      d="M10 18C10 15 11 12 12.5 9"
+      fill="none"
+      stroke="#FFFFFF"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      opacity="0.8"
+    />
+  </svg>
+);
+
 export default function MacroPlateVisualizer({ mealMacros = {}, targetMacros = {} }) {
   // Calcola la scala visiva: 0 se vuoto, 1 se target raggiunto, max 2.5 per l'eccesso
   const getScale = (current, target) => {
@@ -27,7 +62,7 @@ export default function MacroPlateVisualizer({ mealMacros = {}, targetMacros = {
       pos: { top: '25%', left: '25%' }, align: 'left' },
     { id: 'carbo', label: 'Carboidrati', icon: '🍝', current: mealMacros.carbo || 0, target: targetMacros.carbo || 0, color: '#3b82f6', 
       pos: { top: '25%', left: '75%' }, align: 'right' },
-    { id: 'fat', label: 'Grassi', icon: '🥑', current: mealMacros.fat || 0, target: targetMacros.fat || 0, color: '#f59e0b', 
+    { id: 'fat', label: 'Grassi', icon: null, current: mealMacros.fat || 0, target: targetMacros.fat || 0, color: '#f59e0b', 
       pos: { top: '75%', left: '25%' }, align: 'left' },
     { id: 'fiber', label: 'Fibre/Verd.', icon: '🥦', current: mealMacros.fiber ?? 0, target: targetMacros.fiber ?? 15, color: '#10b981', 
       pos: { top: '75%', left: '75%' }, align: 'right' },
@@ -36,7 +71,7 @@ export default function MacroPlateVisualizer({ mealMacros = {}, targetMacros = {
   const visualHarmonizer = {
     '🥩': 1.3, // Fattore correttivo per la bistecca (più grande del 30%)
     '🍝': 1.0,
-    '🥑': 1.0,
+    fat: 1.2, // Ampolla EVO SVG
     '🥦': 1.0
   };
 
@@ -72,7 +107,7 @@ export default function MacroPlateVisualizer({ mealMacros = {}, targetMacros = {
         {/* Render Icone con Animazione di Scala */}
         {quadrants.map((q) => {
           const scaleVal = getScale(q.current, q.target);
-          const iconHarmony = visualHarmonizer[q.icon] ?? 1;
+          const iconHarmony = visualHarmonizer[q.id] ?? visualHarmonizer[q.icon] ?? 1;
           const currentGrams = Number(q.current) || 0;
           const iconVisible = currentGrams > 0.1;
           return (
@@ -84,7 +119,7 @@ export default function MacroPlateVisualizer({ mealMacros = {}, targetMacros = {
               opacity: iconVisible ? 1 : 0,
               zIndex: scaleVal > 1 ? 10 : 1 // Se supera 1, va sopra gli altri
             }}>
-              {q.icon}
+              {q.id === 'fat' ? <OlioEvoCruetIcon /> : q.icon}
             </div>
           );
         })}
