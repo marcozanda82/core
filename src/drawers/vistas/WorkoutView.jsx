@@ -1,5 +1,11 @@
 import React from 'react';
 import {
+  parseDurationMinutesInput,
+  WORKOUT_DURATION_DEFAULT,
+  WORKOUT_DURATION_MIN,
+  WORKOUT_DURATION_MAX,
+} from '../../utils/durationMinutesInput';
+import {
   WORKOUT_ACTIVITY_SELECTOR_IDS,
   getWorkoutActivityTypeDef,
   WORKOUT_MUSCLE_GROUP_DEFS,
@@ -75,7 +81,12 @@ export default function WorkoutView({
               value={decimalToTimeStr(workoutStartTime)}
               onChange={(e) => {
                 const startTime = Math.min(24, Math.max(0, parseTimeStrToDecimal(e.target.value)));
-                const durationHours = Math.max(0, Number(workoutDurationMin) || 0) / 60;
+                const durationHours =
+                  parseDurationMinutesInput(workoutDurationMin, {
+                    min: WORKOUT_DURATION_MIN,
+                    max: WORKOUT_DURATION_MAX,
+                    fallback: WORKOUT_DURATION_DEFAULT,
+                  }) / 60;
                 let computedEndTime = startTime + durationHours;
                 while (computedEndTime >= 24) computedEndTime -= 24;
                 while (computedEndTime < 0) computedEndTime += 24;
@@ -105,11 +116,14 @@ export default function WorkoutView({
               max={600}
               step={5}
               value={workoutDurationMin}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                setWorkoutDurationMin(
-                  Number.isFinite(n) ? Math.max(15, Math.min(600, Math.round(n))) : 30,
-                );
+              onChange={(e) => setWorkoutDurationMin(e.target.value)}
+              onBlur={() => {
+                const parsed = parseDurationMinutesInput(workoutDurationMin, {
+                  min: WORKOUT_DURATION_MIN,
+                  max: WORKOUT_DURATION_MAX,
+                  fallback: WORKOUT_DURATION_DEFAULT,
+                });
+                setWorkoutDurationMin(String(parsed));
               }}
               style={{
                 width: '100%',

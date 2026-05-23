@@ -98,6 +98,12 @@ import {
   sumConsumedMacrosExcludingMeal,
   buildRemainingDistributionMeals,
 } from './utils/mealStrategy';
+import {
+  parseDurationMinutesInput,
+  WORKOUT_DURATION_DEFAULT,
+  WORKOUT_DURATION_MIN,
+  WORKOUT_DURATION_MAX,
+} from './utils/durationMinutesInput';
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
 import FullscreenGraphView from './features/charts/FullscreenGraphView';
@@ -908,13 +914,23 @@ export default function SalaComandi() {
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(300);
   const [workoutEndTime, setWorkoutEndTime] = useState(19);
-  const [workoutDurationMin, setWorkoutDurationMin] = useState(30);
+  const [workoutDurationMin, setWorkoutDurationMin] = useState(String(WORKOUT_DURATION_DEFAULT));
   const [workoutStrengthDetail, setWorkoutStrengthDetail] = useState('');
   const [workoutMuscles, setWorkoutMuscles] = useState([]);
   const [editingWorkoutId, setEditingWorkoutId] = useState(null);
   const [editingMealId, setEditingMealId] = useState(null);
 
-  const workoutDurationHours = Math.max(0.25, Math.min(24, Number(workoutDurationMin) || 30) / 60);
+  const workoutDurationHours = Math.max(
+    0.25,
+    Math.min(
+      24,
+      parseDurationMinutesInput(workoutDurationMin, {
+        min: WORKOUT_DURATION_MIN,
+        max: WORKOUT_DURATION_MAX,
+        fallback: WORKOUT_DURATION_DEFAULT,
+      }) / 60,
+    ),
+  );
   const workoutStartTime = (() => {
     let s = Number(workoutEndTime) - workoutDurationHours;
     if (s < 0) s += 24;
@@ -2933,7 +2949,7 @@ export default function SalaComandi() {
       case 'workout': {
         const nowT = getCurrentTimeRoundedTo15Min();
         setWorkoutEndTime(nowT);
-        setWorkoutDurationMin(30);
+        setWorkoutDurationMin(String(WORKOUT_DURATION_DEFAULT));
         setWorkoutStrengthDetail('');
         if (fromModal) setShowChoiceModal(false);
         setActiveAction('allenamento');
@@ -3910,11 +3926,17 @@ Ottimo! Diario aggiornato. 🥗`;
       window.alert('Compila «Dettaglio workout» per salvare questo tipo di attività.');
       return;
     }
+    const normalizedDurationMin = parseDurationMinutesInput(workoutDurationMin, {
+      min: WORKOUT_DURATION_MIN,
+      max: WORKOUT_DURATION_MAX,
+      fallback: WORKOUT_DURATION_DEFAULT,
+    });
+    setWorkoutDurationMin(String(normalizedDurationMin));
+    const duration = Math.max(0.25, Math.min(24, normalizedDurationMin / 60));
     const def = getWorkoutActivityTypeDef(workoutType);
     const nodeKind = def?.nodeKind ?? 'workout';
     const isWork = nodeKind === 'work';
     const isCognitive = nodeKind === 'cognitive';
-    const duration = workoutDurationHours;
     const startDec = workoutStartTime;
     const finalId = editingWorkoutId || (isWork ? 'work_' : isCognitive ? 'cognitive_' : 'workout_') + Date.now();
 
@@ -7362,7 +7384,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 const endT =
                   hourDec != null && !Number.isNaN(hourDec) ? hourDec : getCurrentTimeRoundedTo15Min();
                 setWorkoutEndTime(endT);
-                setWorkoutDurationMin(45);
+                setWorkoutDurationMin('45');
                 const k = Number(plan.kcal);
                 setWorkoutKcal(Number.isFinite(k) && k > 0 ? Math.round(k) : 300);
                 setWorkoutStrengthDetail('');
@@ -9631,7 +9653,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           setTimelineInsertUI(null);
           setEditingWorkoutId(null);
           setWorkoutEndTime(Math.min(24, hour + 0.5));
-          setWorkoutDurationMin(45);
+          setWorkoutDurationMin('45');
           setWorkoutStrengthDetail('');
           setActiveAction('allenamento');
           setIsDrawerOpen(true);
@@ -9696,7 +9718,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               setWorkoutType(resolveWorkoutActivityTypeId(ghostSt) ?? ghostSt);
               const durH = Math.max(0.25, Number(node.duration) || 1);
               setWorkoutEndTime(Math.min(24, t + durH));
-              setWorkoutDurationMin(Math.max(15, Math.min(600, Math.round(durH * 60))));
+              setWorkoutDurationMin(String(Math.max(15, Math.min(600, Math.round(durH * 60)))));
               setWorkoutKcal(node.kcal || node.cal || 300);
               setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
               setWorkoutMuscles(
@@ -9718,7 +9740,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             const startT = node.time ?? 12;
             const durH = Math.max(0.25, Number(node.duration) || 1);
             setWorkoutEndTime(Math.min(24, startT + durH));
-            setWorkoutDurationMin(Math.max(15, Math.min(600, Math.round(durH * 60))));
+            setWorkoutDurationMin(String(Math.max(15, Math.min(600, Math.round(durH * 60)))));
             setWorkoutKcal(node.kcal || node.cal || 300);
             setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
             setWorkoutMuscles(
