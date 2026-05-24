@@ -91,8 +91,14 @@ export default function MetabolicMap({
   bodyMetricsHistory = [],
   userGender = 'M',
   userHeightCm = 174,
+  selectedRoute: selectedRouteProp,
+  onRouteChange,
 }) {
-  const [selectedRoute, setSelectedRoute] = useState('longevity');
+  const [selectedRouteInternal, setSelectedRouteInternal] = useState('longevity');
+  const selectedRoute =
+    typeof selectedRouteProp === 'string' && selectedRouteProp
+      ? selectedRouteProp
+      : selectedRouteInternal;
 
   const historicalWeighIns = useMemo(() => {
     if (Array.isArray(historicalWeighInsProp) && historicalWeighInsProp.length > 0) {
@@ -139,22 +145,20 @@ export default function MetabolicMap({
 
   const fatDelta = Number(expectedFatDeltaKg) || 0;
   const leanDelta = Number(expectedLeanDeltaKg) || 0;
-  // Calcoliamo la vera previsione basata sui delta (che possono essere 0)
   const predictedFatReal = currentPos.fatMassKg + fatDelta;
   const predictedLeanReal = currentPos.leanMassKg + leanDelta;
-  const realCometSvg = mapKgToSvg(
+  const cometSvg = mapKgToSvg(
     predictedFatReal,
     predictedLeanReal,
     activeTargetFat,
     activeTargetLean,
   );
-
-  // Creiamo una versione di fallback visivo se la previsione è identica all'ancora (stallo)
-  const isPrevisionStalled = fatDelta === 0 && leanDelta === 0;
-  const cometSvg = {
-    cx: isPrevisionStalled ? anchorSvg.cx + 12 : realCometSvg.cx,
-    cy: isPrevisionStalled ? anchorSvg.cy + 8 : realCometSvg.cy,
-  };
+  const hasRealPrediction = fatDelta !== 0 || leanDelta !== 0;
+  const dx_needle = cometSvg.cx - anchorSvg.cx;
+  const dy_needle = cometSvg.cy - anchorSvg.cy;
+  const distance_needle = Math.sqrt(dx_needle * dx_needle + dy_needle * dy_needle);
+  const needleAngle = distance_needle > 0 ? (Math.atan2(dy_needle, dx_needle) * 180) / Math.PI : -90;
+  const showCompassNeedle = hasRealPrediction && distance_needle > 0;
 
   const polylinePoints = trailPoints.map((p) => `${p.cx},${p.cy}`).join(' ');
   const routeVocabulary = ROUTE_VOCABULARY[selectedRoute] || ROUTE_VOCABULARY.longevity;
@@ -170,7 +174,12 @@ export default function MetabolicMap({
           <button
             key={route.id}
             type="button"
-            onClick={() => setSelectedRoute(route.id)}
+            onClick={() => {
+              if (!(typeof selectedRouteProp === 'string' && selectedRouteProp)) {
+                setSelectedRouteInternal(route.id);
+              }
+              if (typeof onRouteChange === 'function') onRouteChange(route.id);
+            }}
             style={{
               padding: '6px 12px',
               fontSize: '0.75rem',
@@ -283,37 +292,42 @@ export default function MetabolicMap({
           />
         )}
 
+        {/* La Bussola del Presente (Ancora + Vettore Direzionale) */}
         {hasHistory && (
-          <circle
-            cx={anchorSvg.cx}
-            cy={anchorSvg.cy}
-            r="1.5"
-            fill="#38bdf8"
-            stroke="#0284c7"
-            strokeWidth="0.5"
-          />
+          <g transform={`translate(${anchorSvg.cx}, ${anchorSvg.cy})`}>
+            <circle
+              r="4"
+              fill="#38bdf8"
+              fillOpacity="0.4"
+            >
+              <animate
+                attributeName="r"
+                values="4; 6; 4"
+                dur="2s"
+                repeatCount="indefinite"
+              />
+              <animate
+                attributeName="fill-opacity"
+                values="0.4; 0; 0.4"
+                dur="2s"
+                repeatCount="indefinite"
+              />
+            </circle>
+            <circle r="4" fill="rgba(15, 23, 42, 0.9)" stroke="#38bdf8" strokeWidth="0.8" />
+            {showCompassNeedle && (
+              <g
+                transform={`rotate(${needleAngle})`}
+                style={{
+                  transition: 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  transformOrigin: '0px 0px',
+                }}
+              >
+                <polygon points="-1.5,-1.5 3,0 -1.5,1.5" fill="#fb923c" />
+              </g>
+            )}
+            <circle r="1" fill="#38bdf8" />
+          </g>
         )}
-
-        {/* La Cometa (Vettore Predittivo dello Stile di Vita) */}
-        <g>
-          <line
-            x1={anchorSvg.cx}
-            y1={anchorSvg.cy}
-            x2={cometSvg.cx}
-            y2={cometSvg.cy}
-            stroke="#fb923c"
-            strokeWidth="0.8"
-            strokeLinecap="round"
-            strokeDasharray="1.5 1.5"
-          />
-          <circle
-            cx={cometSvg.cx}
-            cy={cometSvg.cy}
-            r="1.5"
-            fill="#fb923c"
-            style={{ filter: 'drop-shadow(0px 0px 3px #fb923c)' }}
-          />
-        </g>
       </svg>
     </div>
   );

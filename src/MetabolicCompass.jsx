@@ -6,18 +6,11 @@ import {
   METABOLIC_COMPASS_DIRECTIONS,
   METABOLIC_GOAL,
 } from './metabolicDirection';
-import { getTodayString } from './coreEngine';
-import { computeMetabolicEngineTargetVec, historyFingerprint } from './metabolicDirectionEngine';
 import MetabolicMap from './MetabolicMap';
 import { sortBiometricsByTimeAsc } from './biometricHistory';
-import { computeMetabolicMapInputsFromDailyHistory } from './metabolicMapPeriodInputs';
 import {
   calculateBodyComposition,
-  calculateMetabolicTrajectory,
 } from './features/salaComandi/engines/adaptiveTDEEEngine';
-
-/** `true` in dev: mostra intervallo date sotto la bussola. Produzione: `false`. */
-const SHOW_METABOLIC_DEBUG = false;
 
 const FINAL_ANGLE_MIN = -135;
 const FINAL_ANGLE_MAX = 135;
@@ -35,13 +28,6 @@ const MICRO_SUGGESTION_FINAL_OPACITY = 0.7;
 /** Attesa ≈ durata fade-out prima di aggiornare il testo, poi fade-in. */
 const MICRO_SUGGESTION_FADE_MS = 340;
 const MICRO_SUGGESTION_TRANSITION = 'opacity 0.34s cubic-bezier(0.4, 0, 0.2, 1)';
-
-const COMPASS_WINDOW_DAYS = {
-  '1d': 1,
-  '7d': 7,
-  '14d': 14,
-  '30d': 30,
-};
 
 /** Lunghezza fissa dal centro al vertice ≈ 75% del raggio (= 37.5% del lato del volto quadrato). */
 const ARROW_LENGTH_FRAC_OF_FACE = 0.375;
@@ -266,43 +252,6 @@ function metabolicCompassMicroSuggestion(angleDeg, targetMetabolicAngleDeg) {
 const METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG = 180 / Math.PI;
 
 /**
- * Direzione metabolica per il periodo selezionato: stesso vettore del motore, senza smoothing né rumore angolare.
- *
- * @param {Array<{ date?: string, kcalBalance: number, trainingLoad: number }>} dailyHistory
- * @param {'1d' | '7d' | '14d' | '30d'} timeframe
- */
-function computeMetabolicCompassDirection(dailyHistory, timeframe, referenceTdee = 2000) {
-  const { x, y } = computeMetabolicEngineTargetVec(dailyHistory, timeframe, referenceTdee);
-  const angleRad = Math.atan2(y, x);
-  const angleDeg = Number.isFinite(angleRad) ? angleRad * METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG : 0;
-  const magnitude = Math.hypot(x, y);
-  return { angleDeg, magnitude, x, y };
-}
-
-/** Allineato a {@link computeMetabolicEngineTargetVec} (escluso oggi, ultima finestra). */
-const COMPASS_DEBUG_TIMEFRAME_DAYS = { '1d': 1, '7d': 7, '14d': 14, '30d': 30 };
-
-function formatMetabolicCompassDebugDate(isoYmd) {
-  if (!isoYmd || typeof isoYmd !== 'string') return '—';
-  const ymd = isoYmd.slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return '—';
-  const t = new Date(`${ymd}T12:00:00`);
-  if (Number.isNaN(t.getTime())) return '—';
-  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' }).format(t);
-}
-
-function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
-  const today = getTodayString();
-  const safe = (dailyHistory || []).filter((e) => e?.date !== today);
-  const windowLen = COMPASS_DEBUG_TIMEFRAME_DAYS[timeframe] ?? COMPASS_DEBUG_TIMEFRAME_DAYS['7d'];
-  const slice = safe.length <= windowLen ? safe : safe.slice(-windowLen);
-  return {
-    startDate: slice[0]?.date,
-    endDate: slice[slice.length - 1]?.date,
-  };
-}
-
-/**
  * @param {{
  *   dailyHistory?: Array<{ date?: string, kcalBalance: number, trainingLoad: number }>,
  *   compassScreenActive?: boolean,
@@ -320,21 +269,20 @@ function getMetabolicCompassWindowDateRange(dailyHistory, timeframe) {
  *   selectedTimeframe?: string,
  *   onTimeframeChange?: (t: string) => void,
  *   metabolicMapInputsFromBundle?: { energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number } | null,
- *   compassDirectionFromBundle?: { angleDeg: number, magnitude: number, x: number, y: number } | null,
- *   visualVectorFromBundle?: { visualX: number, visualY: number, visualMagnitude: number, rawMagnitude: number } | null,
- *   compassDisplayLabelFromBundle?: string | null,
  *   mapSignalStrengthFromBundle?: 'very_weak' | 'weak' | 'moderate' | 'strong' | null,
- *   referenceTdeeKcal?: number | null,
+ *   expectedFatDeltaKg?: number | null,
+ *   expectedLeanDeltaKg?: number | null,
  * }} props
  * `dailyHistory`: serie dal tracker (ultimo = ieri; oggi escluso dal motore). Passare `[]` se assente.
  * `compassScreenActive`: quando passa da false a true, ripristina il periodo al default (es. rientro tab bussola).
  * `goal` / `onGoalChange` e `selectedTimeframe` / `onTimeframeChange`: modalità controllata (es. vista unificata).
- * Con `visualVectorFromBundle` la bussola usa `visualMagnitude` (e vettore visivo) mantenendo `angleDeg` da `compassDirectionFromBundle`.
  */
 export default function MetabolicCompass({
   dailyHistory: dailyHistoryProp = [],
   bodyMetricsHistory: bodyMetricsHistoryProp = [],
   userTargets = null,
+  expectedFatDeltaKg: expectedFatDeltaKgProp = null,
+  expectedLeanDeltaKg: expectedLeanDeltaKgProp = null,
   compassScreenActive = true,
   mapZoneColor = '',
   compassAmbientStyle = null,
@@ -344,19 +292,10 @@ export default function MetabolicCompass({
   selectedTimeframe: timeframeControlled,
   onTimeframeChange,
   metabolicMapInputsFromBundle = null,
-  compassDirectionFromBundle = null,
-  visualVectorFromBundle = null,
-  compassDisplayLabelFromBundle = null,
   mapSignalStrengthFromBundle = null,
-  referenceTdeeKcal = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
-
-  const referenceTdeeResolved =
-    referenceTdeeKcal != null && Number(referenceTdeeKcal) > 0
-      ? Number(referenceTdeeKcal)
-      : 2000;
 
   const prevCompassScreenActiveRef = useRef(false);
   const [goalInternal, setGoalInternal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
@@ -370,8 +309,6 @@ export default function MetabolicCompass({
   const isTfControlled =
     timeframeControlled !== undefined && typeof onTimeframeChange === 'function';
   const selectedTimeframe = isTfControlled ? timeframeControlled : timeframeInternal;
-
-  const [internalCompassSnapshot, setInternalCompassSnapshot] = useState(null);
 
   useEffect(() => {
     if (!compassScreenActive) {
@@ -388,25 +325,14 @@ export default function MetabolicCompass({
     prevCompassScreenActiveRef.current = true;
   }, [compassScreenActive, isTfControlled, onTimeframeChange]);
 
-  const compassHistoryKey = useMemo(
-    () => historyFingerprint(dailyHistory, selectedTimeframe),
-    [dailyHistory, selectedTimeframe]
-  );
-
-  const usesEngineCompassBundle =
-    metabolicMapInputsFromBundle != null && compassDirectionFromBundle != null;
-
-  const fallbackMetabolicMapInputs = useMemo(
-    () =>
-      computeMetabolicMapInputsFromDailyHistory(
-        dailyHistory,
-        selectedTimeframe,
-        referenceTdeeResolved
-      ),
-    [dailyHistory, selectedTimeframe, referenceTdeeResolved]
-  );
-  /** Medie periodo + instabilità glicemica teorica per la mappa (stessa finestra della bussola). */
-  const metabolicMapInputs = metabolicMapInputsFromBundle ?? fallbackMetabolicMapInputs;
+  const metabolicMapInputs = metabolicMapInputsFromBundle ?? {
+    energyBalance: 0,
+    trainingLoad: 0,
+    sleepHours: 8,
+    glycemicInstability: 0,
+    realSleepDays: 0,
+    totalWindowDays: 0,
+  };
 
   const targetWeight = useMemo(() => {
     const profileTarget = Number(userTargets?.weight);
@@ -433,104 +359,30 @@ export default function MetabolicCompass({
     [targetWeight, targetBF],
   );
 
-  const { expectedFatDelta: expectedFatDeltaKg, expectedLeanDelta: expectedLeanDeltaKg } = useMemo(() => {
-    const windowSize = COMPASS_WINDOW_DAYS[selectedTimeframe] || 7;
-    const slice = dailyHistory.slice(-windowSize);
-    const cumulativeCaloricDelta = slice.reduce(
-      (sum, day) => sum + (Number(day?.kcalBalance) || 0),
-      0,
-    );
-    const trainingAxis = Number(metabolicMapInputs?.trainingLoad);
-    const trainingStimulus =
-      Number.isFinite(trainingAxis) ? Math.max(0, Math.min(1, (trainingAxis + 100) / 200)) : 1;
-    return calculateMetabolicTrajectory(cumulativeCaloricDelta, 1, trainingStimulus);
-  }, [dailyHistory, selectedTimeframe, metabolicMapInputs]);
+  const expectedFatDeltaShared = Number.isFinite(Number(expectedFatDeltaKgProp))
+    ? Number(expectedFatDeltaKgProp)
+    : 0;
+  const expectedLeanDeltaShared = Number.isFinite(Number(expectedLeanDeltaKgProp))
+    ? Number(expectedLeanDeltaKgProp)
+    : 0;
+  const usesSharedDeltaSnapshot = true;
 
-  useEffect(() => {
-    if (usesEngineCompassBundle) return;
-    const result = computeMetabolicCompassDirection(
-      dailyHistory,
-      selectedTimeframe,
-      referenceTdeeResolved
-    );
-    setInternalCompassSnapshot(result);
-  }, [dailyHistory, selectedTimeframe, referenceTdeeResolved, usesEngineCompassBundle]);
+  const sharedDeltaCompassSnapshot = useMemo(() => {
+    if (!usesSharedDeltaSnapshot) return null;
+    const x = expectedFatDeltaShared;
+    const y = expectedLeanDeltaShared;
+    const angleDeg = Number.isFinite(Math.atan2(y, x))
+      ? Math.atan2(y, x) * METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG
+      : 0;
+    const magnitude = Math.hypot(x, y);
+    return { angleDeg, magnitude, x, y };
+  }, [usesSharedDeltaSnapshot, expectedFatDeltaShared, expectedLeanDeltaShared]);
 
-  useEffect(() => {
-    if (!usesEngineCompassBundle || !import.meta.env.DEV) return;
-    const oldInternalSnapshot = computeMetabolicCompassDirection(
-      dailyHistory,
-      selectedTimeframe,
-      referenceTdeeResolved
-    );
-    const oldInternalMapInputs = computeMetabolicMapInputsFromDailyHistory(
-      dailyHistory,
-      selectedTimeframe,
-      referenceTdeeResolved
-    );
-    const snapshotMatch =
-      JSON.stringify(oldInternalSnapshot) === JSON.stringify(compassDirectionFromBundle);
-    const inputsMatch =
-      JSON.stringify(oldInternalMapInputs) === JSON.stringify(metabolicMapInputsFromBundle);
-    if (import.meta.env.DEV) {
-      console.log('[CompassParityCheck]', {
-        oldInternal: {
-          snapshot: oldInternalSnapshot,
-          metabolicMapInputs: oldInternalMapInputs,
-        },
-        newFromMapData: {
-          snapshot: compassDirectionFromBundle,
-          metabolicMapInputs: metabolicMapInputsFromBundle,
-        },
-        snapshotMatch,
-        inputsMatch,
-      });
-    }
-    if (!snapshotMatch || !inputsMatch) {
-      if (import.meta.env.DEV) {
-        console.warn('[CompassParityCheck] mismatch', {
-          snapshotMatch,
-          inputsMatch,
-          oldInternalSnapshot,
-          compassDirectionFromBundle,
-        });
-      }
-    }
-  }, [
-    compassHistoryKey,
-    usesEngineCompassBundle,
-    dailyHistory,
-    selectedTimeframe,
-    compassDirectionFromBundle,
-    metabolicMapInputsFromBundle,
-    referenceTdeeResolved,
-  ]);
-
-  const compassSnapshot = compassDirectionFromBundle ?? internalCompassSnapshot;
+  const compassSnapshot = sharedDeltaCompassSnapshot;
   const angleDeg = compassSnapshot?.angleDeg ?? 0;
-  const hasVisualLayer =
-    usesEngineCompassBundle &&
-    visualVectorFromBundle != null &&
-    Number.isFinite(Number(visualVectorFromBundle.visualMagnitude));
-  const visualX = hasVisualLayer
-    ? Number(visualVectorFromBundle.visualX)
-    : Number(compassSnapshot?.x ?? 0);
-  const visualY = hasVisualLayer
-    ? Number(visualVectorFromBundle.visualY)
-    : Number(compassSnapshot?.y ?? 0);
-  const magnitude = hasVisualLayer
-    ? Math.hypot(visualX, visualY)
-    : compassSnapshot?.magnitude ?? 0;
-
-  /** TEMPORARY: verifica finestra date in test */
-  const compassDebugRangeLine = useMemo(() => {
-    const tfLabel = selectedTimeframe;
-    const { startDate, endDate } = getMetabolicCompassWindowDateRange(
-      dailyHistory,
-      selectedTimeframe
-    );
-    return `${tfLabel} · ${formatMetabolicCompassDebugDate(startDate)} → ${formatMetabolicCompassDebugDate(endDate)}`;
-  }, [dailyHistory, selectedTimeframe]);
+  const visualX = Number(compassSnapshot?.x ?? 0);
+  const visualY = Number(compassSnapshot?.y ?? 0);
+  const magnitude = compassSnapshot?.magnitude ?? 0;
 
   const finalAngle = useMemo(() => {
     const targetAngle = getMetabolicTargetAngle(goal);
@@ -554,15 +406,8 @@ export default function MetabolicCompass({
   );
 
   const suggestionLineText = useMemo(() => {
-    if (usesEngineCompassBundle) {
-      const s =
-        typeof compassDisplayLabelFromBundle === 'string'
-          ? compassDisplayLabelFromBundle.trim()
-          : '';
-      return s.length > 0 ? s : 'Segnale debole / quasi neutro';
-    }
     return microSuggestionText;
-  }, [usesEngineCompassBundle, compassDisplayLabelFromBundle, microSuggestionText]);
+  }, [microSuggestionText]);
 
   const compassAmbientVisual = useMemo(() => {
     const a = compassAmbientStyle;
@@ -892,7 +737,7 @@ export default function MetabolicCompass({
                 height: `${ARROW_LENGTH_FRAC_OF_FACE * 100}%`,
                 marginLeft: -ARROW_SHAFT_WIDTH_PX / 2,
                 transformOrigin: '50% 100%',
-                transition: ARROW_SHAFT_VISUAL_TRANSITION,
+                transition: `transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), ${ARROW_SHAFT_VISUAL_TRANSITION}`,
                 borderRadius: 9999,
                 background: tierStyle.needleBg,
                 boxShadow: arrowMagStyle.boxShadow,
@@ -965,30 +810,6 @@ export default function MetabolicCompass({
         </div>
       </div>
 
-      {/* Finestra date solo in modalità debug (stesso flag della vista unificata per convenzione). */}
-      {SHOW_METABOLIC_DEBUG ? (
-      <div
-        className="metabolic-compass-debug-range"
-        aria-hidden
-        style={{
-          margin: '8px 0 0',
-          width: '100%',
-          maxWidth: 340,
-          fontSize: 8,
-          fontWeight: 500,
-          letterSpacing: '0.05em',
-          lineHeight: 1.35,
-          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          color: 'rgba(232, 235, 242, 0.38)',
-          textAlign: 'center',
-          opacity: 0.55,
-          userSelect: 'none',
-        }}
-      >
-        {compassDebugRangeLine}
-      </div>
-      ) : null}
-
       <div
         className="metabolic-compass-micro-suggestion"
         role="status"
@@ -1006,7 +827,7 @@ export default function MetabolicCompass({
           fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           color: 'rgb(232, 235, 242)',
           textAlign: 'center',
-          textTransform: usesEngineCompassBundle ? 'none' : 'lowercase',
+          textTransform: 'lowercase',
           background: 'none',
           border: 'none',
           padding: 0,

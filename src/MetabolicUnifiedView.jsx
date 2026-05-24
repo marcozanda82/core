@@ -6,8 +6,10 @@ import MetabolicCompass from './MetabolicCompass';
 import MetabolicMap from './MetabolicMap';
 import {
   calculateBodyComposition,
+  calculateDynamicTarget,
   calculateMetabolicTrajectory,
 } from './features/salaComandi/engines/adaptiveTDEEEngine';
+import { generateCoachAdvice } from './features/salaComandi/engines/coachEngine';
 import MetabolicCoachCompact from '@/features/salaComandi/components/MetabolicCoachCompact';
 import useMetabolicCoach from './features/salaComandi/hooks/useMetabolicCoach';
 
@@ -18,11 +20,12 @@ const METABOLIC_COMPASS_TIMEFRAMES = [
   { value: '14d', label: '14G' },
   { value: '30d', label: '30G' },
 ];
-const MAP_HISTORY_WINDOWS = [
-  { value: '1m', label: '1M' },
-  { value: '3m', label: '3M' },
-  { value: '6m', label: '6M' },
-  { value: 'all', label: 'ALL' },
+const RADAR_TIMEFRAMES = [
+  { value: 'AUTO', label: 'AUTO' },
+  { value: '1D', label: 'IERI' },
+  { value: '7D', label: '7G' },
+  { value: '14D', label: '14G' },
+  { value: '30D', label: '30G' },
 ];
 
 const COMPASS_DEBUG_ALL_TIMEFRAMES = ['1d', '7d', '14d', '30d'];
@@ -171,7 +174,8 @@ export default function MetabolicUnifiedView({
   const [viewMode, setViewMode] = useState('compass');
   const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
   const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_TIMEFRAME);
-  const [mapHistoryWindow, setMapHistoryWindow] = useState('3m');
+  const [radarTimeframe, setRadarTimeframe] = useState('AUTO');
+  const [mapRoute, setMapRoute] = useState('longevity');
   const [mapZoom, setMapZoom] = useState(1);
 
   const isTfControlled =
@@ -186,9 +190,6 @@ export default function MetabolicUnifiedView({
     mapZoneColor,
     dailyMapPositions,
     projectedTrajectory,
-    lineProjection,
-    lineTrend,
-    lineConfidence,
   } = mapData;
 
   useEffect(() => {
@@ -227,9 +228,6 @@ export default function MetabolicUnifiedView({
     dailyHistory,
   });
 
-  const referenceTdeeKcal =
-    userTargets != null && Number(userTargets?.kcal) > 0 ? Number(userTargets.kcal) : null;
-
   const targetWeight = useMemo(() => {
     const profileTarget = Number(userTargets?.weight);
     if (Number.isFinite(profileTarget) && profileTarget > 0) return profileTarget;
@@ -254,40 +252,87 @@ export default function MetabolicUnifiedView({
   );
 
   const { expectedFatDelta: expectedFatDeltaKg, expectedLeanDelta: expectedLeanDeltaKg } = useMemo(() => {
-    const projectionWindow = dailyHistory.slice(-10);
-    const cumulativeCaloricDelta = projectionWindow.reduce(
+    const parseDayMs = (day) => {
+      if (!day || typeof day.date !== 'string') return NaN;
+      return new Date(`${day.date.slice(0, 10)}T12:00:00`).getTime();
+    };
+    const now = new Date();
+    const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const msDay = 86400000;
+
+    const latestWeighDateMs = (() => {
+      let best = NaN;
+      for (let i = bodyMetricsHistory.length - 1; i >= 0; i -= 1) {
+        const rawDate = typeof bodyMetricsHistory[i]?.date === 'string' ? bodyMetricsHistory[i].date.slice(0, 10) : '';
+        if (!rawDate) continue;
+        const t = new Date(`${rawDate}T12:00:00`).getTime();
+        if (Number.isFinite(t)) {
+          best = t;
+          break;
+        }
+      }
+      return best;
+    })();
+
+    const minDateMs = (() => {
+      if (radarTimeframe === 'AUTO') {
+        return Number.isFinite(latestWeighDateMs) ? latestWeighDateMs : todayMid - 10 * msDay;
+      }
+      if (radarTimeframe === '1D') return todayMid - 1 * msDay;
+      if (radarTimeframe === '7D') return todayMid - 7 * msDay;
+      if (radarTimeframe === '14D') return todayMid - 14 * msDay;
+      if (radarTimeframe === '30D') return todayMid - 30 * msDay;
+      return todayMid - 10 * msDay;
+    })();
+
+    const projectionWindow = dailyHistory.filter((day) => {
+      const t = parseDayMs(day);
+      return Number.isFinite(t) && t >= minDateMs;
+    });
+
+    const safeWindow = projectionWindow.length > 0 ? projectionWindow : dailyHistory.slice(-10);
+    const cumulativeCaloricDelta = safeWindow.reduce(
       (sum, day) => sum + (Number(day?.kcalBalance) || 0),
       0,
     );
     const meanTrainingAxis =
-      projectionWindow.length > 0
-        ? projectionWindow.reduce((sum, day) => sum + (Number(day?.trainingLoad) || 0), 0) /
-          projectionWindow.length
+      safeWindow.length > 0
+        ? safeWindow.reduce((sum, day) => sum + (Number(day?.trainingLoad) || 0), 0) /
+          safeWindow.length
         : Number(metabolicMapInputs?.trainingLoad);
     const trainingAxis = Number(meanTrainingAxis);
     const trainingStimulus =
       Number.isFinite(trainingAxis) ? Math.max(0, Math.min(1, (trainingAxis + 100) / 200)) : 1;
     return calculateMetabolicTrajectory(cumulativeCaloricDelta, 1, trainingStimulus);
-  }, [dailyHistory, metabolicMapInputs]);
+  }, [dailyHistory, bodyMetricsHistory, radarTimeframe, metabolicMapInputs]);
 
-  const filteredBodyMetricsHistory = useMemo(() => {
+  const currentMapPos = useMemo(() => {
     const history = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
-    if (mapHistoryWindow === 'all') return history;
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const weight = Number(history[i]?.weight);
+      const bodyFat = Number(history[i]?.bodyFat);
+      if (Number.isFinite(weight) && weight > 0 && Number.isFinite(bodyFat) && bodyFat >= 0) {
+        return calculateBodyComposition(weight, bodyFat);
+      }
+    }
+    return { fatMassKg: targetFatKg, leanMassKg: targetLeanKg };
+  }, [bodyMetricsHistory, targetFatKg, targetLeanKg]);
 
-    const daysBack =
-      mapHistoryWindow === '1m' ? 30 : mapHistoryWindow === '3m' ? 90 : mapHistoryWindow === '6m' ? 180 : 90;
-    const now = Date.now();
-    const cutoffMs = now - daysBack * 86400000;
+  const dynamicTarget = useMemo(
+    () => calculateDynamicTarget('M', 174, mapRoute),
+    [mapRoute],
+  );
 
-    return history.filter((entry) => {
-      const ts = Number(entry?.timestamp);
-      if (Number.isFinite(ts) && ts > 0) return ts >= cutoffMs;
-      const rawDate = typeof entry?.date === 'string' ? entry.date.slice(0, 10) : '';
-      if (!rawDate) return false;
-      const parsed = new Date(`${rawDate}T12:00:00`).getTime();
-      return Number.isFinite(parsed) && parsed >= cutoffMs;
-    });
-  }, [bodyMetricsHistory, mapHistoryWindow]);
+  const coachMessage = useMemo(
+    () =>
+      generateCoachAdvice(
+        { fatMassKg: currentMapPos.fatMassKg, leanMassKg: currentMapPos.leanMassKg },
+        dynamicTarget,
+        { expectedFatDeltaKg, expectedLeanDeltaKg },
+        mapRoute,
+      ),
+    [currentMapPos, dynamicTarget, expectedFatDeltaKg, expectedLeanDeltaKg, mapRoute],
+  );
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -385,7 +430,7 @@ export default function MetabolicUnifiedView({
 
       <div
         role="tablist"
-        aria-label={viewMode === 'map' ? 'Storico mappa composizione' : 'Periodo analisi bussola'}
+        aria-label="Periodo ago predittivo"
         className="metabolic-compass-timeframe"
         style={{
           position: 'relative',
@@ -401,21 +446,15 @@ export default function MetabolicUnifiedView({
           background: 'rgba(255,255,255,0.04)',
         }}
       >
-        {(viewMode === 'map' ? MAP_HISTORY_WINDOWS : METABOLIC_COMPASS_TIMEFRAMES).map(({ value, label }) => {
-          const active = viewMode === 'map' ? mapHistoryWindow === value : selectedTimeframe === value;
+        {RADAR_TIMEFRAMES.map(({ value, label }) => {
+          const active = radarTimeframe === value;
           return (
             <button
               key={value}
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => {
-                if (viewMode === 'map') {
-                  setMapHistoryWindow(value);
-                } else {
-                  setSelectedTimeframe(value);
-                }
-              }}
+              onClick={() => setRadarTimeframe(value)}
               style={{
                 flex: 1,
                 minWidth: 0,
@@ -480,6 +519,8 @@ export default function MetabolicUnifiedView({
               dailyHistory={dailyHistory}
               bodyMetricsHistory={bodyMetricsHistory}
               userTargets={userTargets}
+              expectedFatDeltaKg={expectedFatDeltaKg}
+              expectedLeanDeltaKg={expectedLeanDeltaKg}
               compassScreenActive={compassScreenActive}
               mapZoneColor={mapZoneColor}
               compassAmbientStyle={mapData.compassAmbientStyle}
@@ -489,11 +530,7 @@ export default function MetabolicUnifiedView({
               selectedTimeframe={selectedTimeframe}
               onTimeframeChange={setSelectedTimeframe}
               metabolicMapInputsFromBundle={mapData.metabolicMapInputs}
-              compassDirectionFromBundle={mapData.compassDirection}
-              visualVectorFromBundle={mapData.visualVector}
-              compassDisplayLabelFromBundle={mapData.compassDisplayLabel}
               mapSignalStrengthFromBundle={mapData.mapSignalStrength}
-              referenceTdeeKcal={referenceTdeeKcal}
             />
             {SHOW_METABOLIC_DEBUG && (
               <CompassDebugPanel
@@ -533,27 +570,6 @@ export default function MetabolicUnifiedView({
               >
                 Analisi Stato Metabolico
               </h3>
-              <div
-                style={{
-                  margin: '0 0 10px',
-                  padding: '8px 10px',
-                  borderRadius: 10,
-                  background: 'rgba(16, 20, 24, 0.72)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                  color: 'rgba(200, 210, 220, 0.88)',
-                  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-                }}
-              >
-                {lineProjection ? (
-                  <div style={{ fontWeight: 500, color: 'rgba(226, 232, 240, 0.92)', marginBottom: 4 }}>
-                    {lineProjection}
-                  </div>
-                ) : null}
-                <div style={{ fontSize: 11, opacity: 0.9 }}>{lineTrend}</div>
-                <div style={{ fontSize: 11, opacity: 0.9 }}>{lineConfidence}</div>
-              </div>
               <MetabolicMap
                 energyBalance={metabolicMapInputs.energyBalance}
                 trainingLoad={metabolicMapInputs.trainingLoad}
@@ -563,7 +579,7 @@ export default function MetabolicUnifiedView({
                 totalWindowDays={metabolicMapInputs.totalWindowDays}
                 selectedTimeframe={selectedTimeframe}
                 baselineOffset={baselineOffset}
-                bodyMetricsHistory={filteredBodyMetricsHistory}
+                bodyMetricsHistory={bodyMetricsHistory}
                 zoomLevel={mapZoom}
                 onZoomLevelChange={setMapZoom}
                 dailyPositions={dailyMapPositions}
@@ -578,7 +594,48 @@ export default function MetabolicUnifiedView({
                 targetLeanKg={targetLeanKg}
                 expectedFatDeltaKg={expectedFatDeltaKg}
                 expectedLeanDeltaKg={expectedLeanDeltaKg}
+                selectedRoute={mapRoute}
+                onRouteChange={setMapRoute}
               />
+              {/* Box del Navigatore Cartesiano */}
+              <div
+                style={{
+                  marginTop: '16px',
+                  padding: '16px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    paddingBottom: '8px',
+                  }}
+                >
+                  <span style={{ fontSize: '1.2rem' }}>🧭</span>
+                  <span
+                    style={{
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      color: 'rgba(255,255,255,0.7)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}
+                  >
+                    Navigatore di Rotta
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.9)', lineHeight: '1.5' }}>
+                  {coachMessage || 'In attesa di dati per calcolare la traiettoria...'}
+                </div>
+              </div>
               {SHOW_METABOLIC_DEBUG ? (
                 <MetabolicDataAudit
                   rawDetails={metabolicMapRawDetails}
@@ -588,7 +645,7 @@ export default function MetabolicUnifiedView({
             </div>
           </div>
         </div>
-        <MetabolicCoachCompact coach={coachInsight} />
+        {viewMode === 'compass' ? <MetabolicCoachCompact coach={coachInsight} /> : null}
       </div>
     </div>
   );
