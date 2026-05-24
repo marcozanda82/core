@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import { sortBiometricsByTimeAsc } from './biometricHistory';
 import {
   calculateBodyComposition,
@@ -70,6 +71,8 @@ function buildHistoricalWeighInsFromBodyMetrics(bodyMetricsHistory) {
     out.push({
       fatMassKg,
       leanMassKg,
+      weightKg: weight,
+      bodyFatPct: bodyFat,
       date: entry?.date,
       id: entry?.id,
     });
@@ -94,6 +97,8 @@ export default function MetabolicMap({
   metabolicGoal,
   selectedRoute: selectedRouteProp,
 }) {
+  const [selectedPoint, setSelectedPoint] = useState(null);
+
   const selectedRoute = useMemo(() => {
     const normalizedGoal = String(metabolicGoal || '').toUpperCase();
     if (normalizedGoal === 'LONGEVITY') return 'longevity';
@@ -131,11 +136,15 @@ export default function MetabolicMap({
 
   const targetSvg = { cx: 50, cy: 50 };
 
-  const trailPoints = useMemo(
+  const historicalPoints = useMemo(
     () =>
-      historicalWeighIns.map((p) =>
-        mapKgToSvg(p.fatMassKg, p.leanMassKg, activeTargetFat, activeTargetLean),
-      ),
+      historicalWeighIns.map((p, index) => ({
+        ...mapKgToSvg(p.fatMassKg, p.leanMassKg, activeTargetFat, activeTargetLean),
+        id: p?.id || `historical-point-${index}`,
+        date: p?.date || null,
+        weightKg: Number.isFinite(Number(p?.weightKg)) ? Number(p.weightKg) : null,
+        bodyFatPct: Number.isFinite(Number(p?.bodyFatPct)) ? Number(p.bodyFatPct) : null,
+      })),
     [historicalWeighIns, activeTargetFat, activeTargetLean],
   );
 
@@ -163,18 +172,42 @@ export default function MetabolicMap({
   const needleAngle = distance_needle > 0 ? (Math.atan2(dy_needle, dx_needle) * 180) / Math.PI : -90;
   const showCompassNeedle = hasRealPrediction && distance_needle > 0;
 
-  const polylinePoints = trailPoints.map((p) => `${p.cx},${p.cy}`).join(' ');
+  const polylinePoints = historicalPoints.map((p) => `${p.cx},${p.cy}`).join(' ');
   const routeVocabulary = ROUTE_VOCABULARY[selectedRoute] || ROUTE_VOCABULARY.longevity;
+  const selectedPointDateLabel = useMemo(() => {
+    if (!selectedPoint?.date) return '—';
+    const parsed = new Date(selectedPoint.date);
+    if (Number.isNaN(parsed.getTime())) return '—';
+    return parsed.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+  }, [selectedPoint]);
+  const selectedPointWeightLabel = useMemo(() => {
+    if (!Number.isFinite(Number(selectedPoint?.weightKg))) return null;
+    return `${Number(selectedPoint.weightKg).toFixed(1)} kg`;
+  }, [selectedPoint]);
+  const selectedPointBodyFatLabel = useMemo(() => {
+    if (!Number.isFinite(Number(selectedPoint?.bodyFatPct))) return null;
+    return `${Number(selectedPoint.bodyFatPct).toFixed(1)}% BF`;
+  }, [selectedPoint]);
 
   return (
     <div style={{ width: '100%', maxWidth: 400, margin: '0 auto', position: 'relative' }}>
-      <svg
-        viewBox="0 0 100 100"
-        preserveAspectRatio="xMidYMid meet"
-        role="img"
-        aria-label="Mappa composizione corporea: massa grassa e massa magra rispetto all'obiettivo"
-        style={{ width: '100%', background: '#12181f', borderRadius: 16 }}
+      <TransformWrapper
+        initialScale={1}
+        minScale={0.5}
+        maxScale={4}
+        wheel={{ step: 0.1 }}
+        pinch={{ step: 5 }}
+        doubleClick={{ disabled: true }}
       >
+        <TransformComponent wrapperClass="w-full h-full cursor-grab active:cursor-grabbing">
+          <svg
+            viewBox="0 0 100 100"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="Mappa composizione corporea: massa grassa e massa magra rispetto all'obiettivo"
+            style={{ width: '100%', background: '#12181f', borderRadius: 16 }}
+            onClick={() => setSelectedPoint(null)}
+          >
         {/* NW: Picco Atletico */}
         <rect x="0" y="0" width="50" height="50" fill="rgba(16, 185, 129, 0.05)" />
         {/* NE: Bulking Sporco */}
@@ -260,6 +293,26 @@ export default function MetabolicMap({
             strokeLinejoin="round"
           />
         )}
+        {historicalPoints.map((point) => (
+          <circle
+            key={point.id}
+            cx={point.cx}
+            cy={point.cy}
+            r="0.95"
+            fill={selectedPoint?.id === point.id ? '#cbd5e1' : 'rgba(203,213,225,0.72)'}
+            style={{ cursor: 'pointer', transition: 'r 0.18s ease, fill 0.18s ease' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.setAttribute('r', '1.2');
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.setAttribute('r', selectedPoint?.id === point.id ? '1.15' : '0.95');
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedPoint(point);
+            }}
+          />
+        ))}
 
         {/* La Bussola del Presente (Ancora + Vettore Direzionale) */}
         {hasHistory && (
@@ -292,7 +345,63 @@ export default function MetabolicMap({
             <circle r="0.5" fill="#f8fafc" />
           </g>
         )}
-      </svg>
+
+            {selectedPoint && (
+              <foreignObject
+                x={selectedPoint.cx - 17}
+                y={selectedPoint.cy - 14}
+                width="34"
+                height="13"
+                style={{ overflow: 'visible', pointerEvents: 'none' }}
+              >
+                <div
+                  style={{
+                    background: 'rgba(15, 23, 42, 0.9)',
+                    border: '1px solid rgba(71, 85, 105, 0.9)',
+                    borderRadius: '6px',
+                    padding: '3px 6px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '2px',
+                    boxShadow: '0 8px 16px rgba(0,0,0,0.35)',
+                    backdropFilter: 'blur(4px)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span
+                    style={{
+                      color: '#cbd5e1',
+                      fontSize: '10px',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {selectedPointDateLabel}
+                  </span>
+                  <span
+                    style={{
+                      color: '#f8fafc',
+                      fontSize: '9px',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                      letterSpacing: '0.04em',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {selectedPointWeightLabel || '—'}
+                    {selectedPointBodyFatLabel ? (
+                      <span style={{ color: '#38bdf8' }}>{` • ${selectedPointBodyFatLabel}`}</span>
+                    ) : null}
+                  </span>
+                </div>
+              </foreignObject>
+            )}
+          </svg>
+        </TransformComponent>
+      </TransformWrapper>
     </div>
   );
 }

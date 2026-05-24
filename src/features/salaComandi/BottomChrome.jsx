@@ -1,4 +1,5 @@
 import React from 'react';
+import { Gauge } from 'lucide-react';
 
 export default function BottomChrome({
   kentuChatNotificationBadge,
@@ -267,10 +268,13 @@ export default function BottomChrome({
                 fontSize: t.id === 'menu' ? '1.45rem' : '1.25rem',
                 lineHeight: 1,
                 fontWeight: t.id === 'menu' ? 700 : undefined,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
               aria-hidden
             >
-              {t.icon}
+              {t.id === 'bussola' ? <Gauge size={20} strokeWidth={2.2} /> : t.icon}
             </span>
             <span>{t.label}</span>
           </button>

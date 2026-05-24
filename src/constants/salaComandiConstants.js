@@ -5,7 +5,7 @@ export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola', 'longevita']
 export const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },
   { id: 'analisi', label: 'Timeline', icon: '🕒' },
-  { id: 'bussola', label: 'Salute', icon: '❤️' },
+  { id: 'bussola', label: 'Motore', icon: '❤️' },
   { id: 'longevita', label: 'Progressi', icon: '📈' },
   { id: 'menu', label: 'Menu', icon: '≡' },
 ];
