@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { sortBiometricsByTimeAsc } from './biometricHistory';
 import {
   calculateBodyComposition,
@@ -91,14 +91,17 @@ export default function MetabolicMap({
   bodyMetricsHistory = [],
   userGender = 'M',
   userHeightCm = 174,
+  metabolicGoal,
   selectedRoute: selectedRouteProp,
-  onRouteChange,
 }) {
-  const [selectedRouteInternal, setSelectedRouteInternal] = useState('longevity');
-  const selectedRoute =
-    typeof selectedRouteProp === 'string' && selectedRouteProp
-      ? selectedRouteProp
-      : selectedRouteInternal;
+  const selectedRoute = useMemo(() => {
+    const normalizedGoal = String(metabolicGoal || '').toUpperCase();
+    if (normalizedGoal === 'LONGEVITY') return 'longevity';
+    if (normalizedGoal === 'PERFORMANCE') return 'performance';
+    if (normalizedGoal === 'DEFINITION') return 'definition';
+    if (typeof selectedRouteProp === 'string' && selectedRouteProp) return selectedRouteProp;
+    return 'longevity';
+  }, [metabolicGoal, selectedRouteProp]);
 
   const historicalWeighIns = useMemo(() => {
     if (Array.isArray(historicalWeighInsProp) && historicalWeighInsProp.length > 0) {
@@ -165,40 +168,6 @@ export default function MetabolicMap({
 
   return (
     <div style={{ width: '100%', maxWidth: 400, margin: '0 auto', position: 'relative' }}>
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '16px' }}>
-        {[
-          { id: 'longevity', label: '🌱 Longevità (Equilibrio)' },
-          { id: 'performance', label: '⚡ Performance (Massa)' },
-          { id: 'definition', label: '🔪 Definizione (Estetica)' },
-        ].map((route) => (
-          <button
-            key={route.id}
-            type="button"
-            onClick={() => {
-              if (!(typeof selectedRouteProp === 'string' && selectedRouteProp)) {
-                setSelectedRouteInternal(route.id);
-              }
-              if (typeof onRouteChange === 'function') onRouteChange(route.id);
-            }}
-            style={{
-              padding: '6px 12px',
-              fontSize: '0.75rem',
-              fontWeight: selectedRoute === route.id ? 600 : 400,
-              color: selectedRoute === route.id ? '#fff' : 'rgba(255,255,255,0.6)',
-              background:
-                selectedRoute === route.id ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${
-                selectedRoute === route.id ? 'rgba(56, 189, 248, 0.5)' : 'transparent'
-              }`,
-              borderRadius: '20px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            {route.label}
-          </button>
-        ))}
-      </div>
       <svg
         viewBox="0 0 100 100"
         preserveAspectRatio="xMidYMid meet"
@@ -295,17 +264,8 @@ export default function MetabolicMap({
         {/* La Bussola del Presente (Ancora + Vettore Direzionale) */}
         {hasHistory && (
           <g transform={`translate(${anchorSvg.cx}, ${anchorSvg.cy})`}>
-            <circle
-              r="4"
-              fill="#38bdf8"
-              fillOpacity="0.4"
-            >
-              <animate
-                attributeName="r"
-                values="4; 6; 4"
-                dur="2s"
-                repeatCount="indefinite"
-              />
+            <circle r="4" fill="#3b82f6" fillOpacity="0.4">
+              <animate attributeName="r" values="4; 6; 4" dur="2s" repeatCount="indefinite" />
               <animate
                 attributeName="fill-opacity"
                 values="0.4; 0; 0.4"
@@ -313,7 +273,9 @@ export default function MetabolicMap({
                 repeatCount="indefinite"
               />
             </circle>
-            <circle r="4" fill="rgba(15, 23, 42, 0.9)" stroke="#38bdf8" strokeWidth="0.8" />
+
+            <circle r="4" fill="rgba(15, 23, 42, 0.9)" stroke="#3b82f6" strokeWidth="1" />
+
             {showCompassNeedle && (
               <g
                 transform={`rotate(${needleAngle})`}
@@ -322,10 +284,12 @@ export default function MetabolicMap({
                   transformOrigin: '0px 0px',
                 }}
               >
-                <polygon points="-1.5,-1.5 3,0 -1.5,1.5" fill="#fb923c" />
+                <polygon points="-1.5,-1.2 3.5,0 -1.5,1.2" fill="#ef4444" />
               </g>
             )}
-            <circle r="1" fill="#38bdf8" />
+
+            <circle r="1.2" fill="#94a3b8" />
+            <circle r="0.5" fill="#f8fafc" />
           </g>
         )}
       </svg>

@@ -14,12 +14,6 @@ import MetabolicCoachCompact from '@/features/salaComandi/components/MetabolicCo
 import useMetabolicCoach from './features/salaComandi/hooks/useMetabolicCoach';
 
 const DEFAULT_TIMEFRAME = '7d';
-const METABOLIC_COMPASS_TIMEFRAMES = [
-  { value: '1d', label: 'IERI' },
-  { value: '7d', label: '7G' },
-  { value: '14d', label: '14G' },
-  { value: '30d', label: '30G' },
-];
 const RADAR_TIMEFRAMES = [
   { value: 'AUTO', label: 'AUTO' },
   { value: '1D', label: 'IERI' },
@@ -27,6 +21,23 @@ const RADAR_TIMEFRAMES = [
   { value: '14D', label: '14G' },
   { value: '30D', label: '30G' },
 ];
+const METABOLIC_GOALS = [
+  { value: 'LONGEVITY', label: '🌱 Longevità (Equilibrio)' },
+  { value: 'PERFORMANCE', label: '⚡ Performance (Massa)' },
+  { value: 'DEFINITION', label: '🔪 Definizione (Estetica)' },
+];
+
+function metabolicGoalToRoute(metabolicGoal) {
+  if (metabolicGoal === 'PERFORMANCE') return 'performance';
+  if (metabolicGoal === 'DEFINITION') return 'definition';
+  return 'longevity';
+}
+
+function metabolicGoalToCompassGoal(metabolicGoal) {
+  if (metabolicGoal === 'PERFORMANCE') return METABOLIC_GOAL.MASSA;
+  if (metabolicGoal === 'DEFINITION') return METABOLIC_GOAL.PERDITA_GRASSO;
+  return METABOLIC_GOAL.RICOMPOSIZIONE;
+}
 
 const COMPASS_DEBUG_ALL_TIMEFRAMES = ['1d', '7d', '14d', '30d'];
 
@@ -118,39 +129,6 @@ function CompassDebugPanel({ selectedTimeframe, mapData, compassDebugByTimeframe
   );
 }
 
-function IconMapSwitch() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M4 6.5 9 4v13l-5 2.5V6.5Zm10-2.5 5 2.5v13l-5-2.5V4Zm1 .6v11.8l3-1.5V6.1l-3-1.5Zm-9-.1v11.8l3 1.5V5.5l-3 1.5Z"
-        fill="currentColor"
-        opacity={0.92}
-      />
-      <path
-        d="M15 8.5h4M15 11h3"
-        stroke="currentColor"
-        strokeWidth={1.2}
-        strokeLinecap="round"
-        opacity={0.45}
-      />
-    </svg>
-  );
-}
-
-function IconCompassSwitch() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth={1.1} opacity={0.35} />
-      <path
-        d="M12 6.5 13.8 12 12 17.5 10.2 12 12 6.5Z"
-        fill="currentColor"
-        opacity={0.9}
-      />
-      <circle cx="12" cy="12" r="1.6" fill="currentColor" opacity={0.95} />
-    </svg>
-  );
-}
-
 /**
  * Bussola + mappa metabolica in un unico flusso: traiettoria storica, mini-freccia allineata alla bussola,
  * alone bezel dalla zona dell’ultimo giorno della finestra.
@@ -171,11 +149,10 @@ export default function MetabolicUnifiedView({
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
-  const [viewMode, setViewMode] = useState('compass');
-  const [goal, setGoal] = useState(METABOLIC_GOAL.RICOMPOSIZIONE);
+  const [currentView, setCurrentView] = useState('MAP');
   const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_TIMEFRAME);
   const [radarTimeframe, setRadarTimeframe] = useState('AUTO');
-  const [mapRoute, setMapRoute] = useState('longevity');
+  const [metabolicGoal, setMetabolicGoal] = useState('LONGEVITY');
   const [mapZoom, setMapZoom] = useState(1);
 
   const isTfControlled =
@@ -318,9 +295,11 @@ export default function MetabolicUnifiedView({
     return { fatMassKg: targetFatKg, leanMassKg: targetLeanKg };
   }, [bodyMetricsHistory, targetFatKg, targetLeanKg]);
 
+  const routeForGoal = useMemo(() => metabolicGoalToRoute(metabolicGoal), [metabolicGoal]);
+
   const dynamicTarget = useMemo(
-    () => calculateDynamicTarget('M', 174, mapRoute),
-    [mapRoute],
+    () => calculateDynamicTarget('M', 174, routeForGoal),
+    [routeForGoal],
   );
 
   const coachMessage = useMemo(
@@ -329,13 +308,17 @@ export default function MetabolicUnifiedView({
         { fatMassKg: currentMapPos.fatMassKg, leanMassKg: currentMapPos.leanMassKg },
         dynamicTarget,
         { expectedFatDeltaKg, expectedLeanDeltaKg },
-        mapRoute,
+        routeForGoal,
       ),
-    [currentMapPos, dynamicTarget, expectedFatDeltaKg, expectedLeanDeltaKg, mapRoute],
+    [currentMapPos, dynamicTarget, expectedFatDeltaKg, expectedLeanDeltaKg, routeForGoal],
   );
 
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const compassGoal = useMemo(
+    () => metabolicGoalToCompassGoal(metabolicGoal),
+    [metabolicGoal],
+  );
 
   return (
     <div
@@ -345,19 +328,19 @@ export default function MetabolicUnifiedView({
         maxWidth: 440,
         margin: '0 auto',
         boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
       }}
     >
       <div
         style={{
-          position: 'absolute',
-          top: 8,
-          right: 8,
-          zIndex: 40,
+          width: '100%',
           display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '6px',
-          borderRadius: 12,
+          flexDirection: 'column',
+          gap: 8,
+          padding: '10px',
+          borderRadius: 14,
           border: '1px solid rgba(255,255,255,0.14)',
           background: 'rgba(10, 12, 16, 0.74)',
           backdropFilter: 'blur(10px)',
@@ -365,121 +348,138 @@ export default function MetabolicUnifiedView({
           boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
         }}
       >
-        <button
-          type="button"
-          onClick={() => setViewMode((m) => (m === 'compass' ? 'map' : 'compass'))}
-          aria-label={
-            viewMode === 'compass' ? 'Apri mappa metabolica' : 'Apri bussola metabolica'
-          }
-          aria-pressed={viewMode === 'map'}
+        <div
+          role="tablist"
+          aria-label="Vista principale"
           style={{
-            width: 38,
-            height: 38,
-            borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.12)',
-            background: 'rgba(255,255,255,0.05)',
-            cursor: 'pointer',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'rgba(240, 245, 250, 0.9)',
-            transition: reducedMotion ? 'none' : 'background 0.25s ease, transform 0.2s ease',
+            width: '100%',
+            gap: 6,
           }}
         >
-          {viewMode === 'compass' ? <IconMapSwitch /> : <IconCompassSwitch />}
-        </button>
-        <button
-          type="button"
-          onClick={() => setMapZoom((z) => Math.max(0.8, z - 0.12))}
-          disabled={viewMode !== 'map'}
-          aria-label="Riduci zoom mappa"
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 9,
-            border: '1px solid rgba(255,255,255,0.12)',
-            background: 'rgba(255,255,255,0.05)',
-            color: '#e2e8f0',
-            fontWeight: 700,
-            cursor: viewMode === 'map' ? 'pointer' : 'default',
-            opacity: viewMode === 'map' ? 1 : 0.45,
-          }}
-        >
-          -
-        </button>
-        <button
-          type="button"
-          onClick={() => setMapZoom((z) => Math.min(2.5, z + 0.12))}
-          disabled={viewMode !== 'map'}
-          aria-label="Aumenta zoom mappa"
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 9,
-            border: '1px solid rgba(255,255,255,0.12)',
-            background: 'rgba(255,255,255,0.05)',
-            color: '#e2e8f0',
-            fontWeight: 700,
-            cursor: viewMode === 'map' ? 'pointer' : 'default',
-            opacity: viewMode === 'map' ? 1 : 0.45,
-          }}
-        >
-          +
-        </button>
-      </div>
+          {[
+            { value: 'MAP', label: '🗺️ Mappa' },
+            { value: 'COMPASS', label: '🧭 Bussola' },
+          ].map(({ value, label }) => {
+            const active = currentView === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setCurrentView(value)}
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  borderRadius: 999,
+                  border: active
+                    ? '1px solid rgba(148, 197, 255, 0.7)'
+                    : '1px solid rgba(255,255,255,0.12)',
+                  background: active ? 'rgba(148, 197, 255, 0.16)' : 'rgba(255,255,255,0.04)',
+                  color: active ? 'rgba(241, 245, 249, 0.96)' : 'rgba(226,232,240,0.62)',
+                  fontSize: 12,
+                  fontWeight: 650,
+                  cursor: 'pointer',
+                  transition: reducedMotion
+                    ? 'none'
+                    : 'background 0.25s ease, color 0.25s ease, border-color 0.25s ease',
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
 
-      <div
-        role="tablist"
-        aria-label="Periodo ago predittivo"
-        className="metabolic-compass-timeframe"
-        style={{
-          position: 'relative',
-          zIndex: 25,
-          display: 'flex',
-          width: '100%',
-          maxWidth: 340,
-          padding: 3,
-          gap: 2,
-          margin: '58px auto 8px',
-          borderRadius: 12,
-          boxSizing: 'border-box',
-          background: 'rgba(255,255,255,0.04)',
-        }}
-      >
-        {RADAR_TIMEFRAMES.map(({ value, label }) => {
-          const active = radarTimeframe === value;
-          return (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setRadarTimeframe(value)}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                padding: '8px 5px',
-                borderRadius: 9,
-                border: 'none',
-                margin: 0,
-                cursor: 'pointer',
-                fontSize: 10,
-                fontWeight: 650,
-                letterSpacing: '0.11em',
-                textTransform: 'uppercase',
-                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-                color: active ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.36)',
-                background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
-                boxShadow: active ? '0 0 18px rgba(255,255,255,0.05)' : 'none',
-                transition:
-                  'background 0.35s ease, color 0.35s ease, box-shadow 0.35s ease',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
+        <div
+          role="tablist"
+          aria-label="Periodo ago predittivo"
+          style={{
+            display: 'flex',
+            width: '100%',
+            gap: 4,
+            padding: 3,
+            borderRadius: 11,
+            background: 'rgba(255,255,255,0.04)',
+          }}
+        >
+          {RADAR_TIMEFRAMES.map(({ value, label }) => {
+            const active = radarTimeframe === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setRadarTimeframe(value)}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  padding: '8px 5px',
+                  borderRadius: 8,
+                  border: 'none',
+                  margin: 0,
+                  cursor: 'pointer',
+                  fontSize: 10,
+                  fontWeight: 650,
+                  letterSpacing: '0.11em',
+                  textTransform: 'uppercase',
+                  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+                  color: active ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.42)',
+                  background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+                  boxShadow: active ? '0 0 18px rgba(255,255,255,0.05)' : 'none',
+                  transition:
+                    'background 0.35s ease, color 0.35s ease, box-shadow 0.35s ease',
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          role="tablist"
+          aria-label="Obiettivo metabolico"
+          style={{
+            display: 'flex',
+            width: '100%',
+            gap: 6,
+          }}
+        >
+          {METABOLIC_GOALS.map(({ value, label }) => {
+            const active = metabolicGoal === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setMetabolicGoal(value)}
+                style={{
+                  flex: 1,
+                  padding: '8px 9px',
+                  borderRadius: 12,
+                  border: active
+                    ? '1px solid rgba(110, 231, 255, 0.56)'
+                    : '1px solid rgba(255,255,255,0.12)',
+                  background: active ? 'rgba(34,211,238,0.14)' : 'rgba(255,255,255,0.04)',
+                  color: active ? 'rgba(248,250,252,0.96)' : 'rgba(203,213,225,0.7)',
+                  fontSize: 11,
+                  fontWeight: active ? 640 : 520,
+                  cursor: 'pointer',
+                  transition: reducedMotion
+                    ? 'none'
+                    : 'background 0.25s ease, color 0.25s ease, border-color 0.25s ease',
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div
@@ -489,73 +489,12 @@ export default function MetabolicUnifiedView({
           alignItems: 'stretch',
           gap: 16,
           width: '100%',
-          paddingTop: 4,
           boxSizing: 'border-box',
         }}
       >
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr',
-            width: '100%',
-            boxSizing: 'border-box',
-          }}
-        >
-          <div
-            aria-hidden={viewMode !== 'compass'}
-            style={{
-              gridColumn: 1,
-              gridRow: 1,
-              width: '100%',
-              justifySelf: 'center',
-              alignSelf: 'start',
-              opacity: viewMode === 'compass' ? 1 : 0,
-              pointerEvents: viewMode === 'compass' ? 'auto' : 'none',
-              zIndex: viewMode === 'compass' ? 2 : 0,
-              transition: reducedMotion ? 'none' : 'opacity 0.42s ease',
-            }}
-          >
-            <MetabolicCompass
-              dailyHistory={dailyHistory}
-              bodyMetricsHistory={bodyMetricsHistory}
-              userTargets={userTargets}
-              expectedFatDeltaKg={expectedFatDeltaKg}
-              expectedLeanDeltaKg={expectedLeanDeltaKg}
-              compassScreenActive={compassScreenActive}
-              mapZoneColor={mapZoneColor}
-              compassAmbientStyle={mapData.compassAmbientStyle}
-              hideMetabolicMapSection
-              goal={goal}
-              onGoalChange={setGoal}
-              selectedTimeframe={selectedTimeframe}
-              onTimeframeChange={setSelectedTimeframe}
-              metabolicMapInputsFromBundle={mapData.metabolicMapInputs}
-              mapSignalStrengthFromBundle={mapData.mapSignalStrength}
-            />
-            {SHOW_METABOLIC_DEBUG && (
-              <CompassDebugPanel
-                selectedTimeframe={selectedTimeframe}
-                mapData={mapData}
-                compassDebugByTimeframe={compassDebugByTimeframe}
-              />
-            )}
-          </div>
-
-          <div
-            aria-hidden={viewMode !== 'map'}
-            style={{
-              gridColumn: 1,
-              gridRow: 1,
-              width: '100%',
-              justifySelf: 'center',
-              alignSelf: 'start',
-              opacity: viewMode === 'map' ? 1 : 0,
-              pointerEvents: viewMode === 'map' ? 'auto' : 'none',
-              zIndex: viewMode === 'map' ? 2 : 0,
-              transition: reducedMotion ? 'none' : 'opacity 0.42s ease',
-            }}
-          >
-            <div style={{ padding: 'clamp(0.75rem, 3vw, 1rem)', boxSizing: 'border-box' }}>
+        <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {currentView === 'MAP' ? (
+            <div style={{ width: '100%', padding: 'clamp(0.75rem, 3vw, 1rem)', boxSizing: 'border-box' }}>
               <h3
                 style={{
                   margin: '0 0 12px',
@@ -594,10 +533,8 @@ export default function MetabolicUnifiedView({
                 targetLeanKg={targetLeanKg}
                 expectedFatDeltaKg={expectedFatDeltaKg}
                 expectedLeanDeltaKg={expectedLeanDeltaKg}
-                selectedRoute={mapRoute}
-                onRouteChange={setMapRoute}
+                metabolicGoal={metabolicGoal}
               />
-              {/* Box del Navigatore Cartesiano */}
               <div
                 style={{
                   marginTop: '16px',
@@ -643,9 +580,38 @@ export default function MetabolicUnifiedView({
                 />
               ) : null}
             </div>
-          </div>
+          ) : (
+            <div style={{ width: '100%' }}>
+              <MetabolicCompass
+                dailyHistory={dailyHistory}
+                bodyMetricsHistory={bodyMetricsHistory}
+                userTargets={userTargets}
+                expectedFatDeltaKg={expectedFatDeltaKg}
+                expectedLeanDeltaKg={expectedLeanDeltaKg}
+                compassScreenActive={compassScreenActive}
+                mapZoneColor={mapZoneColor}
+                compassAmbientStyle={mapData.compassAmbientStyle}
+                hideMetabolicMapSection
+                goal={compassGoal}
+                onGoalChange={() => {}}
+                selectedTimeframe={selectedTimeframe}
+                onTimeframeChange={setSelectedTimeframe}
+                metabolicMapInputsFromBundle={mapData.metabolicMapInputs}
+                mapSignalStrengthFromBundle={mapData.mapSignalStrength}
+                hideGoalControls
+              />
+              {SHOW_METABOLIC_DEBUG && (
+                <CompassDebugPanel
+                  selectedTimeframe={selectedTimeframe}
+                  mapData={mapData}
+                  compassDebugByTimeframe={compassDebugByTimeframe}
+                />
+              )}
+            </div>
+          )}
         </div>
-        {viewMode === 'compass' ? <MetabolicCoachCompact coach={coachInsight} /> : null}
+
+        {currentView === 'COMPASS' ? <MetabolicCoachCompact coach={coachInsight} /> : null}
       </div>
     </div>
   );

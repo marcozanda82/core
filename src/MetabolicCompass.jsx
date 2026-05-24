@@ -287,6 +287,7 @@ export default function MetabolicCompass({
   mapZoneColor = '',
   compassAmbientStyle = null,
   hideMetabolicMapSection = false,
+  hideGoalControls = false,
   goal: goalControlled,
   onGoalChange,
   selectedTimeframe: timeframeControlled,
@@ -569,46 +570,47 @@ export default function MetabolicCompass({
           overflow: 'visible',
         }}
       >
-      {/* Obiettivo */}
-      <div
-        role="tablist"
-        aria-label="Obiettivo"
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          justifyContent: 'center',
-          gap: 6,
-        }}
-      >
-        {GOALS.map((g) => (
-          <button
-            key={g}
-            type="button"
-            role="tab"
-            aria-selected={goal === g}
-            onClick={() => setGoal(g)}
-            style={{
-              padding: '7px 13px',
-              borderRadius: 100,
-              border:
-                goal === g
-                  ? '1px solid rgba(255,255,255,0.18)'
-                  : '1px solid rgba(255,255,255,0.06)',
-              background:
-                goal === g ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
-              color: goal === g ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.4)',
-              fontSize: 11,
-              fontWeight: 560,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-              fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-            }}
-          >
-            {g}
-          </button>
-        ))}
-      </div>
+      {!hideGoalControls && (
+        <div
+          role="tablist"
+          aria-label="Obiettivo"
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            gap: 6,
+          }}
+        >
+          {GOALS.map((g) => (
+            <button
+              key={g}
+              type="button"
+              role="tab"
+              aria-selected={goal === g}
+              onClick={() => setGoal(g)}
+              style={{
+                padding: '7px 13px',
+                borderRadius: 100,
+                border:
+                  goal === g
+                    ? '1px solid rgba(255,255,255,0.18)'
+                    : '1px solid rgba(255,255,255,0.06)',
+                background:
+                  goal === g ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
+                color: goal === g ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.4)',
+                fontSize: 11,
+                fontWeight: 560,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+              }}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Volto bussola — alone zona mappa: anello esterno sopra gli strati del volto (niente overflow:hidden qui). */}
       <div
@@ -709,7 +711,7 @@ export default function MetabolicCompass({
                 key={`lbl-${angle}`}
                 labelText={label}
                 selected={goal === label}
-                onSelect={setGoal}
+                onSelect={hideGoalControls ? null : setGoal}
                 layoutStyle={compassLabelStyleFromAngle(angle, compassRotation)}
               />
             ))}
@@ -901,6 +903,7 @@ function compassLabelStyleFromAngle(angle, compassRotationDeg, radiusPct = 41.5)
 }
 
 function CompassDirectionLabel({ labelText, selected, onSelect, layoutStyle }) {
+  const isInteractive = typeof onSelect === 'function';
   return (
     <button
       type="button"
@@ -911,7 +914,10 @@ function CompassDirectionLabel({ labelText, selected, onSelect, layoutStyle }) {
       }
       aria-pressed={selected}
       aria-label={`Obiettivo ${labelText}`}
-      onClick={() => onSelect(labelText)}
+      onClick={() => {
+        if (isInteractive) onSelect(labelText);
+      }}
+      disabled={!isInteractive}
       style={{
         position: 'absolute',
         maxWidth: '34%',
@@ -923,14 +929,14 @@ function CompassDirectionLabel({ labelText, selected, onSelect, layoutStyle }) {
         textTransform: 'uppercase',
         lineHeight: 1.2,
         fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        cursor: 'pointer',
+        cursor: isInteractive ? 'pointer' : 'default',
         border: 'none',
         margin: 0,
         padding: '6px 8px',
         borderRadius: 8,
         transition:
           'color 0.35s ease, background 0.35s ease, text-shadow 0.35s ease, box-shadow 0.35s ease, filter 0.25s ease',
-        pointerEvents: 'auto',
+        pointerEvents: isInteractive ? 'auto' : 'none',
         touchAction: 'manipulation',
         zIndex: selected ? 5 : 2,
         WebkitTapHighlightColor: 'transparent',
