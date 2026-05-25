@@ -1240,6 +1240,7 @@ export default function MealBuilder({
   const [aiConstraintPreferred, setAiConstraintPreferred] = useState('');
   const [isCreaExpanded, setIsCreaExpanded] = useState(false);
   const [selectedFoodMatch, setSelectedFoodMatch] = useState(null);
+  const [barcodeScannerError, setBarcodeScannerError] = useState('');
   /** Valori nutrizionali /100g modificabili (scheda prodotto) quando c’è una selezione da DB / CREA / barcode. */
   const [per100Draft, setPer100Draft] = useState({ kcal: '', prot: '', carb: '', fat: '' });
   const [inspectingFood, setInspectingFood] = useState(null);
@@ -1327,8 +1328,15 @@ export default function MealBuilder({
 
   useEffect(() => {
     const b = mealBuilderBarcodeBootstrap;
+    if (!b) return;
+    if (typeof b.error === 'string' && b.error.trim()) {
+      setBarcodeScannerError(b.error.trim());
+      onMealBuilderBarcodeBootstrapConsumed();
+      return;
+    }
     if (!b?.match?.id) return;
     const m = b.match;
+    setBarcodeScannerError('');
     setSelectedFoodMatch({
       id: m.id,
       desc: m.desc,
@@ -1337,6 +1345,10 @@ export default function MealBuilder({
     });
     onMealBuilderBarcodeBootstrapConsumed();
   }, [mealBuilderBarcodeBootstrap?.nonce, onMealBuilderBarcodeBootstrapConsumed, mealBuilderBarcodeBootstrap]);
+
+  useEffect(() => {
+    if (isBarcodeScannerOpen) setBarcodeScannerError('');
+  }, [isBarcodeScannerOpen]);
 
   useEffect(() => {
     if (!selectedFoodMatch?.id) {
@@ -2171,7 +2183,23 @@ export default function MealBuilder({
 
     if (selectedFoodMatch?.id && typeof estraiDatiFoodDb === 'function' && typeof setAddedFoods === 'function') {
       const trimmedName = nameTrim;
-      const preferredDbKey = foodDb?.[selectedFoodMatch.id] != null ? selectedFoodMatch.id : undefined;
+      const normalizedDesc = normalizeSearchQuery(trimmedName);
+      const existingKeyByBarcode =
+        selectedFoodMatch.barcode &&
+        Object.keys(foodDb || {}).find(
+          (k) => foodDb[k] && String(foodDb[k].barcode ?? '').trim() === String(selectedFoodMatch.barcode).trim(),
+        );
+      const existingKeyByDesc =
+        normalizedDesc &&
+        Object.keys(foodDb || {}).find((k) => {
+          const row = foodDb[k];
+          if (!row || typeof row !== 'object') return false;
+          return normalizeSearchQuery(row.desc ?? row.name ?? '') === normalizedDesc;
+        });
+      const preferredDbKey =
+        foodDb?.[selectedFoodMatch.id] != null
+          ? selectedFoodMatch.id
+          : existingKeyByBarcode || existingKeyByDesc || undefined;
       const row = selectedFoodMatch.row || {};
       const k100 = parsePer100Field(
         per100Draft.kcal,
@@ -2189,6 +2217,23 @@ export default function MealBuilder({
           per100: { kcal: k100, prot: p100, carb: c100, fat: f100 },
           desc: trimmedName,
         });
+      }
+
+      if (
+        typeof saveFoodEntryPer100ToFoodDb === 'function' &&
+        !preferredDbKey &&
+        trimmedName
+      ) {
+        const entryForDb = {
+          desc: trimmedName,
+          kcal: k100,
+          prot: p100,
+          carb: c100,
+          fatTotal: f100,
+          ...(selectedFoodMatch.barcode ? { barcode: selectedFoodMatch.barcode } : {}),
+          ...(selectedFoodMatch?.row?.foodSource ? { foodSource: selectedFoodMatch.row.foodSource } : {}),
+        };
+        void saveFoodEntryPer100ToFoodDb(entryForDb).catch(() => {});
       }
 
       const baseItem = estraiDatiFoodDb(trimmedName, parsedWeight, mealType, preferredDbKey);
@@ -2260,6 +2305,7 @@ export default function MealBuilder({
     localFoodDb,
     per100Draft,
     persistBarcodeNutritionCorrection,
+    saveFoodEntryPer100ToFoodDb,
   ]);
 
   const handleSelectRecentFood = useCallback((entry) => {
@@ -3543,6 +3589,22 @@ export default function MealBuilder({
                 </div>
               </div>
             )}
+            {barcodeScannerError ? (
+              <div
+                style={{
+                  marginBottom: '12px',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(248, 113, 113, 0.45)',
+                  background: 'rgba(127, 29, 29, 0.18)',
+                  color: '#fecaca',
+                  fontSize: '0.82rem',
+                  lineHeight: 1.4,
+                }}
+              >
+                {barcodeScannerError}
+              </div>
+            ) : null}
             {!isComplexMode && scoredSuggestedMeals.length > 0 ? (
               <details
                 style={{

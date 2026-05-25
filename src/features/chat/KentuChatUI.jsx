@@ -1,6 +1,5 @@
-import React, { useCallback } from 'react';
+import { useCallback } from 'react';
 import AiCluster from '../../AiCluster';
-import { applyCalorieStrategyToProfileKcal, getTodayString } from '../../coreEngine';
 
 /**
  * Vista drawer chat Kentu: messaggi, quick actions e impostazioni API (AiCluster).
@@ -12,24 +11,6 @@ export default function KentuChatUI({
   chatImages,
   setChatImages,
   handleChatSubmit,
-  currentTrackerDate,
-  activeLog,
-  userTargets,
-  kentuDailyCalorieStrategy,
-  bodyBattery,
-  totali,
-  fullHistory,
-  buildQuickBriefingSecretPrompt,
-  buildYesterdayGapSecretPrompt,
-  buildMealIdeaFromDispensaSecretPrompt,
-  onLogDinnerOption,
-  onLoadAgenda,
-  onMealProposalConfirm,
-  onMealProposalCancel,
-  onMealProposalSwap,
-  onDailyPlanConfirm,
-  onDailyPlanCancel,
-  onGeneratePlanGhostMealDraft,
   showAiSettings,
   setShowAiSettings,
   apiKeys,
@@ -42,52 +23,20 @@ export default function KentuChatUI({
 }) {
   const onChatQuickAction = useCallback(
     (kind) => {
-      const anchor = currentTrackerDate || getTodayString();
-      const burnedKcalContext = (activeLog || [])
-        .filter((item) => item.type === 'workout')
-        .reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
-      const dynamicDailyKcalCtx =
-        applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) +
-        burnedKcalContext;
-      if (kind === 'briefing') {
-        const secret = buildQuickBriefingSecretPrompt({
-          bodyBatteryPercent: bodyBattery?.currentEnergy ?? 0,
-          dynamicDailyKcal: dynamicDailyKcalCtx,
-          totali,
-          userTargets,
-        });
-        void handleChatSubmit(null, { secretPrompt: secret, displayText: '📊 Briefing' });
-      } else if (kind === 'yesterday') {
-        const secret = buildYesterdayGapSecretPrompt(fullHistory, anchor, userTargets);
-        void handleChatSubmit(null, { secretPrompt: secret, displayText: '🔍 Analisi Ieri' });
-      } else if (kind === 'mealIdea') {
-        void handleChatSubmit(null, {
-          secretPrompt: buildMealIdeaFromDispensaSecretPrompt(),
-          displayText: '💡 Idea Pasto',
-        });
-      } else if (kind === 'checkOggi') {
-        void handleChatSubmit('⚖️ Check Oggi', { fromQuickReply: true });
-      } else if (kind === 'trainingCheck') {
-        void handleChatSubmit('🏃‍♂️ Posso allenarmi?', { fromQuickReply: true });
-      } else if (kind === 'reportMese') {
-        void handleChatSubmit('📅 Report Mese', { fromQuickReply: true });
-      } else if (kind === 'scannerMetabolico') {
-        void handleChatSubmit('🧬 Scanner Metabolico', { fromQuickReply: true });
-      }
+      const quickActionMap = {
+        briefing: 'Genera briefing sintetico della giornata.',
+        yesterday: 'Analizza i gap di ieri e suggerisci una correzione pratica.',
+        mealIdea: 'Suggerisci un pasto bilanciato per oggi.',
+        checkOggi: 'Esegui check nutrizionale di oggi.',
+        trainingCheck: 'Posso allenarmi ora? Valuta recupero e carico.',
+        reportMese: 'Genera report sintetico ultimi 30 giorni.',
+        scannerMetabolico: 'Esegui scanner metabolico e segnala priorita.',
+      };
+      const text = quickActionMap[kind];
+      if (!text) return;
+      void handleChatSubmit(text, { fromQuickReply: true });
     },
-    [
-      activeLog,
-      bodyBattery?.currentEnergy,
-      buildMealIdeaFromDispensaSecretPrompt,
-      buildQuickBriefingSecretPrompt,
-      buildYesterdayGapSecretPrompt,
-      currentTrackerDate,
-      fullHistory,
-      handleChatSubmit,
-      kentuDailyCalorieStrategy,
-      totali,
-      userTargets,
-    ],
+    [handleChatSubmit],
   );
 
   return (
@@ -111,15 +60,6 @@ export default function KentuChatUI({
         setChatImages={setChatImages}
         onSendMessage={handleChatSubmit}
         onChatQuickAction={onChatQuickAction}
-        onLogDinnerOption={onLogDinnerOption}
-        onLoadAgenda={onLoadAgenda}
-        onMealProposalConfirm={onMealProposalConfirm}
-        onMealProposalCancel={onMealProposalCancel}
-        onMealProposalSwap={onMealProposalSwap}
-        onDailyPlanConfirm={onDailyPlanConfirm}
-        onDailyPlanCancel={onDailyPlanCancel}
-        onGeneratePlanGhostMealDraft={onGeneratePlanGhostMealDraft}
-        dailyLog={activeLog || []}
         showAiSettings={showAiSettings}
         setShowAiSettings={setShowAiSettings}
         apiKeys={apiKeys}

@@ -9,6 +9,9 @@ import { estraiDatiFoodDb, getAverageEstimate } from '../engines/foodDataEngine'
 import { deriveClassicSearchQuery, orchestrateFoodInput } from '../engines/foodInputOrchestrator.js';
 import { parseFoodCommandIntent } from '../engines/foodCommandEngine.js';
 
+const BARCODE_NO_MATCH_MESSAGE =
+  'Nessuna corrispondenza trovata. Riprova la scansione o inserisci manualmente.';
+
 export default function useFoodInputEngine({
   foodDb,
   mealType,
@@ -42,6 +45,56 @@ export default function useFoodInputEngine({
   const barcodeVideoRef = useRef(null);
   const barcodeStreamRef = useRef(null);
   const barcodeScanIntervalRef = useRef(null);
+
+  const normalizeFoodDesc = useCallback(
+    (value) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, ''),
+    [],
+  );
+
+  const saveEntryToPersonalFoodDb = useCallback(
+    async (entryPer100, opts = {}) => {
+      if (!userUid || !db || !entryPer100 || typeof entryPer100 !== 'object') return null;
+      const name = String(entryPer100.desc || entryPer100.name || '').trim();
+      if (!name) return null;
+      const barcode = String(opts.barcode ?? '').trim();
+      const descNorm = normalizeFoodDesc(name);
+      const existingKeyByBarcode =
+        barcode &&
+        Object.keys(foodDb || {}).find(
+          (k) => foodDb[k] && String(foodDb[k].barcode ?? '').trim() === barcode,
+        );
+      const existingKeyByDesc =
+        descNorm &&
+        Object.keys(foodDb || {}).find((k) => {
+          const row = foodDb[k];
+          if (!row || typeof row !== 'object') return false;
+          const rowNorm = normalizeFoodDesc(row.desc ?? row.name ?? '');
+          return rowNorm && rowNorm === descNorm;
+        });
+      const slug = name
+        .replace(/[.$#[\]/\\\s]/g, '_')
+        .replace(/[^\w\-]/g, '_')
+        .slice(0, 30);
+      const dbKey = existingKeyByBarcode || existingKeyByDesc || `food_${Date.now()}_${slug}`;
+      const merged = {
+        ...(foodDb?.[dbKey] && typeof foodDb[dbKey] === 'object' ? foodDb[dbKey] : {}),
+        ...entryPer100,
+        desc: name,
+      };
+      if (barcode) merged.barcode = barcode;
+      if (merged.fatTotal == null && merged.fat != null) merged.fatTotal = Number(merged.fat);
+      const payload = enrichDbRowWithFoodUnits(merged, dbKey);
+      await set(ref(db, `users/${userUid}/tracker_data/trackerFoodDatabase/${dbKey}`), payload);
+      setFoodDb((prev) => ({ ...(prev || {}), [dbKey]: payload }));
+      return dbKey;
+    },
+    [userUid, db, foodDb, normalizeFoodDesc, setFoodDb],
+  );
 
   useEffect(() => {
     const q = (foodNameInput || '').trim();
@@ -130,6 +183,16 @@ export default function useFoodInputEngine({
     }
     if (barcodeScanIntervalRef.current) clearInterval(barcodeScanIntervalRef.current);
     const code = String(barcode ?? '').trim();
+    const strictNoMatch = () => {
+      setMealBuilderBarcodeBootstrap({
+        nonce: Date.now(),
+        error: BARCODE_NO_MATCH_MESSAGE,
+      });
+    };
+    if (!code) {
+      strictNoMatch();
+      return;
+    }
     const slugName = (name) => String(name).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 30);
 
     const applyLocalOverride = (base) => {
@@ -144,19 +207,11 @@ export default function useFoodInputEngine({
       return next;
     };
 
-    const fillPer100Defaults = (row) => {
-      const r = { ...row };
-      Object.keys(TARGETS).forEach((g) =>
-        Object.keys(TARGETS[g] || {}).forEach((k) => {
-          if (r[k] == null) r[k] = getDefaultNutrientValue(k, fullHistoryRef.current);
-        })
-      );
-      if (r.kcal == null) r.kcal = getDefaultNutrientValue('kcal', fullHistoryRef.current);
-      return r;
-    };
-
     try {
-      let entryPer100 = await fetchOpenFoodFactsProduct(code);
+      const existingDbKey = Object.keys(foodDb || {}).find(
+        (k) => foodDb[k] && String(foodDb[k].barcode ?? '').trim() === code,
+      );
+      let entryPer100 = existingDbKey ? { ...(foodDb?.[existingDbKey] || {}) } : null;
       const localOv = getBarcodeNutritionOverride(code);
 
       if (!entryPer100) {
@@ -170,29 +225,33 @@ export default function useFoodInputEngine({
             barcode: code,
           };
         } else {
-          entryPer100 = { desc: `Barcode ${code}`, barcode: code };
+          entryPer100 = await fetchOpenFoodFactsProduct(code);
+          if (entryPer100) {
+            entryPer100 = { ...entryPer100, barcode: code };
+            entryPer100 = applyLocalOverride(entryPer100);
+          }
         }
-      } else {
-        entryPer100 = { ...entryPer100, barcode: code };
-        entryPer100 = applyLocalOverride(entryPer100);
       }
 
-      entryPer100 = fillPer100Defaults(entryPer100);
+      const hasStrictMacros = ['kcal', 'prot', 'carb', 'fatTotal', 'fat'].some((k) =>
+        Number.isFinite(Number(entryPer100?.[k])),
+      );
+      if (!entryPer100 || !hasStrictMacros) {
+        strictNoMatch();
+        return;
+      }
       const name = String(entryPer100.desc || '').trim() || `Barcode ${code}`;
 
       let savedRow = { ...entryPer100, desc: name };
-      let dbKey = `local_${Date.now()}_${code}`;
+      let dbKey = existingDbKey || `local_${Date.now()}_${code}`;
 
       if (userUid && db) {
-        const basePath = `users/${userUid}/tracker_data`;
-        const existingKey = Object.keys(foodDb || {}).find(
-          (k) => foodDb[k] && String(foodDb[k].barcode ?? '') === code
-        );
-        dbKey = existingKey || `food_${Date.now()}_${slugName(name)}`;
-        const entrySaved = enrichDbRowWithFoodUnits(savedRow, dbKey);
-        await set(ref(db, `${basePath}/trackerFoodDatabase/${dbKey}`), entrySaved);
-        setFoodDb((prev) => ({ ...(prev || {}), [dbKey]: entrySaved }));
-        savedRow = entrySaved;
+        dbKey =
+          (await saveEntryToPersonalFoodDb(
+            { ...savedRow, barcode: code },
+            { barcode: code },
+          )) || `food_${Date.now()}_${slugName(name)}`;
+        savedRow = dbKey && foodDb?.[dbKey] ? foodDb[dbKey] : { ...savedRow, barcode: code };
       }
 
       setFoodNameInput(savedRow.desc || name);
@@ -208,20 +267,9 @@ export default function useFoodInputEngine({
       });
       setTimeout(() => document.getElementById('weight-input')?.focus(), 100);
     } catch {
-      setFoodNameInput(`Barcode ${code}`);
-      setFoodWeightInput('100');
-      setMealBuilderBarcodeBootstrap({
-        nonce: Date.now(),
-        match: {
-          id: `err_${Date.now()}`,
-          desc: `Barcode ${code}`,
-          row: { desc: `Barcode ${code}`, barcode: code },
-          barcode: code,
-        },
-      });
-      setTimeout(() => document.getElementById('weight-input')?.focus(), 100);
+      strictNoMatch();
     }
-  }, [foodDb, userUid, fullHistoryRef, db, fetchOpenFoodFactsProduct, setFoodDb, getLastQuantityForFoodRef, setMealBuilderBarcodeBootstrap]);
+  }, [foodDb, userUid, db, fetchOpenFoodFactsProduct, setFoodDb, getLastQuantityForFoodRef, setMealBuilderBarcodeBootstrap, saveEntryToPersonalFoodDb]);
 
   useEffect(() => {
     if (!isBarcodeScannerOpen || !barcodeVideoRef.current) return;
@@ -490,9 +538,24 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
       fullHistory: fullHistoryRef.current,
     });
     setAddedFoods([item, ...addedFoods]);
+    const typedWeight = Number.parseFloat(String(foodWeightInput).replace(',', '.'));
+    const safeWeight = Number.isFinite(typedWeight) && typedWeight > 0 ? typedWeight : 100;
+    const toPer100 = (value) => {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return null;
+      return (n * 100) / safeWeight;
+    };
+    const manualEntry = {
+      desc: String(item?.desc || item?.name || foodNameInput).trim(),
+      kcal: toPer100(item?.kcal ?? item?.cal),
+      prot: toPer100(item?.prot),
+      carb: toPer100(item?.carb),
+      fatTotal: toPer100(item?.fatTotal ?? item?.fat),
+    };
+    void saveEntryToPersonalFoodDb(manualEntry).catch(() => {});
     setFoodNameInput('');
     setFoodWeightInput('');
-  }, [foodNameInput, foodWeightInput, mealType, foodDb, fullHistoryRef, setAddedFoods, addedFoods]);
+  }, [foodNameInput, foodWeightInput, mealType, foodDb, fullHistoryRef, setAddedFoods, addedFoods, saveEntryToPersonalFoodDb]);
 
   return {
     foodNameInput,

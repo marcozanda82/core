@@ -1,5 +1,5 @@
 import React from 'react';
-import { Gauge } from 'lucide-react';
+import { Compass } from 'lucide-react';
 
 export default function BottomChrome({
   kentuChatNotificationBadge,
@@ -274,7 +274,7 @@ export default function BottomChrome({
               }}
               aria-hidden
             >
-              {t.id === 'bussola' ? <Gauge size={20} strokeWidth={2.2} /> : t.icon}
+              {t.id === 'bussola' ? <Compass size={20} strokeWidth={2.2} /> : t.icon}
             </span>
             <span>{t.label}</span>
           </button>

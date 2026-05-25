@@ -25,7 +25,7 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
-import { useKentuChatHandler } from './hooks/useKentuChatHandler';
+import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandTerminal';
 import { useProfileAndTargets } from './hooks/useProfileAndTargets';
 import { useTimelineDrag } from './hooks/useTimelineDrag';
 import MainDashboardCharts from './features/charts/MainDashboardCharts';
@@ -75,6 +75,7 @@ import {
 } from './constants/salaComandiConstants';
 import LongevityView from './LongevityView';
 import DailyCoachSection from '@/features/salaComandi/components/DailyCoachSection';
+import BiochemicalDiagnostics from './features/nutrition/BiochemicalDiagnostics';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
   getWorkoutActivityTypeDef,
@@ -1186,6 +1187,7 @@ export default function SalaComandi() {
   const [apiKeys, setApiKeys] = useState(() => JSON.parse(localStorage.getItem('ghost_api_cluster')) || ['']);
   const [activeKeyIndex, setActiveKeyIndex] = useState(0);
   const [showAiSettings, setShowAiSettings] = useState(false);
+  const [showBiochemicalDiagnostics, setShowBiochemicalDiagnostics] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
   const [chatHistory, setChatHistory] = useState(() => {
@@ -2480,6 +2482,85 @@ export default function SalaComandi() {
   const baseKcal = (effectiveTargetsForCurrentDate.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
   const { totali, obiettiviPasti } = useBiochimico(activeLog, baseKcal);
   const targetKcal = baseKcal + (totali?.workout ?? 0);
+
+  const todayMicrosForDiagnostics = useMemo(
+    () => ({
+      sodium: Number(totali?.na) || 0,
+      potassium: Number(totali?.k) || 0,
+      omega3: Number(totali?.omega3) || 0,
+      omega6: Number(totali?.omega6) || 0,
+    }),
+    [totali],
+  );
+
+  const aminoAcidProfileForDiagnostics = useMemo(
+    () => ({
+      leu: Number(totali?.leu) || 0,
+      iso: Number(totali?.iso) || 0,
+      val: Number(totali?.val) || 0,
+      lys: Number(totali?.lys) || 0,
+      met: Number(totali?.met) || 0,
+      phe: Number(totali?.phe) || 0,
+      thr: Number(totali?.thr) || 0,
+      trp: Number(totali?.trp) || 0,
+      his: Number(totali?.his) || 0,
+      proteinGrams: Number(totali?.prot) || 0,
+    }),
+    [totali],
+  );
+
+  const weeklyLiposolubleHistoryForDiagnostics = useMemo(() => {
+    const out = [];
+    const seen = new Set();
+    const parseDateFromKey = (key) => {
+      const raw = String(key || '').trim();
+      if (!raw) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+      if (raw.startsWith('trackerStorico_')) {
+        const d = raw.slice('trackerStorico_'.length);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+      }
+      return null;
+    };
+    const getNodeLog = (node) => {
+      if (!node || typeof node !== 'object') return [];
+      if (Array.isArray(node)) return node;
+      if (Array.isArray(node.dailyLog)) return node.dailyLog;
+      if (Array.isArray(node.log)) return node.log;
+      if (Array.isArray(node.items)) return node.items;
+      return [];
+    };
+
+    const pushDay = (dateKey, totalsLike) => {
+      const dk = String(dateKey || '').trim();
+      if (!dk || seen.has(dk)) return;
+      seen.add(dk);
+      out.push({
+        date: dk,
+        vitA: Number(totalsLike?.vitA) || 0,
+        vitD: Number(totalsLike?.vitD) || 0,
+        vitE: Number(totalsLike?.vitE) || 0,
+        vitK: Number(totalsLike?.vitK) || 0,
+      });
+    };
+
+    const todayKey = currentTrackerDate || getTodayString();
+    pushDay(todayKey, totali || {});
+
+    Object.entries(fullHistory || {})
+      .map(([key, node]) => ({ date: parseDateFromKey(key), node }))
+      .filter((x) => !!x.date)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+      .forEach(({ date, node }) => {
+        if (out.length >= 7) return;
+        if (seen.has(date)) return;
+        const log = getNodeLog(node);
+        const dayTotals = computeTotali(log || []);
+        pushDay(date, dayTotals || {});
+      });
+
+    return out.slice(0, 7);
+  }, [fullHistory, currentTrackerDate, totali]);
 
   // Macro giornalieri reali (solo da dailyLog) per MealBuilder — mai undefined per evitare NaN nelle barre
   const macroDailyReals = useMemo(() => {
@@ -6594,83 +6675,129 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
     return calculateMetabolicVariance(bodyMetricsHistory, fullHistory, currentTdeeForAi);
   }, [bodyMetricsHistory, fullHistory, userTargets?.kcal]);
 
-  const { handleChatSubmit } = useKentuChatHandler({
-    CHAT_HISTORY_WINDOW,
-    accumuloSNC,
-    activeAction,
-    activeLog,
-    anabolicCurve,
-    applyKentuChatCmd,
-    birthDate,
-    bodyBattery,
-    bodyMetricsHistory,
-    buildKentuAgendaSecretPrompt,
-    buildRecentActivitiesContext,
-    buildRecentMealsContextForDinner,
-    calculateAge,
-    callGeminiAPIWithRotation,
-    chatHistory,
-    chatImages,
-    chatInput,
-    commitAddFoodChatPayload,
-    computeSleepDurationHours,
-    cortisolCurve,
-    currentTime,
-    currentTrackerDate,
-    dailyLog,
-    dailyLogForEnergy,
-    dismissKentuSleepTrigger,
-    estraiDatiFoodDb,
-    foodDb,
-    fullHistory,
-    getCurrentTimeRoundedTo15Min,
-    handleAutoLogDinner,
-    idealStrategy,
-    isSimulationMode,
-    kentuAgendaAwaitingRef,
-    kentuDailyCalorieStrategy,
-    lastAgendaOptionsRef,
-    lastDinnerOptionsRef,
-    longevityData,
-    longevityEngineScore,
-    longevityScoreHistory,
-    manualNodes,
-    mealType,
-    metabolicVarianceForAi,
-    nervousSystemLoad,
-    nodesForEnergySimulation,
-    normalizeAiMealTypeToStorageId,
-    pendingAiBatch,
-    pendingHabit,
-    pendingWorkoutFlowRef,
-    predictMealType,
-    scheduledWorkoutContextRef,
-    setChatHistory,
-    setChatImages,
-    setChatInput,
-    setDailyLog,
-    setIdealStrategy,
-    setManualNodes,
-    setPendingAiBatch,
-    setPendingHabit,
-    setSimulatedLog,
-    setSimulationNodes,
-    simulatedLog,
-    syncDatiFirebase,
-    totali,
-    trainingWaveResult,
-    userModel,
-    userProfile,
-    userTargets,
-  });
-
-  const handleMealProposalSwap = useCallback(
-    (itemId) => {
-      const safe = String(itemId ?? '').replace(/'/g, "'");
-      handleChatSubmit(`Sostituisci l'ingrediente con ID: '${safe}'`, { fromInput: true });
+  const commitAddFoodCommand = useCallback(
+    (payload) => {
+      const foodName = String(payload?.foodName || '').trim();
+      if (!foodName) throw new Error('foodName mancante');
+      const grams = Math.max(1, Math.round(Number(payload?.grams) || 0));
+      if (!Number.isFinite(grams) || grams <= 0) throw new Error('grams non valido');
+      const mealTypeCanonical = toCanonicalMealType(String(payload?.mealType || '').trim()) || 'pranzo';
+      const defaultMealTimeMap = {
+        colazione: 8,
+        snack: 16,
+        pranzo: 13,
+        cena: 20,
+      };
+      let mealDec = null;
+      if (payload?.timeString) {
+        mealDec = parseFlexibleTimeToDecimal(String(payload.timeString).trim());
+      }
+      if (mealDec == null) {
+        mealDec =
+          defaultMealTimeMap[mealTypeCanonical] != null
+            ? defaultMealTimeMap[mealTypeCanonical]
+            : getCurrentTimeRoundedTo15Min();
+      }
+      const timeString = String(payload?.timeString || decimalToTimeStr(mealDec)).trim();
+      const message = commitAddFoodChatPayload({
+        timeString,
+        mealDec,
+        items: [{ name: foodName, qty: grams }],
+      });
+      return message || `✅ ${foodName} (${grams}g) aggiunto nel diario.`;
     },
-    [handleChatSubmit]
+    [
+      commitAddFoodChatPayload,
+      decimalToTimeStr,
+      getCurrentTimeRoundedTo15Min,
+      parseFlexibleTimeToDecimal,
+      toCanonicalMealType,
+    ],
   );
+
+  const commitAddWorkoutCommand = useCallback(
+    (payload) => {
+      const workoutName = String(payload?.workoutName || '').trim();
+      if (!workoutName) throw new Error('workoutName mancante');
+      const durationMinutes = Math.max(1, Math.round(Number(payload?.durationMinutes) || 0));
+      if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+        throw new Error('durationMinutes non valido');
+      }
+      const duration = Math.max(0.1, durationMinutes / 60);
+      const parsedKcal = Number(payload?.estimatedKcal);
+      const kcal = Number.isFinite(parsedKcal) && parsedKcal >= 0
+        ? Math.round(parsedKcal)
+        : Math.round(durationMinutes * 6);
+      const workoutDec =
+        payload?.timeString != null && String(payload.timeString).trim()
+          ? parseFlexibleTimeToDecimal(String(payload.timeString).trim())
+          : getCurrentTimeRoundedTo15Min();
+      const timeSafe = Number.isFinite(workoutDec) ? workoutDec : getCurrentTimeRoundedTo15Min();
+      const logEntry = {
+        id: `cmd_workout_${Date.now()}`,
+        type: 'workout',
+        workoutType: 'misto',
+        desc: workoutName,
+        name: workoutName,
+        kcal,
+        cal: kcal,
+        duration,
+        time: timeSafe,
+        mealTime: timeSafe,
+      };
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => [logEntry, ...(prev || [])]);
+      } else {
+        setDailyLog((prev) => {
+          const nextLog = [logEntry, ...(prev || [])];
+          syncDatiFirebase(nextLog, manualNodesRef.current);
+          return nextLog;
+        });
+      }
+      return `✅ Allenamento registrato: ${workoutName} (${durationMinutes} min, ~${kcal} kcal).`;
+    },
+    [
+      getCurrentTimeRoundedTo15Min,
+      isSimulationMode,
+      parseFlexibleTimeToDecimal,
+      setDailyLog,
+      setSimulatedLog,
+      syncDatiFirebase,
+    ],
+  );
+
+  const {
+    messages,
+    sendMessage,
+    chatInput: commandChatInput,
+    setChatInput: setCommandChatInput,
+    chatImages: commandChatImages,
+    setChatImages: setCommandChatImages,
+  } = useCommandTerminal({
+    apiKeys,
+    initialAiMessage: introPhrase,
+    onAddFoodCommand: commitAddFoodCommand,
+    onAddWorkoutCommand: commitAddWorkoutCommand,
+    getCurrentState: () => {
+      const todayWorkoutKcal = (activeLog || [])
+        .filter((item) => item?.type === 'workout')
+        .reduce((acc, item) => acc + (Number(item?.kcal ?? item?.cal) || 0), 0);
+      return {
+        activeDate: currentTrackerDate || getTodayString(),
+        locale: 'it-IT',
+        foodDatabase: foodDb,
+        mealState: {
+          mealType: toCanonicalMealType(mealType) || 'pranzo',
+          recentFoods: [],
+        },
+        dailyStats: {
+          todayWorkoutKcal,
+          bodyBatteryPercent: Number(bodyBattery?.currentEnergy ?? 0),
+          recoveryScore: Number(longevityEngineScore ?? 0),
+        },
+      };
+    },
+  });
 
   const renderCustomizedLabel = (props) => {
     const { cx, cy, midAngle, outerRadius, value, name, fill, payload } = props;
@@ -7250,6 +7377,36 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
         <div style={{ fontSize: '13px', opacity: 0.7, color: '#94a3b8', marginBottom: '6px' }}>
           {homeLongevityInsightLine}
+        </div>
+      ) : null}
+      {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') ? (
+        <div style={{ marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button
+            type="button"
+            onClick={() => setShowBiochemicalDiagnostics((v) => !v)}
+            style={{
+              alignSelf: 'flex-start',
+              padding: '8px 12px',
+              borderRadius: '10px',
+              border: '1px solid #334155',
+              background: showBiochemicalDiagnostics ? 'rgba(15, 23, 42, 0.9)' : 'rgba(15, 23, 42, 0.6)',
+              color: '#cbd5e1',
+              fontSize: '0.75rem',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+            }}
+          >
+            {showBiochemicalDiagnostics ? 'Nascondi Diagnostica' : 'Diagnostica'}
+          </button>
+          {showBiochemicalDiagnostics ? (
+            <BiochemicalDiagnostics
+              todayMicros={todayMicrosForDiagnostics}
+              aminoAcidProfile={aminoAcidProfileForDiagnostics}
+              weeklyLiposolubleHistory={weeklyLiposolubleHistoryForDiagnostics}
+              onClose={() => setShowBiochemicalDiagnostics(false)}
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -8244,32 +8401,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         {/* VISTA CHAT AI */}
         {activeAction === 'ai_chat' && (
           <KentuChatUI
-            chatHistory={chatHistory}
-            chatInput={chatInput}
-            setChatInput={setChatInput}
-            chatImages={chatImages}
-            setChatImages={setChatImages}
-            handleChatSubmit={handleChatSubmit}
-            currentTrackerDate={currentTrackerDate}
-            activeLog={activeLog}
-            userTargets={userTargets}
-            kentuDailyCalorieStrategy={kentuDailyCalorieStrategy}
-            bodyBattery={bodyBattery}
-            totali={totali}
-            fullHistory={fullHistory}
-            buildQuickBriefingSecretPrompt={(payload) =>
-              buildQuickBriefingSecretPrompt({ ...payload, strategicPlan })
-            }
-            buildYesterdayGapSecretPrompt={buildYesterdayGapSecretPrompt}
-            buildMealIdeaFromDispensaSecretPrompt={buildMealIdeaFromDispensaSecretPrompt}
-            onLogDinnerOption={handleAutoLogDinner}
-            onLoadAgenda={handleAutoLogAgenda}
-            onMealProposalConfirm={handleMealProposalConfirm}
-            onMealProposalCancel={handleMealProposalCancel}
-            onMealProposalSwap={handleMealProposalSwap}
-            onDailyPlanConfirm={handleDailyPlanConfirm}
-            onDailyPlanCancel={handleDailyPlanCancel}
-            onGeneratePlanGhostMealDraft={handleGeneratePlanGhostMealDraft}
+            chatHistory={messages}
+            chatInput={commandChatInput}
+            setChatInput={setCommandChatInput}
+            chatImages={commandChatImages}
+            setChatImages={setCommandChatImages}
+            handleChatSubmit={sendMessage}
             showAiSettings={showAiSettings}
             setShowAiSettings={setShowAiSettings}
             apiKeys={apiKeys}
