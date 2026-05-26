@@ -76,6 +76,7 @@ import {
 import LongevityView from './LongevityView';
 import DailyCoachSection from '@/features/salaComandi/components/DailyCoachSection';
 import BiochemicalDiagnostics from './features/nutrition/BiochemicalDiagnostics';
+import TacticalCoach from './features/coach/TacticalCoach';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
   getWorkoutActivityTypeDef,
@@ -1188,6 +1189,7 @@ export default function SalaComandi() {
   const [activeKeyIndex, setActiveKeyIndex] = useState(0);
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [showBiochemicalDiagnostics, setShowBiochemicalDiagnostics] = useState(false);
+  const [isCoachOpen, setIsCoachOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
   const [chatHistory, setChatHistory] = useState(() => {
@@ -7381,24 +7383,32 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       ) : null}
       {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') ? (
         <div style={{ marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <button
-            type="button"
-            onClick={() => setShowBiochemicalDiagnostics((v) => !v)}
-            style={{
-              alignSelf: 'flex-start',
-              padding: '8px 12px',
-              borderRadius: '10px',
-              border: '1px solid #334155',
-              background: showBiochemicalDiagnostics ? 'rgba(15, 23, 42, 0.9)' : 'rgba(15, 23, 42, 0.6)',
-              color: '#cbd5e1',
-              fontSize: '0.75rem',
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-            }}
-          >
-            {showBiochemicalDiagnostics ? 'Nascondi Diagnostica' : 'Diagnostica'}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => setShowBiochemicalDiagnostics((v) => !v)}
+              style={{
+                alignSelf: 'flex-start',
+                padding: '8px 12px',
+                borderRadius: '10px',
+                border: '1px solid #334155',
+                background: showBiochemicalDiagnostics ? 'rgba(15, 23, 42, 0.9)' : 'rgba(15, 23, 42, 0.6)',
+                color: '#cbd5e1',
+                fontSize: '0.75rem',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              {showBiochemicalDiagnostics ? 'Nascondi Diagnostica' : 'Diagnostica'}
+            </button>
+            <button 
+              onClick={() => setIsCoachOpen(true)} 
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded shadow transition-colors ml-2 flex items-center gap-2"
+            >
+              <span>🤖</span> Coach Tattico
+            </button>
+          </div>
           {showBiochemicalDiagnostics ? (
             <BiochemicalDiagnostics
               todayMicros={todayMicrosForDiagnostics}
@@ -7406,6 +7416,17 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               weeklyLiposolubleHistory={weeklyLiposolubleHistoryForDiagnostics}
               dailyLog={activeLog}
               onClose={() => setShowBiochemicalDiagnostics(false)}
+            />
+          ) : null}
+          {isCoachOpen ? (
+            <TacticalCoach
+              totals={totali || {}}
+              targets={{
+                kcal: Number(targetKcal) || 0,
+                prot: Number(effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot) || 0,
+                carb: Number(effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb) || 0,
+              }}
+              onClose={() => setIsCoachOpen(false)}
             />
           ) : null}
         </div>
