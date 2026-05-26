@@ -88,5 +88,37 @@ export const evaluateTacticalMissions = (totals, targets, goal) => {
     missions.push({ id: 'inflammation', title: 'Indice Infiammatorio', status: infStatus, message: infMessage });
   }
 
+  // 5. STIMOLO MOTORIO / ESERCIZIO
+  let exeStatus = 'pending';
+  let exeMessage = `Nessun allenamento rilevato per oggi.`;
+  
+  // Fallback robusto che include la nuova variabile 'workout' e predispone la lettura del giorno precedente
+  const hasWorkout = 
+    (typeof totals.workout === 'number' && totals.workout > 0) || 
+    (totals.workoutKcal > 0) || 
+    (totals.hasWorkout === true) ||
+    (totals.hadWorkoutYesterday === true); // Trigger finestra anabolica 48h
+
+  if (goal === GOALS.HYPERTROPHY) {
+    if (hasWorkout) {
+      exeStatus = 'success'; exeMessage = `Stimolo ipertrofico registrato. La sintesi proteica e il pathway mTOR sono attivati correttamente.`;
+    } else {
+      exeStatus = 'error'; exeMessage = `Manca lo stimolo meccanico! Senza allenamento di forza (sollevamento pesi), il surplus calorico si convertirà in tessuto adiposo anziché muscolare.`;
+    }
+  } else if (goal === GOALS.LONGEVITY) {
+    if (hasWorkout) {
+      exeStatus = 'success'; exeMessage = `Attività metabolica registrata. Ottimo per la biogenesi mitocondriale e la sensibilità all'insulina.`;
+    } else {
+      exeStatus = 'error'; exeMessage = `Manca lo stimolo cardiovascolare/metabolico. Esegui almeno 30 min di cardio (Zona 2) o camminata per mantenere l'efficienza cellulare ed attivare l'autofagia.`;
+    }
+  } else if (goal === GOALS.DEFINITION) {
+    if (hasWorkout) {
+      exeStatus = 'success'; exeMessage = `Allenamento eseguito. Ottimo per difendere la massa magra dal catabolismo durante il deficit.`;
+    } else {
+      exeStatus = 'error'; exeMessage = `Manca lo stimolo di forza/cardio. In deficit calorico senza allenamento rischi di deperire e perdere tessuto muscolare prezioso.`;
+    }
+  }
+  missions.push({ id: 'exercise', title: 'Stimolo Fisico & Allenamento', status: exeStatus, message: exeMessage });
+
   return missions;
 };

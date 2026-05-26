@@ -1190,6 +1190,7 @@ export default function SalaComandi() {
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [showBiochemicalDiagnostics, setShowBiochemicalDiagnostics] = useState(false);
   const [isCoachOpen, setIsCoachOpen] = useState(false);
+  const [biochemicalDetailModal, setBiochemicalDetailModal] = useState(null);
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
   const [chatHistory, setChatHistory] = useState(() => {
@@ -1451,6 +1452,7 @@ export default function SalaComandi() {
     userTargets,
     projectionAnchorDate: currentTrackerDate,
     selectedTimeframe: metabolicCompassTimeframe,
+    currentLog: activeLog,
   });
 
   // Alias semantico: livello SNC usato in UI / allarmi.
@@ -7018,7 +7020,8 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
   // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
   // ========================================================
   /** Barra Kentu + navigazione: sempre montata dopo login, anche durante caricamento dati (Bussola sempre visibile). */
-  const fixedAppBottomChrome = (
+  const shouldHideBottomChatBar = isCoachOpen || biochemicalDetailModal != null;
+  const fixedAppBottomChrome = shouldHideBottomChatBar ? null : (
     <AppBottomNavigation
       kentuChatNotificationBadge={kentuChatNotificationBadge}
       setActiveAction={setActiveAction}
@@ -7415,7 +7418,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               aminoAcidProfile={aminoAcidProfileForDiagnostics}
               weeklyLiposolubleHistory={weeklyLiposolubleHistoryForDiagnostics}
               dailyLog={activeLog}
-              onClose={() => setShowBiochemicalDiagnostics(false)}
+              detailModal={biochemicalDetailModal}
+              setDetailModal={setBiochemicalDetailModal}
+              onClose={() => {
+                setShowBiochemicalDiagnostics(false);
+                setBiochemicalDetailModal(null);
+              }}
             />
           ) : null}
           {isCoachOpen ? (
@@ -7425,6 +7433,10 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 kcal: Number(targetKcal) || 0,
                 prot: Number(effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot) || 0,
                 carb: Number(effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb) || 0,
+              }}
+              currentCoordinates={{
+                x: Number(metabolicMapData?.mapPositionInertial?.x ?? metabolicMapData?.x) || 0,
+                y: Number(metabolicMapData?.mapPositionInertial?.y ?? metabolicMapData?.y) || 0,
               }}
               onClose={() => setIsCoachOpen(false)}
             />

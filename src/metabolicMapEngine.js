@@ -64,6 +64,7 @@ function computeMetabolicMapPoint(params = {}) {
     glycemicInstability = 0,
     baselineOffsetX = 0,
     baselineOffsetY = 0,
+    totals = null,
   } = params;
 
   let x = energyBalance;
@@ -80,7 +81,62 @@ function computeMetabolicMapPoint(params = {}) {
   x += Number(baselineOffsetX) || 0;
   y += Number(baselineOffsetY) || 0;
 
-  // Le coordinate restano sempre entro i limiti della mappa.
+  // --- VETTORE GRAVITAZIONALE ALLENAMENTO (CONCURRENT TRAINING) ---
+  const safeTotals = totals && typeof totals === 'object' ? totals : {};
+  const hasWorkout =
+    (typeof safeTotals.workout === 'number' && safeTotals.workout > 0) ||
+    Number(safeTotals.workoutKcal) > 0 ||
+    safeTotals.hasWorkout === true ||
+    safeTotals.hadWorkoutYesterday === true;
+
+  if (hasWorkout) {
+    const desc = String(
+      safeTotals.workoutDesc || safeTotals.workoutName || safeTotals.descrizione || ''
+    ).toLowerCase();
+
+    // Definisci i dizionari di parole chiave
+    const isCardio =
+      desc.includes('corsa') ||
+      desc.includes('bici') ||
+      desc.includes('cardio') ||
+      desc.includes('nuoto') ||
+      desc.includes('camminata') ||
+      desc.includes('tapis');
+    const isStrength =
+      desc.includes('pesi') ||
+      desc.includes('braccia') ||
+      desc.includes('dorso') ||
+      desc.includes('gambe') ||
+      desc.includes('petto') ||
+      desc.includes('spalle') ||
+      desc.includes('forza') ||
+      desc.includes('ipertrofia');
+
+    // Se c'è un allenamento ma nessuna parola chiave riconosciuta, usiamo fallback ibrido.
+    const applyCardio = isCardio || (!isCardio && !isStrength && desc !== '');
+    const applyStrength = isStrength || (!isCardio && !isStrength && desc === '');
+
+    const vectorY = 25; // Potenza del tirante verticale
+    const vectorX = 10; // Potenza del tirante orizzontale
+
+    // Applichiamo i vettori in modo INDIPENDENTE (Somma Algebrica)
+    if (applyCardio) {
+      // Tira verso Sud (AMPK) e Ovest (Sensibilità Insulinica / Deplezione)
+      y -= vectorY;
+      x -= vectorX;
+    }
+
+    if (applyStrength) {
+      // Tira verso Nord (mTOR) e Est (Infiammazione muscolare acuta/danno meccanico)
+      y += vectorY;
+      x += vectorX / 2;
+    }
+
+    // Nota fisiologica: concurrent training smorza la componente verticale e lascia deplezione orizzontale.
+  }
+
+  // --- CLAMP DELLE COORDINATE ---
+  // Le coordinate restano sempre entro i limiti fisici della mappa cartesiana.
   x = clamp(x, -100, 100);
   y = clamp(y, -100, 100);
 

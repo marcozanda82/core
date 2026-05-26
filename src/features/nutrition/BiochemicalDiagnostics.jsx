@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { TARGETS } from '../../useBiochimico';
 
 const WHO_REFERENCE_MG_PER_G_PROTEIN = Object.freeze({
@@ -52,9 +53,10 @@ export default function BiochemicalDiagnostics({
   aminoAcidProfile = null,
   weeklyLiposolubleHistory = [],
   dailyLog = [],
+  detailModal = null,
+  setDetailModal = () => {},
   onClose = () => {},
 }) {
-  const [detailModal, setDetailModal] = useState(null);
   const sodiumMg = num(todayMicros?.sodium ?? todayMicros?.na);
   const potassiumMg = num(todayMicros?.potassium ?? todayMicros?.k);
   const omega3 = num(todayMicros?.omega3);
@@ -345,24 +347,39 @@ export default function BiochemicalDiagnostics({
 
         </div>
 
-        {detailModal && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-sm p-6 rounded-xl">
-            <div className="bg-white border border-slate-300 rounded-xl w-full max-w-md shadow-2xl flex flex-col max-h-[80vh] overflow-hidden">
-              <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-xl">
+        {detailModal && createPortal(
+          <div
+            className="fixed inset-0 !z-[2147483647] flex items-center justify-center bg-slate-900/90 backdrop-blur-sm p-4 sm:p-6"
+            onClick={() => setDetailModal(null)}
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+          >
+            <div className="bg-white border border-slate-300 rounded-xl w-full max-w-md shadow-2xl relative flex flex-col max-h-full" onClick={e => e.stopPropagation()}>
+              
+              {/* Bottone Chiusura Fluttuante */}
+              <button 
+                onClick={() => setDetailModal(null)} 
+                className="absolute top-4 right-4 z-30 bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shadow-sm transition-colors"
+              >
+                ✕
+              </button>
+              
+              {/* Header Fissato */}
+              <div className="p-5 border-b border-slate-200 bg-slate-50 rounded-t-xl pr-14 shrink-0">
                 <h3 className="font-bold text-[#0b4ea2] text-lg">{detailModal.title}</h3>
-                <button onClick={() => setDetailModal(null)} className="text-slate-500 hover:text-rose-500 font-bold text-xl">✕</button>
               </div>
-              <div className="p-4 overflow-y-auto max-h-[60vh]">
+              
+              {/* Corpo Scorrevole */}
+              <div className="p-5 overflow-y-auto flex-1 min-h-0">
                 {detailModal.data.length === 0 ? (
-                  <p className="text-slate-500 text-center py-4">Nessun dato disponibile per oggi.</p>
+                  <p className="text-slate-500 text-center py-4">Nessun dato registrato oggi.</p>
                 ) : (
                   <ul className="space-y-3">
                     {detailModal.data.map((item, idx) => (
                       <li key={idx} className="flex justify-between items-center border-b border-slate-100 pb-2">
                         <span className="font-medium text-slate-700 truncate pr-4">{item.name}</span>
-                        <span className="text-slate-600 whitespace-nowrap">
+                        <span className="text-slate-600 whitespace-nowrap text-right">
                           <span className="font-bold text-slate-800">{item.val.toFixed(1)} {detailModal.unit}</span>
-                          <span className="text-xs ml-2 text-slate-400">({item.percentage}%)</span>
+                          <span className="text-xs ml-2 text-slate-400 inline-block w-8">({item.percentage}%)</span>
                         </span>
                       </li>
                     ))}
@@ -370,7 +387,8 @@ export default function BiochemicalDiagnostics({
                 )}
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     </div>

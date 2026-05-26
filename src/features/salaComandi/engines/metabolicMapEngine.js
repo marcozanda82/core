@@ -161,6 +161,79 @@ function clampMapAxis(value) {
   return Math.max(-100, Math.min(100, value));
 }
 
+function deriveWorkoutTotalsFromCurrentLog(currentLog = [], dailyHistory = []) {
+  const log = Array.isArray(currentLog) ? currentLog : [];
+  const history = Array.isArray(dailyHistory) ? dailyHistory : [];
+
+  let workoutKcal = 0;
+  let workoutDesc = '';
+  for (let i = 0; i < log.length; i += 1) {
+    const e = log[i] || {};
+    if (e.type !== 'workout') continue;
+    const kcal =
+      Number(e.kcal) ||
+      Number(e.calories) ||
+      Number(e.kcalBurned) ||
+      Number(e.energy) ||
+      0;
+    workoutKcal += kcal;
+    if (!workoutDesc) {
+      workoutDesc = String(e.desc || e.name || e.workoutName || '').trim();
+    }
+  }
+
+  const yesterday = history.length > 0 ? history[history.length - 1] : null;
+  const hadWorkoutYesterday = (Number(yesterday?.trainingLoad) || 0) > 0;
+
+  return {
+    workout: workoutKcal,
+    workoutKcal,
+    hasWorkout: workoutKcal > 0,
+    hadWorkoutYesterday,
+    workoutDesc,
+    workoutName: workoutDesc,
+  };
+}
+
+function applyWorkoutVectorToCompassRaw(rawVector = {}, totals = null) {
+  let x = Number(rawVector?.x) || 0;
+  let y = Number(rawVector?.y) || 0;
+  const safeTotals = totals && typeof totals === 'object' ? totals : {};
+  const hasWorkout =
+    (typeof safeTotals.workout === 'number' && safeTotals.workout > 0) ||
+    Number(safeTotals.workoutKcal) > 0 ||
+    safeTotals.hasWorkout === true ||
+    safeTotals.hadWorkoutYesterday === true;
+
+  if (!hasWorkout) return { x, y };
+
+  const desc = String(
+    safeTotals.workoutDesc || safeTotals.workoutName || safeTotals.descrizione || ''
+  ).toLowerCase();
+  const isCardio =
+    desc.includes('corsa') ||
+    desc.includes('bici') ||
+    desc.includes('cardio') ||
+    desc.includes('nuoto') ||
+    desc.includes('camminata');
+
+  const vectorY = 0.25; // scala bussola normalizzata (0..1 verticale)
+  const vectorX = 0.1; // scala bussola normalizzata (-1..1 orizzontale)
+
+  if (isCardio) {
+    y -= vectorY;
+    x -= vectorX;
+  } else {
+    y += vectorY;
+    x += vectorX / 2;
+  }
+
+  return {
+    x: Math.max(-1, Math.min(1, x)),
+    y: Math.max(-1, Math.min(1, y)),
+  };
+}
+
 /** Stessa formula di {@link calculateMetabolicScore} in MetabolicMap.jsx */
 function calculateMetabolicScore(mapX, mapY) {
   const { cx, cy } = mapPointToSvgCoords(clampMapAxis(mapX), clampMapAxis(mapY));
@@ -538,6 +611,7 @@ export function computeMetabolicMapCompassBundle({
   userTargets = null,
   projectionAnchorDate = null,
   selectedTimeframe = '7d',
+  currentLog = [],
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
@@ -552,6 +626,7 @@ export function computeMetabolicMapCompassBundle({
   );
 
   const baselineOffset = resolveBaselineOffset(bodyMetricsHistory, dailyHistory);
+  const workoutTotals = deriveWorkoutTotalsFromCurrentLog(currentLog, dailyHistory);
 
   const mapPosition = calculateMetabolicMapPosition({
     energyBalance: mapInputs.energyBalance,
@@ -560,6 +635,7 @@ export function computeMetabolicMapCompassBundle({
     glycemicInstability: mapInputs.glycemicInstability,
     baselineOffsetX: baselineOffset.x,
     baselineOffsetY: baselineOffset.y,
+    totals: workoutTotals,
   });
 
   const { mapInputs: mapInputs30d } = computeMetabolicMapInputsAndAudit(
@@ -577,6 +653,7 @@ export function computeMetabolicMapCompassBundle({
       glycemicInstability: mapInputs30d.glycemicInstability,
       baselineOffsetX: baselineOffset.x,
       baselineOffsetY: baselineOffset.y,
+      totals: workoutTotals,
     });
     mapPositionInertialSource = 'inertial_30d';
   } else {
@@ -612,7 +689,10 @@ export function computeMetabolicMapCompassBundle({
     referenceTdee,
   );
 
-  const rawVector = { x: compassDirection.x, y: compassDirection.y };
+  const rawVector = applyWorkoutVectorToCompassRaw(
+    { x: compassDirection.x, y: compassDirection.y },
+    workoutTotals
+  );
   const visualVector = computeVisualCompassVector(rawVector);
 
   const currentMapPoint = dailyMapPositions.length ? dailyMapPositions[dailyMapPositions.length - 1] : null;
