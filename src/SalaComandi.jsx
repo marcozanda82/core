@@ -7404,6 +7404,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               todayMicros={todayMicrosForDiagnostics}
               aminoAcidProfile={aminoAcidProfileForDiagnostics}
               weeklyLiposolubleHistory={weeklyLiposolubleHistoryForDiagnostics}
+              dailyLog={activeLog}
               onClose={() => setShowBiochemicalDiagnostics(false)}
             />
           ) : null}

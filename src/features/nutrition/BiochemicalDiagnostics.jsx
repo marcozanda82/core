@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { TARGETS } from '../../useBiochimico';
 
 const WHO_REFERENCE_MG_PER_G_PROTEIN = Object.freeze({
@@ -51,8 +51,10 @@ export default function BiochemicalDiagnostics({
   todayMicros = null,
   aminoAcidProfile = null,
   weeklyLiposolubleHistory = [],
+  dailyLog = [],
   onClose = () => {},
 }) {
+  const [detailModal, setDetailModal] = useState(null);
   const sodiumMg = num(todayMicros?.sodium ?? todayMicros?.na);
   const potassiumMg = num(todayMicros?.potassium ?? todayMicros?.k);
   const omega3 = num(todayMicros?.omega3);
@@ -97,6 +99,42 @@ export default function BiochemicalDiagnostics({
     };
   }, [weeklyLiposolubleHistory]);
 
+  const calculateContributions = (nutrientKey) => {
+    if (!dailyLog || !Array.isArray(dailyLog)) return [];
+    let total = 0;
+    const aggregated = {};
+
+    const allItems = [];
+    dailyLog.forEach(entry => {
+      if (entry.type === 'meal' && Array.isArray(entry.items)) {
+        allItems.push(...entry.items);
+      } else {
+        allItems.push(entry);
+      }
+    });
+
+    allItems.forEach(item => {
+      const val = item[nutrientKey] || 0;
+      if (val > 0) {
+        total += val;
+        const name = item.desc || item.alimento || 'Sconosciuto';
+        if (aggregated[name]) {
+            aggregated[name] += val;
+        } else {
+            aggregated[name] = val;
+        }
+      }
+    });
+
+    const contributions = Object.keys(aggregated).map(name => ({
+        name,
+        val: aggregated[name]
+    }));
+
+    contributions.sort((a, b) => b.val - a.val);
+    return contributions.map(c => ({ ...c, percentage: total > 0 ? Math.round((c.val / total) * 100) : 0 }));
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
       <div className="bg-white border border-slate-300 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl relative p-6">
@@ -122,7 +160,16 @@ export default function BiochemicalDiagnostics({
                 <span>SODIO (Na)</span>
                 <span>{Math.round(sodiumMg)} mg</span>
               </div>
-              <div className="w-full bg-slate-300 h-6">
+              <div
+                className="w-full bg-slate-300 h-6 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() =>
+                  setDetailModal({
+                    title: 'Fonti di Sodio (Na)',
+                    unit: 'mg',
+                    data: calculateContributions('na'),
+                  })
+                }
+              >
                 <div className="bg-rose-500 h-6" style={{ width: `${Math.min((sodiumMg / 2000) * 100, 100)}%` }}></div>
               </div>
             </div>
@@ -131,7 +178,16 @@ export default function BiochemicalDiagnostics({
                 <span>POTASSIO (K)</span>
                 <span>{Math.round(potassiumMg)} mg</span>
               </div>
-              <div className="w-full bg-slate-300 h-6">
+              <div
+                className="w-full bg-slate-300 h-6 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() =>
+                  setDetailModal({
+                    title: 'Fonti di Potassio (K)',
+                    unit: 'mg',
+                    data: calculateContributions('k'),
+                  })
+                }
+              >
                 <div className="bg-green-600 h-6" style={{ width: `${Math.min((potassiumMg / 3400) * 100, 100)}%` }}></div>
               </div>
             </div>
@@ -143,7 +199,16 @@ export default function BiochemicalDiagnostics({
             <div className="flex items-end gap-2 mb-2">
               <span className="text-4xl font-bold text-slate-800">{Math.round(aminoStats.score)}%</span>
             </div>
-            <div className="w-full bg-slate-300 h-6 mb-2">
+            <div
+              className="w-full bg-slate-300 h-6 mb-2 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() =>
+                setDetailModal({
+                  title: 'Fonti di Proteine',
+                  unit: 'g',
+                  data: calculateContributions('prot'),
+                })
+              }
+            >
               <div className="bg-green-600 h-6" style={{ width: `${clamp(aminoStats.score)}%` }}></div>
             </div>
             <p className="text-sm text-slate-600 font-medium">Limitante: {aminoStats.limitingLabel}</p>
@@ -158,11 +223,42 @@ export default function BiochemicalDiagnostics({
                 {Number.isFinite(omegaRatio) ? omegaRatio.toFixed(1) : '∞'} : 1
               </span>
             </div>
-            <div className="flex justify-between text-sm text-slate-700 mb-1">
-              <span>Omega 3: {fmt(omega3, 2)} g</span>
-              <span>Omega 6: {fmt(omega6, 2)} g</span>
+            <div className="flex justify-between text-sm text-slate-700 mb-1 gap-3">
+              <span
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() =>
+                  setDetailModal({
+                    title: 'Fonti di Omega 3',
+                    unit: 'g',
+                    data: calculateContributions('omega3'),
+                  })
+                }
+              >
+                Omega 3: {fmt(omega3, 2)} g
+              </span>
+              <span
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() =>
+                  setDetailModal({
+                    title: 'Fonti di Omega 6',
+                    unit: 'g',
+                    data: calculateContributions('omega6'),
+                  })
+                }
+              >
+                Omega 6: {fmt(omega6, 2)} g
+              </span>
             </div>
-            <div className="flex w-full bg-slate-300 h-4 gap-1">
+            <div
+              className="flex w-full bg-slate-300 h-4 gap-1 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() =>
+                setDetailModal({
+                  title: 'Fonti di Omega 6',
+                  unit: 'g',
+                  data: calculateContributions('omega6'),
+                })
+              }
+            >
                <div className="bg-green-600 h-4 w-1/4"></div>
                <div className="bg-rose-500 h-4 w-3/4"></div>
             </div>
@@ -177,7 +273,16 @@ export default function BiochemicalDiagnostics({
                   <span>Vitamina A</span>
                   <span>{Math.round(liposoluble.A)}%</span>
                 </div>
-                <div className="w-full bg-slate-300 h-4">
+                <div
+                  className="w-full bg-slate-300 h-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() =>
+                    setDetailModal({
+                      title: 'Fonti Vitamina A',
+                      unit: 'µg',
+                      data: calculateContributions('vitA'),
+                    })
+                  }
+                >
                   <div className="bg-green-600 h-4" style={{ width: `${clamp(liposoluble.A)}%` }}></div>
                 </div>
               </div>
@@ -186,7 +291,16 @@ export default function BiochemicalDiagnostics({
                   <span>Vitamina D</span>
                   <span>{Math.round(liposoluble.D)}%</span>
                 </div>
-                <div className="w-full bg-slate-300 h-4">
+                <div
+                  className="w-full bg-slate-300 h-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() =>
+                    setDetailModal({
+                      title: 'Fonti Vitamina D',
+                      unit: 'µg',
+                      data: calculateContributions('vitD'),
+                    })
+                  }
+                >
                   <div className="bg-green-600 h-4" style={{ width: `${clamp(liposoluble.D)}%` }}></div>
                 </div>
               </div>
@@ -195,7 +309,16 @@ export default function BiochemicalDiagnostics({
                   <span>Vitamina E</span>
                   <span>{Math.round(liposoluble.E)}%</span>
                 </div>
-                <div className="w-full bg-slate-300 h-4">
+                <div
+                  className="w-full bg-slate-300 h-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() =>
+                    setDetailModal({
+                      title: 'Fonti Vitamina E',
+                      unit: 'mg',
+                      data: calculateContributions('vitE'),
+                    })
+                  }
+                >
                   <div className="bg-green-600 h-4" style={{ width: `${clamp(liposoluble.E)}%` }}></div>
                 </div>
               </div>
@@ -204,7 +327,16 @@ export default function BiochemicalDiagnostics({
                   <span>Vitamina K</span>
                   <span>{Math.round(liposoluble.K)}%</span>
                 </div>
-                <div className="w-full bg-slate-300 h-4">
+                <div
+                  className="w-full bg-slate-300 h-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() =>
+                    setDetailModal({
+                      title: 'Fonti Vitamina K',
+                      unit: 'µg',
+                      data: calculateContributions('vitK'),
+                    })
+                  }
+                >
                   <div className="bg-green-600 h-4" style={{ width: `${clamp(liposoluble.K)}%` }}></div>
                 </div>
               </div>
@@ -212,6 +344,34 @@ export default function BiochemicalDiagnostics({
           </div>
 
         </div>
+
+        {detailModal && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-sm p-6 rounded-xl">
+            <div className="bg-white border border-slate-300 rounded-xl w-full max-w-md shadow-2xl flex flex-col max-h-[80vh] overflow-hidden">
+              <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-xl">
+                <h3 className="font-bold text-[#0b4ea2] text-lg">{detailModal.title}</h3>
+                <button onClick={() => setDetailModal(null)} className="text-slate-500 hover:text-rose-500 font-bold text-xl">✕</button>
+              </div>
+              <div className="p-4 overflow-y-auto max-h-[60vh]">
+                {detailModal.data.length === 0 ? (
+                  <p className="text-slate-500 text-center py-4">Nessun dato disponibile per oggi.</p>
+                ) : (
+                  <ul className="space-y-3">
+                    {detailModal.data.map((item, idx) => (
+                      <li key={idx} className="flex justify-between items-center border-b border-slate-100 pb-2">
+                        <span className="font-medium text-slate-700 truncate pr-4">{item.name}</span>
+                        <span className="text-slate-600 whitespace-nowrap">
+                          <span className="font-bold text-slate-800">{item.val.toFixed(1)} {detailModal.unit}</span>
+                          <span className="text-xs ml-2 text-slate-400">({item.percentage}%)</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
