@@ -16,6 +16,7 @@ export default function AppHeader({
   onSncStressClick,
   bodyBattery,
   accentColor,
+  hoursFasted,
   onBatteryClick,
   simulationActive,
   onExitSimulation,
@@ -174,20 +175,11 @@ export default function AppHeader({
               percentage={bodyBattery?.currentEnergy ?? 0}
               size="small"
               hasNapBoost={!!bodyBattery?.hasNapBoost}
-              showText={false}
+              showText
+              textMode="energy"
               accentColor={accentColor ?? '#22d3ee'}
+              hoursFasted={hoursFasted}
             />
-            <span
-              style={{
-                fontSize: '0.7rem',
-                color: '#a1a1aa',
-                marginTop: '4px',
-                fontWeight: '600',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              🔋 Energia {bodyBattery?.currentEnergy ?? 0}%
-            </span>
           </div>
         </div>
       </div>

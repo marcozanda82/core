@@ -5,6 +5,7 @@ import TimeAlignmentChartDebugOverlay from '../../TimeAlignmentDebugOverlay';
 import TimelineNodi from '../../TimelineNodi';
 import { CHART_AXIS_GUTTER_LEFT_PX, CHART_AXIS_GUTTER_RIGHT_PX } from '../../timeLayout';
 import { SncEnergyChartGradients, useMetabolicChartGradient } from '../../components/charts/MetabolicTimelineGradient';
+import MetabolicLegendPill from '../../components/charts/MetabolicLegendPill';
 function fullscreenChartLabelFromType(currentChartType) {
   return currentChartType === 'percent'
     ? 'Energia SNC %'
@@ -86,6 +87,7 @@ export default function FullscreenGraphView({
   metabolicGradientStops,
   metabolicChartGradientStops,
   currentMetabolicColor,
+  hoursFasted,
 }) {
   const currentChartType = availableFullscreenCharts[fullscreenChartIndex] || 'percent';
   const fullscreenChartLabel = fullscreenChartLabelFromType(currentChartType);
@@ -260,6 +262,9 @@ export default function FullscreenGraphView({
                 marginBottom: 10,
               }}
             >
+              {currentChartType === 'percent' ? (
+                <MetabolicLegendPill hoursFasted={hoursFasted} />
+              ) : null}
               <TimelineNodi
                 activeNodesWithStack={activeNodesWithStack}
                 chartUnit={chartUnit}

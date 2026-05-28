@@ -8,6 +8,53 @@ export const METABOLIC_PHASE_COLORS = Object.freeze({
   default: '#4ade80',
 });
 
+/** Legenda «Pillola Spettro» — ordine timeline digiuno (sinistra → destra). */
+export const METABOLIC_PHASE_LEGEND = Object.freeze([
+  {
+    id: 'digestiva',
+    label: 'Digestione',
+    rangeLabel: '<4h',
+    icon: '🥗',
+    color: METABOLIC_PHASE_COLORS.digestiva,
+  },
+  {
+    id: 'stabilita',
+    label: 'Stabilità',
+    rangeLabel: '4–12h',
+    icon: '⚡',
+    color: METABOLIC_PHASE_COLORS.stabilita,
+  },
+  {
+    id: 'adrenergico',
+    label: 'Adrenergico',
+    rangeLabel: '12–16h',
+    icon: '🧠',
+    color: METABOLIC_PHASE_COLORS.adrenergico,
+  },
+  {
+    id: 'autofagia',
+    label: 'Autofagia',
+    rangeLabel: '>16h',
+    icon: '🛠️',
+    color: METABOLIC_PHASE_COLORS.autofagia,
+  },
+]);
+
+/**
+ * Id fase metabolica attiva da ore di digiuno (allineato a resolveMetabolicColorForHoursFasted).
+ * @param {number | null | undefined} hoursFasted
+ */
+export function resolveMetabolicPhaseId(hoursFasted) {
+  const raw = hoursFasted;
+  if (raw == null || raw === '') return 'digestiva';
+  const h = Number(raw);
+  if (!Number.isFinite(h) || Number.isNaN(h) || h < 0) return 'digestiva';
+  if (h >= 16) return 'autofagia';
+  if (h >= 12) return 'adrenergico';
+  if (h >= 4) return 'stabilita';
+  return 'digestiva';
+}
+
 /**
  * Colore fase metabolica da ore di digiuno.
  * @param {number | null | undefined} hoursFasted

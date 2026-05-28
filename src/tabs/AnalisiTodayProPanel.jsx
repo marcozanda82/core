@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import DailyCoachSection from '@/features/salaComandi/components/DailyCoachSection';
 import DailyTimelineList from '../components/DailyTimelineList';
 import MainAnalysisChart from '../charts/MainAnalysisChart';
+import MetabolicLegendPill from '../components/charts/MetabolicLegendPill';
 import { CustomChartTooltip, getWorkoutTrafficLight } from '../coreEngine';
 
 /** Titolo asse / grafico in base alla metrica selezionata (solo UI). */
@@ -68,6 +68,7 @@ export default function AnalisiTodayProPanel({
   metabolicGradientStops,
   metabolicChartGradientStops,
   currentMetabolicColor,
+  hoursFasted,
 }) {
   const { hasCrashRisk, hasWaterRisk, hasCortisolRisk, hasDigestionRisk } = riskFlags;
   const {
@@ -250,21 +251,6 @@ export default function AnalisiTodayProPanel({
               </button>
             </div>
           )}
-          <div style={{ marginTop: '6px' }}>
-            <DailyCoachSection
-              activeLog={metabolicCoach.activeLog}
-              totali={metabolicCoach.totali}
-              dynamicDailyKcal={metabolicCoach.dynamicDailyKcal}
-              userProfile={metabolicCoach.userProfile}
-              metabolicMapData={metabolicCoach.metabolicMapData}
-              userTargets={metabolicCoach.userTargets}
-              metabolicCompassTimeframe={metabolicCoach.metabolicCompassTimeframe}
-              metabolicCompassDailyHistory={metabolicCoach.metabolicCompassDailyHistory}
-              energyAt20Percent={metabolicCoach.energyAt20Percent}
-              kentuDailyCalorieStrategy={metabolicCoach.kentuDailyCalorieStrategy}
-              aiDayCoach={metabolicCoach.aiCoachEval}
-            />
-          </div>
           <div
             role="button"
             tabIndex={0}
@@ -458,6 +444,11 @@ export default function AnalisiTodayProPanel({
               }}
               zoomLevel={zoomLevel}
               timelineNodiProps={timelineNodiProps}
+              metabolicLegend={
+                chartUnit === 'percent' ? (
+                  <MetabolicLegendPill hoursFasted={hoursFasted} />
+                ) : null
+              }
             >
               <MainAnalysisChart
                 chartUnit={chartUnit}
@@ -474,6 +465,7 @@ export default function AnalisiTodayProPanel({
                 metabolicGradientStops={metabolicGradientStops}
                 metabolicChartGradientStops={metabolicChartGradientStops}
                 currentMetabolicColor={currentMetabolicColor}
+              />
             </DailyTimelineList>
           </div>
         </div>

@@ -1,13 +1,32 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { GOALS } from './tacticalEngine';
 import { calculateCorrection } from './NavigationEngine';
 import { evaluateMissions } from './MissionEvaluator';
 
-const TacticalCoach = ({ totals, targets, currentCoordinates, userStats, onClose }) => {
-  const [goal, setGoal] = useState(GOALS.LONGEVITY);
+const STATUS_UI = {
+  success: { icon: '✅', barClass: 'bg-emerald-500', textClass: 'text-emerald-600' },
+  fail: { icon: '❌', barClass: 'bg-red-500', textClass: 'text-red-500' },
+  progress: { icon: '⏳', barClass: 'bg-amber-400', textClass: 'text-amber-500' },
+};
 
-  // Il motore calcola in tempo reale la checklist ogni volta che cambi obiettivo o cambiano i dati
-  console.log("🤖 Dati arrivati al Coach:", totals);
+function buildCoachCurrentData(totals) {
+  const t = totals && typeof totals === 'object' ? totals : {};
+  return {
+    ...t,
+    kcal: Number(t.kcal ?? t.cal) || 0,
+    prot: Number(t.prot ?? t.protein) || 0,
+    carb: Number(t.carb ?? t.carbs) || 0,
+    fatTotal: Number(t.fatTotal ?? t.fat ?? t.fats) || 0,
+    protein: Number(t.protein ?? t.prot) || 0,
+    carbs: Number(t.carbs ?? t.carb) || 0,
+    fats: Number(t.fats ?? t.fatTotal ?? t.fat) || 0,
+  };
+}
+
+const TacticalCoach = ({ totals, targets, currentCoordinates, userStats, onClose, isDayEnded = false }) => {
+  const [goal, setGoal] = useState(GOALS.LONGEVITY);
+  const coachCurrentData = useMemo(() => buildCoachCurrentData(totals), [totals]);
+
   const navigationInstructions = calculateCorrection(currentCoordinates, String(goal || '').toUpperCase());
 
   return (
@@ -47,13 +66,18 @@ const TacticalCoach = ({ totals, targets, currentCoordinates, userStats, onClose
         {/* Checklist Operativa */}
         <div className="p-5 overflow-y-auto flex-1 min-h-0 bg-slate-50/50 rounded-b-xl">
           <ul className="space-y-4">
-            {evaluateMissions(String(goal || '').toUpperCase(), totals || {}, userStats).map((mission) => (
+            {evaluateMissions(
+              String(goal || '').toUpperCase(),
+              coachCurrentData,
+              userStats,
+              isDayEnded,
+            ).map((mission) => {
+              const ui = STATUS_UI[mission.status] || STATUS_UI.progress;
+              return (
               <li key={mission.id} className="p-4 rounded-lg border border-slate-200 bg-white shadow-sm">
                 <div className="flex justify-between items-center mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">
-                      {mission.status === 'completed' ? '✅' : mission.status === 'progress' ? '🟡' : '⏳'}
-                    </span>
+                    <span className={`text-xl ${ui.textClass}`}>{ui.icon}</span>
                     <h4 className="font-bold text-slate-800 text-sm">{mission.title}</h4>
                   </div>
                   <span className="text-[10px] font-bold text-slate-400">
@@ -61,15 +85,15 @@ const TacticalCoach = ({ totals, targets, currentCoordinates, userStats, onClose
                   </span>
                 </div>
 
-                {/* Barra di progresso */}
                 <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                   <div
-                    className={`h-full transition-all duration-500 ${mission.status === 'completed' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                    className={`h-full transition-all duration-500 ${ui.barClass}`}
                     style={{ width: `${mission.progress}%` }}
                   />
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
 
           <div className="mt-5 p-4 rounded-lg border border-indigo-100 bg-indigo-50/60">

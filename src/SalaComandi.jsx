@@ -29,6 +29,7 @@ import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandT
 import { useProfileAndTargets } from './hooks/useProfileAndTargets';
 import { useTimelineDrag } from './hooks/useTimelineDrag';
 import MainDashboardCharts from './features/charts/MainDashboardCharts';
+import MetabolicLegendPill from './components/charts/MetabolicLegendPill';
 import { recordMealFoodCooccurrence } from './foodCooccurrence';
 import { recordMealSuggestionHabits } from './mealSuggestionHabits';
 import {
@@ -74,7 +75,6 @@ import {
   AI_COACH_EMPTY_HISTORY,
 } from './constants/salaComandiConstants';
 import LongevityView from './LongevityView';
-import DailyCoachSection from '@/features/salaComandi/components/DailyCoachSection';
 import BiochemicalDiagnostics from './features/nutrition/BiochemicalDiagnostics';
 import TacticalCoach from './features/coach/TacticalCoach';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
@@ -190,9 +190,7 @@ import {
   resolveMetabolicColorForHoursFasted,
 } from './features/salaComandi/utils/metabolicPhaseColors';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
-import SleepCoachCompact from '@/features/salaComandi/components/SleepCoachCompact';
 import DailyIndicatorsBar from '@/features/salaComandi/components/DailyIndicatorsBar';
-import { useSleepCoach } from '@/features/salaComandi/hooks/useSleepCoach';
 import useMetabolicMapEngine from './features/salaComandi/hooks/useMetabolicMapEngine';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { computeMetabolicNotification } from './notificationEngine';
@@ -5829,12 +5827,6 @@ ${dbKeys || 'n/d'}`;
   const burnedKcal = activeLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
   const dynamicDailyKcal =
     applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) + burnedKcal;
-  const sleepCoach = useSleepCoach({
-    activeLog,
-    totali,
-    dynamicDailyKcal,
-    userProfile,
-  });
   const targetKcalChart = dynamicDailyKcal;
   // --- NUOVI ALLARMI PREDITTIVI PERCENTUALI ---
   const targetKcalForAlerts = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
@@ -7273,6 +7265,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         metabolicGradientStops={metabolicGradientStops}
         metabolicChartGradientStops={metabolicChartGradientStops}
         currentMetabolicColor={currentMetabolicColor}
+        hoursFasted={fastingData?.hoursFasted}
       />
     );
   } else {
@@ -7454,6 +7447,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         onSncStressClick={() => setShowSncPopup(true)}
         bodyBattery={bodyBattery}
         accentColor={currentMetabolicColor}
+        hoursFasted={fastingData?.hoursFasted}
         onBatteryClick={() => setShowBatteryModal(true)}
         simulationActive={isSimulationMode}
         onExitSimulation={() => {
@@ -7533,17 +7527,33 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           ) : null}
           {isCoachOpen ? (
             <TacticalCoach
-              totals={totali || {}}
+              totals={{
+                kcal: Number(totali?.kcal) || 0,
+                prot: Number(totali?.prot) || 0,
+                carb: Number(totali?.carb) || 0,
+                fatTotal: Number(totali?.fatTotal ?? totali?.fat) || 0,
+              }}
               targets={{
-                kcal: Number(targetKcal) || 0,
+                kcal: Number(dynamicDailyKcal ?? targetKcal) || 0,
                 prot: Number(effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot) || 0,
                 carb: Number(effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb) || 0,
+                fatTotal: Number(
+                  effectiveTargetsForCurrentDate?.fatTotal
+                  ?? effectiveTargetsForCurrentDate?.fat
+                  ?? userTargets?.fatTotal
+                  ?? userTargets?.fat,
+                ) || 0,
               }}
               currentCoordinates={{
                 x: Number(metabolicMapData?.mapPositionInertial?.x ?? metabolicMapData?.x) || 0,
                 y: Number(metabolicMapData?.mapPositionInertial?.y ?? metabolicMapData?.y) || 0,
               }}
-              userStats={{ weight: 68, tdee: 2480, plannedWorkoutKcal }}
+              userStats={{
+                weight: Number(userProfile?.weight) || 75,
+                tdee: Number(dynamicDailyKcal ?? targetKcal) || 2480,
+                plannedWorkoutKcal,
+              }}
+              isDayEnded={isViewingPastDate}
               onClose={() => setIsCoachOpen(false)}
             />
           ) : null}
@@ -7817,6 +7827,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   zIndex: 10,
                 }}
               >
+                {chartUnit === 'percent' ? (
+                  <MetabolicLegendPill hoursFasted={fastingData?.hoursFasted} />
+                ) : null}
                 <TimelineNodi
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}
@@ -8261,20 +8274,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                       </div>
                     </div>
                   </div>
-                  {/* Widget Fase Metabolica (versione compatta Analisi) */}
-                  <DailyCoachSection
-                    activeLog={activeLog}
-                    totali={totali}
-                    dynamicDailyKcal={dynamicDailyKcal}
-                    userProfile={userProfile}
-                    metabolicMapData={metabolicMapData}
-                    userTargets={userTargets}
-                    metabolicCompassTimeframe={metabolicCompassTimeframe}
-                    metabolicCompassDailyHistory={metabolicCompassDailyHistory}
-                    energyAt20Percent={energyAt20Percent}
-                    kentuDailyCalorieStrategy={kentuDailyCalorieStrategy}
-                    aiDayCoach={aiCoachEval}
-                  />
                 </div>
               </div>
             );
@@ -8520,9 +8519,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             selectedTimeframe={metabolicCompassTimeframe}
             onTimeframeChange={setMetabolicCompassTimeframe}
           />
-          <div style={{ width: '100%', marginTop: 14, flexShrink: 0 }}>
-            <SleepCoachCompact data={sleepCoach} />
-          </div>
         </div>
       )}
       </div>

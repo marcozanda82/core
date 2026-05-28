@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import MealDialPieChart from '../charts/MealDialPieChart';
-import DailyCoachSection from '../features/salaComandi/components/DailyCoachSection';
 
 /**
  * Cruscotto essenziale tab Oggi (utenti non Pro): tachimetro pasti, macro, fase metabolica.
@@ -26,14 +25,6 @@ export default function EssentialTodayCruscotto({
   isAiCoachInsightArmed,
   isAiCoachBulbHovered,
   aiCoachBulbPulseCycles,
-  activeLog,
-  userProfile,
-  metabolicMapData,
-  metabolicCompassTimeframe,
-  metabolicCompassDailyHistory,
-  energyAt20Percent,
-  kentuDailyCalorieStrategy,
-  aiCoachEval,
 }) {
   const dial = useMemo(() => {
     const targetProt = userTargets?.prot ?? 150;
@@ -369,19 +360,6 @@ export default function EssentialTodayCruscotto({
               </div>
             </div>
           </div>
-          <DailyCoachSection
-            activeLog={activeLog}
-            totali={totali}
-            dynamicDailyKcal={dynamicDailyKcal}
-            userProfile={userProfile}
-            metabolicMapData={metabolicMapData}
-            userTargets={userTargets}
-            metabolicCompassTimeframe={metabolicCompassTimeframe}
-            metabolicCompassDailyHistory={metabolicCompassDailyHistory}
-            energyAt20Percent={energyAt20Percent}
-            kentuDailyCalorieStrategy={kentuDailyCalorieStrategy}
-            aiDayCoach={aiCoachEval}
-          />
         </div>
       </div>
     </div>

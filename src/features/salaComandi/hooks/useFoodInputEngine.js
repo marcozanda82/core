@@ -12,6 +12,122 @@ import { parseFoodCommandIntent } from '../engines/foodCommandEngine.js';
 const BARCODE_NO_MATCH_MESSAGE =
   'Nessuna corrispondenza trovata. Riprova la scansione o inserisci manualmente.';
 
+const OFF_USER_AGENT = 'GhostApp/1.0 (KentuOS; barcode-scanner)';
+
+function pickOffNutriment(nutriments, keys) {
+  if (!nutriments || typeof nutriments !== 'object') return undefined;
+  for (let i = 0; i < keys.length; i += 1) {
+    const raw = nutriments[keys[i]];
+    if (raw == null || raw === '') continue;
+    const parsed = parseFloat(String(raw).replace(',', '.'));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function mapOpenFoodFactsProduct(barcode, product) {
+  if (!product || typeof product !== 'object') return null;
+  const nut = product.nutriments || {};
+  const energyKcal = pickOffNutriment(nut, [
+    'energy-kcal_100g',
+    'energy-kcal',
+    'energy-kcal_value',
+    'energy-kcal_serving',
+  ]);
+  const energyKj = pickOffNutriment(nut, ['energy_100g', 'energy', 'energy_value', 'energy-kj_100g']);
+  const kcal = energyKcal ?? (energyKj != null ? energyKj / 4.184 : undefined);
+  const prot = pickOffNutriment(nut, ['proteins_100g', 'proteins', 'proteins_value', 'protein_100g']);
+  const carb = pickOffNutriment(nut, ['carbohydrates_100g', 'carbohydrates', 'carbohydrates_value']);
+  const fatTotal = pickOffNutriment(nut, ['fat_100g', 'fat', 'fat_value']);
+  const fibre = pickOffNutriment(nut, ['fiber_100g', 'fiber', 'fibre_100g', 'fibre']);
+
+  const entryPer100 = {
+    desc: String(product.product_name || product.product_name_it || product.generic_name || '').trim()
+      || `Barcode ${barcode}`,
+    kcal,
+    prot,
+    carb,
+    fatTotal,
+    fat: fatTotal,
+    fibre,
+  };
+
+  ['sugars_100g', 'saturated-fat_100g', 'salt_100g', 'sodium_100g', 'calcium_100g', 'iron_100g', 'potassium_100g', 'vitamin-c_100g', 'vitamin-d_100g'].forEach((key, i) => {
+    const our = ['zuccheri', 'fatSat', 'sale', 'na', 'ca', 'fe', 'k', 'vitc', 'vitD'][i];
+    const val = pickOffNutriment(nut, [key, key.replace('_100g', ''), `${key}_value`]);
+    if (our && val != null) entryPer100[our] = val;
+  });
+
+  const hasMacro = ['kcal', 'prot', 'carb', 'fatTotal'].some(
+    (k) => Number.isFinite(Number(entryPer100[k])),
+  );
+  if (!hasMacro) {
+    // eslint-disable-next-line no-console
+    console.warn('[barcode:OFF] Prodotto senza macro utili', barcode, {
+      nutrimentsKeys: Object.keys(nut).slice(0, 20),
+    });
+    return null;
+  }
+
+  return entryPer100;
+}
+
+async function fetchOpenFoodFactsByBarcode(barcode) {
+  const code = String(barcode ?? '').trim();
+  if (!code) return null;
+
+  const requestOpts = {
+    headers: { 'User-Agent': OFF_USER_AGENT, Accept: 'application/json' },
+  };
+
+  const endpoints = [
+    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`,
+    `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(code)}.json`,
+  ];
+
+  for (let i = 0; i < endpoints.length; i += 1) {
+    const url = endpoints[i];
+    try {
+      const res = await fetch(url, requestOpts);
+      if (!res.ok) {
+        // eslint-disable-next-line no-console
+        console.warn('[barcode:OFF] HTTP error', { barcode: code, url, status: res.status });
+        continue;
+      }
+      const data = await res.json();
+      const product = data?.product;
+      if (!product) {
+        // eslint-disable-next-line no-console
+        console.warn('[barcode:OFF] Prodotto assente', {
+          barcode: code,
+          url,
+          status: data?.status,
+          statusVerbose: data?.status_verbose,
+        });
+        continue;
+      }
+      const mapped = mapOpenFoodFactsProduct(code, product);
+      if (mapped) {
+        // eslint-disable-next-line no-console
+        console.log('[barcode:OFF] Match', code, {
+          desc: mapped.desc,
+          kcal: mapped.kcal,
+          prot: mapped.prot,
+          carb: mapped.carb,
+          fatTotal: mapped.fatTotal,
+          source: url.includes('/v2/') ? 'v2' : 'v0',
+        });
+        return mapped;
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[barcode:OFF] Fetch fallito', { barcode: code, url, error: err?.message || err });
+    }
+  }
+
+  return null;
+}
+
 export default function useFoodInputEngine({
   foodDb,
   mealType,
@@ -151,28 +267,7 @@ export default function useFoodInputEngine({
   }, [foodNameInput, foodDb, flatLog]);
 
   const fetchOpenFoodFactsProduct = useCallback(async (barcode) => {
-    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json?fields=product_name,ingredients_text_it,ingredients_text,nutriments`);
-    const data = await res.json();
-    if (data?.status === 0 || !data?.product) return null;
-    const p = data?.product;
-    const nut = p?.nutriments || {};
-    const toNum = (v) => (v != null && v !== '' ? parseFloat(v) : undefined);
-    const kcalFromKj = (kj) => (kj != null && Number.isFinite(kj) ? kj / 4.184 : undefined);
-    const energyKcal = toNum(nut['energy-kcal_100g']);
-    const energyKj = toNum(nut.energy_100g);
-    const entryPer100 = {
-      desc: p?.product_name || `Barcode ${barcode}`,
-      kcal: energyKcal ?? kcalFromKj(energyKj),
-      prot: toNum(nut.proteins_100g),
-      carb: toNum(nut.carbohydrates_100g),
-      fatTotal: toNum(nut.fat_100g),
-      fibre: toNum(nut.fiber_100g),
-    };
-    ['sugars_100g', 'saturated-fat_100g', 'salt_100g', 'sodium_100g', 'calcium_100g', 'iron_100g', 'potassium_100g', 'vitamin-c_100g', 'vitamin-d_100g'].forEach((key, i) => {
-      const our = ['zuccheri', 'fatSat', 'sale', 'na', 'ca', 'fe', 'k', 'vitc', 'vitD'][i];
-      if (our && nut[key] != null) entryPer100[our] = parseFloat(nut[key]);
-    });
-    return entryPer100;
+    return fetchOpenFoodFactsByBarcode(barcode);
   }, []);
 
   const handleBarcodeDetected = useCallback(async (barcode) => {
@@ -266,7 +361,9 @@ export default function useFoodInputEngine({
         },
       });
       setTimeout(() => document.getElementById('weight-input')?.focus(), 100);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[barcode] Errore gestione scansione', code, err?.message || err);
       strictNoMatch();
     }
   }, [foodDb, userUid, db, fetchOpenFoodFactsProduct, setFoodDb, getLastQuantityForFoodRef, setMealBuilderBarcodeBootstrap, saveEntryToPersonalFoodDb]);
