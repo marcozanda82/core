@@ -1,7 +1,14 @@
 import React, { useId } from 'react';
 
 /** Arco semicircolare Body Battery — look neon sottile; 💤 cyan se boost sonnellino. */
-export default function EnergyArc({ percentage, size = 'small', hasNapBoost = false, showText = true }) {
+export default function EnergyArc({
+  percentage,
+  size = 'small',
+  hasNapBoost = false,
+  showText = true,
+  accentColor = '#22d3ee',
+}) {
+  const arcColor = String(accentColor || '#22d3ee').trim() || '#22d3ee';
   const filterUid = useId().replace(/:/g, '');
   const energyVal = Number(percentage);
   const arcP = Math.min(100, Math.max(0, Number.isFinite(energyVal) ? energyVal : 0));
@@ -51,12 +58,15 @@ export default function EnergyArc({ percentage, size = 'small', hasNapBoost = fa
           <path
             d={`M ${x1} ${cy} A ${r} ${r} 0 0 1 ${x2} ${cy}`}
             fill="none"
-            stroke="#4ade80"
+            stroke={arcColor}
             strokeWidth={sw}
             strokeLinecap="round"
             strokeDasharray={arcLen}
             strokeDashoffset={dashOffset}
-            style={{ transition: 'stroke-dashoffset 0.55s ease-out', filter: `url(#${gid})` }}
+            style={{
+              transition: 'stroke-dashoffset 0.55s ease-out, stroke 0.45s ease-out',
+              filter: `url(#${gid})`,
+            }}
           />
         </svg>
         {hasNapBoost ? (
@@ -82,7 +92,7 @@ export default function EnergyArc({ percentage, size = 'small', hasNapBoost = fa
             fontWeight: 800,
             color: '#ecfdf5',
             letterSpacing: large ? '0.06em' : '-0.02em',
-            textShadow: '0 0 12px rgba(74,222,128,0.45)',
+            textShadow: `0 0 12px ${arcColor}73`,
             lineHeight: 1,
           }}
         >

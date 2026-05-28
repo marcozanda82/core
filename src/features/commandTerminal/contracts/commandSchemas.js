@@ -55,17 +55,40 @@ export const addWorkoutPayloadSchema = {
   required: ['workoutName', 'durationMinutes'],
 };
 
+export const logSleepPayloadSchema = {
+  type: 'object',
+  properties: {
+    durationHours: {
+      type: 'number',
+      minimum: 0.01,
+      description:
+        'Ore totali di sonno in formato decimale. ATTENZIONE MATEMATICA: converti ore e minuti (es. 7h 30m = 7.5, 7h 15m = 7.25). Non restituire MAI 0.',
+    },
+    deepSleepPhase: {
+      type: 'number',
+      description:
+        'Ore di sonno profondo in formato decimale. Cerca voce Profondo (es. 1 ora 43 min = 1.71). Formula: ore + minuti/60.',
+    },
+    qualityScore: {
+      type: 'number',
+      description:
+        'Punteggio sonno intero estratto da etichetta punti (es. 80 punti = 80).',
+    },
+  },
+  required: ['durationHours'],
+};
+
 export const terminalCommandEnvelopeSchema = {
   type: 'object',
   properties: {
     commandType: {
       type: 'string',
-      enum: ['ADD_FOOD', 'ADD_WORKOUT'],
+      enum: ['ADD_FOOD', 'ADD_WORKOUT', 'LOG_SLEEP'],
     },
     payload: {
       type: 'object',
       description:
-        'Payload del comando. Se commandType e ADD_FOOD usa schema cibo, se ADD_WORKOUT usa schema allenamento.',
+        'Payload del comando. Se commandType e ADD_FOOD usa schema cibo, se ADD_WORKOUT usa schema allenamento, se LOG_SLEEP usa schema sonno.',
     },
     uiMessage: {
       type: 'string',
@@ -95,5 +118,11 @@ export const geminiToolSchemas = Object.freeze({
     description:
       'Crea un comando tipizzato per aggiungere un allenamento al diario (nome e durata obbligatori).',
     inputSchema: addWorkoutPayloadSchema,
+  },
+  LOG_SLEEP: {
+    name: 'dispatch_log_sleep',
+    description:
+      'Estrae e registra dati sonno da testo o screenshot smartwatch (durationHours obbligatorio).',
+    inputSchema: logSleepPayloadSchema,
   },
 });

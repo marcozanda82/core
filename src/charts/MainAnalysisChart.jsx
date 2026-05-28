@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import NowVerticalLineOverlay from '../NowVerticalLineOverlay';
 import TimeAlignmentChartDebugOverlay from '../TimeAlignmentDebugOverlay';
+import { SncEnergyChartGradients, useMetabolicChartGradient } from '../components/charts/MetabolicTimelineGradient';
 
 /** Grafico principale tab Analisi — dataset e tooltip dal parent. */
 export default function MainAnalysisChart({
@@ -28,7 +29,12 @@ export default function MainAnalysisChart({
   targetKcalChart,
   totalCaloriesTimeline,
   multiSeriesTooltip,
+  metabolicGradientStops,
+  metabolicChartGradientStops,
+  currentMetabolicColor,
 }) {
+  const chartGradientStops = metabolicChartGradientStops ?? metabolicGradientStops;
+  const energyGradient = useMetabolicChartGradient(chartGradientStops, 'colorEnergia');
   if (chartUnit === 'percent') {
     return (
       <div style={{ background: '#111', paddingTop: 15, paddingBottom: 15, borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
@@ -36,14 +42,10 @@ export default function MainAnalysisChart({
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
               <defs>
-                <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
-                  <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
-                </linearGradient>
-                <linearGradient id="colorRiserva" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00e676" stopOpacity={0.5}/>
-                  <stop offset="100%" stopColor="#00e676" stopOpacity={0.0}/>
-                </linearGradient>
+                <SncEnergyChartGradients
+                  metabolicGradientStops={chartGradientStops}
+                  energyGradientId={energyGradient.gradientId}
+                />
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
               <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
@@ -75,9 +77,9 @@ export default function MainAnalysisChart({
                   label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11, fontWeight: 'bold' }}
                 />
               ))}
-              <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
+              <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill={currentMetabolicColor || '#22d3ee'} stroke="#fff" strokeWidth={2} className="pulsing-dot" />
               <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiserva)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
-              <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergia)" connectNulls={false} isAnimationActive={!draggingNode} />
+              <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke={energyGradient.stroke} strokeWidth={3} fillOpacity={1} fill={energyGradient.fill} connectNulls={false} isAnimationActive={!draggingNode} />
               <Area type="monotone" dataKey="energyFuture" name="Previsione" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
               <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
               <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />

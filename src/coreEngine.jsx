@@ -2599,6 +2599,53 @@ function yesterdayCalorieDeficit(fullHistory, anchorDateStr, userTargets) {
   return kcal < tdee * 0.9;
 }
 
+function workoutEntryDateStr(entry) {
+  const raw = entry?.date ?? entry?.dateStr ?? entry?.logDate ?? entry?.trackerDate ?? entry?.day;
+  return raw != null && String(raw).trim() ? String(raw).trim().slice(0, 10) : null;
+}
+
+function isPlannedWorkoutEntry(entry) {
+  if (!entry || typeof entry !== 'object') return true;
+  if (entry.isGhost === true) return true;
+  if (entry.type === 'ghost_workout') return true;
+  if (entry.planned === true || entry.isPlanned === true) return true;
+  const status = String(entry.status || '').toLowerCase();
+  if (status === 'planned' || status === 'scheduled' || status === 'pending') return true;
+  if (entry.completed === false) return true;
+  return false;
+}
+
+/**
+ * Allenamenti conteggiabili nel Body Battery: esclude ghost/pianificati/futuri (su oggi).
+ */
+function collectCompletedWorkoutsForBattery(log, { anchorDateStr, restrictToPastOnToday, nowDec }) {
+  const anchor = anchorDateStr && String(anchorDateStr).trim() ? String(anchorDateStr).slice(0, 10) : getTodayString();
+  const workouts = [];
+  for (const item of log || []) {
+    if (!item || (item.type !== 'workout' && item.type !== 'work')) continue;
+    if (isPlannedWorkoutEntry(item)) continue;
+    const entryDate = workoutEntryDateStr(item);
+    if (entryDate && entryDate > anchor) continue;
+    if (restrictToPastOnToday) {
+      const t = Number(item.mealTime ?? item.time);
+      if (!Number.isFinite(t) || t > nowDec) continue;
+    }
+    workouts.push(item);
+  }
+  return workouts;
+}
+
+function getYesterdayCompletedWorkouts(fullHistory, anchorDateStr) {
+  const anchor = anchorDateStr && String(anchorDateStr).trim() ? String(anchorDateStr).slice(0, 10) : getTodayString();
+  const yesterdayStr = addDays(anchor, -1);
+  const yLog = getLogFromStoricoTree(fullHistory, yesterdayStr) || [];
+  return collectCompletedWorkoutsForBattery(yLog, {
+    anchorDateStr: yesterdayStr,
+    restrictToPastOnToday: false,
+    nowDec: 24,
+  });
+}
+
 /**
  * Curva fisiologica del boost da sonnellino (interpolazione lineare a tratti, massimo 30).
  * @param {number} minutes Durata del sonnellino in minuti.
@@ -2616,7 +2663,7 @@ export function calculateNapBoost(minutes) {
 
 /**
  * Body Battery: debito sonno, partenza da sonno notturno, decadimento dalle 7:00, pasti (max 3), allenamenti, sonnellini (boost da curva sui minuti).
- * @param {object} [userTargets] — se presente, ieri in deficit calorico aumenta il costo workout (−30 vs −20).
+ * @param {object} [userTargets] — se presente, ieri in deficit calorico E con allenamento completato aumenta il costo workout odierno (−30 vs −20).
  * @returns {{ currentEnergy: number, maxCapacity: number, hasNapBoost: boolean, breakdown: Array<{ label: string, value: number, type: 'positive'|'negative'|'neutral' }> }}
  */
 export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTargets) {
@@ -2624,7 +2671,9 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
   const anchor = anchorDate && String(anchorDate).trim() ? String(anchorDate).slice(0, 10) : getTodayString();
   const log = Array.isArray(activeLog) ? activeLog : [];
   const deficitYesterday = yesterdayCalorieDeficit(fullHistory, anchor, userTargets);
-  const workoutPenalty = deficitYesterday ? 30 : 20;
+  const yesterdayCompletedWorkouts = getYesterdayCompletedWorkouts(fullHistory, anchor);
+  const applyDeficitWorkoutPenalty = deficitYesterday && yesterdayCompletedWorkouts.length > 0;
+  const workoutPenalty = applyDeficitWorkoutPenalty ? 30 : 20;
 
   const isToday = anchor === getTodayString();
   let nowDec;
@@ -2692,15 +2741,11 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
   const mealDrain = mealCount * 5;
   const totalMealCost = mealDrain;
 
-  const workouts = [];
-  for (const i of log) {
-    if (!i || (i.type !== 'workout' && i.type !== 'work')) continue;
-    if (isToday) {
-      const t = Number(i.mealTime ?? i.time);
-      if (Number.isFinite(t) && t > nowDec) continue;
-    }
-    workouts.push(i);
-  }
+  const workouts = collectCompletedWorkoutsForBattery(log, {
+    anchorDateStr: anchor,
+    restrictToPastOnToday: isToday,
+    nowDec,
+  });
   const workoutDrain = workouts.length * workoutPenalty;
 
   const napBreakdownRows = [];
@@ -2749,7 +2794,7 @@ export function calculateBodyBattery(fullHistory, anchorDate, activeLog, userTar
   workouts.forEach((w, idx) => {
     const name = (w.desc || w.name || `Sessione ${idx + 1}`).toString().trim().slice(0, 24);
     const woLabel =
-      deficitYesterday && workoutPenalty === 30
+      applyDeficitWorkoutPenalty
         ? name
           ? `Allenamento · ${name} (deficit ieri)`
           : 'Allenamento (deficit ieri)'

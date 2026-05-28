@@ -4,6 +4,7 @@ import NowVerticalLineOverlay from '../../NowVerticalLineOverlay';
 import TimeAlignmentChartDebugOverlay from '../../TimeAlignmentDebugOverlay';
 import TimelineNodi from '../../TimelineNodi';
 import { CHART_AXIS_GUTTER_LEFT_PX, CHART_AXIS_GUTTER_RIGHT_PX } from '../../timeLayout';
+import { SncEnergyChartGradients, useMetabolicChartGradient } from '../../components/charts/MetabolicTimelineGradient';
 function fullscreenChartLabelFromType(currentChartType) {
   return currentChartType === 'percent'
     ? 'Energia SNC %'
@@ -82,9 +83,14 @@ export default function FullscreenGraphView({
   activeAction,
   NODE_IMPORTANCE,
   NODE_TYPE_ICON,
+  metabolicGradientStops,
+  metabolicChartGradientStops,
+  currentMetabolicColor,
 }) {
   const currentChartType = availableFullscreenCharts[fullscreenChartIndex] || 'percent';
   const fullscreenChartLabel = fullscreenChartLabelFromType(currentChartType);
+  const chartGradientStops = metabolicChartGradientStops ?? metabolicGradientStops;
+  const energyGradient = useMetabolicChartGradient(chartGradientStops, 'colorEnergiaFullscreen');
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100dvw', height: '100dvh', maxHeight: '100dvh', backgroundColor: '#121212', zIndex: 100020, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
@@ -105,14 +111,11 @@ export default function FullscreenGraphView({
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
                     <defs>
-                      <linearGradient id="colorEnergiaFullscreen" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#00e676" stopOpacity={0.6} />
-                        <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0} />
-                      </linearGradient>
-                      <linearGradient id="colorRiservaFullscreen" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#00e676" stopOpacity={0.5} />
-                        <stop offset="100%" stopColor="#00e676" stopOpacity={0.0} />
-                      </linearGradient>
+                      <SncEnergyChartGradients
+                        metabolicGradientStops={chartGradientStops}
+                        energyGradientId={energyGradient.gradientId}
+                        riservaGradientId="colorRiservaFullscreen"
+                      />
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                     <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
@@ -137,9 +140,9 @@ export default function FullscreenGraphView({
                     {nodesForEnergySimulation.filter((n) => n.type === 'sleep').map((node, index) => (
                       <ReferenceLine key={`fs-sleep-${node.id ?? index}`} x={node.wakeTime ?? 7.5} stroke="#00e5ff" strokeDasharray="3 3" strokeWidth={1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
                     ))}
-                    <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
+                    <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill={currentMetabolicColor || '#22d3ee'} stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                     <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiservaFullscreen)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={false} />
-                    <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergiaFullscreen)" connectNulls={false} isAnimationActive={false} />
+                    <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke={energyGradient.stroke} strokeWidth={3} fillOpacity={1} fill={energyGradient.fill} connectNulls={false} isAnimationActive={false} />
                     <Area type="monotone" dataKey="energyFuture" name="Previsione" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
                     <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                     <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
@@ -290,6 +293,7 @@ export default function FullscreenGraphView({
                 onStripDragChartPreview={scheduleTimelineStripEnergyPreview}
                 onStripDragChartPreviewEnd={clearTimelineStripEnergyPreview}
                 onStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
+                metabolicGradientStops={metabolicGradientStops}
               />
             </div>
           </div>

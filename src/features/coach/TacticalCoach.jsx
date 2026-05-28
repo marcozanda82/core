@@ -3,7 +3,7 @@ import { GOALS } from './tacticalEngine';
 import { calculateCorrection } from './NavigationEngine';
 import { evaluateMissions } from './MissionEvaluator';
 
-const TacticalCoach = ({ totals, targets, currentCoordinates, onClose }) => {
+const TacticalCoach = ({ totals, targets, currentCoordinates, userStats, onClose }) => {
   const [goal, setGoal] = useState(GOALS.LONGEVITY);
 
   // Il motore calcola in tempo reale la checklist ogni volta che cambi obiettivo o cambiano i dati
@@ -47,7 +47,7 @@ const TacticalCoach = ({ totals, targets, currentCoordinates, onClose }) => {
         {/* Checklist Operativa */}
         <div className="p-5 overflow-y-auto flex-1 min-h-0 bg-slate-50/50 rounded-b-xl">
           <ul className="space-y-4">
-            {evaluateMissions(String(goal || '').toUpperCase(), totals || {}).map((mission) => (
+            {evaluateMissions(String(goal || '').toUpperCase(), totals || {}, userStats).map((mission) => (
               <li key={mission.id} className="p-4 rounded-lg border border-slate-200 bg-white shadow-sm">
                 <div className="flex justify-between items-center mb-2">
                   <div className="flex items-center gap-2">

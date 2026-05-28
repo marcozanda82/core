@@ -6,8 +6,8 @@ import {
   getWallClockDecimalHour,
   DEBUG_TIME_GRID_HOURS,
   getDebugGridLineTimelineStyle,
-  buildTimelineEnergyStripGradient,
 } from './timeLayout';
+import { buildMetabolicTimelineCssGradient } from './features/salaComandi/utils/metabolicPhaseColors';
 import { SHOW_TIME_ALIGNMENT_DEBUG } from './TimeAlignmentDebugOverlay';
 import {
   buildTimelineNodeQualityMap,
@@ -258,8 +258,10 @@ export default function TimelineNodi({
   onTimelineTrackLongPress,
   /** Se impostato (es. da SalaComandi), stessa ora del grafico: ore + minuti/60. */
   nowLineDecimalHour,
-  /** Punti energia giornata per sfondo gradient sotto la striscia: { time, energy } (0–24h, 0–100). */
+  /** Punti energia giornata (legacy; sfondo striscia usa metabolicGradientStops). */
   timelineEnergySeries,
+  /** Stop gradiente metabolico orizzontale (stesso schema del grafico Energia SNC). */
+  metabolicGradientStops,
   /**
    * Serie grafico giornata (stessi punti del ComposedChart) per campioni fisiologici sui nodi.
    * Se assente, lo stato qualità resta neutro.
@@ -940,8 +942,8 @@ export default function TimelineNodi({
   const energyBarWidthPercent = getTimePositionPercent(Math.max(0, Math.min(24, lineHour)));
 
   const energyStripGradient = useMemo(
-    () => buildTimelineEnergyStripGradient(timelineEnergySeries),
-    [timelineEnergySeries]
+    () => buildMetabolicTimelineCssGradient(metabolicGradientStops),
+    [metabolicGradientStops],
   );
 
   return (

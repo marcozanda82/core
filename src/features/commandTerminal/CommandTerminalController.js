@@ -4,6 +4,7 @@ import { geminiStructuredClient } from './llm/GeminiStructuredClient.js';
 import {
   DISPATCH_ADD_FOOD,
   DISPATCH_ADD_WORKOUT,
+  DISPATCH_LOG_SLEEP,
   DISPATCH_COMMAND_ACCEPTED,
   DISPATCH_COMMAND_REJECTED,
   DISPATCH_SYSTEM_MESSAGE,
@@ -12,6 +13,7 @@ import {
 const COMMAND_TO_EVENT = Object.freeze({
   ADD_FOOD: DISPATCH_ADD_FOOD,
   ADD_WORKOUT: DISPATCH_ADD_WORKOUT,
+  LOG_SLEEP: DISPATCH_LOG_SLEEP,
 });
 
 function isFiniteNumber(value) {
@@ -38,6 +40,23 @@ function validateWorkoutPayload(payload) {
   return null;
 }
 
+const INVALID_SLEEP_DURATION_MESSAGE =
+  'Non ho rilevato ore di sonno valide nell\'immagine. Carica uno screenshot più chiaro con la durata totale (es. 7h 30m).';
+
+function validateSleepPayload(payload) {
+  if (!payload || typeof payload !== 'object') return INVALID_SLEEP_DURATION_MESSAGE;
+  if (!isFiniteNumber(payload.durationHours) || Number(payload.durationHours) <= 0) {
+    return INVALID_SLEEP_DURATION_MESSAGE;
+  }
+  if (payload.deepSleepPhase != null && !isFiniteNumber(payload.deepSleepPhase)) {
+    return 'deepSleepPhase must be a number when provided';
+  }
+  if (payload.qualityScore != null && !isFiniteNumber(payload.qualityScore)) {
+    return 'qualityScore must be a number when provided';
+  }
+  return null;
+}
+
 function validateEnvelope(command) {
   if (!command || typeof command !== 'object') return 'Command must be an object';
   const commandType = String(command.commandType || '').trim().toUpperCase();
@@ -45,6 +64,7 @@ function validateEnvelope(command) {
   if (!command.payload || typeof command.payload !== 'object') return 'payload is required';
   if (commandType === 'ADD_FOOD') return validateFoodPayload(command.payload);
   if (commandType === 'ADD_WORKOUT') return validateWorkoutPayload(command.payload);
+  if (commandType === 'LOG_SLEEP') return validateSleepPayload(command.payload);
   return 'Unsupported commandType';
 }
 
@@ -57,7 +77,8 @@ export class CommandTerminalController {
 
   async processUserMessage(text, currentState = {}, options = {}) {
     const userText = String(text || '').trim();
-    if (!userText) {
+    const images = Array.isArray(options?.images) ? options.images : [];
+    if (!userText && images.length === 0) {
       const reason = 'Empty user message';
       this.bus.publish(DISPATCH_COMMAND_REJECTED, { reason }, { source: 'CommandTerminalController' });
       return { ok: false, reason };
@@ -65,7 +86,7 @@ export class CommandTerminalController {
 
     const inferredIntent =
       String(options.intent || '').trim().toUpperCase() ||
-      this.composer.detectIntent(userText);
+      this.composer.detectIntent(userText, { hasImages: images.length > 0 });
     const contextBundle = this.composer.buildPromptContext(inferredIntent, currentState);
 
     let commandResponse;
@@ -74,6 +95,7 @@ export class CommandTerminalController {
         userText,
         contextBundle,
         commandHint: inferredIntent,
+        images,
       });
     } catch (error) {
       const reason = `LLM failure: ${error?.message || 'unknown error'}`;
@@ -101,6 +123,7 @@ export class CommandTerminalController {
     }
 
     const commandType = String(commandResponse.command.commandType).toUpperCase();
+    console.log('✅ Intent completato con successo:', commandType);
     const eventType = COMMAND_TO_EVENT[commandType];
     const payload = { ...commandResponse.command.payload };
     const publishResult = this.bus.publish(eventType, payload, {

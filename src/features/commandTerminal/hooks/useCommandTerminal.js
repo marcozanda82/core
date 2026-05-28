@@ -5,6 +5,7 @@ import { GeminiStructuredClient } from '../llm/GeminiStructuredClient.js';
 import { CommandTerminalController } from '../CommandTerminalController.js';
 import {
   DISPATCH_COMMAND_REJECTED,
+  DISPATCH_LOG_SLEEP,
   DISPATCH_SYSTEM_MESSAGE,
 } from '../contracts/eventTypes.js';
 import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
@@ -15,6 +16,7 @@ export function useCommandTerminal({
   getCurrentState = null,
   onAddFoodCommand = null,
   onAddWorkoutCommand = null,
+  onLogSleepCommand = null,
   initialAiMessage = 'Terminale pronto.',
 } = {}) {
   const [messages, setMessages] = useState(() => [
@@ -25,6 +27,7 @@ export function useCommandTerminal({
   const [isLoading, setIsLoading] = useState(false);
   const onAddFoodRef = useRef(onAddFoodCommand);
   const onAddWorkoutRef = useRef(onAddWorkoutCommand);
+  const onLogSleepRef = useRef(onLogSleepCommand);
 
   useEffect(() => {
     onAddFoodRef.current = onAddFoodCommand;
@@ -33,6 +36,10 @@ export function useCommandTerminal({
   useEffect(() => {
     onAddWorkoutRef.current = onAddWorkoutCommand;
   }, [onAddWorkoutCommand]);
+
+  useEffect(() => {
+    onLogSleepRef.current = onLogSleepCommand;
+  }, [onLogSleepCommand]);
 
   const getCurrentStateRef = useRef(getCurrentState);
   useEffect(() => {
@@ -78,6 +85,38 @@ export function useCommandTerminal({
       }),
     );
 
+    const unsubscribeLogSleep = commandBus.subscribe(DISPATCH_LOG_SLEEP, async (envelope) => {
+      const payload = envelope?.payload || {};
+      try {
+        if (typeof onLogSleepRef.current === 'function') {
+          await onLogSleepRef.current(payload, envelope);
+        }
+        const hours = Number(payload?.durationHours);
+        const hoursLabel = Number.isFinite(hours) ? Math.round(hours * 100) / 100 : '?';
+        const deepSleepPhase = Number(payload?.deepSleepPhase);
+        const qualityScore = Number(payload?.qualityScore);
+        const extras = [];
+        if (Number.isFinite(deepSleepPhase)) {
+          extras.push(`profondo ${Math.round(deepSleepPhase * 100) / 100}h`);
+        }
+        if (Number.isFinite(qualityScore)) {
+          extras.push(`punteggio ${Math.round(qualityScore)}`);
+        }
+        const suffix = extras.length ? ` (${extras.join(', ')})` : '';
+        setMessages((prev) => [
+          ...prev,
+          { sender: 'ai', text: `🛌 Sonno registrato: ${hoursLabel} ore${suffix}.` },
+        ]);
+      } catch (error) {
+        const reason = `Sleep handler failure: ${error?.message || 'unknown error'}`;
+        commandBus.publish(
+          DISPATCH_COMMAND_REJECTED,
+          { reason, command: payload },
+          { source: 'useCommandTerminal' },
+        );
+      }
+    });
+
     const unsubscribeSystem = commandBus.subscribe(DISPATCH_SYSTEM_MESSAGE, (envelope) => {
       const text = String(envelope?.payload?.message || '').trim();
       if (!text) return;
@@ -90,6 +129,7 @@ export function useCommandTerminal({
     });
 
     return () => {
+      unsubscribeLogSleep();
       unsubscribeSystem();
       unsubscribeRejected();
       cleanupFns.forEach((fn) => {
@@ -103,23 +143,37 @@ export function useCommandTerminal({
   }, []);
 
   const sendMessage = useCallback(
-    async (text) => {
+    async (text, options = {}) => {
       const resolvedText = String(text ?? chatInput ?? '').trim();
-      if (!resolvedText) return { ok: false, reason: 'empty_message' };
+      const attachedImages = Array.isArray(options?.images) && options.images.length > 0
+        ? options.images
+        : chatImages;
+      if (!resolvedText && attachedImages.length === 0) {
+        return { ok: false, reason: 'empty_message' };
+      }
 
-      setMessages((prev) => [...prev, { sender: 'user', text: resolvedText }]);
+      const userBubbleText =
+        resolvedText || `📷 ${attachedImages.length} immagine/i allegata/e`;
+      setMessages((prev) => [...prev, { sender: 'user', text: userBubbleText }]);
       setChatInput('');
       setChatImages([]);
       setIsLoading(true);
       try {
         const currentState =
           typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() : {};
-        return await controller.processUserMessage(resolvedText, currentState);
+        const imageOnly = !resolvedText && attachedImages.length > 0;
+        const fallbackText =
+          resolvedText ||
+          'Analizza lo screenshot allegato dell app fitness/sonno (es. Xiaomi Fitness) ed estrai i dati per LOG_SLEEP.';
+        return await controller.processUserMessage(fallbackText, currentState, {
+          images: attachedImages,
+          intent: imageOnly ? 'LOG_SLEEP' : undefined,
+        });
       } finally {
         setIsLoading(false);
       }
     },
-    [chatInput, controller],
+    [chatInput, chatImages, controller],
   );
 
   return {

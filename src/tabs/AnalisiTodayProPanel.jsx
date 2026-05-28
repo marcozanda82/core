@@ -65,6 +65,9 @@ export default function AnalisiTodayProPanel({
   targetKcalChart,
   totalCaloriesTimeline,
   timelineNodiProps,
+  metabolicGradientStops,
+  metabolicChartGradientStops,
+  currentMetabolicColor,
 }) {
   const { hasCrashRisk, hasWaterRisk, hasCortisolRisk, hasDigestionRisk } = riskFlags;
   const {
@@ -468,7 +471,9 @@ export default function AnalisiTodayProPanel({
                 targetKcalChart={targetKcalChart}
                 totalCaloriesTimeline={totalCaloriesTimeline}
                 multiSeriesTooltip={<CustomChartTooltip />}
-              />
+                metabolicGradientStops={metabolicGradientStops}
+                metabolicChartGradientStops={metabolicChartGradientStops}
+                currentMetabolicColor={currentMetabolicColor}
             </DailyTimelineList>
           </div>
         </div>

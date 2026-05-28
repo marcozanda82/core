@@ -378,7 +378,7 @@ export function buildAiCoachFoodLogFingerprint(log) {
   const parts = [];
   for (let i = 0; i < arr.length; i += 1) {
     const e = arr[i];
-    if (!e || (e.type !== 'food' && e.type !== 'recipe')) continue;
+    if (!e || (e.type !== 'food' && e.type !== 'recipe' && e.type !== 'ghost_meal')) continue;
     const id = e.id ?? e.entryId ?? e.logId ?? `idx${i}`;
     const mtRaw = String(e.mealType || 'snack').split('_')[0];
     const kcal = Number(e.kcal ?? e.cal) || 0;

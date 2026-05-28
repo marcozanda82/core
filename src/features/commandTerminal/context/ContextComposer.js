@@ -11,9 +11,11 @@ function normalizeMealType(value) {
 }
 
 export class ContextComposer {
-  detectIntent(userText = '') {
+  detectIntent(userText = '', { hasImages = false } = {}) {
     const text = toSafeString(userText).toLowerCase();
-    if (!text) return 'UNKNOWN';
+    if (!text) return hasImages ? 'LOG_SLEEP' : 'UNKNOWN';
+    const sleepKeywords = ['sonno', 'sleep', 'dormito', 'dormire', 'deep sleep', 'sleep score', 'smartwatch'];
+    if (sleepKeywords.some((token) => text.includes(token))) return 'LOG_SLEEP';
     const workoutKeywords = ['allenamento', 'workout', 'corsa', 'pesi', 'cardio', 'training'];
     if (workoutKeywords.some((token) => text.includes(token))) return 'ADD_WORKOUT';
     const foodKeywords = ['mang', 'cibo', 'alimento', 'pasto', 'colazione', 'pranzo', 'cena', 'snack'];

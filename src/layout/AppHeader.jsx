@@ -15,6 +15,7 @@ export default function AppHeader({
   sncStressLevel,
   onSncStressClick,
   bodyBattery,
+  accentColor,
   onBatteryClick,
   simulationActive,
   onExitSimulation,
@@ -174,6 +175,7 @@ export default function AppHeader({
               size="small"
               hasNapBoost={!!bodyBattery?.hasNapBoost}
               showText={false}
+              accentColor={accentColor ?? '#22d3ee'}
             />
             <span
               style={{

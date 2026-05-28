@@ -43,7 +43,7 @@ import TargetSettingsModal from './components/modals/TargetSettingsModal';
 import MainMenuDrawer from './layout/MainMenuDrawer';
 import StrategicPlannerOverlay from './features/planning/StrategicPlannerOverlay';
 import TodayStrategyBanner from './features/planning/TodayStrategyBanner';
-import { useStrategicPlanner } from './hooks/useStrategicPlanner';
+import { getTodayPlannedKcal, useStrategicPlanner } from './hooks/useStrategicPlanner';
 import { UserNutritionGoalsProvider } from './UserNutritionGoalsContext';
 import { mergeProfileNutritionFromServer, buildNutritionGoalsSnapshot } from './userNutritionGoals';
 import {
@@ -181,6 +181,14 @@ import {
   ghostMealLogEntryIdFromPayload,
   normalizeGhostFoodsForTimelineNode,
 } from './features/salaComandi/utils/timelineUtils';
+import {
+  resolveMetabolicAccentColor,
+  collectMetabolicTimelineMeals,
+  buildMetabolicTimelineGradientStops,
+  buildMetabolicFastingSnapshot,
+  hoursFastedAtTimelineHour,
+  resolveMetabolicColorForHoursFasted,
+} from './features/salaComandi/utils/metabolicPhaseColors';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
 import SleepCoachCompact from '@/features/salaComandi/components/SleepCoachCompact';
 import DailyIndicatorsBar from '@/features/salaComandi/components/DailyIndicatorsBar';
@@ -902,6 +910,11 @@ export default function SalaComandi() {
   const [birthDate, setBirthDate] = useState('');
   const userProfileRef = useRef(userProfile);
   userProfileRef.current = userProfile;
+  const [currentDateObj, setCurrentDateObj] = useState(() => new Date());
+  const currentTrackerDate = useMemo(() => {
+    const offset = currentDateObj.getTimezoneOffset() * 60000;
+    return new Date(currentDateObj.getTime() - offset).toISOString().slice(0, 10);
+  }, [currentDateObj]);
 
   const nutritionGoalsValue = useMemo(
     () => buildNutritionGoalsSnapshot(userProfile, userTargets),
@@ -911,6 +924,10 @@ export default function SalaComandi() {
   const { strategicPlan, isPlannerLoading, updateDayPlan, updateSettings, saveCalorieMemory, shiftPlanForward } = useStrategicPlanner(
     db,
     userProfile?.uid || user?.uid
+  );
+  const plannedWorkoutKcal = useMemo(
+    () => getTodayPlannedKcal(strategicPlan, currentTrackerDate),
+    [strategicPlan, currentTrackerDate]
   );
 
   const [workoutType, setWorkoutType] = useState('pesi');
@@ -1280,17 +1297,11 @@ export default function SalaComandi() {
     try { return JSON.parse(localStorage.getItem('reportViewedDates')) || {}; } catch { return {}; }
   });
   const [reportPeriod, setReportPeriod] = useState('7');
-  const [currentDateObj, setCurrentDateObj] = useState(() => new Date());
   const [calendarMonthIso, setCalendarMonthIso] = useState(() => getTodayString().slice(0, 7));
 
   useEffect(() => {
     if (!recalibrationProposal?.show) setShowRecalibrationDetails(false);
   }, [recalibrationProposal?.show]);
-
-  const currentTrackerDate = useMemo(() => {
-    const offset = currentDateObj.getTimezoneOffset() * 60000;
-    return new Date(currentDateObj.getTime() - offset).toISOString().slice(0, 10);
-  }, [currentDateObj]);
 
   const effectiveTargetsForCurrentDate = useMemo(
     () =>
@@ -5889,8 +5900,8 @@ ${dbKeys || 'n/d'}`;
       return cache.value;
     }
 
-    const log = todayLogForCoachRef.current;
-    if (!log || currentTrackerDate !== getTodayString() || isSimulationMode) {
+    const log = activeLogForCoachSyncRef.current;
+    if (log == null || currentTrackerDate !== getTodayString() || isSimulationMode) {
       aiCoachEvalCacheRef.current = { key: aiCoachEvalKey, value: AI_COACH_EVAL_INACTIVE };
       return AI_COACH_EVAL_INACTIVE;
     }
@@ -6625,41 +6636,71 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
   };
 
   // --- ZONA SICURA HOOKS: MOTORE METABOLICO E BODY BATTERY ---
-  const fastingData = useMemo(() => {
-    let lastMealTime = null;
-    let lastMealDate = null;
-    const todayMeals = (activeLog || []).filter(i => (i.type === 'food' || i.type === 'recipe') && typeof i.mealTime === 'number' && i.mealTime <= currentTime).sort((a, b) => b.mealTime - a.mealTime);
-    if (todayMeals.length > 0) { lastMealTime = todayMeals[0].mealTime; lastMealDate = 'today'; }
-    if (lastMealDate === null && fullHistory) {
-      const yesterdayObj = new Date(currentDateObj);
-      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
-      const offset = yesterdayObj.getTimezoneOffset() * 60000;
-      const yesterdayStr = new Date(yesterdayObj.getTime() - offset).toISOString().slice(0, 10);
-      const yesterdayNode = fullHistory[TRACKER_STORICO_KEY(yesterdayStr)];
-      if (yesterdayNode && yesterdayNode.log) {
-        const yesterdayLog = normalizeLogData(Array.isArray(yesterdayNode.log) ? yesterdayNode.log : Object.values(yesterdayNode.log));
-        const yestMeals = yesterdayLog.filter(i => i.type === 'food' || i.type === 'recipe');
-        let maxYestTime = -1;
-        yestMeals.forEach(m => {
-          const t = yesterdayNode.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
-          if (t > maxYestTime) maxYestTime = t;
-        });
-        if (maxYestTime >= 0) { lastMealTime = maxYestTime; lastMealDate = 'yesterday'; }
-      }
-    }
-    let hoursFasted = 0;
-    if (lastMealDate === 'today') hoursFasted = currentTime - lastMealTime;
-    else if (lastMealDate === 'yesterday') hoursFasted = (24 - lastMealTime) + currentTime;
-    hoursFasted = Math.max(0, hoursFasted);
-    const h = Math.floor(hoursFasted);
-    const m = Math.round((hoursFasted - h) * 60);
-    const timeString = `${h}h ${m}m`;
-    let phaseName = 'ASSORBIMENTO'; let phaseColor = '#00e676'; let phaseDesc = 'Digestione attiva • Sintesi glicogeno'; let progress = Math.min((hoursFasted / 4) * 100, 100);
-    if (hoursFasted >= 16) { phaseName = 'AUTOFAGIA'; phaseColor = '#9c27b0'; phaseDesc = 'Rigenerazione profonda • Pulizia cellulare'; progress = 100; }
-    else if (hoursFasted >= 12) { phaseName = 'CHETOSI / LIPOLISI'; phaseColor = '#ffea00'; phaseDesc = 'Uso intensivo grassi • Chetoni attivi'; progress = ((hoursFasted - 12) / 4) * 100; }
-    else if (hoursFasted >= 4) { phaseName = 'DIGIUNO / CATABOLISMO'; phaseColor = '#00e5ff'; phaseDesc = 'Esaurimento scorte • Calo insulina'; progress = ((hoursFasted - 4) / 8) * 100; }
-    return { hoursFasted, timeString, phaseName, phaseColor, phaseDesc, progress };
-  }, [activeLog, currentTime, fullHistory, currentDateObj]);
+  const metabolicContextOptions = useMemo(() => {
+    const anchorDate = currentTrackerDate || getTodayString();
+    return {
+      fullHistory,
+      anchorDate,
+      mealTimesObj: fullHistory?.[TRACKER_STORICO_KEY(anchorDate)]?.mealTimes ?? {},
+      referenceDateObj: currentDateObj,
+    };
+  }, [fullHistory, currentTrackerDate, currentDateObj, getTodayString]);
+
+  const fastingData = useMemo(
+    () => buildMetabolicFastingSnapshot(activeLog, currentTime, metabolicContextOptions),
+    [activeLog, currentTime, metabolicContextOptions],
+  );
+
+  const currentMetabolicColor = useMemo(
+    () => resolveMetabolicAccentColor(fastingData),
+    [fastingData?.hoursFasted, fastingData?.phaseName],
+  );
+
+  const metabolicTimelineMeals = useMemo(
+    () => collectMetabolicTimelineMeals(activeLog, metabolicContextOptions),
+    [activeLog, metabolicContextOptions],
+  );
+
+  const metabolicGradientStops = useMemo(
+    () => buildMetabolicTimelineGradientStops(metabolicTimelineMeals),
+    [metabolicTimelineMeals],
+  );
+
+  const metabolicChartGradientStops = useMemo(
+    () => buildMetabolicTimelineGradientStops({
+      ...metabolicTimelineMeals,
+      offsetDomainEnd: isViewingPastDate ? 24 : Math.max(displayTime, 0.1),
+    }),
+    [metabolicTimelineMeals, displayTime, isViewingPastDate],
+  );
+
+  useEffect(() => {
+    const referenceHour = isViewingPastDate ? 24 : currentTime;
+    const hoursAtNow = hoursFastedAtTimelineHour(
+      referenceHour,
+      metabolicTimelineMeals.todayMealTimes,
+      metabolicTimelineMeals.yesterdayLastMealTime,
+    );
+    const coloreCalcolatoPerOraCorrente = resolveMetabolicColorForHoursFasted(hoursAtNow);
+    console.log(
+      '[DEBUG TIMELINE] currentMetabolicColor:',
+      currentMetabolicColor,
+      '| Colore grafico ora corrente:',
+      coloreCalcolatoPerOraCorrente,
+      '| hoursFasted arc:',
+      fastingData?.hoursFasted,
+      '| hoursFasted timeline:',
+      hoursAtNow,
+      '| pasti oggi:',
+      metabolicTimelineMeals.todayMealTimes,
+    );
+  }, [
+    currentMetabolicColor,
+    currentTime,
+    fastingData?.hoursFasted,
+    isViewingPastDate,
+    metabolicTimelineMeals,
+  ]);
 
   const trainingWaveResult = useMemo(() => {
     const anchor = currentTrackerDate || getTodayString();
@@ -6770,6 +6811,65 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
     ],
   );
 
+  const commitLogSleepCommand = useCallback(
+    (payload) => {
+      const hours = Number(payload?.durationHours);
+      if (!Number.isFinite(hours) || hours <= 0) {
+        throw new Error('durationHours non valido');
+      }
+      const roundedHours = Math.round(hours * 100) / 100;
+      const deepSleepPhase =
+        payload?.deepSleepPhase != null ? Number(payload.deepSleepPhase) : null;
+      const deepMin =
+        deepSleepPhase != null && Number.isFinite(deepSleepPhase)
+          ? Math.max(0, Math.round(deepSleepPhase * 60))
+          : 60;
+      const qualityScore =
+        payload?.qualityScore != null ? Number(payload.qualityScore) : null;
+      const wake = 7;
+      let bed = wake - roundedHours;
+      if (bed < 0) bed += 24;
+      bed = Math.round(bed * 100) / 100;
+      const entry = {
+        type: 'sleep',
+        id: `sleep_cmd_${Date.now()}`,
+        hours: roundedHours,
+        duration: roundedHours,
+        sleepHours: roundedHours,
+        wakeTime: wake,
+        bedtime: bed,
+        sleepStart: bed,
+        sleepEnd: wake,
+        deepMin,
+        remMin: 60,
+        ...(qualityScore != null && Number.isFinite(qualityScore) ? { quality: Math.round(qualityScore) } : {}),
+      };
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => {
+          const base = prev || [];
+          const rest = base.filter((e) => e?.type !== 'sleep');
+          return [...rest, entry];
+        });
+      } else {
+        setDailyLog((prev) => {
+          const base = prev || [];
+          const rest = base.filter((e) => e?.type !== 'sleep');
+          const next = [...rest, entry];
+          syncDatiFirebase(next, manualNodesRef.current || []);
+          return next;
+        });
+      }
+      dismissKentuSleepTrigger();
+    },
+    [
+      dismissKentuSleepTrigger,
+      isSimulationMode,
+      setDailyLog,
+      setSimulatedLog,
+      syncDatiFirebase,
+    ],
+  );
+
   const {
     messages,
     sendMessage,
@@ -6782,6 +6882,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
     initialAiMessage: introPhrase,
     onAddFoodCommand: commitAddFoodCommand,
     onAddWorkoutCommand: commitAddWorkoutCommand,
+    onLogSleepCommand: commitLogSleepCommand,
     getCurrentState: () => {
       const todayWorkoutKcal = (activeLog || [])
         .filter((item) => item?.type === 'workout')
@@ -7169,6 +7270,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         activeAction={activeAction}
         NODE_IMPORTANCE={NODE_IMPORTANCE}
         NODE_TYPE_ICON={NODE_TYPE_ICON}
+        metabolicGradientStops={metabolicGradientStops}
+        metabolicChartGradientStops={metabolicChartGradientStops}
+        currentMetabolicColor={currentMetabolicColor}
       />
     );
   } else {
@@ -7349,6 +7453,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         sncStressLevel={sncStressLevel}
         onSncStressClick={() => setShowSncPopup(true)}
         bodyBattery={bodyBattery}
+        accentColor={currentMetabolicColor}
         onBatteryClick={() => setShowBatteryModal(true)}
         simulationActive={isSimulationMode}
         onExitSimulation={() => {
@@ -7438,6 +7543,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 x: Number(metabolicMapData?.mapPositionInertial?.x ?? metabolicMapData?.x) || 0,
                 y: Number(metabolicMapData?.mapPositionInertial?.y ?? metabolicMapData?.y) || 0,
               }}
+              userStats={{ weight: 68, tdee: 2480, plannedWorkoutKcal }}
               onClose={() => setIsCoachOpen(false)}
             />
           ) : null}
@@ -7694,6 +7800,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   currentTime={currentTime}
                   targetKcalChart={targetKcalChart}
                   totalCaloriesTimeline={totalCaloriesTimeline}
+                  metabolicGradientStops={metabolicGradientStops}
+                  metabolicChartGradientStops={metabolicChartGradientStops}
+                  currentMetabolicColor={currentMetabolicColor}
                 />
               </div>
               <div
@@ -7741,6 +7850,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   onStripDragChartPreview={scheduleTimelineStripEnergyPreview}
                   onStripDragChartPreviewEnd={clearTimelineStripEnergyPreview}
                   onStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
+                  metabolicGradientStops={metabolicGradientStops}
                 />
               </div>
             </div>
@@ -7791,6 +7901,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             activeAlerts={activeAlertsArray}
             wallClockNowLineHour={!isViewingPastDate ? currentTime : undefined}
             timelineEnergySeries={timelineEnergySeries}
+            metabolicGradientStops={metabolicGradientStops}
+            metabolicChartGradientStops={metabolicChartGradientStops}
+            currentMetabolicColor={currentMetabolicColor}
           />
         )}
       </>
@@ -10063,7 +10176,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         showBatteryModal={showBatteryModal}
         BodyBatteryModalComponent={BodyBatteryModal}
         onClose={() => setShowBatteryModal(false)}
-        batteryData={bodyBattery}
+        batteryData={{
+          ...bodyBattery,
+          accentColor: currentMetabolicColor,
+          hoursFasted: fastingData?.hoursFasted,
+        }}
       />
 
       {showSncPopup && (

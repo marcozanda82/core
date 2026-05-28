@@ -31,11 +31,12 @@ import {
   CHART_AXIS_GUTTER_RIGHT_PX,
   DEBUG_TIME_GRID_HOURS,
   getDebugGridLineTimelineStyle,
-  buildTimelineEnergyStripGradient,
 } from '../timeLayout';
+import { buildMetabolicTimelineCssGradient } from '../features/salaComandi/utils/metabolicPhaseColors';
 import NowVerticalLineOverlay from '../NowVerticalLineOverlay';
 import TimeAlignmentChartDebugOverlay, { SHOW_TIME_ALIGNMENT_DEBUG } from '../TimeAlignmentDebugOverlay';
 import TimelineNodi from '../TimelineNodi';
+import { SncEnergyChartGradients, useMetabolicChartGradient } from '../components/charts/MetabolicTimelineGradient';
 
 const MODAL_TIMELINE_NOW_GLOW =
   '0 0 4px rgba(0, 229, 255, 0.95), 0 0 10px rgba(0, 229, 255, 0.55), 0 0 18px rgba(255, 255, 255, 0.12)';
@@ -84,8 +85,13 @@ export default function MetabolicChartModal({
   wallClockNowLineHour,
   /** Punti energia giornata per sfondo timeline modale (stesso formato di TimelineNodi). */
   timelineEnergySeries,
+  metabolicGradientStops,
+  metabolicChartGradientStops,
+  currentMetabolicColor,
 }) {
   const [selectedSimNode, setSelectedSimNode] = useState(null);
+  const chartGradientStops = metabolicChartGradientStops ?? metabolicGradientStops;
+  const energyGradientModal = useMetabolicChartGradient(chartGradientStops, 'colorEnergiaModal');
   const [zoomLevel, setZoomLevel] = useState(1);
   const modalSwipeStartXRef = useRef(null);
   const bottomTouchStartX = useRef(null);
@@ -93,8 +99,8 @@ export default function MetabolicChartModal({
   const initialPinchDistanceRef = useRef(null);
 
   const modalEnergyStripGradient = useMemo(
-    () => buildTimelineEnergyStripGradient(timelineEnergySeries),
-    [timelineEnergySeries]
+    () => buildMetabolicTimelineCssGradient(metabolicGradientStops),
+    [metabolicGradientStops],
   );
 
   useEffect(() => {
@@ -275,8 +281,11 @@ export default function MetabolicChartModal({
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 15 }}>
                       <defs>
-                        <linearGradient id="colorEnergiaModal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/><stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/></linearGradient>
-                        <linearGradient id="colorRiservaModal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00e676" stopOpacity={0.4}/><stop offset="95%" stopColor="#00e676" stopOpacity={0}/></linearGradient>
+                        <SncEnergyChartGradients
+                          metabolicGradientStops={chartGradientStops}
+                          energyGradientId={energyGradientModal.gradientId}
+                          riservaGradientId="colorRiservaModal"
+                        />
                         <filter id="modalGlowEnergia" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
@@ -284,9 +293,9 @@ export default function MetabolicChartModal({
                       <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} width={35} />
                       <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${value}%`, 'Energia SNC']} labelFormatter={(label) => `Ore ${label}:00`} />
                       {safeDailyLog.filter(item => item.type === 'sleep').map((sleepItem, index) => (<ReferenceLine key={`modal-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 4 : 1.5} strokeOpacity={activeHighlight === 'sveglia' ? 1 : 0.8} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />))}
-                      <ReferenceDot x={displayTime} y={dotY} isFront r={8} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
+                      <ReferenceDot x={displayTime} y={dotY} isFront r={8} fill={currentMetabolicColor || '#22d3ee'} stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                       <Area type="monotone" dataKey="riservaFisica" stroke="#00e676" fill="url(#colorRiservaModal)" fillOpacity={1} strokeWidth={2} dot={false} isAnimationActive={false} />
-                      <Area type="monotone" dataKey="energyPast" stroke="#00e5ff" strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill="url(#colorEnergiaModal)" filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} connectNulls={false} />
+                      <Area type="monotone" dataKey="energyPast" stroke={energyGradientModal.stroke} strokeWidth={activeHighlight === 'energia' ? 5 : (activeHighlight != null ? 2 : 3)} fillOpacity={activeHighlight == null ? 1 : (activeHighlight === 'energia' ? 1 : 0.55)} fill={energyGradientModal.fill} filter={activeHighlight === 'energia' ? 'url(#modalGlowEnergia)' : undefined} connectNulls={false} />
                       <Area type="monotone" dataKey="energyFuture" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" strokeOpacity={activeHighlight == null || activeHighlight === 'energia' ? 1 : 0.6} connectNulls={false} />
                       <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
@@ -541,8 +550,13 @@ export function FullscreenMetabolicCharts({
   isViewingPastDate,
   currentTime,
   timelineNodiProps,
+  metabolicGradientStops,
+  metabolicChartGradientStops,
+  currentMetabolicColor,
 }) {
   const currentChartType = availableFullscreenCharts[fullscreenChartIndex] || 'percent';
+  const chartGradientStops = metabolicChartGradientStops ?? metabolicGradientStops;
+  const energyGradient = useMetabolicChartGradient(chartGradientStops, 'colorEnergiaFullscreen');
   const fullscreenChartLabel =
     currentChartType === 'percent'
       ? 'Energia SNC %'
@@ -581,14 +595,11 @@ export function FullscreenMetabolicCharts({
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
                   <defs>
-                    <linearGradient id="colorEnergiaFullscreen" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#00e676" stopOpacity={0.6}/>
-                      <stop offset="95%" stopColor="#ffea00" stopOpacity={0.0}/>
-                    </linearGradient>
-                    <linearGradient id="colorRiservaFullscreen" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#00e676" stopOpacity={0.5}/>
-                      <stop offset="100%" stopColor="#00e676" stopOpacity={0.0}/>
-                    </linearGradient>
+                    <SncEnergyChartGradients
+                      metabolicGradientStops={chartGradientStops}
+                      energyGradientId={energyGradient.gradientId}
+                      riservaGradientId="colorRiservaFullscreen"
+                    />
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                   <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
@@ -612,9 +623,9 @@ export function FullscreenMetabolicCharts({
                   {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
                     <ReferenceLine key={`fs-sleep-${node.id ?? index}`} x={node.wakeTime ?? 7.5} stroke="#00e5ff" strokeDasharray="3 3" strokeWidth={1.5} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />
                   ))}
-                  <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill="#00e676" stroke="#fff" strokeWidth={2} className="pulsing-dot" />
+                  <ReferenceDot x={displayTime} y={dotY} isFront r={10} fill={currentMetabolicColor || '#22d3ee'} stroke="#fff" strokeWidth={2} className="pulsing-dot" />
                   <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiservaFullscreen)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke="#00e5ff" strokeWidth={3} fillOpacity={1} fill="url(#colorEnergiaFullscreen)" connectNulls={false} isAnimationActive={false} />
+                  <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke={energyGradient.stroke} strokeWidth={3} fillOpacity={1} fill={energyGradient.fill} connectNulls={false} isAnimationActive={false} />
                   <Area type="monotone" dataKey="energyFuture" name="Previsione" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" connectNulls={false} isAnimationActive={false} />
                   <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
                   <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />

@@ -1,6 +1,58 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ref, onValue, set, update } from 'firebase/database';
 
+const IT_DAY_KEYS = ['domenica', 'lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato'];
+
+function dayKeyFromAnchor(anchorDate = new Date()) {
+  let d = null;
+  if (anchorDate instanceof Date && !Number.isNaN(anchorDate.getTime())) {
+    d = anchorDate;
+  } else {
+    const s = String(anchorDate || '').trim();
+    const parts = s.split('-').map((x) => parseInt(x, 10));
+    if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+      d = new Date(parts[0], parts[1] - 1, parts[2]);
+    } else {
+      d = new Date();
+    }
+  }
+  return IT_DAY_KEYS[d.getDay()] || IT_DAY_KEYS[new Date().getDay()];
+}
+
+function estimatePlannedWorkoutKcal(dayPlan) {
+  const explicitKcal = Number(dayPlan?.kcal);
+  if (Number.isFinite(explicitKcal) && explicitKcal > 0) return explicitKcal;
+  const t = String(dayPlan?.type || '').toUpperCase();
+  if (t === 'CARDIO') return 400;
+  if (t === 'WORKOUT') return 300;
+  if (t === 'RECOVERY') return 180;
+  if (t === 'REST') return 0;
+  return 0;
+}
+
+/**
+ * Somma kcal pianificate per oggi dal planner strategico.
+ * Se manca una stima kcal esplicita, usa fallback per tipo attività.
+ *
+ * @param {object | null | undefined} strategicPlan
+ * @param {Date | string} [anchorDate]
+ * @returns {number}
+ */
+export function getTodayPlannedKcal(strategicPlan, anchorDate = new Date()) {
+  const plan = strategicPlan && typeof strategicPlan === 'object' ? strategicPlan : null;
+  if (!plan || !plan.days || typeof plan.days !== 'object') return 0;
+  const todayKey = dayKeyFromAnchor(anchorDate);
+  const dayPlan = plan.days[todayKey];
+  if (!dayPlan) return 0;
+  if (Array.isArray(dayPlan)) {
+    return Math.max(
+      0,
+      Math.round(dayPlan.reduce((sum, item) => sum + estimatePlannedWorkoutKcal(item), 0))
+    );
+  }
+  return Math.max(0, Math.round(estimatePlannedWorkoutKcal(dayPlan)));
+}
+
 const DEFAULT_PLAN = {
   settings: {
     deloadFrequencyWeeks: 4, // Scarico predefinito ogni 4 settimane

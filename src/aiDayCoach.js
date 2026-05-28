@@ -133,8 +133,32 @@ export function buildDayState(meals, targetCalories, analysis) {
   };
 }
 
+function isCoachCountableMealEntry(entry) {
+  if (!entry) return false;
+  return entry.type === 'food' || entry.type === 'recipe' || entry.type === 'ghost_meal';
+}
+
+function coachEntryMacros(entry) {
+  if (entry?.type === 'ghost_meal') {
+    let kcal = Number(entry.kcal ?? entry.cal) || 0;
+    let prot = Number(entry.prot ?? entry.proteine) || 0;
+    if (kcal <= 0 && Array.isArray(entry.draftFoods)) {
+      for (let i = 0; i < entry.draftFoods.length; i += 1) {
+        const draft = entry.draftFoods[i];
+        kcal += Number(draft?.kcal ?? draft?.cal) || 0;
+        prot += Number(draft?.prot ?? draft?.proteine) || 0;
+      }
+    }
+    return { kcal, prot };
+  }
+  return {
+    kcal: Number(entry?.kcal ?? entry?.cal) || 0,
+    prot: Number(entry?.prot ?? entry?.proteine) || 0,
+  };
+}
+
 /**
- * Analizza il log giornaliero (voci food/recipe).
+ * Analizza il log giornaliero (voci food/recipe/ghost_meal — allineato a timeline metabolica).
  * @param {function} toCanon — es. toCanonicalMealType
  */
 export function analyzeTodayFromLog(log, toCanon = toCanonicalMealType) {
@@ -145,13 +169,12 @@ export function analyzeTodayFromLog(log, toCanon = toCanonicalMealType) {
   let foodCount = 0;
 
   (log || []).forEach((e) => {
-    if (!e || (e.type !== 'food' && e.type !== 'recipe')) return;
+    if (!isCoachCountableMealEntry(e)) return;
     foodCount += 1;
     const raw = String(e.mealType || 'snack').split('_')[0];
     const k0 = toCanon(raw);
     const k = ['colazione', 'pranzo', 'cena', 'snack'].includes(k0) ? k0 : 'snack';
-    const kcal = Number(e.kcal ?? e.cal) || 0;
-    const prot = Number(e.prot ?? e.proteine) || 0;
+    const { kcal, prot } = coachEntryMacros(e);
     totalCalories += kcal;
     totalProt += prot;
     dist[k] += kcal;
@@ -202,6 +225,8 @@ export function evaluateAiDayCoach(input) {
 
   const analysis = analyzeTodayFromLog(todayLog, toCanon);
   const state = buildDayState(null, targetCalories, analysis);
+  // eslint-disable-next-line no-console
+  console.log('[DEBUG COACH] Log ricevuti:', todayLog?.length, 'Pasti contati:', state.mealCount);
   const h = Number(decimalHour);
   const period = getCoachPeriod(h);
   const budget = readCoachPeriodBudget(String(todayStr || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
