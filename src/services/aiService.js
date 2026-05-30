@@ -38,6 +38,20 @@ function buildPromptWithHistory(promptText, options = null) {
   return prompt;
 }
 
+/** OpenAI json_object richiede la parola "json" nei messaggi quando response_format è JSON. */
+function ensureJsonKeywordSafeguard(prompt, systemInstruction = '') {
+  const safePrompt = String(prompt ?? '');
+  const safeSystemInstruction = String(systemInstruction ?? '');
+  const combinedText = `${safePrompt} ${safeSystemInstruction}`.toLowerCase();
+  if (combinedText.includes('json')) {
+    return { prompt: safePrompt, systemInstruction: safeSystemInstruction };
+  }
+  return {
+    prompt: `${safePrompt}\n\nIMPORTANTE: Rispondi esclusivamente in formato JSON.`,
+    systemInstruction: safeSystemInstruction,
+  };
+}
+
 /**
  * Chiamata AI centralizzata via Firebase Cloud Function (BFF).
  * @param {string} prompt
@@ -46,9 +60,14 @@ function buildPromptWithHistory(promptText, options = null) {
  */
 export async function askAI(prompt, systemInstruction = '', options = {}) {
   const opts = options || {};
+  const resolvedSystemInstruction = systemInstruction || opts.systemInstruction || '';
+  const { prompt: safePrompt, systemInstruction: safeSystemInstruction } = ensureJsonKeywordSafeguard(
+    buildPromptWithHistory(prompt, opts),
+    resolvedSystemInstruction,
+  );
   const payload = {
-    prompt: buildPromptWithHistory(prompt, opts),
-    systemInstruction: systemInstruction || opts.systemInstruction || '',
+    prompt: safePrompt,
+    systemInstruction: safeSystemInstruction,
   };
 
   if (opts.images?.length) payload.images = opts.images;
