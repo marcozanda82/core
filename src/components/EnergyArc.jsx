@@ -1,16 +1,6 @@
-import React, { useId, useMemo } from 'react';
-import {
-  METABOLIC_PHASE_LEGEND,
-  resolveMetabolicPhaseId,
-} from '../features/salaComandi/utils/metabolicPhaseColors';
+import React, { useId } from 'react';
 
-function resolveMetabolicPhaseIcon(hoursFasted) {
-  const phaseId = resolveMetabolicPhaseId(hoursFasted);
-  const entry = METABOLIC_PHASE_LEGEND.find((phase) => phase.id === phaseId);
-  return entry?.icon ?? METABOLIC_PHASE_LEGEND[0].icon;
-}
-
-/** Arco semicircolare Body Battery — look neon sottile; icona fase metabolica al centro. */
+/** Arco semicircolare Body Battery — look neon sottile; 💤 cyan se boost sonnellino. */
 export default function EnergyArc({
   percentage,
   size = 'small',
@@ -18,8 +8,6 @@ export default function EnergyArc({
   showText = true,
   textMode = 'percent',
   accentColor = '#22d3ee',
-  hoursFasted,
-  metabolicIcon,
 }) {
   const arcColor = String(accentColor || '#22d3ee').trim() || '#22d3ee';
   const filterUid = useId().replace(/:/g, '');
@@ -38,14 +26,6 @@ export default function EnergyArc({
   const dashOffset = arcLen * (1 - arcP / 100);
   const gid = `${large ? 'eaL' : 'eaS'}_${filterUid}`;
   const pctRounded = Math.round(Number.isFinite(energyVal) ? energyVal : 0);
-  const phaseIcon = useMemo(() => {
-    if (metabolicIcon) return metabolicIcon;
-    if (hoursFasted != null && hoursFasted !== '') {
-      return resolveMetabolicPhaseIcon(hoursFasted);
-    }
-    return null;
-  }, [metabolicIcon, hoursFasted]);
-
   const centerLabel =
     showText && textMode === 'energy'
       ? `Energia ${pctRounded}%`
@@ -53,24 +33,24 @@ export default function EnergyArc({
         ? `${pctRounded}%`
         : null;
 
-  const overlayPadBottom = large ? 14 : 7;
-  const iconMarginTop = large ? -22 : -11;
-  const iconMarginBottom = large ? 6 : 3;
-  const iconFontSize = large ? '1.875rem' : '0.95rem';
-  const labelFontSize = large ? '1.35rem' : '10px';
-
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'flex-end',
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: large ? 8 : 4 }}>
-        <div style={{ position: 'relative', width: w, height: h }}>
-          <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', overflow: 'visible' }} aria-hidden>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'flex-end',
+          justifyContent: 'center',
+          gap: large ? 8 : 4,
+        }}
+      >
+        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', overflow: 'visible' }} aria-hidden>
           <defs>
             <filter id={gid} x="-40%" y="-40%" width="180%" height="180%">
               <feGaussianBlur stdDeviation={large ? 3.2 : 1.4} result="b" />
@@ -101,62 +81,7 @@ export default function EnergyArc({
               filter: `url(#${gid})`,
             }}
           />
-          </svg>
-
-          {(phaseIcon || centerLabel) ? (
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                bottom: 0,
-                left: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                pointerEvents: 'none',
-                paddingBottom: overlayPadBottom,
-                boxSizing: 'border-box',
-              }}
-            >
-              {phaseIcon ? (
-                <span
-                  aria-hidden
-                  title="Fase metabolica attuale"
-                  style={{
-                    display: 'block',
-                    flexShrink: 0,
-                    fontSize: iconFontSize,
-                    lineHeight: 1,
-                    marginTop: iconMarginTop,
-                    marginBottom: iconMarginBottom,
-                    filter: `drop-shadow(0 0 6px ${arcColor}aa) drop-shadow(0 1px 2px rgba(0,0,0,0.85))`,
-                  }}
-                >
-                  {phaseIcon}
-                </span>
-              ) : null}
-              {centerLabel ? (
-                <span
-                  style={{
-                    display: 'block',
-                    flexShrink: 0,
-                    fontSize: labelFontSize,
-                    fontWeight: 800,
-                    color: '#ecfdf5',
-                    letterSpacing: large ? '0.06em' : '-0.03em',
-                    textShadow: `0 0 10px ${arcColor}73`,
-                    lineHeight: 1,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {centerLabel}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+        </svg>
         {hasNapBoost ? (
           <span
             style={{
@@ -173,6 +98,24 @@ export default function EnergyArc({
           </span>
         ) : null}
       </div>
+      {centerLabel ? (
+        <span
+          style={{
+            marginTop: large ? 8 : 4,
+            marginBottom: large ? 4 : 2,
+            fontSize: large ? '1.35rem' : '0.625rem',
+            fontWeight: large ? 800 : 600,
+            color: large ? '#ecfdf5' : '#a1a1aa',
+            letterSpacing: large ? '0.06em' : '-0.02em',
+            textShadow: large ? `0 0 12px ${arcColor}73` : 'none',
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+            textAlign: 'center',
+          }}
+        >
+          {centerLabel}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import AiCluster from '../../AiCluster';
 
 /**
- * Vista drawer chat Kentu: messaggi, quick actions e impostazioni API (AiCluster).
+ * KentuChatUI — vista drawer chat Kentu: messaggi e quick actions (AiCluster).
  */
 export default function KentuChatUI({
   chatHistory,
@@ -11,13 +11,6 @@ export default function KentuChatUI({
   chatImages,
   setChatImages,
   handleChatSubmit,
-  showAiSettings,
-  setShowAiSettings,
-  apiKeys,
-  onKeyChange,
-  onRemoveKey,
-  onAddKey,
-  onSaveApiCluster,
   onBack,
   introPhrase,
 }) {
@@ -60,13 +53,6 @@ export default function KentuChatUI({
         setChatImages={setChatImages}
         onSendMessage={handleChatSubmit}
         onChatQuickAction={onChatQuickAction}
-        showAiSettings={showAiSettings}
-        setShowAiSettings={setShowAiSettings}
-        apiKeys={apiKeys}
-        onKeyChange={onKeyChange}
-        onRemoveKey={onRemoveKey}
-        onAddKey={onAddKey}
-        onSaveApiCluster={onSaveApiCluster}
         onBack={onBack}
         introPhrase={introPhrase}
       />

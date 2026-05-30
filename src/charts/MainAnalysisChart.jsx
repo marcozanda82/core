@@ -35,60 +35,59 @@ export default function MainAnalysisChart({
 }) {
   const chartGradientStops = metabolicChartGradientStops ?? metabolicGradientStops;
   const energyGradient = useMetabolicChartGradient(chartGradientStops, 'colorEnergia');
+  const sncChartMargin = { top: 8, right: 0, left: 0, bottom: 0 };
   if (chartUnit === 'percent') {
     return (
-      <div style={{ background: '#111', paddingTop: 15, paddingBottom: 15, borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-        <div style={{ position: 'relative', width: '100%', height: '280px', paddingBottom: '60px' }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
-              <defs>
-                <SncEnergyChartGradients
-                  metabolicGradientStops={chartGradientStops}
-                  energyGradientId={energyGradient.gradientId}
-                />
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-              <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-              <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} width={35} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#1a1a1c', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
-                itemStyle={{ color: '#00e676', fontWeight: 'bold' }}
-                formatter={(value, name) => {
-                  const formattedValue = typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—');
-                  const displayName = name === 'energyPast' || name === 'Energia SNC' ? 'Energia SNC' : name === 'riservaFisica' ? 'Riserva Fisica' : name === 'energyFuture' ? 'Previsione' : name;
-                  return [formattedValue, displayName];
-                }}
-                labelFormatter={(label) => {
-                  if (typeof label === 'number') {
-                    const ore = Math.floor(label);
-                    const min = Math.round((label - ore) * 60);
-                    return `Ore ${String(ore).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-                  }
-                  return label;
-                }}
+      <>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={mainChartData} margin={sncChartMargin}>
+            <defs>
+              <SncEnergyChartGradients
+                metabolicGradientStops={chartGradientStops}
+                energyGradientId={energyGradient.gradientId}
               />
-              {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
-                <ReferenceLine
-                  key={`snc-sleep-${node.id ?? index}`}
-                  x={node.wakeTime ?? 7.5}
-                  stroke="#00e5ff"
-                  strokeDasharray="3 3"
-                  strokeWidth={1.5}
-                  label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11, fontWeight: 'bold' }}
-                />
-              ))}
-              <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill={currentMetabolicColor || '#22d3ee'} stroke="#fff" strokeWidth={2} className="pulsing-dot" />
-              <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiserva)" fillOpacity={0.3} strokeWidth={2} dot={false} isAnimationActive={!draggingNode} />
-              <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke={energyGradient.stroke} strokeWidth={3} fillOpacity={1} fill={energyGradient.fill} connectNulls={false} isAnimationActive={!draggingNode} />
-              <Area type="monotone" dataKey="energyFuture" name="Previsione" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" connectNulls={false} isAnimationActive={!draggingNode} />
-              <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
-              <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
-            </ComposedChart>
-          </ResponsiveContainer>
-          {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
-          <TimeAlignmentChartDebugOverlay />
-        </div>
-      </div>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+            <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} scale="linear" axisLine={false} tickLine={false} />
+            <YAxis domain={[0, 100]} allowDataOverflow stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} width={35} tickMargin={2} axisLine={false} tickLine={false} />
+            <Tooltip
+              contentStyle={{ backgroundColor: '#1a1a1c', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
+              itemStyle={{ color: '#00e676', fontWeight: 'bold' }}
+              formatter={(value, name) => {
+                const formattedValue = typeof value === 'number' ? `${value.toFixed(1)}%` : (value != null ? `${Number(value).toFixed(1)}%` : '—');
+                const displayName = name === 'energyPast' || name === 'Energia SNC' ? 'Energia SNC' : name === 'riservaFisica' ? 'Riserva Fisica' : name === 'energyFuture' ? 'Previsione' : name;
+                return [formattedValue, displayName];
+              }}
+              labelFormatter={(label) => {
+                if (typeof label === 'number') {
+                  const ore = Math.floor(label);
+                  const min = Math.round((label - ore) * 60);
+                  return `Ore ${String(ore).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+                }
+                return label;
+              }}
+            />
+            {nodesForEnergySimulation.filter(n => n.type === 'sleep').map((node, index) => (
+              <ReferenceLine
+                key={`snc-sleep-${node.id ?? index}`}
+                x={node.wakeTime ?? 7.5}
+                stroke="#00e5ff"
+                strokeDasharray="3 3"
+                strokeWidth={1.5}
+                label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11, fontWeight: 'bold' }}
+              />
+            ))}
+            <ReferenceDot x={displayTime} y={finalDotY} isFront r={8} fill={currentMetabolicColor || '#22d3ee'} stroke="#fff" strokeWidth={2} className="pulsing-dot" />
+            <Area type="monotone" dataKey="riservaFisica" name="Riserva Fisica" stroke="#00e676" fill="url(#colorRiserva)" fillOpacity={0.3} strokeWidth={2} dot={false} baseValue={0} isAnimationActive={!draggingNode} />
+            <Area type="monotone" dataKey="energyPast" name="Energia SNC" stroke={energyGradient.stroke} strokeWidth={3} fillOpacity={1} fill={energyGradient.fill} baseValue={0} connectNulls={false} isAnimationActive={!draggingNode} />
+            <Area type="monotone" dataKey="energyFuture" name="Previsione" stroke="#444" strokeWidth={2} strokeDasharray="10 10" fill="transparent" className="future" baseValue={0} connectNulls={false} isAnimationActive={!draggingNode} />
+            <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
+            <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
+          </ComposedChart>
+        </ResponsiveContainer>
+        {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
+        <TimeAlignmentChartDebugOverlay />
+      </>
     );
   }
 

@@ -12,7 +12,6 @@ import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
 import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
 
 export function useCommandTerminal({
-  apiKeys = [],
   getCurrentState = null,
   onAddFoodCommand = null,
   onAddWorkoutCommand = null,
@@ -46,22 +45,14 @@ export function useCommandTerminal({
     getCurrentStateRef.current = getCurrentState;
   }, [getCurrentState]);
 
-  const firstApiKey = useMemo(() => {
-    if (!Array.isArray(apiKeys)) return '';
-    const found = apiKeys.find((key) => String(key || '').trim());
-    return String(found || '').trim();
-  }, [apiKeys]);
-
   const controller = useMemo(() => {
-    const llmClient = new GeminiStructuredClient({
-      getApiKey: () => firstApiKey,
-    });
+    const llmClient = new GeminiStructuredClient();
     return new CommandTerminalController({
       bus: commandBus,
       llmClient,
       composer: new ContextComposer(),
     });
-  }, [firstApiKey]);
+  }, []);
 
   useEffect(() => {
     const cleanupFns = [];

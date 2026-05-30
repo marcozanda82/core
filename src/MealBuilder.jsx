@@ -2739,7 +2739,7 @@ export default function MealBuilder({
     setEditingRecipeKey(null);
     setShowRecipeDropdown(false);
     if (typeof callGeminiAPIWithRotation !== 'function') {
-      alert('AI non disponibile: configura le API Key nelle impostazioni.');
+      alert('AI non disponibile: riprova tra qualche istante.');
       return;
     }
     setIsGeneratingRecipe(true);
@@ -2836,7 +2836,7 @@ export default function MealBuilder({
     const nm = String(ingredientName ?? '').trim();
     if (!nm) return;
     if (typeof callGeminiAPIWithRotation !== 'function') {
-      alert('AI non disponibile: configura le API Key nelle impostazioni.');
+      alert('AI non disponibile: riprova tra qualche istante.');
       return;
     }
     setDeepCompileLoadingIndex(index);
@@ -2880,7 +2880,7 @@ export default function MealBuilder({
     if (!q) return;
     setShowExtraDropdown(false);
     if (typeof callGeminiAPIWithRotation !== 'function') {
-      alert('AI non disponibile: configura le API Key nelle impostazioni.');
+      alert('AI non disponibile: riprova tra qualche istante.');
       return;
     }
     setIsAddingExtra(true);

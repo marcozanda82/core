@@ -6,8 +6,8 @@ export function getTimePositionPercent(time) {
 }
 
 /** Allineati a margin.left + YAxis dei ComposedChart Recharts (stessa colonna dati 0–24h). */
-export const CHART_AXIS_GUTTER_LEFT_PX = 50;
-export const CHART_AXIS_GUTTER_RIGHT_PX = 15;
+export const CHART_AXIS_GUTTER_LEFT_PX = 35;
+export const CHART_AXIS_GUTTER_RIGHT_PX = 0;
 
 const NOW_VERTICAL_LINE_GLOW =
   '0 0 4px rgba(0, 229, 255, 0.95), 0 0 10px rgba(0, 229, 255, 0.55), 0 0 18px rgba(255, 255, 255, 0.12)';

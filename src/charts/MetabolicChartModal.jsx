@@ -229,7 +229,7 @@ export default function MetabolicChartModal({
     const prompt = buildGlobalAIPrompt({ displayTime, energy: dotY, cortisolo: dotCortisolo, glicemia: dotGlicemia, idratazione: dotIdratazione, digestione: dotDigestione, neuro: dotNeuro, activeAlerts: activeAlerts || [] });
     callGeminiAPIWithRotation(prompt)
       .then((result) => { saveToKnowledgeBase(currentHash, result); setAiInsightsList(prev => { const next = [...prev, { time: timeStr, text: result }]; setCurrentAiIndex(next.length - 1); return next; }); setIsAiLoading(false); })
-      .catch((err) => { console.error("Errore AI Analisi Grafico:", err); setAiInsightsList(prev => { const next = [...prev, { time: timeStr, text: "❌ Connessione con Core AI fallita. Verifica le API Key." }]; setCurrentAiIndex(next.length - 1); return next; }); setIsAiLoading(false); });
+      .catch((err) => { console.error("Errore AI Analisi Grafico:", err); setAiInsightsList(prev => { const next = [...prev, { time: timeStr, text: "❌ Connessione con Core AI fallita. Riprova tra qualche istante." }]; setCurrentAiIndex(next.length - 1); return next; }); setIsAiLoading(false); });
   };
 
   const safeDailyLog = dailyLog || [];
@@ -279,7 +279,7 @@ export default function MetabolicChartModal({
                 <div style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
                 {expandedChart === 'percent' ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={modalChartData} margin={{ top: 20, right: 15, left: 15, bottom: 15 }}>
+                    <ComposedChart data={modalChartData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
                       <defs>
                         <SncEnergyChartGradients
                           metabolicGradientStops={chartGradientStops}
@@ -289,8 +289,8 @@ export default function MetabolicChartModal({
                         <filter id="modalGlowEnergia" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                      <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} padding={{ left: 0, right: 0 }} />
-                      <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} width={35} />
+                      <XAxis dataKey="time" stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}h`} padding={{ left: 0, right: 0 }} scale="linear" />
+                      <YAxis domain={[0, 100]} stroke="#666" fontSize={10} tickFormatter={(tick) => `${tick}%`} width={35} tickMargin={2} axisLine={false} />
                       <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`${value}%`, 'Energia SNC']} labelFormatter={(label) => `Ore ${label}:00`} />
                       {safeDailyLog.filter(item => item.type === 'sleep').map((sleepItem, index) => (<ReferenceLine key={`modal-sleep-${sleepItem.id ?? index}`} x={sleepItem.wakeTime ?? 7.5} stroke="#4ba3e3" strokeDasharray="3 3" strokeWidth={activeHighlight === 'sveglia' ? 4 : 1.5} strokeOpacity={activeHighlight === 'sveglia' ? 1 : 0.8} label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11 }} />))}
                       <ReferenceDot x={displayTime} y={dotY} isFront r={8} fill={currentMetabolicColor || '#22d3ee'} stroke="#fff" strokeWidth={2} className="pulsing-dot" />
@@ -593,7 +593,7 @@ export function FullscreenMetabolicCharts({
             <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
             {currentChartType === 'percent' && (
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
+                <ComposedChart data={finalChartData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
                   <defs>
                     <SncEnergyChartGradients
                       metabolicGradientStops={chartGradientStops}
@@ -602,8 +602,8 @@ export function FullscreenMetabolicCharts({
                     />
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                  <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
+                  <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} scale="linear" />
+                  <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} tickMargin={2} axisLine={false} />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#1a1a1c', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
                     formatter={(value, name) => {

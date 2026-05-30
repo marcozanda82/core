@@ -33,7 +33,7 @@ L'utente ha appena cliccato sulla sua Età Biologica Proiettata, che è variata 
         }
       } catch {
         if (!cancelled) {
-          setText("Impossibile completare l'analisi. Verifica la connessione e le API Key.");
+          setText("Impossibile completare l'analisi. Verifica la connessione e riprova.");
           setPhase('error');
         }
       }

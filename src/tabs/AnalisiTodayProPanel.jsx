@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
 import DailyTimelineList from '../components/DailyTimelineList';
 import MainAnalysisChart from '../charts/MainAnalysisChart';
-import MetabolicLegendPill from '../components/charts/MetabolicLegendPill';
-import { CustomChartTooltip, getWorkoutTrafficLight } from '../coreEngine';
+import { CustomChartTooltip } from '../coreEngine';
 
 /** Titolo asse / grafico in base alla metrica selezionata (solo UI). */
 export function chartUnitTitleIt(chartUnit) {
@@ -26,8 +25,8 @@ function buildChartSelectorAlerts({ hasCrashRisk, hasWaterRisk, hasCortisolRisk,
 }
 
 /**
- * Vista Analisi + Oggi Pro: selettori metrica, coach giornaliero, semaforo digestione/workout, grafico 24h e strip nodi.
- * Calcolo locale del semaforo e delle label UI; i dati del grafico arrivano già preparati dal genitore.
+ * Vista Analisi + Oggi Pro: selettori metrica, coach giornaliero, grafico 24h e strip nodi.
+ * I dati del grafico arrivano già preparati dal genitore.
  */
 export default function AnalisiTodayProPanel({
   activeBottomTab,
@@ -36,8 +35,6 @@ export default function AnalisiTodayProPanel({
   setChartUnit,
   riskFlags,
   metabolicCoach,
-  trafficContext,
-  onDigestionTrafficClick,
   isWaterHydrationAutoPilot,
   historyIndex,
   historyStackLength,
@@ -68,34 +65,13 @@ export default function AnalisiTodayProPanel({
   metabolicGradientStops,
   metabolicChartGradientStops,
   currentMetabolicColor,
-  hoursFasted,
 }) {
   const { hasCrashRisk, hasWaterRisk, hasCortisolRisk, hasDigestionRisk } = riskFlags;
-  const {
-    displayTime: trafficDisplayTime,
-    anabolicCurve,
-    activeLog,
-    fullHistory,
-    currentTrackerDate,
-    userTargets,
-  } = trafficContext;
-
-  const trafficLight = useMemo(
-    () =>
-      getWorkoutTrafficLight(trafficDisplayTime, anabolicCurve, activeLog, {
-        fullHistory,
-        currentTrackerDate,
-        userTargets,
-      }),
-    [trafficDisplayTime, anabolicCurve, activeLog, fullHistory, currentTrackerDate, userTargets]
-  );
 
   const chartSelectorAlerts = useMemo(
     () => buildChartSelectorAlerts({ hasCrashRisk, hasWaterRisk, hasCortisolRisk, hasDigestionRisk }),
     [hasCrashRisk, hasWaterRisk, hasCortisolRisk, hasDigestionRisk]
   );
-
-  const digestionClickable = trafficLight.text === 'IN DIGESTIONE';
 
   return (
     <>
@@ -251,44 +227,6 @@ export default function AnalisiTodayProPanel({
               </button>
             </div>
           )}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              if (digestionClickable) onDigestionTrafficClick();
-            }}
-            onKeyDown={(e) => {
-              if ((e.key === 'Enter' || e.key === ' ') && digestionClickable) {
-                e.preventDefault();
-                onDigestionTrafficClick();
-              }
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              background: '#1a1a1a',
-              padding: '10px 15px',
-              borderRadius: '12px',
-              border: `1px solid ${trafficLight.color}`,
-              marginTop: '8px',
-              cursor: digestionClickable ? 'pointer' : 'default',
-            }}
-          >
-            <div
-              style={{
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: trafficLight.color,
-                boxShadow: `0 0 10px ${trafficLight.color}`,
-              }}
-            />
-            <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: trafficLight.color }}>{trafficLight.text}</div>
-              <div style={{ fontSize: '0.65rem', color: '#aaa' }}>{trafficLight.msg}</div>
-            </div>
-          </div>
         </div>
         <div
           className="analisi-top-visual-container"
@@ -444,11 +382,6 @@ export default function AnalisiTodayProPanel({
               }}
               zoomLevel={zoomLevel}
               timelineNodiProps={timelineNodiProps}
-              metabolicLegend={
-                chartUnit === 'percent' ? (
-                  <MetabolicLegendPill hoursFasted={hoursFasted} />
-                ) : null
-              }
             >
               <MainAnalysisChart
                 chartUnit={chartUnit}

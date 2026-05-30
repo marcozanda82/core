@@ -72,8 +72,6 @@ export default function BodyBatteryModal({ onClose, batteryData }) {
             size="large"
             hasNapBoost={!!hasNapBoost}
             accentColor={accentColor ?? '#22d3ee'}
-            hoursFasted={hoursFasted}
-            textMode="percent"
           />
         </div>
         <div

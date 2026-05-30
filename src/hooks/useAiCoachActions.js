@@ -6,14 +6,12 @@ import {
 } from '../coreEngine';
 import { collectDispensaProbableFoods } from '../features/salaComandi/utils/aiContextUtils';
 import { parsePlanMealDraftAiResponse } from '../features/salaComandi/utils/foodUtils';
+import { callGeminiAPIWithRotation } from '../services/aiService';
+
 /**
- * Gemini cluster + verifica alimenti + generazione draft ghost meal (piano).
- * `callGeminiAPIWithRotation` mantiene la stessa firma usata da MealBuilder / chat / modali.
+ * Verifica alimenti + generazione draft ghost meal (piano) via BFF Firebase.
  */
 export function useAiCoachActions({
-  apiKeys,
-  activeKeyIndex,
-  setActiveKeyIndex,
   editFoodData,
   setEditFoodData,
   setIsAIVerifying,
@@ -30,75 +28,9 @@ export function useAiCoachActions({
 }) {
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  const callGeminiAPIWithRotation = useCallback(
-    async (promptText, options = null) => {
-      const validKeys = apiKeys.filter((k) => k.trim() !== '');
-      if (validKeys.length === 0) throw new Error('Nessuna API Key configurata.');
-      const useChat = options?.systemInstruction != null && Array.isArray(options?.contents);
-      let partsArray = [];
-      if (options?.images && Array.isArray(options.images)) {
-        options.images.forEach((img) => {
-          const base64Data = (img || '').split(',')[1];
-          const mimeType = ((img || '').split(';')[0] || '').split(':')[1] || 'image/jpeg';
-          if (base64Data) partsArray.push({ inlineData: { mimeType, data: base64Data } });
-        });
-      }
-      if (options?.image) {
-        const base64Data = options.image.split(',')[1];
-        const mimeType = (options.image.split(';')[0] || '').split(':')[1] || 'image/jpeg';
-        if (base64Data) partsArray.push({ inlineData: { mimeType, data: base64Data } });
-      }
-      partsArray.push({ text: promptText });
-      const body = useChat
-        ? {
-            systemInstruction: { parts: [{ text: options.systemInstruction }] },
-            contents: [...(options.contents || []), { role: 'user', parts: partsArray }],
-            generationConfig: { temperature: 0.3 },
-          }
-        : {
-            contents: [{ role: 'user', parts: partsArray }],
-            generationConfig: { temperature: 0.1 },
-          };
-      let attempt = 0;
-      while (attempt < validKeys.length) {
-        const currentIndex = (activeKeyIndex + attempt) % validKeys.length;
-        const currentKey = validKeys[currentIndex];
-        try {
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${currentKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            }
-          );
-          if (!response.ok) {
-            if (response.status === 429) {
-              attempt++;
-              continue;
-            }
-            throw new Error(`Errore Server: ${response.status}`);
-          }
-          const data = await response.json();
-          if (attempt > 0) setActiveKeyIndex(currentIndex);
-          const generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (generatedText == null) {
-            console.warn('Gemini API response missing text payload', { data });
-          }
-          return generatedText;
-        } catch (e) {
-          if (attempt === validKeys.length - 1) throw e;
-          attempt++;
-        }
-      }
-      throw new Error('Cluster API esaurito.');
-    },
-    [apiKeys, activeKeyIndex, setActiveKeyIndex]
-  );
-
   useEffect(() => {
     callGeminiAPIWithRotationRef.current = callGeminiAPIWithRotation;
-  }, [callGeminiAPIWithRotation, callGeminiAPIWithRotationRef]);
+  }, [callGeminiAPIWithRotationRef]);
 
   const handleVerifyFoodAI = useCallback(async () => {
     if (!editFoodData || !(editFoodData.name || editFoodData.nome || editFoodData.desc)) return;
@@ -126,7 +58,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     } finally {
       setIsAIVerifying(false);
     }
-  }, [editFoodData, setEditFoodData, setIsAIVerifying, callGeminiAPIWithRotation]);
+  }, [editFoodData, setEditFoodData, setIsAIVerifying]);
 
   const handleGeneratePlanGhostMealDraft = useCallback(
     async ({
@@ -240,7 +172,6 @@ ${dbKeys || 'n/d'}`;
     },
     [
       activeLog,
-      callGeminiAPIWithRotation,
       currentTrackerDate,
       foodDb,
       fullHistory,

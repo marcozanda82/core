@@ -67,13 +67,6 @@ export default function AiCluster({
   onGeneratePlanGhostMealDraft,
   /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
   dailyLog = [],
-  showAiSettings,
-  setShowAiSettings,
-  apiKeys,
-  onKeyChange,
-  onRemoveKey,
-  onAddKey,
-  onSaveApiCluster,
   onBack,
   /** Stessa frase del mount SalaComandi (rotazione kentuIntroPhrases); nessuna seconda estrazione qui. */
   introPhrase = '',
@@ -119,54 +112,7 @@ export default function AiCluster({
             ) : null}
           </div>
         </div>
-        <KentuButton
-          variant="ghost"
-          className="kentu-btn--icon"
-          onClick={() => setShowAiSettings(!showAiSettings)}
-          aria-label="Impostazioni API"
-        >
-          <KentuIcon name="gear" size={22} />
-        </KentuButton>
       </header>
-
-      {showAiSettings && (
-        <div className="kentu-card kentu-card--settings" style={{ marginBottom: 14 }}>
-          <p className="kentu-insight-sub" style={{ marginBottom: 12 }}>
-            Cluster nodi API (fallback)
-          </p>
-          {apiKeys.map((key, idx) => (
-            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span style={{ color: 'var(--kentu-text-muted)', fontSize: '0.65rem', fontWeight: 700 }}>N.{idx + 1}</span>
-              <input
-                type="password"
-                value={key}
-                onChange={(e) => onKeyChange(idx, e.target.value)}
-                style={{
-                  flex: 1,
-                  background: 'rgba(0,0,0,0.25)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  padding: '8px 10px',
-                  borderRadius: 10,
-                  fontSize: '0.8rem',
-                }}
-                placeholder="Chiave Gemini…"
-              />
-              <KentuButton variant="ghost" className="kentu-btn--icon" onClick={() => onRemoveKey(idx)} aria-label="Rimuovi">
-                <KentuIcon name="x" size={18} />
-              </KentuButton>
-            </div>
-          ))}
-          <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-            <KentuButton variant="secondary" style={{ flex: 1 }} onClick={onAddKey}>
-              + Nodo
-            </KentuButton>
-            <KentuButton variant="primary" style={{ flex: 1 }} onClick={onSaveApiCluster}>
-              Salva rete
-            </KentuButton>
-          </div>
-        </div>
-      )}
 
       <div
         className="chat-container"

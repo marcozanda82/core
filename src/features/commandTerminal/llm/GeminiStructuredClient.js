@@ -4,9 +4,9 @@ import {
   addWorkoutPayloadSchema,
   terminalCommandEnvelopeSchema,
 } from '../contracts/commandSchemas.js';
+import { askAI } from '../../../services/aiService.js';
 
 const DEFAULT_MODEL = 'gemini-2.0-flash';
-const DEFAULT_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 function asTrimmedString(value) {
   return String(value ?? '').trim();
@@ -76,43 +76,8 @@ function imageDataUrlToInlinePart(imageSrc) {
 }
 
 export class GeminiStructuredClient {
-  constructor({
-    apiKey = '',
-    getApiKey = null,
-    model = DEFAULT_MODEL,
-    apiBaseUrl = DEFAULT_API_BASE,
-    fetchImpl = null,
-  } = {}) {
-    this.apiKey = apiKey;
-    this.getApiKey = typeof getApiKey === 'function' ? getApiKey : null;
+  constructor({ model = DEFAULT_MODEL } = {}) {
     this.model = model || DEFAULT_MODEL;
-    this.apiBaseUrl = apiBaseUrl || DEFAULT_API_BASE;
-    this.fetchImpl = fetchImpl;
-  }
-
-  resolveFetchImpl() {
-    if (typeof this.fetchImpl === 'function') {
-      if (typeof window !== 'undefined' && this.fetchImpl === window.fetch) {
-        return window.fetch.bind(window);
-      }
-      return this.fetchImpl;
-    }
-    if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
-      return window.fetch.bind(window);
-    }
-    if (typeof fetch === 'function') {
-      // Global fetch call path (non-window runtimes).
-      return (...args) => fetch(...args);
-    }
-    throw new Error('No fetch implementation available');
-  }
-
-  resolveApiKey() {
-    const dynamic = this.getApiKey ? asTrimmedString(this.getApiKey()) : '';
-    const direct = asTrimmedString(this.apiKey);
-    const resolved = dynamic || direct;
-    if (!resolved) throw new Error('GeminiStructuredClient missing API key');
-    return resolved;
   }
 
   buildSystemInstruction(commandHint, { hasImages = false } = {}) {
@@ -152,7 +117,6 @@ export class GeminiStructuredClient {
     temperature = 0,
     images = [],
   }) {
-    const apiKey = this.resolveApiKey();
     const responseSchema = getEnvelopeSchemaForIntent(asTrimmedString(commandHint).toUpperCase());
     const imageParts = Array.isArray(images)
       ? images
@@ -166,48 +130,26 @@ export class GeminiStructuredClient {
       (imageParts.length > 0
         ? 'Analizza lo screenshot allegato (app fitness/sonno in italiano, es. Xiaomi Fitness) ed estrai durata sonno, fase Profondo e punteggio punti per LOG_SLEEP.'
         : '');
-    const payload = {
-      system_instruction: {
-        parts: [{ text: this.buildSystemInstruction(commandHint, { hasImages: imageParts.length > 0 }) }],
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: [
-                `Richiesta utente: ${userPromptText}`,
-                `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
-                'Produci esclusivamente l envelope commandType/payload/uiMessage/confidence/requiresConfirmation.',
-              ].join('\n'),
-            },
-            ...imageParts,
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature,
-        response_mime_type: 'application/json',
-        responseMimeType: 'application/json',
-        response_schema: responseSchema,
-        responseSchema,
-      },
+    const systemInstruction = this.buildSystemInstruction(commandHint, { hasImages: imageParts.length > 0 });
+    const userPrompt = [
+      `Richiesta utente: ${userPromptText}`,
+      `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
+      'Produci esclusivamente l envelope commandType/payload/uiMessage/confidence/requiresConfirmation.',
+    ].join('\n');
+    const generationConfig = {
+      temperature,
+      response_mime_type: 'application/json',
+      responseMimeType: 'application/json',
+      response_schema: responseSchema,
+      responseSchema,
     };
-    const endpoint = `${this.apiBaseUrl}/models/${this.model}:generateContent?key=${apiKey}`;
-    const fetchFn = this.resolveFetchImpl();
-    const response = await fetchFn(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    const rawText = await askAI(userPrompt, systemInstruction, {
+      temperature,
+      images: imageParts.length > 0 ? images : undefined,
+      responseSchema,
+      generationConfig,
     });
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Gemini API error ${response.status}: ${body}`);
-    }
-    const data = await response.json();
-    console.log('RAW_GEMINI_RESPONSE:', data);
-    const rawText =
-      data?.candidates?.[0]?.content?.parts?.find((p) => typeof p?.text === 'string')?.text || '';
+    console.log('RAW_GEMINI_RESPONSE:', rawText);
     const cleaned = unwrapJsonText(rawText);
     if (!cleaned) throw new Error('Gemini returned empty structured response');
     let parsed;

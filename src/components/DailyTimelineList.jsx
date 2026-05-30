@@ -27,7 +27,6 @@ export default function DailyTimelineList({
   zoomLevel,
   children,
   timelineNodiProps,
-  metabolicLegend,
 }) {
   return (
     <div
@@ -139,7 +138,6 @@ export default function DailyTimelineList({
               zIndex: 10,
             }}
           >
-            {metabolicLegend}
             <TimelineNodi {...timelineNodiProps} />
           </div>
         </div>

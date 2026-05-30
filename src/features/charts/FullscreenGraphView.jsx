@@ -5,7 +5,6 @@ import TimeAlignmentChartDebugOverlay from '../../TimeAlignmentDebugOverlay';
 import TimelineNodi from '../../TimelineNodi';
 import { CHART_AXIS_GUTTER_LEFT_PX, CHART_AXIS_GUTTER_RIGHT_PX } from '../../timeLayout';
 import { SncEnergyChartGradients, useMetabolicChartGradient } from '../../components/charts/MetabolicTimelineGradient';
-import MetabolicLegendPill from '../../components/charts/MetabolicLegendPill';
 function fullscreenChartLabelFromType(currentChartType) {
   return currentChartType === 'percent'
     ? 'Energia SNC %'
@@ -87,7 +86,6 @@ export default function FullscreenGraphView({
   metabolicGradientStops,
   metabolicChartGradientStops,
   currentMetabolicColor,
-  hoursFasted,
 }) {
   const currentChartType = availableFullscreenCharts[fullscreenChartIndex] || 'percent';
   const fullscreenChartLabel = fullscreenChartLabelFromType(currentChartType);
@@ -111,7 +109,7 @@ export default function FullscreenGraphView({
             <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               {currentChartType === 'percent' && (
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={finalChartData} margin={{ top: 35, right: 10, left: -10, bottom: 10 }}>
+                  <ComposedChart data={finalChartData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
                     <defs>
                       <SncEnergyChartGradients
                         metabolicGradientStops={chartGradientStops}
@@ -120,8 +118,8 @@ export default function FullscreenGraphView({
                       />
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                    <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} />
-                    <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} />
+                    <XAxis dataKey="hour" type="number" domain={[0, 24]} allowDataOverflow={true} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}h`} ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]} padding={{ left: 0, right: 0 }} scale="linear" />
+                    <YAxis domain={[0, 100]} stroke="#666" fontSize={11} tickFormatter={(tick) => `${tick}%`} width={35} tickMargin={2} axisLine={false} />
                     <Tooltip
                       contentStyle={{ backgroundColor: '#1a1a1c', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
                       formatter={(value, name) => {
@@ -262,9 +260,6 @@ export default function FullscreenGraphView({
                 marginBottom: 10,
               }}
             >
-              {currentChartType === 'percent' ? (
-                <MetabolicLegendPill hoursFasted={hoursFasted} />
-              ) : null}
               <TimelineNodi
                 activeNodesWithStack={activeNodesWithStack}
                 chartUnit={chartUnit}

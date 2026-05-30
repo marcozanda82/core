@@ -16,7 +16,6 @@ export default function AppHeader({
   onSncStressClick,
   bodyBattery,
   accentColor,
-  hoursFasted,
   onBatteryClick,
   simulationActive,
   onExitSimulation,
@@ -178,7 +177,6 @@ export default function AppHeader({
               showText
               textMode="energy"
               accentColor={accentColor ?? '#22d3ee'}
-              hoursFasted={hoursFasted}
             />
           </div>
         </div>

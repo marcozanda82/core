@@ -26,10 +26,10 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
 import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandTerminal';
+import { callGeminiAPIWithRotation } from './services/aiService';
 import { useProfileAndTargets } from './hooks/useProfileAndTargets';
 import { useTimelineDrag } from './hooks/useTimelineDrag';
 import MainDashboardCharts from './features/charts/MainDashboardCharts';
-import MetabolicLegendPill from './components/charts/MetabolicLegendPill';
 import { recordMealFoodCooccurrence } from './foodCooccurrence';
 import { recordMealSuggestionHabits } from './mealSuggestionHabits';
 import {
@@ -43,7 +43,6 @@ import KentuChatUI from './features/chat/KentuChatUI';
 import TargetSettingsModal from './components/modals/TargetSettingsModal';
 import MainMenuDrawer from './layout/MainMenuDrawer';
 import StrategicPlannerOverlay from './features/planning/StrategicPlannerOverlay';
-import TodayStrategyBanner from './features/planning/TodayStrategyBanner';
 import { getTodayPlannedKcal, useStrategicPlanner } from './hooks/useStrategicPlanner';
 import { UserNutritionGoalsProvider } from './UserNutritionGoalsContext';
 import { mergeProfileNutritionFromServer, buildNutritionGoalsSnapshot } from './userNutritionGoals';
@@ -239,7 +238,6 @@ import {
   computeMetabolicStress,
   generateAnabolicCurve,
   generateCortisolCurve,
-  getWorkoutTrafficLight,
   generateCalorieTimeline,
   buildAIPrompt,
   buildGlobalAIPrompt,
@@ -850,7 +848,6 @@ export default function SalaComandi() {
     return () => mediaQuery.removeEventListener("change", handleOrientationChange);
   }, []);
 
-  const [showTrainingPopup, setShowTrainingPopup] = useState(false);
   const [showAlcoholPopup, setShowAlcoholPopup] = useState(false);
   const [showLongevityModal, setShowLongevityModal] = useState(false);
   const [longevityDays, setLongevityDays] = useState(7);
@@ -1199,10 +1196,7 @@ export default function SalaComandi() {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }, [isZenActive, zenGracefulEnd, zenSessionDurationKey, zenSessionRemainingSec]);
 
-  // AI ASSISTANT E CLUSTER
-  const [apiKeys, setApiKeys] = useState(() => JSON.parse(localStorage.getItem('ghost_api_cluster')) || ['']);
-  const [activeKeyIndex, setActiveKeyIndex] = useState(0);
-  const [showAiSettings, setShowAiSettings] = useState(false);
+  // AI ASSISTANT
   const [showBiochemicalDiagnostics, setShowBiochemicalDiagnostics] = useState(false);
   const [isCoachOpen, setIsCoachOpen] = useState(false);
   const [biochemicalDetailModal, setBiochemicalDetailModal] = useState(null);
@@ -1594,7 +1588,7 @@ export default function SalaComandi() {
 
     if (currentTrackerDate === getTodayString()) {
       const chartWidth =
-        scrollWidth - CHART_AXIS_GUTTER_LEFT_PX - CHART_AXIS_GUTTER_RIGHT_PX - 15;
+        scrollWidth - CHART_AXIS_GUTTER_LEFT_PX - CHART_AXIS_GUTTER_RIGHT_PX;
       const timePos = (getTimePositionPercent(currentTime) / 100) * chartWidth;
       const targetScroll = timePos - (clientWidth * CURRENT_TIME_VIEW_OFFSET);
       container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
@@ -1612,7 +1606,7 @@ export default function SalaComandi() {
     const clientWidth = container.clientWidth;
     if (currentTrackerDate === getTodayString()) {
       const chartWidth = Math.max(
-        scrollWidth - CHART_AXIS_GUTTER_LEFT_PX - CHART_AXIS_GUTTER_RIGHT_PX - 15,
+        scrollWidth - CHART_AXIS_GUTTER_LEFT_PX - CHART_AXIS_GUTTER_RIGHT_PX,
         1
       );
       const timePos = (getTimePositionPercent(currentTime) / 100) * chartWidth;
@@ -4223,82 +4217,7 @@ Ottimo! Diario aggiornato. 🥗`;
     target.addEventListener('pointercancel', onUp);
   };
 
-  // --- CLUSTER AI GEMINI ---
-  const handleAddKey = () => { setApiKeys([...apiKeys, '']); };
-  const handleKeyChange = (index, value) => { 
-    const newKeys = [...apiKeys]; 
-    newKeys[index] = value; 
-    setApiKeys(newKeys); 
-  };
-  const handleRemoveKey = (index) => { 
-    const newKeys = apiKeys.filter((_, i) => i !== index); 
-    if(newKeys.length === 0) newKeys.push(''); 
-    setApiKeys(newKeys); 
-  };
-  const saveApiCluster = () => { 
-    localStorage.setItem('ghost_api_cluster', JSON.stringify(apiKeys)); 
-    setShowAiSettings(false); 
-  };
-
-  const callGeminiAPIWithRotation = async (promptText, options = null) => {
-    const validKeys = apiKeys.filter(k => k.trim() !== '');
-    if (validKeys.length === 0) throw new Error("Nessuna API Key configurata.");
-    const useChat = options?.systemInstruction != null && Array.isArray(options?.contents);
-    let partsArray = [];
-    if (options?.images && Array.isArray(options.images)) {
-      options.images.forEach(img => {
-        const base64Data = (img || '').split(',')[1];
-        const mimeType = ((img || '').split(';')[0] || '').split(':')[1] || 'image/jpeg';
-        if (base64Data) partsArray.push({ inlineData: { mimeType, data: base64Data } });
-      });
-    }
-    if (options?.image) {
-      const base64Data = options.image.split(',')[1];
-      const mimeType = (options.image.split(';')[0] || '').split(':')[1] || 'image/jpeg';
-      if (base64Data) partsArray.push({ inlineData: { mimeType, data: base64Data } });
-    }
-    partsArray.push({ text: promptText });
-    const body = useChat
-      ? {
-          systemInstruction: { parts: [{ text: options.systemInstruction }] },
-          contents: [...(options.contents || []), { role: 'user', parts: partsArray }],
-          generationConfig: { temperature: 0.3 }
-        }
-      : {
-          contents: [{ role: 'user', parts: partsArray }],
-          generationConfig: { temperature: 0.1 }
-        };
-    let attempt = 0;
-    while (attempt < validKeys.length) {
-      const currentIndex = (activeKeyIndex + attempt) % validKeys.length;
-      const currentKey = validKeys[currentIndex];
-      try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${currentKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        if (!response.ok) {
-          if (response.status === 429) {
-            attempt++;
-            continue;
-          }
-          throw new Error(`Errore Server: ${response.status}`);
-        }
-        const data = await response.json();
-        if (attempt > 0) setActiveKeyIndex(currentIndex);
-        const generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (generatedText == null) {
-          console.warn('Gemini API response missing text payload', { data });
-        }
-        return generatedText;
-      } catch (e) {
-        if (attempt === validKeys.length - 1) throw e;
-        attempt++;
-      }
-    }
-    throw new Error("Cluster API esaurito.");
-  };
+  // --- CLUSTER AI (BFF Firebase) ---
   callGeminiAPIWithRotationRef.current = callGeminiAPIWithRotation;
 
   const handleVerifyFoodAI = async () => {
@@ -6294,8 +6213,6 @@ ${dbKeys || 'n/d'}`;
   };
   });
 
-  const trafficLight = getWorkoutTrafficLight(displayTime, anabolicCurve, activeLog, { fullHistory, currentTrackerDate, userTargets });
-
   const mealPieData = useMemo(() => {
     // Palette Sci-Fi per distinguere i vari pasti in modo univoco
     const PIE_COLORS = ['#00e5ff', '#b388ff', '#00e676', '#ffea00', '#ff9800', '#f48fb1', '#4fc3f7', '#aed581', '#ffb74d'];
@@ -6870,7 +6787,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
     chatImages: commandChatImages,
     setChatImages: setCommandChatImages,
   } = useCommandTerminal({
-    apiKeys,
     initialAiMessage: introPhrase,
     onAddFoodCommand: commitAddFoodCommand,
     onAddWorkoutCommand: commitAddWorkoutCommand,
@@ -7265,7 +7181,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         metabolicGradientStops={metabolicGradientStops}
         metabolicChartGradientStops={metabolicChartGradientStops}
         currentMetabolicColor={currentMetabolicColor}
-        hoursFasted={fastingData?.hoursFasted}
       />
     );
   } else {
@@ -7447,7 +7362,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         onSncStressClick={() => setShowSncPopup(true)}
         bodyBattery={bodyBattery}
         accentColor={currentMetabolicColor}
-        hoursFasted={fastingData?.hoursFasted}
         onBatteryClick={() => setShowBatteryModal(true)}
         simulationActive={isSimulationMode}
         onExitSimulation={() => {
@@ -7672,58 +7586,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               })()}
             </div>
           )}
-          <div style={{ marginTop: '6px' }}>
-            <TodayStrategyBanner
-              strategicPlan={strategicPlan}
-              currentProfile={dayProfile}
-              onSyncProfile={(profile) => {
-                if (profile) setDayProfile(profile);
-              }}
-              onOpenPlanner={() => setShowStrategicPlanner(true)}
-              onShiftPlan={(dayKey) => shiftPlanForward(dayKey)}
-              onUpdateTime={(dayKey, dayData) => updateDayPlan(dayKey, dayData)}
-              onExecute={(plan) => {
-                if (!plan || plan.type === 'REST') return;
-                const hourDec =
-                  plan.hour != null && String(plan.hour).trim() !== ''
-                    ? parseFlexibleTimeToDecimal(String(plan.hour))
-                    : null;
-                const endT =
-                  hourDec != null && !Number.isNaN(hourDec) ? hourDec : getCurrentTimeRoundedTo15Min();
-                setWorkoutEndTime(endT);
-                setWorkoutDurationMin('45');
-                const k = Number(plan.kcal);
-                setWorkoutKcal(Number.isFinite(k) && k > 0 ? Math.round(k) : 300);
-                setWorkoutStrengthDetail('');
-                setEditingWorkoutId(null);
-                if (plan.type === 'CARDIO') {
-                  setWorkoutType('cardio');
-                  setWorkoutMuscles([]);
-                } else if (plan.type === 'WORKOUT') {
-                  setWorkoutType('pesi');
-                  setWorkoutMuscles(normalizeMuscleGroupArray(Array.isArray(plan.focus) ? plan.focus : []));
-                } else if (plan.type === 'RECOVERY') {
-                  setWorkoutType('cardio');
-                  setWorkoutMuscles([]);
-                }
-                setActiveAction('allenamento');
-                setIsDrawerOpen(true);
-              }}
-            />
-          </div>
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => { if (trafficLight.text === 'IN DIGESTIONE') setShowTrainingPopup(true); }}
-            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && trafficLight.text === 'IN DIGESTIONE') { e.preventDefault(); setShowTrainingPopup(true); } }}
-            style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#1a1a1a', padding: '10px 15px', borderRadius: '12px', border: `1px solid ${trafficLight.color}`, marginTop: '8px', cursor: trafficLight.text === 'IN DIGESTIONE' ? 'pointer' : 'default' }}
-          >
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: trafficLight.color, boxShadow: `0 0 10px ${trafficLight.color}` }} />
-            <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: trafficLight.color }}>{trafficLight.text}</div>
-              <div style={{ fontSize: '0.65rem', color: '#aaa' }}>{trafficLight.msg}</div>
-            </div>
-          </div>
         </div>
         <div
           className="analisi-top-visual-container"
@@ -7827,9 +7689,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   zIndex: 10,
                 }}
               >
-                {chartUnit === 'percent' ? (
-                  <MetabolicLegendPill hoursFasted={fastingData?.hoursFasted} />
-                ) : null}
                 <TimelineNodi
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}
@@ -8550,13 +8409,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             chatImages={commandChatImages}
             setChatImages={setCommandChatImages}
             handleChatSubmit={sendMessage}
-            showAiSettings={showAiSettings}
-            setShowAiSettings={setShowAiSettings}
-            apiKeys={apiKeys}
-            onKeyChange={handleKeyChange}
-            onRemoveKey={handleRemoveKey}
-            onAddKey={handleAddKey}
-            onSaveApiCluster={saveApiCluster}
             onBack={() => setActiveAction(null)}
             introPhrase={introPhrase}
           />
@@ -10220,42 +10072,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           </div>
         </div>
       )}
-
-      {/* POP-UP READY TO TRAIN (digestione) */}
-      {showTrainingPopup && (() => {
-        const pastoRecente = (activeLog || []).find(item => (item?.type === 'food' || item?.type === 'recipe') && displayTime - item?.mealTime >= 0 && displayTime - item?.mealTime <= 1);
-        const mealTime = pastoRecente?.mealTime ?? 0;
-        const waitMinutesTotal = 90;
-        const elapsedMinutes = (displayTime - mealTime) * 60;
-        const residualMinutes = Math.max(0, Math.ceil(waitMinutesTotal - elapsedMinutes));
-        const startTime = displayTime + residualMinutes / 60;
-        const startHours = Math.floor(startTime) % 24;
-        const startMins = Math.round((startTime % 1) * 60);
-        const startStr = `${startHours}:${String(startMins).padStart(2, '0')}`;
-        return (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100020, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={() => setShowTrainingPopup(false)}>
-            <div style={{ background: '#111', border: '1px solid #333', borderRadius: '20px', padding: '25px', maxWidth: '400px', width: '100%', position: 'relative', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
-              <h3 style={{ color: '#fff', marginTop: 0, marginBottom: '15px', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
-                ⏱️ Ready to Train
-              </h3>
-              <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(245,158,11,0.12)', border: '1px solid #f59e0b', borderRadius: '10px', fontSize: '0.9rem' }}>
-                <div style={{ fontSize: '0.75rem', color: '#f59e0b', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 'bold' }}>Tempo di attesa residuo</div>
-                <div style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '1.1rem' }}>{residualMinutes} minuti</div>
-              </div>
-              <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(0,229,118,0.1)', border: '1px solid #00e676', borderRadius: '10px', fontSize: '0.9rem' }}>
-                <div style={{ fontSize: '0.75rem', color: '#00e676', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 'bold' }}>Orario stimato di inizio</div>
-                <div style={{ color: '#39ff14', fontWeight: 'bold', fontSize: '1.1rem' }}>Puoi iniziare alle {startStr}</div>
-              </div>
-              <p style={{ color: '#b0b0b0', fontSize: '0.85rem', lineHeight: 1.6, marginBottom: '18px', fontStyle: 'italic' }}>
-                In questa fase il sangue è concentrato nell&apos;area splancnica per la digestione. Allenarsi ora ridurrebbe la performance e causerebbe stress gastrointestinale.
-              </p>
-              <button type="button" onClick={() => setShowTrainingPopup(false)} style={{ background: '#333', color: '#fff', border: 'none', padding: '12px', width: '100%', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
-                Chiudi
-              </button>
-            </div>
-          </div>
-        );
-      })()}
 
       <AlcoholPopupOverlay
         showAlcoholPopup={showAlcoholPopup}
