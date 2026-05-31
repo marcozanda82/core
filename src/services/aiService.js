@@ -1,7 +1,7 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebaseConfig';
 
-const callAiFunction = httpsCallable(functions, 'callOpenAI');
+const callAiFunction = httpsCallable(functions, 'callGemini');
 
 function extractAiText(data) {
   if (data == null) return '';
@@ -38,36 +38,46 @@ function buildPromptWithHistory(promptText, options = null) {
   return prompt;
 }
 
-/** OpenAI json_object richiede la parola "json" nei messaggi quando response_format è JSON. */
-function ensureJsonKeywordSafeguard(prompt, systemInstruction = '') {
-  const safePrompt = String(prompt ?? '');
-  const safeSystemInstruction = String(systemInstruction ?? '');
-  const combinedText = `${safePrompt} ${safeSystemInstruction}`.toLowerCase();
-  if (combinedText.includes('json')) {
-    return { prompt: safePrompt, systemInstruction: safeSystemInstruction };
+function unwrapCallableError(error) {
+  const code = String(error?.code || '');
+  const details = error?.details;
+  const message = String(error?.message || '').trim();
+
+  if (typeof details === 'string' && details.trim()) {
+    throw new Error(details.trim());
   }
-  return {
-    prompt: `${safePrompt}\n\nIMPORTANTE: Rispondi esclusivamente in formato JSON.`,
-    systemInstruction: safeSystemInstruction,
-  };
+
+  if (message && message !== 'internal' && message !== 'INTERNAL') {
+    throw new Error(message);
+  }
+
+  if (code === 'functions/failed-precondition') {
+    throw new Error('AI non configurata sul server (GEMINI_API_KEY mancante).');
+  }
+  if (code === 'functions/not-found' || code === 'functions/unavailable') {
+    throw new Error(
+      'Cloud Function callGemini non raggiungibile. Verifica deploy su europe-west1 e la connessione.',
+    );
+  }
+  if (code === 'functions/internal') {
+    throw new Error('Errore interno callGemini. Controlla i log Firebase Functions.');
+  }
+
+  throw new Error(message || code || 'Errore AI sconosciuto');
 }
 
 /**
- * Chiamata AI centralizzata via Firebase Cloud Function (BFF).
+ * Chiamata AI centralizzata via Firebase Cloud Function callGemini (Google Gemini nativo).
  * @param {string} prompt
  * @param {string} [systemInstruction]
- * @param {object} [options] — images, image, temperature, responseSchema, generationConfig, contents
+ * @param {object} [options] — images, image, temperature, responseSchema, generationConfig, contents, model
  */
 export async function askAI(prompt, systemInstruction = '', options = {}) {
   const opts = options || {};
-  const resolvedSystemInstruction = systemInstruction || opts.systemInstruction || '';
-  const { prompt: safePrompt, systemInstruction: safeSystemInstruction } = ensureJsonKeywordSafeguard(
-    buildPromptWithHistory(prompt, opts),
-    resolvedSystemInstruction,
-  );
   const payload = {
-    prompt: safePrompt,
-    systemInstruction: safeSystemInstruction,
+    prompt: buildPromptWithHistory(prompt, opts),
+    systemInstruction: systemInstruction || opts.systemInstruction || '',
+    model: opts.model || 'gemini-2.0-flash',
   };
 
   if (opts.images?.length) payload.images = opts.images;
@@ -77,7 +87,14 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
   if (opts.responseSchema) payload.responseSchema = opts.responseSchema;
   if (opts.generationConfig) payload.generationConfig = opts.generationConfig;
 
-  const result = await callAiFunction(payload);
+  let result;
+  try {
+    result = await callAiFunction(payload);
+  } catch (error) {
+    console.error('[askAI] callable error', error?.code, error?.message, error?.details);
+    unwrapCallableError(error);
+  }
+
   const text = extractAiText(result.data);
   if (!text) {
     console.warn('AI response missing text payload', { data: result.data });

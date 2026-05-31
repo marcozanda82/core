@@ -98,7 +98,13 @@ export class CommandTerminalController {
         images,
       });
     } catch (error) {
-      const reason = `LLM failure: ${error?.message || 'unknown error'}`;
+      const detail =
+        error?.details
+        || error?.message
+        || error?.code
+        || 'unknown error';
+      const reason = `LLM failure: ${detail}`;
+      console.error('[CommandTerminalController] LLM error', error);
       this.bus.publish(
         DISPATCH_COMMAND_REJECTED,
         { reason, userText, intent: inferredIntent },
