@@ -56,6 +56,8 @@ import {
 import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import FirebaseDataLoadingLayer from './components/FirebaseDataLoadingLayer';
+import DialMaintenanceMarker from './components/DialMaintenanceMarker';
+import usePlannedDayDelta from './hooks/usePlannedDayDelta';
 import TimelineNodeReport from './components/TimelineNodeReport';
 import BodyBatteryModal from './components/BodyBatteryModal';
 import CustomDateTick from './components/CustomDateTick';
@@ -931,6 +933,14 @@ export default function SalaComandi() {
     () => getTodayPlannedKcal(strategicPlan, currentTrackerDate),
     [strategicPlan, currentTrackerDate]
   );
+
+  const { plannedDelta, hasPlannedBlock, plannedTargetKcal } = usePlannedDayDelta({
+    db,
+    user,
+    dateKey: currentTrackerDate || getTodayString(),
+    profileKcal: Number(userTargets?.kcal ?? 2000),
+    isSimulationMode,
+  });
 
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(300);
@@ -5751,8 +5761,11 @@ ${dbKeys || 'n/d'}`;
 
   // Calcolo Budget Dinamico (Base + Bruciate oggi) — prima di renderDataWithSegments per usare scale nel map
   const burnedKcal = activeLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
-  const dynamicDailyKcal =
-    applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) + burnedKcal;
+  const profileKcalBase = Number(userTargets?.kcal ?? 2000);
+  const dynamicDailyKcal = hasPlannedBlock
+    ? plannedTargetKcal + burnedKcal
+    : applyCalorieStrategyToProfileKcal(profileKcalBase, kentuDailyCalorieStrategy) + burnedKcal;
+  const profileTdeeKcal = Math.round(profileKcalBase + burnedKcal);
   const targetKcalChart = dynamicDailyKcal;
   // --- NUOVI ALLARMI PREDITTIVI PERCENTUALI ---
   const targetKcalForAlerts = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
@@ -7816,6 +7829,31 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             const dialKcalSurplus =
               dialConsumedKcal > dialDailyTargetKcal ? dialConsumedKcal - dialDailyTargetKcal : 0;
             const dialKcalRemaining = Math.max(0, dialDailyTargetKcal - dialConsumedKcal);
+            const dialPlannedDelta = hasPlannedBlock ? plannedDelta : 0;
+            const dialKcalRestLabel =
+              dialKcalSurplus > 0
+                ? 'SURPLUS'
+                : dialPlannedDelta > 0
+                  ? 'RESTANTI (SURPLUS)'
+                  : dialPlannedDelta < 0
+                    ? 'RESTANTI (DEFICIT)'
+                    : 'RESTANTI (PAREGGIO)';
+            const dialKcalGoalLine =
+              dialKcalSurplus > 0
+                ? `obiettivo ${dialDailyTargetKcal} kcal · assunte ${dialConsumedKcal}`
+                : dialPlannedDelta > 0
+                  ? `Obiettivo ${dialDailyTargetKcal} kcal (+${dialPlannedDelta})`
+                  : dialPlannedDelta < 0
+                    ? `Obiettivo ${dialDailyTargetKcal} kcal (−${Math.abs(dialPlannedDelta)})`
+                    : `Obiettivo ${dialDailyTargetKcal} kcal`;
+            const showMaintenanceMarker =
+              activeDialMode === 'kcal' &&
+              hasPlannedBlock &&
+              dialPlannedDelta > 0 &&
+              dialDailyTargetKcal > 0;
+            const maintenanceMarkerRatio = showMaintenanceMarker
+              ? profileTdeeKcal / dialDailyTargetKcal
+              : 0;
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
@@ -7969,17 +8007,24 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                             {activeDialMode === 'cho' && Math.round(totali?.carb || 0)}
                             {activeDialMode === 'fat' && Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}
                           </div>
-                          <div style={{ color: '#888', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '2px' }}>
-                            {activeDialMode === 'kcal' && (dialKcalSurplus > 0 ? 'SURPLUS' : 'restanti')}
+                          <div
+                            style={{
+                              color: '#888',
+                              fontSize:
+                                activeDialMode === 'kcal' && dialKcalRestLabel.includes('(')
+                                  ? '0.72rem'
+                                  : '0.9rem',
+                              textTransform: 'uppercase',
+                              letterSpacing: dialKcalRestLabel.includes('(') ? '1px' : '2px',
+                            }}
+                          >
+                            {activeDialMode === 'kcal' && dialKcalRestLabel}
                             {activeDialMode === 'pro' && 'g Proteine'}
                             {activeDialMode === 'cho' && 'g Carboidrati'}
                             {activeDialMode === 'fat' && 'g Grassi'}
                           </div>
                           <div style={{ color: '#555', fontSize: '0.8rem', marginTop: '4px' }}>
-                            {activeDialMode === 'kcal' &&
-                              (dialKcalSurplus > 0
-                                ? `obiettivo ${dialDailyTargetKcal} kcal · assunte ${dialConsumedKcal}`
-                                : `obiettivo ${dialDailyTargetKcal} kcal`)}
+                            {activeDialMode === 'kcal' && dialKcalGoalLine}
                             {activeDialMode === 'pro' && `obiettivo ${Math.round(targetProt)} g`}
                             {activeDialMode === 'cho' && `obiettivo ${Math.round(targetCarb)} g`}
                             {activeDialMode === 'fat' && `obiettivo ${Math.round(targetFat)} g`}
@@ -8045,6 +8090,12 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                           </Pie>
                         </PieChart>
                       </ResponsiveContainer>
+                      {showMaintenanceMarker ? (
+                        <DialMaintenanceMarker
+                          tdeeRatio={maintenanceMarkerRatio}
+                          size={310}
+                        />
+                      ) : null}
                     </div>
                   </div>
                 </div>
