@@ -27,7 +27,7 @@ export const WORKOUT_MUSCLE_GROUP_DEFS = [
   { id: 'abs', label: 'ABS' },
   { id: 'bicipiti', label: 'Bicipiti' },
   { id: 'tricipiti', label: 'Tricipiti' },
-  { id: 'Core', label: 'Core', aliases: ['Addominali', 'addominali', 'ABS', 'abs'] },
+  { id: 'Core', label: 'Core', aliases: ['Addominali', 'addominali'] },
   { id: 'Total Body', label: 'Total Body', aliases: ['Full Body', 'full body', 'totalbody'] },
 ];
 
@@ -71,6 +71,20 @@ export function normalizeMuscleGroupArray(muscles) {
     }
   }
   return out;
+}
+
+/**
+ * Firma univoca per combo tab + muscoli (historical defaults planner).
+ * @param {string} workoutType
+ * @param {string[]} [musclesArray]
+ * @returns {string}
+ */
+export function generateWorkoutComboSignature(workoutType, musclesArray = []) {
+  const type = String(workoutType || 'pesi').trim() || 'pesi';
+  const sorted = normalizeMuscleGroupArray(musclesArray)
+    .slice()
+    .sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
+  return `${type}_${sorted.join('_')}`;
 }
 
 /**
@@ -212,6 +226,7 @@ export function getWorkoutActivityLogDescription(activityId, muscles = []) {
   if (activityId === 'pesi') return `Sollevamento Pesi${ms}`;
   if (activityId === 'cardio') return 'Cardio / Corsa';
   if (activityId === 'hiit') return 'HIIT / Circuito';
+  if (activityId === 'riposo') return 'Riposo';
   if (activityId === 'studio') return 'Studio';
   if (activityId === 'lavoro_pc') return 'Lavoro PC';
   if (activityId === 'lavoro') return 'Attività Lavorativa';

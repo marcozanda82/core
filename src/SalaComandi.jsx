@@ -9,6 +9,7 @@
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './styles/SalaComandiInline.css';
 import { createPortal } from 'react-dom';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, PieChart, Pie, Cell, Sector } from 'recharts';
@@ -107,6 +108,7 @@ import {
 } from './utils/durationMinutesInput';
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
+import WeeklyMetabolicIndicator from './components/WeeklyMetabolicIndicator';
 import FullscreenGraphView from './features/charts/FullscreenGraphView';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
 import OverlayHost from './features/salaComandi/OverlayHost';
@@ -384,6 +386,7 @@ export function calculateAge(dobString) {
 }
 
 export default function SalaComandi() {
+  const navigate = useNavigate();
   const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
   const isAuthenticated = !!user;
   const userUid = user?.uid ?? null;
@@ -553,6 +556,10 @@ export default function SalaComandi() {
         setIsDrawerOpen(true);
         return;
       }
+      if (tabId === 'pianifica') {
+        navigate('/planner');
+        return;
+      }
       const fromIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(activeBottomTab);
       const toIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(tabId);
       if (tabId !== activeBottomTab && toIdx >= 0 && fromIdx >= 0) {
@@ -564,7 +571,7 @@ export default function SalaComandi() {
       }
       setActiveBottomTab(tabId);
     },
-    [activeBottomTab]
+    [activeBottomTab, navigate]
   );
 
   const handleMainTabTouchCancel = useCallback((e) => {
@@ -7368,6 +7375,19 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           setIsSimulationMode(false);
           setSimulatedLog(null);
         }}
+        accessory={
+          user?.uid ? (
+            <WeeklyMetabolicIndicator
+              db={db}
+              user={user}
+              fullHistory={fullHistory}
+              userTargets={userTargets}
+              currentTrackerDate={currentTrackerDate}
+              isSimulationMode={isSimulationMode}
+              getTodayString={getTodayString}
+            />
+          ) : null
+        }
       />
 
       {MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab) && (
@@ -8324,32 +8344,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           </div>
         </div>
       )}
-      {activeBottomTab === 'longevita' && (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}>
-          <LongevityView
-            data={longevityData}
-            minimalOnly={false}
-            showPriorityFocus
-            userAge={userAge}
-            bodyMetricsHistory={bodyMetricsHistory}
-            scoreHistory={longevityScoreHistory}
-            periodAnchorDate={currentTrackerDate}
-            fullHistory={fullHistory}
-            userTargets={userTargets}
-            userProfile={userProfile}
-            onUpdateTDEE={handleUpdateTDEE}
-            tdeeHistory={tdeeHistory}
-            predictionCalibration={predictiveCalibration}
-            onBalanceCsvImport={handleCSVUpload}
-            onQuickWeighInSubmit={handleQuickWeighInFromHistory}
-            onDeleteBodyMetrics={handleDeleteBodyMetrics}
-            pastDaysStorico={pastDaysStorico}
-            weeklyTrendData={weeklyTrendData}
-            weeklyMicrosTotals={weeklyMicrosTotals}
-            weeklyKcalChartReference={weeklyKcalChartReference}
-          />
-        </div>
-      )}
       {activeBottomTab === 'bussola' && (
         <div
           style={{
@@ -8382,6 +8376,56 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       )}
       </div>
       )}
+      {activeBottomTab === 'longevita' && (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)',
+            boxSizing: 'border-box',
+            width: '100%',
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              WebkitOverflowScrolling: 'touch',
+              width: '100%',
+            }}
+          >
+            <LongevityView
+              data={longevityData}
+              minimalOnly={false}
+              showPriorityFocus
+              userAge={userAge}
+              bodyMetricsHistory={bodyMetricsHistory}
+              scoreHistory={longevityScoreHistory}
+              periodAnchorDate={currentTrackerDate}
+              fullHistory={fullHistory}
+              userTargets={userTargets}
+              userProfile={userProfile}
+              onUpdateTDEE={handleUpdateTDEE}
+              tdeeHistory={tdeeHistory}
+              predictionCalibration={predictiveCalibration}
+              onBalanceCsvImport={handleCSVUpload}
+              onQuickWeighInSubmit={handleQuickWeighInFromHistory}
+              onDeleteBodyMetrics={handleDeleteBodyMetrics}
+              pastDaysStorico={pastDaysStorico}
+              weeklyTrendData={weeklyTrendData}
+              weeklyMicrosTotals={weeklyMicrosTotals}
+              weeklyKcalChartReference={weeklyKcalChartReference}
+            />
+          </div>
+        </div>
+      )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
       <MenuDrawerShell isDrawerOpen={isDrawerOpen} onClose={closeDrawer}>
         <MainMenuDrawer
@@ -8398,6 +8442,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           calorieTuning={calorieTuning}
           setCalorieTuning={setCalorieTuning}
           onOpenStrategicPlanner={() => setShowStrategicPlanner(true)}
+          onOpenProgressi={() => setActiveBottomTab('longevita')}
         />
 
         {/* VISTA CHAT AI */}

@@ -1,12 +1,12 @@
-/** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu»). */
-export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola', 'longevita'];
+/** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu» e «Pianifica»). */
+export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola'];
 
 /** Voci barra inferiore (sempre tutte visibili; non condizionare al caricamento dati). */
 export const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },
   { id: 'analisi', label: 'Timeline', icon: '🕒' },
   { id: 'bussola', label: 'Trend', icon: '❤️' },
-  { id: 'longevita', label: 'Progressi', icon: '📈' },
+  { id: 'pianifica', label: 'Pianifica', icon: '🗓️' },
   { id: 'menu', label: 'Menu', icon: '≡' },
 ];
 

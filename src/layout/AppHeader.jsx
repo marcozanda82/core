@@ -19,6 +19,7 @@ export default function AppHeader({
   onBatteryClick,
   simulationActive,
   onExitSimulation,
+  accessory,
 }) {
   return (
     <>
@@ -128,7 +129,10 @@ export default function AppHeader({
             </button>
           </div>
         </div>
-        <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '6px' }}>
+        <div className="flex min-w-0 flex-[1_1_0] items-center justify-end gap-2 sm:gap-3">
+          {accessory ? (
+            <div className="flex shrink-0 items-center">{accessory}</div>
+          ) : null}
           {sncStressLevel > 65 && (
             <button
               type="button"

@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { decimalToTimeStr } from '../../coreEngine';
+import { getTimePositionPercent } from '../../timeLayout';
 import {
   parseDurationMinutesInput,
   WORKOUT_DURATION_DEFAULT,
@@ -7,10 +9,50 @@ import {
 } from '../../utils/durationMinutesInput';
 import {
   WORKOUT_ACTIVITY_SELECTOR_IDS,
+  generateWorkoutComboSignature,
   getWorkoutActivityTypeDef,
   WORKOUT_MUSCLE_GROUP_DEFS,
   normalizeMuscleGroupArray,
+  getWorkoutActivityLogDescription,
 } from '../../activityCatalog';
+
+/**
+ * @typedef {object} PlannerComboHistoryEntry
+ * @property {number} burnKcal
+ * @property {number} durationMin
+ * @property {number} startTime
+ */
+
+export const PLANNER_WORKOUT_SELECTOR_IDS = ['pesi', 'cardio', 'hiit', 'riposo'];
+
+const PLANNER_EXTRA_TAB_LABELS = {
+  riposo: '🛌 RIPOSO',
+};
+
+/** @typedef {'high' | 'medium' | 'low' | 'rest'} PlannerIntensity */
+
+/**
+ * @typedef {object} PlannerActionObject
+ * @property {string} name
+ * @property {string} workoutType
+ * @property {string[]} muscles
+ * @property {number} burnKcal
+ * @property {number} durationMin
+ * @property {string} [startTime]
+ * @property {number} [startTimeDec]
+ * @property {string} [strengthDetail]
+ * @property {PlannerIntensity} intensity
+ */
+
+/**
+ * @typedef {object} PlannerWorkoutInitialData
+ * @property {string} [workoutType]
+ * @property {number} [workoutStartTime]
+ * @property {string|number} [workoutDurationMin]
+ * @property {string[]} [workoutMuscles]
+ * @property {string} [workoutStrengthDetail]
+ * @property {number} [workoutKcal]
+ */
 
 /** Pesi: gruppi muscolari via chip. Altri strength: nota obbligatoria per il salvataggio. */
 export function workoutActivityRequiresStrengthDetailNote(typeId) {
@@ -21,42 +63,355 @@ export function workoutActivityRequiresStrengthDetailNote(typeId) {
   return raw.includes('strength') || raw.includes('bodybuilding');
 }
 
-export default function WorkoutView({
-  onBack,
+function parseTimeStrToDecimal(value) {
+  const digits = (value || '').replace(/\D/g, '');
+  if (digits.length === 0) return 12;
+  const formatted = digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2, 4)}` : digits;
+  const [hh, mm] = formatted.includes(':')
+    ? formatted.split(':')
+    : [formatted.slice(0, 2) || '0', formatted.slice(2) || '0'];
+  const h = Math.min(23, Math.max(0, parseInt(hh, 10) || 0));
+  const m = Math.min(59, Math.max(0, parseInt(mm, 10) || 0));
+  return h + m / 60;
+}
+
+/**
+ * @param {PlannerWorkoutInitialData | null | undefined} initialData
+ */
+function normalizePlannerInitialData(initialData) {
+  const data = initialData && typeof initialData === 'object' ? initialData : {};
+  const durationMin = parseDurationMinutesInput(data.workoutDurationMin, {
+    min: WORKOUT_DURATION_MIN,
+    max: WORKOUT_DURATION_MAX,
+    fallback: WORKOUT_DURATION_DEFAULT,
+  });
+  const startTime = Number.isFinite(Number(data.workoutStartTime))
+    ? Number(data.workoutStartTime)
+    : 18;
+  const workoutType = data.workoutType || 'pesi';
+  const isRest = workoutType === 'riposo';
+
+  return {
+    workoutType,
+    workoutStartTime: isRest ? 0 : startTime,
+    workoutDurationMin: isRest ? '0' : String(durationMin),
+    workoutMuscles: isRest ? [] : normalizeMuscleGroupArray(data.workoutMuscles),
+    workoutStrengthDetail: isRest ? '' : String(data.workoutStrengthDetail || ''),
+    workoutKcal: isRest
+      ? 0
+      : Number.isFinite(Number(data.workoutKcal))
+        ? Number(data.workoutKcal)
+        : 250,
+  };
+}
+
+/**
+ * @param {string} workoutType
+ * @param {string[]} [muscles]
+ * @param {number} [burnKcal]
+ * @returns {PlannerIntensity}
+ */
+export function derivePlannerIntensity(workoutType, muscles = [], burnKcal = 0) {
+  if (workoutType === 'riposo') return 'rest';
+  const burn = Number(burnKcal) || 0;
+  if (burn <= 0) return 'rest';
+  if (workoutType === 'cardio') return 'low';
+  if (workoutType === 'hiit') return 'medium';
+  if (workoutType === 'pesi') {
+    const m = normalizeMuscleGroupArray(muscles);
+    const highGroups = new Set(['Gambe', 'Dorso']);
+    if (m.some((g) => highGroups.has(g))) return 'high';
+    return 'medium';
+  }
+  return 'low';
+}
+
+/**
+ * @param {{
+ *   workoutType: string,
+ *   muscles: string[],
+ *   burnKcal: number,
+ *   durationMin: number,
+ *   startTimeDec?: number,
+ *   strengthDetail?: string,
+ * }} params
+ * @returns {PlannerActionObject}
+ */
+export function buildPlannerActionObject({
   workoutType,
-  setWorkoutType,
-  workoutStartTime,
-  workoutEndTime,
-  setWorkoutEndTime,
-  workoutDurationMin,
-  setWorkoutDurationMin,
-  workoutDurationHours,
-  miniTimelineActivityRef,
-  handleMiniTimelineDrag,
-  allNodes,
-  getTimePositionPercent,
-  decimalToTimeStr,
-  parseTimeStrToDecimal,
-  workoutMuscles,
-  setWorkoutMuscles,
-  editingWorkoutId,
-  workoutStrengthDetail,
-  setWorkoutStrengthDetail,
-  workoutKcal,
-  setWorkoutKcal,
+  muscles,
+  burnKcal,
+  durationMin,
+  startTimeDec,
+  strengthDetail,
+}) {
+  const musclesCanon = normalizeMuscleGroupArray(muscles);
+  const baseDesc = getWorkoutActivityLogDescription(workoutType, musclesCanon);
+  const strengthTrim = String(strengthDetail || '').trim();
+  const name =
+    strengthTrim && workoutActivityRequiresStrengthDetailNote(workoutType)
+      ? `${baseDesc} — ${strengthTrim}`
+      : baseDesc;
+  const isRest = workoutType === 'riposo';
+  const burn = isRest ? 0 : Math.round(Number(burnKcal) || 0);
+
+  return {
+    name: isRest ? 'Riposo' : name,
+    workoutType,
+    muscles: isRest ? [] : musclesCanon,
+    burnKcal: burn,
+    durationMin: isRest ? 0 : Math.round(Number(durationMin) || WORKOUT_DURATION_DEFAULT),
+    startTime: isRest
+      ? undefined
+      : Number.isFinite(startTimeDec)
+        ? decimalToTimeStr(startTimeDec)
+        : undefined,
+    startTimeDec: isRest ? undefined : Number.isFinite(startTimeDec) ? startTimeDec : undefined,
+    strengthDetail: strengthTrim || undefined,
+    intensity: derivePlannerIntensity(workoutType, musclesCanon, burn),
+  };
+}
+
+/**
+ * @param {PlannerWorkoutInitialData | null | undefined} initialData
+ * @param {Record<string, PlannerComboHistoryEntry>} [comboHistory]
+ */
+function usePlannerWorkoutState(initialData, comboHistory = {}) {
+  const normalized = useMemo(() => normalizePlannerInitialData(initialData), [initialData]);
+  const [workoutType, setWorkoutType] = useState(normalized.workoutType);
+  const [workoutStartTime, setWorkoutStartTime] = useState(normalized.workoutStartTime);
+  const [workoutEndTime, setWorkoutEndTime] = useState(
+    normalized.workoutStartTime + parseDurationMinutesInput(normalized.workoutDurationMin, {
+      min: WORKOUT_DURATION_MIN,
+      max: WORKOUT_DURATION_MAX,
+      fallback: WORKOUT_DURATION_DEFAULT,
+    }) / 60
+  );
+  const [workoutDurationMin, setWorkoutDurationMin] = useState(normalized.workoutDurationMin);
+  const [workoutMuscles, setWorkoutMuscles] = useState(normalized.workoutMuscles);
+  const [workoutStrengthDetail, setWorkoutStrengthDetail] = useState(normalized.workoutStrengthDetail);
+  const [workoutKcal, setWorkoutKcal] = useState(normalized.workoutKcal);
+
+  useEffect(() => {
+    const next = normalizePlannerInitialData(initialData);
+    setWorkoutType(next.workoutType);
+    setWorkoutStartTime(next.workoutStartTime);
+    setWorkoutDurationMin(next.workoutDurationMin);
+    setWorkoutMuscles(next.workoutMuscles);
+    setWorkoutStrengthDetail(next.workoutStrengthDetail);
+    setWorkoutKcal(next.workoutKcal);
+    const durationHours =
+      parseDurationMinutesInput(next.workoutDurationMin, {
+        min: WORKOUT_DURATION_MIN,
+        max: WORKOUT_DURATION_MAX,
+        fallback: WORKOUT_DURATION_DEFAULT,
+      }) / 60;
+    setWorkoutEndTime(next.workoutStartTime + durationHours);
+  }, [initialData]);
+
+  const skipComboHistoryEffect = useRef(true);
+  const comboHistoryRef = useRef(comboHistory);
+  const lastAppliedComboSignature = useRef(/** @type {string | null} */ (null));
+  comboHistoryRef.current = comboHistory;
+
+  const comboSignature = useMemo(
+    () => generateWorkoutComboSignature(workoutType, workoutMuscles),
+    [workoutType, workoutMuscles]
+  );
+
+  useEffect(() => {
+    skipComboHistoryEffect.current = true;
+    lastAppliedComboSignature.current = null;
+  }, [initialData]);
+
+  useEffect(() => {
+    if (skipComboHistoryEffect.current) {
+      skipComboHistoryEffect.current = false;
+      lastAppliedComboSignature.current = comboSignature;
+      return;
+    }
+    if (lastAppliedComboSignature.current === comboSignature) return;
+
+    lastAppliedComboSignature.current = comboSignature;
+    const historical = comboHistoryRef.current[comboSignature];
+    const burnKcal = Number.isFinite(historical?.burnKcal) ? historical.burnKcal : 250;
+    const durationMin = parseDurationMinutesInput(
+      historical?.durationMin ?? WORKOUT_DURATION_DEFAULT,
+      {
+        min: WORKOUT_DURATION_MIN,
+        max: WORKOUT_DURATION_MAX,
+        fallback: WORKOUT_DURATION_DEFAULT,
+      }
+    );
+    const startTime = Number.isFinite(historical?.startTime) ? historical.startTime : 18;
+
+    setWorkoutKcal(burnKcal);
+    setWorkoutDurationMin(String(durationMin));
+    setWorkoutStartTime(startTime);
+    setWorkoutEndTime(startTime + durationMin / 60);
+  }, [comboSignature]);
+
+  useEffect(() => {
+    if (workoutType !== 'riposo') return;
+    setWorkoutMuscles([]);
+    setWorkoutKcal(0);
+    setWorkoutDurationMin('0');
+    setWorkoutStrengthDetail('');
+    setWorkoutStartTime(0);
+    setWorkoutEndTime(0);
+  }, [workoutType]);
+
+  const workoutDurationHours = useMemo(
+    () =>
+      parseDurationMinutesInput(workoutDurationMin, {
+        min: WORKOUT_DURATION_MIN,
+        max: WORKOUT_DURATION_MAX,
+        fallback: WORKOUT_DURATION_DEFAULT,
+      }) / 60,
+    [workoutDurationMin]
+  );
+
+  return {
+    workoutType,
+    setWorkoutType,
+    workoutStartTime,
+    setWorkoutStartTime,
+    workoutEndTime,
+    setWorkoutEndTime,
+    workoutDurationMin,
+    setWorkoutDurationMin,
+    workoutDurationHours,
+    workoutMuscles,
+    setWorkoutMuscles,
+    workoutStrengthDetail,
+    setWorkoutStrengthDetail,
+    workoutKcal,
+    setWorkoutKcal,
+  };
+}
+
+export default function WorkoutView({
+  isPlannerMode = false,
+  initialData = null,
+  comboHistory = {},
+  onSaveAction,
+  onClose,
+  onBack,
+  workoutType: workoutTypeProp,
+  setWorkoutType: setWorkoutTypeProp,
+  workoutStartTime: workoutStartTimeProp,
+  workoutEndTime: workoutEndTimeProp,
+  setWorkoutEndTime: setWorkoutEndTimeProp,
+  workoutDurationMin: workoutDurationMinProp,
+  setWorkoutDurationMin: setWorkoutDurationMinProp,
+  workoutDurationHours: workoutDurationHoursProp,
+  miniTimelineActivityRef: miniTimelineActivityRefProp,
+  handleMiniTimelineDrag: handleMiniTimelineDragProp,
+  allNodes = [],
+  getTimePositionPercent: getTimePositionPercentProp,
+  decimalToTimeStr: decimalToTimeStrProp,
+  parseTimeStrToDecimal: parseTimeStrToDecimalProp,
+  workoutMuscles: workoutMusclesProp,
+  setWorkoutMuscles: setWorkoutMusclesProp,
+  editingWorkoutId = null,
+  workoutStrengthDetail: workoutStrengthDetailProp,
+  setWorkoutStrengthDetail: setWorkoutStrengthDetailProp,
+  workoutKcal: workoutKcalProp,
+  setWorkoutKcal: setWorkoutKcalProp,
   handleSaveWorkout,
-  workoutsLog,
+  workoutsLog = [],
   removeLogItem,
 }) {
+  const internalPlannerRef = useRef(null);
+  const planner = usePlannerWorkoutState(isPlannerMode ? initialData : null, comboHistory);
+
+  const workoutType = isPlannerMode ? planner.workoutType : workoutTypeProp;
+  const setWorkoutType = isPlannerMode ? planner.setWorkoutType : setWorkoutTypeProp;
+  const workoutStartTime = isPlannerMode ? planner.workoutStartTime : workoutStartTimeProp;
+  const setWorkoutStartTime = isPlannerMode ? planner.setWorkoutStartTime : null;
+  const workoutEndTime = isPlannerMode ? planner.workoutEndTime : workoutEndTimeProp;
+  const setWorkoutEndTime = isPlannerMode ? planner.setWorkoutEndTime : setWorkoutEndTimeProp;
+  const workoutDurationMin = isPlannerMode ? planner.workoutDurationMin : workoutDurationMinProp;
+  const setWorkoutDurationMin = isPlannerMode ? planner.setWorkoutDurationMin : setWorkoutDurationMinProp;
+  const workoutDurationHours = isPlannerMode ? planner.workoutDurationHours : workoutDurationHoursProp;
+  const workoutMuscles = isPlannerMode ? planner.workoutMuscles : workoutMusclesProp;
+  const setWorkoutMuscles = isPlannerMode ? planner.setWorkoutMuscles : setWorkoutMusclesProp;
+  const workoutStrengthDetail = isPlannerMode ? planner.workoutStrengthDetail : workoutStrengthDetailProp;
+  const setWorkoutStrengthDetail = isPlannerMode
+    ? planner.setWorkoutStrengthDetail
+    : setWorkoutStrengthDetailProp;
+  const workoutKcal = isPlannerMode ? planner.workoutKcal : workoutKcalProp;
+  const setWorkoutKcal = isPlannerMode ? planner.setWorkoutKcal : setWorkoutKcalProp;
+
+  const miniTimelineActivityRef = isPlannerMode
+    ? internalPlannerRef
+    : miniTimelineActivityRefProp;
+  const handleMiniTimelineDrag = isPlannerMode ? () => {} : handleMiniTimelineDragProp;
+  const toTimeStr = decimalToTimeStrProp || decimalToTimeStr;
+  const toTimeDec = parseTimeStrToDecimalProp || parseTimeStrToDecimal;
+  const timePosition = getTimePositionPercentProp || getTimePositionPercent;
+  const handleBack = isPlannerMode ? onClose : onBack;
+
+  const selectorIds = isPlannerMode ? PLANNER_WORKOUT_SELECTOR_IDS : WORKOUT_ACTIVITY_SELECTOR_IDS;
+  const isRestDay = workoutType === 'riposo';
+
+  const handleSaveClick = () => {
+    if (
+      workoutActivityRequiresStrengthDetailNote(workoutType) &&
+      !String(workoutStrengthDetail).trim()
+    ) {
+      window.alert('Compila «Dettaglio workout» per salvare questo tipo di attività.');
+      return;
+    }
+
+    const normalizedDurationMin = isRestDay
+      ? 0
+      : parseDurationMinutesInput(workoutDurationMin, {
+          min: WORKOUT_DURATION_MIN,
+          max: WORKOUT_DURATION_MAX,
+          fallback: WORKOUT_DURATION_DEFAULT,
+        });
+
+    if (isPlannerMode) {
+      const action = buildPlannerActionObject({
+        workoutType,
+        muscles: isRestDay ? [] : workoutMuscles,
+        burnKcal: isRestDay ? 0 : workoutKcal,
+        durationMin: normalizedDurationMin,
+        startTimeDec: isRestDay ? undefined : workoutStartTime,
+        strengthDetail: workoutStrengthDetail,
+      });
+      if (typeof onSaveAction === 'function') onSaveAction(action);
+      return;
+    }
+
+    if (typeof handleSaveWorkout === 'function') handleSaveWorkout();
+  };
+
   return (
     <div className="view-animate">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-        <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-        <h2 style={{ fontSize: '0.8rem', color: '#ff6d00', letterSpacing: '2px', margin: 0 }}>⚡ ATTIVITÀ</h2>
+        <button
+          type="button"
+          onClick={handleBack}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#666',
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            letterSpacing: '1px',
+          }}
+        >
+          &lt; INDIETRO
+        </button>
+        <h2 style={{ fontSize: '0.8rem', color: '#ff6d00', letterSpacing: '2px', margin: 0 }}>
+          {isPlannerMode ? '⚡ PIANIFICA AZIONE' : '⚡ ATTIVITÀ'}
+        </h2>
         <div style={{ width: '70px' }} />
       </div>
       <div style={{ display: 'flex', gap: '8px', marginBottom: '30px', flexWrap: 'wrap' }}>
-        {WORKOUT_ACTIVITY_SELECTOR_IDS.map((typeId) => {
+        {selectorIds.map((typeId) => {
           const ad = getWorkoutActivityTypeDef(typeId);
           return (
             <button
@@ -65,22 +420,32 @@ export default function WorkoutView({
               className={`type-btn ${workoutType === typeId ? 'active orange' : ''}`}
               onClick={() => setWorkoutType(typeId)}
             >
-              {ad?.selectorButtonLabel ?? typeId}
+              {ad?.selectorButtonLabel ?? PLANNER_EXTRA_TAB_LABELS[typeId] ?? typeId}
             </button>
           );
         })}
       </div>
+      {!isRestDay ? (
       <div style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '14px', marginBottom: '10px' }}>
           <div style={{ flex: '1 1 140px' }}>
-            <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-              Ora di inizio
+            <div
+              style={{
+                fontSize: '0.65rem',
+                color: '#888',
+                letterSpacing: '1px',
+                marginBottom: '6px',
+                textTransform: 'uppercase',
+              }}
+            >
+              {isPlannerMode ? 'Ora di inizio (opzionale)' : 'Ora di inizio'}
             </div>
             <input
               type="time"
-              value={decimalToTimeStr(workoutStartTime)}
+              value={toTimeStr(workoutStartTime)}
               onChange={(e) => {
-                const startTime = Math.min(24, Math.max(0, parseTimeStrToDecimal(e.target.value)));
+                const startTime = Math.min(24, Math.max(0, toTimeDec(e.target.value)));
+                if (setWorkoutStartTime) setWorkoutStartTime(startTime);
                 const durationHours =
                   parseDurationMinutesInput(workoutDurationMin, {
                     min: WORKOUT_DURATION_MIN,
@@ -107,7 +472,15 @@ export default function WorkoutView({
             />
           </div>
           <div style={{ flex: '0 0 120px' }}>
-            <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+            <div
+              style={{
+                fontSize: '0.65rem',
+                color: '#888',
+                letterSpacing: '1px',
+                marginBottom: '6px',
+                textTransform: 'uppercase',
+              }}
+            >
               Durata (min)
             </div>
             <input
@@ -139,31 +512,107 @@ export default function WorkoutView({
             />
           </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#666', fontSize: '0.65rem', marginBottom: '8px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            color: '#666',
+            fontSize: '0.65rem',
+            marginBottom: '8px',
+          }}
+        >
           <span>0:00</span>
-          <span>Inizio calcolato: {decimalToTimeStr(workoutStartTime)}</span>
+          <span>Inizio calcolato: {toTimeStr(workoutStartTime)}</span>
           <span>24:00</span>
         </div>
-        <div ref={miniTimelineActivityRef} style={{ position: 'relative', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid #333', touchAction: 'pan-x' }}>
+        <div
+          ref={miniTimelineActivityRef}
+          style={{
+            position: 'relative',
+            height: '36px',
+            background: 'rgba(255,255,255,0.05)',
+            borderRadius: '8px',
+            border: '1px solid #333',
+            touchAction: 'pan-x',
+          }}
+        >
           {allNodes.filter((n) => n.id !== editingWorkoutId).map((n) => {
             const isWork = n.type === 'work';
             const isCognitive = n.type === 'cognitive';
-            const startP = getTimePositionPercent(n.time);
-            const durP = (isWork || isCognitive) ? getTimePositionPercent(n.duration || 1) : 0;
+            const startP = timePosition(n.time);
+            const durP = isWork || isCognitive ? timePosition(n.duration || 1) : 0;
             const isPesi = n.type === 'workout' && n.subType === 'pesi' && n.muscles?.length > 0;
-            const iconContent = isPesi ? n.muscles.map((m) => m.substring(0, 2).toUpperCase()).join('+') : (n.icon || '•');
+            const iconContent = isPesi
+              ? n.muscles.map((m) => m.substring(0, 2).toUpperCase()).join('+')
+              : n.icon || '•';
             if (isWork) {
               return (
-                <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, width: `${durP}%`, top: '50%', transform: 'translateY(-50%)', height: '20px', background: 'rgba(255, 234, 0, 0.2)', borderLeft: '2px solid #ffea00', borderRight: '2px solid #ffea00', borderRadius: '4px', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }} />
+                <div
+                  key={n.id}
+                  style={{
+                    position: 'absolute',
+                    left: `${startP}%`,
+                    width: `${durP}%`,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    height: '20px',
+                    background: 'rgba(255, 234, 0, 0.2)',
+                    borderLeft: '2px solid #ffea00',
+                    borderRight: '2px solid #ffea00',
+                    borderRadius: '4px',
+                    filter: 'grayscale(1)',
+                    opacity: 0.3,
+                    pointerEvents: 'none',
+                  }}
+                />
               );
             }
             if (isCognitive) {
               return (
-                <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, width: `${durP}%`, top: '50%', transform: 'translateY(-50%)', height: '20px', background: 'rgba(0, 229, 255, 0.2)', borderLeft: '2px solid #00e5ff', borderRight: '2px solid #00e5ff', borderRadius: '4px', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none' }} />
+                <div
+                  key={n.id}
+                  style={{
+                    position: 'absolute',
+                    left: `${startP}%`,
+                    width: `${durP}%`,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    height: '20px',
+                    background: 'rgba(0, 229, 255, 0.2)',
+                    borderLeft: '2px solid #00e5ff',
+                    borderRight: '2px solid #00e5ff',
+                    borderRadius: '4px',
+                    filter: 'grayscale(1)',
+                    opacity: 0.3,
+                    pointerEvents: 'none',
+                  }}
+                />
               );
             }
             return (
-              <div key={n.id} style={{ position: 'absolute', left: `${startP}%`, top: '50%', transform: 'translate(-50%, -50%)', width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(0,0,0,0.5)', border: '2px solid #666', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', filter: 'grayscale(1)', opacity: 0.3, pointerEvents: 'none', fontSize: '0.5rem' }}>
+              <div
+                key={n.id}
+                style={{
+                  position: 'absolute',
+                  left: `${startP}%`,
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  background: 'rgba(0,0,0,0.5)',
+                  border: '2px solid #666',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  filter: 'grayscale(1)',
+                  opacity: 0.3,
+                  pointerEvents: 'none',
+                  fontSize: '0.5rem',
+                }}
+              >
                 <span style={{ lineHeight: 1 }}>{iconContent}</span>
               </div>
             );
@@ -179,13 +628,13 @@ export default function WorkoutView({
                 workoutEndTime,
                 () => {},
                 setWorkoutEndTime,
-                { fixedDurationHours: workoutDurationHours },
+                { fixedDurationHours: workoutDurationHours }
               )
             }
             style={{
               position: 'absolute',
-              left: `${getTimePositionPercent(workoutStartTime)}%`,
-              width: `${getTimePositionPercent(workoutDurationHours)}%`,
+              left: `${timePosition(workoutStartTime)}%`,
+              width: `${timePosition(workoutDurationHours)}%`,
               top: '50%',
               transform: 'translateY(-50%)',
               height: '24px',
@@ -211,7 +660,7 @@ export default function WorkoutView({
                   workoutEndTime,
                   () => {},
                   setWorkoutEndTime,
-                  { fixedDurationHours: workoutDurationHours },
+                  { fixedDurationHours: workoutDurationHours }
                 );
               }}
               style={{
@@ -229,58 +678,68 @@ export default function WorkoutView({
                 zIndex: 11,
               }}
             >
-              <div style={{ width: '12px', height: '24px', background: '#ff6d00', borderRadius: '4px', pointerEvents: 'none' }} />
+              <div
+                style={{
+                  width: '12px',
+                  height: '24px',
+                  background: '#ff6d00',
+                  borderRadius: '4px',
+                  pointerEvents: 'none',
+                }}
+              />
             </div>
           </div>
         </div>
       </div>
-      {workoutType === 'pesi' && (() => {
-        const pesiMuscleSet = new Set(normalizeMuscleGroupArray(workoutMuscles));
-        return (
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
-              Gruppi muscolari
-            </label>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
-                gap: '8px',
-              }}
-            >
-              {WORKOUT_MUSCLE_GROUP_DEFS.map(({ id: mId, label: mLabel }) => {
-                const isActive = pesiMuscleSet.has(mId);
-                return (
-                  <button
-                    key={mId}
-                    type="button"
-                    onClick={() => {
-                      setWorkoutMuscles((prev) => {
-                        const p = normalizeMuscleGroupArray(prev);
-                        if (p.includes(mId)) return p.filter((x) => x !== mId);
-                        return [...p, mId];
-                      });
-                    }}
-                    style={{
-                      padding: '10px 12px',
-                      fontSize: '0.75rem',
-                      borderRadius: '20px',
-                      border: `1px solid ${isActive ? '#ff6d00' : '#444'}`,
-                      background: isActive ? '#ff6d00' : '#222',
-                      color: isActive ? '#000' : '#aaa',
-                      fontWeight: isActive ? 'bold' : 'normal',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                    }}
-                  >
-                    {mLabel}
-                  </button>
-                );
-              })}
+      ) : null}
+      {workoutType === 'pesi' &&
+        (() => {
+          const pesiMuscleSet = new Set(normalizeMuscleGroupArray(workoutMuscles));
+          return (
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
+                Gruppi muscolari
+              </label>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
+                  gap: '8px',
+                }}
+              >
+                {WORKOUT_MUSCLE_GROUP_DEFS.map(({ id: mId, label: mLabel }) => {
+                  const isActive = pesiMuscleSet.has(mId);
+                  return (
+                    <button
+                      key={mId}
+                      type="button"
+                      onClick={() => {
+                        setWorkoutMuscles((prev) => {
+                          const p = normalizeMuscleGroupArray(prev);
+                          if (p.includes(mId)) return p.filter((x) => x !== mId);
+                          return [...p, mId];
+                        });
+                      }}
+                      style={{
+                        padding: '10px 12px',
+                        fontSize: '0.75rem',
+                        borderRadius: '20px',
+                        border: `1px solid ${isActive ? '#ff6d00' : '#444'}`,
+                        background: isActive ? '#ff6d00' : '#222',
+                        color: isActive ? '#000' : '#aaa',
+                        fontWeight: isActive ? 'bold' : 'normal',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {mLabel}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
       {workoutActivityRequiresStrengthDetailNote(workoutType) && (
         <div style={{ marginBottom: '20px' }}>
           <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
@@ -307,23 +766,86 @@ export default function WorkoutView({
         </div>
       )}
       <div className="burn-slider-container">
-        <span className="burn-label" style={{ color: '#ff6d00' }}>OUTPUT ENERGETICO STIMATO</span>
-        <div className="burn-value workout">{Math.min(750, workoutKcal)}</div>
-        <input type="range" min="50" max="750" step="10" value={Math.min(750, workoutKcal)} onChange={(e) => setWorkoutKcal(Math.min(750, Number(e.target.value)))} className="custom-range orange" style={{ marginTop: '20px' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#666', marginTop: '6px' }}>
-          <span>0</span><span>375</span><span>750</span>
+        <span className="burn-label" style={{ color: '#ff6d00' }}>
+          OUTPUT ENERGETICO STIMATO
+        </span>
+        <div className="burn-value workout">{isRestDay ? 0 : Math.min(750, workoutKcal)}</div>
+        <input
+          type="range"
+          min={isPlannerMode ? 0 : 50}
+          max="750"
+          step="10"
+          value={isRestDay ? 0 : Math.min(750, Math.max(isPlannerMode ? 0 : 50, workoutKcal))}
+          onChange={(e) => setWorkoutKcal(Math.min(750, Number(e.target.value)))}
+          disabled={isRestDay}
+          className="custom-range orange"
+          style={{ marginTop: '20px', opacity: isRestDay ? 0.45 : 1 }}
+        />
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: '0.65rem',
+            color: '#666',
+            marginTop: '6px',
+          }}
+        >
+          <span>{isPlannerMode ? 0 : 50}</span>
+          <span>375</span>
+          <span>750</span>
         </div>
       </div>
-      <button type="button" onClick={handleSaveWorkout} style={{ width: '100%', padding: '18px', backgroundColor: '#ff6d00', color: '#000', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 0 20px rgba(255, 109, 0, 0.4)' }}>SALVA ATTIVITÀ</button>
-      <div style={{ marginTop: '30px' }}>
-        {workoutsLog.length > 0 && <h4 style={{ fontSize: '0.65rem', color: '#666', letterSpacing: '2px', marginBottom: '10px' }}>OUTPUT REGISTRATI OGGI</h4>}
-        {workoutsLog.map((wk) => (
-          <div key={wk.id} className="food-pill" style={{ borderLeft: '3px solid #ff6d00' }}>
-            <div><span className="food-pill-name">{wk.desc || wk.name}</span><span className="food-pill-weight" style={{ color: '#ff6d00' }}>{Math.round(wk.kcal)} kcal</span></div>
-            <div className="food-pill-actions"><button type="button" className="food-pill-btn btn-delete" onClick={() => removeLogItem(wk.id)}>✕</button></div>
-          </div>
-        ))}
-      </div>
+      <button
+        type="button"
+        onClick={handleSaveClick}
+        style={{
+          width: '100%',
+          padding: '18px',
+          backgroundColor: '#ff6d00',
+          color: '#000',
+          border: 'none',
+          borderRadius: '15px',
+          fontSize: '0.9rem',
+          fontWeight: 'bold',
+          letterSpacing: '2px',
+          cursor: 'pointer',
+          transition: '0.2s',
+          boxShadow: '0 0 20px rgba(255, 109, 0, 0.4)',
+        }}
+      >
+        {isPlannerMode ? 'APPLICA AZIONE' : 'SALVA ATTIVITÀ'}
+      </button>
+      {!isPlannerMode && (
+        <div style={{ marginTop: '30px' }}>
+          {workoutsLog.length > 0 && (
+            <h4
+              style={{
+                fontSize: '0.65rem',
+                color: '#666',
+                letterSpacing: '2px',
+                marginBottom: '10px',
+              }}
+            >
+              OUTPUT REGISTRATI OGGI
+            </h4>
+          )}
+          {workoutsLog.map((wk) => (
+            <div key={wk.id} className="food-pill" style={{ borderLeft: '3px solid #ff6d00' }}>
+              <div>
+                <span className="food-pill-name">{wk.desc || wk.name}</span>
+                <span className="food-pill-weight" style={{ color: '#ff6d00' }}>
+                  {Math.round(wk.kcal)} kcal
+                </span>
+              </div>
+              <div className="food-pill-actions">
+                <button type="button" className="food-pill-btn btn-delete" onClick={() => removeLogItem(wk.id)}>
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
