@@ -25,24 +25,18 @@ function microDeficit(omega3) {
   return (Number(omega3) ?? 0) < 1;
 }
 
-function eveningRisk(energyAt20Percent) {
-  return (Number(energyAt20Percent) ?? 100) < 40;
-}
-
 /**
  * Barra indicatori giornalieri: priorità ai problemi; target calorico solo se tutto ok.
  *
  * @param {{
  *   calorieStrategyLabel?: string,
  *   omega3?: number | string | null,
- *   energyAt20Percent?: number | string | null,
  *   onClick?: () => void,
  * }} props
  */
 export default function DailyIndicatorsBar({
   calorieStrategyLabel,
   omega3,
-  energyAt20Percent,
   onClick,
 } = {}) {
   /** @type {{ type: string, label: string, color: 'red' | 'orange' | 'neutral' }[]} */
@@ -50,10 +44,6 @@ export default function DailyIndicatorsBar({
 
   if (microDeficit(omega3)) {
     indicators.push({ type: 'micro', label: 'Carenza Micro', color: 'red' });
-  }
-
-  if (eveningRisk(energyAt20Percent)) {
-    indicators.push({ type: 'evening', label: 'Rischio Serali', color: 'orange' });
   }
 
   if (indicators.length === 0) {

@@ -19,6 +19,7 @@ export default function MainMenuDrawer({
   setCalorieTuning,
   onOpenStrategicPlanner,
   onOpenProgressi,
+  onOpenTacticalCoach,
 }) {
   return (
     <>
@@ -75,6 +76,7 @@ export default function MainMenuDrawer({
             <button type="button" className="action-btn" onClick={() => { setShowProfile(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">⚙️</span><span className="action-label">Profilo & Target</span></button>
             <button type="button" className="action-btn" onClick={() => { onOpenStrategicPlanner?.(); setActiveAction(null); closeDrawer(); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>🎯</span><span className="action-label" style={{ color: '#00e5ff' }}>Protocollo</span></button>
             <button type="button" className="action-btn" onClick={() => { onOpenProgressi?.(); setActiveAction(null); closeDrawer(); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(34, 197, 94, 0.45))' }}>📈</span><span className="action-label" style={{ color: '#86efac' }}>Progressi</span></button>
+            <button type="button" className="action-btn" onClick={() => { onOpenTacticalCoach?.(); setActiveAction(null); closeDrawer(); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(99, 102, 241, 0.5))' }}>🤖</span><span className="action-label" style={{ color: '#a5b4fc' }}>Navigatore Tattico</span></button>
             <button type="button" className="action-btn" onClick={() => setActiveAction('focus')}><img src="/icon-neural-128.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 192, 45, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#fbc02d' }}>Neural Reset</span></button>
             <button type="button" className="action-btn" onClick={() => setActiveAction('ai_chat')} style={{ position: 'relative', background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
               {kentuChatNotificationBadge ? (

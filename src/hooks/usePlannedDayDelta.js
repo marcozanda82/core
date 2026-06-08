@@ -22,6 +22,7 @@ import { getWeekStartMondayKeyLocal } from '../weeklyPlanning';
  *   plannedDelta: number,
  *   hasPlannedBlock: boolean,
  *   plannedTargetKcal: number,
+ *   todayPlanBlock: import('../features/weeklyBlocks/weeklyBlockSchema').DayBlock | null,
  *   isLoading: boolean,
  * }}
  */
@@ -85,6 +86,7 @@ export default function usePlannedDayDelta({
       plannedDelta,
       hasPlannedBlock,
       plannedTargetKcal,
+      todayPlanBlock: hasPlannedBlock ? block : null,
       isLoading,
     };
   }, [weeklyBlockPlan, weekStart, dateKey, normalizedProfileKcal, isLoading]);

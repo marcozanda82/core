@@ -57,7 +57,10 @@ import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import FirebaseDataLoadingLayer from './components/FirebaseDataLoadingLayer';
 import DialMaintenanceMarker from './components/DialMaintenanceMarker';
+import DayPlanWidget from './components/DayPlanWidget';
+import DayPlanActionSheet from './components/DayPlanActionSheet';
 import usePlannedDayDelta from './hooks/usePlannedDayDelta';
+import { plannerInitialDataFromDayBlock } from './features/weeklyBlocks/activityCatalog';
 import TimelineNodeReport from './components/TimelineNodeReport';
 import BodyBatteryModal from './components/BodyBatteryModal';
 import CustomDateTick from './components/CustomDateTick';
@@ -934,13 +937,15 @@ export default function SalaComandi() {
     [strategicPlan, currentTrackerDate]
   );
 
-  const { plannedDelta, hasPlannedBlock, plannedTargetKcal } = usePlannedDayDelta({
+  const { plannedDelta, hasPlannedBlock, plannedTargetKcal, todayPlanBlock } = usePlannedDayDelta({
     db,
     user,
     dateKey: currentTrackerDate || getTodayString(),
     profileKcal: Number(userTargets?.kcal ?? 2000),
     isSimulationMode,
   });
+
+  const [isPlanActionSheetOpen, setIsPlanActionSheetOpen] = useState(false);
 
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(300);
@@ -3009,6 +3014,31 @@ export default function SalaComandi() {
     const decimal = h + m / 60;
     return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
   };
+
+  const openWorkoutFromTodayPlan = useCallback(() => {
+    if (!todayPlanBlock) return;
+    const initialData = plannerInitialDataFromDayBlock(todayPlanBlock);
+    const typeVal = initialData.workoutType || 'pesi';
+    const durationMin = parseDurationMinutesInput(initialData.workoutDurationMin, {
+      min: WORKOUT_DURATION_MIN,
+      max: WORKOUT_DURATION_MAX,
+      fallback: WORKOUT_DURATION_DEFAULT,
+    });
+    const startT = Number.isFinite(Number(initialData.workoutStartTime))
+      ? Number(initialData.workoutStartTime)
+      : getCurrentTimeRoundedTo15Min();
+
+    setEditingWorkoutId(null);
+    setWorkoutType(resolveWorkoutActivityTypeId(typeVal) ?? typeVal);
+    setWorkoutMuscles(normalizeMuscleGroupArray(initialData.workoutMuscles));
+    setWorkoutKcal(Number(initialData.workoutKcal) || 300);
+    setWorkoutDurationMin(String(durationMin));
+    setWorkoutStrengthDetail(String(initialData.workoutStrengthDetail || ''));
+    setWorkoutEndTime(Math.min(24, startT + durationMin / 60));
+    setIsPlanActionSheetOpen(false);
+    setActiveAction('allenamento');
+    setIsDrawerOpen(true);
+  }, [todayPlanBlock]);
 
   function handleAddEventMenuItem(itemId, source) {
     const fromModal = source === 'modal';
@@ -7420,7 +7450,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       <DailyIndicatorsBar
         calorieStrategyLabel={calorieStrategyShortLabelIt(kentuDailyCalorieStrategy)}
         omega3={totali?.omega3}
-        energyAt20Percent={energyAt20Percent}
         onClick={() => setShowSpieInfo(true)}
       />
       )}
@@ -7430,83 +7459,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           {homeLongevityInsightLine}
         </div>
       ) : null}
-      {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') ? (
-        <div style={{ marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              type="button"
-              onClick={() => setShowBiochemicalDiagnostics((v) => !v)}
-              style={{
-                alignSelf: 'flex-start',
-                padding: '8px 12px',
-                borderRadius: '10px',
-                border: '1px solid #334155',
-                background: showBiochemicalDiagnostics ? 'rgba(15, 23, 42, 0.9)' : 'rgba(15, 23, 42, 0.6)',
-                color: '#cbd5e1',
-                fontSize: '0.75rem',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              {showBiochemicalDiagnostics ? 'Nascondi Diagnostica' : 'Diagnostica'}
-            </button>
-            <button 
-              onClick={() => setIsCoachOpen(true)} 
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded shadow transition-colors ml-2 flex items-center gap-2"
-            >
-              <span>🤖</span> Coach Tattico
-            </button>
-          </div>
-          {showBiochemicalDiagnostics ? (
-            <BiochemicalDiagnostics
-              todayMicros={todayMicrosForDiagnostics}
-              aminoAcidProfile={aminoAcidProfileForDiagnostics}
-              weeklyLiposolubleHistory={weeklyLiposolubleHistoryForDiagnostics}
-              dailyLog={activeLog}
-              detailModal={biochemicalDetailModal}
-              setDetailModal={setBiochemicalDetailModal}
-              onClose={() => {
-                setShowBiochemicalDiagnostics(false);
-                setBiochemicalDetailModal(null);
-              }}
-            />
-          ) : null}
-          {isCoachOpen ? (
-            <TacticalCoach
-              totals={{
-                kcal: Number(totali?.kcal) || 0,
-                prot: Number(totali?.prot) || 0,
-                carb: Number(totali?.carb) || 0,
-                fatTotal: Number(totali?.fatTotal ?? totali?.fat) || 0,
-              }}
-              targets={{
-                kcal: Number(dynamicDailyKcal ?? targetKcal) || 0,
-                prot: Number(effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot) || 0,
-                carb: Number(effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb) || 0,
-                fatTotal: Number(
-                  effectiveTargetsForCurrentDate?.fatTotal
-                  ?? effectiveTargetsForCurrentDate?.fat
-                  ?? userTargets?.fatTotal
-                  ?? userTargets?.fat,
-                ) || 0,
-              }}
-              currentCoordinates={{
-                x: Number(metabolicMapData?.mapPositionInertial?.x ?? metabolicMapData?.x) || 0,
-                y: Number(metabolicMapData?.mapPositionInertial?.y ?? metabolicMapData?.y) || 0,
-              }}
-              userStats={{
-                weight: Number(userProfile?.weight) || 75,
-                tdee: Number(dynamicDailyKcal ?? targetKcal) || 2480,
-                plannedWorkoutKcal,
-              }}
-              isDayEnded={isViewingPastDate}
-              onClose={() => setIsCoachOpen(false)}
-            />
-          ) : null}
-        </div>
-      ) : null}
-
       {(activeBottomTab === 'analisi' || (activeBottomTab === 'oggi' && userProfile?.level === 'pro')) && (
       <>
       {/* Cruscotto energetico giornaliero 0-24h */}
@@ -7914,7 +7866,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                           loadMealToConstructor(String(selectedMealCenter.id));
                           return;
                         }
-                        setDailyMacroSheetOpen(true);
+                        setShowBiochemicalDiagnostics(true);
                       }}
                       style={{
                         position: 'absolute',
@@ -7936,7 +7888,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                         transition: 'box-shadow 0.2s ease, filter 0.2s ease',
                         pointerEvents: 'auto',
                       }}
-                      title={!selectedMealCenter ? 'Apri raggi X giornalieri' : undefined}
+                      title={!selectedMealCenter ? 'Apri diagnostica nutrizionale' : undefined}
                     >
                       {selectedMealCenter ? (
                         <div className="pieCenterInfo" style={{ textAlign: 'center', cursor: 'pointer' }}>
@@ -8204,6 +8156,11 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                       </div>
                     </div>
                   </div>
+                  <DayPlanWidget
+                    todayPlanBlock={todayPlanBlock}
+                    isWorkoutDoneToday={hasRealWorkoutInActiveLog}
+                    onOpenActionSheet={() => setIsPlanActionSheetOpen(true)}
+                  />
                 </div>
               </div>
             );
@@ -8494,6 +8451,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           setCalorieTuning={setCalorieTuning}
           onOpenStrategicPlanner={() => setShowStrategicPlanner(true)}
           onOpenProgressi={() => setActiveBottomTab('longevita')}
+          onOpenTacticalCoach={() => setIsCoachOpen(true)}
         />
 
         {/* VISTA CHAT AI */}
@@ -9579,6 +9537,68 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           document.body
         )
         : null}
+
+      <DayPlanActionSheet
+        open={isPlanActionSheetOpen}
+        onClose={() => setIsPlanActionSheetOpen(false)}
+        onStartWorkout={openWorkoutFromTodayPlan}
+        onPostpone={() => {
+          console.log('Avvia traslazione piano');
+          setIsPlanActionSheetOpen(false);
+        }}
+        onSkip={() => {
+          console.log('Imposta oggi a riposo');
+          setIsPlanActionSheetOpen(false);
+        }}
+      />
+
+      {showBiochemicalDiagnostics ? (
+        <BiochemicalDiagnostics
+          todayMicros={todayMicrosForDiagnostics}
+          aminoAcidProfile={aminoAcidProfileForDiagnostics}
+          weeklyLiposolubleHistory={weeklyLiposolubleHistoryForDiagnostics}
+          dailyLog={activeLog}
+          detailModal={biochemicalDetailModal}
+          setDetailModal={setBiochemicalDetailModal}
+          onClose={() => {
+            setShowBiochemicalDiagnostics(false);
+            setBiochemicalDetailModal(null);
+          }}
+        />
+      ) : null}
+
+      {isCoachOpen ? (
+        <TacticalCoach
+          totals={{
+            kcal: Number(totali?.kcal) || 0,
+            prot: Number(totali?.prot) || 0,
+            carb: Number(totali?.carb) || 0,
+            fatTotal: Number(totali?.fatTotal ?? totali?.fat) || 0,
+          }}
+          targets={{
+            kcal: Number(dynamicDailyKcal ?? targetKcal) || 0,
+            prot: Number(effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot) || 0,
+            carb: Number(effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb) || 0,
+            fatTotal: Number(
+              effectiveTargetsForCurrentDate?.fatTotal
+              ?? effectiveTargetsForCurrentDate?.fat
+              ?? userTargets?.fatTotal
+              ?? userTargets?.fat,
+            ) || 0,
+          }}
+          currentCoordinates={{
+            x: Number(metabolicMapData?.mapPositionInertial?.x ?? metabolicMapData?.x) || 0,
+            y: Number(metabolicMapData?.mapPositionInertial?.y ?? metabolicMapData?.y) || 0,
+          }}
+          userStats={{
+            weight: Number(userProfile?.weight) || 75,
+            tdee: Number(dynamicDailyKcal ?? targetKcal) || 2480,
+            plannedWorkoutKcal,
+          }}
+          isDayEnded={isViewingPastDate}
+          onClose={() => setIsCoachOpen(false)}
+        />
+      ) : null}
 
       {createPortal(
         <>
