@@ -585,7 +585,19 @@ export function weeklyBlockPlanToFirebasePayload(plan) {
 }
 
 /**
- * Kcal target effettivo del blocco (assoluto o TDEE profilo + delta).
+ * TDEE di profilo valido per il calcolo live (impostazioni utente correnti).
+ * @param {unknown} profileKcal
+ * @returns {number | null}
+ */
+function resolveLiveProfileKcal(profileKcal) {
+  const n = Math.round(Number(profileKcal));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Kcal target effettivo del blocco (assoluto o TDEE profilo corrente + delta pianificato).
+ * Il `profileKcal` passato (es. `userTargets.kcal`) ha priorità sullo snapshot
+ * `profileKcalBase` salvato in pianificazione, così la Home riflette le Impostazioni reali.
  * @param {DayBlock} block
  * @param {number} [profileKcal]
  * @returns {number}
@@ -593,7 +605,12 @@ export function weeklyBlockPlanToFirebasePayload(plan) {
 export function resolveBlockKcalTarget(block, profileKcal = 2000) {
   const abs = Number(block?.calorieStrategy?.absoluteKcalTarget);
   if (Number.isFinite(abs) && abs > 0) return Math.round(abs);
-  const base = Number(block?.calorieStrategy?.profileKcalBase ?? profileKcal) || 2000;
+  const liveBase = resolveLiveProfileKcal(profileKcal);
+  const snapshotBase = Math.round(Number(block?.calorieStrategy?.profileKcalBase));
+  const base =
+    liveBase
+    ?? (Number.isFinite(snapshotBase) && snapshotBase > 0 ? snapshotBase : null)
+    ?? 2000;
   const delta = Number(block?.calorieStrategy?.deltaKcal) || 0;
   return Math.max(1200, Math.round(base + delta));
 }

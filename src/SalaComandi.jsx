@@ -937,11 +937,29 @@ export default function SalaComandi() {
     [strategicPlan, currentTrackerDate]
   );
 
+  const effectiveTargetsForCurrentDate = useMemo(
+    () =>
+      resolveTargetConfigForDate({
+        targets: userTargets,
+        date: currentTrackerDate || getTodayString(),
+        todayDate: getTodayString(),
+      }),
+    [userTargets, currentTrackerDate]
+  );
+
+  const userProfileKcalBase = useMemo(() => {
+    const effective = Number(effectiveTargetsForCurrentDate?.kcal);
+    if (Number.isFinite(effective) && effective > 0) return Math.round(effective);
+    const raw = Number(userTargets?.kcal);
+    if (Number.isFinite(raw) && raw > 0) return Math.round(raw);
+    return null;
+  }, [effectiveTargetsForCurrentDate?.kcal, userTargets?.kcal]);
+
   const { plannedDelta, hasPlannedBlock, plannedTargetKcal, todayPlanBlock } = usePlannedDayDelta({
     db,
     user,
     dateKey: currentTrackerDate || getTodayString(),
-    profileKcal: Number(userTargets?.kcal ?? 2000),
+    profileKcal: userProfileKcalBase,
     isSimulationMode,
   });
 
@@ -1316,16 +1334,6 @@ export default function SalaComandi() {
   useEffect(() => {
     if (!recalibrationProposal?.show) setShowRecalibrationDetails(false);
   }, [recalibrationProposal?.show]);
-
-  const effectiveTargetsForCurrentDate = useMemo(
-    () =>
-      resolveTargetConfigForDate({
-        targets: userTargets,
-        date: currentTrackerDate || getTodayString(),
-        todayDate: getTodayString(),
-      }),
-    [userTargets, currentTrackerDate]
-  );
 
   const applyTargetModeUpdate = useCallback(
     ({ updater, mode, source }) => {
@@ -5791,11 +5799,13 @@ ${dbKeys || 'n/d'}`;
 
   // Calcolo Budget Dinamico (Base + Bruciate oggi) — prima di renderDataWithSegments per usare scale nel map
   const burnedKcal = activeLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
-  const profileKcalBase = Number(userTargets?.kcal ?? 2000);
-  const dynamicDailyKcal = hasPlannedBlock
-    ? plannedTargetKcal + burnedKcal
-    : applyCalorieStrategyToProfileKcal(profileKcalBase, kentuDailyCalorieStrategy) + burnedKcal;
-  const profileTdeeKcal = Math.round(profileKcalBase + burnedKcal);
+  const profileKcalBase = userProfileKcalBase;
+  const dynamicDailyKcal = hasPlannedBlock && profileKcalBase != null
+    ? profileKcalBase + plannedDelta + burnedKcal
+    : profileKcalBase != null
+      ? applyCalorieStrategyToProfileKcal(profileKcalBase, kentuDailyCalorieStrategy) + burnedKcal
+      : null;
+  const profileTdeeKcal = profileKcalBase != null ? Math.round(profileKcalBase + burnedKcal) : null;
   const targetKcalChart = dynamicDailyKcal;
   // --- NUOVI ALLARMI PREDITTIVI PERCENTUALI ---
   const targetKcalForAlerts = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
@@ -7774,14 +7784,16 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             const targetProt = userTargets?.prot ?? 150;
             const targetCarb = userTargets?.carb ?? 200;
             const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
+            const dialPlannedDelta = hasPlannedBlock ? plannedDelta : 0;
             const dialDailyTargetKcal = Math.round(
-              Number(dynamicDailyKcal) || Number(baseKcal) || Number(userTargets?.kcal ?? 2500)
+              hasPlannedBlock && profileKcalBase != null
+                ? profileKcalBase + dialPlannedDelta + burnedKcal
+                : Number(dynamicDailyKcal) || Number(baseKcal) || Number(userProfileKcalBase ?? userTargets?.kcal ?? 0) || 0
             );
             const dialConsumedKcal = Math.round(Number(totali?.kcal) || 0);
             const dialKcalSurplus =
               dialConsumedKcal > dialDailyTargetKcal ? dialConsumedKcal - dialDailyTargetKcal : 0;
             const dialKcalRemaining = Math.max(0, dialDailyTargetKcal - dialConsumedKcal);
-            const dialPlannedDelta = hasPlannedBlock ? plannedDelta : 0;
             const dialKcalRestLabel =
               dialKcalSurplus > 0
                 ? 'SURPLUS'
@@ -7803,7 +7815,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               hasPlannedBlock &&
               dialPlannedDelta > 0 &&
               dialDailyTargetKcal > 0;
-            const maintenanceMarkerRatio = showMaintenanceMarker
+            const maintenanceMarkerRatio = showMaintenanceMarker && profileTdeeKcal != null
               ? profileTdeeKcal / dialDailyTargetKcal
               : 0;
             return (

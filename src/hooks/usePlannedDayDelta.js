@@ -40,7 +40,10 @@ export default function usePlannedDayDelta({
     () => getWeekStartMondayKeyLocal(dateKey || undefined),
     [dateKey]
   );
-  const normalizedProfileKcal = Math.round(Number(profileKcal) || 2000);
+  const normalizedProfileKcal = (() => {
+    const n = Math.round(Number(profileKcal));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  })();
 
   useEffect(() => {
     if (!db || !user?.uid || isSimulationMode || !dateKey) {
@@ -79,8 +82,8 @@ export default function usePlannedDayDelta({
       ? Math.round(Number(block?.calorieStrategy?.deltaKcal) || 0)
       : 0;
     const plannedTargetKcal = hasPlannedBlock
-      ? resolveBlockKcalTarget(block, normalizedProfileKcal)
-      : normalizedProfileKcal;
+      ? resolveBlockKcalTarget(block, normalizedProfileKcal ?? undefined)
+      : normalizedProfileKcal ?? 0;
 
     return {
       plannedDelta,
