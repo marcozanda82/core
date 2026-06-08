@@ -543,34 +543,44 @@ function sanitizePlannerMetaForFirebase(meta) {
   return out;
 }
 
+/**
+ * Payload RTDB per un singolo `DayBlock` (sotto `.../blocks/{isoDate}`).
+ * @param {DayBlock} block
+ * @returns {Record<string, unknown>}
+ */
+export function dayBlockToFirebasePayload(block) {
+  const b = block && typeof block === 'object' ? block : createRestDayBlock(String(block?.date || ''));
+  return stripUndefinedDeep({
+    date: b.date,
+    activity: {
+      kind: b.activity.kind,
+      ...(b.activity.focus?.length ? { focus: b.activity.focus } : {}),
+      ...(b.activity.hour ? { hour: b.activity.hour } : {}),
+      ...(b.activity.estimatedBurnKcal != null
+        ? { estimatedBurnKcal: b.activity.estimatedBurnKcal }
+        : {}),
+      ...(b.activity.memoryKey ? { memoryKey: b.activity.memoryKey } : {}),
+    },
+    calorieStrategy: {
+      status: b.calorieStrategy.status,
+      deltaKcal: b.calorieStrategy.deltaKcal,
+      ...(b.calorieStrategy.absoluteKcalTarget != null
+        ? { absoluteKcalTarget: b.calorieStrategy.absoluteKcalTarget }
+        : {}),
+      ...(b.calorieStrategy.profileKcalBase != null
+        ? { profileKcalBase: b.calorieStrategy.profileKcalBase }
+        : {}),
+    },
+    meta: sanitizePlannerMetaForFirebase(b.meta),
+  });
+}
+
 /** Payload RTDB per `users/{uid}/weeklyBlockPlan/{weekMonday}` */
 export function weeklyBlockPlanToFirebasePayload(plan) {
   const s = sanitizeWeeklyBlockPlanFromFirebase(plan, plan?.weekStart);
   const blocksOut = {};
   Object.entries(s.blocks).forEach(([date, block]) => {
-    blocksOut[date] = {
-      date: block.date,
-      activity: {
-        kind: block.activity.kind,
-        ...(block.activity.focus?.length ? { focus: block.activity.focus } : {}),
-        ...(block.activity.hour ? { hour: block.activity.hour } : {}),
-        ...(block.activity.estimatedBurnKcal != null
-          ? { estimatedBurnKcal: block.activity.estimatedBurnKcal }
-          : {}),
-        ...(block.activity.memoryKey ? { memoryKey: block.activity.memoryKey } : {}),
-      },
-      calorieStrategy: {
-        status: block.calorieStrategy.status,
-        deltaKcal: block.calorieStrategy.deltaKcal,
-        ...(block.calorieStrategy.absoluteKcalTarget != null
-          ? { absoluteKcalTarget: block.calorieStrategy.absoluteKcalTarget }
-          : {}),
-        ...(block.calorieStrategy.profileKcalBase != null
-          ? { profileKcalBase: block.calorieStrategy.profileKcalBase }
-          : {}),
-      },
-      meta: sanitizePlannerMetaForFirebase(block.meta),
-    };
+    blocksOut[date] = dayBlockToFirebasePayload(block);
   });
 
   return stripUndefinedDeep({

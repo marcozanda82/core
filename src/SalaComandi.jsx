@@ -14,7 +14,7 @@ import './styles/SalaComandiInline.css';
 import { createPortal } from 'react-dom';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, PieChart, Pie, Cell, Sector } from 'recharts';
 
-import { ref, get, set, push, onValue, remove } from 'firebase/database';
+import { ref, get, set, update, push, onValue, remove } from 'firebase/database';
 
 import {
   calculateConsolidatedAverageScore,
@@ -61,6 +61,12 @@ import DayPlanWidget from './components/DayPlanWidget';
 import DayPlanActionSheet from './components/DayPlanActionSheet';
 import usePlannedDayDelta from './hooks/usePlannedDayDelta';
 import { plannerInitialDataFromDayBlock } from './features/weeklyBlocks/activityCatalog';
+import {
+  createBlockActivity,
+  createCalorieStrategy,
+  createDayBlock,
+  dayBlockToFirebasePayload,
+} from './features/weeklyBlocks/weeklyBlockSchema';
 import TimelineNodeReport from './components/TimelineNodeReport';
 import BodyBatteryModal from './components/BodyBatteryModal';
 import CustomDateTick from './components/CustomDateTick';
@@ -3047,6 +3053,60 @@ export default function SalaComandi() {
     setActiveAction('allenamento');
     setIsDrawerOpen(true);
   }, [todayPlanBlock]);
+
+  const skipTodayPlanSession = useCallback(async () => {
+    const uid = user?.uid;
+    const todayIso = currentTrackerDate || getTodayString();
+    const weekStart = getWeekStartMondayKeyLocal(todayIso);
+
+    if (isSimulationMode || !db || !uid) {
+      setIsPlanActionSheetOpen(false);
+      return;
+    }
+
+    const strategyExtra = {};
+    const existingBase = Number(todayPlanBlock?.calorieStrategy?.profileKcalBase);
+    if (Number.isFinite(existingBase) && existingBase > 0) {
+      strategyExtra.profileKcalBase = Math.round(existingBase);
+    } else if (userProfileKcalBase != null) {
+      strategyExtra.profileKcalBase = userProfileKcalBase;
+    }
+
+    const restBlock = createDayBlock(
+      todayIso,
+      createBlockActivity('REST', { hour: '18:00' }),
+      createCalorieStrategy('maintenance', 0, strategyExtra),
+      {
+        source: 'user',
+        plannerWorkoutType: 'riposo',
+        plannerIntensity: 'rest',
+        plannerDurationMin: 0,
+        updatedAt: Date.now(),
+      }
+    );
+
+    try {
+      const payload = dayBlockToFirebasePayload(restBlock);
+      await set(
+        ref(db, `users/${uid}/weeklyBlockPlan/${weekStart}/blocks/${todayIso}`),
+        payload
+      );
+      await update(ref(db, `users/${uid}/weeklyBlockPlan/${weekStart}`), {
+        updatedAt: Date.now(),
+      });
+    } catch (err) {
+      console.error('[SalaComandi] Salta sessione fallito:', err);
+    } finally {
+      setIsPlanActionSheetOpen(false);
+    }
+  }, [
+    user?.uid,
+    currentTrackerDate,
+    isSimulationMode,
+    db,
+    todayPlanBlock,
+    userProfileKcalBase,
+  ]);
 
   function handleAddEventMenuItem(itemId, source) {
     const fromModal = source === 'modal';
@@ -9558,10 +9618,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           console.log('Avvia traslazione piano');
           setIsPlanActionSheetOpen(false);
         }}
-        onSkip={() => {
-          console.log('Imposta oggi a riposo');
-          setIsPlanActionSheetOpen(false);
-        }}
+        onSkip={skipTodayPlanSession}
       />
 
       {showBiochemicalDiagnostics ? (
