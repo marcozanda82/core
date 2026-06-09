@@ -10,25 +10,26 @@
  * @typedef {DistributionDayInput & { deltaKcal: number }} DistributionDayResult
  */
 
+/** Limiti fisiologici massimi (surplus / deficit) per tipologia giorno. */
 export const GUARDRAILS = {
-  maxSurplus: 400,
-  maxDeficit: -250,
+  workout: { min: -400, max: 450 },
+  rest: { min: -600, max: 200 },
 };
 
-/** Limiti giornalieri per intensità (priorità Tetris). */
+/** Giorni con allenamento (qualsiasi intensità) vs riposo. */
 const INTENSITY_LIMITS = {
-  high: { min: 0, max: 400 },
-  medium: { min: 0, max: 200 },
-  low: { min: -100, max: 50 },
-  rest: { min: -250, max: 0 },
+  high: GUARDRAILS.workout,
+  medium: GUARDRAILS.workout,
+  low: GUARDRAILS.workout,
+  rest: GUARDRAILS.rest,
 };
 
-/** Centroidi iniziali pesati per intensità. */
+/** Centroidi iniziali pesati per intensità (poi spillover fino al target settimanale). */
 const PREFERRED_DELTA = {
-  high: 350,
-  medium: 120,
-  low: -20,
-  rest: -140,
+  high: 400,
+  medium: 250,
+  low: 0,
+  rest: -200,
 };
 
 /** Priorità quando si aumenta il totale settimanale. */
