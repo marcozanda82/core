@@ -7725,9 +7725,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           {homeLongevityInsightLine}
         </div>
       ) : null}
-      {activeBottomTab === 'oggi' ? (
-        <FastingBannerWidget fastingData={fastingData} />
-      ) : null}
       {(activeBottomTab === 'analisi' || (activeBottomTab === 'oggi' && userProfile?.level === 'pro')) && (
       <>
       {/* Cruscotto energetico giornaliero 0-24h */}
@@ -8076,6 +8073,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                     setActiveDialMode('kcal');
                   }}
                 >
+                  <FastingBannerWidget fastingData={fastingData} />
                   <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'visible' }}>
                     <button
                       type="button"
