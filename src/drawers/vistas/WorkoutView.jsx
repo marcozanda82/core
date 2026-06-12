@@ -54,6 +54,27 @@ const PLANNER_EXTRA_TAB_LABELS = {
  * @property {number} [workoutKcal]
  */
 
+/**
+ * @typedef {PlannerWorkoutInitialData & {
+ *   planPhase?: string | null,
+ *   planIsDeload?: boolean,
+ *   planActionName?: string | null,
+ * }} WorkoutPlanDraft
+ */
+
+/** @typedef {'idle' | 'draft' | 'running'} TrackerPhase */
+
+/**
+ * @param {number} totalSec
+ * @returns {string}
+ */
+function formatElapsedMmSs(totalSec) {
+  const sec = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+  const ss = String(sec % 60).padStart(2, '0');
+  return `${mm}:${ss}`;
+}
+
 /** Pesi: gruppi muscolari via chip. Altri strength: nota obbligatoria per il salvataggio. */
 export function workoutActivityRequiresStrengthDetailNote(typeId) {
   const def = getWorkoutActivityTypeDef(typeId);
@@ -297,6 +318,10 @@ export default function WorkoutView({
   onSaveAction,
   onClose,
   onBack,
+  draftFromPlan = false,
+  planDraft = null,
+  onStartWorkoutSession,
+  onDraftConsumed,
   workoutType: workoutTypeProp,
   setWorkoutType: setWorkoutTypeProp,
   workoutStartTime: workoutStartTimeProp,
@@ -354,6 +379,40 @@ export default function WorkoutView({
 
   const selectorIds = isPlannerMode ? PLANNER_WORKOUT_SELECTOR_IDS : WORKOUT_ACTIVITY_SELECTOR_IDS;
   const isRestDay = workoutType === 'riposo';
+  const isPlanDraftMode = !isPlannerMode && draftFromPlan;
+
+  const [trackerPhase, setTrackerPhase] = useState(
+    /** @type {TrackerPhase} */ (isPlanDraftMode ? 'draft' : 'idle')
+  );
+  const [sessionStartedAt, setSessionStartedAt] = useState(/** @type {number | null} */ (null));
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  useEffect(() => {
+    if (isPlanDraftMode) {
+      setTrackerPhase('draft');
+      setSessionStartedAt(null);
+      setElapsedSec(0);
+      return;
+    }
+    setTrackerPhase('idle');
+    setSessionStartedAt(null);
+    setElapsedSec(0);
+  }, [isPlanDraftMode, planDraft]);
+
+  useEffect(() => {
+    if (trackerPhase !== 'running' || sessionStartedAt == null) return undefined;
+    const tick = () => setElapsedSec(Math.floor((Date.now() - sessionStartedAt) / 1000));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [trackerPhase, sessionStartedAt]);
+
+  const handleStartSession = () => {
+    if (typeof onStartWorkoutSession === 'function') onStartWorkoutSession();
+    setSessionStartedAt(Date.now());
+    setElapsedSec(0);
+    setTrackerPhase('running');
+  };
 
   const handleSaveClick = () => {
     if (
@@ -385,7 +444,40 @@ export default function WorkoutView({
       return;
     }
 
-    if (typeof handleSaveWorkout === 'function') handleSaveWorkout();
+    if (typeof handleSaveWorkout === 'function') {
+      handleSaveWorkout();
+      if (isPlanDraftMode && typeof onDraftConsumed === 'function') onDraftConsumed();
+    }
+  };
+
+  const planDraftLabel = (() => {
+    if (!planDraft || typeof planDraft !== 'object') return null;
+    if (planDraft.planActionName) return String(planDraft.planActionName);
+    if (planDraft.planPhase) return `Fase ${planDraft.planPhase}`;
+    return 'Piano di oggi';
+  })();
+
+  const primaryButtonStyle = {
+    width: '100%',
+    padding: '18px',
+    backgroundColor: '#ff6d00',
+    color: '#000',
+    border: 'none',
+    borderRadius: '15px',
+    fontSize: '0.9rem',
+    fontWeight: 'bold',
+    letterSpacing: '2px',
+    cursor: 'pointer',
+    transition: '0.2s',
+    boxShadow: '0 0 20px rgba(255, 109, 0, 0.4)',
+  };
+
+  const secondaryButtonStyle = {
+    ...primaryButtonStyle,
+    backgroundColor: 'transparent',
+    color: '#ff6d00',
+    border: '1px solid rgba(255, 109, 0, 0.55)',
+    boxShadow: 'none',
   };
 
   return (
@@ -406,10 +498,56 @@ export default function WorkoutView({
           &lt; INDIETRO
         </button>
         <h2 style={{ fontSize: '0.8rem', color: '#ff6d00', letterSpacing: '2px', margin: 0 }}>
-          {isPlannerMode ? '⚡ PIANIFICA AZIONE' : '⚡ ATTIVITÀ'}
+          {isPlannerMode
+            ? '⚡ PIANIFICA AZIONE'
+            : isPlanDraftMode && trackerPhase === 'draft'
+              ? '⚡ BOZZA DAL PIANO'
+              : isPlanDraftMode && trackerPhase === 'running'
+                ? '⚡ SESSIONE ATTIVA'
+                : '⚡ ATTIVITÀ'}
         </h2>
         <div style={{ width: '70px' }} />
       </div>
+      {isPlanDraftMode && trackerPhase === 'draft' ? (
+        <div
+          style={{
+            marginBottom: '16px',
+            padding: '10px 12px',
+            borderRadius: '12px',
+            border: planDraft?.planIsDeload
+              ? '1px solid rgba(251, 191, 36, 0.35)'
+              : '1px solid rgba(34, 211, 238, 0.28)',
+            background: planDraft?.planIsDeload
+              ? 'rgba(251, 191, 36, 0.1)'
+              : 'rgba(34, 211, 238, 0.08)',
+            fontSize: '0.75rem',
+            color: planDraft?.planIsDeload ? '#fbbf24' : '#67e8f9',
+            letterSpacing: '0.5px',
+          }}
+        >
+          Bozza precompilata · {planDraftLabel}
+          {planDraft?.planIsDeload ? ' · Scarico' : ''}
+        </div>
+      ) : null}
+      {isPlanDraftMode && trackerPhase === 'running' ? (
+        <div
+          style={{
+            marginBottom: '18px',
+            padding: '14px 12px',
+            borderRadius: '14px',
+            border: '1px solid rgba(255, 109, 0, 0.45)',
+            background: 'rgba(255, 109, 0, 0.08)',
+            textAlign: 'center',
+          }}
+        >
+          <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '2px', marginBottom: '6px' }}>
+            TIMER SESSIONE
+          </div>
+          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#ff6d00', fontVariantNumeric: 'tabular-nums' }}>
+            {formatElapsedMmSs(elapsedSec)}
+          </div>
+        </div>
+      ) : null}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '30px', flexWrap: 'wrap' }}>
         {selectorIds.map((typeId) => {
           const ad = getWorkoutActivityTypeDef(typeId);
@@ -795,26 +933,24 @@ export default function WorkoutView({
           <span>750</span>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={handleSaveClick}
-        style={{
-          width: '100%',
-          padding: '18px',
-          backgroundColor: '#ff6d00',
-          color: '#000',
-          border: 'none',
-          borderRadius: '15px',
-          fontSize: '0.9rem',
-          fontWeight: 'bold',
-          letterSpacing: '2px',
-          cursor: 'pointer',
-          transition: '0.2s',
-          boxShadow: '0 0 20px rgba(255, 109, 0, 0.4)',
-        }}
-      >
-        {isPlannerMode ? 'APPLICA AZIONE' : 'SALVA ATTIVITÀ'}
-      </button>
+      {isPlanDraftMode && trackerPhase === 'draft' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button type="button" onClick={handleStartSession} style={primaryButtonStyle}>
+            AVVIA ALLENAMENTO
+          </button>
+          <button type="button" onClick={handleSaveClick} style={secondaryButtonStyle}>
+            REGISTRA COMPLETATO
+          </button>
+        </div>
+      ) : isPlanDraftMode && trackerPhase === 'running' ? (
+        <button type="button" onClick={handleSaveClick} style={primaryButtonStyle}>
+          TERMINA E REGISTRA
+        </button>
+      ) : (
+        <button type="button" onClick={handleSaveClick} style={primaryButtonStyle}>
+          {isPlannerMode ? 'APPLICA AZIONE' : 'SALVA ATTIVITÀ'}
+        </button>
+      )}
       {!isPlannerMode && (
         <div style={{ marginTop: '30px' }}>
           {workoutsLog.length > 0 && (

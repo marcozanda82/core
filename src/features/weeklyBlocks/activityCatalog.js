@@ -166,6 +166,39 @@ export function plannerInitialDataFromDayBlock(block) {
 }
 
 /**
+ * Bozza precompilata per Activity Tracker dalla pianificazione del giorno.
+ * @param {DayBlock | null | undefined} block
+ * @returns {(PlannerWorkoutInitialData & {
+ *   planPhase?: string | null,
+ *   planIsDeload?: boolean,
+ *   planActionName?: string | null,
+ * }) | null}
+ */
+export function buildWorkoutDraftFromPlanBlock(block) {
+  if (!block) return null;
+
+  const base = plannerInitialDataFromDayBlock(block);
+  const phase = block.meta?.phase != null ? String(block.meta.phase).trim() : null;
+  const muscles = Array.isArray(block.activity?.focus) ? block.activity.focus : [];
+  let details = String(block.meta?.plannerStrengthDetail || '').trim();
+  if (!details && phase) details = `Fase: ${phase}`;
+  if (!details && muscles.length > 0) details = muscles.join(' · ');
+
+  return {
+    ...base,
+    workoutStrengthDetail: details || base.workoutStrengthDetail || '',
+    planPhase: phase,
+    planIsDeload: block.meta?.isDeload === true,
+    planActionName:
+      block.meta?.plannerActionName != null
+        ? String(block.meta.plannerActionName)
+        : block.meta?.plannerWorkoutType != null
+          ? String(block.meta.plannerWorkoutType)
+          : null,
+  };
+}
+
+/**
  * @param {string} dayKey
  * @param {PlannerActionObject} action
  * @param {DayBlock | null | undefined} [existingBlock]

@@ -60,7 +60,7 @@ import DialMaintenanceMarker from './components/DialMaintenanceMarker';
 import DayPlanWidget from './components/DayPlanWidget';
 import DayPlanActionSheet from './components/DayPlanActionSheet';
 import usePlannedDayDelta from './hooks/usePlannedDayDelta';
-import { plannerInitialDataFromDayBlock } from './features/weeklyBlocks/activityCatalog';
+import { buildWorkoutDraftFromPlanBlock } from './features/weeklyBlocks/activityCatalog';
 import {
   createBlockActivity,
   createCalorieStrategy,
@@ -126,6 +126,7 @@ import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
 import WeeklyMetabolicIndicator from './components/WeeklyMetabolicIndicator';
 import MesocycleRadarBadge from './components/MesocycleRadarBadge';
+import FastingBannerWidget from './components/FastingBannerWidget';
 import { computeMesocycleRadar } from './utils/mesocycleRadar';
 import FullscreenGraphView from './features/charts/FullscreenGraphView';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
@@ -1054,6 +1055,8 @@ export default function SalaComandi() {
   );
 
   const [isPlanActionSheetOpen, setIsPlanActionSheetOpen] = useState(false);
+  /** Bozza tracker aperta da Widget del Giorno (piano odierno). */
+  const [workoutPlanDraft, setWorkoutPlanDraft] = useState(/** @type {import('./drawers/vistas/WorkoutView').WorkoutPlanDraft | null} */ (null));
 
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(300);
@@ -3115,28 +3118,45 @@ export default function SalaComandi() {
 
   const openWorkoutFromTodayPlan = useCallback(() => {
     if (!todayPlanBlock) return;
-    const initialData = plannerInitialDataFromDayBlock(todayPlanBlock);
-    const typeVal = initialData.workoutType || 'pesi';
-    const durationMin = parseDurationMinutesInput(initialData.workoutDurationMin, {
+    const draft = buildWorkoutDraftFromPlanBlock(todayPlanBlock);
+    if (!draft) return;
+
+    const typeVal = draft.workoutType || 'pesi';
+    const durationMin = parseDurationMinutesInput(draft.workoutDurationMin, {
       min: WORKOUT_DURATION_MIN,
       max: WORKOUT_DURATION_MAX,
       fallback: WORKOUT_DURATION_DEFAULT,
     });
-    const startT = Number.isFinite(Number(initialData.workoutStartTime))
-      ? Number(initialData.workoutStartTime)
+    const startT = Number.isFinite(Number(draft.workoutStartTime))
+      ? Number(draft.workoutStartTime)
       : getCurrentTimeRoundedTo15Min();
 
     setEditingWorkoutId(null);
     setWorkoutType(resolveWorkoutActivityTypeId(typeVal) ?? typeVal);
-    setWorkoutMuscles(normalizeMuscleGroupArray(initialData.workoutMuscles));
-    setWorkoutKcal(Number(initialData.workoutKcal) || 300);
+    setWorkoutMuscles(normalizeMuscleGroupArray(draft.workoutMuscles));
+    setWorkoutKcal(Number(draft.workoutKcal) || 300);
     setWorkoutDurationMin(String(durationMin));
-    setWorkoutStrengthDetail(String(initialData.workoutStrengthDetail || ''));
+    setWorkoutStrengthDetail(String(draft.workoutStrengthDetail || ''));
     setWorkoutEndTime(Math.min(24, startT + durationMin / 60));
+    setWorkoutPlanDraft(draft);
     setIsPlanActionSheetOpen(false);
     setActiveAction('allenamento');
     setIsDrawerOpen(true);
   }, [todayPlanBlock]);
+
+  const handleStartWorkoutSession = useCallback(() => {
+    const startT = getCurrentTimeRoundedTo15Min();
+    const durationMin = parseDurationMinutesInput(workoutDurationMin, {
+      min: WORKOUT_DURATION_MIN,
+      max: WORKOUT_DURATION_MAX,
+      fallback: WORKOUT_DURATION_DEFAULT,
+    });
+    setWorkoutEndTime(Math.min(24, startT + durationMin / 60));
+  }, [workoutDurationMin]);
+
+  const clearWorkoutPlanDraft = useCallback(() => {
+    setWorkoutPlanDraft(null);
+  }, []);
 
   const skipTodayPlanSession = useCallback(async () => {
     const uid = user?.uid;
@@ -4327,6 +4347,8 @@ Ottimo! Diario aggiornato. 🥗`;
       setEditingWorkoutId(null);
       setWorkoutMuscles([]);
       setWorkoutStrengthDetail('');
+      setWorkoutPlanDraft(null);
+      setIsPlanActionSheetOpen(false);
       closeDrawer();
       return;
     }
@@ -4341,6 +4363,8 @@ Ottimo! Diario aggiornato. 🥗`;
     setEditingWorkoutId(null);
     setWorkoutMuscles([]);
     setWorkoutStrengthDetail('');
+    setWorkoutPlanDraft(null);
+    setIsPlanActionSheetOpen(false);
     closeDrawer();
   };
 
@@ -7701,6 +7725,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           {homeLongevityInsightLine}
         </div>
       ) : null}
+      {activeBottomTab === 'oggi' ? (
+        <FastingBannerWidget fastingData={fastingData} />
+      ) : null}
       {(activeBottomTab === 'analisi' || (activeBottomTab === 'oggi' && userProfile?.level === 'pro')) && (
       <>
       {/* Cruscotto energetico giornaliero 0-24h */}
@@ -8792,7 +8819,14 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         {/* VISTA ALLENAMENTO */}
         {activeAction === 'allenamento' && (
           <WorkoutView
-            onBack={() => setActiveAction(null)}
+            onBack={() => {
+              clearWorkoutPlanDraft();
+              setActiveAction(null);
+            }}
+            draftFromPlan={workoutPlanDraft != null}
+            planDraft={workoutPlanDraft}
+            onStartWorkoutSession={handleStartWorkoutSession}
+            onDraftConsumed={clearWorkoutPlanDraft}
             workoutType={workoutType}
             setWorkoutType={setWorkoutType}
             workoutStartTime={workoutStartTime}
