@@ -8,6 +8,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<SalaComandi />} />
+        {/* Legacy deep-link: reindirizza a / con tab «Pianifica» (WeeklyBuilder in SalaComandi). */}
         <Route path="/planner" element={<WeeklyPlannerPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

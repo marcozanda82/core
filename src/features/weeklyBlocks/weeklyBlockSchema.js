@@ -533,6 +533,8 @@ function sanitizePlannerMetaForFirebase(meta) {
     'plannerActionName',
     'plannerDurationMin',
     'plannerStrengthDetail',
+    'isDeload',
+    'phase',
   ];
   optionalKeys.forEach((key) => {
     const val = src[key];

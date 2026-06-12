@@ -23,6 +23,12 @@ import { getWeekStartMondayKeyLocal } from '../weeklyPlanning';
  *   hasPlannedBlock: boolean,
  *   plannedTargetKcal: number,
  *   todayPlanBlock: import('../features/weeklyBlocks/weeklyBlockSchema').DayBlock | null,
+ *   dayPlanBlock: import('../features/weeklyBlocks/weeklyBlockSchema').DayBlock | null,
+ *   mesocycleSettings: {
+ *     startDate: string | null,
+ *     loadWeeks: number,
+ *     deloadWeeks: number,
+ *   },
  *   isLoading: boolean,
  * }}
  */
@@ -77,6 +83,7 @@ export default function usePlannedDayDelta({
     const plan = weeklyBlockPlan ?? createEmptyWeeklyBlockPlan(weekStart);
     const block =
       dateKey && plan.blocks && typeof plan.blocks === 'object' ? plan.blocks[dateKey] : null;
+    const settings = plan.settings && typeof plan.settings === 'object' ? plan.settings : {};
     const hasPlannedBlock = isUserAssignedDayBlock(block);
     const plannedDelta = hasPlannedBlock
       ? Math.round(Number(block?.calorieStrategy?.deltaKcal) || 0)
@@ -90,6 +97,15 @@ export default function usePlannedDayDelta({
       hasPlannedBlock,
       plannedTargetKcal,
       todayPlanBlock: hasPlannedBlock ? block : null,
+      dayPlanBlock: block,
+      mesocycleSettings: {
+        startDate:
+          typeof settings.mesocycleStartDate === 'string' && settings.mesocycleStartDate.trim()
+            ? settings.mesocycleStartDate.trim()
+            : null,
+        loadWeeks: Math.max(0, Math.round(Number(settings.mesocycleLoadWeeks) || 0)),
+        deloadWeeks: Math.max(0, Math.round(Number(settings.mesocycleDeloadWeeks) || 0)),
+      },
       isLoading,
     };
   }, [weeklyBlockPlan, weekStart, dateKey, normalizedProfileKcal, isLoading]);

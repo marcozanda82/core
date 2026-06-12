@@ -239,46 +239,68 @@ export default function BottomChrome({
           justifyContent: 'space-around',
           alignItems: 'center',
           zIndex: 9999,
+          paddingTop: '6px',
           paddingBottom: 'env(safe-area-inset-bottom)',
           boxSizing: 'border-box',
+          overflow: 'visible',
         }}
       >
-        {BOTTOM_NAV_ITEMS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => handleBottomNavTabSelect(t.id)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '4px',
-              cursor: 'pointer',
-              flex: '1 1 0',
-              minWidth: 0,
-              color: activeBottomTab === t.id ? '#00e5ff' : '#888',
-              fontSize: '0.7rem',
-              padding: '4px 0',
-            }}
-          >
-            <span
+        {BOTTOM_NAV_ITEMS.map((t) => {
+          const isActive = activeBottomTab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => handleBottomNavTabSelect(t.id)}
+              aria-current={isActive ? 'page' : undefined}
               style={{
-                fontSize: t.id === 'menu' ? '1.45rem' : '1.25rem',
-                lineHeight: 1,
-                fontWeight: t.id === 'menu' ? 700 : undefined,
-                display: 'inline-flex',
+                background: 'transparent',
+                border: 'none',
+                display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
+                cursor: 'pointer',
+                flex: '1 1 0',
+                minWidth: 0,
+                padding: '4px 0',
+                overflow: 'visible',
               }}
-              aria-hidden
             >
-              {t.id === 'bussola' ? <Compass size={20} strokeWidth={2.2} /> : t.icon}
-            </span>
-            <span>{t.label}</span>
-          </button>
-        ))}
+              <span
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '4px',
+                  color: isActive ? '#00e5ff' : '#888',
+                  fontSize: '0.7rem',
+                  lineHeight: 1.1,
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  transform: isActive ? 'scale(1.2) translateY(-4px)' : 'scale(1) translateY(0)',
+                  opacity: isActive ? 1 : 0.6,
+                  filter: isActive ? 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.5))' : 'none',
+                  willChange: 'transform, opacity, filter',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: t.id === 'menu' ? '1.45rem' : '1.25rem',
+                    lineHeight: 1,
+                    fontWeight: t.id === 'menu' ? 700 : undefined,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  aria-hidden
+                >
+                  {t.id === 'bussola' ? <Compass size={20} strokeWidth={2.2} /> : t.icon}
+                </span>
+                <span>{t.label}</span>
+              </span>
+            </button>
+          );
+        })}
       </nav>
     </>
   );

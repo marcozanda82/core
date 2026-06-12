@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { get, ref, set } from 'firebase/database';
+import { get, ref, update } from 'firebase/database';
+import { addDays } from '../../../calendarDateUtils';
 import WorkoutView from '../../../drawers/vistas/WorkoutView';
 import {
   createDayBlock,
   createEmptyWeeklyBlockPlan,
+  createRestDayBlock,
+  dayBlockToFirebasePayload,
   draftFromPlansForIsoWindow,
   isUserAssignedDayBlock,
   resolveBlockKcalTarget,
   sanitizeWeeklyBlockPlanFromFirebase,
-  stripUndefinedDeep,
-  weeklyBlockPlanToFirebasePayload,
 } from '../weeklyBlockSchema';
 import { getWeekStartMondayKeyLocal } from '../../../weeklyPlanning';
 import {
@@ -29,6 +30,176 @@ import BalanceEditor from './BalanceEditor';
 import './WeeklyBuilderHeatmapSlider.css';
 
 const DRAFT_PROFILE_KCAL = 2200;
+
+const MESOCYCLE_WEEKS_MIN = 1;
+const MESOCYCLE_WEEKS_MAX = 12;
+const DELOAD_CARDIO_BURN_KCAL = 200;
+
+/**
+ * @param {import('../weeklyBlockSchema').DayBlock | null | undefined} templateDay
+ * @param {string} isoDate
+ * @param {number} dayIndex — indice assoluto nel mesociclo (0…totalDays-1)
+ * @param {number} loadWeeks
+ * @returns {import('../weeklyBlockSchema').DayBlock}
+ */
+function generateMesocycleDayBlock(templateDay, isoDate, dayIndex, loadWeeks) {
+  const isDeload = Math.floor(dayIndex / 7) >= loadWeeks;
+  const profileKcalBase =
+    templateDay?.calorieStrategy?.profileKcalBase ?? DRAFT_PROFILE_KCAL;
+
+  if (!isDeload) {
+    if (!templateDay) return createRestDayBlock(isoDate, 'user');
+    return createDayBlock(isoDate, templateDay.activity, templateDay.calorieStrategy, {
+      ...(templateDay.meta || {}),
+      source: 'user',
+      updatedAt: Date.now(),
+      phase: 'spinta',
+      isDeload: false,
+    });
+  }
+
+  const isCardioDay = dayIndex % 2 === 0;
+  const activity = isCardioDay
+    ? {
+        kind: 'CARDIO',
+        focus: [],
+        hour: '18:00',
+        estimatedBurnKcal: DELOAD_CARDIO_BURN_KCAL,
+        memoryKey: 'CARDIO',
+      }
+    : { kind: 'REST', focus: [] };
+
+  return createDayBlock(
+    isoDate,
+    activity,
+    {
+      status: 'maintenance',
+      deltaKcal: 0,
+      profileKcalBase,
+    },
+    {
+      source: 'user',
+      updatedAt: Date.now(),
+      isDeload: true,
+      phase: 'scarico',
+      plannerWorkoutType: isCardioDay ? 'cardio' : 'riposo',
+      plannerIntensity: isCardioDay ? 'low' : 'rest',
+      plannerActionName: isCardioDay ? 'Cardio (scarico)' : 'Riposo (scarico)',
+    }
+  );
+}
+
+/**
+ * @param {string} uid
+ * @param {import('../weeklyBlockSchema').DayBlock[]} weekTemplate — 7 slot template
+ * @param {string} startDate — ISO primo giorno griglia
+ * @param {number} loadWeeks
+ * @param {number} deloadWeeks
+ * @param {number} weeklyTargetKcal
+ * @param {string} primaryWeekMonday
+ * @returns {Record<string, unknown>}
+ */
+function buildMesocycleFirebaseUpdates(
+  uid,
+  weekTemplate,
+  startDate,
+  loadWeeks,
+  deloadWeeks,
+  weeklyTargetKcal,
+  primaryWeekMonday
+) {
+  const totalDays = (loadWeeks + deloadWeeks) * 7;
+  /** @type {Record<string, unknown>} */
+  const updates = {};
+  /** @type {Set<string>} */
+  const weekMondaysTouched = new Set();
+  const now = Date.now();
+
+  for (let i = 0; i < totalDays; i += 1) {
+    const currentDate = addDays(startDate, i);
+    const templateDay = weekTemplate[i % 7];
+    const generatedBlock = generateMesocycleDayBlock(templateDay, currentDate, i, loadWeeks);
+    const weekMonday = getWeekStartMondayKeyLocal(currentDate);
+
+    weekMondaysTouched.add(weekMonday);
+    updates[`users/${uid}/weeklyBlockPlan/${weekMonday}/blocks/${currentDate}`] =
+      dayBlockToFirebasePayload(generatedBlock);
+  }
+
+  weekMondaysTouched.forEach((weekMonday) => {
+    updates[`users/${uid}/weeklyBlockPlan/${weekMonday}/weekStart`] = weekMonday;
+    updates[`users/${uid}/weeklyBlockPlan/${weekMonday}/updatedAt`] = now;
+    updates[`users/${uid}/weeklyBlockPlan/${weekMonday}/settings/mesocycleLoadWeeks`] = loadWeeks;
+    updates[`users/${uid}/weeklyBlockPlan/${weekMonday}/settings/mesocycleDeloadWeeks`] = deloadWeeks;
+    updates[`users/${uid}/weeklyBlockPlan/${weekMonday}/settings/mesocycleStartDate`] = startDate;
+    if (weekMonday === primaryWeekMonday) {
+      updates[`users/${uid}/weeklyBlockPlan/${weekMonday}/weeklyKcalTarget`] = Math.round(
+        Number(weeklyTargetKcal) || 0
+      );
+    }
+  });
+
+  return updates;
+}
+
+/**
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
+function clampMesocycleWeeks(value, min = MESOCYCLE_WEEKS_MIN, max = MESOCYCLE_WEEKS_MAX) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * @param {{
+ *   label: string,
+ *   value: number,
+ *   onChange: (next: number) => void,
+ *   min?: number,
+ *   max?: number,
+ * }} props
+ */
+function MesocycleWeekStepper({ label, value, onChange, min = MESOCYCLE_WEEKS_MIN, max = MESOCYCLE_WEEKS_MAX }) {
+  const clamped = clampMesocycleWeeks(value, min, max);
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-xs font-medium leading-snug text-slate-400">{label}</label>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label={`Riduci ${label}`}
+          disabled={clamped <= min}
+          onClick={() => onChange(clampMesocycleWeeks(clamped - 1, min, max))}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-600 bg-slate-800 text-lg font-bold text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          −
+        </button>
+        <input
+          type="number"
+          min={min}
+          max={max}
+          value={clamped}
+          onChange={(e) => onChange(clampMesocycleWeeks(e.target.value, min, max))}
+          className="h-9 w-14 rounded-lg border border-slate-600 bg-slate-900 text-center text-sm font-bold text-slate-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          aria-label={label}
+        />
+        <button
+          type="button"
+          aria-label={`Aumenta ${label}`}
+          disabled={clamped >= max}
+          onClick={() => onChange(clampMesocycleWeeks(clamped + 1, min, max))}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-600 bg-slate-800 text-lg font-bold text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /** Obiettivi macro rapidi (chip sotto lo slider). */
 const WEEKLY_TARGET_PRESETS = [
@@ -590,6 +761,8 @@ export default function WeeklyBuilder({
   }, [dynamicIsoKeys]);
 
   const [draftBlocks, setDraftBlocks] = useState(() => createEmptyDraftBlocks(getDynamicWeekDays()));
+  const [loadWeeks, setLoadWeeks] = useState(3);
+  const [deloadWeeks, setDeloadWeeks] = useState(1);
   const [weeklyTargetKcal, setWeeklyTargetKcal] = useState(WEEKLY_TARGET_RANGE.default);
   const [localSliderValue, setLocalSliderValue] = useState(WEEKLY_TARGET_RANGE.default);
   const [isDistributed, setIsDistributed] = useState(false);
@@ -802,33 +975,36 @@ export default function WeeklyBuilder({
     setIsSaving(true);
     setSaveFeedback(null);
 
+    const weekTemplate = dynamicDays.map((day) => draftBlocks[day.key]);
+    const startDate = dynamicDays[0]?.key || toLocalIsoDate();
+    const totalDays = (loadWeeks + deloadWeeks) * 7;
+
+    console.log('[WeeklyBuilder] Mesociclo — generazione:', {
+      startDate,
+      loadWeeks,
+      deloadWeeks,
+      totalDays,
+      weekTemplate,
+      weeklyTargetKcal,
+    });
+
     try {
-      const weekGroups = groupIsoDatesByWeekMonday(dynamicIsoKeys);
-
-      await Promise.all(
-        Object.entries(weekGroups).map(async ([weekMonday, isoDates]) => {
-          const planRef = ref(db, `users/${uid}/weeklyBlockPlan/${weekMonday}`);
-          const snap = await get(planRef);
-          const plan = snap.exists()
-            ? sanitizeWeeklyBlockPlanFromFirebase(snap.val(), weekMonday)
-            : createEmptyWeeklyBlockPlan(weekMonday);
-
-          isoDates.forEach((isoDate) => {
-            const draft = draftBlocks[isoDate];
-            if (!draft || !hasActionBlock(draft)) return;
-            mergeDraftIntoPlanBlock(plan, isoDate, draft);
-          });
-
-          if (weekMonday === primaryWeekMonday) {
-            plan.weeklyKcalTarget = Math.round(Number(weeklyTargetKcal) || 0);
-          }
-
-          const payload = stripUndefinedDeep(weeklyBlockPlanToFirebasePayload(plan));
-          await set(planRef, payload);
-        })
+      const updates = buildMesocycleFirebaseUpdates(
+        uid,
+        weekTemplate,
+        startDate,
+        loadWeeks,
+        deloadWeeks,
+        weeklyTargetKcal,
+        primaryWeekMonday
       );
 
-      setSaveFeedback({ type: 'success', message: 'Settimana salvata! La Livella a Bolla si aggiornerà.' });
+      await update(ref(db), updates);
+
+      setSaveFeedback({
+        type: 'success',
+        message: `Mesociclo salvato (${totalDays} giorni). La Livella a Bolla si aggiornerà.`,
+      });
       if (typeof onSaveSuccess === 'function') {
         window.setTimeout(() => onSaveSuccess(), 1400);
       }
@@ -846,8 +1022,10 @@ export default function WeeklyBuilder({
     authReady,
     db,
     draftBlocks,
-    dynamicIsoKeys,
+    deloadWeeks,
+    dynamicDays,
     isSaving,
+    loadWeeks,
     onSaveSuccess,
     primaryWeekMonday,
     userUid,
@@ -862,14 +1040,40 @@ export default function WeeklyBuilder({
     );
   }
 
+  const totalCycleWeeks = loadWeeks + deloadWeeks;
+
   return (
-    <div className="mx-auto w-full max-w-lg px-3 py-4 text-slate-100">
+    <div className="relative mx-auto w-full max-w-lg px-3 py-4 pb-6 text-slate-100">
       <div className="mb-2">
         <h2 className="text-lg font-bold text-slate-50">Costruttore della Settimana</h2>
         <p className="text-sm text-slate-500">
           Top-down: imposta il budget settimanale. Bottom-up: assegna le attività.
         </p>
       </div>
+
+      <section
+        aria-labelledby="mesocycle-settings-heading"
+        className="mb-4 rounded-2xl border border-slate-700/80 bg-slate-800/40 p-4"
+      >
+        <h3 id="mesocycle-settings-heading" className="mb-3 text-sm font-bold uppercase tracking-wide text-cyan-300/90">
+          Impostazioni Mesociclo
+        </h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <MesocycleWeekStepper
+            label="Settimane di Spinta (Surplus/Deficit attivo)"
+            value={loadWeeks}
+            onChange={setLoadWeeks}
+          />
+          <MesocycleWeekStepper
+            label="Settimane di Scarico (Mantenimento calorico)"
+            value={deloadWeeks}
+            onChange={setDeloadWeeks}
+          />
+        </div>
+        <p className="mt-3 text-center text-xs font-medium text-slate-400">
+          Durata totale ciclo: <span className="text-cyan-300">{totalCycleWeeks}</span> settimane
+        </p>
+      </section>
 
       <MacroStrategyHeader
         weeklyTargetKcal={weeklyTargetKcal}

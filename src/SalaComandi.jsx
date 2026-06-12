@@ -65,13 +65,17 @@ import {
   createBlockActivity,
   createCalorieStrategy,
   createDayBlock,
+  createEmptyWeeklyBlockPlan,
   dayBlockToFirebasePayload,
+  isUserAssignedDayBlock,
+  sanitizeWeeklyBlockPlanFromFirebase,
 } from './features/weeklyBlocks/weeklyBlockSchema';
 import TimelineNodeReport from './components/TimelineNodeReport';
 import BodyBatteryModal from './components/BodyBatteryModal';
 import CustomDateTick from './components/CustomDateTick';
 import {
   MAIN_BOTTOM_TAB_ORDER,
+  PERSISTED_BOTTOM_TAB_IDS,
   BOTTOM_NAV_ITEMS,
   ACTIVE_BOTTOM_TAB_LS_KEY,
   AI_COACH_DISMISSED_INSIGHTS_LS_KEY,
@@ -105,6 +109,7 @@ import {
   weeklyPlanToFirebasePayload,
 } from './weeklyPlanning';
 import WeeklyPlanning from './components/WeeklyPlanning';
+import WeeklyBuilder from './features/weeklyBlocks/components/WeeklyBuilder';
 import MealBuilderOverlay from './features/mealBuilder/MealBuilderOverlay';
 import {
   resolveDistributionMealId,
@@ -120,6 +125,8 @@ import {
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
 import WeeklyMetabolicIndicator from './components/WeeklyMetabolicIndicator';
+import MesocycleRadarBadge from './components/MesocycleRadarBadge';
+import { computeMesocycleRadar } from './utils/mesocycleRadar';
 import FullscreenGraphView from './features/charts/FullscreenGraphView';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
 import OverlayHost from './features/salaComandi/OverlayHost';
@@ -396,6 +403,55 @@ export function calculateAge(dobString) {
   return age;
 }
 
+/** @param {import('./features/weeklyBlocks/weeklyBlockSchema').DayBlock | null | undefined} block */
+function isRestPlanBlockForSwap(block) {
+  if (!isUserAssignedDayBlock(block)) return false;
+  if (String(block.meta?.plannerWorkoutType || '').toLowerCase() === 'riposo') return true;
+  const kind = String(block.activity?.kind || '').toUpperCase();
+  return kind === 'REST' || kind === 'RECOVERY';
+}
+
+/**
+ * @param {string} dateIso
+ * @param {import('./features/weeklyBlocks/weeklyBlockSchema').DayBlock | null | undefined} todayPlanBlock
+ * @param {number | null | undefined} userProfileKcalBase
+ */
+function buildUserRestDayBlock(dateIso, todayPlanBlock, userProfileKcalBase) {
+  const strategyExtra = {};
+  const existingBase = Number(todayPlanBlock?.calorieStrategy?.profileKcalBase);
+  if (Number.isFinite(existingBase) && existingBase > 0) {
+    strategyExtra.profileKcalBase = Math.round(existingBase);
+  } else if (userProfileKcalBase != null) {
+    strategyExtra.profileKcalBase = userProfileKcalBase;
+  }
+  return createDayBlock(
+    dateIso,
+    createBlockActivity('REST', { hour: '18:00' }),
+    createCalorieStrategy('maintenance', 0, strategyExtra),
+    {
+      source: 'user',
+      plannerWorkoutType: 'riposo',
+      plannerIntensity: 'rest',
+      plannerDurationMin: 0,
+      updatedAt: Date.now(),
+    }
+  );
+}
+
+/** @param {import('./features/weeklyBlocks/weeklyBlockSchema').DayBlock} block @param {string} targetDate */
+function relocatePlanBlockToDate(block, targetDate) {
+  return {
+    ...block,
+    date: targetDate,
+    activity: {
+      ...block.activity,
+      focus: Array.isArray(block.activity?.focus) ? [...block.activity.focus] : [],
+    },
+    calorieStrategy: { ...block.calorieStrategy },
+    meta: { ...(block.meta || {}), source: 'user', updatedAt: Date.now() },
+  };
+}
+
 export default function SalaComandi() {
   const navigate = useNavigate();
   const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
@@ -454,7 +510,7 @@ export default function SalaComandi() {
   }, []);
 
   useEffect(() => {
-    if (!MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)) return;
+    if (!PERSISTED_BOTTOM_TAB_IDS.includes(activeBottomTab)) return;
     try {
       localStorage.setItem(ACTIVE_BOTTOM_TAB_LS_KEY, activeBottomTab);
     } catch {
@@ -463,7 +519,7 @@ export default function SalaComandi() {
   }, [activeBottomTab]);
 
   useEffect(() => {
-    if (!MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)) {
+    if (!PERSISTED_BOTTOM_TAB_IDS.includes(activeBottomTab)) {
       setActiveBottomTab('oggi');
     }
   }, [activeBottomTab]);
@@ -568,7 +624,7 @@ export default function SalaComandi() {
         return;
       }
       if (tabId === 'pianifica') {
-        navigate('/planner');
+        setActiveBottomTab('pianifica');
         return;
       }
       const fromIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(activeBottomTab);
@@ -961,13 +1017,41 @@ export default function SalaComandi() {
     return null;
   }, [effectiveTargetsForCurrentDate?.kcal, userTargets?.kcal]);
 
-  const { plannedDelta, hasPlannedBlock, plannedTargetKcal, todayPlanBlock } = usePlannedDayDelta({
+  const {
+    plannedDelta,
+    hasPlannedBlock,
+    plannedTargetKcal,
+    todayPlanBlock,
+    dayPlanBlock,
+    mesocycleSettings,
+  } = usePlannedDayDelta({
     db,
     user,
     dateKey: currentTrackerDate || getTodayString(),
     profileKcal: userProfileKcalBase,
     isSimulationMode,
   });
+
+  const mesocycleRadar = useMemo(
+    () =>
+      computeMesocycleRadar({
+        mesocycleStartDate: mesocycleSettings?.startDate,
+        mesocycleLoadWeeks: mesocycleSettings?.loadWeeks,
+        mesocycleDeloadWeeks: mesocycleSettings?.deloadWeeks,
+        viewDateIso: currentTrackerDate || getTodayString(),
+        isDeload: dayPlanBlock?.meta?.isDeload,
+        phase: dayPlanBlock?.meta?.phase,
+      }),
+    [
+      mesocycleSettings?.startDate,
+      mesocycleSettings?.loadWeeks,
+      mesocycleSettings?.deloadWeeks,
+      currentTrackerDate,
+      dayPlanBlock?.meta?.isDeload,
+      dayPlanBlock?.meta?.phase,
+      getTodayString,
+    ]
+  );
 
   const [isPlanActionSheetOpen, setIsPlanActionSheetOpen] = useState(false);
 
@@ -3064,26 +3148,7 @@ export default function SalaComandi() {
       return;
     }
 
-    const strategyExtra = {};
-    const existingBase = Number(todayPlanBlock?.calorieStrategy?.profileKcalBase);
-    if (Number.isFinite(existingBase) && existingBase > 0) {
-      strategyExtra.profileKcalBase = Math.round(existingBase);
-    } else if (userProfileKcalBase != null) {
-      strategyExtra.profileKcalBase = userProfileKcalBase;
-    }
-
-    const restBlock = createDayBlock(
-      todayIso,
-      createBlockActivity('REST', { hour: '18:00' }),
-      createCalorieStrategy('maintenance', 0, strategyExtra),
-      {
-        source: 'user',
-        plannerWorkoutType: 'riposo',
-        plannerIntensity: 'rest',
-        plannerDurationMin: 0,
-        updatedAt: Date.now(),
-      }
-    );
+    const restBlock = buildUserRestDayBlock(todayIso, todayPlanBlock, userProfileKcalBase);
 
     try {
       const payload = dayBlockToFirebasePayload(restBlock);
@@ -3096,6 +3161,85 @@ export default function SalaComandi() {
       });
     } catch (err) {
       console.error('[SalaComandi] Salta sessione fallito:', err);
+    } finally {
+      setIsPlanActionSheetOpen(false);
+    }
+  }, [
+    user?.uid,
+    currentTrackerDate,
+    isSimulationMode,
+    db,
+    todayPlanBlock,
+    userProfileKcalBase,
+  ]);
+
+  const handlePostponeWorkout = useCallback(async () => {
+    const uid = user?.uid;
+    const todayIso = currentTrackerDate || getTodayString();
+
+    if (isSimulationMode || !db || !uid || !todayPlanBlock) {
+      setIsPlanActionSheetOpen(false);
+      return;
+    }
+
+    if (isRestPlanBlockForSwap(todayPlanBlock)) {
+      setIsPlanActionSheetOpen(false);
+      return;
+    }
+
+    try {
+      /** @type {Map<string, import('./features/weeklyBlocks/weeklyBlockSchema').WeeklyBlockPlan>} */
+      const plansByWeek = new Map();
+
+      const loadPlanForDate = async (isoDate) => {
+        const weekMonday = getWeekStartMondayKeyLocal(isoDate);
+        if (!plansByWeek.has(weekMonday)) {
+          const snap = await get(ref(db, `users/${uid}/weeklyBlockPlan/${weekMonday}`));
+          plansByWeek.set(
+            weekMonday,
+            snap.exists()
+              ? sanitizeWeeklyBlockPlanFromFirebase(snap.val(), weekMonday)
+              : createEmptyWeeklyBlockPlan(weekMonday)
+          );
+        }
+        return plansByWeek.get(weekMonday);
+      };
+
+      let restDate = null;
+      for (let offset = 1; offset <= 6; offset += 1) {
+        const candidateIso = addDays(todayIso, offset);
+        const plan = await loadPlanForDate(candidateIso);
+        const candidateBlock = plan?.blocks?.[candidateIso];
+        if (isRestPlanBlockForSwap(candidateBlock)) {
+          restDate = candidateIso;
+          break;
+        }
+      }
+
+      if (!restDate) {
+        window.alert(
+          "Nessun giorno di riposo disponibile per posticipare l'allenamento. Usa 'Salta sessione'."
+        );
+        setIsPlanActionSheetOpen(false);
+        return;
+      }
+
+      const weekToday = getWeekStartMondayKeyLocal(todayIso);
+      const weekRest = getWeekStartMondayKeyLocal(restDate);
+      const todayRestBlock = buildUserRestDayBlock(todayIso, todayPlanBlock, userProfileKcalBase);
+      const relocatedBlock = relocatePlanBlockToDate(todayPlanBlock, restDate);
+
+      await update(ref(db, `users/${uid}/weeklyBlockPlan/${weekToday}`), {
+        [`blocks/${todayIso}`]: dayBlockToFirebasePayload(todayRestBlock),
+        updatedAt: Date.now(),
+      });
+
+      await update(ref(db, `users/${uid}/weeklyBlockPlan/${weekRest}`), {
+        [`blocks/${restDate}`]: dayBlockToFirebasePayload(relocatedBlock),
+        updatedAt: Date.now(),
+      });
+    } catch (err) {
+      console.error('[SalaComandi] Posticipa allenamento fallito:', err);
     } finally {
       setIsPlanActionSheetOpen(false);
     }
@@ -6336,6 +6480,7 @@ ${dbKeys || 'n/d'}`;
   const mealPieData = useMemo(() => {
     // Palette Sci-Fi per distinguere i vari pasti in modo univoco
     const PIE_COLORS = ['#00e5ff', '#b388ff', '#00e676', '#ffea00', '#ff9800', '#f48fb1', '#4fc3f7', '#aed581', '#ffb74d'];
+    const rimanentiSliceColor = 'rgba(255, 255, 255, 0.05)';
 
     const mealsById = {};
 
@@ -6390,25 +6535,32 @@ ${dbKeys || 'n/d'}`;
 
     let data = calculatedPieData.filter(d => d.value > 0);
     const currentTotal = data.reduce((s, d) => s + d.value, 0);
-    const targetKcal = dynamicDailyKcal || (userTargets?.kcal ?? 2000);
-    if (currentTotal < targetKcal) {
+    const targetKcal =
+      Math.round(
+        Number(dynamicDailyKcal) ||
+        Number(baseKcal) ||
+        Number(userProfileKcalBase) ||
+        Number(userTargets?.kcal) ||
+        2000
+      ) || 2000;
+    if (targetKcal > 0 && currentTotal < targetKcal) {
       data = [...data, {
         name: 'Rimanenti',
         value: targetKcal - currentTotal,
         macros: null,
         id: 'rimanenti',
-        fill: 'rgba(255, 255, 255, 0.05)',
-        color: 'rgba(255, 255, 255, 0.05)'
+        fill: rimanentiSliceColor,
+        color: rimanentiSliceColor,
       }];
     }
     if (data.length === 0) {
       data = [{
         name: 'Rimanenti',
-        value: userTargets?.kcal ?? 2000,
+        value: targetKcal,
         macros: null,
         id: 'rimanenti',
-        fill: 'rgba(255,255,255,0.05)',
-        color: 'rgba(255,255,255,0.05)'
+        fill: rimanentiSliceColor,
+        color: rimanentiSliceColor,
       }];
     }
     const sortedPieData = [...data].sort((a, b) => {
@@ -6419,7 +6571,7 @@ ${dbKeys || 'n/d'}`;
       return (Number(tA) || 0) - (Number(tB) || 0);
     });
     return sortedPieData;
-  }, [activeLog, userTargets?.kcal, dynamicDailyKcal]);
+  }, [activeLog, userTargets?.kcal, dynamicDailyKcal, baseKcal, userProfileKcalBase]);
 
   const mealPieDisplayData = useMemo(() => {
     if (activeDialMode === 'kcal') return mealPieData;
@@ -7503,6 +7655,26 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         }
       />
 
+      {activeBottomTab === 'oggi' && mesocycleRadar?.show ? (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            width: '100%',
+            marginTop: '-4px',
+            marginBottom: '6px',
+            padding: '0 12px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <MesocycleRadarBadge
+            inDeload={mesocycleRadar.inDeload}
+            currentWeek={mesocycleRadar.currentWeek}
+            totalWeeks={mesocycleRadar.totalWeeks}
+          />
+        </div>
+      ) : null}
+
       {MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab) && (
       <div
         key={activeBottomTab}
@@ -7854,30 +8026,19 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
             const dialKcalSurplus =
               dialConsumedKcal > dialDailyTargetKcal ? dialConsumedKcal - dialDailyTargetKcal : 0;
             const dialKcalRemaining = Math.max(0, dialDailyTargetKcal - dialConsumedKcal);
+            const dialTdeeKcal = Math.round(Number(profileTdeeKcal ?? userProfileKcalBase ?? 0) || 0);
             const dialKcalRestLabel =
-              dialKcalSurplus > 0
-                ? 'SURPLUS'
-                : dialPlannedDelta > 0
-                  ? 'RESTANTI (SURPLUS)'
-                  : dialPlannedDelta < 0
-                    ? 'RESTANTI (DEFICIT)'
-                    : 'RESTANTI (PAREGGIO)';
+              dialKcalSurplus > 0 ? 'SURPLUS' : 'RESTANTI';
             const dialKcalGoalLine =
               dialKcalSurplus > 0
-                ? `obiettivo ${dialDailyTargetKcal} kcal · assunte ${dialConsumedKcal}`
-                : dialPlannedDelta > 0
-                  ? `Obiettivo ${dialDailyTargetKcal} kcal (+${dialPlannedDelta})`
-                  : dialPlannedDelta < 0
-                    ? `Obiettivo ${dialDailyTargetKcal} kcal (−${Math.abs(dialPlannedDelta)})`
-                    : `Obiettivo ${dialDailyTargetKcal} kcal`;
+                ? `Base ${dialTdeeKcal} kcal | Target ${dialDailyTargetKcal} kcal · assunte ${dialConsumedKcal}`
+                : `Base ${dialTdeeKcal} kcal | Target ${dialDailyTargetKcal} kcal`;
             const showMaintenanceMarker =
-              activeDialMode === 'kcal' &&
-              hasPlannedBlock &&
-              dialPlannedDelta > 0 &&
-              dialDailyTargetKcal > 0;
+              activeDialMode === 'kcal' && hasPlannedBlock && dialDailyTargetKcal > 0;
             const maintenanceMarkerRatio = showMaintenanceMarker && profileTdeeKcal != null
               ? profileTdeeKcal / dialDailyTargetKcal
               : 0;
+            const maintenanceMarkerIsDeficit = dialPlannedDelta < 0;
             return (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
@@ -8034,12 +8195,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                           <div
                             style={{
                               color: '#888',
-                              fontSize:
-                                activeDialMode === 'kcal' && dialKcalRestLabel.includes('(')
-                                  ? '0.72rem'
-                                  : '0.9rem',
+                              fontSize: '0.9rem',
                               textTransform: 'uppercase',
-                              letterSpacing: dialKcalRestLabel.includes('(') ? '1px' : '2px',
+                              letterSpacing: '2px',
                             }}
                           >
                             {activeDialMode === 'kcal' && dialKcalRestLabel}
@@ -8117,6 +8275,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                       {showMaintenanceMarker ? (
                         <DialMaintenanceMarker
                           tdeeRatio={maintenanceMarkerRatio}
+                          isDeficit={maintenanceMarkerIsDeficit}
                           size={310}
                         />
                       ) : null}
@@ -8504,6 +8663,30 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
               weeklyKcalChartReference={weeklyKcalChartReference}
             />
           </div>
+        </div>
+      )}
+      {activeBottomTab === 'pianifica' && (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            width: '100%',
+            boxSizing: 'border-box',
+            paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)',
+          }}
+        >
+          <WeeklyBuilder
+            db={db}
+            userUid={user?.uid ?? null}
+            weekStart={getWeekStartMondayKeyLocal(currentTrackerDate || getTodayString())}
+            authReady={authReady}
+            onSaveSuccess={() => setActiveBottomTab('oggi')}
+          />
         </div>
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
@@ -9614,10 +9797,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         open={isPlanActionSheetOpen}
         onClose={() => setIsPlanActionSheetOpen(false)}
         onStartWorkout={openWorkoutFromTodayPlan}
-        onPostpone={() => {
-          console.log('Avvia traslazione piano');
-          setIsPlanActionSheetOpen(false);
-        }}
+        onPostpone={handlePostponeWorkout}
         onSkip={skipTodayPlanSession}
       />
 

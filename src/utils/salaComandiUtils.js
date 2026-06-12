@@ -1,5 +1,6 @@
 import {
   MAIN_BOTTOM_TAB_ORDER,
+  PERSISTED_BOTTOM_TAB_IDS,
   ACTIVE_BOTTOM_TAB_LS_KEY,
   EVENT_USAGE_LS_KEY,
   EVENT_USAGE_DEFAULT,
@@ -30,7 +31,7 @@ export function readPersistedActiveBottomTab() {
   if (typeof localStorage === 'undefined') return 'oggi';
   try {
     const v = localStorage.getItem(ACTIVE_BOTTOM_TAB_LS_KEY);
-    if (v && MAIN_BOTTOM_TAB_ORDER.includes(v)) return v;
+    if (v && PERSISTED_BOTTOM_TAB_IDS.includes(v)) return v;
   } catch {
     /* ignore */
   }

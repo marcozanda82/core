@@ -1,6 +1,9 @@
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu» e «Pianifica»). */
 export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola'];
 
+/** Tab bottom bar persistibili in localStorage (include viste fuori dallo swipe). */
+export const PERSISTED_BOTTOM_TAB_IDS = [...MAIN_BOTTOM_TAB_ORDER, 'pianifica'];
+
 /** Voci barra inferiore (sempre tutte visibili; non condizionare al caricamento dati). */
 export const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },

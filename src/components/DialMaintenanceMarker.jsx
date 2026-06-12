@@ -1,19 +1,30 @@
 /**
- * Tacca di mantenimento (TDEE) sull'anello kcal quando il target include surplus pianificato.
- * @param {{ tdeeRatio: number, size?: number }} props — `tdeeRatio` = TDEE / target (0–1)
+ * Tacca di mantenimento (TDEE) sull'anello kcal rispetto al target pianificato.
+ * @param {{
+ *   tdeeRatio: number,
+ *   isDeficit?: boolean,
+ *   size?: number,
+ * }} props — `tdeeRatio` = TDEE / target (può essere > 1 in deficit)
  */
-export default function DialMaintenanceMarker({ tdeeRatio, size = 310 }) {
-  const ratio = Math.max(0, Math.min(1, Number(tdeeRatio) || 0));
+export default function DialMaintenanceMarker({ tdeeRatio, isDeficit = false, size = 310 }) {
+  const rawRatio = Math.max(0, Number(tdeeRatio) || 0);
+  // Oltre il 100% del target (deficit): tacca al termine del giro anello
+  const arcPosition = rawRatio > 1 ? 1 : rawRatio;
   const cx = size / 2;
   const cy = size / 2;
   const half = size / 2;
   const rInner = 0.68 * half;
   const rOuter = 0.85 * half;
-  const angleRad = -Math.PI / 2 + ratio * 2 * Math.PI;
+  const angleRad = -Math.PI / 2 + arcPosition * 2 * Math.PI;
   const x1 = cx + rInner * Math.cos(angleRad);
   const y1 = cy + rInner * Math.sin(angleRad);
   const x2 = cx + (rOuter + 5) * Math.cos(angleRad);
   const y2 = cy + (rOuter + 5) * Math.sin(angleRad);
+
+  const lineStroke = isDeficit ? '#0ea5e9' : '#f97316';
+  const lineDash = isDeficit ? '4 4' : undefined;
+  const dotFill = isDeficit ? 'rgba(14, 165, 233, 0.55)' : '#fb923c';
+  const dotStroke = isDeficit ? '#0369a1' : '#ea580c';
 
   return (
     <svg
@@ -28,16 +39,18 @@ export default function DialMaintenanceMarker({ tdeeRatio, size = 310 }) {
         y1={y1}
         x2={x2}
         y2={y2}
-        stroke="rgba(226, 232, 240, 0.95)"
+        stroke={lineStroke}
         strokeWidth={2.5}
         strokeLinecap="round"
+        strokeDasharray={lineDash}
+        opacity={isDeficit ? 0.85 : 1}
       />
       <circle
         cx={x2}
         cy={y2}
         r={4}
-        fill="#e2e8f0"
-        stroke="#94a3b8"
+        fill={dotFill}
+        stroke={dotStroke}
         strokeWidth={1}
       />
     </svg>
