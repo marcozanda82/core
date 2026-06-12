@@ -767,7 +767,6 @@ export default function SalaComandi() {
   const [coachPrefsTick, setCoachPrefsTick] = useState(0);
   const [hasNewInsight, setHasNewInsight] = useState(false);
   const [aiCoachBulbPulseCycles, setAiCoachBulbPulseCycles] = useState(0);
-  const [isAiCoachBulbHovered, setIsAiCoachBulbHovered] = useState(false);
   const [isAiCoachInsightArmed, setIsAiCoachInsightArmed] = useState(false);
   const [dismissedAiCoachInsights, setDismissedAiCoachInsights] = useState(() => readDismissedAiCoachInsights());
   const [isAiCoachSuggestionModalOpen, setIsAiCoachSuggestionModalOpen] = useState(false);
@@ -6267,17 +6266,6 @@ ${dbKeys || 'n/d'}`;
     shouldDelayAiCoachInsight,
   ]);
 
-  const handleOpenAiCoachSuggestionModal = useCallback(() => {
-    if (!isAiCoachSuggestionActive || !isAiCoachInsightArmed) return;
-    setHasNewInsight(false);
-    setAiCoachBulbPulseCycles(0);
-    if (aiCoachInsightReminderTimeoutRef.current) {
-      clearTimeout(aiCoachInsightReminderTimeoutRef.current);
-      aiCoachInsightReminderTimeoutRef.current = null;
-    }
-    setIsAiCoachSuggestionModalOpen(true);
-  }, [isAiCoachSuggestionActive, isAiCoachInsightArmed]);
-
   const handleAiCoachClose = useCallback(() => {
     beginAiCoachCooldown(180000);
   }, [beginAiCoachCooldown]);
@@ -8075,46 +8063,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                 >
                   <FastingBannerWidget fastingData={fastingData} />
                   <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'visible' }}>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenAiCoachSuggestionModal();
-                      }}
-                      onMouseEnter={() => setIsAiCoachBulbHovered(true)}
-                      onMouseLeave={() => setIsAiCoachBulbHovered(false)}
-                      disabled={!isAiCoachSuggestionActive || !isAiCoachInsightArmed}
-                      aria-label={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Apri suggerimento metabolico' : 'Nessun suggerimento metabolico attivo'}
-                      title={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Suggerimento attivo' : 'Nessun suggerimento attivo'}
-                      style={{
-                        position: 'absolute',
-                        top: 6,
-                        right: 6,
-                        zIndex: 2,
-                        background: 'transparent',
-                        border: '1px solid rgba(255,255,255,0.12)',
-                        borderRadius: 999,
-                        width: 32,
-                        height: 32,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '1rem',
-                        lineHeight: 1,
-                        padding: 0,
-                        cursor: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'pointer' : 'default',
-                        color: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '#facc15' : '#64748b',
-                        opacity: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 0.85 : 0.55,
-                        transform: isAiCoachBulbHovered && isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'scale(1.1)' : 'scale(1)',
-                        transition: 'transform 140ms ease, opacity 180ms ease, box-shadow 180ms ease',
-                        animation: isAiCoachSuggestionActive && isAiCoachInsightArmed && aiCoachBulbPulseCycles > 0
-                          ? `pulseDot 460ms ease-in-out ${aiCoachBulbPulseCycles}`
-                          : 'none',
-                        boxShadow: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '0 0 5px rgba(250,204,21,0.12)' : 'none',
-                      }}
-                    >
-                      💡
-                    </button>
                     {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
                     <div
                       className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
