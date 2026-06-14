@@ -1569,7 +1569,7 @@ export default function SalaComandi() {
     [fullHistory, currentTrackerDate, userTargets]
   );
 
-  const [metabolicCompassTimeframe, setMetabolicCompassTimeframe] = useState('7d');
+  const [metabolicCompassTimeframe, setMetabolicCompassTimeframe] = useState('1d');
   const metabolicMapData = useMetabolicMapEngine({
     dailyHistory: metabolicCompassDailyHistory,
     bodyMetricsHistory,

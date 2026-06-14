@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { METABOLIC_GOAL } from './metabolicDirection';
 import { computeMetabolicMapCompassBundle } from './features/salaComandi/engines/metabolicMapEngine';
 import MetabolicDataAudit from './MetabolicDataAudit';
@@ -12,8 +12,11 @@ import {
 import { generateCoachAdvice } from './features/salaComandi/engines/coachEngine';
 import MetabolicCoachCompact from '@/features/salaComandi/components/MetabolicCoachCompact';
 import useMetabolicCoach from './features/salaComandi/hooks/useMetabolicCoach';
+import { mapBundleToPillars } from './features/metabolic/pillarsMapper';
+import MetabolicPillarsTelemetry from './features/metabolic/components/MetabolicPillarsTelemetry';
+import MetabolicBubbleRadar from './features/metabolic/components/MetabolicBubbleRadar';
 
-const DEFAULT_TIMEFRAME = '7d';
+const DEFAULT_TIMEFRAME = '1d';
 const RADAR_TIMEFRAMES = [
   { value: 'AUTO', label: 'AUTO' },
   { value: '1D', label: 'IERI' },
@@ -41,8 +44,117 @@ function metabolicGoalToCompassGoal(metabolicGoal) {
 
 const COMPASS_DEBUG_ALL_TIMEFRAMES = ['1d', '7d', '14d', '30d'];
 
+/** Converte il valore UI del radar nel timeframe del motore (`1d` / `7d` / …). */
+function radarTimeframeToEngine(radarValue) {
+  const map = {
+    '1D': '1d',
+    '7D': '7d',
+    '14D': '14d',
+    '30D': '30d',
+    AUTO: '7d',
+  };
+  return map[String(radarValue).toUpperCase()] || '7d';
+}
+
+/** Converte il timeframe motore nel tab radar attivo. */
+function engineTimeframeToRadar(engineValue) {
+  const map = {
+    '1d': '1D',
+    '7d': '7D',
+    '14d': '14D',
+    '30d': '30D',
+  };
+  return map[String(engineValue).toLowerCase()] || 'AUTO';
+}
+
 /** `true` in dev: pannello raw/visual bussola e (opz.) audit espandibile. Produzione: sempre `false`. */
 const SHOW_METABOLIC_DEBUG = false;
+
+/**
+ * @param {{
+ *   active: boolean,
+ *   onClick: () => void,
+ *   children: React.ReactNode,
+ *   variant?: 'view' | 'timeframe' | 'goal',
+ *   reducedMotion?: boolean,
+ *   'aria-label'?: string,
+ * }} props
+ */
+function MetabolicTabButton({
+  active,
+  onClick,
+  children,
+  variant = 'view',
+  reducedMotion = false,
+  ...rest
+}) {
+  const transition = reducedMotion
+    ? 'none'
+    : variant === 'timeframe'
+      ? 'background 0.35s ease, color 0.35s ease, box-shadow 0.35s ease'
+      : 'background 0.25s ease, color 0.25s ease, border-color 0.25s ease';
+
+  const base = {
+    flex: 1,
+    margin: 0,
+    cursor: 'pointer',
+    transition,
+    WebkitTapHighlightColor: 'transparent',
+  };
+
+  const variantStyle =
+    variant === 'timeframe'
+      ? {
+          minWidth: 0,
+          padding: '8px 5px',
+          borderRadius: 8,
+          border: 'none',
+          fontSize: 10,
+          fontWeight: 650,
+          letterSpacing: '0.11em',
+          textTransform: 'uppercase',
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+          color: active ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.42)',
+          background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+          boxShadow: active ? '0 0 18px rgba(255,255,255,0.05)' : 'none',
+        }
+      : variant === 'goal'
+        ? {
+            padding: '8px 9px',
+            borderRadius: 12,
+            border: active
+              ? '1px solid rgba(110, 231, 255, 0.56)'
+              : '1px solid rgba(255,255,255,0.12)',
+            background: active ? 'rgba(34,211,238,0.14)' : 'rgba(255,255,255,0.04)',
+            color: active ? 'rgba(248,250,252,0.96)' : 'rgba(203,213,225,0.7)',
+            fontSize: 11,
+            fontWeight: active ? 640 : 520,
+          }
+        : {
+            padding: '8px 10px',
+            borderRadius: 999,
+            border: active
+              ? '1px solid rgba(148, 197, 255, 0.7)'
+              : '1px solid rgba(255,255,255,0.12)',
+            background: active ? 'rgba(148, 197, 255, 0.16)' : 'rgba(255,255,255,0.04)',
+            color: active ? 'rgba(241, 245, 249, 0.96)' : 'rgba(226,232,240,0.62)',
+            fontSize: 12,
+            fontWeight: 650,
+          };
+
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{ ...base, ...variantStyle }}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
 
 function CompassDebugPanel({ selectedTimeframe, mapData, compassDebugByTimeframe }) {
   const {
@@ -151,7 +263,7 @@ export default function MetabolicUnifiedView({
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
   const [currentView, setCurrentView] = useState('MAP');
   const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_TIMEFRAME);
-  const [radarTimeframe, setRadarTimeframe] = useState('AUTO');
+  const [radarTimeframe, setRadarTimeframe] = useState('1D');
   const [metabolicGoal, setMetabolicGoal] = useState('LONGEVITY');
   const [mapZoom, setMapZoom] = useState(1);
 
@@ -160,14 +272,28 @@ export default function MetabolicUnifiedView({
   const selectedTimeframe = isTfControlled ? selectedTimeframeProp : timeframeInternal;
   const setSelectedTimeframe = isTfControlled ? onTimeframeChange : setTimeframeInternal;
 
+  useEffect(() => {
+    if (selectedTimeframeProp !== undefined) {
+      setRadarTimeframe(engineTimeframeToRadar(selectedTimeframeProp));
+    }
+  }, [selectedTimeframeProp]);
+
+  const handleRadarTimeframeChange = useCallback(
+    (radarValue) => {
+      setRadarTimeframe(radarValue);
+      setSelectedTimeframe(radarTimeframeToEngine(radarValue));
+    },
+    [setSelectedTimeframe],
+  );
+
   const {
     metabolicMapInputs,
     metabolicMapRawDetails,
     baselineOffset,
     mapZoneColor,
-    dailyMapPositions,
+    dailyMapPositions = [],
     projectedTrajectory,
-  } = mapData;
+  } = mapData ?? {};
 
   useEffect(() => {
     if (import.meta.env.DEV) {
@@ -204,6 +330,8 @@ export default function MetabolicUnifiedView({
     selectedTimeframe,
     dailyHistory,
   });
+
+  const pillarTelemetry = useMemo(() => mapBundleToPillars(mapData), [mapData]);
 
   const targetWeight = useMemo(() => {
     const profileTarget = Number(userTargets?.weight);
@@ -360,36 +488,17 @@ export default function MetabolicUnifiedView({
           {[
             { value: 'MAP', label: '🗺️ Mappa' },
             { value: 'COMPASS', label: '🧭 Bussola' },
-          ].map(({ value, label }) => {
-            const active = currentView === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setCurrentView(value)}
-                style={{
-                  flex: 1,
-                  padding: '8px 10px',
-                  borderRadius: 999,
-                  border: active
-                    ? '1px solid rgba(148, 197, 255, 0.7)'
-                    : '1px solid rgba(255,255,255,0.12)',
-                  background: active ? 'rgba(148, 197, 255, 0.16)' : 'rgba(255,255,255,0.04)',
-                  color: active ? 'rgba(241, 245, 249, 0.96)' : 'rgba(226,232,240,0.62)',
-                  fontSize: 12,
-                  fontWeight: 650,
-                  cursor: 'pointer',
-                  transition: reducedMotion
-                    ? 'none'
-                    : 'background 0.25s ease, color 0.25s ease, border-color 0.25s ease',
-                }}
-              >
-                {label}
-              </button>
-            );
-          })}
+          ].map(({ value, label }) => (
+            <MetabolicTabButton
+              key={value}
+              active={currentView === value}
+              onClick={() => setCurrentView(value)}
+              variant="view"
+              reducedMotion={reducedMotion}
+            >
+              {label}
+            </MetabolicTabButton>
+          ))}
         </div>
 
         <div
@@ -404,81 +513,17 @@ export default function MetabolicUnifiedView({
             background: 'rgba(255,255,255,0.04)',
           }}
         >
-          {RADAR_TIMEFRAMES.map(({ value, label }) => {
-            const active = radarTimeframe === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setRadarTimeframe(value)}
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  padding: '8px 5px',
-                  borderRadius: 8,
-                  border: 'none',
-                  margin: 0,
-                  cursor: 'pointer',
-                  fontSize: 10,
-                  fontWeight: 650,
-                  letterSpacing: '0.11em',
-                  textTransform: 'uppercase',
-                  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-                  color: active ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.42)',
-                  background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
-                  boxShadow: active ? '0 0 18px rgba(255,255,255,0.05)' : 'none',
-                  transition:
-                    'background 0.35s ease, color 0.35s ease, box-shadow 0.35s ease',
-                  WebkitTapHighlightColor: 'transparent',
-                }}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div
-          role="tablist"
-          aria-label="Obiettivo metabolico"
-          style={{
-            display: 'flex',
-            width: '100%',
-            gap: 6,
-          }}
-        >
-          {METABOLIC_GOALS.map(({ value, label }) => {
-            const active = metabolicGoal === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setMetabolicGoal(value)}
-                style={{
-                  flex: 1,
-                  padding: '8px 9px',
-                  borderRadius: 12,
-                  border: active
-                    ? '1px solid rgba(110, 231, 255, 0.56)'
-                    : '1px solid rgba(255,255,255,0.12)',
-                  background: active ? 'rgba(34,211,238,0.14)' : 'rgba(255,255,255,0.04)',
-                  color: active ? 'rgba(248,250,252,0.96)' : 'rgba(203,213,225,0.7)',
-                  fontSize: 11,
-                  fontWeight: active ? 640 : 520,
-                  cursor: 'pointer',
-                  transition: reducedMotion
-                    ? 'none'
-                    : 'background 0.25s ease, color 0.25s ease, border-color 0.25s ease',
-                }}
-              >
-                {label}
-              </button>
-            );
-          })}
+          {RADAR_TIMEFRAMES.map(({ value, label }) => (
+            <MetabolicTabButton
+              key={value}
+              active={radarTimeframe === value}
+              onClick={() => handleRadarTimeframeChange(value)}
+              variant="timeframe"
+              reducedMotion={reducedMotion}
+            >
+              {label}
+            </MetabolicTabButton>
+          ))}
         </div>
       </div>
 
@@ -492,126 +537,158 @@ export default function MetabolicUnifiedView({
           boxSizing: 'border-box',
         }}
       >
-        <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {currentView === 'MAP' ? (
-            <div style={{ width: '100%', padding: 'clamp(0.75rem, 3vw, 1rem)', boxSizing: 'border-box' }}>
-              <h3
-                style={{
-                  margin: '0 0 12px',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: '0.14em',
-                  textTransform: 'uppercase',
-                  color: 'rgba(255,255,255,0.42)',
-                  textAlign: 'center',
-                  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-                }}
-              >
-                Analisi Stato Metabolico
-              </h3>
-              <MetabolicMap
-                energyBalance={metabolicMapInputs.energyBalance}
-                trainingLoad={metabolicMapInputs.trainingLoad}
-                sleepHours={metabolicMapInputs.sleepHours}
-                glycemicInstability={metabolicMapInputs.glycemicInstability}
-                realSleepDays={metabolicMapInputs.realSleepDays}
-                totalWindowDays={metabolicMapInputs.totalWindowDays}
-                selectedTimeframe={selectedTimeframe}
-                baselineOffset={baselineOffset}
-                bodyMetricsHistory={bodyMetricsHistory}
-                zoomLevel={mapZoom}
-                onZoomLevelChange={setMapZoom}
-                dailyPositions={dailyMapPositions}
-                currentPosition={dailyMapPositions[dailyMapPositions.length - 1] || null}
-                mapPositionInertial={mapData.mapPositionInertial ?? null}
-                projectedPosition={projectedTrajectory.projected}
-                trajectoryVelocity={projectedTrajectory.velocity}
-                mapSignalStrength={mapData.mapSignalStrength}
-                persistFracOutsideDeadband={mapData.persistFracOutsideDeadband ?? null}
-                mapPresentation={mapData.mapPresentation}
-                targetFatKg={targetFatKg}
-                targetLeanKg={targetLeanKg}
-                expectedFatDeltaKg={expectedFatDeltaKg}
-                expectedLeanDeltaKg={expectedLeanDeltaKg}
-                metabolicGoal={metabolicGoal}
-              />
+        {currentView === 'MAP' ? (
+          <div style={{ width: '100%', padding: 'clamp(0.75rem, 3vw, 1rem)', boxSizing: 'border-box' }}>
+            <h3
+              style={{
+                margin: '0 0 12px',
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                color: 'rgba(255,255,255,0.42)',
+                textAlign: 'center',
+                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+              }}
+            >
+              Analisi Stato Metabolico
+            </h3>
+            <MetabolicMap
+              energyBalance={metabolicMapInputs.energyBalance}
+              trainingLoad={metabolicMapInputs.trainingLoad}
+              sleepHours={metabolicMapInputs.sleepHours}
+              glycemicInstability={metabolicMapInputs.glycemicInstability}
+              realSleepDays={metabolicMapInputs.realSleepDays}
+              totalWindowDays={metabolicMapInputs.totalWindowDays}
+              selectedTimeframe={selectedTimeframe}
+              baselineOffset={baselineOffset}
+              bodyMetricsHistory={bodyMetricsHistory}
+              zoomLevel={mapZoom}
+              onZoomLevelChange={setMapZoom}
+              dailyPositions={dailyMapPositions}
+              currentPosition={dailyMapPositions[dailyMapPositions.length - 1] || null}
+              mapPositionInertial={mapData.mapPositionInertial ?? null}
+              projectedPosition={projectedTrajectory.projected}
+              trajectoryVelocity={projectedTrajectory.velocity}
+              mapSignalStrength={mapData.mapSignalStrength}
+              persistFracOutsideDeadband={mapData.persistFracOutsideDeadband ?? null}
+              mapPresentation={mapData.mapPresentation}
+              targetFatKg={targetFatKg}
+              targetLeanKg={targetLeanKg}
+              expectedFatDeltaKg={expectedFatDeltaKg}
+              expectedLeanDeltaKg={expectedLeanDeltaKg}
+              metabolicGoal={metabolicGoal}
+            />
+            <div
+              style={{
+                marginTop: '16px',
+                padding: '16px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
               <div
                 style={{
-                  marginTop: '16px',
-                  padding: '16px',
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '12px',
                   display: 'flex',
-                  flexDirection: 'column',
+                  alignItems: 'center',
                   gap: '8px',
+                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  paddingBottom: '8px',
                 }}
               >
-                <div
+                <span style={{ fontSize: '1.2rem' }}>🧭</span>
+                <span
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    borderBottom: '1px solid rgba(255,255,255,0.05)',
-                    paddingBottom: '8px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: 'rgba(255,255,255,0.7)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
                   }}
                 >
-                  <span style={{ fontSize: '1.2rem' }}>🧭</span>
-                  <span
-                    style={{
-                      fontSize: '0.85rem',
-                      fontWeight: 600,
-                      color: 'rgba(255,255,255,0.7)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                    }}
-                  >
-                    Navigatore di Rotta
-                  </span>
-                </div>
-                <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.9)', lineHeight: '1.5' }}>
-                  {coachMessage || 'In attesa di dati per calcolare la traiettoria...'}
-                </div>
+                  Navigatore di Rotta
+                </span>
               </div>
-              {SHOW_METABOLIC_DEBUG ? (
-                <MetabolicDataAudit
-                  rawDetails={metabolicMapRawDetails}
-                  mapInputs={metabolicMapInputs}
-                />
-              ) : null}
+              <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.9)', lineHeight: '1.5' }}>
+                {coachMessage || 'In attesa di dati per calcolare la traiettoria...'}
+              </div>
             </div>
-          ) : (
-            <div style={{ width: '100%' }}>
-              <MetabolicCompass
-                dailyHistory={dailyHistory}
-                bodyMetricsHistory={bodyMetricsHistory}
-                userTargets={userTargets}
-                expectedFatDeltaKg={expectedFatDeltaKg}
-                expectedLeanDeltaKg={expectedLeanDeltaKg}
-                compassScreenActive={compassScreenActive}
-                mapZoneColor={mapZoneColor}
-                compassAmbientStyle={mapData.compassAmbientStyle}
-                hideMetabolicMapSection
-                goal={compassGoal}
-                onGoalChange={() => {}}
-                selectedTimeframe={selectedTimeframe}
-                onTimeframeChange={setSelectedTimeframe}
-                metabolicMapInputsFromBundle={mapData.metabolicMapInputs}
-                mapSignalStrengthFromBundle={mapData.mapSignalStrength}
-                hideGoalControls
+            <div
+              role="tablist"
+              aria-label="Obiettivo metabolico"
+              style={{
+                display: 'flex',
+                width: '100%',
+                gap: 6,
+                marginTop: 16,
+              }}
+            >
+              {METABOLIC_GOALS.map(({ value, label }) => (
+                <MetabolicTabButton
+                  key={value}
+                  active={metabolicGoal === value}
+                  onClick={() => setMetabolicGoal(value)}
+                  variant="goal"
+                  reducedMotion={reducedMotion}
+                >
+                  {label}
+                </MetabolicTabButton>
+              ))}
+            </div>
+            {SHOW_METABOLIC_DEBUG ? (
+              <MetabolicDataAudit
+                rawDetails={metabolicMapRawDetails}
+                mapInputs={metabolicMapInputs}
               />
-              {SHOW_METABOLIC_DEBUG && (
-                <CompassDebugPanel
-                  selectedTimeframe={selectedTimeframe}
-                  mapData={mapData}
-                  compassDebugByTimeframe={compassDebugByTimeframe}
-                />
-              )}
-            </div>
-          )}
-        </div>
-
-        {currentView === 'COMPASS' ? <MetabolicCoachCompact coach={coachInsight} /> : null}
+            ) : null}
+          </div>
+        ) : (
+          <div
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+            }}
+          >
+            <MetabolicPillarsTelemetry pillars={pillarTelemetry} />
+            <MetabolicBubbleRadar
+              pillars={pillarTelemetry}
+              dailyHistory={dailyHistory}
+              selectedTimeframe={selectedTimeframe}
+            />
+            <MetabolicCompass
+              dailyHistory={dailyHistory}
+              bodyMetricsHistory={bodyMetricsHistory}
+              userTargets={userTargets}
+              expectedFatDeltaKg={expectedFatDeltaKg}
+              expectedLeanDeltaKg={expectedLeanDeltaKg}
+              compassScreenActive={compassScreenActive}
+              mapZoneColor={mapZoneColor}
+              compassAmbientStyle={mapData.compassAmbientStyle}
+              hideMetabolicMapSection
+              goal={compassGoal}
+              onGoalChange={() => {}}
+              selectedTimeframe={selectedTimeframe}
+              onTimeframeChange={setSelectedTimeframe}
+              metabolicMapInputsFromBundle={mapData.metabolicMapInputs}
+              mapSignalStrengthFromBundle={mapData.mapSignalStrength}
+              hideGoalControls
+            />
+            {SHOW_METABOLIC_DEBUG ? (
+              <CompassDebugPanel
+                selectedTimeframe={selectedTimeframe}
+                mapData={mapData}
+                compassDebugByTimeframe={compassDebugByTimeframe}
+              />
+            ) : null}
+            <MetabolicCoachCompact coach={coachInsight} />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -77,6 +77,45 @@ export function resolveMetabolicColorForHoursFasted(hoursFasted) {
 const MEAL_HOUR_EPS = 0.002;
 const MEAL_TYPES = new Set(['food', 'recipe', 'ghost_meal']);
 
+/** Soglia tolleranza metabolica: sotto questi valori il pasto non interrompe il digiuno. */
+const FASTING_BREAK_THRESHOLDS = Object.freeze({
+  kcal: 10,
+  carbs: 1,
+  protein: 1,
+});
+
+function readItemKcal(item) {
+  const n = Number(item?.kcal ?? item?.cal ?? item?.calories ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function readItemCarbs(item) {
+  const n = Number(item?.carb ?? item?.carbs ?? item?.carboidrati ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function readItemProtein(item) {
+  const n = Number(item?.prot ?? item?.protein ?? item?.proteine ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Pasto che interrompe il digiuno (supera soglia fisiologica trascurabile).
+ * @param {object | null | undefined} item
+ * @returns {boolean}
+ */
+export function isFastingBreakerLogItem(item) {
+  if (!isMealLikeLogItem(item)) return false;
+  const kcal = readItemKcal(item);
+  const carbs = readItemCarbs(item);
+  const protein = readItemProtein(item);
+  return (
+    kcal > FASTING_BREAK_THRESHOLDS.kcal
+    || carbs > FASTING_BREAK_THRESHOLDS.carbs
+    || protein > FASTING_BREAK_THRESHOLDS.protein
+  );
+}
+
 function normalizeMealHour(hour) {
   if (typeof hour !== 'number' || !Number.isFinite(hour)) return null;
   return Math.round(Math.max(0, Math.min(24, hour)) * 120) / 120;
@@ -152,7 +191,7 @@ function getYesterdayLastMealTime(fullHistory, referenceDateObj, anchorDate) {
   );
   let maxYestTime = -1;
   yesterdayLog
-    .filter((i) => i.type === 'food' || i.type === 'recipe')
+    .filter((i) => isFastingBreakerLogItem(i))
     .forEach((m) => {
       const t = yesterdayNode.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
       if (typeof t === 'number' && t > maxYestTime) maxYestTime = t;
@@ -173,14 +212,14 @@ export function computeHoursFastedAtHour(referenceHour, activeLog, options = {})
       ? Math.max(0, Math.min(24, referenceHour))
       : 0;
 
-  const todayMeals = (activeLog || [])
-    .filter((i) => isMealLikeLogItem(i))
+  const todayMealTimes = (activeLog || [])
+    .filter((i) => isFastingBreakerLogItem(i))
     .map((i) => resolveMealTimeFromLogItem(i, mealTimesObj))
-    .filter((t) => t != null && t <= hour + MEAL_HOUR_EPS)
-    .sort((a, b) => b - a);
+    .filter((t) => t != null && t <= hour + MEAL_HOUR_EPS);
 
-  if (todayMeals.length > 0) {
-    return Math.max(0, hour - todayMeals[0]);
+  if (todayMealTimes.length > 0) {
+    const lastMealTime = Math.max(...todayMealTimes);
+    return Math.max(0, hour - lastMealTime);
   }
 
   const yesterdayLastMealTime = getYesterdayLastMealTime(fullHistory, referenceDateObj, anchorDate);
@@ -217,14 +256,14 @@ export function collectMetabolicTimelineMeals(activeLog, options = {}) {
   const eventTimes = new Set();
 
   for (const item of activeLog || []) {
-    if (item.type !== 'food' && item.type !== 'recipe') continue;
+    if (!isFastingBreakerLogItem(item)) continue;
     if (typeof item.mealTime === 'number' && Number.isFinite(item.mealTime)) {
       eventTimes.add(normalizeMealHour(item.mealTime));
     }
   }
 
   for (const item of activeLog || []) {
-    if (!isMealLikeLogItem(item)) continue;
+    if (!isFastingBreakerLogItem(item)) continue;
     const resolved = resolveMealTimeFromLogItem(item, mealTimesObj);
     if (resolved != null) eventTimes.add(resolved);
   }
