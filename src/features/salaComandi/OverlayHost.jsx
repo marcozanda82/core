@@ -4,9 +4,6 @@ import PlanningWizard from '../../PlanningWizard';
 import PesataDrawer from '../../components/drawers/PesataDrawer';
 
 export default function OverlayHost({
-  showUnsavedMealWarning,
-  setShowUnsavedMealWarning,
-  finalizeMealBuilderCloseEmpty,
   showWeightModal,
   setShowWeightModal,
   inputWeightDate,
@@ -41,97 +38,6 @@ export default function OverlayHost({
 }) {
   return (
     <>
-      {showUnsavedMealWarning &&
-        createPortal(
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="unsaved-meal-warning-title"
-            onClick={() => setShowUnsavedMealWarning(false)}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 100050,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 20,
-              background: 'rgba(0,0,0,0.72)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-            }}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: '100%',
-                maxWidth: 360,
-                borderRadius: 16,
-                padding: '22px 20px 18px',
-                background: 'linear-gradient(165deg, #1e2128 0%, #12141a 100%)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                boxShadow: '0 24px 48px rgba(0,0,0,0.55)',
-              }}
-            >
-              <h3
-                id="unsaved-meal-warning-title"
-                style={{
-                  margin: '0 0 12px',
-                  fontSize: '1.05rem',
-                  fontWeight: 800,
-                  color: '#f5f5f5',
-                  letterSpacing: '0.02em',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <span aria-hidden>⚠️</span> Attenzione
-              </h3>
-              <p style={{ margin: '0 0 22px', fontSize: '0.9rem', lineHeight: 1.5, color: 'rgba(226,232,240,0.88)' }}>
-                Hai inserito degli alimenti che non sono stati salvati. Sei sicuro di voler uscire perdendo le modifiche?
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowUnsavedMealWarning(false)}
-                  style={{
-                    width: '100%',
-                    padding: '14px 16px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(0,229,255,0.35)',
-                    background: 'rgba(0,229,255,0.12)',
-                    color: '#00e5ff',
-                    fontSize: '0.9rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Resta
-                </button>
-                <button
-                  type="button"
-                  onClick={finalizeMealBuilderCloseEmpty}
-                  style={{
-                    width: '100%',
-                    padding: '14px 16px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(248,113,113,0.45)',
-                    background: 'rgba(248,113,113,0.12)',
-                    color: '#f87171',
-                    fontSize: '0.9rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Esci e perdi dati
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-
       <PesataDrawer
         showWeightModal={showWeightModal}
         setShowWeightModal={setShowWeightModal}

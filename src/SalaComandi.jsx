@@ -31,11 +31,8 @@ import { callGeminiAPIWithRotation } from './services/aiService';
 import { useProfileAndTargets } from './hooks/useProfileAndTargets';
 import { useTimelineDrag } from './hooks/useTimelineDrag';
 import MainDashboardCharts from './features/charts/MainDashboardCharts';
-import { recordMealFoodCooccurrence } from './foodCooccurrence';
-import { recordMealSuggestionHabits } from './mealSuggestionHabits';
 import {
   enrichDbRowWithFoodUnits,
-  recordMealFoodUnitUsageFromItems,
 } from './foodUnits';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
@@ -110,12 +107,7 @@ import {
 } from './weeklyPlanning';
 import WeeklyPlanning from './components/WeeklyPlanning';
 import WeeklyBuilder from './features/weeklyBlocks/components/WeeklyBuilder';
-import MealBuilderOverlay from './features/mealBuilder/MealBuilderOverlay';
-import {
-  resolveDistributionMealId,
-  sumConsumedMacrosExcludingMeal,
-  buildRemainingDistributionMeals,
-} from './utils/mealStrategy';
+import FastMealLogger from './features/mealBuilder/FastMealLogger';
 import {
   parseDurationMinutesInput,
   WORKOUT_DURATION_DEFAULT,
@@ -149,7 +141,6 @@ import {
 import TimelineInsertOverlay from './components/modals/TimelineInsertOverlay';
 import FoodInspectorModal from './components/modals/FoodInspectorModal';
 import HealthspanOverlay from './features/longevity/HealthspanOverlay';
-import useFoodInputEngine from './features/salaComandi/hooks/useFoodInputEngine';
 import useBodyMetricsEngine from './features/salaComandi/hooks/useBodyMetricsEngine';
 import {
   estraiDatiFoodDb as resolveFoodDataFromEngine,
@@ -183,7 +174,6 @@ import {
   normalizeDailyPlanTimeForInput,
   normalizeDailyPlanFromToken,
   extractAndStripDailyPlan,
-  parseSmartCompletionJsonFromAiResponse,
 } from './features/salaComandi/utils/aiContextUtils';
 import { normalizeAddMenuOrderState } from './features/salaComandi/utils/menuUtils';
 import {
@@ -296,7 +286,6 @@ import {
   getLastMealMacrosForTrainingWave,
   getTrainingWaveCurves,
   buildTrainingWaveContextSnippet,
-  getDynamicMealTargets,
   normalizeMealFoodsArray,
   buildSmartMealPhysioContextSnippet,
   parseKentuInvisibleCmd,
@@ -307,6 +296,7 @@ import {
   generateLocalTrainingAdvice,
   generateLocalMonthlyAudit,
   generateLocalHabitScanner,
+  getDynamicMealTargets,
 } from './coreEngine';
 
 import {
@@ -491,6 +481,11 @@ export default function SalaComandi() {
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
   const [eventUsage, setEventUsage] = useState(readPersistedEventUsage);
   const [isFabOpen, setIsFabOpen] = useState(false);
+  const [showFastLogger, setShowFastLogger] = useState(false);
+  const [mealToEdit, setMealToEdit] = useState(null);
+  const [fastLoggerInitialSlot, setFastLoggerInitialSlot] = useState(null);
+  /** Ghost meal in conferma: salvataggio = pasto reale + rimozione ghost dal log. */
+  const [pendingGhostMealId, setPendingGhostMealId] = useState(null);
   const [slideDirection, setSlideDirection] = useState('slide-none');
 
   const trackEventUsage = useCallback((id) => {
@@ -660,7 +655,6 @@ export default function SalaComandi() {
   const [dailyMacroSheetOpen, setDailyMacroSheetOpen] = useState(false);
   /** Quadrante home (modalità base): kcal | pro | cho | fat */
   const [activeDialMode, setActiveDialMode] = useState('kcal');
-  const [isMealBuilderOpen, setIsMealBuilderOpen] = useState(false);
   const [userModel, setUserModel] = useState(DEFAULT_USER_MODEL);
   const [lastCalibrationWeek, setLastCalibrationWeek] = useState(null);
   const [nervousSystemLoad, setNervousSystemLoad] = useState(30);
@@ -672,17 +666,9 @@ export default function SalaComandi() {
   const coreOsClickTimer = useRef(null);
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
-  const [addedFoods, setAddedFoods] = useState([]);
-  const [showUnsavedMealWarning, setShowUnsavedMealWarning] = useState(false);
-  const addedFoodsRef = useRef(addedFoods);
   const closeDrawerRef = useRef(null);
   useEffect(() => { isDrawerOpenRef.current = isDrawerOpen; }, [isDrawerOpen]);
   useEffect(() => { activeActionRef.current = activeAction; }, [activeAction]);
-  useEffect(() => {
-    if (addedFoodsRef) {
-      addedFoodsRef.current = addedFoods;
-    }
-  }, [addedFoods]);
   useEffect(() => {
     closeDrawerRef.current = closeDrawer;
   });
@@ -706,15 +692,6 @@ export default function SalaComandi() {
     window.history.pushState({ noExit: true }, '');
     const handlePopState = () => {
       if (isDrawerOpenRef.current) {
-        if (
-          activeActionRef.current === 'pasto' &&
-          addedFoodsRef.current &&
-          addedFoodsRef.current.length > 0
-        ) {
-          setShowUnsavedMealWarning(true);
-          window.history.pushState({ drawer: 'open' }, '');
-          return;
-        }
         closeDrawerRef.current?.();
         window.history.pushState({ noExit: true }, '');
         return;
@@ -762,8 +739,6 @@ export default function SalaComandi() {
   // STATI MODULI (Pasti, Acqua, Allenamento, Zen)
   const [mealType, setMealType] = useState('cena');
   const [mealPlannerGhostNote, setMealPlannerGhostNote] = useState('');
-  const [mealBuilderSmartLaunchKey, setMealBuilderSmartLaunchKey] = useState(0);
-  const [mealBuilderCoachPracticalKey, setMealBuilderCoachPracticalKey] = useState(0);
   const [coachPrefsTick, setCoachPrefsTick] = useState(0);
   const [hasNewInsight, setHasNewInsight] = useState(false);
   const [aiCoachBulbPulseCycles, setAiCoachBulbPulseCycles] = useState(0);
@@ -777,52 +752,11 @@ export default function SalaComandi() {
   const aiCoachInsightActivateTimeoutRef = useRef(null);
   const aiCoachCooldownUntilRef = useRef(0);
   const aiCoachLastInsightKeyRef = useRef(null);
-  const [drawerMealTime, setDrawerMealTime] = useState(12);
-  const [drawerMealTimeStr, setDrawerMealTimeStr] = useState('12:00');
-  const [showFoodDropdown, setShowFoodDropdown] = useState(false);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
   const [inspectedFood, setInspectedFood] = useState(null);
   const [editFoodData, setEditFoodData] = useState(null);
   const [isAIVerifying, setIsAIVerifying] = useState(false);
-  /** One-shot bootstrap per MealBuilder dopo scansione OFF (nonce + match con row Firebase o bozza locale). */
-  const [mealBuilderBarcodeBootstrap, setMealBuilderBarcodeBootstrap] = useState(null);
-  const foodInputRef = useRef(null);
-  const getLastQuantityForFoodRef = useRef(null);
   const callGeminiAPIWithRotationRef = useRef(null);
-  const fullHistoryForFoodEngineRef = useRef({});
-
-  const {
-    foodNameInput,
-    setFoodNameInput,
-    foodWeightInput,
-    setFoodWeightInput,
-    foodDropdownSuggestions,
-    creaResults,
-    isCreaLoading,
-    isBarcodeScannerOpen,
-    setIsBarcodeScannerOpen,
-    isGeneratingFood,
-    triggerCreaSearch,
-    closeBarcodeScanner,
-    generateFoodWithAI,
-    handleAddFoodManual,
-    barcodeVideoRef,
-  } = useFoodInputEngine({
-    foodDb,
-    mealType,
-    addedFoods,
-    userUid,
-    fullHistoryRef: fullHistoryForFoodEngineRef,
-    db,
-    csvFoodDb,
-    csvFoodDbLoading,
-    setFoodDb,
-    setAddedFoods,
-    setShowFoodDropdown,
-    setMealBuilderBarcodeBootstrap,
-    getLastQuantityForFoodRef,
-    callGeminiAPIWithRotationRef,
-  });
 
   const [selectedFoodForInfo, setSelectedFoodForInfo] = useState(null);
   const [selectedFoodForEdit, setSelectedFoodForEdit] = useState(null);
@@ -1370,7 +1304,6 @@ export default function SalaComandi() {
 
   const [fullStorico, setFullStorico] = useState(null);
   const [fullHistory, setFullHistory] = useState({});
-  fullHistoryForFoodEngineRef.current = fullHistory;
   const {
     bodyMetricsHistory,
     predictiveCalibration,
@@ -1617,7 +1550,6 @@ export default function SalaComandi() {
   const pendingClickRef = useRef(null);
   const historyStackRef = useRef([]);
   const historyIndexRef = useRef(-1);
-  const miniTimelinePastoRef = useRef(null);
   const miniTimelineActivityRef = useRef(null);
   const miniTimelineWaterRef = useRef(null);
   const [drawerWaterTime, setDrawerWaterTime] = useState(12);
@@ -2604,8 +2536,8 @@ export default function SalaComandi() {
   }, [zenBreathPhase, zenBreathPatternId, activeAction, isZenActive, audioMode, zenGracefulEnd, fadeAudio]);
 
   useEffect(() => {
-    if (isDrawerOpen && activeAction === 'pasto') setDrawerMealTimeStr(decimalToTimeStr(drawerMealTime));
-  }, [isDrawerOpen, activeAction, drawerMealTime]);
+    closeDrawerRef.current = closeDrawer;
+  });
 
   // Motore biochimico
   const baseKcal = (effectiveTargetsForCurrentDate.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
@@ -2739,40 +2671,8 @@ export default function SalaComandi() {
     setIsDrawerOpen(true);
   }
 
-  function finalizeMealBuilderCloseEmpty() {
-    setShowUnsavedMealWarning(false);
+  function closeDrawer() {
     setEditingMealId(null);
-    setAddedFoods([]);
-    setSelectedMealCenter(null);
-    setFoodNameInput('');
-    setFoodWeightInput('');
-    setIsBarcodeScannerOpen(false);
-    setMealPlannerGhostNote('');
-    setActiveAction('home');
-    setIsDrawerOpen(false);
-  }
-
-  function handleAttemptCloseMeal() {
-    if ((addedFoods?.length ?? 0) > 0) {
-      setShowUnsavedMealWarning(true);
-      return;
-    }
-    finalizeMealBuilderCloseEmpty();
-  }
-
-  /** @param {{ force?: boolean }} [opts] — `force: true` dopo salvataggio pasto (stesso tick: addedFoods non aggiornato ancora). */
-  function closeDrawer(opts) {
-    const force = opts && opts.force === true;
-    if (!force && activeAction === 'pasto' && (addedFoods?.length ?? 0) > 0) {
-      setShowUnsavedMealWarning(true);
-      return;
-    }
-    if (activeAction === 'pasto' && (force || (addedFoods?.length ?? 0) === 0)) {
-      finalizeMealBuilderCloseEmpty();
-      return;
-    }
-    setEditingMealId(null);
-    setAddedFoods([]);
     setIsDrawerOpen(false);
     setTimeout(() => setActiveAction(null), 400);
   }
@@ -3049,63 +2949,87 @@ export default function SalaComandi() {
     [isSimulationMode, getFoodItemsForMealSlot, syncDatiFirebase, pushTimelineUndoSnapshot]
   );
 
-  /**
-   * Carica un pasto nel costruttore. Accetta mealType o id composito "mealType_time" (es. snack_16.5).
-   * Con id composito carica solo i food con quel mealType e quel mealTime.
-   */
-  const loadMealToConstructor = (mTypeOrId) => {
-    setAddedFoods([]);
-    setEditingMealId(mTypeOrId);
-    let items = getFoodItemsForMealSlot(activeLog, mTypeOrId);
+  const loadMealToConstructor = useCallback((mTypeOrId) => {
+    const log = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
+    let items = getFoodItemsForMealSlot(log, mTypeOrId);
 
-    if (items.length === 0) {
+    if (items.length === 0 && mTypeOrId != null) {
       const canonical = toCanonicalMealType(String(mTypeOrId).split('_')[0]);
       const equivalents = getEquivalentMealTypes(canonical);
-      items = (activeLog || []).filter(item => (item.type === 'food' || item.type === 'recipe') && equivalents.includes(item.mealType));
+      items = log.filter(
+        (item) =>
+          (item.type === 'food' || item.type === 'recipe') &&
+          equivalents.includes(item.mealType)
+      );
     }
 
-    const toNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (Number(v) || 0);
-    items = items.map(f => ({
-      ...f,
-      kcal: toNum(f.kcal) || toNum(f.cal) || 0,
-      prot: toNum(f.prot) || toNum(f.proteine) || 0,
-      carb: toNum(f.carb) || toNum(f.carboidrati) || 0,
-      fat: toNum(f.fat) || toNum(f.fatTotal) || toNum(f.grassi) || 0,
-      qta: toNum(f.qta) || toNum(f.weight) || 100,
-      weight: toNum(f.weight) || toNum(f.qta) || 100
-    }));
-    const canonical = items.length > 0 ? toCanonicalMealType(items[0].mealType) : toCanonicalMealType(String(mTypeOrId).split('_')[0]);
+    const draftItems = items.map((f) => {
+      const weight = Number(f.qta ?? f.weight) || 100;
+      const dbKey = f.foodDbKey;
+      const dbRow = dbKey && foodDb?.[dbKey] ? foodDb[dbKey] : null;
+      const row = dbRow || {
+        desc: f.desc || f.name,
+        kcal: Number(f.kcal ?? f.cal) || 0,
+        prot: Number(f.prot) || 0,
+        carb: Number(f.carb) || 0,
+        fatTotal: Number(f.fatTotal ?? f.fat) || 0,
+      };
+      return {
+        ...f,
+        type: f.type === 'recipe' ? 'recipe' : 'food',
+        foodDbKey: dbKey,
+        row,
+        units: row.units ?? f.units,
+        defaultUnit: row.defaultUnit ?? f.defaultUnit,
+        selectedUnit: f.selectedUnit || 'g',
+        multiplier: Number(f.multiplier) || weight,
+        qta: weight,
+        weight,
+        kcal: Number(f.kcal ?? f.cal) || 0,
+        cal: Number(f.cal ?? f.kcal) || 0,
+        prot: Number(f.prot) || 0,
+        carb: Number(f.carb) || 0,
+        fat: Number(f.fatTotal ?? f.fat) || 0,
+        fatTotal: Number(f.fatTotal ?? f.fat) || 0,
+      };
+    });
 
-    let parsedTimeFromId = null;
-    const idStr = String(mTypeOrId);
-    const u = idStr.lastIndexOf('_');
-    if (u > 0) {
-      const p = Number(idStr.slice(u + 1));
-      if (Number.isFinite(p)) parsedTimeFromId = p;
-    }
-    const fromFirst = items.length > 0 ? getMealTimeFromLogItem(items[0]) : null;
-    const t =
-      fromFirst != null
-        ? fromFirst
-        : parsedTimeFromId != null
-          ? parsedTimeFromId
-          : getDefaultMealTime(canonical);
+    setMealToEdit(draftItems.length > 0 ? draftItems : null);
+    setEditingMealId(mTypeOrId != null ? String(mTypeOrId) : null);
+    setPendingGhostMealId(null);
+    setFastLoggerInitialSlot(
+      mTypeOrId != null
+        ? toCanonicalMealType(String(mTypeOrId).split('_')[0])
+        : draftItems[0]?.mealType
+          ? toCanonicalMealType(String(draftItems[0].mealType).split('_')[0])
+          : null
+    );
+    setShowFastLogger(true);
+  }, [
+    isSimulationMode,
+    simulatedLog,
+    dailyLog,
+    getFoodItemsForMealSlot,
+    foodDb,
+    toCanonicalMealType,
+    getEquivalentMealTypes,
+  ]);
 
-    setMealType(mealIdFromCanonical(canonical));
-    setDrawerMealTime(t);
-    setDrawerMealTimeStr(decimalToTimeStr(t));
-    setAddedFoods(items);
-    setActiveAction('pasto');
-    setIsDrawerOpen(true);
-    setIsMealBuilderOpen(true);
-  };
+  const closeFastLogger = useCallback(() => {
+    setShowFastLogger(false);
+    setMealToEdit(null);
+    setEditingMealId(null);
+    setFastLoggerInitialSlot(null);
+    setPendingGhostMealId(null);
+  }, []);
 
-  useEffect(() => {
-    if (activeAction === 'pasto' && !editingMealId && addedFoods.length === 0) {
-      const predicted = predictMealType(drawerMealTime);
-      if (predicted !== mealType) setMealType(predicted);
-    }
-  }, [drawerMealTime, activeAction, editingMealId, addedFoods.length]);
+  const openFastLoggerNew = useCallback(() => {
+    setMealToEdit(null);
+    setEditingMealId(null);
+    setFastLoggerInitialSlot(null);
+    setPendingGhostMealId(null);
+    setShowFastLogger(true);
+  }, []);
 
   const getCurrentTimeRoundedTo15Min = () => {
     const now = new Date();
@@ -3275,16 +3199,9 @@ export default function SalaComandi() {
     const fromModal = source === 'modal';
     switch (itemId) {
       case 'meal': {
-        const predicted = predictMealType(getCurrentTimeRoundedTo15Min());
-        setMealType(predicted);
-        setAddedFoods([]);
-        setEditingMealId(null);
-        const t = getCurrentTimeRoundedTo15Min();
-        setDrawerMealTime(t);
-        setDrawerMealTimeStr(decimalToTimeStr(t));
         if (fromModal) setShowChoiceModal(false);
-        setActiveAction('pasto');
-        setIsDrawerOpen(true);
+        if (isDrawerOpen) closeDrawer();
+        openFastLoggerNew();
         break;
       }
       case 'water':
@@ -3359,7 +3276,7 @@ export default function SalaComandi() {
         break;
       case 'plan':
         setShowChoiceModal(false);
-        closeDrawer({ force: true });
+        closeDrawer();
         setPlanningWizardHydrateNonce((n) => n + 1);
         setPlanningWizardOverlayOpen(true);
         break;
@@ -3442,29 +3359,6 @@ export default function SalaComandi() {
     return fallbackFromSlot();
   };
 
-  const handleTimeInput = (value) => {
-    const digits = (value || '').replace(/\D/g, '');
-    if (digits.length === 0) {
-      setDrawerMealTimeStr('');
-      setDrawerMealTime(12);
-      return;
-    }
-    let formatted = digits.slice(0, 4);
-    if (formatted.length > 2) formatted = formatted.slice(0, 2) + ':' + formatted.slice(2);
-    if (digits.length > 4) formatted = digits.slice(0, 2) + ':' + digits.slice(2, 4);
-    setDrawerMealTimeStr(formatted);
-    const [hh, mm] = formatted.includes(':') ? formatted.split(':') : [formatted.slice(0, 2) || '0', formatted.slice(2) || '0'];
-    const h = Math.min(23, Math.max(0, parseInt(hh, 10) || 0));
-    const m = Math.min(59, Math.max(0, parseInt(mm, 10) || 0));
-    setDrawerMealTime(h + m / 60);
-  };
-
-  const adjustMealTime = (delta) => {
-    const next = Math.max(0, Math.min(24, Math.round((drawerMealTime + delta) * 4) / 4));
-    setDrawerMealTime(next);
-    setDrawerMealTimeStr(decimalToTimeStr(next));
-  };
-
   const parseTimeStrToDecimal = (value) => {
     const digits = (value || '').replace(/\D/g, '');
     if (digits.length === 0) return 12;
@@ -3474,33 +3368,6 @@ export default function SalaComandi() {
     const m = Math.min(59, Math.max(0, parseInt(mm, 10) || 0));
     return h + m / 60;
   };
-
-  const getLastQuantityForFood = (desc) => {
-    if (!fullStorico || !desc) return null;
-    const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
-    keys.sort((a, b) => b.localeCompare(a));
-    const norm = (s) => (s || '').toLowerCase().trim();
-    const target = norm(desc);
-    for (const key of keys) {
-      const log = fullStorico[key]?.log;
-      if (!Array.isArray(log)) continue;
-      const flat = normalizeLogData(log);
-      const found = flat.filter(i => i?.type === 'food' || i?.type === 'recipe').find(i => 
-        norm(i?.desc || i?.name) === target || 
-        norm(i?.desc || i?.name).includes(target) || 
-        target.includes(norm(i?.desc || i?.name))
-      );
-      if (found != null && (found.qta != null || found.weight != null)) {
-        return String(found.qta ?? found.weight ?? '');
-      }
-    }
-    return null;
-  };
-  getLastQuantityForFoodRef.current = getLastQuantityForFood;
-
-  const consumeMealBuilderBarcodeBootstrap = useCallback(() => {
-    setMealBuilderBarcodeBootstrap(null);
-  }, []);
 
   /** Stima media verosimile per nutriente mancante (mai 0: usa contesto nome o media). */
   const getAverageEstimate = useCallback((nutrientKey, foodDesc = '') => {
@@ -3518,6 +3385,57 @@ export default function SalaComandi() {
       fullHistory,
     });
   }, [foodDb, fullHistory]);
+
+  /** Normalizza righe diario / ghost → payload Smart Row per FastMealLogger. */
+  const buildDraftPrefillItems = useCallback(
+    (rawItems, mealSlotCanon) => {
+      const slot = mealSlotCanon
+        ? toCanonicalMealType(String(mealSlotCanon).split('_')[0])
+        : null;
+      return (rawItems || []).map((f) => {
+        const desc = String(f.desc || f.name || '').trim();
+        const weight = Number(f.qta ?? f.weight ?? f.qty) || 100;
+        const dbKey =
+          f.foodDbKey ??
+          f.dbKey ??
+          (desc ? findBestFoodMatch(desc, foodDb) : null);
+        const dbRow = dbKey && foodDb?.[dbKey] ? foodDb[dbKey] : null;
+        const row = dbRow || {
+          desc: desc || f.name,
+          kcal: Number(f.kcal ?? f.cal) || 0,
+          prot: Number(f.prot) || 0,
+          carb: Number(f.carb) || 0,
+          fatTotal: Number(f.fatTotal ?? f.fat) || 0,
+        };
+        const fromDb =
+          dbKey && desc
+            ? estraiDatiFoodDb(desc, weight, slot || 'pranzo', dbKey)
+            : null;
+        return {
+          ...f,
+          type: f.type === 'recipe' ? 'recipe' : 'food',
+          desc: desc || f.name,
+          name: desc || f.name,
+          foodDbKey: dbKey,
+          row,
+          units: row.units ?? f.units,
+          defaultUnit: row.defaultUnit ?? f.defaultUnit,
+          selectedUnit: f.selectedUnit || 'g',
+          multiplier: Number(f.multiplier) || weight,
+          qta: weight,
+          weight,
+          mealType: slot || f.mealType,
+          kcal: Number(fromDb?.kcal ?? f.kcal ?? f.cal) || 0,
+          cal: Number(fromDb?.cal ?? fromDb?.kcal ?? f.cal ?? f.kcal) || 0,
+          prot: Number(fromDb?.prot ?? f.prot) || 0,
+          carb: Number(fromDb?.carb ?? f.carb) || 0,
+          fat: Number(fromDb?.fatTotal ?? fromDb?.fat ?? f.fatTotal ?? f.fat) || 0,
+          fatTotal: Number(fromDb?.fatTotal ?? fromDb?.fat ?? f.fatTotal ?? f.fat) || 0,
+        };
+      });
+    },
+    [foodDb, estraiDatiFoodDb, toCanonicalMealType]
+  );
 
   /**
    * Proposal items (nome, qty, est*, dbKey, matchedKey) → righe `food`/`recipe` per il diario.
@@ -3593,38 +3511,59 @@ export default function SalaComandi() {
     [predictMealType, getGhostMealType, foodDb, estraiDatiFoodDb, getAverageEstimate]
   );
 
-  /** Apre MealBuilder su ghost_meal (timeline o modale) con stessi dati del diario. */
+  /** Apre FastMealLogger precompilato da ghost_meal (timeline / modale). */
   const openGhostMealEditorFromTimelineNode = useCallback(
     (node) => {
       if (!node || node.type !== 'ghost_meal') return;
-      const logSnap = dailyLogRef.current || [];
-      const src =
-        logSnap.find(
-          (e) => e?.type === 'ghost_meal' && e?.id != null && String(e.id) === String(node.id)
-        ) || node;
-      const mt = toCanonicalMealType(String(src.mealType || 'pranzo').split('_')[0]) || 'pranzo';
-      let t = src.mealTime;
-      if (typeof t !== 'number' || Number.isNaN(t)) t = src.time;
-      if (typeof t !== 'number' || Number.isNaN(t)) t = node.time;
-      if (typeof t !== 'number' || Number.isNaN(t)) t = 12;
       setSelectedNodeReport(null);
-      setEditingMealId(src.id ?? node.id);
-      const reads = mealFoodsRead(src);
-      const proposalItems =
-        reads.length > 0
-          ? structuredFoodsToProposalItems(reads)
-          : ghostSurfaceDraftToProposalItems(src.draftFoods || node.draftFoods);
-      setAddedFoods(mapProposalItemsToDiaryFoods(proposalItems, t));
-      setMealType(mealIdFromCanonical(mt));
-      setDrawerMealTime(t);
-      setDrawerMealTimeStr(decimalToTimeStr(t));
-      setMealPlannerGhostNote(String(src.microDesc || src.title || node.microDesc || node.title || '').trim());
-      setActiveAction('pasto');
-      setIsDrawerOpen(true);
-      setIsMealBuilderOpen(true);
-      setMealBuilderSmartLaunchKey((k) => k + 1);
+
+      const log = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
+      const logEntry =
+        node.id != null
+          ? log.find(
+              (e) =>
+                e?.type === 'ghost_meal' &&
+                e?.id != null &&
+                String(e.id) === String(node.id)
+            )
+          : null;
+      const src = logEntry || node;
+
+      const canonicalFoods = normalizeGhostFoodsForTimelineNode(src);
+      const mealSlot =
+        toCanonicalMealType(String(src.mealType || node.mealType || 'pranzo').split('_')[0]) ||
+        'pranzo';
+
+      const draftItems = buildDraftPrefillItems(
+        canonicalFoods.map((f) => ({
+          type: 'food',
+          name: f.name,
+          desc: f.name,
+          qta: f.qty,
+          weight: f.qty,
+          dbKey: f.dbKey,
+          kcal: f.kcal,
+          prot: f.prot,
+          carb: f.carb,
+          fat: f.fat,
+          mealType: mealSlot,
+        })),
+        mealSlot
+      );
+
+      setMealToEdit(draftItems.length > 0 ? draftItems : null);
+      setEditingMealId(null);
+      setPendingGhostMealId(src.id ?? node.id ?? null);
+      setFastLoggerInitialSlot(mealSlot);
+      setShowFastLogger(true);
     },
-    [mapProposalItemsToDiaryFoods, decimalToTimeStr, toCanonicalMealType, mealIdFromCanonical]
+    [
+      isSimulationMode,
+      simulatedLog,
+      dailyLog,
+      buildDraftPrefillItems,
+      toCanonicalMealType,
+    ]
   );
 
   /** Salvataggio pasto da payload add_food / pendingHabit; items possono includere matchedKey (abitudine). */
@@ -3674,52 +3613,6 @@ Ottimo! Diario aggiornato. 🥗`;
     ]
   );
 
-  const handleCalibrateFoodWeight = (foodId, deltaG) => {
-    const food = addedFoods.find(f => f?.id === foodId);
-    if (!food) {
-      console.warn('[SalaComandi] food not found for calibration', { foodId });
-      return;
-    }
-    const currentQta = Number(food.qta ?? food.weight ?? 100) || 100;
-    const newQta = Math.max(5, Math.min(5000, currentQta + deltaG));
-    if (newQta === currentQta) return;
-    if (food.type === 'recipe') {
-      const ratio = newQta / currentQta;
-      const scaleKeys = new Set([
-        'kcal', 'cal', 'prot', 'carb', 'fat', 'fatTotal',
-        ...Object.values(TARGETS).flatMap(g => Object.keys(g || {}))
-      ]);
-      setAddedFoods(prev => prev.map(f => {
-        if (f.id !== foodId) return f;
-        const next = { ...f, qta: newQta, weight: newQta, locked: true };
-        scaleKeys.forEach((k) => {
-          if (f[k] != null && typeof f[k] === 'number' && !Number.isNaN(f[k])) {
-            next[k] = f[k] * ratio;
-          }
-        });
-        if (Array.isArray(f.ingredients)) {
-          next.ingredients = f.ingredients.map((ing) => {
-            const w0 = Number(ing.weight) || 0;
-            const w1 = Math.max(5, Math.round(w0 * ratio));
-            const wf = w0 > 0 ? w1 / w0 : 1;
-            return {
-              ...ing,
-              weight: w1,
-              kcal: Math.max(0, Math.round((Number(ing.kcal) || 0) * wf)),
-              prot: Math.max(0, Math.round((Number(ing.prot) || 0) * wf * 10) / 10),
-              carb: Math.max(0, Math.round((Number(ing.carb) || 0) * wf * 10) / 10),
-              fat: Math.max(0, Math.round((Number(ing.fat) || 0) * wf * 10) / 10)
-            };
-          });
-        }
-        return next;
-      }));
-      return;
-    }
-    const updated = estraiDatiFoodDb(food.desc || food.name, newQta, food.mealType || mealType);
-    setAddedFoods(prev => prev.map(f => f.id === foodId ? { ...updated, id: foodId, locked: true } : f));
-  };
-
   const saveCustomRecipeToFoodDb = useCallback(async ({ desc, kcal, prot, carb, fatTotal, ingredients }, existingKey) => {
     if (!userUid || !desc) return null;
     const basePath = `users/${userUid}/tracker_data`;
@@ -3762,6 +3655,7 @@ Ottimo! Diario aggiornato. 🥗`;
     const payloadWithUnits = enrichDbRowWithFoodUnits(payload, newKey);
     await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), payloadWithUnits);
     setFoodDb(prev => ({ ...(prev || {}), [newKey]: payloadWithUnits }));
+    return { key: newKey, row: payloadWithUnits };
   }, [userUid, db, fullHistory]);
 
   /** Override locale + aggiornamento riga Firebase per stesso barcode (correzioni utente). */
@@ -3836,148 +3730,105 @@ Ottimo! Diario aggiornato. 🥗`;
     setIsFullScreenGraph(false);
   };
 
-  const saveMealToDiary = () => {
-    if (!isInitialLoadComplete) return;
-    try {
-      const currentTargetType = mealType;
-      const uniqueBatchId = Date.now();
-      const timeToUse =
-        typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime)
-          ? drawerMealTime
-          : getCurrentTimeRoundedTo15Min();
-      const safeDailyLog = dailyLog || [];
-      const ourSlot = getGhostMealType(currentTargetType, safeDailyLog);
-      const slotToReplace = editingMealId || ourSlot;
+  const handleFastLoggerSave = useCallback((draftFoods, targetMealType, editMealId) => {
+    if (!isInitialLoadComplete || !Array.isArray(draftFoods) || draftFoods.length === 0) return;
 
-      const mealItems = (addedFoods || []).map((f, index) => ({
-        ...f,
-        type: f.type === 'recipe' ? 'recipe' : 'food',
-        mealType: ourSlot,
-        mealTime: timeToUse,
-        id: f.id || `f_${uniqueBatchId}_${index}`
-      }));
+    const mealTimeBySlot = {
+      colazione: 8.0,
+      pranzo: 13.0,
+      cena: 20.0,
+      snack: 10.5,
+    };
+    const slot = String(targetMealType || 'pranzo').split('_')[0];
+    const batchId = Date.now();
+    const logToUse = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
 
-      if (!isSimulationMode && mealItems.length >= 1) {
-        try {
-          if (mealItems.length >= 2) {
-            recordMealFoodCooccurrence(mealItems, ourSlot);
-          }
-          recordMealSuggestionHabits(mealItems, ourSlot, foodDb || {});
-          recordMealFoodUnitUsageFromItems(mealItems, foodDb || {}, findBestFoodMatch);
-        } catch (_) {}
-      }
+    let mealTypeToUse = slot;
+    let mealTimeToUse = mealTimeBySlot[slot] ?? 13.0;
 
-      const foodsToRemove = getFoodItemsForMealSlot(safeDailyLog, String(slotToReplace));
-      const removeSet = new Set(foodsToRemove);
-      const editingGhostMealId = editingMealId != null ? String(editingMealId) : '';
-      const rest = safeDailyLog.filter((item) => {
-        if (removeSet.has(item)) return false;
-        if (
-          editingGhostMealId &&
-          item?.type === 'ghost_meal' &&
-          item.id != null &&
-          String(item.id) === editingGhostMealId
-        ) {
-          return false;
+    if (editMealId) {
+      const existing = getFoodItemsForMealSlot(logToUse, String(editMealId));
+      if (existing.length > 0) {
+        if (typeof existing[0].mealTime === 'number' && !Number.isNaN(existing[0].mealTime)) {
+          mealTimeToUse = existing[0].mealTime;
         }
-        return true;
-      });
-
-      const nuovoLog = [...mealItems, ...rest];
-      if (isSimulationMode) {
-        setSimulatedLog((prev) => {
-          const p = prev || [];
-          const toRm = getFoodItemsForMealSlot(p, String(slotToReplace));
-          const rm = new Set(toRm);
-          const kept = p.filter((item) => {
-            if (rm.has(item)) return false;
-            if (
-              editingGhostMealId &&
-              item?.type === 'ghost_meal' &&
-              item.id != null &&
-              String(item.id) === editingGhostMealId
-            ) {
-              return false;
-            }
-            return true;
-          });
-          return [...kept, ...mealItems];
-        });
-        setAddedFoods([]);
-        setEditingMealId(null);
-        closeDrawer({ force: true });
-        return;
       }
+    } else if (pendingGhostMealId) {
+      const ghost = logToUse.find(
+        (e) =>
+          e?.type === 'ghost_meal' &&
+          e?.id != null &&
+          String(e.id) === String(pendingGhostMealId)
+      );
+      if (ghost) {
+        let t = ghost.mealTime;
+        if (typeof t !== 'number' || Number.isNaN(t)) t = ghost.time;
+        if (typeof t === 'number' && !Number.isNaN(t)) {
+          mealTimeToUse = t;
+        } else {
+          const parsed = parseFlexibleTimeToDecimal(String(t ?? ''));
+          if (parsed != null) mealTimeToUse = parsed;
+        }
+      }
+    }
+
+    const nuoviAlimenti = draftFoods.map((f, index) => {
+      const weight = Number(f.weight ?? f.qta) || 100;
+      return {
+        ...f,
+        type: 'food',
+        mealType: mealTypeToUse,
+        mealTime: mealTimeToUse,
+        id: `f_${batchId}_${index}`,
+        qta: weight,
+        weight,
+        kcal: Number(f.kcal ?? f.cal) || 0,
+        cal: Number(f.cal ?? f.kcal) || 0,
+      };
+    });
+
+    let nuovoLog;
+    if (editMealId) {
+      const foodsToRemove = getFoodItemsForMealSlot(logToUse, String(editMealId));
+      const removeSet = new Set(foodsToRemove);
+      nuovoLog = logToUse.filter((item) => !removeSet.has(item));
+      nuovoLog = [...nuoviAlimenti, ...nuovoLog];
+    } else {
+      nuovoLog = [...logToUse, ...nuoviAlimenti];
+      if (pendingGhostMealId) {
+        nuovoLog = nuovoLog.filter(
+          (e) =>
+            !(
+              e?.type === 'ghost_meal' &&
+              e?.id != null &&
+              String(e.id) === String(pendingGhostMealId)
+            )
+        );
+      }
+    }
+
+    if (isSimulationMode) {
+      setSimulatedLog(nuovoLog);
+    } else {
       setDailyLog(nuovoLog);
       syncDatiFirebase(nuovoLog, manualNodes || []);
-    } catch (error) {
-      console.error("Errore salvataggio pasto:", error);
-    } finally {
-      setAddedFoods([]);
-      setEditingMealId(null);
-      closeDrawer({ force: true });
     }
-  };
-
-  /**
-   * Salvataggio dal costruttore pasti avanzato (macro, timing, impatto glicemico stimato).
-   * Predisposto per un futuro sistema modulare di creazione pasti.
-   * @param {Object} payload - { macro?, timing?, glycemicImpact?, mealType?, items? }
-   */
-  const handleMealBuilderSave = useCallback((payload = {}) => {
-    setIsMealBuilderOpen(false);
-    if (payload?.items?.length) {
-      const timeToUse =
-        typeof payload.timing === 'number' && !Number.isNaN(payload.timing)
-          ? payload.timing
-          : typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime)
-            ? drawerMealTime
-            : getCurrentTimeRoundedTo15Min();
-      const logToUse = isSimulationMode ? (simulatedLog || []) : dailyLog;
-      const ourSlot = getGhostMealType(payload.mealType || mealType, logToUse);
-      const slotToReplace = editingMealId || ourSlot;
-      const mealItems = payload.items.map((f, index) => ({
-        ...f,
-        type: f.type === 'recipe' ? 'recipe' : 'food',
-        mealType: ourSlot,
-        mealTime: timeToUse,
-        id: f.id || `f_${Date.now()}_${index}`
-      }));
-      const foodsToRemove = getFoodItemsForMealSlot(logToUse, String(slotToReplace));
-      const removeSet = new Set(foodsToRemove);
-      const editingGhostMealId = editingMealId != null ? String(editingMealId) : '';
-      const dailyLogRest = logToUse.filter((item) => {
-        if (removeSet.has(item)) return false;
-        if (
-          editingGhostMealId &&
-          item?.type === 'ghost_meal' &&
-          item.id != null &&
-          String(item.id) === editingGhostMealId
-        ) {
-          return false;
-        }
-        return true;
-      });
-      const nextLog = [...mealItems, ...dailyLogRest];
-      if (isSimulationMode) {
-        setSimulatedLog(nextLog);
-        setEditingMealId(null);
-        return;
-      }
-      if (mealItems.length >= 1) {
-        try {
-          if (mealItems.length >= 2) {
-            recordMealFoodCooccurrence(mealItems, ourSlot);
-          }
-          recordMealSuggestionHabits(mealItems, ourSlot, foodDb || {});
-          recordMealFoodUnitUsageFromItems(mealItems, foodDb || {}, findBestFoodMatch);
-        } catch (_) {}
-      }
-      setDailyLog(nextLog);
-      syncDatiFirebase(nextLog, manualNodes);
-      setEditingMealId(null);
-    }
-  }, [dailyLog, simulatedLog, isSimulationMode, manualNodes, mealType, drawerMealTime, syncDatiFirebase, editingMealId, getFoodItemsForMealSlot, foodDb]);
+    setMealToEdit(null);
+    setEditingMealId(null);
+    setFastLoggerInitialSlot(null);
+    setPendingGhostMealId(null);
+    setShowFastLogger(false);
+  }, [
+    dailyLog,
+    simulatedLog,
+    manualNodes,
+    syncDatiFirebase,
+    isSimulationMode,
+    isInitialLoadComplete,
+    getFoodItemsForMealSlot,
+    pendingGhostMealId,
+    parseFlexibleTimeToDecimal,
+  ]);
 
   const startNodeDrag = useCallback((node, edge) => (e, activationOpts) => {
     e.stopPropagation();
@@ -5366,20 +5217,6 @@ ${dbKeys || 'n/d'}`;
     });
   }, [fullStorico, todayStr]);
 
-  /** Cibi mangiati ieri nello stesso pasto (stesso mealType) per suggerimenti inserimento fulmineo */
-  const abitudiniIeri = useMemo(() => {
-    if (!fullStorico || !mealType) return [];
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().slice(0, 10);
-    const node = fullStorico[TRACKER_STORICO_KEY(yesterdayStr)];
-    const raw = node?.log ?? node?.dati?.log ?? [];
-    const logArr = Array.isArray(raw) ? raw : Object.values(raw || {});
-    const normalized = normalizeLogData(logArr);
-    const equivalents = getEquivalentMealTypes(mealType);
-    return normalized.filter(item => (item.type === 'food' || item.type === 'recipe') && equivalents.includes(item.mealType));
-  }, [fullStorico, mealType]);
-
   const weeklyTrendData = useMemo(() => {
     return [...pastDaysStorico].slice(0, 7).reverse().map(d => {
       const prevDate = new Date(d.dataStr + 'T12:00:00');
@@ -5521,48 +5358,6 @@ ${dbKeys || 'n/d'}`;
         <div style={{ height: '5px', background: '#222', borderRadius: '3px', overflow: 'hidden' }}>
           <div style={{ width: `${percent}%`, height: '100%', background: isOver ? '#ff3d00' : (percent >= 100 ? '#00e676' : '#b388ff'), transition: 'width 0.5s' }}></div>
         </div>
-      </div>
-    );
-  };
-
-  const renderMiniBar = (label, current, target, color) => {
-    const percent = Math.min((current / (target || 1)) * 100, 100);
-    const isOver = current > target * 1.1;
-    return (
-      <div key={label} style={{ flex: '1 1 45%', minWidth: '120px', marginBottom: '8px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#888', marginBottom: '4px' }}>
-          <span>{label}</span>
-          <span style={{ color: isOver ? '#ff3d00' : '#ccc' }}>{Math.round(current)} / {Math.round(target)}</span>
-        </div>
-        <div style={{ height: '4px', background: '#222', borderRadius: '2px', overflow: 'hidden' }}>
-          <div style={{ width: `${percent}%`, height: '100%', background: isOver ? '#ff3d00' : color, transition: 'width 0.3s' }}></div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderLiveProgressBar = (label, currentDaily, mealAddition, dailyTarget, unit, color) => {
-    const current = Number(currentDaily) || 0;
-    const addition = Number(mealAddition) || 0;
-    const target = Number(dailyTarget) || 1;
-    const currentPercent = Math.min((current / target) * 100, 100);
-    const additionPercent = Math.min((addition / target) * 100, 100 - currentPercent);
-    const isOverflow = current + addition > target;
-    return (
-      <div style={{ marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px', fontWeight: 'bold' }}>
-          <span style={{ color: color }}>{label.toUpperCase()}</span>
-          <span>
-            {current.toFixed(1)} <span style={{ color, filter: 'brightness(1.5)' }}>+{addition.toFixed(1)}</span> / {target} {unit}
-          </span>
-        </div>
-        <div style={{ height: '12px', background: '#1a1a1a', borderRadius: '6px', overflow: 'hidden', display: 'flex', border: '1px solid #333' }}>
-          <div style={{ width: `${currentPercent}%`, background: '#444', transition: 'width 0.3s' }}></div>
-          {addition > 0 && (
-            <div className={`live-bar-addition ${isOverflow ? 'live-bar-overflow' : ''}`} style={{ width: `${Math.max(2, additionPercent)}%`, backgroundColor: isOverflow ? '#ff1744' : color, color: isOverflow ? '#ff1744' : color }}></div>
-          )}
-        </div>
-        {isOverflow && <div style={{ fontSize: '0.65rem', color: '#ff1744', marginTop: '4px', textAlign: 'right' }}>⚠️ Superato limite giornaliero</div>}
       </div>
     );
   };
@@ -6026,6 +5821,98 @@ ${dbKeys || 'n/d'}`;
 
   // Calcolo Budget Dinamico (Base + Bruciate oggi) — prima di renderDataWithSegments per usare scale nel map
   const burnedKcal = activeLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
+
+  const fastLoggerDailyLogForTargets = useMemo(() => {
+    const log = activeLog || [];
+    if (!editingMealId) return log;
+    const items = getFoodItemsForMealSlot(log, editingMealId);
+    const keys = new Set(
+      items.map((f) => {
+        const base = String(f.mealType ?? '').split('_')[0];
+        const t = typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 'na';
+        return `${base}|${t}`;
+      }),
+    );
+    return log.filter((e) => {
+      if (e.type !== 'food' && e.type !== 'recipe') return true;
+      const base = String(e.mealType ?? '').split('_')[0];
+      const t = typeof e.mealTime === 'number' && !Number.isNaN(e.mealTime) ? e.mealTime : 'na';
+      return !keys.has(`${base}|${t}`);
+    });
+  }, [activeLog, editingMealId, getFoodItemsForMealSlot]);
+
+  const getFastLoggerMealTargetsForSlot = useCallback((mealSlot) => {
+    const canon = toCanonicalMealType(String(mealSlot || 'pranzo').split('_')[0]);
+    const baseTargets = {
+      kcal: effectiveTargetsForCurrentDate?.kcal ?? userTargets?.kcal ?? 2000,
+      prot: effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot ?? 150,
+      carb: effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb ?? 200,
+      fatTotal:
+        effectiveTargetsForCurrentDate?.fatTotal
+        ?? effectiveTargetsForCurrentDate?.fat
+        ?? userTargets?.fatTotal
+        ?? userTargets?.fat
+        ?? 60,
+      fat:
+        effectiveTargetsForCurrentDate?.fat
+        ?? effectiveTargetsForCurrentDate?.fatTotal
+        ?? userTargets?.fat
+        ?? userTargets?.fatTotal
+        ?? 60,
+      fibre: effectiveTargetsForCurrentDate?.fibre ?? userTargets?.fibre ?? 30,
+    };
+    const dynamic = getDynamicMealTargets(canon, fastLoggerDailyLogForTargets, baseTargets, {
+      calorieStrategy: kentuDailyCalorieStrategy,
+      burnedKcalBonus: burnedKcal,
+    });
+    const result = dynamic && typeof dynamic === 'object' ? { ...dynamic } : {};
+    const sk = getStrategyKey(canon);
+    const planK = idealStrategy?.[sk];
+    if (
+      canon !== 'cena'
+      && planK != null
+      && Number.isFinite(Number(planK))
+      && Number(planK) > 0
+    ) {
+      result.kcal = Math.round(Number(planK));
+    }
+    return {
+      kcal: Number(result.kcal) || baseTargets.kcal,
+      prot: Number(result.prot) || baseTargets.prot,
+      carb: Number(result.carb) || baseTargets.carb,
+      fat: Number(result.fat ?? result.fatTotal) || baseTargets.fat,
+    };
+  }, [
+    fastLoggerDailyLogForTargets,
+    effectiveTargetsForCurrentDate,
+    userTargets,
+    kentuDailyCalorieStrategy,
+    burnedKcal,
+    idealStrategy,
+  ]);
+
+  const getFastLoggerMealConsumedForSlot = useCallback((mealSlot) => {
+    if (editingMealId) {
+      return { kcal: 0, prot: 0, carb: 0, fat: 0 };
+    }
+    const log = activeLog || [];
+    const canon = toCanonicalMealType(String(mealSlot || 'pranzo').split('_')[0]);
+    const items = log.filter(
+      (e) =>
+        (e.type === 'food' || e.type === 'recipe')
+        && toCanonicalMealType(String(e.mealType || '').split('_')[0]) === canon,
+    );
+    return items.reduce(
+      (acc, f) => ({
+        kcal: acc.kcal + (Number(f.kcal ?? f.cal) || 0),
+        prot: acc.prot + (Number(f.prot) || 0),
+        carb: acc.carb + (Number(f.carb) || 0),
+        fat: acc.fat + (Number(f.fatTotal ?? f.fat) || 0),
+      }),
+      { kcal: 0, prot: 0, carb: 0, fat: 0 },
+    );
+  }, [activeLog, editingMealId]);
+
   const profileKcalBase = userProfileKcalBase;
   const dynamicDailyKcal = hasPlannedBlock && profileKcalBase != null
     ? profileKcalBase + plannedDelta + burnedKcal
@@ -6148,14 +6035,7 @@ ${dbKeys || 'n/d'}`;
     && !dismissedAiCoachInsights[aiCoachSuggestionDismissKey]
   );
   const isAiCoachInsightCritical = (Number(aiCoachSuggestion?.priority) || 0) >= 80;
-  const isUserActivelyEditing = !!(
-    activeAction === 'pasto'
-    || isMealBuilderOpen
-    || (isDrawerOpen && activeAction === 'pasto')
-    || editingMealId != null
-    || String(foodNameInput || '').trim().length > 0
-    || String(foodWeightInput || '').trim().length > 0
-  );
+  const isUserActivelyEditing = !!(showFastLogger);
   const shouldDelayAiCoachInsight = isUserActivelyEditing && !isAiCoachInsightCritical;
 
   useEffect(() => {
@@ -6312,20 +6192,11 @@ ${dbKeys || 'n/d'}`;
     consumeCoachPeriod(getTodayString(), period);
     setCoachPrefsTick((x) => x + 1);
     const canon = s.action.mealType;
-    const mealId = mealIdFromCanonical(canon);
-    setMealType(mealId);
-    const t = getDefaultMealTime(mealId);
-    setDrawerMealTime(t);
-    setDrawerMealTimeStr(decimalToTimeStr(t));
-    setAddedFoods([]);
+    setMealType(mealIdFromCanonical(canon));
     setSelectedMealCenter(null);
     setEditingMealId(null);
-    setFoodNameInput('');
-    setFoodWeightInput('');
-    setActiveAction('pasto');
-    setIsDrawerOpen(true);
-    setIsMealBuilderOpen(true);
-    setMealBuilderCoachPracticalKey((k) => k + 1);
+    setMealToEdit(null);
+    openFastLoggerNew();
     setHasNewInsight(false);
     setAiCoachBulbPulseCycles(0);
     if (aiCoachInsightReminderTimeoutRef.current) {
@@ -6337,7 +6208,7 @@ ${dbKeys || 'n/d'}`;
       aiCoachInsightActivateTimeoutRef.current = null;
     }
     setIsAiCoachSuggestionModalOpen(false);
-  }, [aiCoachEval, decimalToTimeStr, getDefaultMealTime, mealIdFromCanonical]);
+  }, [aiCoachEval, mealIdFromCanonical, openFastLoggerNew]);
 
   useEffect(() => {
     if (kentuActiveTrigger !== 'agenda') kentuAgendaAwaitingRef.current = false;
@@ -6663,170 +6534,7 @@ ${dbKeys || 'n/d'}`;
 
   const energyAt20Percent = energyAt20 ?? 50;
 
-  const currentMealTotals = addedFoods.reduce((acc, food) => ({
-    kcal: acc.kcal + (Number(food.kcal) || Number(food.cal) || 0),
-    prot: acc.prot + (Number(food.prot) || 0),
-    carb: acc.carb + (Number(food.carb) || 0),
-    fat: acc.fat + (Number(food.fatTotal) || 0),
-    fibre: acc.fibre + (Number(food.fibre) || 0)
-  }), { kcal: 0, prot: 0, carb: 0, fat: 0, fibre: 0 });
-
-  const mealNutrientKeys = ['kcal', ...Object.values(TARGETS).flatMap(g => Object.keys(g))];
-  const mealTotaliFull = addedFoods.reduce((acc, food) => {
-    acc.kcal = (acc.kcal || 0) + (Number(food.kcal) || Number(food.cal) || 0);
-    mealNutrientKeys.forEach(k => {
-      if (k === 'kcal') return;
-      acc[k] = (acc[k] || 0) + (Number(food[k]) || 0);
-    });
-    return acc;
-  }, {});
-
-  const dailyLogForDynamicTargets = useMemo(() => {
-    const log = activeLog || [];
-    if (!editingMealId) return log;
-    const items = getFoodItemsForMealSlot(log, editingMealId);
-    const keys = new Set(
-      items.map((f) => {
-        const base = String(f.mealType ?? '').split('_')[0];
-        const t = typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 'na';
-        return `${base}|${t}`;
-      })
-    );
-    return log.filter((e) => {
-      if (e.type !== 'food' && e.type !== 'recipe') return true;
-      const base = String(e.mealType ?? '').split('_')[0];
-      const t = typeof e.mealTime === 'number' && !Number.isNaN(e.mealTime) ? e.mealTime : 'na';
-      return !keys.has(`${base}|${t}`);
-    });
-  }, [activeLog, editingMealId, getFoodItemsForMealSlot]);
-
-  const targetMacrosPasto = useMemo(() => {
-    const h =
-      typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime)
-        ? drawerMealTime
-        : typeof displayTime === 'number' && !Number.isNaN(displayTime)
-          ? displayTime
-          : 12;
-    return getDynamicMealTargets(mealType, dailyLogForDynamicTargets, {
-      kcal: effectiveTargetsForCurrentDate?.kcal ?? 2000,
-      prot: effectiveTargetsForCurrentDate?.prot ?? 150,
-      carb: effectiveTargetsForCurrentDate?.carb ?? 200,
-      fatTotal:
-        effectiveTargetsForCurrentDate?.fatTotal ?? effectiveTargetsForCurrentDate?.fat ?? 60,
-      fat: effectiveTargetsForCurrentDate?.fat ?? effectiveTargetsForCurrentDate?.fatTotal ?? 60,
-      fibre: effectiveTargetsForCurrentDate?.fibre ?? 30,
-    }, {
-      currentDecimalHour: h,
-      calorieStrategy: kentuDailyCalorieStrategy,
-      burnedKcalBonus: burnedKcal,
-    });
-  }, [
-    mealType,
-    dailyLogForDynamicTargets,
-    effectiveTargetsForCurrentDate,
-    kentuDailyCalorieStrategy,
-    burnedKcal,
-    drawerMealTime,
-    displayTime,
-  ]);
-
-  const targetMacrosPastoWithPlanning = useMemo(() => {
-    const base =
-      targetMacrosPasto && typeof targetMacrosPasto === 'object' ? { ...targetMacrosPasto } : {};
-    const canon = toCanonicalMealType(String(mealType || 'pranzo').split('_')[0]);
-    const sk = getStrategyKey(canon);
-    const planK = idealStrategy?.[sk];
-    // Cena: niente quota fissa da idealStrategy — resta il residuo da getDynamicMealTargets (Tkcal − consumate).
-    if (
-      canon !== 'cena' &&
-      planK != null &&
-      Number.isFinite(Number(planK)) &&
-      Number(planK) > 0
-    ) {
-      base.kcal = Math.round(Number(planK));
-    }
-    return base;
-  }, [targetMacrosPasto, mealType, idealStrategy]);
-
-  const mealBuilderDailyTarget = useMemo(
-    () => ({
-      pro: effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot ?? 150,
-      carbo: effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb ?? 200,
-      fat:
-        effectiveTargetsForCurrentDate?.fatTotal ??
-        effectiveTargetsForCurrentDate?.fat ??
-        userTargets?.fatTotal ??
-        userTargets?.fat ??
-        60,
-    }),
-    [effectiveTargetsForCurrentDate, userTargets]
-  );
-
-  const mealBuilderCurrentMealId = useMemo(() => {
-    const h =
-      typeof drawerMealTime === 'number' && !Number.isNaN(drawerMealTime)
-        ? drawerMealTime
-        : typeof displayTime === 'number' && !Number.isNaN(displayTime)
-          ? displayTime
-          : 12;
-    return resolveDistributionMealId(mealType, h);
-  }, [mealType, drawerMealTime, displayTime]);
-
-  const mealBuilderConsumedMacros = useMemo(() => {
-    if (!mealBuilderCurrentMealId) return { pro: 0, carbo: 0, fat: 0 };
-    return sumConsumedMacrosExcludingMeal(dailyLogForDynamicTargets, mealBuilderCurrentMealId);
-  }, [dailyLogForDynamicTargets, mealBuilderCurrentMealId]);
-
-  const mealBuilderRemainingMeals = useMemo(() => {
-    if (!mealBuilderCurrentMealId) return [];
-    return buildRemainingDistributionMeals(dailyLogForDynamicTargets, mealBuilderCurrentMealId);
-  }, [dailyLogForDynamicTargets, mealBuilderCurrentMealId]);
-
-  const handleSmartMealCompletion = useCallback(
-    async (currentFoods, aiMealConstraints) => {
-      const foods = Array.isArray(currentFoods) ? currentFoods : [];
-      const present = foods.map((f) => f.desc || f.name).filter(Boolean);
-      const anchor = currentTrackerDate || getTodayString();
-      const recent7 = buildLast7DaysMealLinesForDraftPrompt(fullHistory, anchor);
-      const constraintsBlock = buildAiMealConstraintsPromptBlock(aiMealConstraints);
-      const prompt = `SMART MEAL COMPLETION: Devo completare il pasto '${String(mealType)}'. Target ricalcolato: ${JSON.stringify(targetMacrosPastoWithPlanning)}. Cibi già presenti (da NON rimuovere): ${present.join(', ') || 'Nessuno'}. Genera cibi suggeriti per raggiungere il target (pescando da storico o DB utente), coerenti con le abitudini reali degli ultimi giorni.
-${constraintsBlock}
-
-ULTIMI 7 GIORNI (pasti registrati):
-${recent7}
-
-Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...", "weight": 100}]}]. NON SCRIVERE ALTRO. NON USARE MARKDOWN o backticks.`;
-      try {
-        const raw = await callGeminiAPIWithRotation(prompt);
-        const items = parseSmartCompletionJsonFromAiResponse(raw);
-        const newEntries = items.map((it) => estraiDatiFoodDb(it.desc, it.weight, mealType));
-        setAddedFoods((prev) => [...prev, ...newEntries]);
-      } catch (e) {
-        const msg = e?.message ? String(e.message) : 'Completamento non riuscito';
-        window.alert(msg);
-      }
-    },
-    [mealType, targetMacrosPastoWithPlanning, callGeminiAPIWithRotation, estraiDatiFoodDb, fullHistory, currentTrackerDate]
-  );
-
-  const dailyKcal = userTargets.kcal ?? 2000;
-  const ratio = dailyKcal > 0 ? targetMacrosPastoWithPlanning.kcal / dailyKcal : 0.25;
-
   const isReadyToDelete = draggingNode && Math.abs(dragOffsetY) > 50;
-
-  const checkBilanciamentoPasto = () => {
-    if (addedFoods.length === 0) return null;
-    const kcal = mealTotaliFull.kcal || 0;
-    const prot = mealTotaliFull.prot || 0;
-    const carb = mealTotaliFull.carb || 0;
-    const fatTotal = mealTotaliFull.fatTotal ?? mealTotaliFull.fat ?? 0;
-    if (kcal < 150) return null;
-    if (carb > (prot * 4) && prot < 15) return { text: '⚠️ Povero di proteine e ricco di carboidrati. Rischio picco glicemico.', color: '#ff9800' };
-    if (prot < 10 && kcal > 400) return { text: '⚠️ Pasto molto calorico ma carente di fonti proteiche.', color: '#ff9800' };
-    if (fatTotal > 30 && carb > 60) return { text: '⚠️ Combinazione alta di grassi e carboidrati. Impegno digestivo severo.', color: '#ff4d4d' };
-    if (prot >= 20 && carb <= 80 && fatTotal <= 25) return { text: '✅ Pasto ottimamente bilanciato.', color: '#00e676' };
-    return null;
-  };
 
   // --- ZONA SICURA HOOKS: MOTORE METABOLICO E BODY BATTERY ---
   const metabolicContextOptions = useMemo(() => {
@@ -8800,85 +8508,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           />
         )}
 
-        {/* VISTA PASTO RAPIDO - CON BOTTONI CANONICI */}
-        <MealBuilderOverlay
-          activeAction={activeAction}
-          onClose={handleAttemptCloseMeal}
-          mealType={mealType}
-          setMealType={setMealType}
-          drawerMealTime={drawerMealTime}
-          setDrawerMealTime={setDrawerMealTime}
-          setDrawerMealTimeStr={setDrawerMealTimeStr}
-          getDefaultMealTime={getDefaultMealTime}
-          decimalToTimeStr={decimalToTimeStr}
-          parseTimeStrToDecimal={parseTimeStrToDecimal}
-          miniTimelinePastoRef={miniTimelinePastoRef}
-          handleMiniTimelineDrag={handleMiniTimelineDrag}
-          allNodes={allNodes}
-          totali={macroDailyReals}
-          userTargets={userTargets}
-          dynamicDailyKcal={dynamicDailyKcal}
-          renderLiveProgressBar={renderLiveProgressBar}
-          renderMiniBar={renderMiniBar}
-          renderProgressBar={renderProgressBar}
-          renderRatioBar={renderRatioBar}
-          mealTotaliFull={mealTotaliFull}
-          targetMacrosPasto={targetMacrosPastoWithPlanning}
-          ratio={ratio}
-          energyAt20Percent={energyAt20Percent}
-          isBarcodeScannerOpen={isBarcodeScannerOpen}
-          setIsBarcodeScannerOpen={setIsBarcodeScannerOpen}
-          barcodeVideoRef={barcodeVideoRef}
-          onCloseBarcodeScanner={closeBarcodeScanner}
-          foodNameInput={foodNameInput}
-          setFoodNameInput={setFoodNameInput}
-          foodWeightInput={foodWeightInput}
-          setFoodWeightInput={setFoodWeightInput}
-          foodInputRef={foodInputRef}
-          foodDropdownSuggestions={foodDropdownSuggestions}
-          creaResults={creaResults}
-          isCreaLoading={isCreaLoading}
-          getLastQuantityForFood={getLastQuantityForFood}
-          showFoodDropdown={showFoodDropdown}
-          setShowFoodDropdown={setShowFoodDropdown}
-          generateFoodWithAI={generateFoodWithAI}
-          triggerCreaSearch={triggerCreaSearch}
-          isGeneratingFood={isGeneratingFood}
-          handleAddFoodManual={handleAddFoodManual}
-          abitudiniIeri={abitudiniIeri}
-          addedFoods={addedFoods}
-          setAddedFoods={setAddedFoods}
-          handleCalibrateFoodWeight={handleCalibrateFoodWeight}
-          setSelectedFoodForInfo={setSelectedFoodForInfo}
-          setSelectedFoodForEdit={setSelectedFoodForEdit}
-          setEditQuantityValue={setEditQuantityValue}
-          userProfile={userProfile}
-          checkBilanciamentoPasto={checkBilanciamentoPasto}
-          TELEMETRY_TABS={TELEMETRY_TABS}
-          TARGETS={TARGETS}
-          MEAL_LABELS_SAVE={MEAL_LABELS_SAVE}
-          saveMealToDiary={saveMealToDiary}
-          editingMealId={editingMealId}
-          callGeminiAPIWithRotation={callGeminiAPIWithRotation}
-          saveCustomRecipeToFoodDb={saveCustomRecipeToFoodDb}
-          csvFoodDb={csvFoodDb}
-          foodDb={foodDb}
-          saveFoodEntryPer100ToFoodDb={saveFoodEntryPer100ToFoodDb}
-          deleteRecipeFromFoodDb={deleteRecipeFromFoodDb}
-          estraiDatiFoodDb={estraiDatiFoodDb}
-          plannerNoteFromAi={mealPlannerGhostNote}
-          onSmartComplete={handleSmartMealCompletion}
-          smartMealLaunchKey={mealBuilderSmartLaunchKey}
-          coachPracticalLaunchKey={mealBuilderCoachPracticalKey}
-          mealBuilderBarcodeBootstrap={mealBuilderBarcodeBootstrap}
-          onMealBuilderBarcodeBootstrapConsumed={consumeMealBuilderBarcodeBootstrap}
-          persistBarcodeNutritionCorrection={persistBarcodeNutritionCorrection}
-          currentMealId={mealBuilderCurrentMealId}
-          dailyTarget={mealBuilderDailyTarget}
-          consumedMacros={mealBuilderConsumedMacros}
-          remainingMeals={mealBuilderRemainingMeals}
-        />
-
         {/* VISTA DIARIO GIORNALIERO */}
         {activeAction === 'diario_giornaliero' && (
           <div className="view-animate">
@@ -9652,8 +9281,7 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
                   if (!Number.isFinite(qta) || qta <= 0) return;
                   const { food, source } = selectedFoodForEdit;
                   const newItem = { ...estraiDatiFoodDb(food.desc || food.name, qta, food.mealType), id: food.id, locked: true };
-                  if (source === 'queue') setAddedFoods(prev => prev.map(f => f.id === food.id ? newItem : f));
-                  else if (source === 'diary') {
+                  if (source === 'diary') {
                     if (isSimulationMode) {
                       setSimulatedLog(prev => (prev || []).map(f => {
                         if (f.id !== food.id) return f;
@@ -10044,9 +9672,6 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
       />
 
       <OverlayHost
-        showUnsavedMealWarning={showUnsavedMealWarning}
-        setShowUnsavedMealWarning={setShowUnsavedMealWarning}
-        finalizeMealBuilderCloseEmpty={finalizeMealBuilderCloseEmpty}
         showWeightModal={showWeightModal}
         setShowWeightModal={setShowWeightModal}
         inputWeightDate={inputWeightDate}
@@ -10113,18 +9738,9 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
         timelineInsertUI={timelineInsertUI}
         onDismiss={() => setTimelineInsertUI(null)}
         decimalToTimeStr={decimalToTimeStr}
-        onAddMealAtHour={(hour) => {
+        onAddMealAtHour={() => {
           setTimelineInsertUI(null);
-          const predicted = predictMealType(hour);
-          setAddedFoods([]);
-          setEditingMealId(null);
-          setMealPlannerGhostNote('');
-          setMealType(predicted);
-          setDrawerMealTime(hour);
-          setDrawerMealTimeStr(decimalToTimeStr(hour));
-          setActiveAction('pasto');
-          setIsDrawerOpen(true);
-          setMealBuilderSmartLaunchKey((k) => k + 1);
+          openFastLoggerNew();
         }}
         onAddWorkoutAtHour={(hour) => {
           setTimelineInsertUI(null);
@@ -10466,6 +10082,32 @@ Genera SOLO E UNICAMENTE la stringa [COMPLETION_JSON: {"foods": [{"desc": "...",
           setExpandedRiskId={setExpandedRiskId}
         />
       )}
+
+      {showFastLogger ? (
+        <FastMealLogger
+          key={editingMealId ?? pendingGhostMealId ?? 'new-meal'}
+          fullHistory={fullHistory}
+          personalDb={foodDb}
+          creaDb={csvFoodDb}
+          getMealTargetsForSlot={getFastLoggerMealTargetsForSlot}
+          getMealConsumedForSlot={getFastLoggerMealConsumedForSlot}
+          initialDraft={mealToEdit}
+          editingMealId={editingMealId}
+          initialMealSlot={
+            fastLoggerInitialSlot
+            ?? (mealToEdit?.[0]?.mealType
+              ? toCanonicalMealType(String(mealToEdit[0].mealType).split('_')[0])
+              : undefined)
+            ?? (editingMealId
+              ? toCanonicalMealType(String(editingMealId).split('_')[0])
+              : undefined)
+          }
+          onClose={closeFastLogger}
+          onSave={handleFastLoggerSave}
+          onAcquireExternalFood={saveFoodEntryPer100ToFoodDb}
+          onSaveRecipe={saveCustomRecipeToFoodDb}
+        />
+      ) : null}
 
       {fixedAppBottomChrome}
     </div>
