@@ -3658,6 +3658,43 @@ Ottimo! Diario aggiornato. 🥗`;
     return { key: newKey, row: payloadWithUnits };
   }, [userUid, db, fullHistory]);
 
+  /** Aggiorna parzialmente una voce del database personale (es. customImage, macro per100). */
+  const patchFoodDbEntry = useCallback(async (foodDbKey, patch) => {
+    if (!userUid || !db || !foodDbKey || !patch || typeof patch !== 'object') return;
+    const prev = foodDb?.[foodDbKey];
+    if (!prev) return;
+
+    const basePath = `users/${userUid}/tracker_data`;
+    const { row, customImage, ...rest } = patch;
+    const merged = { ...prev, ...rest };
+
+    if (row && typeof row === 'object') {
+      Object.assign(merged, row);
+    }
+
+    if ('customImage' in patch) {
+      if (customImage) {
+        merged.customImage = customImage;
+      } else {
+        delete merged.customImage;
+      }
+    }
+
+    Object.keys(TARGETS).forEach((g) =>
+      Object.keys(TARGETS[g] || {}).forEach((k) => {
+        if (merged[k] == null) merged[k] = getDefaultNutrientValue(k, fullHistory);
+      }),
+    );
+    if (merged.kcal == null || Number(merged.kcal) === 0) {
+      merged.kcal = getDefaultNutrientValue('kcal', fullHistory);
+    }
+    if (merged.fatTotal == null && merged.fat != null) merged.fatTotal = Number(merged.fat);
+
+    const payload = enrichDbRowWithFoodUnits(merged, foodDbKey);
+    await set(ref(db, `${basePath}/trackerFoodDatabase/${foodDbKey}`), payload);
+    setFoodDb((p) => ({ ...(p || {}), [foodDbKey]: payload }));
+  }, [userUid, db, foodDb, fullHistory]);
+
   /** Override locale + aggiornamento riga Firebase per stesso barcode (correzioni utente). */
   const persistBarcodeNutritionCorrection = useCallback(
     async ({ barcode, foodDbKey, per100, desc }) => {
@@ -10153,6 +10190,7 @@ ${dbKeys || 'n/d'}`;
           onClose={closeFastLogger}
           onSave={handleFastLoggerSave}
           onAcquireExternalFood={saveFoodEntryPer100ToFoodDb}
+          onPatchFoodDbEntry={patchFoodDbEntry}
           onSaveRecipe={saveCustomRecipeToFoodDb}
         />
       ) : null}

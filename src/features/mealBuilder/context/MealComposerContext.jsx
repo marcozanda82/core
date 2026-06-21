@@ -370,6 +370,17 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
   }, [updateFoodAmount]);
 
+  const updateFoodInDraft = useCallback((foodId, nextPartial) => {
+    if (foodId == null || !nextPartial || typeof nextPartial !== 'object') return;
+
+    setDraftFoods((prev) =>
+      prev.map((item) => {
+        if (String(item.id) !== String(foodId)) return item;
+        return { ...item, ...nextPartial };
+      }),
+    );
+  }, []);
+
 
 
   const clearDraft = useCallback(() => {
@@ -433,6 +444,8 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
       updateFoodQuantity,
 
+      updateFoodInDraft,
+
       clearDraft,
 
       loadInitialDraft,
@@ -462,6 +475,8 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       updateFoodAmount,
 
       updateFoodQuantity,
+
+      updateFoodInDraft,
 
       clearDraft,
 

@@ -304,10 +304,10 @@ function aggregatePredictiveFoodBlocks(allFoodEntries, targetMealType, limit) {
  *
  * @param {object|Array} fullHistory Albero tracker_data Firebase (`trackerStorico_YYYY-MM-DD`)
  * @param {string} targetMealType es. 'colazione', 'pranzo', 'cena'
- * @param {number} [limit=12] Numero massimo di blocchi predittivi
+ * @param {number} [limit=30] Numero massimo di blocchi predittivi
  * @returns {Array<object>} Blocchi ordinati per utilizzo più recente
  */
-export function usePredictiveFoodBlocks(fullHistory, targetMealType, limit = 12) {
+export function usePredictiveFoodBlocks(fullHistory, targetMealType, limit = 30) {
   return useMemo(() => {
     if (!targetMealType) return [];
 

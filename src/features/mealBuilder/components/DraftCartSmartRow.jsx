@@ -5,6 +5,8 @@ import {
   resolveUnitIdFromUnit,
   resolveUnitWeight,
 } from '../utils/draftFoodUnits';
+import FoodThumbnail from './FoodThumbnail';
+import { resolveFoodVisual } from '../utils/foodIconUtils';
 
 const numberInputClassName =
   'w-14 border-b border-slate-600 bg-transparent py-0.5 text-center text-sm text-slate-200 outline-none focus:border-cyan-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
@@ -12,8 +14,9 @@ const numberInputClassName =
 const stepButtonClassName =
   'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-base text-slate-200 transition-colors hover:border-slate-500 hover:bg-slate-700/80 active:scale-95';
 
-export default function DraftCartSmartRow({ item, onUpdateAmount, onRemove }) {
+export default function DraftCartSmartRow({ item, personalDb, onUpdateAmount, onRemove, onDeepEdit }) {
   const name = item.desc || item.name || 'Alimento';
+  const visual = resolveFoodVisual(item, personalDb);
   const selectedUnit = item.selectedUnit || 'g';
   const multiplier = Number(item.multiplier ?? item.qta ?? item.weight) || 0;
   const weight = Number(item.weight ?? item.qta) || 0;
@@ -44,9 +47,14 @@ export default function DraftCartSmartRow({ item, onUpdateAmount, onRemove }) {
   return (
     <li className="min-w-0 max-w-full rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2.5">
       <div className="flex min-w-0 items-start gap-2">
-        <p className="min-w-0 flex-1 truncate text-sm font-medium leading-snug text-slate-100">
+        <FoodThumbnail name={visual.name} customImage={visual.customImage} />
+        <button
+          type="button"
+          onClick={() => onDeepEdit?.(item)}
+          className="min-w-0 flex-1 truncate text-left text-sm font-medium leading-snug text-slate-100 transition-colors hover:text-cyan-300"
+        >
           {name}
-        </p>
+        </button>
         <div className="flex shrink-0 items-center gap-2">
           <div className="text-right">
             {selectedUnit !== 'g' ? (

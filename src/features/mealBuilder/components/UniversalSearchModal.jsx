@@ -1,6 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Plus, Settings } from 'lucide-react';
 import useUniversalSearchEngine from '../hooks/useUniversalSearchEngine';
 import useRecipeEngine from '../hooks/useRecipeEngine';
+import FoodThumbnail from './FoodThumbnail';
+import QtyBadge from './QtyBadge';
+import { resolveFoodVisual } from '../utils/foodIconUtils';
+import { getDraftQtyForFood } from '../utils/draftFoodMatchUtils';
+
+const SEARCH_UNIT_WEIGHT = 100;
 
 const SOURCE_BADGE = {
   personal: {
@@ -40,6 +47,25 @@ function resolveKcalPer100(result) {
   return Number.isFinite(kcal) ? Math.round(kcal) : null;
 }
 
+function resolveMacrosPer100(result) {
+  const row = result?.row || {};
+  const round = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.round(n * 10) / 10 : 0;
+  };
+  return {
+    kcal: resolveKcalPer100(result),
+    prot: round(row.prot),
+    carb: round(row.carb),
+    fat: round(row.fatTotal ?? row.fat),
+  };
+}
+
+function formatMacroLinePer100({ kcal, prot, carb, fat }) {
+  if (kcal == null) return 'Kcal non disponibili';
+  return `${kcal} kcal · P${prot} C${carb} F${fat}`;
+}
+
 function SourceBadge({ source }) {
   const config = SOURCE_BADGE[source] || {
     label: String(source || 'Altro'),
@@ -48,7 +74,7 @@ function SourceBadge({ source }) {
 
   return (
     <span
-      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${config.className}`}
+      className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${config.className}`}
     >
       {config.label}
     </span>
@@ -59,11 +85,13 @@ export default function UniversalSearchModal({
   isOpen,
   onClose,
   onSelectFood,
+  onEditCatalogFood,
   onSelectRecipe,
   onOpenScanner,
   onSaveManualFood,
   personalDb,
   creaDb = null,
+  draftFoods = [],
   scannerError = '',
   isScannerResolving = false,
 }) {
@@ -266,7 +294,7 @@ export default function UniversalSearchModal({
         ) : null}
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="flex-1 overflow-y-auto px-4 py-4">
         {isFoodsTab && isManualEntryOpen ? (
           <form onSubmit={handleManualSubmit} className="space-y-4">
             <p className="text-xs text-slate-400">Valori nutrizionali per 100 g</p>
@@ -379,25 +407,57 @@ export default function UniversalSearchModal({
             </button>
           </div>
         ) : isFoodsTab ? (
-          <ul className="space-y-2">
+          <ul className="divide-y divide-slate-800">
             {results.map((result) => {
-              const kcal = resolveKcalPer100(result);
+              const visual = resolveFoodVisual(result, personalDb);
+              const macros = resolveMacrosPer100(result);
+              const name = result.desc || result.name || 'Alimento';
+              const matchFood = {
+                foodDbKey: result._source === 'personal' ? (result.key || result.id) : undefined,
+                desc: name,
+                name,
+              };
+              const qty = getDraftQtyForFood(draftFoods, matchFood, SEARCH_UNIT_WEIGHT);
               return (
-                <li key={`${result._source}-${result.id}`}>
+                <li
+                  key={`${result._source}-${result.id}`}
+                  className="flex items-center gap-3 py-3"
+                >
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onEditCatalogFood?.(result);
+                      }}
+                      aria-label={`Modifica ${name}`}
+                      className="absolute left-0 top-0 z-10 flex h-5 w-5 items-center justify-center rounded-md bg-slate-900/90 transition-colors hover:bg-slate-800"
+                    >
+                      <Settings className="h-3 w-3 text-slate-400" />
+                    </button>
+                    {qty > 0 ? <QtyBadge qty={qty} className="-right-2 -top-2" /> : null}
+                    <FoodThumbnail
+                      name={visual.name}
+                      customImage={visual.customImage}
+                      sizeClassName="h-12 w-12"
+                      emojiClassName="text-2xl"
+                      className="rounded-lg"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-100">{name}</p>
+                    <p className="mt-0.5 truncate text-xs text-slate-400">
+                      {formatMacroLinePer100(macros)}
+                    </p>
+                    <SourceBadge source={result._source} />
+                  </div>
                   <button
                     type="button"
                     onClick={() => handleSelect(result)}
-                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-left transition-colors hover:border-slate-600 hover:bg-slate-900"
+                    aria-label={`Aggiungi ${name}`}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-600/20 text-cyan-400 transition-colors hover:bg-cyan-600/35 active:scale-95"
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-slate-100">
-                        {result.desc || result.name || 'Alimento'}
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        {kcal != null ? `${kcal} kcal / 100g` : 'Kcal non disponibili'}
-                      </p>
-                    </div>
-                    <SourceBadge source={result._source} />
+                    <Plus className="h-4 w-4" />
                   </button>
                 </li>
               );
@@ -410,25 +470,37 @@ export default function UniversalSearchModal({
               : 'Nessuna ricetta salvata. Componi un pasto e usa "Salva come ricetta".'}
           </p>
         ) : (
-          <ul className="space-y-2">
-            {filteredRecipes.map((recipe) => (
-              <li key={recipe.key}>
-                <button
-                  type="button"
-                  onClick={() => handleSelectRecipe(recipe)}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-violet-500/20 bg-slate-900/70 px-4 py-3 text-left transition-colors hover:border-violet-400/40 hover:bg-slate-900"
-                >
+          <ul className="divide-y divide-slate-800">
+            {filteredRecipes.map((recipe) => {
+              const visual = resolveFoodVisual({ name: recipe.name, foodDbKey: recipe.key }, personalDb);
+              return (
+                <li key={recipe.key} className="flex items-center gap-3 py-3">
+                  <FoodThumbnail
+                    name={visual.name}
+                    customImage={visual.customImage}
+                    sizeClassName="h-12 w-12"
+                    emojiClassName="text-2xl"
+                    className="rounded-lg"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-100">{recipe.name}</p>
-                    <p className="mt-0.5 text-xs text-slate-400">
+                    <p className="mt-0.5 truncate text-xs text-slate-400">
                       {recipe.kcal} kcal · {recipe.ingredientCount}{' '}
                       {recipe.ingredientCount === 1 ? 'ingrediente' : 'ingredienti'}
                     </p>
+                    <SourceBadge source="recipe" />
                   </div>
-                  <SourceBadge source="recipe" />
-                </button>
-              </li>
-            ))}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRecipe(recipe)}
+                    aria-label={`Aggiungi ricetta ${recipe.name}`}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600/20 text-violet-400 transition-colors hover:bg-violet-600/35 active:scale-95"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
 
