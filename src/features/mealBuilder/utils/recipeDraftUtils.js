@@ -1,3 +1,5 @@
+import { flattenDraftFoodsForSave } from './recipeGroupUtils';
+
 export function isRecipeRow(row) {
   return row?.isRecipe === true || row?.type === 'recipe';
 }
@@ -51,7 +53,7 @@ export function ingredientToDraftItem(ing, index, personalDb) {
 }
 
 export function draftFoodsToRecipeIngredients(draftFoods) {
-  return (draftFoods || []).map((f) => ({
+  return flattenDraftFoodsForSave(draftFoods).map((f) => ({
     name: String(f.desc ?? f.name ?? 'Ingrediente').trim() || 'Ingrediente',
     desc: String(f.desc ?? f.name ?? 'Ingrediente').trim() || 'Ingrediente',
     weight: Number(f.weight ?? f.qta) || 100,

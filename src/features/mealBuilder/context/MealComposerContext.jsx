@@ -10,6 +10,14 @@ import {
 
 } from '../utils/draftFoodUnits';
 
+import { roundToOneDecimal } from '../utils/numberFormatUtils';
+import {
+  computeRecipeGroupItemMacros,
+  isRecipeGroup,
+  recomputeRecipeGroupTotals,
+  scaleRecipeGroupToWeight,
+} from '../utils/recipeGroupUtils';
+
 
 
 const MealComposerContext = createContext(null);
@@ -129,9 +137,8 @@ function applyFoodAmount(item, multiplier, unitId) {
 
 
   const unitWeight = resolveUnitWeight(item, unitId);
-
-  const newWeight = mult * unitWeight;
-
+  const newWeight = roundToOneDecimal(mult * unitWeight);
+  const nextMult = unitId === 'g' ? newWeight : roundToOneDecimal(mult);
   const scaledMacros = scaleMacrosForWeight(item, newWeight);
 
 
@@ -144,13 +151,13 @@ function applyFoodAmount(item, multiplier, unitId) {
 
     selectedUnit: unitId,
 
-    multiplier: mult,
+    multiplier: nextMult,
 
     qta: newWeight,
 
     weight: newWeight,
 
-    qtyLabel: buildQtyLabel(item, unitId, mult, newWeight),
+    qtyLabel: buildQtyLabel(item, unitId, nextMult, newWeight),
 
     unit: unitId === 'g' ? 'g' : unitId,
 
@@ -161,6 +168,10 @@ function applyFoodAmount(item, multiplier, unitId) {
 
 
 function computeDraftItemMacros(item) {
+  if (isRecipeGroup(item)) {
+    return computeRecipeGroupItemMacros(item);
+  }
+
   const weight = Number(item?.weight ?? item?.qta) || 0;
   const row = item?.row || {};
   const rowKcal = Number(row.kcal ?? row.cal);
@@ -184,7 +195,7 @@ function computeDraftItemMacros(item) {
 }
 
 function computeDraftTotals(draftFoods) {
-  return (draftFoods || []).reduce(
+  const totals = (draftFoods || []).reduce(
     (acc, item) => {
       const macros = computeDraftItemMacros(item);
       acc.kcal += macros.kcal;
@@ -195,6 +206,13 @@ function computeDraftTotals(draftFoods) {
     },
     { kcal: 0, prot: 0, carb: 0, fat: 0 },
   );
+
+  return {
+    kcal: Math.round(totals.kcal),
+    prot: Math.round(totals.prot),
+    carb: Math.round(totals.carb),
+    fat: Math.round(totals.fat),
+  };
 }
 
 function normalizeDraftFood(foodItem) {
@@ -271,7 +289,11 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
     if (!foodItem || typeof foodItem !== 'object') return;
 
-
+    if (isRecipeGroup(foodItem)) {
+      setDraftFoods((prev) => [{ ...foodItem, id: foodItem.id || createDraftFoodId() }, ...prev]);
+      setStatus('composing');
+      return;
+    }
 
     const normalized = normalizeDraftFood(foodItem);
 
@@ -279,6 +301,21 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
     setStatus('composing');
 
+  }, []);
+
+
+
+  const addRecipeGroupToDraft = useCallback((groupItem) => {
+    if (!groupItem || !isRecipeGroup(groupItem)) return;
+
+    setDraftFoods((prev) => [
+      {
+        ...recomputeRecipeGroupTotals(groupItem),
+        id: groupItem.id || createDraftFoodId(),
+      },
+      ...prev,
+    ]);
+    setStatus('composing');
   }, []);
 
 
@@ -353,6 +390,7 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       prev.map((item) => {
 
         if (String(item.id) !== String(foodId)) return item;
+        if (isRecipeGroup(item)) return item;
 
         return applyFoodAmount(item, multiplier, unitId || 'g');
 
@@ -360,6 +398,45 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
     );
 
+  }, []);
+
+
+
+  const updateRecipeGroupWeight = useCallback((groupId, newWeightGrams) => {
+    if (groupId == null) return;
+
+    setDraftFoods((prev) => {
+      const next = prev
+        .map((item) => {
+          if (String(item.id) !== String(groupId) || !isRecipeGroup(item)) return item;
+          const nextWeight = roundToOneDecimal(newWeightGrams);
+          if (nextWeight <= 0) return null;
+          return scaleRecipeGroupToWeight(item, nextWeight);
+        })
+        .filter(Boolean);
+
+      setStatus(next.length === 0 ? 'idle' : 'composing');
+      return next;
+    });
+  }, []);
+
+
+
+  const updateRecipeGroupChildAmount = useCallback((groupId, childId, multiplier, unitId) => {
+    if (groupId == null || childId == null) return;
+
+    setDraftFoods((prev) =>
+      prev.map((item) => {
+        if (String(item.id) !== String(groupId) || !isRecipeGroup(item)) return item;
+
+        const items = (item.items || []).map((child) => {
+          if (String(child.id) !== String(childId)) return child;
+          return applyFoodAmount(child, multiplier, unitId || 'g');
+        });
+
+        return recomputeRecipeGroupTotals({ ...item, items });
+      }),
+    );
   }, []);
 
 
@@ -434,6 +511,8 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
       addFoodToDraft,
 
+      addRecipeGroupToDraft,
+
       addComboToDraft,
 
       addFoodsToDraft,
@@ -441,6 +520,10 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       removeFoodFromDraft,
 
       updateFoodAmount,
+
+      updateRecipeGroupWeight,
+
+      updateRecipeGroupChildAmount,
 
       updateFoodQuantity,
 
@@ -466,6 +549,8 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
       addFoodToDraft,
 
+      addRecipeGroupToDraft,
+
       addComboToDraft,
 
       addFoodsToDraft,
@@ -473,6 +558,10 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       removeFoodFromDraft,
 
       updateFoodAmount,
+
+      updateRecipeGroupWeight,
+
+      updateRecipeGroupChildAmount,
 
       updateFoodQuantity,
 

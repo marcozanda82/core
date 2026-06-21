@@ -32,3 +32,18 @@ export function getDraftQtyForFood(draftFoods, food, unitWeight) {
   const draftItem = findDraftItemForFood(draftFoods, food);
   return computeDraftQtyMultiplier(draftItem, unitWeight);
 }
+
+export function getDefaultUnitKcal(food) {
+  return Math.round(Number(food?.kcal ?? food?.cal) || 0);
+}
+
+export function getTileDisplayStats(qty, defaultUnitWeight, defaultUnitKcal) {
+  const safeQty = Number(qty) || 0;
+  const unitWeight = Number(defaultUnitWeight) || 0;
+  const unitKcal = Number(defaultUnitKcal) || 0;
+
+  return {
+    displayWeight: Math.round(safeQty > 0 ? safeQty * unitWeight : unitWeight),
+    displayKcal: Math.round(safeQty > 0 ? safeQty * unitKcal : unitKcal),
+  };
+}

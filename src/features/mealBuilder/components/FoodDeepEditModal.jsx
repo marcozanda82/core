@@ -316,6 +316,7 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
       <ImageSelectionSheet
         isOpen={isImageSheetOpen}
         onClose={() => setIsImageSheetOpen(false)}
+        foodName={name}
         onSelectEmoji={handleSelectEmoji}
         onSelectImage={handleSelectImage}
       />

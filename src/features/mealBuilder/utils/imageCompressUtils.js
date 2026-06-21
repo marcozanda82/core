@@ -173,6 +173,13 @@ export async function compressImageFromClipboardItems(clipboardItems) {
 }
 
 export function extractImageBlobFromPasteEvent(event) {
+  const files = event.clipboardData?.files;
+  if (files?.length) {
+    for (const file of files) {
+      if (file.type.startsWith('image/')) return file;
+    }
+  }
+
   const items = event.clipboardData?.items;
   if (!items) return null;
 

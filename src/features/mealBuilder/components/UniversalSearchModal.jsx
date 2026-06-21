@@ -1,11 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Settings } from 'lucide-react';
+import { Minus, Plus, Settings } from 'lucide-react';
 import useUniversalSearchEngine from '../hooks/useUniversalSearchEngine';
 import useRecipeEngine from '../hooks/useRecipeEngine';
 import FoodThumbnail from './FoodThumbnail';
 import QtyBadge from './QtyBadge';
 import { resolveFoodVisual } from '../utils/foodIconUtils';
-import { getDraftQtyForFood } from '../utils/draftFoodMatchUtils';
+import {
+  getDefaultUnitKcal,
+  getDraftQtyForFood,
+  getTileDisplayStats,
+} from '../utils/draftFoodMatchUtils';
 
 const SEARCH_UNIT_WEIGHT = 100;
 
@@ -61,11 +65,6 @@ function resolveMacrosPer100(result) {
   };
 }
 
-function formatMacroLinePer100({ kcal, prot, carb, fat }) {
-  if (kcal == null) return 'Kcal non disponibili';
-  return `${kcal} kcal · P${prot} C${carb} F${fat}`;
-}
-
 function SourceBadge({ source }) {
   const config = SOURCE_BADGE[source] || {
     label: String(source || 'Altro'),
@@ -86,6 +85,7 @@ export default function UniversalSearchModal({
   onClose,
   onSelectFood,
   onEditCatalogFood,
+  onRemoveOneFromDraft,
   onSelectRecipe,
   onOpenScanner,
   onSaveManualFood,
@@ -417,38 +417,60 @@ export default function UniversalSearchModal({
                 desc: name,
                 name,
               };
-              const qty = getDraftQtyForFood(draftFoods, matchFood, SEARCH_UNIT_WEIGHT);
+              const defaultUnitWeight = SEARCH_UNIT_WEIGHT;
+              const defaultUnitKcal = macros.kcal ?? 0;
+              const qty = getDraftQtyForFood(draftFoods, matchFood, defaultUnitWeight);
+              const { displayWeight, displayKcal } = getTileDisplayStats(
+                qty,
+                defaultUnitWeight,
+                defaultUnitKcal,
+              );
               return (
                 <li
                   key={`${result._source}-${result.id}`}
                   className="flex items-center gap-3 py-3"
                 >
                   <div className="relative shrink-0">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onEditCatalogFood?.(result);
-                      }}
-                      aria-label={`Modifica ${name}`}
-                      className="absolute left-0 top-0 z-10 flex h-5 w-5 items-center justify-center rounded-md bg-slate-900/90 transition-colors hover:bg-slate-800"
-                    >
-                      <Settings className="h-3 w-3 text-slate-400" />
-                    </button>
+                    {qty > 0 ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRemoveOneFromDraft?.(matchFood, defaultUnitWeight);
+                        }}
+                        aria-label={`Rimuovi una porzione di ${name}`}
+                        className="absolute -left-2 -top-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-md transition-transform active:scale-90"
+                      >
+                        <Minus className="h-3.5 w-3.5" strokeWidth={3} />
+                      </button>
+                    ) : null}
                     {qty > 0 ? <QtyBadge qty={qty} className="-right-2 -top-2" /> : null}
-                    <FoodThumbnail
-                      name={visual.name}
-                      customImage={visual.customImage}
-                      customEmoji={visual.customEmoji}
-                      sizeClassName="h-12 w-12"
-                      emojiClassName="text-2xl"
-                      className="rounded-lg"
-                    />
+                    <div className="relative">
+                      <FoodThumbnail
+                        name={visual.name}
+                        customImage={visual.customImage}
+                        customEmoji={visual.customEmoji}
+                        sizeClassName="h-12 w-12"
+                        emojiClassName="text-2xl"
+                        className="rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEditCatalogFood?.(result);
+                        }}
+                        aria-label={`Modifica ${name}`}
+                        className="absolute bottom-0 left-0 z-10 flex h-5 w-5 items-center justify-center rounded-md bg-slate-900/90 transition-colors hover:bg-slate-800"
+                      >
+                        <Settings className="h-3 w-3 text-slate-400" />
+                      </button>
+                    </div>
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-100">{name}</p>
-                    <p className="mt-0.5 truncate text-xs text-slate-400">
-                      {formatMacroLinePer100(macros)}
+                    <p className="mt-0.5 truncate font-mono text-xs tabular-nums text-slate-400 transition-all duration-200">
+                      {displayWeight}g · {displayKcal} kcal
                     </p>
                     <SourceBadge source={result._source} />
                   </div>

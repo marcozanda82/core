@@ -5,6 +5,7 @@ import {
 } from '../context/MealComposerContext';
 import { usePredictiveFoodBlocks } from '../hooks/usePredictiveFoodBlocks';
 import { usePredictiveMealCombos } from '../hooks/usePredictiveMealCombos';
+import { buildRecipeGroupFromCombo } from '../utils/recipeGroupUtils';
 
 const MEAL_SLOTS = [
   { id: 'colazione', label: 'Colazione' },
@@ -470,7 +471,7 @@ function formatComboItemPreview(item) {
 function MealBlocksSandboxContent() {
   const [selectedSlot, setSelectedSlot] = useState('colazione');
   const mockFullHistory = useMemo(() => buildMockFullHistory(), []);
-  const { draftFoods, status, addFoodToDraft, addComboToDraft, clearDraft } = useMealComposer();
+  const { draftFoods, status, addRecipeGroupToDraft, clearDraft } = useMealComposer();
   const predictiveCombos = usePredictiveMealCombos(mockFullHistory, selectedSlot);
   const predictiveBlocks = usePredictiveFoodBlocks(mockFullHistory, selectedSlot, 6);
 
@@ -529,7 +530,10 @@ function MealBlocksSandboxContent() {
                 <button
                   key={combo.id}
                   type="button"
-                  onClick={() => addComboToDraft(combo.items)}
+                  onClick={() => {
+                    const payload = buildRecipeGroupFromCombo(combo);
+                    if (payload) addRecipeGroupToDraft(payload);
+                  }}
                   className="w-full rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 to-slate-900/90 px-4 py-4 text-left shadow-md transition-all hover:border-cyan-400/50 hover:shadow-lg active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -556,7 +560,7 @@ function MealBlocksSandboxContent() {
                     ))}
                   </ul>
                   <p className="mt-3 text-xs text-slate-400">
-                    Tap per aggiungere tutti gli alimenti ({combo.items.length})
+                    Tap per aggiungere la combo come un unico alimento
                   </p>
                 </button>
               ))}

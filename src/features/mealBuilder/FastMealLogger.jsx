@@ -8,16 +8,27 @@ import { usePredictiveMealCombos } from './hooks/usePredictiveMealCombos';
 import UniversalSearchModal from './components/UniversalSearchModal';
 import BarcodeScannerOverlay from './components/BarcodeScannerOverlay';
 import DraftCartSmartRow from './components/DraftCartSmartRow';
+import RecipeGroupRow from './components/RecipeGroupRow';
 import FoodDeepEditModal from './components/FoodDeepEditModal';
 import QtyBadge from './components/QtyBadge';
 import LiveMacroHud from './components/LiveMacroHud';
 import { formatCheckoutMealTitle, formatMiniCartMealLabel, getFoodEmoji, resolveFoodVisual } from './utils/foodIconUtils';
 import {
   findDraftItemForFood,
+  getDefaultUnitKcal,
   getDraftQtyForFood,
   getFoodUnitWeight,
+  getTileDisplayStats,
   resolveFoodIdentityKey,
 } from './utils/draftFoodMatchUtils';
+import { roundToOneDecimal } from './utils/numberFormatUtils';
+import {
+  buildRecipeGroupFromCombo,
+  findRecipeGroupInDraft,
+  flattenDraftFoodsForSave,
+  getRecipeGroupQty,
+  isRecipeGroup,
+} from './utils/recipeGroupUtils';
 import {
   applyCatalogEditToDraftItem,
   buildCatalogAcquirePayload,
@@ -27,9 +38,8 @@ import {
   mergeCatalogDisplay,
 } from './utils/catalogFoodUtils';
 import { resolveUnitWeight } from './utils/draftFoodUnits';
-import { ChevronDown, Clock, Plus, Settings, ShoppingBag } from 'lucide-react';
+import { ChevronDown, Clock, Minus, Plus, Settings, ShoppingBag } from 'lucide-react';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
-import useRecipeEngine from './hooks/useRecipeEngine';
 import useFoodDb from '../../useFoodDb';
 import { draftFoodsToRecipePayload } from './utils/recipeDraftUtils';
 import { decimalToTimeStr } from '../../coreEngine';
@@ -216,16 +226,15 @@ function FastMealLoggerContent({
     draftFoods,
     draftTotals,
     addFoodToDraft,
-    addFoodsToDraft,
-    addComboToDraft,
+    addRecipeGroupToDraft,
     removeFoodFromDraft,
     updateFoodAmount,
+    updateRecipeGroupWeight,
+    updateRecipeGroupChildAmount,
     updateFoodInDraft,
     clearDraft,
     loadInitialDraft,
   } = useMealComposer();
-
-  const { getRecipeAsDraft } = useRecipeEngine(personalDb);
 
   const notifyItemAdded = (label) => {
     setAddFeedback(label || 'Aggiunto al piatto');
@@ -270,11 +279,26 @@ function FastMealLoggerContent({
 
   const handleRecipeSelection = (recipe) => {
     if (!recipe) return;
-    const items = getRecipeAsDraft(recipe.key ?? recipe.id);
-    if (!items.length) return;
-    addFoodsToDraft(items);
+    const recipeKey = String(recipe.key ?? recipe.id ?? '').trim();
+    const dbEntry = recipeKey && personalDb?.[recipeKey] ? personalDb[recipeKey] : null;
+    const ingredients = Array.isArray(recipe.ingredients)
+      ? recipe.ingredients
+      : Array.isArray(dbEntry?.ingredients)
+        ? dbEntry.ingredients
+        : [];
+    if (ingredients.length === 0) return;
+
+    const payload = buildRecipeGroupFromCombo({
+      id: recipeKey || recipe.id,
+      name: String(recipe.desc || recipe.name || dbEntry?.desc || 'Ricetta').trim(),
+      ingredients,
+      customImage: recipe.row?.customImage || dbEntry?.customImage || null,
+    });
+    if (!payload) return;
+
+    addOrIncrementRecipeGroup(payload);
     setIsSearchModalOpen(false);
-    notifyItemAdded(String(recipe?.desc || recipe?.name || 'Ricetta').trim());
+    notifyItemAdded(payload.name);
   };
 
   const handleOpenSaveRecipe = () => {
@@ -358,7 +382,7 @@ function FastMealLoggerContent({
   const incrementDraftItemByUnit = (existing, unitWeight) => {
     if (!existing?.id || !unitWeight) return;
     const currentWeight = Number(existing.weight ?? existing.qta) || 0;
-    const newWeight = currentWeight + unitWeight;
+    const newWeight = roundToOneDecimal(currentWeight + unitWeight);
     const selectedUnit = existing.selectedUnit || 'g';
 
     if (selectedUnit === 'g') {
@@ -367,8 +391,69 @@ function FastMealLoggerContent({
     }
 
     const unitW = resolveUnitWeight(existing, selectedUnit);
-    const nextMultiplier = unitW > 0 ? Math.round((newWeight / unitW) * 100) / 100 : newWeight;
+    const nextMultiplier = unitW > 0 ? roundToOneDecimal(newWeight / unitW) : newWeight;
     updateFoodAmount(existing.id, nextMultiplier, selectedUnit);
+  };
+
+  const decrementDraftItemByUnit = (existing, unitWeight) => {
+    if (!existing?.id || !unitWeight) return;
+    const currentWeight = Number(existing.weight ?? existing.qta) || 0;
+    const newWeight = roundToOneDecimal(currentWeight - unitWeight);
+
+    if (newWeight <= 0) {
+      removeFoodFromDraft(existing.id);
+      return;
+    }
+
+    const selectedUnit = existing.selectedUnit || 'g';
+    if (selectedUnit === 'g') {
+      updateFoodAmount(existing.id, newWeight, 'g');
+      return;
+    }
+
+    const unitW = resolveUnitWeight(existing, selectedUnit);
+    const nextMultiplier = unitW > 0 ? roundToOneDecimal(newWeight / unitW) : newWeight;
+    updateFoodAmount(existing.id, nextMultiplier, selectedUnit);
+  };
+
+  const removeOneUnitFromDraft = (food, unitWeight) => {
+    const existing = findDraftItemForFood(draftFoods, food);
+    if (!existing) return;
+    decrementDraftItemByUnit(existing, unitWeight);
+  };
+
+  const addOrIncrementRecipeGroup = (groupPayload) => {
+    const existing = findRecipeGroupInDraft(draftFoods, {
+      id: groupPayload.recipeGroupId,
+      foodDbKey: groupPayload.foodDbKey,
+    });
+
+    if (!existing) {
+      addRecipeGroupToDraft(groupPayload);
+      return false;
+    }
+
+    const nextWeight = roundToOneDecimal(
+      (Number(existing.weight ?? existing.qta) || 0) + (Number(existing.baseTotalWeight) || 0),
+    );
+    updateRecipeGroupWeight(existing.id, nextWeight);
+    return true;
+  };
+
+  const removeOneRecipeGroupUnit = (combo) => {
+    const existing = findRecipeGroupInDraft(draftFoods, combo);
+    if (!existing) return;
+
+    const nextWeight = roundToOneDecimal(
+      (Number(existing.weight ?? existing.qta) || 0) - (Number(existing.baseTotalWeight) || 0),
+    );
+
+    if (nextWeight <= 0) {
+      removeFoodFromDraft(existing.id);
+      return;
+    }
+
+    updateRecipeGroupWeight(existing.id, nextWeight);
   };
 
   const addOrIncrementDraftFood = (payload, unitWeight) => {
@@ -387,7 +472,12 @@ function FastMealLoggerContent({
 
   const handleConfirm = () => {
     if (draftFoods.length === 0) return;
-    onSave?.(draftFoods, selectedSlot, editingMealId ?? undefined, mealTime);
+    onSave?.(
+      flattenDraftFoodsForSave(draftFoods),
+      selectedSlot,
+      editingMealId ?? undefined,
+      mealTime,
+    );
     clearDraft();
   };
 
@@ -434,10 +524,11 @@ function FastMealLoggerContent({
     setDeepEditFood(item);
   };
 
-  const handleAddComboToDraft = (items, comboName) => {
-    if (!items?.length) return;
-    addComboToDraft(items);
-    notifyItemAdded(comboName || `${items.length} alimenti aggiunti`);
+  const handleAddComboToDraft = (combo, comboTitle) => {
+    const payload = buildRecipeGroupFromCombo(combo);
+    if (!payload) return;
+    addOrIncrementRecipeGroup(payload);
+    notifyItemAdded(comboTitle || payload.name || 'Combo aggiunta');
   };
 
   const handleDeepEditSave = async (updatedItem) => {
@@ -578,52 +669,89 @@ function FastMealLoggerContent({
                 Nessun alimento frequente per questo slot
               </p>
             ) : (
-              <div className="grid auto-cols-[100px] grid-flow-col grid-rows-2 gap-3 overflow-x-auto pb-4 pt-2 scrollbar-hide snap-x snap-mandatory">
+              <div className="grid auto-cols-[90px] grid-flow-col grid-rows-2 gap-3 overflow-x-auto pb-4 pt-2 scrollbar-hide snap-x snap-mandatory">
                 {quickFoods.map((tile) => {
                   const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
                   const tileVisual = resolveFoodVisual(displayTile, personalDb);
-                  const unitWeight = getFoodUnitWeight(displayTile);
-                  const qty = getDraftQtyForFood(draftFoods, displayTile, unitWeight);
+                  const defaultUnitWeight = getFoodUnitWeight(displayTile);
+                  const defaultUnitKcal = getDefaultUnitKcal(displayTile);
+                  const qty = getDraftQtyForFood(draftFoods, displayTile, defaultUnitWeight);
+                  const { displayWeight, displayKcal } = getTileDisplayStats(
+                    qty,
+                    defaultUnitWeight,
+                    defaultUnitKcal,
+                  );
                   return (
                     <div
                       key={tile.key}
-                      className="relative h-[110px] w-[100px] shrink-0 snap-start"
+                      className="relative w-[90px] shrink-0 snap-start overflow-visible"
                     >
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openEditModalForCatalog(tile);
-                        }}
-                        aria-label={`Modifica ${displayTile.desc || displayTile.label}`}
-                        className="absolute left-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-slate-900/90 transition-colors hover:bg-slate-800"
-                      >
-                        <Settings className="h-3.5 w-3.5 text-slate-400" />
-                      </button>
-                      <button
-                        type="button"
+                      {qty > 0 ? (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            removeOneUnitFromDraft(displayTile, defaultUnitWeight);
+                          }}
+                          aria-label={`Rimuovi una porzione di ${displayTile.desc || displayTile.label}`}
+                          className="absolute -left-2 -top-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-md transition-transform active:scale-90"
+                        >
+                          <Minus className="h-3.5 w-3.5" strokeWidth={3} />
+                        </button>
+                      ) : null}
+                      {qty > 0 ? <QtyBadge qty={qty} className="z-20" /> : null}
+                      <div
+                        role="button"
+                        tabIndex={0}
                         onClick={() => handleAddPredictiveBlock(tile)}
-                        className="relative flex h-full w-full flex-col items-center justify-between rounded-xl border border-slate-700/50 bg-slate-800/40 p-2.5 transition-transform active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            handleAddPredictiveBlock(tile);
+                          }
+                        }}
+                        className="relative flex min-h-[120px] w-[90px] cursor-pointer flex-col overflow-visible rounded-xl border border-slate-700/50 bg-slate-800/40 p-0 transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
                       >
-                        {qty > 0 ? <QtyBadge qty={qty} /> : null}
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden text-3xl">
+                        <div className="relative flex h-[55%] w-full items-center justify-center rounded-t-xl bg-slate-800/60">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openEditModalForCatalog(tile);
+                            }}
+                            aria-label={`Modifica ${displayTile.desc || displayTile.label}`}
+                            className="absolute bottom-1 right-1 z-10 flex h-5 w-5 items-center justify-center rounded-md bg-slate-900/90 transition-colors hover:bg-slate-800"
+                          >
+                            <Settings className="h-3 w-3 text-slate-400" />
+                          </button>
                           {tileVisual.customImage ? (
                             <img
                               src={tileVisual.customImage}
                               alt={tileVisual.name}
-                              className="h-full w-full rounded-md object-cover"
+                              className="h-full w-full rounded-t-xl object-cover"
                             />
                           ) : (
-                            <span aria-hidden>
+                            <span className="text-3xl" aria-hidden>
                               {tileVisual.customEmoji || getFoodEmoji(tileVisual.name)}
                             </span>
                           )}
                         </div>
-                        <span className="line-clamp-2 w-full break-words text-center text-xs font-medium leading-snug text-slate-200">
-                          {displayTile.label || displayTile.desc}
-                        </span>
-                        <span className="text-[10px] text-slate-500">{displayTile.kcal} kcal</span>
-                      </button>
+
+                        <div className="flex w-full flex-1 items-center justify-center px-1 py-1.5">
+                          <span className="line-clamp-2 w-full break-words text-center text-[11px] font-semibold leading-tight text-slate-200">
+                            {displayTile.label || displayTile.desc}
+                          </span>
+                        </div>
+
+                        <div className="flex h-6 w-full items-center justify-between rounded-b-xl border-t border-slate-800 bg-slate-900/80 px-2">
+                          <span className="font-mono text-[10px] font-medium tabular-nums text-slate-400 transition-all duration-200">
+                            {displayWeight}g
+                          </span>
+                          <span className="font-mono text-[10px] font-bold tabular-nums text-cyan-400 transition-all duration-200">
+                            {displayKcal}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
@@ -646,11 +774,48 @@ function FastMealLoggerContent({
               <div className="flex min-w-0 snap-x snap-mandatory gap-3 overflow-x-auto pb-2 scrollbar-hide">
                 {predictiveCombos.map((combo, comboIndex) => {
                   const comboTitle = resolveComboCardTitle(combo, comboIndex);
+                  const previewGroup = buildRecipeGroupFromCombo(combo);
+                  const qty = getRecipeGroupQty(draftFoods, combo);
+                  const unitWeight = previewGroup?.baseTotalWeight ?? 100;
+                  const perPortionKcal = Math.round(
+                    Number(previewGroup?.kcal ?? combo.totalKcal) || 0,
+                  );
+                  const { displayWeight, displayKcal } = getTileDisplayStats(
+                    qty,
+                    unitWeight,
+                    perPortionKcal,
+                  );
                   return (
                   <div
                     key={combo.id}
-                    className="flex w-[300px] shrink-0 snap-start flex-col rounded-2xl border border-slate-700 bg-slate-800/80 p-3.5"
+                    className="relative w-[300px] shrink-0 snap-start overflow-visible"
                   >
+                    {qty > 0 ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeOneRecipeGroupUnit(combo);
+                        }}
+                        aria-label={`Rimuovi una porzione di ${comboTitle}`}
+                        className="absolute -left-2 -top-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-md transition-transform active:scale-90"
+                      >
+                        <Minus className="h-3.5 w-3.5" strokeWidth={3} />
+                      </button>
+                    ) : null}
+                    {qty > 0 ? <QtyBadge qty={qty} className="z-20" /> : null}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleAddComboToDraft(combo, comboTitle)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          handleAddComboToDraft(combo, comboTitle);
+                        }
+                      }}
+                      className="flex w-full cursor-pointer flex-col rounded-2xl border border-slate-700 bg-slate-800/80 p-3.5 transition-all active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+                    >
                     <div className="flex items-start justify-between gap-2">
                       <p
                         className="min-w-0 flex-1 text-sm font-semibold leading-snug text-slate-100"
@@ -659,7 +824,7 @@ function FastMealLoggerContent({
                         {comboTitle}
                       </p>
                       <span className="shrink-0 text-xs font-bold text-cyan-400">
-                        {combo.totalKcal} kcal
+                        {qty > 0 ? displayKcal : combo.totalKcal} kcal
                       </span>
                     </div>
 
@@ -684,15 +849,25 @@ function FastMealLoggerContent({
                       <p className="mb-2 text-xs text-slate-500">Usato ×{combo.count}</p>
                     ) : null}
 
+                    {qty > 0 ? (
+                      <p className="mb-2 text-[10px] font-medium text-slate-400">
+                        Nel piatto: {displayWeight}g · {displayKcal} kcal
+                      </p>
+                    ) : null}
+
                     <button
                       type="button"
-                      onClick={() => handleAddComboToDraft(combo.items, comboTitle)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleAddComboToDraft(combo, comboTitle);
+                      }}
                       aria-label={`Aggiungi ${comboTitle} al piatto`}
                       className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-cyan-600/20 px-3 py-2.5 text-xs font-semibold text-cyan-400 transition-colors hover:bg-cyan-600/35 active:scale-[0.98]"
                     >
                       <Plus className="h-3.5 w-3.5" />
-                      Aggiungi al Piatto
+                      {qty > 0 ? `Aggiungi ancora (×${qty})` : 'Aggiungi al Piatto'}
                     </button>
+                    </div>
                   </div>
                   );
                 })}
@@ -813,16 +988,27 @@ function FastMealLoggerContent({
             </p>
           ) : (
             <ul className="min-w-0 space-y-2">
-              {draftFoods.map((food) => (
-                <DraftCartSmartRow
-                  key={food.id}
-                  item={food}
-                  personalDb={personalDb}
-                  onUpdateAmount={updateFoodAmount}
-                  onRemove={removeFoodFromDraft}
-                  onDeepEdit={handleOpenDraftDeepEdit}
-                />
-              ))}
+              {draftFoods.map((food) =>
+                isRecipeGroup(food) ? (
+                  <RecipeGroupRow
+                    key={food.id}
+                    group={food}
+                    personalDb={personalDb}
+                    onUpdateGroupWeight={updateRecipeGroupWeight}
+                    onUpdateChildAmount={updateRecipeGroupChildAmount}
+                    onRemove={removeFoodFromDraft}
+                  />
+                ) : (
+                  <DraftCartSmartRow
+                    key={food.id}
+                    item={food}
+                    personalDb={personalDb}
+                    onUpdateAmount={updateFoodAmount}
+                    onRemove={removeFoodFromDraft}
+                    onDeepEdit={handleOpenDraftDeepEdit}
+                  />
+                ),
+              )}
             </ul>
           )}
         </div>
@@ -875,6 +1061,7 @@ function FastMealLoggerContent({
         creaDb={creaDb}
         onSelectFood={handleFoodSelection}
         onEditCatalogFood={openEditModalForCatalog}
+        onRemoveOneFromDraft={removeOneUnitFromDraft}
         onSelectRecipe={handleRecipeSelection}
         onOpenScanner={handleOpenScanner}
         onSaveManualFood={onAcquireExternalFood}

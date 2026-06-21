@@ -34,10 +34,8 @@ export function normalizeMacroBundle(source, defaults = {}) {
   };
 }
 
-function formatMacroValue(value, unit) {
-  const n = Number(value) || 0;
-  if (unit === 'kcal') return String(Math.round(n));
-  return String(Math.round(n * 10) / 10);
+function formatMacroValue(value) {
+  return String(Math.round(Number(value) || 0));
 }
 
 function MacroBar({ label, consumed, draft, target, unit, accentClass }) {
@@ -75,15 +73,15 @@ function MacroBar({ label, consumed, draft, target, unit, accentClass }) {
         </div>
       </div>
       <p className="mt-1 truncate text-[10px] text-slate-500">
-        <span>{formatMacroValue(consumato, unit)}</span>
+        <span>{formatMacroValue(consumato)}</span>
         {bozza > 0 ? (
           <span className={isOverflow ? 'text-red-400' : 'text-cyan-400'}>
-            +{formatMacroValue(bozza, unit)}
+            +{formatMacroValue(bozza)}
           </span>
         ) : null}
         <span>
           {' '}
-          / {formatMacroValue(targetValue, unit)}
+          / {formatMacroValue(targetValue)}
           {unitSuffix}
         </span>
         {isOverflow ? (
