@@ -42,8 +42,8 @@ export default function DraftCartSmartRow({ item, onUpdateAmount, onRemove }) {
   };
 
   return (
-    <li className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2.5">
-      <div className="flex items-start gap-2">
+    <li className="min-w-0 max-w-full rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2.5">
+      <div className="flex min-w-0 items-start gap-2">
         <p className="min-w-0 flex-1 truncate text-sm font-medium leading-snug text-slate-100">
           {name}
         </p>
@@ -65,12 +65,12 @@ export default function DraftCartSmartRow({ item, onUpdateAmount, onRemove }) {
         </div>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
         <select
           value={selectedUnit}
           onChange={handleUnitChange}
           aria-label={`Unità di misura per ${name}`}
-          className="max-w-[7.5rem] shrink-0 rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-500"
+          className="max-w-[7.5rem] min-w-0 shrink-0 truncate rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-500"
         >
           <option value="g">g</option>
           {units.map((unit) => {

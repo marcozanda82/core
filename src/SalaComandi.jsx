@@ -3730,7 +3730,7 @@ Ottimo! Diario aggiornato. 🥗`;
     setIsFullScreenGraph(false);
   };
 
-  const handleFastLoggerSave = useCallback((draftFoods, targetMealType, editMealId) => {
+  const handleFastLoggerSave = useCallback((draftFoods, targetMealType, editMealId, customMealTime) => {
     if (!isInitialLoadComplete || !Array.isArray(draftFoods) || draftFoods.length === 0) return;
 
     const mealTimeBySlot = {
@@ -3746,7 +3746,9 @@ Ottimo! Diario aggiornato. 🥗`;
     let mealTypeToUse = slot;
     let mealTimeToUse = mealTimeBySlot[slot] ?? 13.0;
 
-    if (editMealId) {
+    if (typeof customMealTime === 'number' && !Number.isNaN(customMealTime)) {
+      mealTimeToUse = customMealTime;
+    } else if (editMealId) {
       const existing = getFoodItemsForMealSlot(logToUse, String(editMealId));
       if (existing.length > 0) {
         if (typeof existing[0].mealTime === 'number' && !Number.isNaN(existing[0].mealTime)) {
@@ -3827,6 +3829,51 @@ Ottimo! Diario aggiornato. 🥗`;
     isInitialLoadComplete,
     getFoodItemsForMealSlot,
     pendingGhostMealId,
+    parseFlexibleTimeToDecimal,
+  ]);
+
+  const fastLoggerInitialMealTime = useMemo(() => {
+    if (!showFastLogger) return undefined;
+
+    const logToUse = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
+
+    if (mealToEdit?.[0]?.mealTime != null && typeof mealToEdit[0].mealTime === 'number') {
+      return mealToEdit[0].mealTime;
+    }
+
+    if (editingMealId) {
+      const existing = getFoodItemsForMealSlot(logToUse, String(editingMealId));
+      if (existing.length > 0 && typeof existing[0].mealTime === 'number') {
+        return existing[0].mealTime;
+      }
+    }
+
+    if (pendingGhostMealId) {
+      const ghost = logToUse.find(
+        (entry) =>
+          entry?.type === 'ghost_meal' &&
+          entry?.id != null &&
+          String(entry.id) === String(pendingGhostMealId),
+      );
+      if (ghost) {
+        let t = ghost.mealTime;
+        if (typeof t !== 'number' || Number.isNaN(t)) t = ghost.time;
+        if (typeof t === 'number' && !Number.isNaN(t)) return t;
+        const parsed = parseFlexibleTimeToDecimal(String(t ?? ''));
+        if (parsed != null) return parsed;
+      }
+    }
+
+    return undefined;
+  }, [
+    showFastLogger,
+    mealToEdit,
+    editingMealId,
+    pendingGhostMealId,
+    isSimulationMode,
+    simulatedLog,
+    dailyLog,
+    getFoodItemsForMealSlot,
     parseFlexibleTimeToDecimal,
   ]);
 
@@ -10102,6 +10149,7 @@ ${dbKeys || 'n/d'}`;
               ? toCanonicalMealType(String(editingMealId).split('_')[0])
               : undefined)
           }
+          initialMealTime={fastLoggerInitialMealTime}
           onClose={closeFastLogger}
           onSave={handleFastLoggerSave}
           onAcquireExternalFood={saveFoodEntryPer100ToFoodDb}

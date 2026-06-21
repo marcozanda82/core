@@ -9,10 +9,12 @@ import UniversalSearchModal from './components/UniversalSearchModal';
 import BarcodeScannerOverlay from './components/BarcodeScannerOverlay';
 import DraftCartSmartRow from './components/DraftCartSmartRow';
 import LiveMacroHud from './components/LiveMacroHud';
+import { Clock } from 'lucide-react';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
 import useRecipeEngine from './hooks/useRecipeEngine';
 import useFoodDb from '../../useFoodDb';
 import { draftFoodsToRecipePayload } from './utils/recipeDraftUtils';
+import { decimalToTimeStr } from '../../coreEngine';
 
 const MEAL_SLOTS = [
   { id: 'colazione', label: 'Colazione' },
@@ -20,6 +22,39 @@ const MEAL_SLOTS = [
   { id: 'pranzo', label: 'Pranzo' },
   { id: 'cena', label: 'Cena' },
 ];
+
+const MEAL_TIME_BY_SLOT = {
+  colazione: 8.0,
+  pranzo: 13.0,
+  cena: 20.0,
+  snack: 10.5,
+};
+
+function getCurrentTimeRoundedTo15Min() {
+  const now = new Date();
+  const decimal = now.getHours() + now.getMinutes() / 60;
+  return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
+}
+
+function parseTimeStrToDecimal(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const [hh, mm] = raw.split(':');
+  const h = Math.min(23, Math.max(0, parseInt(hh, 10) || 0));
+  const m = Math.min(59, Math.max(0, parseInt(mm, 10) || 0));
+  return h + m / 60;
+}
+
+function resolveInitialMealTime(initialMealTime, initialDraft, mealSlot) {
+  if (typeof initialMealTime === 'number' && !Number.isNaN(initialMealTime)) {
+    return initialMealTime;
+  }
+  if (Array.isArray(initialDraft) && initialDraft.length > 0) {
+    const t = initialDraft[0]?.mealTime;
+    if (typeof t === 'number' && !Number.isNaN(t)) return t;
+  }
+  return MEAL_TIME_BY_SLOT[mealSlot] ?? getCurrentTimeRoundedTo15Min();
+}
 
 function formatComboItemPreview(item) {
   if (item.qtyLabel) return `${item.desc} · ${item.qtyLabel}`;
@@ -99,9 +134,17 @@ function FastMealLoggerContent({
   initialDraft,
   editingMealId,
   initialMealSlot,
+  initialMealTime,
 }) {
   const [selectedSlot, setSelectedSlot] = useState(
     () => initialMealSlot || resolveInitialMealSlot(initialDraft, editingMealId),
+  );
+  const [mealTime, setMealTime] = useState(() =>
+    resolveInitialMealTime(
+      initialMealTime,
+      initialDraft,
+      initialMealSlot || resolveInitialMealSlot(initialDraft, editingMealId),
+    ),
   );
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isSaveRecipeOpen, setIsSaveRecipeOpen] = useState(false);
@@ -109,6 +152,7 @@ function FastMealLoggerContent({
   const [isSavingRecipe, setIsSavingRecipe] = useState(false);
   const [saveRecipeError, setSaveRecipeError] = useState('');
   const prefillAppliedRef = useRef(false);
+  const mealTimeInputRef = useRef(null);
   const {
     draftFoods,
     draftTotals,
@@ -219,7 +263,7 @@ function FastMealLoggerContent({
 
   const handleConfirm = () => {
     if (draftFoods.length === 0) return;
-    onSave?.(draftFoods, selectedSlot, editingMealId ?? undefined);
+    onSave?.(draftFoods, selectedSlot, editingMealId ?? undefined, mealTime);
     clearDraft();
   };
 
@@ -246,15 +290,29 @@ function FastMealLoggerContent({
     addFoodToDraft(payload);
   };
 
+  const openNativeTimePicker = () => {
+    const input = mealTimeInputRef.current;
+    if (!input) return;
+    if (typeof input.showPicker === 'function') {
+      try {
+        input.showPicker();
+        return;
+      } catch {
+        /* picker già aperto o rifiutato dal browser */
+      }
+    }
+    input.focus();
+  };
+
   return (
-    <div className="mx-auto flex h-full max-w-lg flex-col bg-[#050a12] text-slate-100">
-      <header className="border-b border-slate-800 px-4 py-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
+    <div className="mx-auto flex h-full w-full max-w-lg flex-col overflow-x-hidden bg-[#050a12] text-slate-100">
+      <header className="shrink-0 border-b border-slate-800 px-4 py-5">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-widest text-cyan-400/80">
               KentuOS · Beta
             </p>
-            <h1 className="mt-1 text-xl font-semibold">Log Rapido</h1>
+            <h1 className="mt-1 truncate text-xl font-semibold">Log Rapido</h1>
             <p className="mt-1 text-sm text-slate-400">
               One-Tap · stato: <span className="text-slate-200">{status}</span>
             </p>
@@ -262,13 +320,13 @@ function FastMealLoggerContent({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+            className="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
           >
             Chiudi
           </button>
         </div>
 
-        <div className="mt-4 flex rounded-xl border border-slate-700/80 bg-slate-900/60 p-1">
+        <div className="mt-4 flex min-w-0 rounded-xl border border-slate-700/80 bg-slate-900/60 p-1">
           {MEAL_SLOTS.map((slot) => {
             const isActive = selectedSlot === slot.id;
             return (
@@ -276,7 +334,7 @@ function FastMealLoggerContent({
                 key={slot.id}
                 type="button"
                 onClick={() => setSelectedSlot(slot.id)}
-                className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                className={`min-w-0 flex-1 truncate rounded-lg px-2 py-2 text-sm font-medium transition-colors sm:px-3 ${
                   isActive
                     ? 'bg-cyan-500 text-slate-950'
                     : 'text-slate-400 hover:text-slate-200'
@@ -287,12 +345,75 @@ function FastMealLoggerContent({
             );
           })}
         </div>
+
+        <div className="mt-3 flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0 text-xs text-slate-400">Orario pasto</span>
+          <label
+            htmlFor="fast-logger-meal-time"
+            onClick={openNativeTimePicker}
+            className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-slate-700/80 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
+          >
+            <Clock
+              className="h-4 w-4 shrink-0 text-cyan-400"
+              strokeWidth={2}
+              aria-hidden
+            />
+            <input
+              ref={mealTimeInputRef}
+              id="fast-logger-meal-time"
+              type="time"
+              value={decimalToTimeStr(mealTime)}
+              onChange={(event) => {
+                const parsed = parseTimeStrToDecimal(event.target.value);
+                if (typeof parsed === 'number' && !Number.isNaN(parsed)) {
+                  setMealTime(parsed);
+                }
+              }}
+              onClick={(event) => {
+                if (typeof event.currentTarget.showPicker === 'function') {
+                  try {
+                    event.currentTarget.showPicker();
+                  } catch {
+                    /* picker già aperto o rifiutato dal browser */
+                  }
+                }
+              }}
+              className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-sm font-medium text-white outline-none [color-scheme:dark]"
+            />
+          </label>
+        </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="shrink-0 border-b border-slate-800/80 px-4 py-3">
+        <LiveMacroHud
+          mealTargets={mealTargets}
+          mealConsumed={mealConsumed}
+          draftTotals={draftTotals}
+        />
+      </div>
+
+      <div className="shrink-0 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setIsSearchModalOpen(true)}
+          className="flex w-full min-w-0 items-center gap-3 rounded-xl border border-cyan-500/40 bg-slate-900/70 px-4 py-4 text-left text-sm text-slate-200 shadow-md transition-colors hover:border-cyan-400/60 hover:bg-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+        >
+          <span className="shrink-0 text-lg" aria-hidden>
+            🔍
+          </span>
+          <span className="min-w-0 flex-1 truncate font-medium">
+            Cerca nuovo alimento nel database...
+          </span>
+        </button>
+        <p className="mt-2 text-center text-xs text-slate-600">
+          DB personale · CREA · USDA
+        </p>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         <section className="space-y-6 px-4 py-5">
-          <div>
-            <h2 className="mb-1 text-sm font-medium text-slate-300">Pasti Frequenti</h2>
+          <div className="min-w-0">
+            <h2 className="mb-1 truncate text-sm font-medium text-slate-300">Pasti Frequenti</h2>
             <p className="mb-3 text-xs text-slate-500">
               One-tap assoluto · {predictiveCombos.length}{' '}
               {predictiveCombos.length === 1 ? 'combo' : 'combo'}
@@ -303,15 +424,15 @@ function FastMealLoggerContent({
                 Nessun pasto completo frequente per questo slot
               </p>
             ) : (
-              <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
+              <div className="flex min-w-0 snap-x snap-mandatory gap-3 overflow-x-auto pb-2 scrollbar-hide">
                 {predictiveCombos.map((combo) => (
                   <button
                     key={combo.id}
                     type="button"
                     onClick={() => addComboToDraft(combo.items)}
-                    className="w-[85%] max-w-[320px] shrink-0 snap-start rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 to-slate-900/90 px-4 py-4 text-left shadow-md transition-all hover:border-cyan-400/50 hover:shadow-lg active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+                    className="w-[85%] max-w-[320px] min-w-0 shrink-0 snap-start rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 to-slate-900/90 px-4 py-4 text-left shadow-md transition-all hover:border-cyan-400/50 hover:shadow-lg active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold uppercase tracking-wider text-cyan-400/90">
                           Pasto completo
@@ -324,17 +445,18 @@ function FastMealLoggerContent({
                         {combo.totalKcal} kcal
                       </span>
                     </div>
-                    <ul className="mt-3 flex max-h-20 flex-wrap gap-1.5 overflow-hidden">
+                    <ul className="mt-3 flex max-h-20 min-w-0 flex-wrap gap-1.5 overflow-hidden">
                       {combo.items.map((item) => (
                         <li
                           key={`${combo.id}-${item.desc}`}
-                          className="rounded-full border border-slate-700/80 bg-slate-950/50 px-2 py-0.5 text-[11px] text-slate-300"
+                          className="max-w-full truncate rounded-full border border-slate-700/80 bg-slate-950/50 px-2 py-0.5 text-[11px] text-slate-300"
+                          title={formatComboItemPreview(item)}
                         >
                           {formatComboItemPreview(item)}
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-3 text-xs text-slate-400">
+                    <p className="mt-3 truncate text-xs text-slate-400">
                       Tap · {combo.items.length} alimenti
                       {combo.count != null ? ` · ×${combo.count}` : ''}
                     </p>
@@ -344,8 +466,8 @@ function FastMealLoggerContent({
             )}
           </div>
 
-          <div>
-            <h2 className="mb-1 text-sm font-medium text-slate-300">Alimenti Rapidi</h2>
+          <div className="min-w-0">
+            <h2 className="mb-1 truncate text-sm font-medium text-slate-300">Alimenti Rapidi</h2>
             <p className="mb-3 text-xs text-slate-500">
               Singoli ingredienti · {predictiveBlocks.length}{' '}
               {predictiveBlocks.length === 1 ? 'blocco' : 'blocchi'}
@@ -356,18 +478,18 @@ function FastMealLoggerContent({
                 Nessun alimento frequente per questo slot
               </p>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid min-w-0 grid-cols-2 gap-3">
                 {predictiveBlocks.map((tile) => (
                   <button
                     key={tile.key}
                     type="button"
                     onClick={() => handleAddPredictiveBlock(tile)}
-                    className="flex min-h-[5.5rem] flex-col items-start justify-center rounded-2xl border border-slate-700/80 bg-slate-900/80 px-4 py-3 text-left shadow-sm transition-all hover:border-cyan-500/40 hover:bg-slate-800/90 hover:shadow-md active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+                    className="flex min-h-[5.5rem] min-w-0 flex-col items-start justify-center rounded-2xl border border-slate-700/80 bg-slate-900/80 px-4 py-3 text-left shadow-sm transition-all hover:border-cyan-500/40 hover:bg-slate-800/90 hover:shadow-md active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
                   >
-                    <span className="text-sm font-semibold leading-snug text-slate-100">
+                    <span className="line-clamp-2 w-full min-w-0 text-sm font-semibold leading-snug text-slate-100">
                       {tile.label}
                     </span>
-                    <span className="mt-1 text-xs text-slate-400">
+                    <span className="mt-1 truncate text-xs text-slate-400">
                       {tile.kcal} kcal · ×{tile.count}
                     </span>
                   </button>
@@ -378,30 +500,8 @@ function FastMealLoggerContent({
         </section>
       </div>
 
-      <div className="shrink-0 border-t border-slate-800/80 px-4 py-3">
-        <button
-          type="button"
-          onClick={() => setIsSearchModalOpen(true)}
-          className="flex w-full items-center gap-3 rounded-xl border border-slate-700/90 bg-slate-900/40 px-4 py-3.5 text-left text-sm text-slate-400 shadow-sm transition-colors hover:border-slate-600 hover:bg-slate-900/70 hover:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
-        >
-          <span className="text-base" aria-hidden>
-            🔍
-          </span>
-          <span>Cerca nuovo alimento nel database...</span>
-        </button>
-        <p className="mt-2 text-center text-xs text-slate-600">
-          DB personale · CREA · USDA
-        </p>
-      </div>
-
       <section className="shrink-0 border-t border-slate-800 bg-slate-950/60 px-4 py-5">
-        <LiveMacroHud
-          mealTargets={mealTargets}
-          mealConsumed={mealConsumed}
-          draftTotals={draftTotals}
-        />
-
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex min-w-0 items-center justify-between gap-2">
           <h2 className="text-sm font-medium text-slate-300">Bozza pasto</h2>
           <div className="flex items-center gap-2">
             {draftFoods.length > 0 ? (
@@ -424,7 +524,7 @@ function FastMealLoggerContent({
             Tappa una piastrella per iniziare
           </p>
         ) : (
-          <ul className="mb-4 max-h-52 space-y-2 overflow-y-auto">
+          <ul className="mb-4 max-h-52 min-w-0 space-y-2 overflow-y-auto overflow-x-hidden">
             {draftFoods.map((food) => (
               <DraftCartSmartRow
                 key={food.id}
@@ -538,13 +638,14 @@ export default function FastMealLogger({
   initialDraft,
   editingMealId,
   initialMealSlot,
+  initialMealTime,
 }) {
   const { foodDb: loadedCreaDb } = useFoodDb();
   const resolvedCreaDb = creaDb ?? loadedCreaDb;
 
   return (
     <div
-      className="fixed inset-0 z-[100040] flex items-stretch justify-center bg-black/75 backdrop-blur-sm"
+      className="fixed inset-0 z-[100040] flex max-w-full items-stretch justify-center overflow-x-hidden bg-black/75 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Log rapido pasti"
@@ -563,6 +664,7 @@ export default function FastMealLogger({
           initialDraft={initialDraft}
           editingMealId={editingMealId}
           initialMealSlot={initialMealSlot}
+          initialMealTime={initialMealTime}
         />
       </MealComposerProvider>
     </div>
