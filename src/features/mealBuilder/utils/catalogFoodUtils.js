@@ -67,6 +67,7 @@ export function buildCatalogDeepEditItem(source, personalDb) {
       qtyLabel: `${weight}g`,
       ...portion,
       ...(row.customImage ? { customImage: row.customImage } : {}),
+      ...(row.customEmoji ? { customEmoji: row.customEmoji } : {}),
       _editSource: 'catalog',
       _catalogKind: 'search',
       _searchSource: source._source,
@@ -105,6 +106,9 @@ export function buildCatalogDeepEditItem(source, personalDb) {
     ...(row.customImage || source.customImage
       ? { customImage: row.customImage || source.customImage }
       : {}),
+    ...(row.customEmoji || source.customEmoji
+      ? { customEmoji: row.customEmoji || source.customEmoji }
+      : {}),
     _editSource: 'catalog',
     _catalogKind: 'tile',
   };
@@ -136,6 +140,7 @@ export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}) {
       row,
       ...portion,
       ...(row.customImage ? { customImage: row.customImage } : {}),
+      ...(row.customEmoji ? { customEmoji: row.customEmoji } : {}),
     };
     if (merged.qtyLabel && merged.desc) {
       merged.label = `${merged.desc} (${merged.qtyLabel})`;
@@ -152,14 +157,26 @@ export function applyCatalogEditToDraftItem(draftItem, updatedCatalog) {
   const selectedUnit = draftItem.selectedUnit || 'g';
   const multiplier = Number(draftItem.multiplier) || weight;
 
-  return {
+  const next = {
     ...draftItem,
     row,
-    ...(updatedCatalog.customImage ? { customImage: updatedCatalog.customImage } : {}),
     ...portion,
     qtyLabel: buildQtyLabel(draftItem, selectedUnit, multiplier, weight),
     _manualOverride: true,
   };
+
+  if (updatedCatalog.customImage) {
+    next.customImage = updatedCatalog.customImage;
+    delete next.customEmoji;
+  } else if (updatedCatalog.customEmoji) {
+    next.customEmoji = updatedCatalog.customEmoji;
+    delete next.customImage;
+  } else {
+    delete next.customImage;
+    delete next.customEmoji;
+  }
+
+  return next;
 }
 
 export function buildCatalogDbPatch(updatedItem) {
@@ -168,6 +185,7 @@ export function buildCatalogDbPatch(updatedItem) {
 
   return {
     customImage: updatedItem.customImage ?? null,
+    customEmoji: updatedItem.customEmoji ?? null,
     row,
     desc: updatedItem.desc,
     defaultServingWeight: Number(updatedItem.weight ?? updatedItem.qta) || undefined,
@@ -183,6 +201,7 @@ export function buildCatalogAcquirePayload(updatedItem) {
     carb: Number(row.carb) || 0,
     fatTotal: Number(row.fatTotal ?? row.fat) || 0,
     ...(updatedItem.customImage ? { customImage: updatedItem.customImage } : {}),
+    ...(updatedItem.customEmoji ? { customEmoji: updatedItem.customEmoji } : {}),
   };
 }
 
@@ -208,6 +227,7 @@ export function buildCatalogOverrideFromEdit(updatedItem) {
       fatTotal: updatedItem.fatTotal,
       row: updatedItem.row,
       ...(updatedItem.customImage ? { customImage: updatedItem.customImage } : {}),
+      ...(updatedItem.customEmoji ? { customEmoji: updatedItem.customEmoji } : {}),
     },
   };
 }

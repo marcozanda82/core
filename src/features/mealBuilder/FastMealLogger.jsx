@@ -87,6 +87,29 @@ function formatComboIngredientLine(item) {
   return name;
 }
 
+function resolveComboCardTitle(combo, index) {
+  const name = String(combo?.name || '').trim();
+  if (!name) return `Combo ${index + 1}`;
+
+  if (/^Combo:\s/i.test(name)) return `Combo ${index + 1}`;
+
+  const items = combo?.items || [];
+  if (items.length > 1) {
+    const ingredientNames = items
+      .map((item) => String(item.desc || item.name || '').trim())
+      .filter(Boolean);
+    const looksLikeIngredientList =
+      name.includes(',')
+      || name.includes(' e ')
+      || ingredientNames.every(
+        (label) => label.length > 0 && name.toLowerCase().includes(label.toLowerCase()),
+      );
+    if (looksLikeIngredientList) return `Combo ${index + 1}`;
+  }
+
+  return name;
+}
+
 function buildAcquirePayload(food) {
   const row = food?.row || {};
   const desc = String(food?.desc || food?.name || row.desc || row.name || '').trim();
@@ -519,63 +542,8 @@ function FastMealLoggerContent({
         </button>
       </header>
 
-      <div className="shrink-0 space-y-3 px-4 pb-3">
-        <div className="flex min-w-0 rounded-xl border border-slate-700/80 bg-slate-900/60 p-1">
-          {MEAL_SLOTS.map((slot) => {
-            const isActive = selectedSlot === slot.id;
-            return (
-              <button
-                key={slot.id}
-                type="button"
-                onClick={() => setSelectedSlot(slot.id)}
-                className={`min-w-0 flex-1 truncate rounded-lg px-2 py-2 text-sm font-medium transition-colors sm:px-3 ${
-                  isActive
-                    ? 'bg-cyan-500 text-slate-950'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {slot.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <span className="shrink-0 text-xs text-slate-400">Orario pasto</span>
-          <label
-            htmlFor="fast-logger-meal-time"
-            onClick={openNativeTimePicker}
-            className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-slate-700/80 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
-          >
-            <Clock className="h-4 w-4 shrink-0 text-cyan-400" strokeWidth={2} aria-hidden />
-            <input
-              ref={mealTimeInputRef}
-              id="fast-logger-meal-time"
-              type="time"
-              value={decimalToTimeStr(mealTime)}
-              onChange={(event) => {
-                const parsed = parseTimeStrToDecimal(event.target.value);
-                if (typeof parsed === 'number' && !Number.isNaN(parsed)) {
-                  setMealTime(parsed);
-                }
-              }}
-              onClick={(event) => {
-                if (typeof event.currentTarget.showPicker === 'function') {
-                  try {
-                    event.currentTarget.showPicker();
-                  } catch {
-                    /* picker già aperto o rifiutato dal browser */
-                  }
-                }
-              }}
-              className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-sm font-medium text-white outline-none [color-scheme:dark]"
-            />
-          </label>
-        </div>
-      </div>
-
       <div
-        className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-1 transition-[padding] duration-300 ${
+        className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-2 transition-[padding] duration-300 ${
           draftFoods.length > 0 && !isCartOpen ? 'pb-24' : 'pb-4'
         }`}
       >
@@ -610,7 +578,7 @@ function FastMealLoggerContent({
                 Nessun alimento frequente per questo slot
               </p>
             ) : (
-              <div className="grid auto-cols-[80px] grid-flow-col grid-rows-2 gap-3 overflow-x-auto pb-4 pt-2 scrollbar-hide snap-x snap-mandatory">
+              <div className="grid auto-cols-[100px] grid-flow-col grid-rows-2 gap-3 overflow-x-auto pb-4 pt-2 scrollbar-hide snap-x snap-mandatory">
                 {quickFoods.map((tile) => {
                   const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
                   const tileVisual = resolveFoodVisual(displayTile, personalDb);
@@ -619,7 +587,7 @@ function FastMealLoggerContent({
                   return (
                     <div
                       key={tile.key}
-                      className="relative h-24 w-20 shrink-0 snap-start"
+                      className="relative h-[110px] w-[100px] shrink-0 snap-start"
                     >
                       <button
                         type="button"
@@ -628,17 +596,17 @@ function FastMealLoggerContent({
                           openEditModalForCatalog(tile);
                         }}
                         aria-label={`Modifica ${displayTile.desc || displayTile.label}`}
-                        className="absolute left-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-md bg-slate-900/90 transition-colors hover:bg-slate-800"
+                        className="absolute left-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-slate-900/90 transition-colors hover:bg-slate-800"
                       >
-                        <Settings className="h-3 w-3 text-slate-400" />
+                        <Settings className="h-3.5 w-3.5 text-slate-400" />
                       </button>
                       <button
                         type="button"
                         onClick={() => handleAddPredictiveBlock(tile)}
-                        className="relative flex h-full w-full flex-col items-center justify-between rounded-xl border border-slate-700/50 bg-slate-800/40 p-2 transition-transform active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+                        className="relative flex h-full w-full flex-col items-center justify-between rounded-xl border border-slate-700/50 bg-slate-800/40 p-2.5 transition-transform active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
                       >
                         {qty > 0 ? <QtyBadge qty={qty} /> : null}
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden text-2xl">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden text-3xl">
                           {tileVisual.customImage ? (
                             <img
                               src={tileVisual.customImage}
@@ -646,13 +614,15 @@ function FastMealLoggerContent({
                               className="h-full w-full rounded-md object-cover"
                             />
                           ) : (
-                            <span aria-hidden>{getFoodEmoji(tileVisual.name)}</span>
+                            <span aria-hidden>
+                              {tileVisual.customEmoji || getFoodEmoji(tileVisual.name)}
+                            </span>
                           )}
                         </div>
-                        <span className="line-clamp-2 w-full break-words text-center text-[10px] leading-tight text-slate-300">
+                        <span className="line-clamp-2 w-full break-words text-center text-xs font-medium leading-snug text-slate-200">
                           {displayTile.label || displayTile.desc}
                         </span>
-                        <span className="text-[9px] text-slate-500">{displayTile.kcal} kcal</span>
+                        <span className="text-[10px] text-slate-500">{displayTile.kcal} kcal</span>
                       </button>
                     </div>
                   );
@@ -674,55 +644,58 @@ function FastMealLoggerContent({
               </p>
             ) : (
               <div className="flex min-w-0 snap-x snap-mandatory gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                {predictiveCombos.map((combo) => (
+                {predictiveCombos.map((combo, comboIndex) => {
+                  const comboTitle = resolveComboCardTitle(combo, comboIndex);
+                  return (
                   <div
                     key={combo.id}
-                    className="flex w-[280px] shrink-0 snap-start flex-col rounded-2xl border border-slate-700 bg-slate-800/80 p-3"
+                    className="flex w-[300px] shrink-0 snap-start flex-col rounded-2xl border border-slate-700 bg-slate-800/80 p-3.5"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p
-                        className="min-w-0 flex-1 text-sm font-semibold leading-snug text-slate-200"
+                        className="min-w-0 flex-1 text-sm font-semibold leading-snug text-slate-100"
                         title={combo.name}
                       >
-                        {combo.name}
+                        {comboTitle}
                       </p>
                       <span className="shrink-0 text-xs font-bold text-cyan-400">
                         {combo.totalKcal} kcal
                       </span>
                     </div>
 
-                    <div className="my-2 rounded-md bg-slate-900/50 p-2">
-                      {combo.items.slice(0, 3).map((item) => (
-                        <span
+                    <ul className="my-3 space-y-1.5">
+                      {combo.items.slice(0, 4).map((item) => (
+                        <li
                           key={`${combo.id}-${item.desc}-${item.qta}`}
-                          className="block truncate text-[10px] text-slate-400"
+                          className="truncate text-sm leading-relaxed text-slate-300"
                           title={formatComboIngredientLine(item)}
                         >
                           • {formatComboIngredientLine(item)}
-                        </span>
+                        </li>
                       ))}
-                      {combo.items.length > 3 ? (
-                        <span className="mt-0.5 block text-[10px] italic text-slate-500">
-                          + altri {combo.items.length - 3} ingredienti
-                        </span>
+                      {combo.items.length > 4 ? (
+                        <li className="text-xs italic leading-relaxed text-slate-500">
+                          + altri {combo.items.length - 4} ingredienti
+                        </li>
                       ) : null}
-                    </div>
+                    </ul>
 
                     {combo.count != null ? (
-                      <p className="mb-2 text-[10px] text-slate-500">Usato ×{combo.count}</p>
+                      <p className="mb-2 text-xs text-slate-500">Usato ×{combo.count}</p>
                     ) : null}
 
                     <button
                       type="button"
-                      onClick={() => handleAddComboToDraft(combo.items, combo.name)}
-                      aria-label={`Aggiungi ${combo.name} al piatto`}
-                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-cyan-600/20 px-3 py-2 text-xs font-semibold text-cyan-400 transition-colors hover:bg-cyan-600/35 active:scale-[0.98]"
+                      onClick={() => handleAddComboToDraft(combo.items, comboTitle)}
+                      aria-label={`Aggiungi ${comboTitle} al piatto`}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-cyan-600/20 px-3 py-2.5 text-xs font-semibold text-cyan-400 transition-colors hover:bg-cyan-600/35 active:scale-[0.98]"
                     >
                       <Plus className="h-3.5 w-3.5" />
                       Aggiungi al Piatto
                     </button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -777,6 +750,61 @@ function FastMealLoggerContent({
           draftTotals={draftTotals}
           className="mx-4 shrink-0 border-slate-700/80 bg-slate-900 shadow-none"
         />
+
+        <div className="shrink-0 space-y-3 border-b border-slate-800 px-4 pb-3 pt-2">
+          <div className="flex min-w-0 rounded-xl border border-slate-700/80 bg-slate-900/60 p-1">
+            {MEAL_SLOTS.map((slot) => {
+              const isActive = selectedSlot === slot.id;
+              return (
+                <button
+                  key={slot.id}
+                  type="button"
+                  onClick={() => setSelectedSlot(slot.id)}
+                  className={`min-w-0 flex-1 truncate rounded-lg px-2 py-2 text-sm font-medium transition-colors sm:px-3 ${
+                    isActive
+                      ? 'bg-cyan-500 text-slate-950'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {slot.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <span className="shrink-0 text-xs text-slate-400">Orario pasto</span>
+            <label
+              htmlFor="fast-logger-cart-meal-time"
+              onClick={openNativeTimePicker}
+              className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-slate-700/80 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
+            >
+              <Clock className="h-4 w-4 shrink-0 text-cyan-400" strokeWidth={2} aria-hidden />
+              <input
+                ref={mealTimeInputRef}
+                id="fast-logger-cart-meal-time"
+                type="time"
+                value={decimalToTimeStr(mealTime)}
+                onChange={(event) => {
+                  const parsed = parseTimeStrToDecimal(event.target.value);
+                  if (typeof parsed === 'number' && !Number.isNaN(parsed)) {
+                    setMealTime(parsed);
+                  }
+                }}
+                onClick={(event) => {
+                  if (typeof event.currentTarget.showPicker === 'function') {
+                    try {
+                      event.currentTarget.showPicker();
+                    } catch {
+                      /* picker già aperto o rifiutato dal browser */
+                    }
+                  }
+                }}
+                className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-sm font-medium text-white outline-none [color-scheme:dark]"
+              />
+            </label>
+          </div>
+        </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           {draftFoods.length === 0 ? (

@@ -38,7 +38,7 @@ export default function ComboFeaturedThumbnail({ items = [], personalDb, classNa
               />
             ) : (
               <span className="text-sm leading-none" aria-hidden>
-                {getFoodEmoji(visual.name)}
+                {visual.customEmoji || getFoodEmoji(visual.name)}
               </span>
             )}
           </div>

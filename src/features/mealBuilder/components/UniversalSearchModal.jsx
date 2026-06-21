@@ -439,6 +439,7 @@ export default function UniversalSearchModal({
                     <FoodThumbnail
                       name={visual.name}
                       customImage={visual.customImage}
+                      customEmoji={visual.customEmoji}
                       sizeClassName="h-12 w-12"
                       emojiClassName="text-2xl"
                       className="rounded-lg"

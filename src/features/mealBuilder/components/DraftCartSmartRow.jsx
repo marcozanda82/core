@@ -47,7 +47,7 @@ export default function DraftCartSmartRow({ item, personalDb, onUpdateAmount, on
   return (
     <li className="min-w-0 max-w-full rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2.5">
       <div className="flex min-w-0 items-start gap-2">
-        <FoodThumbnail name={visual.name} customImage={visual.customImage} />
+        <FoodThumbnail name={visual.name} customImage={visual.customImage} customEmoji={visual.customEmoji} />
         <button
           type="button"
           onClick={() => onDeepEdit?.(item)}

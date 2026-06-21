@@ -4,6 +4,7 @@ import { getFoodEmoji } from '../utils/foodIconUtils';
 export default function FoodThumbnail({
   name,
   customImage,
+  customEmoji,
   sizeClassName = 'h-10 w-10',
   emojiClassName = 'text-xl',
   className = '',
@@ -20,7 +21,7 @@ export default function FoodThumbnail({
         />
       ) : (
         <span className={emojiClassName} aria-hidden>
-          {getFoodEmoji(name)}
+          {customEmoji || getFoodEmoji(name)}
         </span>
       )}
     </div>

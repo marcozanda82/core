@@ -101,7 +101,29 @@ function parseFormNumber(raw, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export function applyDeepEditFormToItem(item, form, customImage) {
+function applyIconFields(row, next, iconState) {
+  const customImage = iconState?.customImage ?? null;
+  const customEmoji = iconState?.customEmoji ?? null;
+
+  if (customImage) {
+    row.customImage = customImage;
+    delete row.customEmoji;
+    next.customImage = customImage;
+    delete next.customEmoji;
+  } else if (customEmoji) {
+    row.customEmoji = customEmoji;
+    delete row.customImage;
+    next.customEmoji = customEmoji;
+    delete next.customImage;
+  } else {
+    delete row.customImage;
+    delete row.customEmoji;
+    delete next.customImage;
+    delete next.customEmoji;
+  }
+}
+
+export function applyDeepEditFormToItem(item, form, iconState) {
   const selectedUnit = form.selectedUnit || 'g';
   const unitWeight = resolveUnitWeight(item, selectedUnit);
   const multiplier = parseFormNumber(form.multiplier, 0);
@@ -129,12 +151,6 @@ export function applyDeepEditFormToItem(item, form, customImage) {
     row[key] = roundMacro(portionVal * ratio);
   });
 
-  if (customImage) {
-    row.customImage = customImage;
-  } else {
-    delete row.customImage;
-  }
-
   const next = {
     ...item,
     row,
@@ -152,11 +168,8 @@ export function applyDeepEditFormToItem(item, form, customImage) {
     _manualOverride: true,
   };
 
-  if (customImage) {
-    next.customImage = customImage;
-  } else {
-    delete next.customImage;
-  }
+  applyIconFields(row, next, iconState);
+  next.row = row;
 
   MICRO_KEYS.forEach((key) => {
     next[key] = roundMacro(parseFormNumber(form[key]));

@@ -1,6 +1,6 @@
 const EMOJI_RULES = [
-  { keywords: ['pollo', 'tacchino', 'chicken', 'turkey'], emoji: '🍗' },
-  { keywords: ['manzo', 'vitello', 'maiale', 'carne', 'bistecca', 'hamburger', 'beef', 'pork'], emoji: '🥩' },
+  { keywords: ['pollo', 'tacchino', 'chicken', 'turkey', 'cotoletta', 'cotolette', 'cutlet', 'schnitzel', 'impanat'], emoji: '🍗' },
+  { keywords: ['manzo', 'vitello', 'maiale', 'carne', 'bistecca', 'hamburger', 'beef', 'pork', 'costoletta'], emoji: '🥩' },
   { keywords: ['salmone', 'tonno', 'pesce', 'merluzzo', 'gamber', 'calam', 'fish', 'sushi'], emoji: '🐟' },
   { keywords: ['uovo', 'uova', 'egg'], emoji: '🥚' },
   { keywords: ['latte', 'yogurt', 'kefir', 'milk'], emoji: '🥛' },
@@ -49,13 +49,19 @@ export function getFoodEmoji(foodName) {
 export function resolveFoodVisual(food, personalDb) {
   const name = String(food?.desc || food?.name || food?.label || 'Alimento').trim();
   const dbKey = food?.foodDbKey ?? food?.key ?? food?.id;
+  const dbEntry = dbKey && personalDb?.[dbKey] ? personalDb[dbKey] : null;
   const customImage =
     food?.customImage
     || food?.row?.customImage
-    || (dbKey && personalDb?.[dbKey]?.customImage)
+    || dbEntry?.customImage
+    || null;
+  const customEmoji =
+    food?.customEmoji
+    || food?.row?.customEmoji
+    || dbEntry?.customEmoji
     || null;
 
-  return { name, customImage };
+  return { name, customImage, customEmoji };
 }
 
 export function formatMealSlotLabel(slot) {
