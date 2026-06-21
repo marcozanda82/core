@@ -96,7 +96,12 @@ function MacroBar({ label, consumed, draft, target, unit, accentClass }) {
   );
 }
 
-export default function LiveMacroHud({ mealTargets = {}, mealConsumed = {}, draftTotals = {} }) {
+export default function LiveMacroHud({
+  mealTargets = {},
+  mealConsumed = {},
+  draftTotals = {},
+  className = '',
+}) {
   const consumed = normalizeMacroBundle(mealConsumed);
   const draft = normalizeMacroBundle(draftTotals);
   const targets = normalizeMacroBundle(mealTargets, DEFAULT_TARGETS);
@@ -109,7 +114,13 @@ export default function LiveMacroHud({ mealTargets = {}, mealConsumed = {}, draf
   };
 
   return (
-    <div className="mb-4 rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+    <div
+      className={
+        className
+          ? `rounded-xl border border-slate-800 p-3 ${className}`
+          : 'mb-4 rounded-xl border border-slate-800 bg-slate-900/50 p-3'
+      }
+    >
       <p className="mb-2 text-xs font-medium text-slate-300">Target pasto</p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {MACRO_ROWS.map(({ id, label, unit, accent }) => (

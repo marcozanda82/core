@@ -65,6 +65,45 @@ function buildLabel(desc, qtyLabel) {
   return `${desc} (${qtyLabel})`;
 }
 
+function resolveEntryLoggedAtMs(entry, dayKey) {
+  const direct = Number(
+    entry?.lastUsedAt ?? entry?.lastUsed ?? entry?.timestamp ?? entry?.loggedAt,
+  );
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const id = String(entry?.id ?? entry?.batchId ?? '');
+  const batchMatch = id.match(/(?:^|_)(\d{10,13})(?:_|$)/);
+  if (batchMatch) {
+    const ts = Number(batchMatch[1]);
+    if (Number.isFinite(ts) && ts > 0) {
+      return ts > 1e12 ? ts : ts * 1000;
+    }
+  }
+
+  if (dayKey) {
+    const baseDate = new Date(`${dayKey}T00:00:00`);
+    if (!Number.isNaN(baseDate.getTime())) {
+      const mealTime = Number(entry?.mealTime ?? entry?.time);
+      if (Number.isFinite(mealTime)) {
+        const hours = Math.floor(mealTime);
+        const minutes = Math.round((mealTime - hours) * 60);
+        baseDate.setHours(hours, minutes, 0, 0);
+        return baseDate.getTime();
+      }
+      return baseDate.getTime();
+    }
+  }
+
+  return 0;
+}
+
+function enrichFoodEntryWithLoggedAt(entry, dayKey) {
+  return {
+    ...entry,
+    _loggedAtMs: resolveEntryLoggedAtMs(entry, dayKey),
+  };
+}
+
 function asLogArray(rawLog) {
   if (Array.isArray(rawLog)) return rawLog;
   if (rawLog && typeof rawLog === 'object') return Object.values(rawLog);
@@ -145,12 +184,18 @@ export function collectFoodEntriesFromFullHistory(fullHistory, options = {}) {
   const anchorDate = options.anchorDate ?? getTodayString();
 
   if (isFlatFoodLogArray(fullHistory)) {
-    return fullHistory;
+    const dayKey = anchorDate;
+    return fullHistory.map((entry) => enrichFoodEntryWithLoggedAt(entry, dayKey));
   }
 
   if (isDayNodeArray(fullHistory)) {
     const recentDays = fullHistory.slice(-lookbackDays);
-    return recentDays.flatMap((day) => flattenLogToFoodEntries(day.log));
+    return recentDays.flatMap((day) => {
+      const dayKey = day?.data ?? day?.date ?? anchorDate;
+      return flattenLogToFoodEntries(day.log).map((entry) =>
+        enrichFoodEntryWithLoggedAt(entry, dayKey),
+      );
+    });
   }
 
   if (typeof fullHistory !== 'object') return [];
@@ -164,7 +209,11 @@ export function collectFoodEntriesFromFullHistory(fullHistory, options = {}) {
     const rawLog = node.log ?? node.dati?.log;
     if (rawLog == null) continue;
 
-    entries.push(...flattenLogToFoodEntries(rawLog));
+    entries.push(
+      ...flattenLogToFoodEntries(rawLog).map((entry) =>
+        enrichFoodEntryWithLoggedAt(entry, dateStr),
+      ),
+    );
   }
 
   return entries;
@@ -195,6 +244,7 @@ function aggregatePredictiveFoodBlocks(allFoodEntries, targetMealType, limit) {
         count: 0,
         quantities: [],
         entries: [],
+        lastUsed: 0,
       });
     }
 
@@ -202,6 +252,10 @@ function aggregatePredictiveFoodBlocks(allFoodEntries, targetMealType, limit) {
     group.count += 1;
     group.quantities.push(resolveQuantity(entry));
     group.entries.push(entry);
+    group.lastUsed = Math.max(
+      group.lastUsed,
+      Number(entry._loggedAtMs) || resolveEntryLoggedAtMs(entry),
+    );
 
     if (!group.foodDbKey && entry.foodDbKey) {
       group.foodDbKey = entry.foodDbKey;
@@ -232,9 +286,16 @@ function aggregatePredictiveFoodBlocks(allFoodEntries, targetMealType, limit) {
         fatTotal: Number(template?.fatTotal ?? template?.fat) || 0,
         qtyLabel,
         label: buildLabel(group.desc, qtyLabel),
+        lastUsed: group.lastUsed,
+        timestamp: group.lastUsed,
       };
     })
-    .sort((a, b) => b.count - a.count || a.desc.localeCompare(b.desc, 'it'))
+    .sort(
+      (a, b) =>
+        (b.lastUsed || 0) - (a.lastUsed || 0) ||
+        b.count - a.count ||
+        a.desc.localeCompare(b.desc, 'it'),
+    )
     .slice(0, safeLimit);
 }
 
@@ -243,10 +304,10 @@ function aggregatePredictiveFoodBlocks(allFoodEntries, targetMealType, limit) {
  *
  * @param {object|Array} fullHistory Albero tracker_data Firebase (`trackerStorico_YYYY-MM-DD`)
  * @param {string} targetMealType es. 'colazione', 'pranzo', 'cena'
- * @param {number} [limit=6] Numero massimo di blocchi predittivi
- * @returns {Array<object>} Blocchi ordinati per frequenza decrescente
+ * @param {number} [limit=12] Numero massimo di blocchi predittivi
+ * @returns {Array<object>} Blocchi ordinati per utilizzo più recente
  */
-export function usePredictiveFoodBlocks(fullHistory, targetMealType, limit = 6) {
+export function usePredictiveFoodBlocks(fullHistory, targetMealType, limit = 12) {
   return useMemo(() => {
     if (!targetMealType) return [];
 
