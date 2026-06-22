@@ -106,22 +106,36 @@ function parseFormNumber(raw, fallback = 0) {
 function applyIconFields(row, next, iconState) {
   const customImage = iconState?.customImage ?? null;
   const customEmoji = iconState?.customEmoji ?? null;
+  const customIcon = iconState?.customIcon ?? null;
 
   if (customImage) {
     row.customImage = customImage;
     delete row.customEmoji;
+    delete row.customIcon;
     next.customImage = customImage;
+    delete next.customEmoji;
+    delete next.customIcon;
+  } else if (customIcon) {
+    row.customIcon = customIcon;
+    delete row.customImage;
+    delete row.customEmoji;
+    next.customIcon = customIcon;
+    delete next.customImage;
     delete next.customEmoji;
   } else if (customEmoji) {
     row.customEmoji = customEmoji;
     delete row.customImage;
+    delete row.customIcon;
     next.customEmoji = customEmoji;
     delete next.customImage;
+    delete next.customIcon;
   } else {
     delete row.customImage;
     delete row.customEmoji;
+    delete row.customIcon;
     delete next.customImage;
     delete next.customEmoji;
+    delete next.customIcon;
   }
 }
 

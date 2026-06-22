@@ -60,8 +60,13 @@ export function resolveFoodVisual(food, personalDb) {
     || food?.row?.customEmoji
     || dbEntry?.customEmoji
     || null;
+  const customIcon =
+    food?.customIcon
+    || food?.row?.customIcon
+    || dbEntry?.customIcon
+    || null;
 
-  return { name, customImage, customEmoji };
+  return { name, customImage, customEmoji, customIcon };
 }
 
 export function formatMealSlotLabel(slot) {

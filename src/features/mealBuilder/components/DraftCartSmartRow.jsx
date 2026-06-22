@@ -91,7 +91,7 @@ export default function DraftCartSmartRow({
       }
     >
       <div className="flex min-w-0 items-start gap-2">
-        <FoodThumbnail name={visual.name} customImage={visual.customImage} customEmoji={visual.customEmoji} />
+        <FoodThumbnail name={visual.name} customImage={visual.customImage} customEmoji={visual.customEmoji} customIcon={visual.customIcon} />
         {embedded ? (
           <p className="min-w-0 flex-1 truncate text-left text-sm font-medium leading-snug text-slate-100">
             {name}

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Edit2, Minus, Plus, X } from 'lucide-react';
 import { findDraftItemForFood } from '../utils/draftFoodMatchUtils';
 import { getFoodEmoji } from '../utils/foodIconUtils';
+import { FoodIconVisual } from '../utils/FoodIcons';
 import { computeMacrosForWeight, getPer100Macros } from '../utils/foodMacroUtils';
 import { roundToOneDecimal } from '../utils/numberFormatUtils';
 
@@ -133,6 +134,14 @@ export default function FoodDetailModal({
               alt={name}
               className="h-40 w-full object-cover"
             />
+          ) : tileVisual?.customIcon ? (
+            <div className="flex h-40 w-full items-center justify-center bg-slate-800/80">
+              <FoodIconVisual
+                iconId={tileVisual.customIcon}
+                iconClassName="h-16 w-16"
+                wrapperClassName="h-28 w-28"
+              />
+            </div>
           ) : (
             <div className="flex h-40 w-full items-center justify-center bg-slate-800/80 text-7xl">
               <span aria-hidden>

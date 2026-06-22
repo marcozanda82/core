@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Minus, Plus } from 'lucide-react';
 import { getFoodEmoji } from '../utils/foodIconUtils';
+import { FoodIconVisual } from '../utils/FoodIcons';
 import QtyBadge from './QtyBadge';
 
 function FoodThumbnailContent({ visual, name, emojiFallback, className = '', compact = false }) {
@@ -10,6 +11,17 @@ function FoodThumbnailContent({ visual, name, emojiFallback, className = '', com
         src={visual.customImage}
         alt={visual.name || name}
         className={className || 'h-full w-full object-cover'}
+      />
+    );
+  }
+
+  if (visual.customIcon) {
+    return (
+      <FoodIconVisual
+        iconId={visual.customIcon}
+        iconClassName={compact ? 'h-7 w-7' : 'h-9 w-9'}
+        wrapperClassName="h-full w-full"
+        className={compact ? 'rounded-lg' : 'rounded-t-xl'}
       />
     );
   }
@@ -42,7 +54,7 @@ export default function QuickFoodTile({
   const baseWeight = Math.round(Number(defaultUnitWeight) || 100);
   const baseKcal = Math.round(Number(defaultUnitKcal) || 0);
   const tempWeight = Math.round(tempQty * baseWeight);
-  const visual = tileVisual || { name, customImage: null, customEmoji: null };
+  const visual = tileVisual || { name, customImage: null, customEmoji: null, customIcon: null };
   const emojiFallback = visual.customEmoji || getFoodEmoji(visual.name || name);
 
   const openDetail = (event) => {

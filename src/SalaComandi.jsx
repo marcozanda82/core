@@ -3666,7 +3666,7 @@ Ottimo! Diario aggiornato. 🥗`;
     if (!prev) return;
 
     const basePath = `users/${userUid}/tracker_data`;
-    const { row, customImage, customEmoji, ...rest } = patch;
+    const { row, customImage, customEmoji, customIcon, ...rest } = patch;
     const merged = { ...prev, ...rest };
 
     if (row && typeof row === 'object') {
@@ -3677,8 +3677,19 @@ Ottimo! Diario aggiornato. 🥗`;
       if (customImage) {
         merged.customImage = customImage;
         delete merged.customEmoji;
+        delete merged.customIcon;
       } else {
         delete merged.customImage;
+      }
+    }
+
+    if ('customIcon' in patch) {
+      if (customIcon) {
+        merged.customIcon = customIcon;
+        delete merged.customImage;
+        delete merged.customEmoji;
+      } else {
+        delete merged.customIcon;
       }
     }
 
@@ -3686,6 +3697,7 @@ Ottimo! Diario aggiornato. 🥗`;
       if (customEmoji) {
         merged.customEmoji = customEmoji;
         delete merged.customImage;
+        delete merged.customIcon;
       } else {
         delete merged.customEmoji;
       }

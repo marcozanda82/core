@@ -1,10 +1,12 @@
 import React from 'react';
 import { getFoodEmoji } from '../utils/foodIconUtils';
+import { FoodIconVisual } from '../utils/FoodIcons';
 
 export default function FoodThumbnail({
   name,
   customImage,
   customEmoji,
+  customIcon = null,
   sizeClassName = 'h-10 w-10',
   emojiClassName = 'text-xl',
   className = '',
@@ -18,6 +20,12 @@ export default function FoodThumbnail({
           src={customImage}
           alt={name || 'Alimento'}
           className="h-full w-full object-cover"
+        />
+      ) : customIcon ? (
+        <FoodIconVisual
+          iconId={customIcon}
+          iconClassName="h-[55%] w-[55%]"
+          wrapperClassName="h-full w-full rounded-md"
         />
       ) : (
         <span className={emojiClassName} aria-hidden>

@@ -42,6 +42,8 @@ import {
 } from './utils/catalogFoodUtils';
 import { resolveUnitWeight } from './utils/draftFoodUnits';
 import { ChevronDown, Clock, LayoutGrid, List, Minus, Plus, Settings, ShoppingBag } from 'lucide-react';
+import { FaHamburger } from 'react-icons/fa';
+import { MdOutlineLocalFireDepartment } from 'react-icons/md';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
 import useFoodDb from '../../useFoodDb';
 import { draftFoodsToRecipePayload, fetchRecipesFromDb } from './utils/recipeDraftUtils';
@@ -145,6 +147,7 @@ function formatSearchResultForDraft(food) {
     fat: Math.round(f100 * 10) / 10,
     fatTotal: Math.round(f100 * 10) / 10,
     ...(row.customImage ? { customImage: row.customImage } : {}),
+    ...(row.customIcon ? { customIcon: row.customIcon } : {}),
   };
 }
 
@@ -785,6 +788,9 @@ function FastMealLoggerContent({
         ...(displayTile.customImage || row.customImage
           ? { customImage: displayTile.customImage || row.customImage }
           : {}),
+        ...(displayTile.customIcon || row.customIcon
+          ? { customIcon: displayTile.customIcon || row.customIcon }
+          : {}),
       };
     }
 
@@ -804,6 +810,7 @@ function FastMealLoggerContent({
       units: payload.units ?? row.units,
       defaultUnit: payload.defaultUnit ?? row.defaultUnit,
       customImage: payload.customImage,
+      customIcon: payload.customIcon,
       isRecipe: payload.isRecipe,
       qta: weight,
       weight,
@@ -891,6 +898,9 @@ function FastMealLoggerContent({
         defaultUnit: (displayTile.row || row).defaultUnit ?? row.defaultUnit,
         ...(displayTile.customImage || row.customImage
           ? { customImage: displayTile.customImage || row.customImage }
+          : {}),
+        ...(displayTile.customIcon || row.customIcon
+          ? { customIcon: displayTile.customIcon || row.customIcon }
           : {}),
       };
     }
@@ -1100,23 +1110,25 @@ function FastMealLoggerContent({
                 <button
                   type="button"
                   onClick={() => setActiveVetrinaTab('foods')}
-                  className={`flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                  className={`flex flex-1 items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
                     activeVetrinaTab === 'foods'
                       ? 'bg-slate-700 text-white shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
+                  <FaHamburger className="mr-1.5 inline h-3.5 w-3.5" aria-hidden />
                   Alimenti
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveVetrinaTab('recipes')}
-                  className={`flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                  className={`flex flex-1 items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
                     activeVetrinaTab === 'recipes'
                       ? 'bg-slate-700 text-white shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
+                  <MdOutlineLocalFireDepartment className="mr-1.5 inline h-3.5 w-3.5" aria-hidden />
                   Le mie Ricette
                 </button>
               </div>

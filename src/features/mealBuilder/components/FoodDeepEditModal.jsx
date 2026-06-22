@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, Clipboard, RotateCcw, Trash2, X } from 'lucide-react';
 import FoodThumbnail from './FoodThumbnail';
 import ImageSelectionSheet from './ImageSelectionSheet';
-import {
+import { FOOD_ICONS_LIBRARY } from '../utils/FoodIcons';import {
   applyDeepEditFormToItem,
   buildDeepEditFormState,
   DEEP_EDIT_MICRO_FIELDS,
@@ -15,6 +15,7 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
   const [form, setForm] = useState(() => buildDeepEditFormState(foodItem || {}));
   const [customImage, setCustomImage] = useState(null);
   const [customEmoji, setCustomEmoji] = useState(null);
+  const [customIcon, setCustomIcon] = useState(null);
   const [isImageSheetOpen, setIsImageSheetOpen] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
 
@@ -23,6 +24,7 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
       setForm(buildDeepEditFormState(foodItem));
       setCustomImage(foodItem.customImage || foodItem.row?.customImage || null);
       setCustomEmoji(foodItem.customEmoji || foodItem.row?.customEmoji || null);
+      setCustomIcon(foodItem.customIcon || foodItem.row?.customIcon || null);
       setIsImageSheetOpen(false);
       setCopiedJson(false);
     }
@@ -32,7 +34,7 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
 
   const name = foodItem.desc || foodItem.name || 'Alimento';
   const isCatalogEdit = foodItem._editSource === 'catalog';
-  const hasCustomIcon = Boolean(customImage || customEmoji);
+  const hasCustomIcon = Boolean(customImage || customEmoji || customIcon);
 
   const patchForm = (patch) => setForm((prev) => ({ ...prev, ...patch }));
   const handleRestoreDefaults = () => {
@@ -42,21 +44,30 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
   const handleSelectEmoji = (emoji) => {
     setCustomEmoji(emoji);
     setCustomImage(null);
+    setCustomIcon(null);
   };
 
   const handleSelectImage = (dataUrl) => {
     setCustomImage(dataUrl);
+    setCustomEmoji(null);
+    setCustomIcon(null);
+  };
+
+  const handleSelectVectorIcon = (iconId) => {
+    setCustomIcon(iconId);
+    setCustomImage(null);
     setCustomEmoji(null);
   };
 
   const handleRemoveIcon = () => {
     setCustomImage(null);
     setCustomEmoji(null);
+    setCustomIcon(null);
   };
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    onSave?.(applyDeepEditFormToItem(foodItem, form, { customImage, customEmoji }));
+    onSave?.(applyDeepEditFormToItem(foodItem, form, { customImage, customEmoji, customIcon }));
     onClose?.();
   };
 
@@ -64,6 +75,7 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
     const currentFood = applyDeepEditFormToItem(foodItem, form, {
       customImage,
       customEmoji,
+      customIcon,
     });
     const jsonString = JSON.stringify(currentFood, null, 2);
     await navigator.clipboard.writeText(jsonString);
@@ -102,6 +114,7 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
                   name={name}
                   customImage={customImage}
                   customEmoji={customEmoji}
+                  customIcon={customIcon}
                   sizeClassName="h-14 w-14"
                   emojiClassName="text-2xl"
                 />
@@ -143,6 +156,41 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+            <section className="mb-5">
+              <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Scegli icona
+              </h4>
+              <p className="mb-3 text-xs leading-relaxed text-slate-500">
+                Icone vettoriali tematiche · oppure usa &quot;Cambia icona&quot; per foto o emoji.
+              </p>
+              <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {FOOD_ICONS_LIBRARY.map(({ id, label, color, icon: Icon }) => {
+                  const isSelected = customIcon === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => handleSelectVectorIcon(id)}
+                      aria-label={`Icona ${label}`}
+                      aria-pressed={isSelected}
+                      className={`flex shrink-0 flex-col items-center gap-1 rounded-xl border p-2 transition-colors ${
+                        isSelected
+                          ? 'border-cyan-500/70 bg-cyan-950/40 ring-1 ring-cyan-500/30'
+                          : 'border-slate-800 bg-slate-900/60 hover:border-slate-600 hover:bg-slate-800/80'
+                      }`}
+                    >
+                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900/90 ring-1 ring-slate-700/60">
+                        <Icon className={`h-5 w-5 ${color}`} aria-hidden />
+                      </span>
+                      <span className="max-w-[4.5rem] truncate text-[9px] font-medium text-slate-400">
+                        {label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
             <section className="mb-5">
               <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Porzione

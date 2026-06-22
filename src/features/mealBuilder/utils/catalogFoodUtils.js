@@ -88,6 +88,9 @@ function buildCatalogEditItemBase(source, personalDb, options = {}) {
     ...(row.customImage || source.customImage
       ? { customImage: row.customImage || source.customImage }
       : {}),
+    ...(row.customIcon || source.customIcon
+      ? { customIcon: row.customIcon || source.customIcon }
+      : {}),
     ...(row.customEmoji || source.customEmoji
       ? { customEmoji: row.customEmoji || source.customEmoji }
       : {}),
@@ -146,6 +149,7 @@ export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}) {
       qtyLabel: unitName ? `1 ${unitName}` : `${Math.round(unitWeight)}g`,
       ...portion,
       ...(row.customImage ? { customImage: row.customImage } : {}),
+      ...(row.customIcon ? { customIcon: row.customIcon } : {}),
       ...(row.customEmoji ? { customEmoji: row.customEmoji } : {}),
     };
     if (merged.desc) {
@@ -178,12 +182,19 @@ export function applyCatalogEditToDraftItem(draftItem, updatedCatalog) {
   if (updatedCatalog.customImage) {
     next.customImage = updatedCatalog.customImage;
     delete next.customEmoji;
+    delete next.customIcon;
+  } else if (updatedCatalog.customIcon) {
+    next.customIcon = updatedCatalog.customIcon;
+    delete next.customImage;
+    delete next.customEmoji;
   } else if (updatedCatalog.customEmoji) {
     next.customEmoji = updatedCatalog.customEmoji;
     delete next.customImage;
+    delete next.customIcon;
   } else {
     delete next.customImage;
     delete next.customEmoji;
+    delete next.customIcon;
   }
 
   return next;
@@ -211,6 +222,7 @@ export function buildCatalogDbPatch(updatedItem) {
   return {
     customImage: updatedItem.customImage ?? null,
     customEmoji: updatedItem.customEmoji ?? null,
+    customIcon: updatedItem.customIcon ?? null,
     row,
     desc: updatedItem.desc,
     unitName: unitName || undefined,
@@ -236,6 +248,7 @@ export function buildCatalogAcquirePayload(updatedItem) {
     fatTotal: per100.fat,
     ...buildBaseMacroFields(per100),
     ...(updatedItem.customImage ? { customImage: updatedItem.customImage } : {}),
+    ...(updatedItem.customIcon ? { customIcon: updatedItem.customIcon } : {}),
     ...(updatedItem.customEmoji ? { customEmoji: updatedItem.customEmoji } : {}),
   };
 }
@@ -267,6 +280,7 @@ export function buildCatalogOverrideFromEdit(updatedItem) {
       defaultUnit: updatedItem.defaultUnit,
       units: updatedItem.units,
       ...(updatedItem.customImage ? { customImage: updatedItem.customImage } : {}),
+      ...(updatedItem.customIcon ? { customIcon: updatedItem.customIcon } : {}),
       ...(updatedItem.customEmoji ? { customEmoji: updatedItem.customEmoji } : {}),
     },
   };
