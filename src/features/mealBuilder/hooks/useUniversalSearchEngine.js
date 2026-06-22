@@ -111,14 +111,14 @@ export function searchPersonalDb(personalDb, query) {
   detailed.forEach((hit) => {
     if (seenIds.has(hit.id)) return;
     const row = db[hit.id];
-    if (!row || isRecipeRow(row)) return;
+    if (!row) return;
     seenIds.add(hit.id);
     results.push(
       buildUnifiedResult({
         id: hit.id,
         desc: hit.name || row.desc || row.name,
         row,
-        source: 'personal',
+        source: isRecipeRow(row) ? 'recipe' : 'personal',
         matchScore: hit.textScore ?? hit.matchScore,
         matchType: 'text',
         textScore: hit.textScore,
@@ -126,6 +126,29 @@ export function searchPersonalDb(personalDb, query) {
       }),
     );
   });
+
+  const qNorm = normalizeSearchText(q);
+  if (qNorm) {
+    Object.entries(db).forEach(([id, row]) => {
+      if (!row || typeof row !== 'object' || !isRecipeRow(row) || seenIds.has(id)) return;
+      const name = String(row.desc ?? row.name ?? '').trim();
+      if (!name) return;
+      const nameNorm = normalizeSearchText(name);
+      if (!nameNorm.includes(qNorm)) return;
+      seenIds.add(id);
+      results.push(
+        buildUnifiedResult({
+          id,
+          desc: name,
+          row,
+          source: 'recipe',
+          matchScore: nameNorm.startsWith(qNorm) ? 0.95 : 0.75,
+          matchType: 'text',
+          textScore: nameNorm.startsWith(qNorm) ? 0.95 : 0.75,
+        }),
+      );
+    });
+  }
 
   return results.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
 }
@@ -205,7 +228,26 @@ function mapUsdaHitToResult(hit) {
   });
 }
 
-async function searchExternalSources(query, creaDb, personalResults, signal) {
+export const SEARCH_SOURCE_BADGE = {
+  personal: {
+    label: 'Personale',
+    className: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+  },
+  crea: {
+    label: 'CREA',
+    className: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
+  },
+  usda: {
+    label: 'USDA',
+    className: 'border-sky-500/40 bg-sky-500/15 text-sky-300',
+  },
+  recipe: {
+    label: 'Ricetta',
+    className: 'border-violet-500/40 bg-violet-500/15 text-violet-300',
+  },
+};
+
+export async function searchExternalSources(query, creaDb, personalResults, signal) {
   const external = [];
   const safeCreaDb = normalizeCreaDb(creaDb);
 
@@ -239,6 +281,87 @@ async function searchExternalSources(query, creaDb, personalResults, signal) {
   });
 
   return external;
+}
+
+/**
+ * Ricerca debounced su CREA + USDA per la barra inline della Vetrina.
+ * I risultati locali (personale) vanno gestiti separatamente in modo sincrono.
+ */
+export function useDebouncedExternalFoodSearch(query, personalDb, creaDb = null) {
+  const [externalResults, setExternalResults] = useState([]);
+  const [isSearchingExternal, setIsSearchingExternal] = useState(false);
+
+  const debounceTimerRef = useRef(null);
+  const externalRequestSeqRef = useRef(0);
+  const abortControllerRef = useRef(null);
+
+  useEffect(() => {
+    const trimmedQuery = String(query || '').trim();
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    if (!trimmedQuery || trimmedQuery.length < MIN_EXTERNAL_QUERY_LENGTH) {
+      setExternalResults([]);
+      setIsSearchingExternal(false);
+      return undefined;
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      const requestSeq = externalRequestSeqRef.current + 1;
+      externalRequestSeqRef.current = requestSeq;
+
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
+      setIsSearchingExternal(true);
+
+      void (async () => {
+        try {
+          const latestPersonal = searchPersonalDb(personalDb, trimmedQuery);
+          const external = await searchExternalSources(
+            trimmedQuery,
+            creaDb,
+            latestPersonal,
+            abortController.signal,
+          );
+
+          if (requestSeq !== externalRequestSeqRef.current) return;
+          if (abortController.signal.aborted) return;
+
+          setExternalResults(external);
+        } catch (error) {
+          if (error?.name === 'AbortError') return;
+          if (requestSeq !== externalRequestSeqRef.current) return;
+          setExternalResults([]);
+        } finally {
+          if (requestSeq === externalRequestSeqRef.current) {
+            setIsSearchingExternal(false);
+          }
+        }
+      })();
+    }, EXTERNAL_DEBOUNCE_MS);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, [query, personalDb, creaDb]);
+
+  return { externalResults, isSearchingExternal };
 }
 
 /**

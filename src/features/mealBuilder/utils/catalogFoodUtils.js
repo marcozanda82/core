@@ -1,5 +1,13 @@
 import { buildQtyLabel } from './draftFoodUnits';
 import { resolveFoodIdentityKey } from './draftFoodMatchUtils';
+import {
+  applyPer100ToRow,
+  buildBaseMacroFields,
+  computeMacrosForUnit,
+  getPer100Macros,
+  resolveDefaultUnitWeight,
+  resolveUnitName,
+} from './foodMacroUtils';
 
 function roundMacro(value, asInt = false) {
   const n = Number(value);
@@ -7,16 +15,14 @@ function roundMacro(value, asInt = false) {
   return asInt ? Math.round(n) : Math.round(n * 10) / 10;
 }
 
-function scalePortionFromRow(row, weight) {
-  const safeWeight = Math.max(0, Number(weight) || 0);
-  const ratio = safeWeight > 0 ? safeWeight / 100 : 1;
+function buildPortionFromPer100(row, unitWeight) {
+  const per100 = getPer100Macros({ row });
+  const portion = computeMacrosForUnit(per100, unitWeight);
   return {
-    kcal: roundMacro((Number(row.kcal ?? row.cal) || 0) * ratio, true),
-    cal: roundMacro((Number(row.kcal ?? row.cal) || 0) * ratio, true),
-    prot: roundMacro((Number(row.prot) || 0) * ratio),
-    carb: roundMacro((Number(row.carb) || 0) * ratio),
-    fat: roundMacro((Number(row.fatTotal ?? row.fat) || 0) * ratio),
-    fatTotal: roundMacro((Number(row.fatTotal ?? row.fat) || 0) * ratio),
+    ...portion,
+    fatTotal: portion.fat,
+    cal: portion.kcal,
+    ...buildBaseMacroFields(per100),
   };
 }
 
@@ -33,7 +39,7 @@ function buildRowFromPortion(item, weight) {
     fat: roundMacro((Number(item.fatTotal ?? item.fat) || 0) * ratio),
   };
   if (item.customImage) row.customImage = item.customImage;
-  return row;
+  return applyPer100ToRow(row, getPer100Macros({ row }));
 }
 
 function enrichRowFromPersonalDb(row, personalDb, foodDbKey) {
@@ -41,54 +47,28 @@ function enrichRowFromPersonalDb(row, personalDb, foodDbKey) {
   return { ...personalDb[foodDbKey], ...row };
 }
 
-export function buildCatalogDeepEditItem(source, personalDb) {
-  if (!source || typeof source !== 'object') return null;
+function buildCatalogEditItemBase(source, personalDb, options = {}) {
+  const desc = String(
+    source.desc || source.name || source.label || source.row?.desc || 'Alimento',
+  ).trim();
+  const foodDbKey =
+    options.foodDbKey ??
+    source.foodDbKey ??
+    (source._source === 'personal' ? source.key || source.id : null);
 
-  if (source._source) {
-    const desc = String(source.desc || source.name || source.row?.desc || 'Alimento').trim();
-    const foodDbKey = source._source === 'personal' ? (source.key || source.id) : undefined;
-    const weight = 100;
-    const row = enrichRowFromPersonalDb(source.row || {}, personalDb, foodDbKey);
-    const portion = scalePortionFromRow(row, weight);
-
-    return {
-      id: `catalog_search_${foodDbKey || desc}`,
-      type: 'food',
-      desc,
-      name: desc,
-      foodDbKey,
-      row,
-      units: row.units,
-      defaultUnit: row.defaultUnit,
-      selectedUnit: 'g',
-      multiplier: weight,
-      qta: weight,
-      weight,
-      qtyLabel: `${weight}g`,
-      ...portion,
-      ...(row.customImage ? { customImage: row.customImage } : {}),
-      ...(row.customEmoji ? { customEmoji: row.customEmoji } : {}),
-      _editSource: 'catalog',
-      _catalogKind: 'search',
-      _searchSource: source._source,
-    };
-  }
-
-  const desc = String(source.desc || source.name || source.label || 'Alimento').trim();
-  const foodDbKey = source.foodDbKey ?? null;
-  const weight = Number(source.qta ?? source.weight) || 100;
   let row = source.row;
-
   if (foodDbKey && personalDb?.[foodDbKey]) {
     row = { ...personalDb[foodDbKey], ...(row || {}) };
   } else if (!row) {
-    row = buildRowFromPortion(source, weight);
+    row = buildRowFromPortion(source, 100);
   }
 
-  const portion = scalePortionFromRow(row, weight);
+  const unitName = resolveUnitName({ ...source, row });
+  const defaultUnitWeight = resolveDefaultUnitWeight({ ...source, row });
+  const portion = buildPortionFromPer100(row, defaultUnitWeight);
 
   return {
-    id: `catalog_tile_${foodDbKey || source.key || desc}`,
+    id: options.id || `catalog_${foodDbKey || desc}`,
     type: 'food',
     desc,
     name: desc,
@@ -96,11 +76,13 @@ export function buildCatalogDeepEditItem(source, personalDb) {
     row,
     units: row.units ?? source.units,
     defaultUnit: row.defaultUnit ?? source.defaultUnit,
-    selectedUnit: source.selectedUnit || 'g',
-    multiplier: Number(source.multiplier) || weight,
-    qta: weight,
-    weight,
-    qtyLabel: source.qtyLabel || `${Math.round(weight)}g`,
+    unitName,
+    defaultUnitWeight,
+    selectedUnit: 'g',
+    multiplier: 1,
+    qta: defaultUnitWeight,
+    weight: defaultUnitWeight,
+    qtyLabel: unitName ? `1 ${unitName}` : `${Math.round(defaultUnitWeight)}g`,
     label: source.label || desc,
     ...portion,
     ...(row.customImage || source.customImage
@@ -110,8 +92,28 @@ export function buildCatalogDeepEditItem(source, personalDb) {
       ? { customEmoji: row.customEmoji || source.customEmoji }
       : {}),
     _editSource: 'catalog',
-    _catalogKind: 'tile',
+    _catalogKind: options.catalogKind || 'tile',
+    ...(options.extra || {}),
   };
+}
+
+export function buildCatalogDeepEditItem(source, personalDb) {
+  if (!source || typeof source !== 'object') return null;
+
+  if (source._source) {
+    const foodDbKey = source._source === 'personal' ? source.key || source.id : undefined;
+    return buildCatalogEditItemBase(source, personalDb, {
+      id: `catalog_search_${foodDbKey || source.desc || source.name}`,
+      foodDbKey,
+      catalogKind: 'search',
+      extra: { _searchSource: source._source },
+    });
+  }
+
+  return buildCatalogEditItemBase(source, personalDb, {
+    id: `catalog_tile_${source.foodDbKey || source.key || source.desc}`,
+    catalogKind: 'tile',
+  });
 }
 
 export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}) {
@@ -128,21 +130,25 @@ export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}) {
     merged = { ...merged, ...override };
   }
 
-  const weight = Number(merged.qta ?? merged.weight) || 100;
-  const row = dbRow
-    ? { ...dbRow, ...(merged.row || {}) }
-    : merged.row;
+  const row = dbRow ? { ...dbRow, ...(merged.row || {}) } : merged.row;
+  const unitWeight = resolveDefaultUnitWeight({ ...merged, row });
+  const unitName = resolveUnitName({ ...merged, row });
 
   if (row) {
-    const portion = scalePortionFromRow(row, weight);
+    const portion = buildPortionFromPer100(row, unitWeight);
     merged = {
       ...merged,
       row,
+      unitName,
+      defaultUnitWeight: unitWeight,
+      qta: unitWeight,
+      weight: unitWeight,
+      qtyLabel: unitName ? `1 ${unitName}` : `${Math.round(unitWeight)}g`,
       ...portion,
       ...(row.customImage ? { customImage: row.customImage } : {}),
       ...(row.customEmoji ? { customEmoji: row.customEmoji } : {}),
     };
-    if (merged.qtyLabel && merged.desc) {
+    if (merged.desc) {
       merged.label = `${merged.desc} (${merged.qtyLabel})`;
     }
   }
@@ -153,7 +159,8 @@ export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}) {
 export function applyCatalogEditToDraftItem(draftItem, updatedCatalog) {
   const weight = Number(draftItem.weight ?? draftItem.qta) || 0;
   const row = updatedCatalog.row || {};
-  const portion = scalePortionFromRow(row, weight);
+  const per100 = getPer100Macros({ row });
+  const portion = computeMacrosForUnit(per100, weight);
   const selectedUnit = draftItem.selectedUnit || 'g';
   const multiplier = Number(draftItem.multiplier) || weight;
 
@@ -161,6 +168,9 @@ export function applyCatalogEditToDraftItem(draftItem, updatedCatalog) {
     ...draftItem,
     row,
     ...portion,
+    fatTotal: portion.fat,
+    cal: portion.kcal,
+    ...buildBaseMacroFields(per100),
     qtyLabel: buildQtyLabel(draftItem, selectedUnit, multiplier, weight),
     _manualOverride: true,
   };
@@ -183,49 +193,79 @@ export function buildCatalogDbPatch(updatedItem) {
   const row = { ...(updatedItem.row || {}) };
   if (updatedItem.desc) row.desc = updatedItem.desc;
 
+  const unitName = String(updatedItem.unitName ?? resolveUnitName(updatedItem)).trim();
+  const defaultUnitWeight = Math.max(
+    1,
+    Number(updatedItem.defaultUnitWeight) || resolveDefaultUnitWeight(updatedItem),
+  );
+
+  const per100 = getPer100Macros({ ...updatedItem, row });
+  Object.assign(row, applyPer100ToRow(row, per100));
+
+  if (unitName) {
+    const unitEntry = { label: unitName, grams: defaultUnitWeight };
+    row.defaultUnit = unitEntry;
+    row.units = [unitEntry];
+  }
+
   return {
     customImage: updatedItem.customImage ?? null,
     customEmoji: updatedItem.customEmoji ?? null,
     row,
     desc: updatedItem.desc,
-    defaultServingWeight: Number(updatedItem.weight ?? updatedItem.qta) || undefined,
+    unitName: unitName || undefined,
+    defaultUnitWeight,
+    defaultServingWeight: defaultUnitWeight,
+    defaultUnit: unitName ? { label: unitName, grams: defaultUnitWeight } : row.defaultUnit,
+    ...buildBaseMacroFields(per100),
+    kcal: per100.kcal,
+    prot: per100.prot,
+    carb: per100.carb,
+    fatTotal: per100.fat,
   };
 }
 
 export function buildCatalogAcquirePayload(updatedItem) {
   const row = updatedItem.row || {};
+  const per100 = getPer100Macros({ ...updatedItem, row });
   return {
     desc: String(updatedItem.desc || row.desc || 'Alimento').trim(),
-    kcal: Number(row.kcal ?? row.cal) || 0,
-    prot: Number(row.prot) || 0,
-    carb: Number(row.carb) || 0,
-    fatTotal: Number(row.fatTotal ?? row.fat) || 0,
+    kcal: per100.kcal,
+    prot: per100.prot,
+    carb: per100.carb,
+    fatTotal: per100.fat,
+    ...buildBaseMacroFields(per100),
     ...(updatedItem.customImage ? { customImage: updatedItem.customImage } : {}),
     ...(updatedItem.customEmoji ? { customEmoji: updatedItem.customEmoji } : {}),
   };
 }
 
 export function buildCatalogOverrideFromEdit(updatedItem) {
-  const weight = Number(updatedItem.weight ?? updatedItem.qta) || 100;
+  const unitWeight = resolveDefaultUnitWeight(updatedItem);
   const identity = resolveFoodIdentityKey(updatedItem);
   if (!identity) return null;
+
+  const per100 = getPer100Macros(updatedItem);
+  const portion = computeMacrosForUnit(per100, unitWeight);
 
   return {
     key: identity,
     patch: {
       foodDbKey: updatedItem.foodDbKey,
-      qta: weight,
-      weight,
-      qtyLabel: updatedItem.qtyLabel || `${Math.round(weight)}g`,
+      unitName: updatedItem.unitName,
+      defaultUnitWeight: unitWeight,
+      qta: unitWeight,
+      weight: unitWeight,
+      qtyLabel: updatedItem.qtyLabel || `${Math.round(unitWeight)}g`,
       label: updatedItem.label
-        || `${updatedItem.desc || updatedItem.name} (${updatedItem.qtyLabel || `${Math.round(weight)}g`})`,
-      kcal: updatedItem.kcal,
-      cal: updatedItem.cal,
-      prot: updatedItem.prot,
-      carb: updatedItem.carb,
-      fat: updatedItem.fat,
-      fatTotal: updatedItem.fatTotal,
+        || `${updatedItem.desc || updatedItem.name} (${updatedItem.qtyLabel || `${Math.round(unitWeight)}g`})`,
+      ...portion,
+      cal: portion.kcal,
+      fatTotal: portion.fat,
+      ...buildBaseMacroFields(per100),
       row: updatedItem.row,
+      defaultUnit: updatedItem.defaultUnit,
+      units: updatedItem.units,
       ...(updatedItem.customImage ? { customImage: updatedItem.customImage } : {}),
       ...(updatedItem.customEmoji ? { customEmoji: updatedItem.customEmoji } : {}),
     },

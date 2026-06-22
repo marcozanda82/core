@@ -1,9 +1,16 @@
 import {
-  buildQtyLabel,
   getItemUnits,
   resolveUnitIdFromUnit,
   resolveUnitWeight,
 } from './draftFoodUnits';
+import {
+  applyPer100ToRow,
+  buildBaseMacroFields,
+  computeMacrosForUnit,
+  getPer100Macros,
+  resolveDefaultUnitWeight,
+  resolveUnitName,
+} from './foodMacroUtils';
 
 const MACRO_KEYS = ['kcal', 'cal', 'prot', 'carb', 'fat', 'fatTotal'];
 
@@ -41,56 +48,51 @@ function roundMacro(value, asInt = false) {
   return asInt ? Math.round(n) : Math.round(n * 10) / 10;
 }
 
-function scaleRowValue(basePer100, weight) {
-  const base = Number(basePer100);
-  if (!Number.isFinite(base)) return 0;
-  return (base * weight) / 100;
-}
-
-export function buildDefaultsFromRow(item, weight) {
-  const row = item?.row || {};
-  const safeWeight = Math.max(0, Number(weight) || 0);
-
+export function buildDefaultsFromRow(item) {
+  const per100 = getPer100Macros(item);
   const defaults = {
-    kcal: roundMacro(scaleRowValue(row.kcal ?? row.cal, safeWeight), true),
-    cal: roundMacro(scaleRowValue(row.kcal ?? row.cal, safeWeight), true),
-    prot: roundMacro(scaleRowValue(row.prot, safeWeight)),
-    carb: roundMacro(scaleRowValue(row.carb, safeWeight)),
-    fat: roundMacro(scaleRowValue(row.fatTotal ?? row.fat, safeWeight)),
-    fatTotal: roundMacro(scaleRowValue(row.fatTotal ?? row.fat, safeWeight)),
+    kcal: roundMacro(per100.kcal, true),
+    cal: roundMacro(per100.kcal, true),
+    prot: roundMacro(per100.prot),
+    carb: roundMacro(per100.carb),
+    fat: roundMacro(per100.fat),
+    fatTotal: roundMacro(per100.fat),
   };
 
+  const row = item?.row || {};
   MICRO_KEYS.forEach((key) => {
-    defaults[key] = roundMacro(scaleRowValue(row[key], safeWeight));
+    defaults[key] = roundMacro(Number(row[key]) || 0);
   });
 
   return defaults;
 }
 
+export function resolveDefaultUnitFromItem(item) {
+  const unitName = resolveUnitName(item);
+  const defaultUnitWeight = resolveDefaultUnitWeight(item, 100);
+
+  return {
+    unitName,
+    defaultUnitWeight: defaultUnitWeight > 0 ? defaultUnitWeight : 100,
+  };
+}
+
 export function buildDeepEditFormState(item) {
-  const selectedUnit = item?.selectedUnit || 'g';
-  const multiplier = Number(item?.multiplier ?? item?.qta ?? item?.weight) || 0;
-  const weight = Number(item?.weight ?? item?.qta) || 0;
+  const { unitName, defaultUnitWeight } = resolveDefaultUnitFromItem(item);
+  const per100 = getPer100Macros(item);
 
   const form = {
-    selectedUnit,
-    multiplier: multiplier > 0 ? String(multiplier) : '',
-    weight: weight > 0 ? String(Math.round(weight)) : '',
-    kcal: String(Number(item?.kcal ?? item?.cal) || 0),
-    prot: String(Number(item?.prot) || 0),
-    carb: String(Number(item?.carb) || 0),
-    fat: String(Number(item?.fatTotal ?? item?.fat) || 0),
+    unitName,
+    defaultUnitWeight: String(defaultUnitWeight),
+    kcal: String(roundMacro(per100.kcal, true)),
+    prot: String(roundMacro(per100.prot)),
+    carb: String(roundMacro(per100.carb)),
+    fat: String(roundMacro(per100.fat)),
   };
 
+  const row = item?.row || {};
   MICRO_KEYS.forEach((key) => {
-    const portionVal = Number(item?.[key]);
-    if (Number.isFinite(portionVal)) {
-      form[key] = String(portionVal);
-    } else if (item?.row?.[key] != null && weight > 0) {
-      form[key] = String(roundMacro(scaleRowValue(item.row[key], weight)));
-    } else {
-      form[key] = '0';
-    }
+    form[key] = String(roundMacro(Number(row[key]) || 0));
   });
 
   return form;
@@ -124,47 +126,54 @@ function applyIconFields(row, next, iconState) {
 }
 
 export function applyDeepEditFormToItem(item, form, iconState) {
-  const selectedUnit = form.selectedUnit || 'g';
-  const unitWeight = resolveUnitWeight(item, selectedUnit);
-  const multiplier = parseFormNumber(form.multiplier, 0);
-  const weight =
-    selectedUnit === 'g'
-      ? parseFormNumber(form.weight, multiplier)
-      : Math.max(0, multiplier * unitWeight);
+  const unitName = String(form.unitName ?? '').trim();
+  const defaultUnitWeight = Math.max(1, parseFormNumber(form.defaultUnitWeight, 100));
 
-  const kcal = roundMacro(parseFormNumber(form.kcal), true);
-  const prot = roundMacro(parseFormNumber(form.prot));
-  const carb = roundMacro(parseFormNumber(form.carb));
-  const fat = roundMacro(parseFormNumber(form.fat));
-  const ratio = weight > 0 ? 100 / weight : 1;
+  const per100 = {
+    kcal: roundMacro(parseFormNumber(form.kcal), true),
+    prot: roundMacro(parseFormNumber(form.prot)),
+    carb: roundMacro(parseFormNumber(form.carb)),
+    fat: roundMacro(parseFormNumber(form.fat)),
+  };
+  const baseFields = buildBaseMacroFields(per100);
+  const portion = computeMacrosForUnit(per100, defaultUnitWeight);
 
-  const row = { ...(item.row || {}) };
-  row.kcal = roundMacro(kcal * ratio, true);
-  row.cal = row.kcal;
-  row.prot = roundMacro(prot * ratio);
-  row.carb = roundMacro(carb * ratio);
-  row.fatTotal = roundMacro(fat * ratio);
-  row.fat = row.fatTotal;
+  const row = applyPer100ToRow({ ...(item.row || {}) }, per100);
+
+  if (unitName) {
+    const unitEntry = { label: unitName, grams: defaultUnitWeight };
+    row.defaultUnit = unitEntry;
+    row.units = [unitEntry];
+  }
 
   MICRO_KEYS.forEach((key) => {
-    const portionVal = roundMacro(parseFormNumber(form[key]));
-    row[key] = roundMacro(portionVal * ratio);
+    row[key] = roundMacro(parseFormNumber(form[key]));
   });
+
+  const selectedUnit = unitName
+    ? resolveUnitIdFromUnit({ label: unitName, grams: defaultUnitWeight })
+    : 'g';
 
   const next = {
     ...item,
     row,
+    unitName,
+    defaultUnitWeight,
+    ...baseFields,
+    defaultUnit: unitName ? { label: unitName, grams: defaultUnitWeight } : item.defaultUnit,
+    units: unitName ? [{ label: unitName, grams: defaultUnitWeight }] : item.units,
+    defaultServingWeight: defaultUnitWeight,
     selectedUnit,
-    multiplier: selectedUnit === 'g' ? weight : multiplier,
-    qta: weight,
-    weight,
-    kcal,
-    cal: kcal,
-    prot,
-    carb,
-    fat,
-    fatTotal: fat,
-    qtyLabel: buildQtyLabel(item, selectedUnit, multiplier, weight),
+    multiplier: 1,
+    qta: defaultUnitWeight,
+    weight: defaultUnitWeight,
+    kcal: portion.kcal,
+    cal: portion.kcal,
+    prot: portion.prot,
+    carb: portion.carb,
+    fat: portion.fat,
+    fatTotal: portion.fat,
+    qtyLabel: unitName ? `1 ${unitName}` : `${Math.round(defaultUnitWeight)}g`,
     _manualOverride: true,
   };
 
@@ -172,15 +181,15 @@ export function applyDeepEditFormToItem(item, form, iconState) {
   next.row = row;
 
   MICRO_KEYS.forEach((key) => {
-    next[key] = roundMacro(parseFormNumber(form[key]));
+    const per100Micro = roundMacro(parseFormNumber(form[key]));
+    next[key] = roundMacro((per100Micro * defaultUnitWeight) / 100);
   });
 
   return next;
 }
 
 export function restoreDeepEditFormFromDefaults(item, form) {
-  const weight = parseFormNumber(form.weight, parseFormNumber(form.multiplier, 100));
-  const defaults = buildDefaultsFromRow(item, weight);
+  const defaults = buildDefaultsFromRow(item);
 
   return {
     ...form,

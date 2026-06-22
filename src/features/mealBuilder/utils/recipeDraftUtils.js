@@ -1,5 +1,3 @@
-import { flattenDraftFoodsForSave } from './recipeGroupUtils';
-
 export function isRecipeRow(row) {
   return row?.isRecipe === true || row?.type === 'recipe';
 }
@@ -53,16 +51,18 @@ export function ingredientToDraftItem(ing, index, personalDb) {
 }
 
 export function draftFoodsToRecipeIngredients(draftFoods) {
-  return flattenDraftFoodsForSave(draftFoods).map((f) => ({
-    name: String(f.desc ?? f.name ?? 'Ingrediente').trim() || 'Ingrediente',
-    desc: String(f.desc ?? f.name ?? 'Ingrediente').trim() || 'Ingrediente',
-    weight: Number(f.weight ?? f.qta) || 100,
-    kcal: Math.round(Number(f.kcal ?? f.cal) || 0),
-    prot: Math.round((Number(f.prot) || 0) * 10) / 10,
-    carb: Math.round((Number(f.carb) || 0) * 10) / 10,
-    fat: Math.round((Number(f.fatTotal ?? f.fat) || 0) * 10) / 10,
-    foodDbKey: f.foodDbKey,
-  }));
+  return (draftFoods || [])
+    .filter((f) => !f?.isRecipe)
+    .map((f) => ({
+      name: String(f.desc ?? f.name ?? 'Ingrediente').trim() || 'Ingrediente',
+      desc: String(f.desc ?? f.name ?? 'Ingrediente').trim() || 'Ingrediente',
+      weight: Number(f.weight ?? f.qta) || 100,
+      kcal: Math.round(Number(f.kcal ?? f.cal) || 0),
+      prot: Math.round((Number(f.prot) || 0) * 10) / 10,
+      carb: Math.round((Number(f.carb) || 0) * 10) / 10,
+      fat: Math.round((Number(f.fatTotal ?? f.fat) || 0) * 10) / 10,
+      foodDbKey: f.foodDbKey,
+    }));
 }
 
 export function draftFoodsToRecipePayload(draftFoods) {

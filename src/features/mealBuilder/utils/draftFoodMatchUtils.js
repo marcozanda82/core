@@ -1,3 +1,9 @@
+import {
+  computeMacrosForUnit,
+  getPer100Macros,
+  resolveDefaultUnitWeight,
+} from './foodMacroUtils';
+
 export function resolveFoodIdentityKey(food) {
   if (food?.foodDbKey != null && String(food.foodDbKey).trim() !== '') {
     return `db:${String(food.foodDbKey).trim()}`;
@@ -17,8 +23,7 @@ export function findDraftItemForFood(draftFoods, food) {
 }
 
 export function getFoodUnitWeight(food, fallback = 100) {
-  const weight = Number(food?.qta ?? food?.weight) || 0;
-  return weight > 0 ? weight : fallback;
+  return resolveDefaultUnitWeight(food, fallback);
 }
 
 export function computeDraftQtyMultiplier(draftItem, unitWeight) {
@@ -34,7 +39,10 @@ export function getDraftQtyForFood(draftFoods, food, unitWeight) {
 }
 
 export function getDefaultUnitKcal(food) {
-  return Math.round(Number(food?.kcal ?? food?.cal) || 0);
+  const per100 = getPer100Macros(food);
+  const unitWeight = getFoodUnitWeight(food);
+  const portion = computeMacrosForUnit(per100, unitWeight);
+  return Math.round(portion.kcal);
 }
 
 export function getTileDisplayStats(qty, defaultUnitWeight, defaultUnitKcal) {

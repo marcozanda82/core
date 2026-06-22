@@ -8,9 +8,14 @@ import { usePredictiveMealCombos } from './hooks/usePredictiveMealCombos';
 import UniversalSearchModal from './components/UniversalSearchModal';
 import BarcodeScannerOverlay from './components/BarcodeScannerOverlay';
 import DraftCartSmartRow from './components/DraftCartSmartRow';
-import RecipeGroupRow from './components/RecipeGroupRow';
+import RecipeEditor from './components/RecipeEditor';
+import RecipeBuilder from './components/RecipeBuilder';
+import FrequentMealBanner from './components/FrequentMealBanner';
+import FrequentMealsModal from './components/FrequentMealsModal';
 import FoodDeepEditModal from './components/FoodDeepEditModal';
+import FoodDetailModal from './components/FoodDetailModal';
 import QtyBadge from './components/QtyBadge';
+import QuickFoodTile from './components/QuickFoodTile';
 import LiveMacroHud from './components/LiveMacroHud';
 import { formatCheckoutMealTitle, formatMiniCartMealLabel, getFoodEmoji, resolveFoodVisual } from './utils/foodIconUtils';
 import {
@@ -18,17 +23,15 @@ import {
   getDefaultUnitKcal,
   getDraftQtyForFood,
   getFoodUnitWeight,
-  getTileDisplayStats,
   resolveFoodIdentityKey,
 } from './utils/draftFoodMatchUtils';
 import { roundToOneDecimal } from './utils/numberFormatUtils';
+import { getPer100Macros } from './utils/foodMacroUtils';
 import {
-  buildRecipeGroupFromCombo,
-  findRecipeGroupInDraft,
-  flattenDraftFoodsForSave,
-  getRecipeGroupQty,
-  isRecipeGroup,
-} from './utils/recipeGroupUtils';
+  buildComboDraftPayload,
+  buildRecipeDraftPayloadFromDb,
+  buildRecipeDraftPayloadFromSearchResult,
+} from './utils/recipePayloadUtils';
 import {
   applyCatalogEditToDraftItem,
   buildCatalogAcquirePayload,
@@ -41,7 +44,8 @@ import { resolveUnitWeight } from './utils/draftFoodUnits';
 import { ChevronDown, Clock, Minus, Plus, Settings, ShoppingBag } from 'lucide-react';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
 import useFoodDb from '../../useFoodDb';
-import { draftFoodsToRecipePayload } from './utils/recipeDraftUtils';
+import { draftFoodsToRecipePayload, fetchRecipesFromDb } from './utils/recipeDraftUtils';
+import { searchPersonalDb, useDebouncedExternalFoodSearch, SEARCH_SOURCE_BADGE } from './hooks/useUniversalSearchEngine';
 import { decimalToTimeStr } from '../../coreEngine';
 
 const QUICK_FOODS_LIMIT = 30;
@@ -85,39 +89,6 @@ function resolveInitialMealTime(initialMealTime, initialDraft, mealSlot) {
     if (typeof t === 'number' && !Number.isNaN(t)) return t;
   }
   return MEAL_TIME_BY_SLOT[mealSlot] ?? getCurrentTimeRoundedTo15Min();
-}
-
-function formatComboIngredientLine(item) {
-  const name = String(item?.desc || item?.name || 'Alimento').trim();
-  const weight = Number(item?.weight ?? item?.qta);
-  if (Number.isFinite(weight) && weight > 0) {
-    return `${name} (${Math.round(weight)}g)`;
-  }
-  if (item?.qtyLabel) return `${name} (${item.qtyLabel})`;
-  return name;
-}
-
-function resolveComboCardTitle(combo, index) {
-  const name = String(combo?.name || '').trim();
-  if (!name) return `Combo ${index + 1}`;
-
-  if (/^Combo:\s/i.test(name)) return `Combo ${index + 1}`;
-
-  const items = combo?.items || [];
-  if (items.length > 1) {
-    const ingredientNames = items
-      .map((item) => String(item.desc || item.name || '').trim())
-      .filter(Boolean);
-    const looksLikeIngredientList =
-      name.includes(',')
-      || name.includes(' e ')
-      || ingredientNames.every(
-        (label) => label.length > 0 && name.toLowerCase().includes(label.toLowerCase()),
-      );
-    if (looksLikeIngredientList) return `Combo ${index + 1}`;
-  }
-
-  return name;
 }
 
 function buildAcquirePayload(food) {
@@ -170,6 +141,72 @@ function formatSearchResultForDraft(food) {
   };
 }
 
+function textMatchesQuery(text, query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return true;
+  return String(text || '').trim().toLowerCase().includes(q);
+}
+
+function resolveSearchKcalPer100(result) {
+  const row = result?.row || {};
+  const kcal = Number(row.kcal ?? row.cal ?? result.kcal ?? result.cal);
+  return Number.isFinite(kcal) ? Math.round(kcal) : 0;
+}
+
+function buildSearchMatchFood(result, personalDb) {
+  const name = String(result.desc || result.name || 'Alimento').trim();
+  if (result._source === 'recipe') {
+    return buildRecipeDraftPayloadFromSearchResult(result, personalDb) || { desc: name, name };
+  }
+  return {
+    foodDbKey: result._source === 'personal' ? (result.key || result.id) : undefined,
+    desc: name,
+    name,
+    row: result.row,
+    _source: result._source,
+  };
+}
+
+function resolveSearchResultTileStats(result, personalDb, catalogServingOverrides) {
+  const name = String(result.desc || result.name || 'Alimento').trim();
+
+  if (result._source === 'recipe') {
+    const payload = buildRecipeDraftPayloadFromSearchResult(result, personalDb);
+    if (payload) {
+      return {
+        matchFood: payload,
+        defaultUnitWeight: getFoodUnitWeight(payload),
+        defaultUnitKcal: getDefaultUnitKcal(payload),
+        displayTile: { desc: name, label: name, row: result.row },
+      };
+    }
+  }
+
+  if (result._source === 'personal') {
+    const dbKey = result.key || result.id;
+    const row = (dbKey && personalDb?.[dbKey]) || result.row || {};
+    const catalogItem = mergeCatalogDisplay(
+      { foodDbKey: dbKey, desc: name, name, row },
+      personalDb,
+      catalogServingOverrides,
+    );
+    return {
+      matchFood: catalogItem,
+      defaultUnitWeight: getFoodUnitWeight(catalogItem),
+      defaultUnitKcal: getDefaultUnitKcal(catalogItem),
+      displayTile: catalogItem,
+    };
+  }
+
+  const matchFood = buildSearchMatchFood(result, personalDb);
+  return {
+    matchFood,
+    defaultUnitWeight: SEARCH_DEFAULT_UNIT_WEIGHT,
+    defaultUnitKcal: resolveSearchKcalPer100(result),
+    displayTile: { desc: name, label: name, row: result.row },
+  };
+}
+
 function resolveInitialMealSlot(initialDraft, editingMealId) {
   if (Array.isArray(initialDraft) && initialDraft.length > 0) {
     const mt = initialDraft[0]?.mealType;
@@ -208,6 +245,12 @@ function FastMealLoggerContent({
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isSaveRecipeOpen, setIsSaveRecipeOpen] = useState(false);
   const [recipeName, setRecipeName] = useState('');
+  const [editingRecipe, setEditingRecipe] = useState(null);
+  const [isRecipeBuilderOpen, setIsRecipeBuilderOpen] = useState(false);
+  const [isFrequentMealsOpen, setIsFrequentMealsOpen] = useState(false);
+  const [detailFood, setDetailFood] = useState(null);
+  const [activeVetrinaTab, setActiveVetrinaTab] = useState('foods');
+  const [vetrinaSearchQuery, setVetrinaSearchQuery] = useState('');
   const [isSavingRecipe, setIsSavingRecipe] = useState(false);
   const [saveRecipeError, setSaveRecipeError] = useState('');
   const [isCartOpen, setIsCartOpen] = useState(
@@ -226,11 +269,8 @@ function FastMealLoggerContent({
     draftFoods,
     draftTotals,
     addFoodToDraft,
-    addRecipeGroupToDraft,
     removeFoodFromDraft,
     updateFoodAmount,
-    updateRecipeGroupWeight,
-    updateRecipeGroupChildAmount,
     updateFoodInDraft,
     clearDraft,
     loadInitialDraft,
@@ -258,6 +298,15 @@ function FastMealLoggerContent({
   const handleFoodSelection = async (food) => {
     if (!food) return;
 
+    if (food._source === 'recipe') {
+      const payload = buildRecipeDraftPayloadFromSearchResult(food, personalDb);
+      if (!payload) return;
+      addOrIncrementDraftFood(payload, getFoodUnitWeight(payload));
+      setIsSearchModalOpen(false);
+      notifyItemAdded(payload.desc);
+      return;
+    }
+
     if (food._source !== 'personal' && typeof onAcquireExternalFood === 'function') {
       const acquirePayload = buildAcquirePayload(food);
       if (acquirePayload) {
@@ -277,28 +326,68 @@ function FastMealLoggerContent({
     );
   };
 
-  const handleRecipeSelection = (recipe) => {
-    if (!recipe) return;
-    const recipeKey = String(recipe.key ?? recipe.id ?? '').trim();
-    const dbEntry = recipeKey && personalDb?.[recipeKey] ? personalDb[recipeKey] : null;
-    const ingredients = Array.isArray(recipe.ingredients)
-      ? recipe.ingredients
-      : Array.isArray(dbEntry?.ingredients)
-        ? dbEntry.ingredients
-        : [];
-    if (ingredients.length === 0) return;
+  const handleAddSearchResult = async (food, portionCount = 1) => {
+    if (!food || portionCount <= 0) return;
 
-    const payload = buildRecipeGroupFromCombo({
-      id: recipeKey || recipe.id,
-      name: String(recipe.desc || recipe.name || dbEntry?.desc || 'Ricetta').trim(),
-      ingredients,
-      customImage: recipe.row?.customImage || dbEntry?.customImage || null,
-    });
-    if (!payload) return;
+    if (food._source === 'recipe') {
+      const payload = buildRecipeDraftPayloadFromSearchResult(food, personalDb);
+      if (!payload) return;
+      for (let i = 0; i < portionCount; i += 1) {
+        addOrIncrementDraftFood(payload, getFoodUnitWeight(payload));
+      }
+      notifyItemAdded(payload.desc);
+      return;
+    }
 
-    addOrIncrementRecipeGroup(payload);
+    if (food._source !== 'personal' && typeof onAcquireExternalFood === 'function') {
+      const acquirePayload = buildAcquirePayload(food);
+      if (acquirePayload) {
+        try {
+          await onAcquireExternalFood(acquirePayload);
+        } catch {
+          /* acquisizione silenziosa — la bozza procede comunque */
+        }
+      }
+    }
+
+    const draftPayload = formatSearchResultForDraft(food);
+    for (let i = 0; i < portionCount; i += 1) {
+      addOrIncrementDraftFood(draftPayload, SEARCH_DEFAULT_UNIT_WEIGHT);
+    }
+    notifyItemAdded(
+      String(food?.desc || food?.name || food?.row?.desc || 'Alimento').trim(),
+    );
+  };
+
+  const handleEditRecipe = (result) => {
+    const recipeKey = String(result?.key ?? result?.id ?? '').trim();
+    const entry = result?.row || personalDb?.[recipeKey];
+    if (!recipeKey || !entry) return;
+    setEditingRecipe({ key: recipeKey, entry });
     setIsSearchModalOpen(false);
-    notifyItemAdded(payload.name);
+  };
+
+  const handleRecipeEditorSave = async (payload, recipeKey) => {
+    if (typeof onSaveRecipe !== 'function') return;
+    await onSaveRecipe(payload, recipeKey);
+
+    const identity = `db:${recipeKey}`;
+    const mergedEntry = { ...payload, isRecipe: true, ingredients: payload.ingredients };
+    draftFoods.forEach((item) => {
+      if (resolveFoodIdentityKey(item) === identity) {
+        const refreshed = buildRecipeDraftPayloadFromDb(recipeKey, mergedEntry);
+        if (refreshed) {
+          updateFoodInDraft(item.id, refreshed);
+        }
+      }
+    });
+    setEditingRecipe(null);
+  };
+
+  const handleRecipeBuilderSave = async (payload) => {
+    if (typeof onSaveRecipe !== 'function') return;
+    await onSaveRecipe({ ...payload, isRecipe: true });
+    setIsRecipeBuilderOpen(false);
   };
 
   const handleOpenSaveRecipe = () => {
@@ -379,6 +468,180 @@ function FastMealLoggerContent({
     [predictiveBlocks],
   );
 
+  const savedRecipes = useMemo(() => fetchRecipesFromDb(personalDb), [personalDb]);
+  const vetrinaQuery = vetrinaSearchQuery.trim();
+  const isVetrinaSearching = vetrinaQuery.length > 0;
+
+  const filteredQuickFoods = useMemo(
+    () =>
+      quickFoods.filter((tile) => {
+        const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+        const name = displayTile.label || displayTile.desc || '';
+        return textMatchesQuery(name, vetrinaQuery);
+      }),
+    [quickFoods, personalDb, catalogServingOverrides, vetrinaQuery],
+  );
+
+  const selectedMealLabel =
+    MEAL_SLOTS.find((slot) => slot.id === selectedSlot)?.label || 'Pasto';
+
+  const filteredSavedRecipes = useMemo(
+    () => savedRecipes.filter((recipe) => textMatchesQuery(recipe.name, vetrinaQuery)),
+    [savedRecipes, vetrinaQuery],
+  );
+
+  const vetrinaDbSearchResults = useMemo(
+    () => (isVetrinaSearching ? searchPersonalDb(personalDb, vetrinaQuery) : []),
+    [personalDb, vetrinaQuery, isVetrinaSearching],
+  );
+
+  const { externalResults: vetrinaExternalResults, isSearchingExternal } =
+    useDebouncedExternalFoodSearch(
+      isVetrinaSearching ? vetrinaQuery : '',
+      personalDb,
+      creaDb,
+    );
+
+  const quickFoodIdentityKeys = useMemo(() => {
+    const keys = new Set();
+    filteredQuickFoods.forEach((tile) => {
+      const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+      const key = resolveFoodIdentityKey(displayTile);
+      if (key) keys.add(key);
+    });
+    return keys;
+  }, [filteredQuickFoods, personalDb, catalogServingOverrides]);
+
+  const extraDbSearchResults = useMemo(
+    () =>
+      vetrinaDbSearchResults.filter((result) => {
+        const matchKey = result._source === 'personal' || result._source === 'recipe'
+          ? `db:${String(result.key || result.id).trim()}`
+          : null;
+        if (matchKey && quickFoodIdentityKeys.has(matchKey)) return false;
+        return true;
+      }),
+    [vetrinaDbSearchResults, quickFoodIdentityKeys],
+  );
+
+  const unifiedSearchGridItems = useMemo(() => {
+    if (!isVetrinaSearching) return [];
+
+    const items = [];
+
+    filteredQuickFoods.forEach((tile) => {
+      items.push({ kind: 'predictive', key: `predictive-${tile.key}`, data: tile });
+    });
+
+    extraDbSearchResults.forEach((result) => {
+      items.push({
+        kind: 'search',
+        key: `search-${result._source}-${result.id}`,
+        data: result,
+      });
+    });
+
+    vetrinaExternalResults.forEach((result) => {
+      items.push({
+        kind: 'search',
+        key: `search-${result._source}-${result.id}`,
+        data: result,
+      });
+    });
+
+    const seenRecipeKeys = new Set(
+      extraDbSearchResults
+        .filter((result) => result._source === 'recipe')
+        .map((result) => String(result.key || result.id).trim()),
+    );
+
+    filteredSavedRecipes.forEach((recipe) => {
+      if (seenRecipeKeys.has(recipe.key)) return;
+      items.push({
+        kind: 'search',
+        key: `saved-recipe-${recipe.key}`,
+        data: {
+          _source: 'recipe',
+          id: recipe.key,
+          key: recipe.key,
+          desc: recipe.name,
+          name: recipe.name,
+          row: recipe.row,
+        },
+      });
+    });
+
+    return items;
+  }, [
+    isVetrinaSearching,
+    filteredQuickFoods,
+    extraDbSearchResults,
+    vetrinaExternalResults,
+    filteredSavedRecipes,
+  ]);
+
+  const handleSavedRecipeAdd = (recipe) => {
+    const payload = buildRecipeDraftPayloadFromDb(recipe.key, recipe.row);
+    if (!payload) return;
+    addOrIncrementDraftFood(payload, getFoodUnitWeight(payload));
+    notifyItemAdded(recipe.name);
+  };
+
+  const renderQuickFoodTile = (tile) => {
+    const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+    const tileVisual = resolveFoodVisual(displayTile, personalDb);
+    const defaultUnitWeight = getFoodUnitWeight(displayTile);
+    const defaultUnitKcal = getDefaultUnitKcal(displayTile);
+    const qty = getDraftQtyForFood(draftFoods, displayTile, defaultUnitWeight);
+
+    return (
+      <QuickFoodTile
+        key={tile.key}
+        displayTile={displayTile}
+        tileVisual={tileVisual}
+        defaultUnitWeight={defaultUnitWeight}
+        defaultUnitKcal={defaultUnitKcal}
+        qty={qty}
+        onConfirmAdd={(portionCount) => handleAddPredictiveBlock(tile, portionCount)}
+        onRemoveOne={() => removeOneUnitFromDraft(displayTile, defaultUnitWeight)}
+        onOpenDetail={() => openFoodDetail(tile)}
+      />
+    );
+  };
+
+  const renderSearchResultTile = (result) => {
+    const {
+      matchFood,
+      defaultUnitWeight,
+      defaultUnitKcal,
+      displayTile,
+    } = resolveSearchResultTileStats(result, personalDb, catalogServingOverrides);
+    const tileVisual = resolveFoodVisual(result, personalDb);
+    const qty = getDraftQtyForFood(draftFoods, matchFood, defaultUnitWeight);
+    const sourceBadge = SEARCH_SOURCE_BADGE[result._source] || null;
+
+    return (
+      <QuickFoodTile
+        displayTile={displayTile}
+        tileVisual={tileVisual}
+        defaultUnitWeight={defaultUnitWeight}
+        defaultUnitKcal={defaultUnitKcal}
+        qty={qty}
+        sourceBadge={sourceBadge}
+        onConfirmAdd={(portionCount) => handleAddSearchResult(result, portionCount)}
+        onRemoveOne={() => removeOneUnitFromDraft(matchFood, defaultUnitWeight)}
+        onOpenDetail={() => openFoodDetailFromSearchResult(result)}
+      />
+    );
+  };
+
+  const renderUnifiedSearchGridItem = (item) => {
+    if (item.kind === 'predictive') {
+      return renderQuickFoodTile(item.data);
+    }
+    return renderSearchResultTile(item.data);
+  };
+
   const incrementDraftItemByUnit = (existing, unitWeight) => {
     if (!existing?.id || !unitWeight) return;
     const currentWeight = Number(existing.weight ?? existing.qta) || 0;
@@ -422,40 +685,6 @@ function FastMealLoggerContent({
     decrementDraftItemByUnit(existing, unitWeight);
   };
 
-  const addOrIncrementRecipeGroup = (groupPayload) => {
-    const existing = findRecipeGroupInDraft(draftFoods, {
-      id: groupPayload.recipeGroupId,
-      foodDbKey: groupPayload.foodDbKey,
-    });
-
-    if (!existing) {
-      addRecipeGroupToDraft(groupPayload);
-      return false;
-    }
-
-    const nextWeight = roundToOneDecimal(
-      (Number(existing.weight ?? existing.qta) || 0) + (Number(existing.baseTotalWeight) || 0),
-    );
-    updateRecipeGroupWeight(existing.id, nextWeight);
-    return true;
-  };
-
-  const removeOneRecipeGroupUnit = (combo) => {
-    const existing = findRecipeGroupInDraft(draftFoods, combo);
-    if (!existing) return;
-
-    const nextWeight = roundToOneDecimal(
-      (Number(existing.weight ?? existing.qta) || 0) - (Number(existing.baseTotalWeight) || 0),
-    );
-
-    if (nextWeight <= 0) {
-      removeFoodFromDraft(existing.id);
-      return;
-    }
-
-    updateRecipeGroupWeight(existing.id, nextWeight);
-  };
-
   const addOrIncrementDraftFood = (payload, unitWeight) => {
     const existing = findDraftItemForFood(draftFoods, payload);
     if (!existing) {
@@ -472,12 +701,7 @@ function FastMealLoggerContent({
 
   const handleConfirm = () => {
     if (draftFoods.length === 0) return;
-    onSave?.(
-      flattenDraftFoodsForSave(draftFoods),
-      selectedSlot,
-      editingMealId ?? undefined,
-      mealTime,
-    );
+    onSave?.(draftFoods, selectedSlot, editingMealId ?? undefined, mealTime);
     clearDraft();
   };
 
@@ -486,8 +710,106 @@ function FastMealLoggerContent({
     openScanner();
   };
 
-  const handleAddPredictiveBlock = (tile) => {
+  const buildTileDraftPayload = (tile, targetWeight) => {
+    const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+    let payload = displayTile;
+    const dbKey = displayTile.foodDbKey;
+    if (dbKey && personalDb && typeof personalDb === 'object' && personalDb[dbKey]) {
+      const row = personalDb[dbKey];
+      payload = {
+        ...displayTile,
+        row: displayTile.row || row,
+        units: (displayTile.row || row).units ?? row.units,
+        defaultUnit: (displayTile.row || row).defaultUnit ?? row.defaultUnit,
+        ...(displayTile.customImage || row.customImage
+          ? { customImage: displayTile.customImage || row.customImage }
+          : {}),
+      };
+    }
+
+    const weight = roundToOneDecimal(targetWeight);
+    const row = payload.row || {};
+    const per100 = getPer100Macros({ ...payload, row });
+    const ratio = weight / 100;
+    const desc = String(payload.label || payload.desc || 'Alimento').trim();
+
+    return {
+      type: 'food',
+      desc,
+      name: desc,
+      label: desc,
+      foodDbKey: payload.foodDbKey,
+      row,
+      units: payload.units ?? row.units,
+      defaultUnit: payload.defaultUnit ?? row.defaultUnit,
+      customImage: payload.customImage,
+      isRecipe: payload.isRecipe,
+      qta: weight,
+      weight,
+      unit: 'g',
+      selectedUnit: 'g',
+      multiplier: weight,
+      qtyLabel: `${Math.round(weight)}g`,
+      kcal: Math.round(per100.kcal * ratio),
+      cal: Math.round(per100.kcal * ratio),
+      prot: Math.round(per100.prot * ratio * 10) / 10,
+      carb: Math.round(per100.carb * ratio * 10) / 10,
+      fat: Math.round(per100.fat * ratio * 10) / 10,
+      fatTotal: Math.round(per100.fat * ratio * 10) / 10,
+    };
+  };
+
+  const openFoodDetail = (tile) => {
     if (!tile) return;
+    const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+    setDetailFood({
+      tile,
+      displayTile,
+      tileVisual: resolveFoodVisual(displayTile, personalDb),
+      defaultUnitWeight: getFoodUnitWeight(displayTile),
+    });
+  };
+
+  const openFoodDetailFromSearchResult = (result) => {
+    if (!result) return;
+    const stats = resolveSearchResultTileStats(result, personalDb, catalogServingOverrides);
+    const dbKey = result._source === 'personal' ? (result.key || result.id) : undefined;
+    const tile = {
+      foodDbKey: dbKey,
+      desc: stats.displayTile.desc || stats.displayTile.name || result.desc,
+      name: stats.displayTile.name || stats.displayTile.desc || result.name,
+      row: stats.displayTile.row || result.row,
+      _source: result._source,
+      key: result.key,
+      id: result.id,
+    };
+
+    setDetailFood({
+      tile,
+      displayTile: stats.displayTile,
+      tileVisual: resolveFoodVisual(result, personalDb),
+      defaultUnitWeight: stats.defaultUnitWeight,
+    });
+  };
+
+  const handleDetailCartConfirm = (selectedWeight) => {
+    if (!detailFood?.tile || selectedWeight <= 0) return;
+
+    const payload = buildTileDraftPayload(detailFood.tile, selectedWeight);
+    const existing = findDraftItemForFood(draftFoods, payload);
+
+    if (existing) {
+      updateFoodAmount(existing.id, selectedWeight, 'g');
+    } else {
+      addFoodToDraft(payload);
+    }
+
+    notifyItemAdded(String(payload.desc || payload.name));
+    setDetailFood(null);
+  };
+
+  const handleAddPredictiveBlock = (tile, portionCount = 1) => {
+    if (!tile || portionCount <= 0) return;
 
     const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
     let payload = displayTile;
@@ -506,11 +828,28 @@ function FastMealLoggerContent({
     }
 
     const unitWeight = getFoodUnitWeight(payload);
-    addOrIncrementDraftFood(payload, unitWeight);
+    for (let i = 0; i < portionCount; i += 1) {
+      addOrIncrementDraftFood(payload, unitWeight);
+    }
     notifyItemAdded(String(displayTile?.label || displayTile?.desc || 'Alimento').trim());
   };
 
+  const handleDetailDeepEdit = () => {
+    if (!detailFood?.tile) return;
+    const tile = detailFood.tile;
+    setDetailFood(null);
+    openEditModalForCatalog(
+      tile._source && !tile.foodDbKey
+        ? { ...tile, _source: tile._source }
+        : tile,
+    );
+  };
+
   const openEditModalForCatalog = (source) => {
+    if (source?._source === 'recipe') {
+      handleEditRecipe(source);
+      return;
+    }
     setDeepEditFood(null);
     const mergedSource = source?._source
       ? source
@@ -520,15 +859,19 @@ function FastMealLoggerContent({
   };
 
   const handleOpenDraftDeepEdit = (item) => {
+    if (item?.isRecipe && item?.foodDbKey && personalDb?.[item.foodDbKey]) {
+      setEditingRecipe({ key: item.foodDbKey, entry: personalDb[item.foodDbKey] });
+      return;
+    }
     setEditingCatalogFood(null);
     setDeepEditFood(item);
   };
 
   const handleAddComboToDraft = (combo, comboTitle) => {
-    const payload = buildRecipeGroupFromCombo(combo);
+    const payload = buildComboDraftPayload(combo);
     if (!payload) return;
-    addOrIncrementRecipeGroup(payload);
-    notifyItemAdded(comboTitle || payload.name || 'Combo aggiunta');
+    addOrIncrementDraftFood(payload, getFoodUnitWeight(payload));
+    notifyItemAdded(comboTitle || payload.desc || 'Combo aggiunta');
   };
 
   const handleDeepEditSave = async (updatedItem) => {
@@ -638,242 +981,168 @@ function FastMealLoggerContent({
           draftFoods.length > 0 && !isCartOpen ? 'pb-24' : 'pb-4'
         }`}
       >
-        <div className="space-y-8 px-0.5">
+        <div className="space-y-4 px-0.5">
           <div>
-            <button
-              type="button"
-              onClick={() => setIsSearchModalOpen(true)}
-              className="flex w-full min-w-0 items-center gap-3 rounded-2xl border-2 border-cyan-500/50 bg-slate-900/80 px-4 py-4 text-left text-sm text-slate-100 shadow-lg shadow-cyan-950/20 transition-colors hover:border-cyan-400/70 hover:bg-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
-            >
-              <span className="shrink-0 text-xl" aria-hidden>
+            <div className="relative">
+              <span
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg text-slate-500"
+                aria-hidden
+              >
                 🔍
               </span>
-              <span className="min-w-0 flex-1 truncate text-base font-medium">
-                Cerca nuovo alimento nel database...
-              </span>
-            </button>
+              <input
+                type="search"
+                value={vetrinaSearchQuery}
+                onChange={(event) => setVetrinaSearchQuery(event.target.value)}
+                placeholder="Cerca alimento o ricetta..."
+                className="w-full rounded-2xl border-2 border-cyan-500/50 bg-slate-900/80 py-3.5 pl-10 pr-12 text-sm text-slate-100 placeholder:text-slate-500 shadow-lg shadow-cyan-950/20 focus:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+              />
+              <button
+                type="button"
+                onClick={() => setIsSearchModalOpen(true)}
+                aria-label="Ricerca avanzata CREA e USDA"
+                title="Ricerca avanzata"
+                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border border-slate-700 bg-slate-800/90 text-[10px] font-bold tracking-widest text-slate-400 transition-colors hover:border-cyan-500/40 hover:text-cyan-300"
+              >
+                |||
+              </button>
+            </div>
             <p className="mt-2 text-center text-xs text-slate-600">
-              DB personale · CREA · USDA
+              {isVetrinaSearching
+                ? isSearchingExternal
+                  ? 'Risultati locali · ricerca CREA e USDA in corso...'
+                  : vetrinaExternalResults.length > 0
+                    ? 'Risultati unificati · DB personale, CREA e USDA'
+                    : 'Risultati unificati · alimenti e ricette'
+                : 'DB personale · Ricette · CREA · USDA'}
             </p>
           </div>
 
-          <div className="min-w-0">
-            <h2 className="mb-1 truncate text-sm font-semibold text-slate-200">Alimenti Rapidi</h2>
-            <p className="mb-3 text-xs text-slate-500">
-              Più recenti per slot · {quickFoods.length}{' '}
-              {quickFoods.length === 1 ? 'blocco' : 'blocchi'}
-            </p>
+          {!isVetrinaSearching ? (
+            <FrequentMealBanner
+              count={predictiveCombos.length}
+              mealLabel={selectedMealLabel}
+              onOpen={() => setIsFrequentMealsOpen(true)}
+            />
+          ) : null}
 
-            {quickFoods.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
-                Nessun alimento frequente per questo slot
+          {!isVetrinaSearching ? (
+            <div className="mx-auto mb-2 flex w-full max-w-xs rounded-full border border-slate-800 bg-slate-900/60 p-1">
+              <button
+                type="button"
+                onClick={() => setActiveVetrinaTab('foods')}
+                className={`flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                  activeVetrinaTab === 'foods'
+                    ? 'bg-slate-700 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Alimenti
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveVetrinaTab('recipes')}
+                className={`flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                  activeVetrinaTab === 'recipes'
+                    ? 'bg-slate-700 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Le mie Ricette
+              </button>
+            </div>
+          ) : null}
+
+          {isVetrinaSearching ? (
+            <div className="min-w-0 space-y-6">
+              {unifiedSearchGridItems.length > 0 ? (
+                <div className="grid w-full grid-cols-3 gap-3 md:grid-cols-4">
+                  {unifiedSearchGridItems.map((item) => (
+                    <React.Fragment key={item.key}>
+                      {renderUnifiedSearchGridItem(item)}
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : null}
+
+              {isSearchingExternal ? (
+                <p className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700/80 px-4 py-4 text-center text-xs text-slate-500">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" />
+                  Ricerca su CREA e USDA...
+                </p>
+              ) : null}
+
+              {unifiedSearchGridItems.length === 0
+                && !isSearchingExternal ? (
+                  <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
+                    Nessun risultato per &quot;{vetrinaQuery}&quot;
+                  </p>
+                ) : null}
+            </div>
+          ) : activeVetrinaTab === 'foods' ? (
+            <div className="min-w-0">
+              <h2 className="mb-1 truncate text-sm font-semibold text-slate-200">Alimenti Rapidi</h2>
+              <p className="mb-3 text-xs text-slate-500">
+                Più recenti per slot · {quickFoods.length}{' '}
+                {quickFoods.length === 1 ? 'blocco' : 'blocchi'}
               </p>
-            ) : (
-              <div className="grid auto-cols-[90px] grid-flow-col grid-rows-2 gap-3 overflow-x-auto pb-4 pt-2 scrollbar-hide snap-x snap-mandatory">
-                {quickFoods.map((tile) => {
-                  const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
-                  const tileVisual = resolveFoodVisual(displayTile, personalDb);
-                  const defaultUnitWeight = getFoodUnitWeight(displayTile);
-                  const defaultUnitKcal = getDefaultUnitKcal(displayTile);
-                  const qty = getDraftQtyForFood(draftFoods, displayTile, defaultUnitWeight);
-                  const { displayWeight, displayKcal } = getTileDisplayStats(
-                    qty,
-                    defaultUnitWeight,
-                    defaultUnitKcal,
-                  );
-                  return (
-                    <div
-                      key={tile.key}
-                      className="relative w-[90px] shrink-0 snap-start overflow-visible"
-                    >
-                      {qty > 0 ? (
+
+              {quickFoods.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
+                  Nessun alimento frequente per questo slot
+                </p>
+              ) : (
+                <div className="grid w-full grid-cols-3 gap-3 md:grid-cols-4">
+                  {quickFoods.map((tile) => renderQuickFoodTile(tile))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="min-w-0">
+              <button
+                type="button"
+                onClick={() => setIsRecipeBuilderOpen(true)}
+                className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-violet-500 active:scale-[0.99]"
+              >
+                ➕ Crea Nuova Ricetta
+              </button>
+
+              <section>
+                <h2 className="mb-1 truncate text-sm font-semibold text-slate-200">Le mie Ricette</h2>
+                <p className="mb-3 text-xs text-slate-500">
+                  {savedRecipes.length}{' '}
+                  {savedRecipes.length === 1 ? 'ricetta salvata' : 'ricette salvate'}
+                </p>
+                {savedRecipes.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-6 text-center text-sm text-slate-500">
+                    Nessuna ricetta salvata. Crea una nuova ricetta o componi un pasto e usa &quot;Salva come ricetta&quot;.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-slate-800 rounded-xl border border-slate-800">
+                    {savedRecipes.map((recipe) => (
+                      <li key={recipe.key} className="flex items-center gap-3 px-3 py-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-100">{recipe.name}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {recipe.kcal} kcal · {recipe.ingredientCount}{' '}
+                            {recipe.ingredientCount === 1 ? 'ingrediente' : 'ingredienti'}
+                          </p>
+                        </div>
                         <button
                           type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            removeOneUnitFromDraft(displayTile, defaultUnitWeight);
-                          }}
-                          aria-label={`Rimuovi una porzione di ${displayTile.desc || displayTile.label}`}
-                          className="absolute -left-2 -top-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-md transition-transform active:scale-90"
+                          onClick={() => handleSavedRecipeAdd(recipe)}
+                          aria-label={`Aggiungi ricetta ${recipe.name}`}
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-600/20 text-violet-400 transition-colors hover:bg-violet-600/35 active:scale-95"
                         >
-                          <Minus className="h-3.5 w-3.5" strokeWidth={3} />
+                          <Plus className="h-4 w-4" />
                         </button>
-                      ) : null}
-                      {qty > 0 ? <QtyBadge qty={qty} className="z-20" /> : null}
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => handleAddPredictiveBlock(tile)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            handleAddPredictiveBlock(tile);
-                          }
-                        }}
-                        className="relative flex min-h-[120px] w-[90px] cursor-pointer flex-col overflow-visible rounded-xl border border-slate-700/50 bg-slate-800/40 p-0 transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
-                      >
-                        <div className="relative flex h-[55%] w-full items-center justify-center rounded-t-xl bg-slate-800/60">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openEditModalForCatalog(tile);
-                            }}
-                            aria-label={`Modifica ${displayTile.desc || displayTile.label}`}
-                            className="absolute bottom-1 right-1 z-10 flex h-5 w-5 items-center justify-center rounded-md bg-slate-900/90 transition-colors hover:bg-slate-800"
-                          >
-                            <Settings className="h-3 w-3 text-slate-400" />
-                          </button>
-                          {tileVisual.customImage ? (
-                            <img
-                              src={tileVisual.customImage}
-                              alt={tileVisual.name}
-                              className="h-full w-full rounded-t-xl object-cover"
-                            />
-                          ) : (
-                            <span className="text-3xl" aria-hidden>
-                              {tileVisual.customEmoji || getFoodEmoji(tileVisual.name)}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex w-full flex-1 items-center justify-center px-1 py-1.5">
-                          <span className="line-clamp-2 w-full break-words text-center text-[11px] font-semibold leading-tight text-slate-200">
-                            {displayTile.label || displayTile.desc}
-                          </span>
-                        </div>
-
-                        <div className="flex h-6 w-full items-center justify-between rounded-b-xl border-t border-slate-800 bg-slate-900/80 px-2">
-                          <span className="font-mono text-[10px] font-medium tabular-nums text-slate-400 transition-all duration-200">
-                            {displayWeight}g
-                          </span>
-                          <span className="font-mono text-[10px] font-bold tabular-nums text-cyan-400 transition-all duration-200">
-                            {displayKcal}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="min-w-0">
-            <h2 className="mb-1 truncate text-sm font-semibold text-slate-200">Pasti Frequenti</h2>
-            <p className="mb-4 text-xs text-slate-500">
-              One-tap assoluto · {predictiveCombos.length}{' '}
-              {predictiveCombos.length === 1 ? 'combo' : 'combo'}
-            </p>
-
-            {predictiveCombos.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-6 text-center text-sm text-slate-500">
-                Nessun pasto completo frequente per questo slot
-              </p>
-            ) : (
-              <div className="flex min-w-0 snap-x snap-mandatory gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                {predictiveCombos.map((combo, comboIndex) => {
-                  const comboTitle = resolveComboCardTitle(combo, comboIndex);
-                  const previewGroup = buildRecipeGroupFromCombo(combo);
-                  const qty = getRecipeGroupQty(draftFoods, combo);
-                  const unitWeight = previewGroup?.baseTotalWeight ?? 100;
-                  const perPortionKcal = Math.round(
-                    Number(previewGroup?.kcal ?? combo.totalKcal) || 0,
-                  );
-                  const { displayWeight, displayKcal } = getTileDisplayStats(
-                    qty,
-                    unitWeight,
-                    perPortionKcal,
-                  );
-                  return (
-                  <div
-                    key={combo.id}
-                    className="relative w-[300px] shrink-0 snap-start overflow-visible"
-                  >
-                    {qty > 0 ? (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          removeOneRecipeGroupUnit(combo);
-                        }}
-                        aria-label={`Rimuovi una porzione di ${comboTitle}`}
-                        className="absolute -left-2 -top-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-md transition-transform active:scale-90"
-                      >
-                        <Minus className="h-3.5 w-3.5" strokeWidth={3} />
-                      </button>
-                    ) : null}
-                    {qty > 0 ? <QtyBadge qty={qty} className="z-20" /> : null}
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleAddComboToDraft(combo, comboTitle)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          handleAddComboToDraft(combo, comboTitle);
-                        }
-                      }}
-                      className="flex w-full cursor-pointer flex-col rounded-2xl border border-slate-700 bg-slate-800/80 p-3.5 transition-all active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
-                    >
-                    <div className="flex items-start justify-between gap-2">
-                      <p
-                        className="min-w-0 flex-1 text-sm font-semibold leading-snug text-slate-100"
-                        title={combo.name}
-                      >
-                        {comboTitle}
-                      </p>
-                      <span className="shrink-0 text-xs font-bold text-cyan-400">
-                        {qty > 0 ? displayKcal : combo.totalKcal} kcal
-                      </span>
-                    </div>
-
-                    <ul className="my-3 space-y-1.5">
-                      {combo.items.slice(0, 4).map((item) => (
-                        <li
-                          key={`${combo.id}-${item.desc}-${item.qta}`}
-                          className="truncate text-sm leading-relaxed text-slate-300"
-                          title={formatComboIngredientLine(item)}
-                        >
-                          • {formatComboIngredientLine(item)}
-                        </li>
-                      ))}
-                      {combo.items.length > 4 ? (
-                        <li className="text-xs italic leading-relaxed text-slate-500">
-                          + altri {combo.items.length - 4} ingredienti
-                        </li>
-                      ) : null}
-                    </ul>
-
-                    {combo.count != null ? (
-                      <p className="mb-2 text-xs text-slate-500">Usato ×{combo.count}</p>
-                    ) : null}
-
-                    {qty > 0 ? (
-                      <p className="mb-2 text-[10px] font-medium text-slate-400">
-                        Nel piatto: {displayWeight}g · {displayKcal} kcal
-                      </p>
-                    ) : null}
-
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleAddComboToDraft(combo, comboTitle);
-                      }}
-                      aria-label={`Aggiungi ${comboTitle} al piatto`}
-                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-cyan-600/20 px-3 py-2.5 text-xs font-semibold text-cyan-400 transition-colors hover:bg-cyan-600/35 active:scale-[0.98]"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      {qty > 0 ? `Aggiungi ancora (×${qty})` : 'Aggiungi al Piatto'}
-                    </button>
-                    </div>
-                  </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </div>
+          )}
         </div>
       </div>
 
@@ -988,27 +1257,16 @@ function FastMealLoggerContent({
             </p>
           ) : (
             <ul className="min-w-0 space-y-2">
-              {draftFoods.map((food) =>
-                isRecipeGroup(food) ? (
-                  <RecipeGroupRow
-                    key={food.id}
-                    group={food}
-                    personalDb={personalDb}
-                    onUpdateGroupWeight={updateRecipeGroupWeight}
-                    onUpdateChildAmount={updateRecipeGroupChildAmount}
-                    onRemove={removeFoodFromDraft}
-                  />
-                ) : (
-                  <DraftCartSmartRow
-                    key={food.id}
-                    item={food}
-                    personalDb={personalDb}
-                    onUpdateAmount={updateFoodAmount}
-                    onRemove={removeFoodFromDraft}
-                    onDeepEdit={handleOpenDraftDeepEdit}
-                  />
-                ),
-              )}
+              {draftFoods.map((food) => (
+                <DraftCartSmartRow
+                  key={food.id}
+                  item={food}
+                  personalDb={personalDb}
+                  onUpdateAmount={updateFoodAmount}
+                  onRemove={removeFoodFromDraft}
+                  onDeepEdit={handleOpenDraftDeepEdit}
+                />
+              ))}
             </ul>
           )}
         </div>
@@ -1061,8 +1319,8 @@ function FastMealLoggerContent({
         creaDb={creaDb}
         onSelectFood={handleFoodSelection}
         onEditCatalogFood={openEditModalForCatalog}
+        onEditRecipe={handleEditRecipe}
         onRemoveOneFromDraft={removeOneUnitFromDraft}
-        onSelectRecipe={handleRecipeSelection}
         onOpenScanner={handleOpenScanner}
         onSaveManualFood={onAcquireExternalFood}
         draftFoods={draftFoods}
@@ -1139,6 +1397,49 @@ function FastMealLoggerContent({
           </form>
         </div>
       ) : null}
+
+      {detailFood ? (
+        <FoodDetailModal
+          food={detailFood}
+          draftFoods={draftFoods}
+          onClose={() => setDetailFood(null)}
+          onConfirm={handleDetailCartConfirm}
+          onDeepEdit={handleDetailDeepEdit}
+        />
+      ) : null}
+
+      {editingRecipe ? (
+        <RecipeEditor
+          recipeKey={editingRecipe.key}
+          recipeEntry={editingRecipe.entry}
+          onSave={handleRecipeEditorSave}
+          onClose={() => setEditingRecipe(null)}
+        />
+      ) : null}
+
+      {isRecipeBuilderOpen ? (
+        <RecipeBuilder
+          personalDb={personalDb}
+          creaDb={creaDb}
+          onSave={handleRecipeBuilderSave}
+          onClose={() => setIsRecipeBuilderOpen(false)}
+          onAcquireExternalFood={onAcquireExternalFood}
+        />
+      ) : null}
+
+      <FrequentMealsModal
+        isOpen={isFrequentMealsOpen}
+        onClose={() => setIsFrequentMealsOpen(false)}
+        mealLabel={selectedMealLabel}
+        combos={predictiveCombos}
+        draftFoods={draftFoods}
+        onAddCombo={(combo, comboTitle) => {
+          handleAddComboToDraft(combo, comboTitle);
+        }}
+        onRemoveOne={(comboPayload, unitWeight) => {
+          removeOneUnitFromDraft(comboPayload, unitWeight);
+        }}
+      />
     </div>
   );
 }

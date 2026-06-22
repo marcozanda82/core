@@ -1,17 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { RotateCcw, Trash2, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Check, Clipboard, RotateCcw, Trash2, X } from 'lucide-react';
 import FoodThumbnail from './FoodThumbnail';
 import ImageSelectionSheet from './ImageSelectionSheet';
 import {
   applyDeepEditFormToItem,
   buildDeepEditFormState,
   DEEP_EDIT_MICRO_FIELDS,
-  getDeepEditUnits,
-  resolveUnitIdFromUnit,
-  resolveUnitWeight,
   restoreDeepEditFormFromDefaults,
 } from '../utils/deepEditFoodUtils';
-
 const inputClassName =
   'w-full rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500/50';
 
@@ -20,6 +16,7 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
   const [customImage, setCustomImage] = useState(null);
   const [customEmoji, setCustomEmoji] = useState(null);
   const [isImageSheetOpen, setIsImageSheetOpen] = useState(false);
+  const [copiedJson, setCopiedJson] = useState(false);
 
   useEffect(() => {
     if (isOpen && foodItem) {
@@ -27,13 +24,9 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
       setCustomImage(foodItem.customImage || foodItem.row?.customImage || null);
       setCustomEmoji(foodItem.customEmoji || foodItem.row?.customEmoji || null);
       setIsImageSheetOpen(false);
+      setCopiedJson(false);
     }
   }, [isOpen, foodItem]);
-
-  const units = useMemo(
-    () => (foodItem ? getDeepEditUnits(foodItem) : []),
-    [foodItem],
-  );
 
   if (!isOpen || !foodItem) return null;
 
@@ -42,59 +35,6 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
   const hasCustomIcon = Boolean(customImage || customEmoji);
 
   const patchForm = (patch) => setForm((prev) => ({ ...prev, ...patch }));
-
-  const handleUnitChange = (event) => {
-    const nextUnitId = event.target.value;
-    const weight = Number(form.weight) || 0;
-    const unitWeight = resolveUnitWeight(foodItem, nextUnitId);
-    const nextMultiplier =
-      nextUnitId === 'g'
-        ? weight
-        : unitWeight > 0
-          ? Math.round((weight / unitWeight) * 100) / 100 || 1
-          : 1;
-    patchForm({
-      selectedUnit: nextUnitId,
-      multiplier: String(nextMultiplier),
-    });
-  };
-
-  const handleMultiplierChange = (event) => {
-    const raw = event.target.value;
-    const selectedUnit = form.selectedUnit || 'g';
-    if (raw === '') {
-      patchForm({ multiplier: '', weight: '' });
-      return;
-    }
-    const mult = Number(raw);
-    if (!Number.isFinite(mult) || mult < 0) return;
-    const unitWeight = resolveUnitWeight(foodItem, selectedUnit);
-    const nextWeight = selectedUnit === 'g' ? mult : mult * unitWeight;
-    patchForm({
-      multiplier: raw,
-      weight: String(Math.round(nextWeight)),
-    });
-  };
-
-  const handleWeightChange = (event) => {
-    const raw = event.target.value;
-    if (raw === '') {
-      patchForm({ weight: '', multiplier: '' });
-      return;
-    }
-    const nextWeight = Number(raw);
-    if (!Number.isFinite(nextWeight) || nextWeight < 0) return;
-    const selectedUnit = form.selectedUnit || 'g';
-    const unitWeight = resolveUnitWeight(foodItem, selectedUnit);
-    patchForm({
-      weight: raw,
-      multiplier:
-        selectedUnit === 'g'
-          ? raw
-          : String(unitWeight > 0 ? Math.round((nextWeight / unitWeight) * 100) / 100 : 1),
-    });
-  };
-
   const handleRestoreDefaults = () => {
     setForm((prev) => restoreDeepEditFormFromDefaults(foodItem, prev));
   };
@@ -118,6 +58,17 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
     event.preventDefault();
     onSave?.(applyDeepEditFormToItem(foodItem, form, { customImage, customEmoji }));
     onClose?.();
+  };
+
+  const handleCopyJson = async () => {
+    const currentFood = applyDeepEditFormToItem(foodItem, form, {
+      customImage,
+      customEmoji,
+    });
+    const jsonString = JSON.stringify(currentFood, null, 2);
+    await navigator.clipboard.writeText(jsonString);
+    setCopiedJson(true);
+    setTimeout(() => setCopiedJson(false), 2000);
   };
 
   return (
@@ -193,53 +144,33 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
             <section className="mb-5">
-              <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Porzione
               </h4>
+              <p className="mb-3 text-xs leading-relaxed text-slate-500">
+                Questo serve solo per i tasti + e − nel diario.
+              </p>
               <div className="grid grid-cols-2 gap-3">
-                <label className="col-span-2 block">
-                  <span className="mb-1 block text-xs text-slate-400">Unità</span>
-                  <select
-                    value={form.selectedUnit || 'g'}
-                    onChange={handleUnitChange}
+                <label className="block">
+                  <span className="mb-1 block text-xs text-slate-400">Nome unità</span>
+                  <input
+                    type="text"
+                    value={form.unitName ?? ''}
+                    onChange={(event) => patchForm({ unitName: event.target.value })}
+                    placeholder="es. Fetta, Uovo, Porzione..."
                     className={inputClassName}
-                  >
-                    <option value="g">g</option>
-                    {units.map((unit) => {
-                      const unitId = resolveUnitIdFromUnit(unit);
-                      return (
-                        <option key={`${unitId}-${unit.grams}`} value={unitId}>
-                          {unit.label} ({unit.grams}g)
-                        </option>
-                      );
-                    })}
-                  </select>
+                  />
                 </label>
-
-                {form.selectedUnit !== 'g' ? (
-                  <label className="block">
-                    <span className="mb-1 block text-xs text-slate-400">Quantità unità</span>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min={0}
-                      step="any"
-                      value={form.multiplier}
-                      onChange={handleMultiplierChange}
-                      className={inputClassName}
-                    />
-                  </label>
-                ) : null}
-
-                <label className={form.selectedUnit !== 'g' ? 'block' : 'col-span-2 block'}>
-                  <span className="mb-1 block text-xs text-slate-400">Peso (g)</span>
+                <label className="block">
+                  <span className="mb-1 block text-xs text-slate-400">Peso unitario (g)</span>
                   <input
                     type="number"
                     inputMode="decimal"
-                    min={0}
+                    min={1}
                     step="any"
-                    value={form.weight}
-                    onChange={handleWeightChange}
+                    value={form.defaultUnitWeight ?? ''}
+                    onChange={(event) => patchForm({ defaultUnitWeight: event.target.value })}
+                    placeholder="es. 25, 50, 100"
                     className={inputClassName}
                   />
                 </label>
@@ -248,10 +179,9 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
 
             <section className="mb-5">
               <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Macro · porzione
+                Etichetta nutrizionale (valori rigorosamente per 100g)
               </h4>
-              <div className="grid grid-cols-2 gap-3">
-                {[
+              <div className="grid grid-cols-2 gap-3">                {[
                   { key: 'kcal', label: 'Kcal' },
                   { key: 'prot', label: 'Proteine (g)' },
                   { key: 'carb', label: 'Carboidrati (g)' },
@@ -274,10 +204,9 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
 
             <section>
               <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Micro · porzione
+                Micro · per 100g
               </h4>
-              <div className="grid grid-cols-2 gap-3">
-                {DEEP_EDIT_MICRO_FIELDS.map(({ key, label }) => (
+              <div className="grid grid-cols-2 gap-3">                {DEEP_EDIT_MICRO_FIELDS.map(({ key, label }) => (
                   <label key={key} className="block">
                     <span className="mb-1 block text-xs text-slate-400">{label}</span>
                     <input
@@ -309,6 +238,20 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
             >
               {isCatalogEdit ? 'Salva' : 'Applica modifiche'}
             </button>
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleCopyJson}
+                className="flex items-center gap-1 rounded border border-slate-800 bg-slate-900/40 px-2 py-1 text-[10px] font-mono text-slate-500 transition-colors hover:text-cyan-400"
+              >
+                {copiedJson ? (
+                  <Check className="h-3 w-3 text-green-400" />
+                ) : (
+                  <Clipboard className="h-3 w-3" />
+                )}
+                {copiedJson ? 'JSON Copiato!' : 'Copia JSON'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

@@ -1,41 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Minus, Plus, Settings } from 'lucide-react';
-import useUniversalSearchEngine from '../hooks/useUniversalSearchEngine';
-import useRecipeEngine from '../hooks/useRecipeEngine';
+import useUniversalSearchEngine, { SEARCH_SOURCE_BADGE } from '../hooks/useUniversalSearchEngine';
 import FoodThumbnail from './FoodThumbnail';
 import QtyBadge from './QtyBadge';
 import { resolveFoodVisual } from '../utils/foodIconUtils';
 import {
   getDefaultUnitKcal,
   getDraftQtyForFood,
+  getFoodUnitWeight,
   getTileDisplayStats,
 } from '../utils/draftFoodMatchUtils';
+import { buildRecipeDraftPayloadFromSearchResult } from '../utils/recipePayloadUtils';
 
 const SEARCH_UNIT_WEIGHT = 100;
-
-const SOURCE_BADGE = {
-  personal: {
-    label: 'Personale',
-    className: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
-  },
-  crea: {
-    label: 'CREA',
-    className: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
-  },
-  usda: {
-    label: 'USDA',
-    className: 'border-sky-500/40 bg-sky-500/15 text-sky-300',
-  },
-  recipe: {
-    label: 'Ricetta',
-    className: 'border-violet-500/40 bg-violet-500/15 text-violet-300',
-  },
-};
-
-const SEARCH_TABS = [
-  { id: 'foods', label: 'Alimenti' },
-  { id: 'recipes', label: 'Ricette' },
-];
 
 const EMPTY_MANUAL_FORM = {
   name: '',
@@ -66,7 +43,7 @@ function resolveMacrosPer100(result) {
 }
 
 function SourceBadge({ source }) {
-  const config = SOURCE_BADGE[source] || {
+  const config = SEARCH_SOURCE_BADGE[source] || {
     label: String(source || 'Altro'),
     className: 'border-slate-600 bg-slate-800 text-slate-300',
   };
@@ -80,13 +57,37 @@ function SourceBadge({ source }) {
   );
 }
 
+function resolveDraftMatchForResult(result, personalDb) {
+  if (result._source === 'recipe') {
+    const payload = buildRecipeDraftPayloadFromSearchResult(result, personalDb);
+    if (payload) {
+      return {
+        matchFood: payload,
+        unitWeight: getFoodUnitWeight(payload),
+        defaultUnitKcal: getDefaultUnitKcal(payload),
+      };
+    }
+  }
+
+  const name = result.desc || result.name || 'Alimento';
+  return {
+    matchFood: {
+      foodDbKey: result._source === 'personal' ? (result.key || result.id) : undefined,
+      desc: name,
+      name,
+    },
+    unitWeight: SEARCH_UNIT_WEIGHT,
+    defaultUnitKcal: resolveKcalPer100(result) ?? 0,
+  };
+}
+
 export default function UniversalSearchModal({
   isOpen,
   onClose,
   onSelectFood,
   onEditCatalogFood,
+  onEditRecipe,
   onRemoveOneFromDraft,
-  onSelectRecipe,
   onOpenScanner,
   onSaveManualFood,
   personalDb,
@@ -99,23 +100,14 @@ export default function UniversalSearchModal({
     personalDb,
     creaDb,
   );
-  const { recipes } = useRecipeEngine(personalDb);
-  const [activeTab, setActiveTab] = useState('foods');
   const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
   const [manualForm, setManualForm] = useState(EMPTY_MANUAL_FORM);
   const [isSavingManual, setIsSavingManual] = useState(false);
   const [manualError, setManualError] = useState('');
 
-  const filteredRecipes = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return recipes;
-    return recipes.filter((recipe) => recipe.name.toLowerCase().includes(q));
-  }, [recipes, query]);
-
   useEffect(() => {
     if (!isOpen) {
       setQuery('');
-      setActiveTab('foods');
       setIsManualEntryOpen(false);
       setManualForm(EMPTY_MANUAL_FORM);
       setManualError('');
@@ -125,14 +117,8 @@ export default function UniversalSearchModal({
 
   if (!isOpen) return null;
 
-  const isFoodsTab = activeTab === 'foods';
-
   const handleSelect = (result) => {
     onSelectFood?.(result);
-  };
-
-  const handleSelectRecipe = (recipe) => {
-    onSelectRecipe?.(recipe);
   };
 
   const handleManualFieldChange = (field) => (event) => {
@@ -193,10 +179,6 @@ export default function UniversalSearchModal({
     }
   };
 
-  const searchPlaceholder = isFoodsTab
-    ? 'Nome alimento o barcode...'
-    : 'Cerca ricetta salvata...';
-
   return (
     <div
       className="fixed inset-0 z-[100050] flex flex-col bg-[#050a12] text-slate-100"
@@ -206,9 +188,7 @@ export default function UniversalSearchModal({
     >
       <header className="shrink-0 border-b border-slate-800 px-4 pb-4 pt-5">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">
-            {isFoodsTab ? 'Cerca alimento' : 'Ricette salvate'}
-          </h2>
+          <h2 className="text-lg font-semibold">Cerca alimento o ricetta</h2>
           <button
             type="button"
             onClick={onClose}
@@ -216,31 +196,6 @@ export default function UniversalSearchModal({
           >
             Annulla
           </button>
-        </div>
-
-        <div className="mb-3 flex rounded-xl border border-slate-700/80 bg-slate-900/60 p-1">
-          {SEARCH_TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setIsManualEntryOpen(false);
-                }}
-                className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? tab.id === 'recipes'
-                      ? 'bg-violet-500 text-slate-950'
-                      : 'bg-cyan-500 text-slate-950'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
         </div>
 
         <div className="flex items-center gap-2">
@@ -253,24 +208,22 @@ export default function UniversalSearchModal({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               autoFocus={!isManualEntryOpen}
-              placeholder={searchPlaceholder}
+              placeholder="Nome alimento, ricetta o barcode..."
               className="w-full rounded-xl border border-slate-700 bg-slate-900/80 py-3 pl-10 pr-4 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
             />
           </div>
-          {isFoodsTab ? (
-            <button
-              type="button"
-              onClick={() => onOpenScanner?.()}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-900/80 text-sm font-bold tracking-widest text-slate-300 transition-colors hover:border-cyan-500/40 hover:text-white"
-              aria-label="Scansiona barcode"
-              title="Scanner barcode"
-            >
-              |||
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => onOpenScanner?.()}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-900/80 text-sm font-bold tracking-widest text-slate-300 transition-colors hover:border-cyan-500/40 hover:text-white"
+            aria-label="Scansiona barcode"
+            title="Scanner barcode"
+          >
+            |||
+          </button>
         </div>
 
-        {isFoodsTab && !isManualEntryOpen ? (
+        {!isManualEntryOpen ? (
           <button
             type="button"
             onClick={() => setIsManualEntryOpen(true)}
@@ -280,13 +233,13 @@ export default function UniversalSearchModal({
           </button>
         ) : null}
 
-        {isFoodsTab && scannerError ? (
+        {scannerError ? (
           <p className="mt-3 rounded-xl border border-red-500/40 bg-red-950/40 px-3 py-2 text-xs text-red-200">
             {scannerError}
           </p>
         ) : null}
 
-        {isFoodsTab && isScannerResolving ? (
+        {isScannerResolving ? (
           <p className="mt-3 flex items-center gap-2 text-xs text-cyan-300">
             <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" />
             Ricerca prodotto dal barcode...
@@ -295,7 +248,7 @@ export default function UniversalSearchModal({
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {isFoodsTab && isManualEntryOpen ? (
+        {isManualEntryOpen ? (
           <form onSubmit={handleManualSubmit} className="space-y-4">
             <p className="text-xs text-slate-400">Valori nutrizionali per 100 g</p>
 
@@ -317,47 +270,42 @@ export default function UniversalSearchModal({
                 <input
                   type="number"
                   min="0"
-                  step="1"
                   value={manualForm.kcal}
                   onChange={handleManualFieldChange('kcal')}
-                  placeholder="0"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-300">Proteine (g)</span>
+                <span className="mb-1 block text-xs font-medium text-slate-300">Proteine</span>
                 <input
                   type="number"
                   min="0"
                   step="0.1"
                   value={manualForm.prot}
                   onChange={handleManualFieldChange('prot')}
-                  placeholder="0"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-300">Carboidrati (g)</span>
+                <span className="mb-1 block text-xs font-medium text-slate-300">Carboidrati</span>
                 <input
                   type="number"
                   min="0"
                   step="0.1"
                   value={manualForm.carb}
                   onChange={handleManualFieldChange('carb')}
-                  placeholder="0"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-300">Grassi (g)</span>
+                <span className="mb-1 block text-xs font-medium text-slate-300">Grassi</span>
                 <input
                   type="number"
                   min="0"
                   step="0.1"
                   value={manualForm.fat}
                   onChange={handleManualFieldChange('fat')}
-                  placeholder="0"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
               </label>
             </div>
@@ -368,7 +316,7 @@ export default function UniversalSearchModal({
               </p>
             ) : null}
 
-            <div className="flex gap-2 pt-1">
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={handleManualCancel}
@@ -386,11 +334,11 @@ export default function UniversalSearchModal({
               </button>
             </div>
           </form>
-        ) : isFoodsTab && query.trim().length === 0 ? (
+        ) : query.trim().length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-10 text-center text-sm text-slate-500">
-            Digita per cercare nel database personale, CREA e USDA
+            Digita per cercare alimenti, ricette salvate, CREA e USDA
           </p>
-        ) : isFoodsTab && results.length === 0 && !isSearchingExternal ? (
+        ) : results.length === 0 && !isSearchingExternal ? (
           <div className="space-y-3">
             <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-10 text-center text-sm text-slate-500">
               Nessun risultato per &quot;{query.trim()}&quot;
@@ -406,25 +354,24 @@ export default function UniversalSearchModal({
               ➕ Crea &quot;{query.trim()}&quot; manualmente
             </button>
           </div>
-        ) : isFoodsTab ? (
+        ) : (
           <ul className="divide-y divide-slate-800">
             {results.map((result) => {
               const visual = resolveFoodVisual(result, personalDb);
               const macros = resolveMacrosPer100(result);
               const name = result.desc || result.name || 'Alimento';
-              const matchFood = {
-                foodDbKey: result._source === 'personal' ? (result.key || result.id) : undefined,
-                desc: name,
-                name,
-              };
-              const defaultUnitWeight = SEARCH_UNIT_WEIGHT;
-              const defaultUnitKcal = macros.kcal ?? 0;
-              const qty = getDraftQtyForFood(draftFoods, matchFood, defaultUnitWeight);
+              const isRecipe = result._source === 'recipe';
+              const { matchFood, unitWeight, defaultUnitKcal } = resolveDraftMatchForResult(
+                result,
+                personalDb,
+              );
+              const qty = getDraftQtyForFood(draftFoods, matchFood, unitWeight);
               const { displayWeight, displayKcal } = getTileDisplayStats(
                 qty,
-                defaultUnitWeight,
+                unitWeight,
                 defaultUnitKcal,
               );
+
               return (
                 <li
                   key={`${result._source}-${result.id}`}
@@ -436,7 +383,7 @@ export default function UniversalSearchModal({
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          onRemoveOneFromDraft?.(matchFood, defaultUnitWeight);
+                          onRemoveOneFromDraft?.(matchFood, unitWeight);
                         }}
                         aria-label={`Rimuovi una porzione di ${name}`}
                         className="absolute -left-2 -top-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-md transition-transform active:scale-90"
@@ -458,9 +405,13 @@ export default function UniversalSearchModal({
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          onEditCatalogFood?.(result);
+                          if (isRecipe) {
+                            onEditRecipe?.(result);
+                          } else {
+                            onEditCatalogFood?.(result);
+                          }
                         }}
-                        aria-label={`Modifica ${name}`}
+                        aria-label={isRecipe ? `Modifica ricetta ${name}` : `Modifica ${name}`}
                         className="absolute bottom-0 left-0 z-10 flex h-5 w-5 items-center justify-center rounded-md bg-slate-900/90 transition-colors hover:bg-slate-800"
                       >
                         <Settings className="h-3 w-3 text-slate-400" />
@@ -471,6 +422,7 @@ export default function UniversalSearchModal({
                     <p className="truncate text-sm font-medium text-slate-100">{name}</p>
                     <p className="mt-0.5 truncate font-mono text-xs tabular-nums text-slate-400 transition-all duration-200">
                       {displayWeight}g · {displayKcal} kcal
+                      {isRecipe && macros.kcal != null ? ` · ${macros.kcal}/100g` : ''}
                     </p>
                     <SourceBadge source={result._source} />
                   </div>
@@ -478,46 +430,11 @@ export default function UniversalSearchModal({
                     type="button"
                     onClick={() => handleSelect(result)}
                     aria-label={`Aggiungi ${name}`}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-600/20 text-cyan-400 transition-colors hover:bg-cyan-600/35 active:scale-95"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : filteredRecipes.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-10 text-center text-sm text-slate-500">
-            {query.trim()
-              ? `Nessuna ricetta per "${query.trim()}"`
-              : 'Nessuna ricetta salvata. Componi un pasto e usa "Salva come ricetta".'}
-          </p>
-        ) : (
-          <ul className="divide-y divide-slate-800">
-            {filteredRecipes.map((recipe) => {
-              const visual = resolveFoodVisual({ name: recipe.name, foodDbKey: recipe.key }, personalDb);
-              return (
-                <li key={recipe.key} className="flex items-center gap-3 py-3">
-                  <FoodThumbnail
-                    name={visual.name}
-                    customImage={visual.customImage}
-                    sizeClassName="h-12 w-12"
-                    emojiClassName="text-2xl"
-                    className="rounded-lg"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-100">{recipe.name}</p>
-                    <p className="mt-0.5 truncate text-xs text-slate-400">
-                      {recipe.kcal} kcal · {recipe.ingredientCount}{' '}
-                      {recipe.ingredientCount === 1 ? 'ingrediente' : 'ingredienti'}
-                    </p>
-                    <SourceBadge source="recipe" />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectRecipe(recipe)}
-                    aria-label={`Aggiungi ricetta ${recipe.name}`}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600/20 text-violet-400 transition-colors hover:bg-violet-600/35 active:scale-95"
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors active:scale-95 ${
+                      isRecipe
+                        ? 'bg-violet-600/20 text-violet-400 hover:bg-violet-600/35'
+                        : 'bg-cyan-600/20 text-cyan-400 hover:bg-cyan-600/35'
+                    }`}
                   >
                     <Plus className="h-4 w-4" />
                   </button>
@@ -527,7 +444,7 @@ export default function UniversalSearchModal({
           </ul>
         )}
 
-        {isFoodsTab && isSearchingExternal ? (
+        {!isManualEntryOpen && isSearchingExternal ? (
           <p className="mt-4 flex items-center justify-center gap-2 text-center text-xs text-slate-400">
             <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" />
             Ricerca estesa in corso...

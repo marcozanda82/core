@@ -11,12 +11,6 @@ import {
 } from '../utils/draftFoodUnits';
 
 import { roundToOneDecimal } from '../utils/numberFormatUtils';
-import {
-  computeRecipeGroupItemMacros,
-  isRecipeGroup,
-  recomputeRecipeGroupTotals,
-  scaleRecipeGroupToWeight,
-} from '../utils/recipeGroupUtils';
 
 
 
@@ -168,10 +162,6 @@ function applyFoodAmount(item, multiplier, unitId) {
 
 
 function computeDraftItemMacros(item) {
-  if (isRecipeGroup(item)) {
-    return computeRecipeGroupItemMacros(item);
-  }
-
   const weight = Number(item?.weight ?? item?.qta) || 0;
   const row = item?.row || {};
   const rowKcal = Number(row.kcal ?? row.cal);
@@ -289,33 +279,12 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
     if (!foodItem || typeof foodItem !== 'object') return;
 
-    if (isRecipeGroup(foodItem)) {
-      setDraftFoods((prev) => [{ ...foodItem, id: foodItem.id || createDraftFoodId() }, ...prev]);
-      setStatus('composing');
-      return;
-    }
-
     const normalized = normalizeDraftFood(foodItem);
 
     setDraftFoods((prev) => [normalized, ...prev]);
 
     setStatus('composing');
 
-  }, []);
-
-
-
-  const addRecipeGroupToDraft = useCallback((groupItem) => {
-    if (!groupItem || !isRecipeGroup(groupItem)) return;
-
-    setDraftFoods((prev) => [
-      {
-        ...recomputeRecipeGroupTotals(groupItem),
-        id: groupItem.id || createDraftFoodId(),
-      },
-      ...prev,
-    ]);
-    setStatus('composing');
   }, []);
 
 
@@ -390,7 +359,6 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       prev.map((item) => {
 
         if (String(item.id) !== String(foodId)) return item;
-        if (isRecipeGroup(item)) return item;
 
         return applyFoodAmount(item, multiplier, unitId || 'g');
 
@@ -398,45 +366,6 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
     );
 
-  }, []);
-
-
-
-  const updateRecipeGroupWeight = useCallback((groupId, newWeightGrams) => {
-    if (groupId == null) return;
-
-    setDraftFoods((prev) => {
-      const next = prev
-        .map((item) => {
-          if (String(item.id) !== String(groupId) || !isRecipeGroup(item)) return item;
-          const nextWeight = roundToOneDecimal(newWeightGrams);
-          if (nextWeight <= 0) return null;
-          return scaleRecipeGroupToWeight(item, nextWeight);
-        })
-        .filter(Boolean);
-
-      setStatus(next.length === 0 ? 'idle' : 'composing');
-      return next;
-    });
-  }, []);
-
-
-
-  const updateRecipeGroupChildAmount = useCallback((groupId, childId, multiplier, unitId) => {
-    if (groupId == null || childId == null) return;
-
-    setDraftFoods((prev) =>
-      prev.map((item) => {
-        if (String(item.id) !== String(groupId) || !isRecipeGroup(item)) return item;
-
-        const items = (item.items || []).map((child) => {
-          if (String(child.id) !== String(childId)) return child;
-          return applyFoodAmount(child, multiplier, unitId || 'g');
-        });
-
-        return recomputeRecipeGroupTotals({ ...item, items });
-      }),
-    );
   }, []);
 
 
@@ -511,8 +440,6 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
       addFoodToDraft,
 
-      addRecipeGroupToDraft,
-
       addComboToDraft,
 
       addFoodsToDraft,
@@ -520,10 +447,6 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       removeFoodFromDraft,
 
       updateFoodAmount,
-
-      updateRecipeGroupWeight,
-
-      updateRecipeGroupChildAmount,
 
       updateFoodQuantity,
 
@@ -549,8 +472,6 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
 
       addFoodToDraft,
 
-      addRecipeGroupToDraft,
-
       addComboToDraft,
 
       addFoodsToDraft,
@@ -558,10 +479,6 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       removeFoodFromDraft,
 
       updateFoodAmount,
-
-      updateRecipeGroupWeight,
-
-      updateRecipeGroupChildAmount,
 
       updateFoodQuantity,
 
