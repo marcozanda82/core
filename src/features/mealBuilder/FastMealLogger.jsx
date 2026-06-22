@@ -41,12 +41,19 @@ import {
   mergeCatalogDisplay,
 } from './utils/catalogFoodUtils';
 import { resolveUnitWeight } from './utils/draftFoodUnits';
-import { ChevronDown, Clock, Minus, Plus, Settings, ShoppingBag } from 'lucide-react';
+import { ChevronDown, Clock, LayoutGrid, List, Minus, Plus, Settings, ShoppingBag } from 'lucide-react';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
 import useFoodDb from '../../useFoodDb';
 import { draftFoodsToRecipePayload, fetchRecipesFromDb } from './utils/recipeDraftUtils';
 import { searchPersonalDb, useDebouncedExternalFoodSearch, SEARCH_SOURCE_BADGE } from './hooks/useUniversalSearchEngine';
+import useStableTimeSlot from './hooks/useStableTimeSlot';
 import { decimalToTimeStr } from '../../coreEngine';
+import {
+  getCurrentTimeSlot,
+  recordDraftFoodsUsageStats,
+  recordFoodUsageStats,
+  sortFoodsByTimeSlotUsage,
+} from './utils/timeSlotUtils';
 
 const QUICK_FOODS_LIMIT = 30;
 const SEARCH_DEFAULT_UNIT_WEIGHT = 100;
@@ -250,6 +257,7 @@ function FastMealLoggerContent({
   const [isFrequentMealsOpen, setIsFrequentMealsOpen] = useState(false);
   const [detailFood, setDetailFood] = useState(null);
   const [activeVetrinaTab, setActiveVetrinaTab] = useState('foods');
+  const [viewMode, setViewMode] = useState('grid');
   const [vetrinaSearchQuery, setVetrinaSearchQuery] = useState('');
   const [isSavingRecipe, setIsSavingRecipe] = useState(false);
   const [saveRecipeError, setSaveRecipeError] = useState('');
@@ -457,15 +465,14 @@ function FastMealLoggerContent({
 
   const predictiveCombos = usePredictiveMealCombos(fullHistory, selectedSlot, 5);
   const predictiveBlocks = usePredictiveFoodBlocks(fullHistory, selectedSlot, QUICK_FOODS_LIMIT);
+  const stableTimeSlot = useStableTimeSlot();
   const quickFoods = useMemo(
     () =>
-      [...predictiveBlocks]
-        .sort(
-          (a, b) =>
-            new Date(b.lastUsed || b.timestamp || 0) - new Date(a.lastUsed || a.timestamp || 0),
-        )
-        .slice(0, QUICK_FOODS_LIMIT),
-    [predictiveBlocks],
+      sortFoodsByTimeSlotUsage(predictiveBlocks, personalDb, stableTimeSlot).slice(
+        0,
+        QUICK_FOODS_LIMIT,
+      ),
+    [predictiveBlocks, personalDb, stableTimeSlot],
   );
 
   const savedRecipes = useMemo(() => fetchRecipesFromDb(personalDb), [personalDb]);
@@ -484,6 +491,11 @@ function FastMealLoggerContent({
 
   const selectedMealLabel =
     MEAL_SLOTS.find((slot) => slot.id === selectedSlot)?.label || 'Pasto';
+
+  const vetrinaTilesContainerClass =
+    viewMode === 'grid'
+      ? 'grid w-full grid-cols-3 gap-3 md:grid-cols-4'
+      : 'flex w-full flex-col gap-2';
 
   const filteredSavedRecipes = useMemo(
     () => savedRecipes.filter((recipe) => textMatchesQuery(recipe.name, vetrinaQuery)),
@@ -597,6 +609,7 @@ function FastMealLoggerContent({
     return (
       <QuickFoodTile
         key={tile.key}
+        viewMode={viewMode}
         displayTile={displayTile}
         tileVisual={tileVisual}
         defaultUnitWeight={defaultUnitWeight}
@@ -622,6 +635,7 @@ function FastMealLoggerContent({
 
     return (
       <QuickFoodTile
+        viewMode={viewMode}
         displayTile={displayTile}
         tileVisual={tileVisual}
         defaultUnitWeight={defaultUnitWeight}
@@ -631,6 +645,39 @@ function FastMealLoggerContent({
         onConfirmAdd={(portionCount) => handleAddSearchResult(result, portionCount)}
         onRemoveOne={() => removeOneUnitFromDraft(matchFood, defaultUnitWeight)}
         onOpenDetail={() => openFoodDetailFromSearchResult(result)}
+      />
+    );
+  };
+
+  const renderSavedRecipeTile = (recipe) => {
+    const payload = buildRecipeDraftPayloadFromDb(recipe.key, recipe.row);
+    if (!payload) return null;
+
+    const unitWeight = getFoodUnitWeight(payload);
+    const defaultUnitKcal = getDefaultUnitKcal(payload);
+    const qty = getDraftQtyForFood(draftFoods, payload, unitWeight);
+    const tileVisual = resolveFoodVisual(
+      { desc: recipe.name, foodDbKey: recipe.key, row: recipe.row },
+      personalDb,
+    );
+
+    return (
+      <QuickFoodTile
+        key={recipe.key}
+        viewMode={viewMode}
+        displayTile={{ desc: recipe.name, label: recipe.name }}
+        tileVisual={tileVisual}
+        defaultUnitWeight={unitWeight}
+        defaultUnitKcal={defaultUnitKcal}
+        qty={qty}
+        sourceBadge={SEARCH_SOURCE_BADGE.recipe}
+        onConfirmAdd={(portionCount) => {
+          for (let i = 0; i < portionCount; i += 1) {
+            handleSavedRecipeAdd(recipe);
+          }
+        }}
+        onRemoveOne={() => removeOneUnitFromDraft(payload, unitWeight)}
+        onOpenDetail={() => setEditingRecipe({ key: recipe.key, entry: recipe.row })}
       />
     );
   };
@@ -689,10 +736,18 @@ function FastMealLoggerContent({
     const existing = findDraftItemForFood(draftFoods, payload);
     if (!existing) {
       addFoodToDraft(payload);
-      return false;
+    } else {
+      incrementDraftItemByUnit(existing, unitWeight);
     }
-    incrementDraftItemByUnit(existing, unitWeight);
-    return true;
+
+    recordFoodUsageStats(
+      payload?.foodDbKey,
+      personalDb,
+      onPatchFoodDbEntry,
+      getCurrentTimeSlot(),
+    );
+
+    return Boolean(existing);
   };
 
   const draftMealKcal = Math.round(Number(draftTotals?.kcal) || 0);
@@ -701,6 +756,12 @@ function FastMealLoggerContent({
 
   const handleConfirm = () => {
     if (draftFoods.length === 0) return;
+    recordDraftFoodsUsageStats(
+      draftFoods,
+      personalDb,
+      onPatchFoodDbEntry,
+      getCurrentTimeSlot(),
+    );
     onSave?.(draftFoods, selectedSlot, editingMealId ?? undefined, mealTime);
     clearDraft();
   };
@@ -803,6 +864,13 @@ function FastMealLoggerContent({
     } else {
       addFoodToDraft(payload);
     }
+
+    recordFoodUsageStats(
+      payload?.foodDbKey,
+      personalDb,
+      onPatchFoodDbEntry,
+      getCurrentTimeSlot(),
+    );
 
     notifyItemAdded(String(payload.desc || payload.name));
     setDetailFood(null);
@@ -1027,36 +1095,97 @@ function FastMealLoggerContent({
           ) : null}
 
           {!isVetrinaSearching ? (
-            <div className="mx-auto mb-2 flex w-full max-w-xs rounded-full border border-slate-800 bg-slate-900/60 p-1">
-              <button
-                type="button"
-                onClick={() => setActiveVetrinaTab('foods')}
-                className={`flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
-                  activeVetrinaTab === 'foods'
-                    ? 'bg-slate-700 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Alimenti
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveVetrinaTab('recipes')}
-                className={`flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
-                  activeVetrinaTab === 'recipes'
-                    ? 'bg-slate-700 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Le mie Ricette
-              </button>
+            <div className="mb-2 flex items-center gap-2">
+              <div className="mx-auto flex w-full max-w-xs flex-1 rounded-full border border-slate-800 bg-slate-900/60 p-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveVetrinaTab('foods')}
+                  className={`flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                    activeVetrinaTab === 'foods'
+                      ? 'bg-slate-700 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Alimenti
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveVetrinaTab('recipes')}
+                  className={`flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                    activeVetrinaTab === 'recipes'
+                      ? 'bg-slate-700 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Le mie Ricette
+                </button>
+              </div>
+              <div className="flex shrink-0 rounded-xl border border-slate-800 bg-slate-900/60 p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grid')}
+                  aria-label="Visualizzazione griglia"
+                  aria-pressed={viewMode === 'grid'}
+                  className={`rounded-lg p-2 transition-colors ${
+                    viewMode === 'grid'
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  aria-label="Visualizzazione elenco"
+                  aria-pressed={viewMode === 'list'}
+                  className={`rounded-lg p-2 transition-colors ${
+                    viewMode === 'list'
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="mb-2 flex justify-end">
+              <div className="flex rounded-xl border border-slate-800 bg-slate-900/60 p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grid')}
+                  aria-label="Visualizzazione griglia"
+                  aria-pressed={viewMode === 'grid'}
+                  className={`rounded-lg p-2 transition-colors ${
+                    viewMode === 'grid'
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  aria-label="Visualizzazione elenco"
+                  aria-pressed={viewMode === 'list'}
+                  className={`rounded-lg p-2 transition-colors ${
+                    viewMode === 'list'
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {isVetrinaSearching ? (
             <div className="min-w-0 space-y-6">
               {unifiedSearchGridItems.length > 0 ? (
-                <div className="grid w-full grid-cols-3 gap-3 md:grid-cols-4">
+                <div className={vetrinaTilesContainerClass}>
                   {unifiedSearchGridItems.map((item) => (
                     <React.Fragment key={item.key}>
                       {renderUnifiedSearchGridItem(item)}
@@ -1092,7 +1221,7 @@ function FastMealLoggerContent({
                   Nessun alimento frequente per questo slot
                 </p>
               ) : (
-                <div className="grid w-full grid-cols-3 gap-3 md:grid-cols-4">
+                <div className={vetrinaTilesContainerClass}>
                   {quickFoods.map((tile) => renderQuickFoodTile(tile))}
                 </div>
               )}
@@ -1118,27 +1247,11 @@ function FastMealLoggerContent({
                     Nessuna ricetta salvata. Crea una nuova ricetta o componi un pasto e usa &quot;Salva come ricetta&quot;.
                   </p>
                 ) : (
-                  <ul className="divide-y divide-slate-800 rounded-xl border border-slate-800">
-                    {savedRecipes.map((recipe) => (
-                      <li key={recipe.key} className="flex items-center gap-3 px-3 py-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-slate-100">{recipe.name}</p>
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            {recipe.kcal} kcal · {recipe.ingredientCount}{' '}
-                            {recipe.ingredientCount === 1 ? 'ingrediente' : 'ingredienti'}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleSavedRecipeAdd(recipe)}
-                          aria-label={`Aggiungi ricetta ${recipe.name}`}
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-600/20 text-violet-400 transition-colors hover:bg-violet-600/35 active:scale-95"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <div className={vetrinaTilesContainerClass}>
+                    {savedRecipes
+                      .map((recipe) => renderSavedRecipeTile(recipe))
+                      .filter(Boolean)}
+                  </div>
                 )}
               </section>
             </div>

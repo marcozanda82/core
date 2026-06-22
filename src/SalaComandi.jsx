@@ -34,6 +34,7 @@ import MainDashboardCharts from './features/charts/MainDashboardCharts';
 import {
   enrichDbRowWithFoodUnits,
 } from './foodUnits';
+import { withDefaultUsageStats } from './features/mealBuilder/utils/timeSlotUtils';
 import ChartModal from './ChartModal';
 import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
@@ -3619,15 +3620,15 @@ Ottimo! Diario aggiornato. 🥗`;
     const slug = String(desc).replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 40);
     const trimmed = existingKey != null && String(existingKey).trim() !== '' ? String(existingKey).trim() : '';
     const dbKey = trimmed || `recipe_${Date.now()}_${slug}`;
-    const entryPer100 = {
+    const entryPer100 = withDefaultUsageStats({
       desc: String(desc).trim(),
       kcal: Number(kcal) || 0,
       prot: Number(prot) || 0,
       carb: Number(carb) || 0,
       fatTotal: fatTotal != null ? Number(fatTotal) : 0,
       isRecipe: true,
-      ingredients: Array.isArray(ingredients) ? ingredients : []
-    };
+      ingredients: Array.isArray(ingredients) ? ingredients : [],
+    });
     Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => {
       if (entryPer100[k] == null) entryPer100[k] = getDefaultNutrientValue(k, fullHistory);
     }));
@@ -3652,7 +3653,7 @@ Ottimo! Diario aggiornato. 🥗`;
       payload.kcal = getDefaultNutrientValue('kcal', fullHistory);
     }
     if (payload.fatTotal == null && payload.fat != null) payload.fatTotal = Number(payload.fat);
-    const payloadWithUnits = enrichDbRowWithFoodUnits(payload, newKey);
+    const payloadWithUnits = enrichDbRowWithFoodUnits(withDefaultUsageStats(payload), newKey);
     await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), payloadWithUnits);
     setFoodDb(prev => ({ ...(prev || {}), [newKey]: payloadWithUnits }));
     return { key: newKey, row: payloadWithUnits };
@@ -3700,7 +3701,7 @@ Ottimo! Diario aggiornato. 🥗`;
     }
     if (merged.fatTotal == null && merged.fat != null) merged.fatTotal = Number(merged.fat);
 
-    const payload = enrichDbRowWithFoodUnits(merged, foodDbKey);
+    const payload = enrichDbRowWithFoodUnits(withDefaultUsageStats(merged), foodDbKey);
     await set(ref(db, `${basePath}/trackerFoodDatabase/${foodDbKey}`), payload);
     setFoodDb((p) => ({ ...(p || {}), [foodDbKey]: payload }));
   }, [userUid, db, foodDb, fullHistory]);
