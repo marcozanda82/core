@@ -41,7 +41,7 @@ import {
   mergeCatalogDisplay,
 } from './utils/catalogFoodUtils';
 import { resolveUnitWeight } from './utils/draftFoodUnits';
-import { ChevronDown, Clock, LayoutGrid, List, Minus, Plus, Settings, ShoppingBag } from 'lucide-react';
+import { ChevronDown, Clock, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag } from 'lucide-react';
 import { FaHamburger } from 'react-icons/fa';
 import { MdOutlineLocalFireDepartment } from 'react-icons/md';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
@@ -148,6 +148,8 @@ function formatSearchResultForDraft(food) {
     fatTotal: Math.round(f100 * 10) / 10,
     ...(row.customImage ? { customImage: row.customImage } : {}),
     ...(row.customIcon ? { customIcon: row.customIcon } : {}),
+    ...(row.iconTag ? { iconTag: row.iconTag } : {}),
+    ...(row.iconOverride ? { iconOverride: row.iconOverride } : {}),
   };
 }
 
@@ -232,6 +234,7 @@ function FastMealLoggerContent({
   onSave,
   personalDb,
   creaDb,
+  usdaDb,
   onAcquireExternalFood,
   onSaveRecipe,
   onPatchFoodDbEntry,
@@ -497,8 +500,8 @@ function FastMealLoggerContent({
 
   const vetrinaTilesContainerClass =
     viewMode === 'grid'
-      ? 'grid w-full grid-cols-3 gap-3 md:grid-cols-4'
-      : 'flex w-full flex-col gap-2';
+      ? 'grid w-full grid-cols-3 gap-2.5 md:grid-cols-4 md:gap-3'
+      : 'flex w-full flex-col gap-2.5';
 
   const filteredSavedRecipes = useMemo(
     () => savedRecipes.filter((recipe) => textMatchesQuery(recipe.name, vetrinaQuery)),
@@ -515,6 +518,7 @@ function FastMealLoggerContent({
       isVetrinaSearching ? vetrinaQuery : '',
       personalDb,
       creaDb,
+      usdaDb,
     );
 
   const quickFoodIdentityKeys = useMemo(() => {
@@ -1062,30 +1066,28 @@ function FastMealLoggerContent({
         <div className="space-y-4 px-0.5">
           <div>
             <div className="relative">
-              <span
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg text-slate-500"
+              <Search
+                className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
                 aria-hidden
-              >
-                🔍
-              </span>
+              />
               <input
                 type="search"
                 value={vetrinaSearchQuery}
                 onChange={(event) => setVetrinaSearchQuery(event.target.value)}
                 placeholder="Cerca alimento o ricetta..."
-                className="w-full rounded-2xl border-2 border-cyan-500/50 bg-slate-900/80 py-3.5 pl-10 pr-12 text-sm text-slate-100 placeholder:text-slate-500 shadow-lg shadow-cyan-950/20 focus:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-12 text-sm text-slate-100 shadow-lg shadow-black/20 placeholder:text-slate-500 transition-all focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
               />
               <button
                 type="button"
                 onClick={() => setIsSearchModalOpen(true)}
                 aria-label="Ricerca avanzata CREA e USDA"
                 title="Ricerca avanzata"
-                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border border-slate-700 bg-slate-800/90 text-[10px] font-bold tracking-widest text-slate-400 transition-colors hover:border-cyan-500/40 hover:text-cyan-300"
+                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-slate-400 transition-all hover:border-cyan-500/40 hover:text-cyan-300 active:scale-95"
               >
-                |||
+                <ScanBarcode className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-2 text-center text-xs text-slate-600">
+            <p className="mt-2 text-center text-[11px] font-medium text-slate-600">
               {isVetrinaSearching
                 ? isSearchingExternal
                   ? 'Risultati locali · ricerca CREA e USDA in corso...'
@@ -1419,18 +1421,39 @@ function FastMealLoggerContent({
       </div>
 
       {!isCartOpen && draftFoods.length > 0 ? (
-        <div className="absolute inset-x-0 bottom-0 z-30 shrink-0 px-4 pb-4 pt-2">
+        <div
+          key={`mini-cart-${draftFoods.length}`}
+          className={`absolute inset-x-0 bottom-0 z-30 shrink-0 px-4 pb-4 pt-2 ${
+            cartPulse ? 'vetrina-cart-row-enter' : ''
+          }`}
+        >
           <button
             type="button"
             onClick={() => setIsCartOpen(true)}
-            className={`flex w-full items-center justify-between rounded-2xl border border-cyan-500/50 bg-gradient-to-r from-cyan-600 to-cyan-500 px-4 py-3.5 text-left shadow-lg shadow-cyan-950/40 transition-all duration-300 hover:from-cyan-500 hover:to-cyan-400 active:scale-[0.98] ${
-              cartPulse ? 'scale-[1.02] ring-2 ring-cyan-300/60' : ''
+            className={`flex w-full items-center justify-between gap-3 rounded-2xl border border-cyan-400/40 bg-gradient-to-r from-cyan-500 to-cyan-400 px-4 py-3.5 text-left shadow-xl shadow-cyan-950/40 transition-all duration-300 hover:from-cyan-400 hover:to-cyan-300 active:scale-[0.98] ${
+              cartPulse ? 'ring-2 ring-cyan-200/50' : ''
             }`}
           >
-            <span className="flex min-w-0 flex-1 items-center gap-2">
-              <ShoppingBag className="mr-2 h-5 w-5 shrink-0 text-slate-950" aria-hidden />
-              <span className="truncate text-sm font-semibold text-slate-950">
-                {miniCartMealLabel} ({draftFoods.length}) · {draftMealKcal} kcal
+            <span className="flex min-w-0 flex-1 items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950/20 shadow-inner">
+                <ShoppingBag className="h-5 w-5 text-slate-950" aria-hidden />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-bold tracking-tight text-slate-950">
+                  {miniCartMealLabel}
+                </span>
+                <span className="mt-0.5 block text-xs font-semibold text-slate-900/75">
+                  {draftFoods.length}{' '}
+                  {draftFoods.length === 1 ? 'alimento' : 'alimenti'}
+                </span>
+              </span>
+            </span>
+            <span className="shrink-0 text-right">
+              <span className="block font-mono text-2xl font-bold leading-none tabular-nums text-slate-950">
+                {draftMealKcal}
+              </span>
+              <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-widest text-slate-900/70">
+                kcal
               </span>
             </span>
           </button>
@@ -1442,6 +1465,7 @@ function FastMealLoggerContent({
         onClose={() => setIsSearchModalOpen(false)}
         personalDb={personalDb}
         creaDb={creaDb}
+        usdaDb={usdaDb}
         onSelectFood={handleFoodSelection}
         onEditCatalogFood={openEditModalForCatalog}
         onEditRecipe={handleEditRecipe}
@@ -1546,6 +1570,7 @@ function FastMealLoggerContent({
         <RecipeBuilder
           personalDb={personalDb}
           creaDb={creaDb}
+          usdaDb={usdaDb}
           onSave={handleRecipeBuilderSave}
           onClose={() => setIsRecipeBuilderOpen(false)}
           onAcquireExternalFood={onAcquireExternalFood}
@@ -1575,6 +1600,7 @@ export default function FastMealLogger({
   onSave,
   personalDb,
   creaDb,
+  usdaDb: usdaDbProp,
   onAcquireExternalFood,
   onSaveRecipe,
   onPatchFoodDbEntry,
@@ -1585,8 +1611,9 @@ export default function FastMealLogger({
   initialMealSlot,
   initialMealTime,
 }) {
-  const { foodDb: loadedCreaDb } = useFoodDb();
+  const { unifiedDb: loadedCreaDb, usdaDb: loadedUsdaDb } = useFoodDb();
   const resolvedCreaDb = creaDb ?? loadedCreaDb;
+  const resolvedUsdaDb = usdaDbProp ?? loadedUsdaDb;
 
   return (
     <div
@@ -1603,6 +1630,7 @@ export default function FastMealLogger({
           onSave={onSave}
           personalDb={personalDb}
           creaDb={resolvedCreaDb}
+          usdaDb={resolvedUsdaDb}
           onAcquireExternalFood={onAcquireExternalFood}
           onSaveRecipe={onSaveRecipe}
           onPatchFoodDbEntry={onPatchFoodDbEntry}

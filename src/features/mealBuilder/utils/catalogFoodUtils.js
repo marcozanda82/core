@@ -91,6 +91,10 @@ function buildCatalogEditItemBase(source, personalDb, options = {}) {
     ...(row.customIcon || source.customIcon
       ? { customIcon: row.customIcon || source.customIcon }
       : {}),
+    ...(row.iconTag || source.iconTag ? { iconTag: row.iconTag || source.iconTag } : {}),
+    ...(row.iconOverride || source.iconOverride
+      ? { iconOverride: row.iconOverride || source.iconOverride }
+      : {}),
     ...(row.customEmoji || source.customEmoji
       ? { customEmoji: row.customEmoji || source.customEmoji }
       : {}),
@@ -150,6 +154,8 @@ export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}) {
       ...portion,
       ...(row.customImage ? { customImage: row.customImage } : {}),
       ...(row.customIcon ? { customIcon: row.customIcon } : {}),
+      ...(row.iconTag ? { iconTag: row.iconTag } : {}),
+      ...(row.iconOverride ? { iconOverride: row.iconOverride } : {}),
       ...(row.customEmoji ? { customEmoji: row.customEmoji } : {}),
     };
     if (merged.desc) {

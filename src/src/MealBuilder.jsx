@@ -1254,7 +1254,7 @@ export default function MealBuilder({
 
   const mealBuilderScrollAnchorRef = useRef(null);
   const foodDropdownContainerRef = useRef(null);
-  const { foodDb: localFoodDb } = useFoodDb();
+  const { unifiedDb: localFoodDb } = useFoodDb();
 
   useEffect(() => {
     const onUpd = () => setOverrideVersion((v) => v + 1);

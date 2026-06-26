@@ -731,7 +731,7 @@ export default function SalaComandi() {
   const [dayProfile, setDayProfile] = useState('upper');
   const [calorieTuning, setCalorieTuning] = useState(0);
   const [foodDb, setFoodDb] = useState({});
-  const { foodDb: csvFoodDb, loading: csvFoodDbLoading } = useFoodDb();
+  const { unifiedDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb();
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
   dailyLogRef.current = dailyLog;

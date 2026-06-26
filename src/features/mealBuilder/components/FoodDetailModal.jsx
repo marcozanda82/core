@@ -1,12 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Edit2, Minus, Plus, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Edit2, X } from 'lucide-react';
 import { findDraftItemForFood } from '../utils/draftFoodMatchUtils';
 import { getFoodEmoji } from '../utils/foodIconUtils';
-import { FoodIconVisual } from '../utils/FoodIcons';
+import { renderIconFromTag } from '../../../utils/iconEngine';
 import { computeMacrosForWeight, getPer100Macros } from '../utils/foodMacroUtils';
+import {
+  getItemUnits,
+  resolveUnitIdFromUnit,
+  resolveUnitWeight,
+} from '../utils/draftFoodUnits';
 import { roundToOneDecimal } from '../utils/numberFormatUtils';
-
-const WEIGHT_STEP = 10;
+import AmountStepper from './AmountStepper';
+import UnitChips from './UnitChips';
 
 const MACRO_BOXES = [
   { id: 'kcal', label: 'Kcal', accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/25' },
@@ -22,14 +27,16 @@ export default function FoodDetailModal({
   onConfirm,
   onDeepEdit,
 }) {
-  const [selectedWeight, setSelectedWeight] = useState(100);
-  const [isEditingWeight, setIsEditingWeight] = useState(false);
-  const [weightInputValue, setWeightInputValue] = useState('');
+  const weightInputRef = useRef(null);
+  const [selectedUnit, setSelectedUnit] = useState('g');
+  const [amount, setAmount] = useState(100);
+  const [justConfirmed, setJustConfirmed] = useState(false);
 
   const displayTile = food?.displayTile;
   const tileVisual = food?.tileVisual;
   const defaultUnitWeight = Math.round(Number(food?.defaultUnitWeight) || 100);
   const name = displayTile?.label || displayTile?.desc || tileVisual?.name || 'Alimento';
+  const units = getItemUnits(displayTile || {});
 
   const draftItem = useMemo(
     () => (displayTile ? findDraftItemForFood(draftFoods, displayTile) : null),
@@ -43,79 +50,63 @@ export default function FoodDetailModal({
 
   useEffect(() => {
     if (!food) return;
-    const initial = isInCart ? cartWeight : defaultUnitWeight;
-    setSelectedWeight(roundToOneDecimal(initial));
-    setIsEditingWeight(false);
-    setWeightInputValue('');
+    const initialWeight = isInCart ? cartWeight : defaultUnitWeight;
+    setSelectedUnit('g');
+    setAmount(roundToOneDecimal(initialWeight));
+    setJustConfirmed(false);
+    const focusTimer = window.setTimeout(() => weightInputRef.current?.focus(), 280);
+    return () => window.clearTimeout(focusTimer);
   }, [food, defaultUnitWeight, cartWeight, isInCart]);
 
   if (!food || !displayTile) return null;
 
   const per100 = getPer100Macros(displayTile);
+  const selectedWeight = selectedUnit === 'g'
+    ? roundToOneDecimal(amount)
+    : roundToOneDecimal(amount * resolveUnitWeight(displayTile, selectedUnit));
   const liveMacros = computeMacrosForWeight(per100, selectedWeight);
-  const roundedWeight = roundToOneDecimal(selectedWeight);
+  const step = selectedUnit === 'g' ? 10 : 0.25;
+  const unitLabel = selectedUnit === 'g'
+    ? 'grammi'
+    : units.find((u) => resolveUnitIdFromUnit(u) === selectedUnit)?.label || selectedUnit;
 
-  const weightFieldValue = isEditingWeight
-    ? weightInputValue
-    : String(roundedWeight > 0 ? roundedWeight : '');
-
-  const handleWeightFocus = () => {
-    setIsEditingWeight(true);
-    setWeightInputValue(String(selectedWeight > 0 ? selectedWeight : ''));
-  };
-
-  const handleWeightChange = (event) => {
-    const raw = event.target.value;
-    setWeightInputValue(raw);
-    if (raw === '' || raw === '.') return;
-    const next = Number(raw);
-    if (!Number.isFinite(next) || next < 0) return;
-    setSelectedWeight(next);
-  };
-
-  const handleWeightBlur = () => {
-    setIsEditingWeight(false);
-    const raw = weightInputValue.trim();
-    if (raw === '' || raw === '.') {
-      setWeightInputValue('');
-      return;
-    }
-    setSelectedWeight(roundToOneDecimal(raw));
-    setWeightInputValue('');
-  };
-
-  const handleStep = (direction) => {
-    const next = Math.max(0, roundToOneDecimal(selectedWeight + direction * WEIGHT_STEP));
-    setSelectedWeight(next);
+  const handleUnitSelect = (nextUnitId) => {
+    if (nextUnitId === selectedUnit) return;
+    const currentWeight = selectedWeight;
+    const nextUnitWeight = resolveUnitWeight(displayTile, nextUnitId);
+    const nextAmount = nextUnitId === 'g'
+      ? currentWeight
+      : Math.max(0.25, roundToOneDecimal(currentWeight / nextUnitWeight) || 1);
+    setSelectedUnit(nextUnitId);
+    setAmount(nextAmount);
+    window.setTimeout(() => weightInputRef.current?.focus(), 50);
   };
 
   const handleConfirm = () => {
-    if (roundedWeight <= 0) return;
-    onConfirm?.(roundedWeight);
-  };
-
-  const handleDeepEdit = () => {
-    onDeepEdit?.();
+    if (selectedWeight <= 0) return;
+    onConfirm?.(selectedWeight);
+    setJustConfirmed(true);
+    window.setTimeout(() => setJustConfirmed(false), 500);
   };
 
   return (
     <div
-      className="fixed inset-0 z-[100055] flex items-end justify-center bg-black/65 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[100055] flex items-end justify-center bg-black/60 backdrop-blur-[2px] sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={`Dettaglio ${name}`}
       onClick={onClose}
     >
       <div
-        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-slate-700 bg-[#050a12] text-slate-100 shadow-2xl sm:rounded-2xl"
+        className="vetrina-sheet-enter flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-white/[0.08] bg-[#050a12] text-slate-100 shadow-2xl shadow-black/50 sm:rounded-3xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="relative shrink-0">
           <button
             type="button"
-            onClick={handleDeepEdit}
+            onClick={() => onDeepEdit?.()}
             aria-label={`Modifica ${name}`}
-            className="absolute left-3 top-3 z-10 rounded-full bg-slate-800 p-2 text-slate-300 transition-transform active:scale-95 hover:bg-slate-700 hover:text-white"
+            className="absolute left-3 top-3 z-10 rounded-full border border-white/10 bg-slate-900/80 p-2.5 text-slate-300 backdrop-blur-sm transition-all hover:bg-slate-800 hover:text-white active:scale-95"
           >
             <Edit2 className="h-4 w-4" />
           </button>
@@ -123,27 +114,22 @@ export default function FoodDetailModal({
             type="button"
             onClick={onClose}
             aria-label="Chiudi scheda prodotto"
-            className="absolute right-3 top-3 z-10 rounded-full bg-slate-900/80 p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+            className="absolute right-3 top-3 z-10 rounded-full border border-white/10 bg-slate-900/80 p-2.5 text-slate-300 backdrop-blur-sm transition-all hover:bg-slate-800 hover:text-white active:scale-95"
           >
             <X className="h-4 w-4" />
           </button>
 
           {tileVisual?.customImage ? (
-            <img
-              src={tileVisual.customImage}
-              alt={name}
-              className="h-40 w-full object-cover"
-            />
-          ) : tileVisual?.customIcon ? (
-            <div className="flex h-40 w-full items-center justify-center bg-slate-800/80">
-              <FoodIconVisual
-                iconId={tileVisual.customIcon}
-                iconClassName="h-16 w-16"
-                wrapperClassName="h-28 w-28"
-              />
+            <img src={tileVisual.customImage} alt={name} className="h-44 w-full object-cover" />
+          ) : tileVisual?.semanticIconTag ? (
+            <div className="flex h-44 w-full items-center justify-center bg-gradient-to-br from-slate-800/90 to-slate-900">
+              {renderIconFromTag(tileVisual.semanticIconTag, {
+                iconClassName: 'h-16 w-16',
+                wrapperClassName: 'h-28 w-28',
+              })}
             </div>
           ) : (
-            <div className="flex h-40 w-full items-center justify-center bg-slate-800/80 text-7xl">
+            <div className="flex h-44 w-full items-center justify-center bg-gradient-to-br from-slate-800/90 to-slate-900 text-7xl">
               <span aria-hidden>
                 {tileVisual?.customEmoji || getFoodEmoji(tileVisual?.name || name)}
               </span>
@@ -151,32 +137,26 @@ export default function FoodDetailModal({
           )}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <h2 className="text-xl font-bold leading-snug text-slate-50">{name}</h2>
-          <p className="mt-1 text-xs font-medium text-slate-400">
-            Porzione base: {defaultUnitWeight}g
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <h2 className="text-xl font-bold leading-snug tracking-tight text-slate-50">{name}</h2>
+          <p className="mt-1 text-xs font-medium text-slate-500">
+            Porzione base · <span className="font-mono tabular-nums text-slate-400">{defaultUnitWeight}g</span>
           </p>
 
           {isInCart ? (
-            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/40 px-3 py-1 text-xs font-medium text-cyan-300">
-              <span aria-hidden>🛍️</span>
-              Hai {cartWeight}g nel pasto di oggi
+            <p className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/50 px-3 py-1 text-xs font-semibold text-cyan-300">
+              Nel pasto: <span className="font-mono tabular-nums">{cartWeight}g</span>
             </p>
           ) : null}
 
-          <p className="mt-3 text-xs text-slate-500">
-            Valori per {Math.round(roundedWeight)}g selezionati
+          <p className="mt-4 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+            Valori per {Math.round(selectedWeight)}g
           </p>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-2 grid grid-cols-2 gap-2">
             {MACRO_BOXES.map(({ id, label, accent, bg }) => (
-              <div
-                key={id}
-                className={`rounded-xl border px-3 py-2.5 ${bg}`}
-              >
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  {label}
-                </p>
+              <div key={id} className={`rounded-2xl border px-3 py-2.5 ${bg}`}>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
                 <p className={`mt-0.5 font-mono text-lg font-bold tabular-nums ${accent}`}>
                   {liveMacros[id]}
                   {id === 'kcal' ? '' : 'g'}
@@ -186,55 +166,40 @@ export default function FoodDetailModal({
           </div>
 
           <p className="mt-3 text-[10px] text-slate-600">
-            Base per 100g: {Math.round(per100.kcal)} kcal · P{per100.prot} · C{per100.carb} · F
-            {per100.fat}
+            Base 100g: {Math.round(per100.kcal)} kcal · P{per100.prot} · C{per100.carb} · F{per100.fat}
           </p>
         </div>
 
-        <div className="shrink-0 space-y-3 border-t border-slate-800 bg-slate-950/90 px-4 py-4">
-          <div className="flex items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => handleStep(-1)}
-              aria-label="Diminuisci peso"
-              className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-800/80 text-lg text-slate-200 transition-colors hover:border-slate-500 active:scale-95"
-            >
-              <Minus className="h-5 w-5" />
-            </button>
+        <div className="shrink-0 space-y-4 border-t border-slate-800/80 bg-slate-950/90 px-5 py-4">
+          {units.length > 0 ? (
+            <UnitChips
+              item={displayTile}
+              selectedUnit={selectedUnit}
+              onSelect={handleUnitSelect}
+            />
+          ) : null}
 
-            <div className="flex min-w-[7rem] flex-col items-center">
-              <input
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step="any"
-                value={weightFieldValue}
-                onFocus={handleWeightFocus}
-                onChange={handleWeightChange}
-                onBlur={handleWeightBlur}
-                aria-label={`Peso in grammi per ${name}`}
-                className="w-full border-b-2 border-cyan-500/50 bg-transparent py-1 text-center font-mono text-2xl font-bold tabular-nums text-slate-100 outline-none focus:border-cyan-400"
-              />
-              <span className="mt-0.5 text-xs text-slate-500">grammi</span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => handleStep(1)}
-              aria-label="Aumenta peso"
-              className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-800/80 text-lg text-slate-200 transition-colors hover:border-slate-500 active:scale-95"
-            >
-              <Plus className="h-5 w-5" />
-            </button>
-          </div>
+          <AmountStepper
+            inputRef={weightInputRef}
+            value={amount}
+            onChange={setAmount}
+            step={step}
+            unitLabel={unitLabel}
+            size="lg"
+            className="w-full"
+          />
 
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={roundedWeight <= 0}
-            className="w-full rounded-xl bg-cyan-500 px-4 py-3.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+            disabled={selectedWeight <= 0}
+            className={`w-full rounded-2xl px-4 py-3.5 text-sm font-bold transition-all duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500 ${
+              justConfirmed
+                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
+                : 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20 hover:bg-cyan-400'
+            }`}
           >
-            {isInCart ? 'Aggiorna Carrello' : 'Aggiungi al Pasto'}
+            {justConfirmed ? '✓ Aggiunto' : isInCart ? 'Aggiorna pasto' : 'Aggiungi al pasto'}
           </button>
         </div>
       </div>

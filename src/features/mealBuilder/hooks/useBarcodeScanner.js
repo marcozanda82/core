@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getBarcodeNutritionOverride } from '../../../barcodeFoodOverrides';
 import { enrichDbRowWithFoodUnits } from '../../../foodUnits';
+import { calculateAutoIconTag } from '../../../utils/iconEngine';
+import { triggerSelectionHaptic } from '../utils/hapticFeedback';
 import {
   BARCODE_NO_MATCH_MESSAGE,
   fetchOpenFoodFactsByBarcode,
@@ -66,6 +68,7 @@ export default function useBarcodeScanner({ personalDb, onAcquireExternalFood, o
       );
 
       let entryPer100 = existingDbKey ? { ...(personalDb[existingDbKey] || {}) } : null;
+      let generatedIconTag = null;
 
       if (!entryPer100) {
         const localOv = getBarcodeNutritionOverride(code);
@@ -82,6 +85,7 @@ export default function useBarcodeScanner({ personalDb, onAcquireExternalFood, o
           entryPer100 = await fetchOpenFoodFactsByBarcode(code);
           if (entryPer100) {
             entryPer100 = applyLocalOverride({ ...entryPer100, barcode: code });
+            generatedIconTag = calculateAutoIconTag(entryPer100.desc, '');
           }
         }
       }
@@ -112,7 +116,12 @@ export default function useBarcodeScanner({ personalDb, onAcquireExternalFood, o
       let row = { ...entryPer100, desc: name, barcode: code };
 
       if (typeof onAcquireExternalFood === 'function') {
-        const saved = await onAcquireExternalFood({ ...row, desc: name, barcode: code });
+        const saved = await onAcquireExternalFood({
+          ...row,
+          desc: name,
+          barcode: code,
+          ...(generatedIconTag ? { iconTag: generatedIconTag } : {}),
+        });
         if (saved?.key && saved?.row) {
           dbKey = saved.key;
           row = saved.row;
@@ -149,6 +158,7 @@ export default function useBarcodeScanner({ personalDb, onAcquireExternalFood, o
       try {
         const food = await resolveBarcodeToFood(barcode);
         setError('');
+        triggerSelectionHaptic(18);
         onFoodResolved?.(food);
       } catch (err) {
         const msg = err?.message || BARCODE_NO_MATCH_MESSAGE;

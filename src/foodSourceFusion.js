@@ -1,5 +1,4 @@
 import { searchFoodsDetailed } from './foodSearch.js';
-import { searchUSDAFoods } from './usdaFoodApi.js';
 
 const SOURCE_BOOST = { CREA: 20, USDA: 5 };
 
@@ -18,6 +17,7 @@ export function normalizeFood(food, source) {
   const protein = food?.protein ?? food?.prot;
   const carbs = food?.carbs ?? food?.carb;
   const fat = food?.fat;
+  const iconTag = food?.iconTag ?? food?.row?.iconTag ?? null;
 
   return {
     id,
@@ -27,9 +27,12 @@ export function normalizeFood(food, source) {
     carbs: carbs != null ? Number(carbs) : undefined,
     fat: fat != null ? Number(fat) : undefined,
     source,
+    iconTag,
     gramsPerUnit: food?.gramsPerUnit != null ? Number(food.gramsPerUnit) : undefined,
     defaultUnit: food?.defaultUnit,
-    row: food?.row || null,
+    row: food?.row
+      ? { ...food.row, ...(iconTag ? { iconTag } : {}) }
+      : null,
   };
 }
 
@@ -66,43 +69,48 @@ function finalScore(item) {
 }
 
 function fusionItemToUi(item) {
-  const row = item.row || {
-    id: item.id,
-    desc: item.name,
-    name: item.name,
-    kcal: item.kcalPer100g,
-    prot: item.protein,
-    carb: item.carbs,
-    fat: item.fat,
-    gramsPerUnit: item.gramsPerUnit ?? 100,
-    defaultUnit: item.defaultUnit || 'g',
-    foodSource: item.source,
-  };
+  const iconTag = item.iconTag ?? item.row?.iconTag ?? null;
+  const row = item.row
+    ? { ...item.row, ...(iconTag ? { iconTag } : {}) }
+    : {
+      id: item.id,
+      desc: item.name,
+      name: item.name,
+      kcal: item.kcalPer100g,
+      prot: item.protein,
+      carb: item.carbs,
+      fat: item.fat,
+      gramsPerUnit: item.gramsPerUnit ?? 100,
+      defaultUnit: item.defaultUnit || 'g',
+      foodSource: item.source,
+      ...(iconTag ? { iconTag } : {}),
+    };
   return {
     id: item.id,
     name: item.name,
     desc: row.desc || item.name,
     foodSource: item.source,
     sourceBadgeLabel: item.source === 'CREA' ? 'Consigliato' : 'Altro database',
+    iconTag,
     row,
   };
 }
 
-function buildCreaNormalizedFromDb(creaDb, query, options = {}) {
+function buildNormalizedFromDb(db, query, source, options = {}) {
   const q = String(query || '').trim();
   const includeUserHistory = options.includeUserHistory !== false;
-  const creaLimit = Number.isFinite(options.creaLimit) && options.creaLimit > 0
-    ? Math.floor(options.creaLimit)
+  const limit = Number.isFinite(options.limit) && options.limit > 0
+    ? Math.floor(options.limit)
     : 50;
 
-  const detailed = searchFoodsDetailed(creaDb, q, {
+  const detailed = searchFoodsDetailed(db, q, {
     includeUserHistory,
-    limit: creaLimit,
+    limit,
     mode: 'search',
   });
 
   return detailed.map((hit) => {
-    const row = creaDb?.[hit.id] || null;
+    const row = db?.[hit.id] || null;
     const food = row
       ? {
         id: hit.id,
@@ -111,7 +119,8 @@ function buildCreaNormalizedFromDb(creaDb, query, options = {}) {
         kcal: row.kcal,
         prot: row.prot,
         carb: row.carb,
-        fat: row.fat,
+        fat: row.fat ?? row.fatTotal ?? row.fatTot,
+        iconTag: row.iconTag || null,
         gramsPerUnit: row.gramsPerUnit,
         defaultUnit: row.defaultUnit,
         row,
@@ -120,17 +129,42 @@ function buildCreaNormalizedFromDb(creaDb, query, options = {}) {
         id: hit.id,
         name: hit.name,
         desc: hit.name,
-        row: { id: hit.id, desc: hit.name, name: hit.name },
+        row: { id: hit.id, desc: hit.name, name: hit.name, foodSource: source },
       };
-    const n = normalizeFood(food, 'CREA');
+    const n = normalizeFood(food, source);
     return {
       ...n,
-      source: 'CREA',
+      source,
+      iconTag: row?.iconTag || n.iconTag || null,
       textScore: hit.textScore,
       matchScore: hit.matchScore,
       recencyScore: hit.recencyScore,
       frequencyScore: hit.frequencyScore,
     };
+  });
+}
+
+function buildCreaNormalizedFromDb(creaDb, query, options = {}) {
+  const creaLimit = Number.isFinite(options.creaLimit) && options.creaLimit > 0
+    ? Math.floor(options.creaLimit)
+    : 30;
+
+  return buildNormalizedFromDb(creaDb, query, 'CREA', {
+    includeUserHistory: options.includeUserHistory !== false,
+    limit: creaLimit,
+  });
+}
+
+function buildUsdaNormalizedFromDb(usdaDb, query, options = {}) {
+  const usdaLimit = Number.isFinite(options.usdaLimit) && options.usdaLimit > 0
+    ? Math.floor(options.usdaLimit)
+    : Number.isFinite(options.usdaPageSize) && options.usdaPageSize > 0
+      ? Math.floor(options.usdaPageSize)
+      : 30;
+
+  return buildNormalizedFromDb(usdaDb, query, 'USDA', {
+    includeUserHistory: false,
+    limit: usdaLimit,
   });
 }
 
@@ -166,37 +200,42 @@ export function getCreaFusionPayload(creaDb, query, options = {}) {
 }
 
 /**
- * Unisce USDA a un payload CREA già calcolato (nessuna seconda ricerca CREA).
+ * Solo USDA (sync): catalogo locale `kentu_master_db.json`.
+ * @returns {{ usdaNormalized: object[], uiItems: object[] }}
  */
-export async function fuseUsdaIntoCrea(creaNormalized, query, options = {}) {
-  const minUsda = Number(options.minQueryLengthForUsda) >= 0
-    ? Math.floor(options.minQueryLengthForUsda)
-    : 3;
+export function getUsdaFusionPayload(usdaDb, query, options = {}) {
+  const usdaNormalized = buildUsdaNormalizedFromDb(usdaDb, query, options);
+  const sorted = [...usdaNormalized].sort((a, b) => {
+    const fa = finalScore(a);
+    const fb = finalScore(b);
+    if (fb !== fa) return fb - fa;
+    return String(a.name).localeCompare(String(b.name), 'it');
+  });
+
+  return {
+    usdaNormalized,
+    uiItems: sorted.map(fusionItemToUi),
+  };
+}
+
+/**
+ * Unisce USDA locale a un payload CREA già calcolato.
+ */
+export function fuseUsdaIntoCrea(creaNormalized, query, options = {}) {
   const q = String(query || '').trim();
   if (!Array.isArray(creaNormalized)) creaNormalized = [];
 
-  let usdaHits = [];
-  if (q.length >= minUsda) {
-    usdaHits = await searchUSDAFoods(q, {
-      signal: options.signal,
-      pageSize: options.usdaPageSize ?? 10,
-    });
-  } else {
-    // eslint-disable-next-line no-console
-    console.log('[USDA] results:', 0);
+  let usdaNormalized = [];
+  const usdaDb = options.usdaDb;
+  if (
+    usdaDb != null
+    && typeof usdaDb === 'object'
+    && !Array.isArray(usdaDb)
+    && Object.keys(usdaDb).length > 0
+    && q.length > 0
+  ) {
+    usdaNormalized = getUsdaFusionPayload(usdaDb, q, options).usdaNormalized;
   }
-
-  const usdaNormalized = usdaHits.map((h) => {
-    const n = normalizeFood({ ...h.row, id: h.id, name: h.name, row: h.row }, 'USDA');
-    return {
-      ...n,
-      source: 'USDA',
-      textScore: 0.35,
-      matchScore: 0.35,
-      recencyScore: 0,
-      frequencyScore: 0,
-    };
-  });
 
   const merged = mergeResults(creaNormalized, usdaNormalized);
 
@@ -233,9 +272,9 @@ export async function fuseUsdaIntoCrea(creaNormalized, query, options = {}) {
 }
 
 /**
- * Carica CREA (sync) + USDA (async). USDA fallito → solo CREA.
+ * Carica CREA + USDA locali (sync).
  */
-export async function fuseCreaUsdaSearch(creaDb, query, options = {}) {
+export function fuseCreaUsdaSearch(creaDb, query, options = {}) {
   const { creaNormalized } = getCreaFusionPayload(creaDb, query, options);
   return fuseUsdaIntoCrea(creaNormalized, String(query || '').trim(), options);
 }

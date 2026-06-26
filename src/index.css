@@ -29,6 +29,68 @@
   animation: pop 0.25s ease-out;
 }
 
+/* KentuOS Vetrina — micro-interazioni logging alimenti */
+@keyframes vetrina-tile-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes vetrina-stepper-expand {
+  from {
+    opacity: 0;
+    transform: scaleY(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes vetrina-sheet-enter {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vetrina-cart-row-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.vetrina-tile-enter {
+  animation: vetrina-tile-enter 0.22s ease-out both;
+}
+
+.vetrina-stepper-expand {
+  animation: vetrina-stepper-expand 0.18s ease-out both;
+  transform-origin: bottom center;
+}
+
+.vetrina-sheet-enter {
+  animation: vetrina-sheet-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.vetrina-cart-row-enter {
+  animation: vetrina-cart-row-enter 0.2s ease-out both;
+}
+
 * {
   box-sizing: border-box;
 }

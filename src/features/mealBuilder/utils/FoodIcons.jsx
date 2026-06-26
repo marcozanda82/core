@@ -46,6 +46,45 @@ export function getFoodIconEntry(iconId) {
   return FOOD_ICON_BY_ID[String(iconId)] ?? null;
 }
 
+/** Alias dei tag semantici del master DB verso gli id della libreria UI. */
+export const ICON_TAG_ALIASES = {
+  wheat: 'bread',
+  milk: 'dairy',
+  beef: 'meat',
+  pork: 'meat',
+  sausage: 'meat',
+  poultry: 'poultry',
+  chicken: 'poultry',
+  fish: 'fish',
+  cheese: 'cheese',
+  egg: 'eggs',
+  eggs: 'eggs',
+  cookie: 'sweets',
+  cookies: 'sweets',
+  croissant: 'bread',
+  package: 'bowl',
+  fruit: 'fruit',
+  vegetable: 'vegetables',
+  vegetables: 'vegetables',
+  pasta: 'pasta',
+  coffee: 'coffee',
+  drink: 'drinks',
+  drinks: 'drinks',
+  water: 'drinks',
+  oil: 'oil',
+  sweet: 'sweets',
+  dessert: 'sweets',
+};
+
+export function resolveIconTagId(tag) {
+  const raw = String(tag || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (getFoodIconEntry(raw)) return raw;
+  const aliased = ICON_TAG_ALIASES[raw];
+  if (aliased && getFoodIconEntry(aliased)) return aliased;
+  return null;
+}
+
 export function FoodIconVisual({
   iconId,
   iconClassName = 'h-7 w-7',

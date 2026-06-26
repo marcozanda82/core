@@ -10,15 +10,23 @@ function normalizeSearchText(value) {
 
 const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
 const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
-const RECENT_FOOD_MEDIUM_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 const SEARCH_SYNONYMS = {
   arrosto: ['cotto'],
   pollo: ['chicken'],
 };
-const MATCH_SCORE_WEIGHT = 0.5;
-const RECENCY_SCORE_WEIGHT = 0.3;
-const FREQUENCY_SCORE_WEIGHT = 0.2;
-const PREFIX_MATCH_BOOST = 0.3;
+
+/** Punteggi rigidi (0–100). Sotto MIN_MATCH_SCORE i risultati vengono scartati. */
+const SCORE_EXACT_PHRASE = 100;
+const SCORE_EXACT_WORD = 100;
+const SCORE_NAME_PREFIX = 98;
+const SCORE_WORD_PREFIX = 95;
+const SCORE_SUBSTRING = 50;
+const SCORE_FUZZY = 12;
+const MIN_MATCH_SCORE = SCORE_SUBSTRING;
+const FUZZY_MIN_QUERY_LENGTH = 5;
+const DEFAULT_SEARCH_LIMIT = 30;
+
+const HISTORY_SCORE_WEIGHT = 0.08;
 
 function loadRecentFoodEntries() {
   if (typeof localStorage === 'undefined') return [];
@@ -68,41 +76,26 @@ function getFrequencyScore(count, maxCount) {
   return Math.max(0.2, Math.min(1, rawScore));
 }
 
-function getSmartScore(entry, now, maxCount) {
-  return (
-    (getRecencyScore(entry?.lastUsed, now) * RECENCY_SCORE_WEIGHT) +
-    (getFrequencyScore(entry?.count, maxCount) * FREQUENCY_SCORE_WEIGHT)
-  );
-}
-
 function buildRecentFoodScoreMap() {
   const now = Date.now();
   const recentEntries = loadRecentFoodEntries();
   const scores = new Map();
-  const maxCount = recentEntries.reduce((max, entry) => (
-    Math.max(max, Math.max(1, Number(entry?.count) || 1))
-  ), 1);
+  const maxCount = recentEntries.reduce(
+    (max, entry) => Math.max(max, Math.max(1, Number(entry?.count) || 1)),
+    1,
+  );
 
   for (let i = 0; i < recentEntries.length; i += 1) {
     const entry = recentEntries[i];
     const recencyScore = getRecencyScore(entry.lastUsed, now);
     const frequencyScore = getFrequencyScore(entry.count, maxCount);
-    const weightedHistoryScore = getSmartScore(entry, now, maxCount);
+    const scorePayload = { recencyScore, frequencyScore };
 
     const idKey = String(entry.id || '').trim();
     const nameKey = normalizeSearchText(entry.name);
-    const scorePayload = {
-      recencyScore,
-      frequencyScore,
-      weightedHistoryScore,
-    };
 
-    if (idKey) {
-      scores.set(idKey, scorePayload);
-    }
-    if (nameKey) {
-      scores.set(nameKey, scorePayload);
-    }
+    if (idKey) scores.set(idKey, scorePayload);
+    if (nameKey) scores.set(nameKey, scorePayload);
   }
 
   return scores;
@@ -127,11 +120,7 @@ function levenshteinDistance(a, b) {
 
     for (let j = 1; j <= b.length; j += 1) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      current[j] = Math.min(
-        previous[j] + 1,
-        current[j - 1] + 1,
-        previous[j - 1] + cost
-      );
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
       if (current[j] < minInRow) minInRow = current[j];
     }
 
@@ -145,100 +134,138 @@ function levenshteinDistance(a, b) {
   return previous[b.length];
 }
 
-function scoreQueryWord(queryWord, itemWords) {
-  const expandedQueryWords = [queryWord, ...(SEARCH_SYNONYMS[queryWord] || [])];
-  let bestScore = 0;
-
-  for (let q = 0; q < expandedQueryWords.length; q += 1) {
-    const candidateQueryWord = expandedQueryWords[q];
-
-    for (let i = 0; i < itemWords.length; i += 1) {
-      const itemWord = itemWords[i];
-      if (itemWord === candidateQueryWord) return 3;
-      if (itemWord.includes(candidateQueryWord) || candidateQueryWord.includes(itemWord)) {
-        bestScore = Math.max(bestScore, 2);
-        continue;
-      }
-      if (levenshteinDistance(candidateQueryWord, itemWord) <= 1) {
-        bestScore = Math.max(bestScore, 1);
-      }
-    }
-  }
-
-  return bestScore;
-}
-
-function getTokenMatchSummary(queryWords, itemWords) {
-  let exactMatches = 0;
-  let fuzzyMatches = 0;
-  let partialMatches = 0;
-
-  for (let i = 0; i < queryWords.length; i += 1) {
-    const queryWord = queryWords[i];
-    const wordScore = scoreQueryWord(queryWord, itemWords);
-
-    if (wordScore === 3) {
-      exactMatches += 1;
-      continue;
-    }
-
-    if (wordScore === 2) {
-      partialMatches += 1;
-      continue;
-    }
-
-    if (wordScore === 1) {
-      fuzzyMatches += 1;
-      continue;
-    }
-  }
-
-  const matchedTokens = exactMatches + fuzzyMatches + partialMatches;
-  const allTokensMatch = matchedTokens === queryWords.length;
-  const exactPhraseMatch = itemWords.join(' ') === queryWords.join(' ');
-
-  return {
-    exactMatches,
-    fuzzyMatches,
-    partialMatches,
-    matchedTokens,
-    allTokensMatch,
-    exactPhraseMatch,
-  };
-}
-
-function getMatchScore(matchSummary, queryWords) {
-  const tokenCount = Math.max(1, queryWords.length);
-  if (matchSummary.exactPhraseMatch) return 1;
-  if (matchSummary.allTokensMatch) {
-    return Math.min(
-      0.98,
-      ((matchSummary.exactMatches * 1) + (matchSummary.partialMatches * 0.7) + (matchSummary.fuzzyMatches * 0.45)) / tokenCount
-    );
-  }
-  return Math.min(
-    0.79,
-    ((matchSummary.exactMatches * 1) + (matchSummary.partialMatches * 0.6) + (matchSummary.fuzzyMatches * 0.35)) / tokenCount
-  );
-}
-
-function isPrefixMatch(normalizedName, itemWords, normalizedQuery) {
-  if (!normalizedQuery) return false;
-  if (normalizedName.startsWith(normalizedQuery)) return true;
-  return itemWords.some((itemWord) => itemWord.startsWith(normalizedQuery));
+function expandQueryWords(queryWord) {
+  return [queryWord, ...(SEARCH_SYNONYMS[queryWord] || [])];
 }
 
 /**
- * Stessi criteri di `searchFoods`, con punteggi per fusion CREA + altre fonti.
+ * Punteggio massimo per una singola parola della query contro il nome normalizzato.
+ * Gerarchia: parola esatta / prefisso > sottostringa contigua > fuzzy (solo query lunghe).
+ */
+function scoreQueryWordStrict(queryWord, normalizedName, itemWords) {
+  const candidates = expandQueryWords(queryWord);
+  let best = 0;
+
+  for (let c = 0; c < candidates.length; c += 1) {
+    const qw = candidates[c];
+    if (!qw) continue;
+
+    for (let i = 0; i < itemWords.length; i += 1) {
+      const itemWord = itemWords[i];
+
+      if (itemWord === qw) {
+        best = Math.max(best, SCORE_EXACT_WORD);
+        continue;
+      }
+
+      if (itemWord.startsWith(qw)) {
+        best = Math.max(best, SCORE_WORD_PREFIX);
+        continue;
+      }
+
+      if (qw.length >= 3 && itemWord.includes(qw)) {
+        best = Math.max(best, SCORE_SUBSTRING);
+        continue;
+      }
+
+      if (qw.length > FUZZY_MIN_QUERY_LENGTH && levenshteinDistance(qw, itemWord) <= 1) {
+        best = Math.max(best, SCORE_FUZZY);
+      }
+    }
+
+    if (normalizedName === qw) {
+      best = Math.max(best, SCORE_EXACT_PHRASE);
+    } else if (normalizedName.startsWith(qw)) {
+      best = Math.max(best, SCORE_NAME_PREFIX);
+    } else if (qw.length >= 3 && normalizedName.includes(qw)) {
+      best = Math.max(best, SCORE_SUBSTRING);
+    }
+  }
+
+  return best;
+}
+
+/**
+ * @returns {{ strictScore: number, matchTier: string, allTokensMatch: boolean }}
+ */
+function calculateStrictMatchScore(normalizedName, itemWords, queryWords) {
+  if (queryWords.length === 0) {
+    return { strictScore: 0, matchTier: 'none', allTokensMatch: false };
+  }
+
+  if (normalizedName === queryWords.join(' ')) {
+    return { strictScore: SCORE_EXACT_PHRASE, matchTier: 'exact_phrase', allTokensMatch: true };
+  }
+
+  if (normalizedName.startsWith(queryWords.join(' '))) {
+    return { strictScore: SCORE_NAME_PREFIX, matchTier: 'name_prefix', allTokensMatch: true };
+  }
+
+  let minWordScore = SCORE_EXACT_PHRASE;
+  let maxWordScore = 0;
+  let matchedCount = 0;
+  let bestTier = 'none';
+
+  const tierRank = {
+    exact_phrase: 5,
+    exact_word: 4,
+    name_prefix: 4,
+    word_prefix: 3,
+    substring: 2,
+    fuzzy: 1,
+    none: 0,
+  };
+
+  const tierFromScore = (score) => {
+    if (score >= SCORE_EXACT_WORD) return 'exact_word';
+    if (score >= SCORE_WORD_PREFIX) return 'word_prefix';
+    if (score >= SCORE_SUBSTRING) return 'substring';
+    if (score >= SCORE_FUZZY) return 'fuzzy';
+    return 'none';
+  };
+
+  for (let i = 0; i < queryWords.length; i += 1) {
+    const wordScore = scoreQueryWordStrict(queryWords[i], normalizedName, itemWords);
+    if (wordScore <= 0) {
+      return { strictScore: 0, matchTier: 'none', allTokensMatch: false };
+    }
+
+    matchedCount += 1;
+    minWordScore = Math.min(minWordScore, wordScore);
+    maxWordScore = Math.max(maxWordScore, wordScore);
+
+    const tier = tierFromScore(wordScore);
+    if (tierRank[tier] > tierRank[bestTier]) {
+      bestTier = tier;
+    }
+  }
+
+  const allTokensMatch = matchedCount === queryWords.length;
+  const strictScore = Math.round(minWordScore * 0.7 + maxWordScore * 0.3);
+
+  return { strictScore, matchTier: bestTier, allTokensMatch };
+}
+
+function isAutocompletePrefix(normalizedName, itemWords, normalizedQuery) {
+  if (!normalizedQuery) return false;
+  if (normalizedName.startsWith(normalizedQuery)) return true;
+  return itemWords.some((word) => word.startsWith(normalizedQuery));
+}
+
+/**
+ * Ricerca rigorosa su catalogo locale — corrispondenze esatte e sottostringa contigua.
  */
 export function searchFoodsDetailed(foodDb, query, options = {}) {
   if (!foodDb || typeof foodDb !== 'object') return [];
 
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return [];
+
   const includeUserHistory = options.includeUserHistory !== false;
   const mode = options.mode || 'search';
-  const limit = Number.isFinite(options.limit) && options.limit > 0 ? Math.floor(options.limit) : 50;
+  const limit = Number.isFinite(options.limit) && options.limit > 0
+    ? Math.floor(options.limit)
+    : DEFAULT_SEARCH_LIMIT;
 
   const queryWords = normalizedQuery.split(' ').filter(Boolean);
   if (queryWords.length === 0) return [];
@@ -257,46 +284,62 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
 
     const itemWords = normalizedName.split(' ').filter(Boolean);
     if (itemWords.length === 0) continue;
-    const prefixMatch = isPrefixMatch(normalizedName, itemWords, normalizedQuery);
 
-    if (mode === 'autocomplete' && !prefixMatch) continue;
-
-    const matchSummary = getTokenMatchSummary(queryWords, itemWords);
-    if (matchSummary.matchedTokens === 0 && !prefixMatch) continue;
-
-    const matchScore = getMatchScore(matchSummary, queryWords);
-    const historyScores = includeUserHistory ? (
-      recentFoodScores.get(String(id).trim()) || recentFoodScores.get(normalizedName) || null
-    ) : null;
-    const recencyScore = historyScores?.recencyScore ?? 0;
-    const frequencyScore = historyScores?.frequencyScore ?? 0;
-    let score = (matchScore * MATCH_SCORE_WEIGHT) + (
-      includeUserHistory
-        ? ((recencyScore * RECENCY_SCORE_WEIGHT) + (frequencyScore * FREQUENCY_SCORE_WEIGHT))
-        : 0
-    );
-    if (prefixMatch) {
-      score = Math.min(1.3, score + PREFIX_MATCH_BOOST);
+    if (mode === 'autocomplete' && !isAutocompletePrefix(normalizedName, itemWords, normalizedQuery)) {
+      continue;
     }
 
-    results.push({ id, name, matchScore, recencyScore, frequencyScore, score, matchSummary, prefixMatch });
+    const { strictScore, matchTier, allTokensMatch } = calculateStrictMatchScore(
+      normalizedName,
+      itemWords,
+      queryWords,
+    );
+
+    if (strictScore < MIN_MATCH_SCORE) continue;
+
+    const historyScores = includeUserHistory
+      ? recentFoodScores.get(String(id).trim()) || recentFoodScores.get(normalizedName) || null
+      : null;
+    const recencyScore = historyScores?.recencyScore ?? 0;
+    const frequencyScore = historyScores?.frequencyScore ?? 0;
+    const historyBoost = includeUserHistory
+      ? (recencyScore * 0.6 + frequencyScore * 0.4) * 100 * HISTORY_SCORE_WEIGHT
+      : 0;
+
+    const score = strictScore + historyBoost;
+    const matchScore = strictScore / 100;
+
+    results.push({
+      id,
+      name,
+      matchScore,
+      recencyScore,
+      frequencyScore,
+      score,
+      strictScore,
+      matchTier,
+      allTokensMatch,
+    });
   }
 
   results.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
-    if (b.prefixMatch !== a.prefixMatch) return Number(b.prefixMatch) - Number(a.prefixMatch);
-    if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
-    return b.matchSummary.matchedTokens - a.matchSummary.matchedTokens;
+    if (b.strictScore !== a.strictScore) return b.strictScore - a.strictScore;
+    if (b.allTokensMatch !== a.allTokensMatch) return Number(b.allTokensMatch) - Number(a.allTokensMatch);
+    return a.name.localeCompare(b.name, 'it');
   });
 
-  return results.slice(0, limit).map(({ id, name, matchScore, recencyScore, frequencyScore, score }) => ({
-    id,
-    name,
-    matchScore,
-    recencyScore,
-    frequencyScore,
-    textScore: score,
-  }));
+  return results.slice(0, limit).map(
+    ({ id, name, matchScore, recencyScore, frequencyScore, score, strictScore }) => ({
+      id,
+      name,
+      matchScore,
+      recencyScore,
+      frequencyScore,
+      textScore: score / 100,
+      strictScore,
+    }),
+  );
 }
 
 export function searchFoods(foodDb, query, options = {}) {

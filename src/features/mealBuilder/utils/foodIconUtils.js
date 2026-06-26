@@ -46,27 +46,38 @@ export function getFoodEmoji(foodName) {
   return FALLBACK_EMOJI;
 }
 
+function pickVisualField(sources, key) {
+  for (let i = 0; i < sources.length; i += 1) {
+    const value = sources[i]?.[key];
+    if (value != null && String(value).trim() !== '') {
+      return String(value).trim();
+    }
+  }
+  return null;
+}
+
 export function resolveFoodVisual(food, personalDb) {
   const name = String(food?.desc || food?.name || food?.label || 'Alimento').trim();
   const dbKey = food?.foodDbKey ?? food?.key ?? food?.id;
   const dbEntry = dbKey && personalDb?.[dbKey] ? personalDb[dbKey] : null;
-  const customImage =
-    food?.customImage
-    || food?.row?.customImage
-    || dbEntry?.customImage
-    || null;
-  const customEmoji =
-    food?.customEmoji
-    || food?.row?.customEmoji
-    || dbEntry?.customEmoji
-    || null;
-  const customIcon =
-    food?.customIcon
-    || food?.row?.customIcon
-    || dbEntry?.customIcon
-    || null;
+  const sources = [food, food?.row, dbEntry].filter(Boolean);
 
-  return { name, customImage, customEmoji, customIcon };
+  const customImage = pickVisualField(sources, 'customImage');
+  const customEmoji = pickVisualField(sources, 'customEmoji');
+  const iconOverride = pickVisualField(sources, 'iconOverride');
+  const iconTag = pickVisualField(sources, 'iconTag');
+  const customIcon = pickVisualField(sources, 'customIcon');
+  const semanticIconTag = iconOverride || iconTag || customIcon || null;
+
+  return {
+    name,
+    customImage,
+    customEmoji,
+    customIcon,
+    iconOverride,
+    iconTag,
+    semanticIconTag,
+  };
 }
 
 export function formatMealSlotLabel(slot) {

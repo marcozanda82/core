@@ -1,6 +1,6 @@
 import React from 'react';
 import { getFoodEmoji, resolveFoodVisual } from '../utils/foodIconUtils';
-
+import FoodVisualMedia from './FoodVisualMedia';
 const Z_INDEX = ['z-[3]', 'z-[2]', 'z-[1]'];
 
 export default function ComboFeaturedThumbnail({ items = [], personalDb, className = '' }) {
@@ -36,6 +36,18 @@ export default function ComboFeaturedThumbnail({ items = [], personalDb, classNa
                 alt={visual.name}
                 className="h-full w-full object-cover"
               />
+            ) : visual.semanticIconTag ? (
+              <div className="flex h-full w-full items-center justify-center">
+                <FoodVisualMedia
+                  visual={visual}
+                  name={visual.name}
+                  compact
+                  iconClassName="h-4 w-4"
+                  wrapperClassName="h-full w-full"
+                  className="rounded-full"
+                  emojiClassName="text-sm"
+                />
+              </div>
             ) : (
               <span className="text-sm leading-none" aria-hidden>
                 {visual.customEmoji || getFoodEmoji(visual.name)}
