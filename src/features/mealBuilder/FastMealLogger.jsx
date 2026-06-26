@@ -17,6 +17,7 @@ import FoodDetailModal from './components/FoodDetailModal';
 import QtyBadge from './components/QtyBadge';
 import QuickFoodTile from './components/QuickFoodTile';
 import LiveMacroHud from './components/LiveMacroHud';
+import TodayMealsTimeline from './components/TodayMealsTimeline';
 import { formatCheckoutMealTitle, formatMiniCartMealLabel, getFoodEmoji, resolveFoodVisual } from './utils/foodIconUtils';
 import {
   findDraftItemForFood,
@@ -52,13 +53,20 @@ import useStableTimeSlot from './hooks/useStableTimeSlot';
 import { decimalToTimeStr } from '../../coreEngine';
 import {
   getCurrentTimeSlot,
+  mergePredictiveWithPersonalDb,
   recordDraftFoodsUsageStats,
   recordFoodUsageStats,
-  sortFoodsByTimeSlotUsage,
 } from './utils/timeSlotUtils';
 
 const QUICK_FOODS_LIMIT = 30;
 const SEARCH_DEFAULT_UNIT_WEIGHT = 100;
+
+const TIME_SLOT_LABELS = {
+  morning: 'mattina',
+  afternoon: 'pomeriggio',
+  evening: 'sera',
+  night: 'notte',
+};
 
 const MEAL_SLOTS = [
   { id: 'colazione', label: 'Colazione' },
@@ -80,6 +88,18 @@ function getCurrentTimeRoundedTo15Min() {
   return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
 }
 
+function getCurrentTimeHHmm() {
+  return new Date().toTimeString().slice(0, 5);
+}
+
+function inferMealSlotFromCurrentHour() {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour < 12) return 'colazione';
+  if (hour >= 12 && hour < 17) return 'pranzo';
+  if (hour >= 17 && hour < 22) return 'cena';
+  return 'snack';
+}
+
 function parseTimeStrToDecimal(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
@@ -97,6 +117,8 @@ function resolveInitialMealTime(initialMealTime, initialDraft, mealSlot) {
     const t = initialDraft[0]?.mealTime;
     if (typeof t === 'number' && !Number.isNaN(t)) return t;
   }
+  const fromClock = parseTimeStrToDecimal(getCurrentTimeHHmm());
+  if (fromClock != null) return fromClock;
   return MEAL_TIME_BY_SLOT[mealSlot] ?? getCurrentTimeRoundedTo15Min();
 }
 
@@ -225,11 +247,12 @@ function resolveInitialMealSlot(initialDraft, editingMealId) {
     if (mt) return String(mt).split('_')[0];
   }
   if (editingMealId) return String(editingMealId).split('_')[0];
-  return 'pranzo';
+  return inferMealSlotFromCurrentHour();
 }
 
 function FastMealLoggerContent({
   fullHistory,
+  todayLog = null,
   onClose,
   onSave,
   personalDb,
@@ -474,8 +497,10 @@ function FastMealLoggerContent({
   const stableTimeSlot = useStableTimeSlot();
   const quickFoods = useMemo(
     () =>
-      sortFoodsByTimeSlotUsage(predictiveBlocks, personalDb, stableTimeSlot).slice(
-        0,
+      mergePredictiveWithPersonalDb(
+        predictiveBlocks,
+        personalDb,
+        stableTimeSlot,
         QUICK_FOODS_LIMIT,
       ),
     [predictiveBlocks, personalDb, stableTimeSlot],
@@ -1040,7 +1065,8 @@ function FastMealLoggerContent({
   };
 
   return (
-    <div className="relative mx-auto flex h-full min-h-0 w-full max-w-lg flex-col overflow-hidden bg-[#050a12] text-slate-100">
+    <div className="relative mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col overflow-hidden bg-[#050a12] text-slate-100 md:flex-row">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:max-w-lg">
       <header className="shrink-0 flex min-w-0 items-center justify-between px-4 pb-2 pt-3">
         <img
           src="/nuovo%20logo%20trasparente2.png"
@@ -1097,6 +1123,15 @@ function FastMealLoggerContent({
                 : 'DB personale · Ricette · CREA · USDA'}
             </p>
           </div>
+
+          {!isVetrinaSearching ? (
+            <TodayMealsTimeline
+              fullHistory={fullHistory}
+              todayLog={todayLog}
+              className="mb-1 md:hidden"
+              layout="inline"
+            />
+          ) : null}
 
           {!isVetrinaSearching ? (
             <FrequentMealBanner
@@ -1224,10 +1259,10 @@ function FastMealLoggerContent({
             </div>
           ) : activeVetrinaTab === 'foods' ? (
             <div className="min-w-0">
-              <h2 className="mb-1 truncate text-sm font-semibold text-slate-200">Alimenti Rapidi</h2>
+              <h2 className="mb-1 truncate text-sm font-semibold text-slate-200">Suggeriti</h2>
               <p className="mb-3 text-xs text-slate-500">
-                Più recenti per slot · {quickFoods.length}{' '}
-                {quickFoods.length === 1 ? 'blocco' : 'blocchi'}
+                Fascia {TIME_SLOT_LABELS[stableTimeSlot] || stableTimeSlot} · {quickFoods.length}{' '}
+                {quickFoods.length === 1 ? 'alimento' : 'alimenti'}
               </p>
 
               {quickFoods.length === 0 ? (
@@ -1590,12 +1625,28 @@ function FastMealLoggerContent({
           removeOneUnitFromDraft(comboPayload, unitWeight);
         }}
       />
+      </div>
+
+      <aside
+        className="hidden min-h-0 shrink-0 flex-col overflow-hidden border-l border-slate-800/80 bg-[#070d18] md:flex md:w-72 lg:w-80"
+        aria-label="Timeline pasti di oggi"
+      >
+        {!isVetrinaSearching ? (
+          <TodayMealsTimeline
+            fullHistory={fullHistory}
+            todayLog={todayLog}
+            className="h-full min-h-0 overflow-y-auto"
+            layout="sidebar"
+          />
+        ) : null}
+      </aside>
     </div>
   );
 }
 
 export default function FastMealLogger({
   fullHistory,
+  todayLog = null,
   onClose,
   onSave,
   personalDb,
@@ -1614,6 +1665,24 @@ export default function FastMealLogger({
   const { unifiedDb: loadedCreaDb, usdaDb: loadedUsdaDb } = useFoodDb();
   const resolvedCreaDb = creaDb ?? loadedCreaDb;
   const resolvedUsdaDb = usdaDbProp ?? loadedUsdaDb;
+  const composerInitialMealTime = useMemo(() => {
+    if (typeof initialMealTime === 'number' && !Number.isNaN(initialMealTime)) {
+      return initialMealTime;
+    }
+    if (Array.isArray(initialDraft) && initialDraft.length > 0) {
+      const t = initialDraft[0]?.mealTime;
+      if (typeof t === 'number' && !Number.isNaN(t)) return t;
+    }
+    const fromClock = parseTimeStrToDecimal(getCurrentTimeHHmm());
+    return fromClock ?? getCurrentTimeRoundedTo15Min();
+  }, [initialMealTime, initialDraft]);
+  const composerInitialMealType =
+    initialMealSlot
+    || (Array.isArray(initialDraft) && initialDraft[0]?.mealType
+      ? String(initialDraft[0].mealType).split('_')[0]
+      : null)
+    || (editingMealId ? String(editingMealId).split('_')[0] : null)
+    || inferMealSlotFromCurrentHour();
 
   return (
     <div
@@ -1622,10 +1691,14 @@ export default function FastMealLogger({
       aria-modal="true"
       aria-label="Log rapido pasti"
     >
-      <MealComposerProvider initialMealType="pranzo" initialMealTime={13.5}>
+      <MealComposerProvider
+        initialMealType={composerInitialMealType}
+        initialMealTime={composerInitialMealTime}
+      >
         <div className="flex min-h-0 flex-1 justify-center overflow-hidden">
         <FastMealLoggerContent
           fullHistory={fullHistory}
+          todayLog={todayLog}
           onClose={onClose}
           onSave={onSave}
           personalDb={personalDb}

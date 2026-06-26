@@ -10,13 +10,13 @@ export const DEFAULT_USAGE_STATS = {
 
 /**
  * Fascia oraria corrente per raccomandazioni e usage stats.
- * morning: 05–11 · afternoon: 12–17 · evening: 18–22 · night: 23–04
+ * morning: 06–12 · afternoon: 12–17 · evening: 17–22 · night: 22–06
  */
 export function getCurrentTimeSlot(date = new Date()) {
   const hour = date.getHours();
-  if (hour >= 5 && hour <= 11) return 'morning';
-  if (hour >= 12 && hour <= 17) return 'afternoon';
-  if (hour >= 18 && hour <= 22) return 'evening';
+  if (hour >= 6 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';
+  if (hour >= 17 && hour < 22) return 'evening';
   return 'night';
 }
 
@@ -113,4 +113,65 @@ export function withDefaultUsageStats(entry) {
     ...entry,
     usageStats: normalizeUsageStats(entry.usageStats),
   };
+}
+
+/**
+ * Tile Vetrina da voci del DB personale (esclusi ricette), per ranking predittivo.
+ */
+export function buildPersonalDbSuggestTiles(personalDb) {
+  if (!personalDb || typeof personalDb !== 'object') return [];
+
+  return Object.entries(personalDb)
+    .filter(([key, entry]) => {
+      if (!entry || typeof entry !== 'object') return false;
+      if (entry.isRecipe || entry.type === 'recipe') return false;
+      if (Array.isArray(entry.ingredients) && entry.ingredients.length > 0) return false;
+      const desc = String(entry.desc || entry.name || '').trim();
+      return Boolean(desc) && Boolean(key);
+    })
+    .map(([key, entry]) => {
+      const desc = String(entry.desc || entry.name).trim();
+      const defaultWeight = Math.max(1, Number(entry.defaultUnitWeight) || 100);
+      const kcalPer100 = Number(entry.kcal ?? entry.cal) || 0;
+      const ratio = defaultWeight / 100;
+
+      return {
+        key: `db:${key}`,
+        foodDbKey: key,
+        desc,
+        type: 'food',
+        qta: defaultWeight,
+        weight: defaultWeight,
+        kcal: Math.round(kcalPer100 * ratio),
+        cal: Math.round(kcalPer100 * ratio),
+        prot: Math.round((Number(entry.prot) || 0) * ratio * 10) / 10,
+        carb: Math.round((Number(entry.carb) || 0) * ratio * 10) / 10,
+        fat: Math.round((Number(entry.fatTotal ?? entry.fat) || 0) * ratio * 10) / 10,
+        fatTotal: Math.round((Number(entry.fatTotal ?? entry.fat) || 0) * ratio * 10) / 10,
+        label: desc,
+        row: entry,
+        lastUsed: Number(entry.usageStats?.lastUsed) || 0,
+        timestamp: Number(entry.usageStats?.lastUsed) || 0,
+      };
+    });
+}
+
+export function mergePredictiveWithPersonalDb(predictiveBlocks, personalDb, timeSlot, limit = 30) {
+  const personalTiles = buildPersonalDbSuggestTiles(personalDb);
+  const seen = new Set();
+
+  predictiveBlocks.forEach((block) => {
+    const id = String(block.foodDbKey || block.key || '').trim();
+    if (id) seen.add(id);
+  });
+
+  const merged = [...predictiveBlocks];
+  personalTiles.forEach((tile) => {
+    const id = String(tile.foodDbKey || tile.key || '').trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    merged.push(tile);
+  });
+
+  return sortFoodsByTimeSlotUsage(merged, personalDb, timeSlot).slice(0, limit);
 }

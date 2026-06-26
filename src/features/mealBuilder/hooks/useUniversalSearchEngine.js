@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { getCreaFusionPayload, getUsdaFusionPayload, isSimilar } from '../../../foodSourceFusion';
+import { getCreaFusionPayload, getUsdaFusionPayload } from '../../../foodSourceFusion';
 
 import { searchFoodsDetailed } from '../../../foodSearch';
 
@@ -303,67 +303,37 @@ export function searchPersonalDb(personalDb, query) {
 
 
 function isDuplicateOfPersonal(externalItem, personalResults) {
-
   const extName = normalizeSearchText(externalItem.name || externalItem.desc);
-
   const extBarcode = String(
-
     externalItem.barcode ?? externalItem.row?.barcode ?? '',
-
   ).replace(/\D/g, '');
 
-
-
   for (const personalItem of personalResults) {
-
     const personalName = normalizeSearchText(personalItem.desc || personalItem.name);
-
     const personalBarcode = String(
-
       personalItem.barcode ?? personalItem.row?.barcode ?? '',
-
     ).replace(/\D/g, '');
 
-
-
     if (extBarcode && personalBarcode && extBarcode === personalBarcode) {
-
       return true;
-
     }
 
-    if (extName && personalName) {
-
-      if (extName === personalName || isSimilar(extName, personalName)) {
-
-        return true;
-
-      }
-
+    if (extName && personalName && extName === personalName) {
+      return true;
     }
-
   }
 
-
-
   return false;
-
 }
 
 
 
 function isDuplicateInList(item, list) {
-
   const name = normalizeSearchText(item.name || item.desc);
-
   return list.some((existing) => {
-
     const existingName = normalizeSearchText(existing.name || existing.desc);
-
-    return existingName && name && isSimilar(existingName, name);
-
+    return existingName && name && existingName === name;
   });
-
 }
 
 

@@ -10194,6 +10194,7 @@ ${dbKeys || 'n/d'}`;
         <FastMealLogger
           key={editingMealId ?? pendingGhostMealId ?? 'new-meal'}
           fullHistory={fullHistory}
+          todayLog={activeLog}
           personalDb={foodDb}
           creaDb={csvFoodDb}
           getMealTargetsForSlot={getFastLoggerMealTargetsForSlot}

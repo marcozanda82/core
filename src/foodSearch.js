@@ -15,17 +15,12 @@ const SEARCH_SYNONYMS = {
   pollo: ['chicken'],
 };
 
-/** Punteggi rigidi (0–100). Sotto MIN_MATCH_SCORE i risultati vengono scartati. */
-const SCORE_EXACT_PHRASE = 100;
-const SCORE_EXACT_WORD = 100;
-const SCORE_NAME_PREFIX = 98;
-const SCORE_WORD_PREFIX = 95;
+/** Punteggi ranking (0–100). Sotto MIN_MATCH_SCORE → escluso. Fuzzy disabilitato. */
+const SCORE_EXACT_OR_PREFIX = 100;
+const SCORE_WORD_BOUNDARY = 75;
 const SCORE_SUBSTRING = 50;
-const SCORE_FUZZY = 12;
 const MIN_MATCH_SCORE = SCORE_SUBSTRING;
-const FUZZY_MIN_QUERY_LENGTH = 5;
 const DEFAULT_SEARCH_LIMIT = 30;
-
 const HISTORY_SCORE_WEIGHT = 0.08;
 
 function loadRecentFoodEntries() {
@@ -101,48 +96,24 @@ function buildRecentFoodScoreMap() {
   return scores;
 }
 
-function levenshteinDistance(a, b) {
-  if (a === b) return 0;
-  if (!a.length) return b.length;
-  if (!b.length) return a.length;
-  if (Math.abs(a.length - b.length) > 1) return 2;
-
-  const previous = new Array(b.length + 1);
-  const current = new Array(b.length + 1);
-
-  for (let j = 0; j <= b.length; j += 1) {
-    previous[j] = j;
-  }
-
-  for (let i = 1; i <= a.length; i += 1) {
-    current[0] = i;
-    let minInRow = current[0];
-
-    for (let j = 1; j <= b.length; j += 1) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
-      if (current[j] < minInRow) minInRow = current[j];
-    }
-
-    if (minInRow > 1) return 2;
-
-    for (let j = 0; j <= b.length; j += 1) {
-      previous[j] = current[j];
-    }
-  }
-
-  return previous[b.length];
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function expandQueryWords(queryWord) {
   return [queryWord, ...(SEARCH_SYNONYMS[queryWord] || [])];
 }
 
+function hasWordBoundaryMatch(normalizedText, queryWord) {
+  if (!queryWord || !normalizedText) return false;
+  const re = new RegExp(`\\b${escapeRegex(queryWord)}\\b`, 'i');
+  return re.test(normalizedText);
+}
+
 /**
- * Punteggio massimo per una singola parola della query contro il nome normalizzato.
- * Gerarchia: parola esatta / prefisso > sottostringa contigua > fuzzy (solo query lunghe).
+ * Score per una singola parola della query (testo già normalizzato lowercase).
  */
-function scoreQueryWordStrict(queryWord, normalizedName, itemWords) {
+function scoreQueryToken(normalizedName, itemWords, queryWord) {
   const candidates = expandQueryWords(queryWord);
   let best = 0;
 
@@ -150,34 +121,27 @@ function scoreQueryWordStrict(queryWord, normalizedName, itemWords) {
     const qw = candidates[c];
     if (!qw) continue;
 
-    for (let i = 0; i < itemWords.length; i += 1) {
-      const itemWord = itemWords[i];
-
-      if (itemWord === qw) {
-        best = Math.max(best, SCORE_EXACT_WORD);
-        continue;
-      }
-
-      if (itemWord.startsWith(qw)) {
-        best = Math.max(best, SCORE_WORD_PREFIX);
-        continue;
-      }
-
-      if (qw.length >= 3 && itemWord.includes(qw)) {
-        best = Math.max(best, SCORE_SUBSTRING);
-        continue;
-      }
-
-      if (qw.length > FUZZY_MIN_QUERY_LENGTH && levenshteinDistance(qw, itemWord) <= 1) {
-        best = Math.max(best, SCORE_FUZZY);
-      }
+    if (normalizedName === qw) {
+      best = Math.max(best, SCORE_EXACT_OR_PREFIX);
+      continue;
     }
 
-    if (normalizedName === qw) {
-      best = Math.max(best, SCORE_EXACT_PHRASE);
-    } else if (normalizedName.startsWith(qw)) {
-      best = Math.max(best, SCORE_NAME_PREFIX);
-    } else if (qw.length >= 3 && normalizedName.includes(qw)) {
+    if (normalizedName.startsWith(qw)) {
+      best = Math.max(best, SCORE_EXACT_OR_PREFIX);
+      continue;
+    }
+
+    if (itemWords.some((word) => word === qw || word.startsWith(qw))) {
+      best = Math.max(best, SCORE_EXACT_OR_PREFIX);
+      continue;
+    }
+
+    if (hasWordBoundaryMatch(normalizedName, qw)) {
+      best = Math.max(best, SCORE_WORD_BOUNDARY);
+      continue;
+    }
+
+    if (normalizedName.includes(qw)) {
       best = Math.max(best, SCORE_SUBSTRING);
     }
   }
@@ -188,62 +152,62 @@ function scoreQueryWordStrict(queryWord, normalizedName, itemWords) {
 /**
  * @returns {{ strictScore: number, matchTier: string, allTokensMatch: boolean }}
  */
-function calculateStrictMatchScore(normalizedName, itemWords, queryWords) {
+function calculateMatchScore(normalizedName, itemWords, queryWords) {
   if (queryWords.length === 0) {
     return { strictScore: 0, matchTier: 'none', allTokensMatch: false };
   }
 
-  if (normalizedName === queryWords.join(' ')) {
-    return { strictScore: SCORE_EXACT_PHRASE, matchTier: 'exact_phrase', allTokensMatch: true };
+  const fullQuery = queryWords.join(' ');
+
+  if (normalizedName === fullQuery || normalizedName.startsWith(fullQuery)) {
+    return { strictScore: SCORE_EXACT_OR_PREFIX, matchTier: 'exact', allTokensMatch: true };
   }
 
-  if (normalizedName.startsWith(queryWords.join(' '))) {
-    return { strictScore: SCORE_NAME_PREFIX, matchTier: 'name_prefix', allTokensMatch: true };
+  if (hasWordBoundaryMatch(normalizedName, fullQuery)) {
+    return { strictScore: SCORE_WORD_BOUNDARY, matchTier: 'word_boundary', allTokensMatch: true };
   }
 
-  let minWordScore = SCORE_EXACT_PHRASE;
-  let maxWordScore = 0;
-  let matchedCount = 0;
+  if (normalizedName.includes(fullQuery)) {
+    return { strictScore: SCORE_SUBSTRING, matchTier: 'substring', allTokensMatch: true };
+  }
+
+  if (queryWords.length === 1) {
+    const tokenScore = scoreQueryToken(normalizedName, itemWords, queryWords[0]);
+    if (tokenScore < MIN_MATCH_SCORE) {
+      return { strictScore: 0, matchTier: 'none', allTokensMatch: false };
+    }
+    const tier = tokenScore >= SCORE_EXACT_OR_PREFIX
+      ? 'exact'
+      : tokenScore >= SCORE_WORD_BOUNDARY
+        ? 'word_boundary'
+        : 'substring';
+    return { strictScore: tokenScore, matchTier: tier, allTokensMatch: true };
+  }
+
+  let minTokenScore = SCORE_EXACT_OR_PREFIX;
+  let maxTokenScore = 0;
   let bestTier = 'none';
-
-  const tierRank = {
-    exact_phrase: 5,
-    exact_word: 4,
-    name_prefix: 4,
-    word_prefix: 3,
-    substring: 2,
-    fuzzy: 1,
-    none: 0,
-  };
-
-  const tierFromScore = (score) => {
-    if (score >= SCORE_EXACT_WORD) return 'exact_word';
-    if (score >= SCORE_WORD_PREFIX) return 'word_prefix';
-    if (score >= SCORE_SUBSTRING) return 'substring';
-    if (score >= SCORE_FUZZY) return 'fuzzy';
-    return 'none';
-  };
+  const tierRank = { exact: 3, word_boundary: 2, substring: 1, none: 0 };
 
   for (let i = 0; i < queryWords.length; i += 1) {
-    const wordScore = scoreQueryWordStrict(queryWords[i], normalizedName, itemWords);
-    if (wordScore <= 0) {
+    const tokenScore = scoreQueryToken(normalizedName, itemWords, queryWords[i]);
+    if (tokenScore < MIN_MATCH_SCORE) {
       return { strictScore: 0, matchTier: 'none', allTokensMatch: false };
     }
 
-    matchedCount += 1;
-    minWordScore = Math.min(minWordScore, wordScore);
-    maxWordScore = Math.max(maxWordScore, wordScore);
+    minTokenScore = Math.min(minTokenScore, tokenScore);
+    maxTokenScore = Math.max(maxTokenScore, tokenScore);
 
-    const tier = tierFromScore(wordScore);
-    if (tierRank[tier] > tierRank[bestTier]) {
-      bestTier = tier;
-    }
+    const tier = tokenScore >= SCORE_EXACT_OR_PREFIX
+      ? 'exact'
+      : tokenScore >= SCORE_WORD_BOUNDARY
+        ? 'word_boundary'
+        : 'substring';
+    if (tierRank[tier] > tierRank[bestTier]) bestTier = tier;
   }
 
-  const allTokensMatch = matchedCount === queryWords.length;
-  const strictScore = Math.round(minWordScore * 0.7 + maxWordScore * 0.3);
-
-  return { strictScore, matchTier: bestTier, allTokensMatch };
+  const strictScore = Math.round(minTokenScore * 0.7 + maxTokenScore * 0.3);
+  return { strictScore, matchTier: bestTier, allTokensMatch: true };
 }
 
 function isAutocompletePrefix(normalizedName, itemWords, normalizedQuery) {
@@ -253,7 +217,7 @@ function isAutocompletePrefix(normalizedName, itemWords, normalizedQuery) {
 }
 
 /**
- * Ricerca rigorosa su catalogo locale — corrispondenze esatte e sottostringa contigua.
+ * Ricerca case-insensitive con substring match contiguo; fuzzy/sparse lettere disabilitato.
  */
 export function searchFoodsDetailed(foodDb, query, options = {}) {
   if (!foodDb || typeof foodDb !== 'object') return [];
@@ -289,7 +253,7 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       continue;
     }
 
-    const { strictScore, matchTier, allTokensMatch } = calculateStrictMatchScore(
+    const { strictScore, matchTier, allTokensMatch } = calculateMatchScore(
       normalizedName,
       itemWords,
       queryWords,
