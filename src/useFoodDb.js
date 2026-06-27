@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { loadKentuDatabases } from './foodLoader';
 
-const EMPTY_MASTER_DATABASES = {
-  unifiedDb: {},
-  usdaDb: {},
+const EMPTY_DBS = {
+  kentuItDb: {},
+  globalDb: {},
+  masterDb: {},
 };
 
 export function useFoodDb() {
-  const [masterDatabases, setMasterDatabases] = useState(EMPTY_MASTER_DATABASES);
+  const [kentuItDb, setKentuItDb] = useState(EMPTY_DBS.kentuItDb);
+  const [globalDb, setGlobalDb] = useState(EMPTY_DBS.globalDb);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -18,16 +20,18 @@ export function useFoodDb() {
       try {
         const data = await loadKentuDatabases();
         if (!cancelled) {
-          setMasterDatabases({
-            unifiedDb:
-              data?.unifiedDb && typeof data.unifiedDb === 'object' ? data.unifiedDb : {},
-            usdaDb: data?.usdaDb && typeof data.usdaDb === 'object' ? data.usdaDb : {},
-          });
+          setKentuItDb(
+            data?.kentuItDb && typeof data.kentuItDb === 'object' ? data.kentuItDb : {},
+          );
+          setGlobalDb(
+            data?.globalDb && typeof data.globalDb === 'object' ? data.globalDb : {},
+          );
         }
       } catch (error) {
-        console.error('[useFoodDb] failed to load Kentu master databases', error);
+        console.error('[useFoodDb] failed to load Kentu databases', error);
         if (!cancelled) {
-          setMasterDatabases(EMPTY_MASTER_DATABASES);
+          setKentuItDb(EMPTY_DBS.kentuItDb);
+          setGlobalDb(EMPTY_DBS.globalDb);
         }
       } finally {
         if (!cancelled) {
@@ -44,9 +48,9 @@ export function useFoodDb() {
   }, []);
 
   return {
-    masterDatabases,
-    unifiedDb: masterDatabases.unifiedDb,
-    usdaDb: masterDatabases.usdaDb,
+    kentuItDb,
+    globalDb,
+    masterDb: globalDb,
     isLoading,
   };
 }

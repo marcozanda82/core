@@ -1,12 +1,18 @@
 import React, { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import {
+  FOOD_PROVENANCE,
+  FOOD_PROVENANCE_META,
+  resolveProvenanceFromDraftItem,
+} from '../../../foodDbSource';
+import {
   getAmountStep,
   getItemUnits,
   resolveUnitIdFromUnit,
   resolveUnitWeight,
 } from '../utils/draftFoodUnits';
 import { roundToOneDecimal } from '../utils/numberFormatUtils';
+import FoodProvenanceBadge from './FoodProvenanceBadge';
 import FoodThumbnail from './FoodThumbnail';
 import UnitChips from './UnitChips';
 import AmountStepper from './AmountStepper';
@@ -21,6 +27,8 @@ export default function DraftCartSmartRow({
   embedded = false,
 }) {
   const name = item.desc || item.name || 'Alimento';
+  const provenance = resolveProvenanceFromDraftItem(item);
+  const provenanceMeta = FOOD_PROVENANCE_META[provenance];
   const visual = resolveFoodVisual(item, personalDb);
   const selectedUnit = item.selectedUnit || 'g';
   const multiplier = Number(item.multiplier ?? item.qta ?? item.weight) || 0;
@@ -52,23 +60,32 @@ export default function DraftCartSmartRow({
 
   return (
     <Wrapper
-      className={`vetrina-cart-row-enter min-w-0 max-w-full transition-all duration-200 ${
+      className={`vetrina-cart-row-enter relative min-w-0 max-w-full transition-all duration-200 ${
         embedded
-          ? 'rounded-xl border border-slate-800/80 border-l-2 border-l-cyan-500/40 bg-slate-950/50 px-3 py-2.5'
+          ? `rounded-xl border border-slate-800/80 bg-slate-950/50 px-3 py-2.5 ${
+            provenance === FOOD_PROVENANCE.PERSONAL && provenanceMeta?.borderClass
+              ? provenanceMeta.borderClass
+              : 'border-l-2 border-l-cyan-500/40'
+          }`
           : `rounded-2xl border bg-gradient-to-br from-slate-800/50 to-slate-900/80 px-3.5 py-3 shadow-md shadow-black/20 ${
             isRowHighlighted
               ? 'border-cyan-500/40 ring-1 ring-cyan-500/15'
-              : 'border-white/[0.06]'
+              : provenance === FOOD_PROVENANCE.PERSONAL && provenanceMeta?.borderClass
+                ? `border-white/[0.06] ${provenanceMeta.borderClass}`
+                : 'border-white/[0.06]'
           }`
       }`}
     >
+      <FoodProvenanceBadge provenance={provenance} compact className="absolute bottom-2 left-2" />
       <div className="flex min-w-0 items-start gap-3">
-        <FoodThumbnail
-          visual={visual}
-          name={visual.name}
-          sizeClassName="h-11 w-11"
-          className="rounded-xl ring-1 ring-white/[0.08] shadow-sm"
-        />
+        <div className="relative shrink-0">
+          <FoodThumbnail
+            visual={visual}
+            name={visual.name}
+            sizeClassName="h-11 w-11"
+            className="rounded-xl ring-1 ring-white/[0.08] shadow-sm"
+          />
+        </div>
         <div className="min-w-0 flex-1">
           {embedded ? (
             <p className="truncate text-sm font-semibold leading-snug tracking-tight text-slate-50">

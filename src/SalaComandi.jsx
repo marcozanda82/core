@@ -109,6 +109,7 @@ import {
 import WeeklyPlanning from './components/WeeklyPlanning';
 import WeeklyBuilder from './features/weeklyBlocks/components/WeeklyBuilder';
 import FastMealLogger from './features/mealBuilder/FastMealLogger';
+import { normalizeMealSlotType } from './features/mealBuilder/utils/slotPredictor';
 import {
   parseDurationMinutesInput,
   WORKOUT_DURATION_DEFAULT,
@@ -731,7 +732,7 @@ export default function SalaComandi() {
   const [dayProfile, setDayProfile] = useState('upper');
   const [calorieTuning, setCalorieTuning] = useState(0);
   const [foodDb, setFoodDb] = useState({});
-  const { unifiedDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb();
+  const { masterDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb();
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
   dailyLogRef.current = dailyLog;
@@ -3799,7 +3800,7 @@ Ottimo! Diario aggiornato. 🥗`;
       cena: 20.0,
       snack: 10.5,
     };
-    const slot = String(targetMealType || 'pranzo').split('_')[0];
+    const slot = normalizeMealSlotType(String(targetMealType || 'pranzo').split('_')[0]);
     const batchId = Date.now();
     const logToUse = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
 
@@ -3908,33 +3909,15 @@ Ottimo! Diario aggiornato. 🥗`;
       }
     }
 
-    if (pendingGhostMealId) {
-      const ghost = logToUse.find(
-        (entry) =>
-          entry?.type === 'ghost_meal' &&
-          entry?.id != null &&
-          String(entry.id) === String(pendingGhostMealId),
-      );
-      if (ghost) {
-        let t = ghost.mealTime;
-        if (typeof t !== 'number' || Number.isNaN(t)) t = ghost.time;
-        if (typeof t === 'number' && !Number.isNaN(t)) return t;
-        const parsed = parseFlexibleTimeToDecimal(String(t ?? ''));
-        if (parsed != null) return parsed;
-      }
-    }
-
     return undefined;
   }, [
     showFastLogger,
     mealToEdit,
     editingMealId,
-    pendingGhostMealId,
     isSimulationMode,
     simulatedLog,
     dailyLog,
     getFoodItemsForMealSlot,
-    parseFlexibleTimeToDecimal,
   ]);
 
   const startNodeDrag = useCallback((node, edge) => (e, activationOpts) => {
@@ -10196,7 +10179,7 @@ ${dbKeys || 'n/d'}`;
           fullHistory={fullHistory}
           todayLog={activeLog}
           personalDb={foodDb}
-          creaDb={csvFoodDb}
+          masterDb={csvFoodDb}
           getMealTargetsForSlot={getFastLoggerMealTargetsForSlot}
           getMealConsumedForSlot={getFastLoggerMealConsumedForSlot}
           initialDraft={mealToEdit}

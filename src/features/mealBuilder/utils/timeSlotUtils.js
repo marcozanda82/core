@@ -1,3 +1,5 @@
+import { FOOD_PROVENANCE } from '../../../foodDbSource';
+
 export const TIME_SLOTS = ['morning', 'afternoon', 'evening', 'night'];
 
 export const DEFAULT_USAGE_STATS = {
@@ -12,12 +14,35 @@ export const DEFAULT_USAGE_STATS = {
  * Fascia oraria corrente per raccomandazioni e usage stats.
  * morning: 06–12 · afternoon: 12–17 · evening: 17–22 · night: 22–06
  */
-export function getCurrentTimeSlot(date = new Date()) {
-  const hour = date.getHours();
-  if (hour >= 6 && hour < 12) return 'morning';
-  if (hour >= 12 && hour < 17) return 'afternoon';
-  if (hour >= 17 && hour < 22) return 'evening';
+export function getTimeSlotForDecimalHour(decimalHour) {
+  const hour = Number(decimalHour);
+  if (!Number.isFinite(hour)) return getCurrentTimeSlot();
+  const h = Math.floor(((hour % 24) + 24) % 24);
+  if (h >= 6 && h < 12) return 'morning';
+  if (h >= 12 && h < 17) return 'afternoon';
+  if (h >= 17 && h < 22) return 'evening';
   return 'night';
+}
+
+export function getCurrentTimeSlot(date = new Date()) {
+  const decimal = date.getHours() + date.getMinutes() / 60;
+  return getTimeSlotForDecimalHour(decimal);
+}
+
+/**
+ * Slot pasto canonico (colazione / pranzo / cena / snack) da ora decimale 0–24.
+ */
+export function getMealSlotForDecimalHour(decimalHour) {
+  const hour = Number(decimalHour);
+  if (!Number.isFinite(hour)) {
+    const now = new Date();
+    return getMealSlotForDecimalHour(now.getHours() + now.getMinutes() / 60);
+  }
+  const h = Math.floor(((hour % 24) + 24) % 24);
+  if (h >= 6 && h < 12) return 'colazione';
+  if (h >= 12 && h < 17) return 'pranzo';
+  if (h >= 17 && h < 22) return 'cena';
+  return 'snack';
 }
 
 export function normalizeUsageStats(raw) {
@@ -138,6 +163,8 @@ export function buildPersonalDbSuggestTiles(personalDb) {
       return {
         key: `db:${key}`,
         foodDbKey: key,
+        provenance: FOOD_PROVENANCE.PERSONAL,
+        source: 'KENTU_IT',
         desc,
         type: 'food',
         qta: defaultWeight,

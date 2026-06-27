@@ -1,8 +1,9 @@
+import { FOOD_DB_SOURCE } from './foodDbSource';
 import { resolveIconTagId } from './features/mealBuilder/utils/FoodIcons';
 import { enrichDbRowWithFoodUnits } from './foodUnits';
 
-const UNIFIED_DB_URL = '/kentu_unified_master_db.json';
-const USDA_DB_URL = '/kentu_master_db.json';
+const KENTU_IT_DB_URL = '/crea_gold_standard.json';
+const GLOBAL_DB_URL = '/kentu_master_db.json';
 
 function toNumber(value) {
   if (typeof value === 'number') {
@@ -57,32 +58,16 @@ function resolveItalianName(record) {
   ).trim();
 }
 
-function resolveRecordKey(record, index, foodSource) {
-  if (foodSource === 'CREA') {
-    const creaCode = pickFirst(record, ['creaCode', 'food_code', 'code', 'id', 'dedupKey'], '');
-    if (creaCode) return String(creaCode).trim();
-  }
-
-  if (foodSource === 'USDA') {
-    const fdcId = pickFirst(record, ['fdcId', 'fdc_id', 'id', 'dedupKey'], '');
-    if (fdcId) {
-      const raw = String(fdcId).trim().replace(/^USDA_/i, '');
-      return raw ? `USDA_${raw}` : '';
-    }
-  }
-
-  const rawId = pickFirst(record, ['dedupKey', 'id', 'food_code', 'code', 'fdcId', 'creaCode'], '');
-  let key = String(rawId).trim();
-
-  if (foodSource === 'USDA' && key && !key.startsWith('USDA_')) {
-    key = `USDA_${key}`;
-  }
-
-  if (key) return key;
-  return `${foodSource === 'USDA' ? 'USDA' : 'food'}_${index}`;
+function resolveRecordKey(record, index) {
+  const rawId = pickFirst(record, ['dedupKey', 'id', 'fdcId', 'creaCode', 'food_code', 'code'], '');
+  if (rawId) return String(rawId).trim();
+  return `kentu_${index}`;
 }
 
-function normalizeRecordForDb(record, foodSource) {
+/**
+ * Normalizza alias di ricerca/visualizzazione senza rimuovere campi avanzati (micro, amminoacidi, ecc.).
+ */
+function normalizeRecordForDb(record, source) {
   const italianName = resolveItalianName(record);
   const englishName = String(pickFirst(record, ['name', 'description'], '')).trim();
   const rawIconTag = pickFirst(record, ['iconTag', 'icon_tag'], '');
@@ -90,12 +75,13 @@ function normalizeRecordForDb(record, foodSource) {
 
   const normalized = {
     ...record,
-    desc: italianName || englishName || `Alimento ${foodSource}`,
-    name: italianName || englishName || `Alimento ${foodSource}`,
+    desc: italianName || englishName || String(record.desc || record.name || '').trim() || 'Alimento',
+    name: italianName || englishName || String(record.name || record.desc || '').trim() || 'Alimento',
     ...(englishName && italianName && englishName !== italianName
       ? { nameEn: englishName }
       : {}),
     ...(resolvedIconTag ? { iconTag: resolvedIconTag } : {}),
+    source,
   };
 
   if (normalized.kcal == null) {
@@ -116,7 +102,7 @@ function normalizeRecordForDb(record, foodSource) {
   }
 
   const fatValue = toNumber(
-    pickFirst(record, ['fat', 'fatTotal', 'fatTot', 'lipids']),
+    pickFirst(record, ['fatTot', 'fat', 'fatTotal', 'lipids']),
   );
   if (normalized.fat == null || normalized.fat === 0) {
     normalized.fat = fatValue;
@@ -137,35 +123,28 @@ function normalizeRecordForDb(record, foodSource) {
     );
   }
   if (normalized.na == null) {
-    normalized.na = toNumber(pickFirst(record, ['na', 'sodium']));
+    normalized.na = toNumber(pickFirst(record, ['na', 'sodium', 'sale']));
   }
   if (normalized.k == null) {
     normalized.k = toNumber(pickFirst(record, ['k', 'potassium']));
   }
   if (!normalized.foodSource) {
-    normalized.foodSource = foodSource;
-  }
-
-  if (foodSource === 'CREA' && record.creaCode) {
-    normalized.creaCode = String(record.creaCode).trim();
-  }
-  if (foodSource === 'USDA' && record.fdcId) {
-    normalized.fdcId = String(record.fdcId).trim();
+    normalized.foodSource = source === FOOD_DB_SOURCE.KENTU_IT ? 'CREA' : 'KENTU';
   }
 
   return normalized;
 }
 
-function indexRecords(records, foodSource) {
+function indexRecords(records, source) {
   const db = {};
 
   records.forEach((raw, index) => {
     if (!raw || typeof raw !== 'object') return;
 
-    const key = resolveRecordKey(raw, index, foodSource);
+    const key = resolveRecordKey(raw, index);
     if (db[key]) return;
 
-    const row = normalizeRecordForDb(raw, foodSource);
+    const row = normalizeRecordForDb(raw, source);
     db[key] = enrichDbRowWithFoodUnits(row, key);
   });
 
@@ -181,39 +160,53 @@ async function fetchKentuJson(url) {
 }
 
 /**
- * Carica i cataloghi master KentuOS (ex-CREA unified + ex-USDA locale).
- * Gli array sorgente vengono indicizzati per chiave O(1) prima del ritorno.
+ * Carica i due pilastri del database KentuOS:
+ * - Kentu DB IT (CREA): `/public/crea_gold_standard.json`
+ * - Kentu DB 🌐: `/public/kentu_master_db.json`
  *
- * @returns {Promise<{ unifiedDb: Record<string, object>, usdaDb: Record<string, object> }>}
+ * Ogni record è marcato con `source: "KENTU_IT" | "GLOBAL"`.
+ * In caso di chiavi duplicate tra i due DB, prevale Kentu DB IT.
+ *
+ * @returns {Promise<{ kentuItDb: Record<string, object>, globalDb: Record<string, object>, masterDb: Record<string, object> }>}
  */
 export async function loadKentuDatabases() {
+  const empty = { kentuItDb: {}, globalDb: {}, masterDb: {} };
+
   try {
-    const [unifiedJson, usdaJson] = await Promise.all([
-      fetchKentuJson(UNIFIED_DB_URL),
-      fetchKentuJson(USDA_DB_URL),
+    const [kentuItJson, globalJson] = await Promise.all([
+      fetchKentuJson(KENTU_IT_DB_URL).catch((error) => {
+        console.warn('[foodLoader] Kentu DB IT unavailable', error);
+        return null;
+      }),
+      fetchKentuJson(GLOBAL_DB_URL).catch((error) => {
+        console.warn('[foodLoader] Kentu DB global unavailable', error);
+        return null;
+      }),
     ]);
 
-    const unifiedRecords = extractRecords(unifiedJson);
-    const usdaRecords = extractRecords(usdaJson);
+    const kentuItRecords = kentuItJson != null ? extractRecords(kentuItJson) : [];
+    const globalRecords = globalJson != null ? extractRecords(globalJson) : [];
 
-    const unifiedDb = indexRecords(unifiedRecords, 'CREA');
-    const usdaDb = indexRecords(usdaRecords, 'USDA');
+    const kentuItDb = indexRecords(kentuItRecords, FOOD_DB_SOURCE.KENTU_IT);
+    const globalDbRaw = indexRecords(globalRecords, FOOD_DB_SOURCE.GLOBAL);
 
-    console.log('[foodLoader] loaded Kentu master DBs', {
-      unified: Object.keys(unifiedDb).length,
-      usda: Object.keys(usdaDb).length,
-      sampleUnified: unifiedRecords[0]
-        ? {
-            key: resolveRecordKey(unifiedRecords[0], 0, 'CREA'),
-            desc: resolveItalianName(unifiedRecords[0]),
-            iconTag: unifiedRecords[0].iconTag,
-          }
-        : null,
+    const globalDb = { ...globalDbRaw };
+    Object.keys(kentuItDb).forEach((key) => {
+      delete globalDb[key];
     });
 
-    return { unifiedDb, usdaDb };
+    console.log('[foodLoader] loaded Kentu databases', {
+      kentuIt: Object.keys(kentuItDb).length,
+      global: Object.keys(globalDb).length,
+    });
+
+    return {
+      kentuItDb,
+      globalDb,
+      masterDb: globalDb,
+    };
   } catch (error) {
-    console.error('[foodLoader] failed to load Kentu master databases', error);
-    return { unifiedDb: {}, usdaDb: {} };
+    console.error('[foodLoader] failed to load Kentu databases', error);
+    return empty;
   }
 }

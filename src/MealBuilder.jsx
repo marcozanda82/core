@@ -1267,7 +1267,7 @@ export default function MealBuilder({
 
   const mealBuilderScrollAnchorRef = useRef(null);
   const foodDropdownContainerRef = useRef(null);
-  const { unifiedDb: localFoodDb } = useFoodDb();
+  const { masterDb: localFoodDb } = useFoodDb();
 
   const nutrientBar = useCallback(
     (label, current, target, unit = 'g', nutrientKey = null) => (

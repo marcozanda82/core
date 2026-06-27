@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { FOOD_PROVENANCE, FOOD_PROVENANCE_META } from '../../../foodDbSource';
 import { Check, Minus, Plus } from 'lucide-react';
 import FoodVisualMedia from './FoodVisualMedia';
+import FoodProvenanceBadge from './FoodProvenanceBadge';
 import QtyBadge from './QtyBadge';
 import { triggerSelectionHaptic } from '../utils/hapticFeedback';
 
@@ -14,7 +16,9 @@ export default function QuickFoodTile({
   onRemoveOne,
   onOpenDetail,
   sourceBadge = null,
+  provenance = null,
   viewMode = 'grid',
+  isSuggested = false,
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [tempQty, setTempQty] = useState(1);
@@ -26,6 +30,7 @@ export default function QuickFoodTile({
   const baseWeight = Math.round(Number(defaultUnitWeight) || 100);
   const baseKcal = Math.round(Number(defaultUnitKcal) || 0);
   const tempWeight = Math.round(tempQty * baseWeight);
+  const provenanceMeta = provenance ? FOOD_PROVENANCE_META[provenance] : null;
   const visual = tileVisual || {
     name,
     customImage: null,
@@ -91,8 +96,32 @@ export default function QuickFoodTile({
   const cardShellClass = `relative overflow-visible rounded-2xl border bg-gradient-to-b from-slate-800/70 to-slate-900/90 shadow-lg shadow-black/25 transition-all duration-200 ${
     isEditing
       ? 'border-cyan-400/50 ring-2 ring-cyan-500/20 shadow-cyan-950/20'
-      : 'border-white/[0.06] hover:border-cyan-500/25 hover:shadow-cyan-950/15'
+      : isSuggested
+        ? 'border-cyan-500/25 ring-1 ring-cyan-500/45 shadow-cyan-950/20 hover:border-cyan-400/40'
+        : provenance === FOOD_PROVENANCE.PERSONAL && provenanceMeta?.borderClass
+          ? `border-white/[0.06] ${provenanceMeta.borderClass} hover:border-cyan-500/25 hover:shadow-cyan-950/15`
+          : 'border-white/[0.06] hover:border-cyan-500/25 hover:shadow-cyan-950/15'
   } ${isPressed ? 'scale-[0.97]' : 'scale-100'}`;
+
+  const renderSuggestedBadge = () =>
+    isSuggested ? (
+      <span
+        className="absolute top-1 right-1 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-cyan-400/45 bg-cyan-500/15 text-[10px] leading-none shadow-sm shadow-cyan-950/40"
+        title="Consigliato per questo pasto"
+        aria-label="Consigliato per questo pasto"
+      >
+        ✨
+      </span>
+    ) : null;
+
+  const renderProvenanceBadge = (compact = false) =>
+    provenance ? (
+      <FoodProvenanceBadge
+        provenance={provenance}
+        compact={compact}
+        className="absolute bottom-1 left-1"
+      />
+    ) : null;
 
   const renderStepper = (compact = false) => (
     <div
@@ -224,11 +253,13 @@ export default function QuickFoodTile({
           onPointerUp={() => setIsPressed(false)}
           onPointerLeave={() => setIsPressed(false)}
         >
+          {renderSuggestedBadge()}
+          {renderProvenanceBadge(true)}
           <button
             type="button"
             onClick={openDetail}
             aria-label={`Apri dettaglio ${name}`}
-            className="shrink-0 transition-transform active:scale-95"
+            className="relative shrink-0 transition-transform active:scale-95"
           >
             {renderIconArea(true)}
           </button>
@@ -271,6 +302,8 @@ export default function QuickFoodTile({
         onPointerUp={() => setIsPressed(false)}
         onPointerLeave={() => setIsPressed(false)}
       >
+        {renderSuggestedBadge()}
+        {renderProvenanceBadge(false)}
         <button
           type="button"
           onClick={openDetail}

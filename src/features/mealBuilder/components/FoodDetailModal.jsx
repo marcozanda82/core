@@ -3,7 +3,8 @@ import { Edit2, X } from 'lucide-react';
 import { findDraftItemForFood } from '../utils/draftFoodMatchUtils';
 import { getFoodEmoji } from '../utils/foodIconUtils';
 import { renderIconFromTag } from '../../../utils/iconEngine';
-import { computeMacrosForWeight, getPer100Macros } from '../utils/foodMacroUtils';
+import { computeMacrosForWeight, getPer100Macros, scaleNutrientsForWeight } from '../utils/foodMacroUtils';
+import AdvancedNutrientsAccordion from './AdvancedNutrientsAccordion';
 import {
   getItemUnits,
   resolveUnitIdFromUnit,
@@ -58,12 +59,21 @@ export default function FoodDetailModal({
     return () => window.clearTimeout(focusTimer);
   }, [food, defaultUnitWeight, cartWeight, isInCart]);
 
+  const selectedWeight = useMemo(() => {
+    if (!displayTile) return 0;
+    if (selectedUnit === 'g') return roundToOneDecimal(amount);
+    return roundToOneDecimal(amount * resolveUnitWeight(displayTile, selectedUnit));
+  }, [displayTile, selectedUnit, amount]);
+
+  const liveNutrients = useMemo(() => {
+    if (!displayTile || selectedWeight <= 0) return {};
+    const row = displayTile.row || displayTile;
+    return scaleNutrientsForWeight({ row }, selectedWeight);
+  }, [displayTile, selectedWeight]);
+
   if (!food || !displayTile) return null;
 
   const per100 = getPer100Macros(displayTile);
-  const selectedWeight = selectedUnit === 'g'
-    ? roundToOneDecimal(amount)
-    : roundToOneDecimal(amount * resolveUnitWeight(displayTile, selectedUnit));
   const liveMacros = computeMacrosForWeight(per100, selectedWeight);
   const step = selectedUnit === 'g' ? 10 : 0.25;
   const unitLabel = selectedUnit === 'g'
@@ -164,6 +174,11 @@ export default function FoodDetailModal({
               </div>
             ))}
           </div>
+
+          <AdvancedNutrientsAccordion
+            nutrients={liveNutrients}
+            className="mt-4"
+          />
 
           <p className="mt-3 text-[10px] text-slate-600">
             Base 100g: {Math.round(per100.kcal)} kcal · P{per100.prot} · C{per100.carb} · F{per100.fat}

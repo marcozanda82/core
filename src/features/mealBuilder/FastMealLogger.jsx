@@ -1,17 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MealComposerProvider,
   useMealComposer,
 } from './context/MealComposerContext';
 import { usePredictiveFoodBlocks } from './hooks/usePredictiveFoodBlocks';
-import { usePredictiveMealCombos } from './hooks/usePredictiveMealCombos';
 import UniversalSearchModal from './components/UniversalSearchModal';
 import BarcodeScannerOverlay from './components/BarcodeScannerOverlay';
 import DraftCartSmartRow from './components/DraftCartSmartRow';
 import RecipeEditor from './components/RecipeEditor';
 import RecipeBuilder from './components/RecipeBuilder';
-import FrequentMealBanner from './components/FrequentMealBanner';
-import FrequentMealsModal from './components/FrequentMealsModal';
 import FoodDeepEditModal from './components/FoodDeepEditModal';
 import FoodDetailModal from './components/FoodDetailModal';
 import QtyBadge from './components/QtyBadge';
@@ -27,9 +24,8 @@ import {
   resolveFoodIdentityKey,
 } from './utils/draftFoodMatchUtils';
 import { roundToOneDecimal } from './utils/numberFormatUtils';
-import { getPer100Macros } from './utils/foodMacroUtils';
+import { getPer100Macros, buildScaledNutrientsForWeight } from './utils/foodMacroUtils';
 import {
-  buildComboDraftPayload,
   buildRecipeDraftPayloadFromDb,
   buildRecipeDraftPayloadFromSearchResult,
 } from './utils/recipePayloadUtils';
@@ -47,26 +43,36 @@ import { FaHamburger } from 'react-icons/fa';
 import { MdOutlineLocalFireDepartment } from 'react-icons/md';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
 import useFoodDb from '../../useFoodDb';
+import {
+  FOOD_DB_SOURCE,
+  FOOD_PROVENANCE,
+  attachProvenanceFromLegacySource,
+  compareProvenancePriority,
+  resolveProvenanceFromSearchResult,
+  resolveProvenanceFromTile,
+} from '../../foodDbSource';
 import { draftFoodsToRecipePayload, fetchRecipesFromDb } from './utils/recipeDraftUtils';
-import { searchPersonalDb, useDebouncedExternalFoodSearch, SEARCH_SOURCE_BADGE } from './hooks/useUniversalSearchEngine';
-import useStableTimeSlot from './hooks/useStableTimeSlot';
+import {
+  searchPersonalDb,
+  searchKentuItDb,
+  useDebouncedExternalFoodSearch,
+  SEARCH_SOURCE_BADGE,
+} from './hooks/useUniversalSearchEngine';
 import { decimalToTimeStr } from '../../coreEngine';
 import {
-  getCurrentTimeSlot,
+  getTimeSlotForDecimalHour,
   mergePredictiveWithPersonalDb,
   recordDraftFoodsUsageStats,
   recordFoodUsageStats,
 } from './utils/timeSlotUtils';
+import {
+  getLearnedMealSlot,
+  getLearnedMealSlotLabel,
+} from './utils/slotPredictor';
 
 const QUICK_FOODS_LIMIT = 30;
+const SUGGESTED_FOODS_LIMIT = 6;
 const SEARCH_DEFAULT_UNIT_WEIGHT = 100;
-
-const TIME_SLOT_LABELS = {
-  morning: 'mattina',
-  afternoon: 'pomeriggio',
-  evening: 'sera',
-  night: 'notte',
-};
 
 const MEAL_SLOTS = [
   { id: 'colazione', label: 'Colazione' },
@@ -82,9 +88,13 @@ const MEAL_TIME_BY_SLOT = {
   snack: 10.5,
 };
 
-function getCurrentTimeRoundedTo15Min() {
+function getCurrentDecimalHours() {
   const now = new Date();
-  const decimal = now.getHours() + now.getMinutes() / 60;
+  return now.getHours() + now.getMinutes() / 60;
+}
+
+function getCurrentTimeRoundedTo15Min() {
+  const decimal = getCurrentDecimalHours();
   return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
 }
 
@@ -109,7 +119,7 @@ function parseTimeStrToDecimal(value) {
   return h + m / 60;
 }
 
-function resolveInitialMealTime(initialMealTime, initialDraft, mealSlot) {
+function resolveInitialMealTime(initialMealTime, initialDraft) {
   if (typeof initialMealTime === 'number' && !Number.isNaN(initialMealTime)) {
     return initialMealTime;
   }
@@ -117,9 +127,7 @@ function resolveInitialMealTime(initialMealTime, initialDraft, mealSlot) {
     const t = initialDraft[0]?.mealTime;
     if (typeof t === 'number' && !Number.isNaN(t)) return t;
   }
-  const fromClock = parseTimeStrToDecimal(getCurrentTimeHHmm());
-  if (fromClock != null) return fromClock;
-  return MEAL_TIME_BY_SLOT[mealSlot] ?? getCurrentTimeRoundedTo15Min();
+  return getCurrentDecimalHours();
 }
 
 function buildAcquirePayload(food) {
@@ -134,8 +142,7 @@ function buildAcquirePayload(food) {
     carb: Number(row.carb) || 0,
     fatTotal: Number(row.fatTotal ?? row.fat) || 0,
     ...(row.barcode ? { barcode: String(row.barcode).trim() } : {}),
-    ...(food._source === 'crea' ? { foodSource: 'CREA' } : {}),
-    ...(food._source === 'usda' ? { foodSource: 'USDA' } : {}),
+    ...(food._source === 'master' ? { foodSource: 'KENTU' } : {}),
   };
 }
 
@@ -143,16 +150,14 @@ function formatSearchResultForDraft(food) {
   const row = food?.row || {};
   const desc = String(food?.desc || food?.name || row.desc || row.name || 'Alimento').trim();
   const qta = 100;
-  const k100 = Number(row.kcal ?? row.cal) || 0;
-  const p100 = Number(row.prot) || 0;
-  const c100 = Number(row.carb) || 0;
-  const f100 = Number(row.fatTotal ?? row.fat) || 0;
+  const scaledNutrients = buildScaledNutrientsForWeight(row, qta);
 
-  return {
+  return attachProvenanceFromLegacySource({
     type: 'food',
     desc,
     name: desc,
     foodDbKey: food._source === 'personal' ? (food.key || food.id) : undefined,
+    _searchSource: food._source,
     row,
     units: row.units,
     defaultUnit: row.defaultUnit,
@@ -162,17 +167,12 @@ function formatSearchResultForDraft(food) {
     selectedUnit: 'g',
     multiplier: qta,
     qtyLabel: '100g',
-    kcal: Math.round(k100),
-    cal: Math.round(k100),
-    prot: Math.round(p100 * 10) / 10,
-    carb: Math.round(c100 * 10) / 10,
-    fat: Math.round(f100 * 10) / 10,
-    fatTotal: Math.round(f100 * 10) / 10,
+    ...scaledNutrients,
     ...(row.customImage ? { customImage: row.customImage } : {}),
     ...(row.customIcon ? { customIcon: row.customIcon } : {}),
     ...(row.iconTag ? { iconTag: row.iconTag } : {}),
     ...(row.iconOverride ? { iconOverride: row.iconOverride } : {}),
-  };
+  }, food._source);
 }
 
 function textMatchesQuery(text, query) {
@@ -256,8 +256,9 @@ function FastMealLoggerContent({
   onClose,
   onSave,
   personalDb,
-  creaDb,
-  usdaDb,
+  kentuItDb,
+  globalDb,
+  masterDb,
   onAcquireExternalFood,
   onSaveRecipe,
   onPatchFoodDbEntry,
@@ -271,19 +272,11 @@ function FastMealLoggerContent({
   const [selectedSlot, setSelectedSlot] = useState(
     () => initialMealSlot || resolveInitialMealSlot(initialDraft, editingMealId),
   );
-  const [mealTime, setMealTime] = useState(() =>
-    resolveInitialMealTime(
-      initialMealTime,
-      initialDraft,
-      initialMealSlot || resolveInitialMealSlot(initialDraft, editingMealId),
-    ),
-  );
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isSaveRecipeOpen, setIsSaveRecipeOpen] = useState(false);
   const [recipeName, setRecipeName] = useState('');
   const [editingRecipe, setEditingRecipe] = useState(null);
   const [isRecipeBuilderOpen, setIsRecipeBuilderOpen] = useState(false);
-  const [isFrequentMealsOpen, setIsFrequentMealsOpen] = useState(false);
   const [detailFood, setDetailFood] = useState(null);
   const [activeVetrinaTab, setActiveVetrinaTab] = useState('foods');
   const [viewMode, setViewMode] = useState('grid');
@@ -302,9 +295,12 @@ function FastMealLoggerContent({
   const cartPulseTimerRef = useRef(null);
   const addFeedbackTimerRef = useRef(null);
   const mealTimeInputRef = useRef(null);
+  const mealTimeManualRef = useRef(false);
   const {
     draftFoods,
     draftTotals,
+    mealTime,
+    setMealTime,
     addFoodToDraft,
     removeFoodFromDraft,
     updateFoodAmount,
@@ -312,6 +308,36 @@ function FastMealLoggerContent({
     clearDraft,
     loadInitialDraft,
   } = useMealComposer();
+
+  const handleMealTimeChange = useCallback((hour) => {
+    mealTimeManualRef.current = true;
+    setMealTime(hour);
+  }, [setMealTime]);
+
+  useEffect(() => {
+    if (typeof initialMealTime === 'number' && !Number.isNaN(initialMealTime)) return;
+    if (Array.isArray(initialDraft) && initialDraft.length > 0) {
+      const t = initialDraft[0]?.mealTime;
+      if (typeof t === 'number' && !Number.isNaN(t)) return;
+    }
+    setMealTime(getCurrentDecimalHours());
+  }, [initialMealTime, initialDraft, setMealTime]);
+
+  const timeSlotForMeal = useMemo(
+    () => getTimeSlotForDecimalHour(mealTime),
+    [mealTime],
+  );
+
+  const mealSlotFromTime = useMemo(
+    () => getLearnedMealSlot(mealTime, fullHistory),
+    [mealTime, fullHistory],
+  );
+
+  useEffect(() => {
+    if (!Number.isFinite(Number(mealTime))) return;
+    const nextSlot = getLearnedMealSlot(mealTime, fullHistory);
+    setSelectedSlot((prev) => (prev === nextSlot ? prev : nextSlot));
+  }, [mealTime, fullHistory]);
 
   const notifyItemAdded = (label) => {
     setAddFeedback(label || 'Aggiunto al piatto');
@@ -344,7 +370,7 @@ function FastMealLoggerContent({
       return;
     }
 
-    if (food._source !== 'personal' && typeof onAcquireExternalFood === 'function') {
+    if (food._source !== 'personal' && food._source !== 'recipe' && typeof onAcquireExternalFood === 'function') {
       const acquirePayload = buildAcquirePayload(food);
       if (acquirePayload) {
         try {
@@ -376,7 +402,7 @@ function FastMealLoggerContent({
       return;
     }
 
-    if (food._source !== 'personal' && typeof onAcquireExternalFood === 'function') {
+    if (food._source !== 'personal' && food._source !== 'recipe' && typeof onAcquireExternalFood === 'function') {
       const acquirePayload = buildAcquirePayload(food);
       if (acquirePayload) {
         try {
@@ -492,18 +518,56 @@ function FastMealLoggerContent({
     [selectedSlot, getMealConsumedForSlot, editingMealId],
   );
 
-  const predictiveCombos = usePredictiveMealCombos(fullHistory, selectedSlot, 5);
-  const predictiveBlocks = usePredictiveFoodBlocks(fullHistory, selectedSlot, QUICK_FOODS_LIMIT);
-  const stableTimeSlot = useStableTimeSlot();
+  const predictiveBlocks = usePredictiveFoodBlocks(fullHistory, mealSlotFromTime, QUICK_FOODS_LIMIT);
   const quickFoods = useMemo(
     () =>
       mergePredictiveWithPersonalDb(
         predictiveBlocks,
         personalDb,
-        stableTimeSlot,
+        timeSlotForMeal,
         QUICK_FOODS_LIMIT,
       ),
-    [predictiveBlocks, personalDb, stableTimeSlot],
+    [predictiveBlocks, personalDb, timeSlotForMeal],
+  );
+
+  const suggestedFoods = useMemo(
+    () =>
+      quickFoods
+        .filter((tile) => tile.source !== FOOD_DB_SOURCE.GLOBAL)
+        .slice(0, SUGGESTED_FOODS_LIMIT),
+    [quickFoods],
+  );
+
+  const suggestedFoodIdentityKeys = useMemo(() => {
+    const keys = new Set();
+    suggestedFoods.forEach((tile) => {
+      const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+      const key = resolveFoodIdentityKey(displayTile);
+      if (key) keys.add(key);
+    });
+    return keys;
+  }, [suggestedFoods, personalDb, catalogServingOverrides]);
+
+  const remainingFoods = useMemo(
+    () =>
+      quickFoods
+        .filter((tile) => {
+          const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+          const key = resolveFoodIdentityKey(displayTile);
+          return !key || !suggestedFoodIdentityKeys.has(key);
+        })
+        .sort((a, b) =>
+          compareProvenancePriority(
+            { provenance: resolveProvenanceFromTile(a, personalDb) },
+            { provenance: resolveProvenanceFromTile(b, personalDb) },
+          ),
+        ),
+    [quickFoods, personalDb, catalogServingOverrides, suggestedFoodIdentityKeys],
+  );
+
+  const gridFoods = useMemo(
+    () => [...suggestedFoods, ...remainingFoods],
+    [suggestedFoods, remainingFoods],
   );
 
   const savedRecipes = useMemo(() => fetchRecipesFromDb(personalDb), [personalDb]);
@@ -520,8 +584,10 @@ function FastMealLoggerContent({
     [quickFoods, personalDb, catalogServingOverrides, vetrinaQuery],
   );
 
-  const selectedMealLabel =
-    MEAL_SLOTS.find((slot) => slot.id === selectedSlot)?.label || 'Pasto';
+  const selectedMealLabel = useMemo(
+    () => getLearnedMealSlotLabel(mealTime, fullHistory),
+    [mealTime, fullHistory],
+  );
 
   const vetrinaTilesContainerClass =
     viewMode === 'grid'
@@ -533,17 +599,19 @@ function FastMealLoggerContent({
     [savedRecipes, vetrinaQuery],
   );
 
-  const vetrinaDbSearchResults = useMemo(
-    () => (isVetrinaSearching ? searchPersonalDb(personalDb, vetrinaQuery) : []),
-    [personalDb, vetrinaQuery, isVetrinaSearching],
-  );
+  const vetrinaDbSearchResults = useMemo(() => {
+    if (!isVetrinaSearching) return [];
+    const personalResults = searchPersonalDb(personalDb, vetrinaQuery);
+    const creaResults = searchKentuItDb(vetrinaQuery, kentuItDb, personalResults);
+    return [...personalResults, ...creaResults].sort(compareProvenancePriority);
+  }, [personalDb, kentuItDb, vetrinaQuery, isVetrinaSearching]);
 
   const { externalResults: vetrinaExternalResults, isSearchingExternal } =
     useDebouncedExternalFoodSearch(
       isVetrinaSearching ? vetrinaQuery : '',
       personalDb,
-      creaDb,
-      usdaDb,
+      globalDb ?? masterDb,
+      { kentuItDb, searchGlobal: true },
     );
 
   const quickFoodIdentityKeys = useMemo(() => {
@@ -606,6 +674,8 @@ function FastMealLoggerContent({
         key: `saved-recipe-${recipe.key}`,
         data: {
           _source: 'recipe',
+          source: FOOD_DB_SOURCE.KENTU_IT,
+          provenance: FOOD_PROVENANCE.PERSONAL,
           id: recipe.key,
           key: recipe.key,
           desc: recipe.name,
@@ -615,13 +685,22 @@ function FastMealLoggerContent({
       });
     });
 
-    return items;
+    return items.sort((a, b) => {
+      const provenanceA = a.kind === 'predictive'
+        ? resolveProvenanceFromTile(a.data, personalDb)
+        : resolveProvenanceFromSearchResult(a.data);
+      const provenanceB = b.kind === 'predictive'
+        ? resolveProvenanceFromTile(b.data, personalDb)
+        : resolveProvenanceFromSearchResult(b.data);
+      return compareProvenancePriority({ provenance: provenanceA }, { provenance: provenanceB });
+    });
   }, [
     isVetrinaSearching,
     filteredQuickFoods,
     extraDbSearchResults,
     vetrinaExternalResults,
     filteredSavedRecipes,
+    personalDb,
   ]);
 
   const handleSavedRecipeAdd = (recipe) => {
@@ -631,7 +710,7 @@ function FastMealLoggerContent({
     notifyItemAdded(recipe.name);
   };
 
-  const renderQuickFoodTile = (tile) => {
+  const renderQuickFoodTile = (tile, isSuggested = false) => {
     const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
     const tileVisual = resolveFoodVisual(displayTile, personalDb);
     const defaultUnitWeight = getFoodUnitWeight(displayTile);
@@ -647,6 +726,8 @@ function FastMealLoggerContent({
         defaultUnitWeight={defaultUnitWeight}
         defaultUnitKcal={defaultUnitKcal}
         qty={qty}
+        isSuggested={isSuggested}
+        provenance={resolveProvenanceFromTile(tile, personalDb)}
         onConfirmAdd={(portionCount) => handleAddPredictiveBlock(tile, portionCount)}
         onRemoveOne={() => removeOneUnitFromDraft(displayTile, defaultUnitWeight)}
         onOpenDetail={() => openFoodDetail(tile)}
@@ -664,6 +745,7 @@ function FastMealLoggerContent({
     const tileVisual = resolveFoodVisual(result, personalDb);
     const qty = getDraftQtyForFood(draftFoods, matchFood, defaultUnitWeight);
     const sourceBadge = SEARCH_SOURCE_BADGE[result._source] || null;
+    const provenance = resolveProvenanceFromSearchResult(result);
 
     return (
       <QuickFoodTile
@@ -674,6 +756,7 @@ function FastMealLoggerContent({
         defaultUnitKcal={defaultUnitKcal}
         qty={qty}
         sourceBadge={sourceBadge}
+        provenance={provenance}
         onConfirmAdd={(portionCount) => handleAddSearchResult(result, portionCount)}
         onRemoveOne={() => removeOneUnitFromDraft(matchFood, defaultUnitWeight)}
         onOpenDetail={() => openFoodDetailFromSearchResult(result)}
@@ -703,6 +786,7 @@ function FastMealLoggerContent({
         defaultUnitKcal={defaultUnitKcal}
         qty={qty}
         sourceBadge={SEARCH_SOURCE_BADGE.recipe}
+        provenance={FOOD_PROVENANCE.PERSONAL}
         onConfirmAdd={(portionCount) => {
           for (let i = 0; i < portionCount; i += 1) {
             handleSavedRecipeAdd(recipe);
@@ -776,7 +860,7 @@ function FastMealLoggerContent({
       payload?.foodDbKey,
       personalDb,
       onPatchFoodDbEntry,
-      getCurrentTimeSlot(),
+      getTimeSlotForDecimalHour(mealTime),
     );
 
     return Boolean(existing);
@@ -788,13 +872,15 @@ function FastMealLoggerContent({
 
   const handleConfirm = () => {
     if (draftFoods.length === 0) return;
+    const learnedSlot = getLearnedMealSlot(mealTime, fullHistory);
+    const mealSlotToSave = selectedSlot || learnedSlot;
     recordDraftFoodsUsageStats(
       draftFoods,
       personalDb,
       onPatchFoodDbEntry,
-      getCurrentTimeSlot(),
+      getTimeSlotForDecimalHour(mealTime),
     );
-    onSave?.(draftFoods, selectedSlot, editingMealId ?? undefined, mealTime);
+    onSave?.(draftFoods, mealSlotToSave, editingMealId ?? undefined, mealTime);
     clearDraft();
   };
 
@@ -825,16 +911,16 @@ function FastMealLoggerContent({
 
     const weight = roundToOneDecimal(targetWeight);
     const row = payload.row || {};
-    const per100 = getPer100Macros({ ...payload, row });
-    const ratio = weight / 100;
+    const scaledNutrients = buildScaledNutrientsForWeight(row, weight);
     const desc = String(payload.label || payload.desc || 'Alimento').trim();
 
-    return {
+    return attachProvenanceFromLegacySource({
       type: 'food',
       desc,
       name: desc,
       label: desc,
       foodDbKey: payload.foodDbKey,
+      _searchSource: tile._source,
       row,
       units: payload.units ?? row.units,
       defaultUnit: payload.defaultUnit ?? row.defaultUnit,
@@ -847,13 +933,8 @@ function FastMealLoggerContent({
       selectedUnit: 'g',
       multiplier: weight,
       qtyLabel: `${Math.round(weight)}g`,
-      kcal: Math.round(per100.kcal * ratio),
-      cal: Math.round(per100.kcal * ratio),
-      prot: Math.round(per100.prot * ratio * 10) / 10,
-      carb: Math.round(per100.carb * ratio * 10) / 10,
-      fat: Math.round(per100.fat * ratio * 10) / 10,
-      fatTotal: Math.round(per100.fat * ratio * 10) / 10,
-    };
+      ...scaledNutrients,
+    }, tile._source || (payload.foodDbKey ? 'personal' : 'kentu_it'));
   };
 
   const openFoodDetail = (tile) => {
@@ -905,7 +986,7 @@ function FastMealLoggerContent({
       payload?.foodDbKey,
       personalDb,
       onPatchFoodDbEntry,
-      getCurrentTimeSlot(),
+      getTimeSlotForDecimalHour(mealTime),
     );
 
     notifyItemAdded(String(payload.desc || payload.name));
@@ -972,13 +1053,6 @@ function FastMealLoggerContent({
     }
     setEditingCatalogFood(null);
     setDeepEditFood(item);
-  };
-
-  const handleAddComboToDraft = (combo, comboTitle) => {
-    const payload = buildComboDraftPayload(combo);
-    if (!payload) return;
-    addOrIncrementDraftFood(payload, getFoodUnitWeight(payload));
-    notifyItemAdded(comboTitle || payload.desc || 'Combo aggiunta');
   };
 
   const handleDeepEditSave = async (updatedItem) => {
@@ -1065,8 +1139,7 @@ function FastMealLoggerContent({
   };
 
   return (
-    <div className="relative mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col overflow-hidden bg-[#050a12] text-slate-100 md:flex-row">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:max-w-lg">
+    <div className="relative mx-auto flex h-full min-h-0 w-full max-w-lg flex-col overflow-hidden bg-[#050a12] text-slate-100">
       <header className="shrink-0 flex min-w-0 items-center justify-between px-4 pb-2 pt-3">
         <img
           src="/nuovo%20logo%20trasparente2.png"
@@ -1089,7 +1162,18 @@ function FastMealLoggerContent({
           draftFoods.length > 0 && !isCartOpen ? 'pb-24' : 'pb-4'
         }`}
       >
-        <div className="space-y-4 px-0.5">
+        <div className="space-y-3 px-0.5">
+          {!isVetrinaSearching ? (
+            <TodayMealsTimeline
+              fullHistory={fullHistory}
+              todayLog={todayLog}
+              currentMealTime={mealTime}
+              onMealTimeChange={handleMealTimeChange}
+              manualOverrideRef={mealTimeManualRef}
+              className="block w-full"
+            />
+          ) : null}
+
           <div>
             <div className="relative">
               <Search
@@ -1106,7 +1190,7 @@ function FastMealLoggerContent({
               <button
                 type="button"
                 onClick={() => setIsSearchModalOpen(true)}
-                aria-label="Ricerca avanzata CREA e USDA"
+                aria-label="Ricerca avanzata Kentu DB"
                 title="Ricerca avanzata"
                 className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-slate-400 transition-all hover:border-cyan-500/40 hover:text-cyan-300 active:scale-95"
               >
@@ -1115,31 +1199,12 @@ function FastMealLoggerContent({
             </div>
             <p className="mt-2 text-center text-[11px] font-medium text-slate-600">
               {isVetrinaSearching
-                ? isSearchingExternal
-                  ? 'Risultati locali · ricerca CREA e USDA in corso...'
-                  : vetrinaExternalResults.length > 0
-                    ? 'Risultati unificati · DB personale, CREA e USDA'
-                    : 'Risultati unificati · alimenti e ricette'
-                : 'DB personale · Ricette · CREA · USDA'}
+                ? vetrinaExternalResults.length > 0
+                  ? 'Ricerca globale · C > 🇮🇹 > 🌐'
+                  : 'Ricerca · personale, CREA, Italia e USDA'
+                : 'Suggerimenti basati sulle tue abitudini reali'}
             </p>
           </div>
-
-          {!isVetrinaSearching ? (
-            <TodayMealsTimeline
-              fullHistory={fullHistory}
-              todayLog={todayLog}
-              className="mb-1 md:hidden"
-              layout="inline"
-            />
-          ) : null}
-
-          {!isVetrinaSearching ? (
-            <FrequentMealBanner
-              count={predictiveCombos.length}
-              mealLabel={selectedMealLabel}
-              onOpen={() => setIsFrequentMealsOpen(true)}
-            />
-          ) : null}
 
           {!isVetrinaSearching ? (
             <div className="mb-2 flex items-center gap-2">
@@ -1246,7 +1311,7 @@ function FastMealLoggerContent({
               {isSearchingExternal ? (
                 <p className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700/80 px-4 py-4 text-center text-xs text-slate-500">
                   <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" />
-                  Ricerca su CREA e USDA...
+                  Ricerca su Kentu DB...
                 </p>
               ) : null}
 
@@ -1259,19 +1324,40 @@ function FastMealLoggerContent({
             </div>
           ) : activeVetrinaTab === 'foods' ? (
             <div className="min-w-0">
-              <h2 className="mb-1 truncate text-sm font-semibold text-slate-200">Suggeriti</h2>
-              <p className="mb-3 text-xs text-slate-500">
-                Fascia {TIME_SLOT_LABELS[stableTimeSlot] || stableTimeSlot} · {quickFoods.length}{' '}
-                {quickFoods.length === 1 ? 'alimento' : 'alimenti'}
-              </p>
-
-              {quickFoods.length === 0 ? (
+              {gridFoods.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
                   Nessun alimento frequente per questo slot
                 </p>
               ) : (
                 <div className={vetrinaTilesContainerClass}>
-                  {quickFoods.map((tile) => renderQuickFoodTile(tile))}
+                  {suggestedFoods.length > 0 ? (
+                    <div
+                      className={
+                        viewMode === 'grid'
+                          ? 'col-span-full mb-0.5'
+                          : 'w-full mb-2'
+                      }
+                    >
+                      <h2 className="text-base font-bold text-slate-100">
+                        ✨ Consigliati per {selectedMealLabel}
+                      </h2>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Legenda: ✨ consigliati · C tuo DB · 🇮🇹 Italia · 🌐 USDA
+                      </p>
+                    </div>
+                  ) : null}
+                  {gridFoods.map((tile) => {
+                    const displayTile = mergeCatalogDisplay(
+                      tile,
+                      personalDb,
+                      catalogServingOverrides,
+                    );
+                    const identityKey = resolveFoodIdentityKey(displayTile);
+                    const isSuggested = Boolean(
+                      identityKey && suggestedFoodIdentityKeys.has(identityKey),
+                    );
+                    return renderQuickFoodTile(tile, isSuggested);
+                  })}
                 </div>
               )}
             </div>
@@ -1394,6 +1480,7 @@ function FastMealLoggerContent({
                 onChange={(event) => {
                   const parsed = parseTimeStrToDecimal(event.target.value);
                   if (typeof parsed === 'number' && !Number.isNaN(parsed)) {
+                    mealTimeManualRef.current = true;
                     setMealTime(parsed);
                   }
                 }}
@@ -1499,8 +1586,9 @@ function FastMealLoggerContent({
         isOpen={isSearchModalOpen}
         onClose={() => setIsSearchModalOpen(false)}
         personalDb={personalDb}
-        creaDb={creaDb}
-        usdaDb={usdaDb}
+        kentuItDb={kentuItDb}
+        globalDb={globalDb ?? masterDb}
+        masterDb={globalDb ?? masterDb}
         onSelectFood={handleFoodSelection}
         onEditCatalogFood={openEditModalForCatalog}
         onEditRecipe={handleEditRecipe}
@@ -1604,42 +1692,13 @@ function FastMealLoggerContent({
       {isRecipeBuilderOpen ? (
         <RecipeBuilder
           personalDb={personalDb}
-          creaDb={creaDb}
-          usdaDb={usdaDb}
+          masterDb={masterDb}
           onSave={handleRecipeBuilderSave}
           onClose={() => setIsRecipeBuilderOpen(false)}
           onAcquireExternalFood={onAcquireExternalFood}
         />
       ) : null}
 
-      <FrequentMealsModal
-        isOpen={isFrequentMealsOpen}
-        onClose={() => setIsFrequentMealsOpen(false)}
-        mealLabel={selectedMealLabel}
-        combos={predictiveCombos}
-        draftFoods={draftFoods}
-        onAddCombo={(combo, comboTitle) => {
-          handleAddComboToDraft(combo, comboTitle);
-        }}
-        onRemoveOne={(comboPayload, unitWeight) => {
-          removeOneUnitFromDraft(comboPayload, unitWeight);
-        }}
-      />
-      </div>
-
-      <aside
-        className="hidden min-h-0 shrink-0 flex-col overflow-hidden border-l border-slate-800/80 bg-[#070d18] md:flex md:w-72 lg:w-80"
-        aria-label="Timeline pasti di oggi"
-      >
-        {!isVetrinaSearching ? (
-          <TodayMealsTimeline
-            fullHistory={fullHistory}
-            todayLog={todayLog}
-            className="h-full min-h-0 overflow-y-auto"
-            layout="sidebar"
-          />
-        ) : null}
-      </aside>
     </div>
   );
 }
@@ -1650,8 +1709,7 @@ export default function FastMealLogger({
   onClose,
   onSave,
   personalDb,
-  creaDb,
-  usdaDb: usdaDbProp,
+  masterDb: masterDbProp,
   onAcquireExternalFood,
   onSaveRecipe,
   onPatchFoodDbEntry,
@@ -1662,9 +1720,9 @@ export default function FastMealLogger({
   initialMealSlot,
   initialMealTime,
 }) {
-  const { unifiedDb: loadedCreaDb, usdaDb: loadedUsdaDb } = useFoodDb();
-  const resolvedCreaDb = creaDb ?? loadedCreaDb;
-  const resolvedUsdaDb = usdaDbProp ?? loadedUsdaDb;
+  const { kentuItDb: loadedKentuItDb, globalDb: loadedGlobalDb } = useFoodDb();
+  const resolvedKentuItDb = loadedKentuItDb;
+  const resolvedGlobalDb = masterDbProp ?? loadedGlobalDb;
   const composerInitialMealTime = useMemo(() => {
     if (typeof initialMealTime === 'number' && !Number.isNaN(initialMealTime)) {
       return initialMealTime;
@@ -1673,8 +1731,7 @@ export default function FastMealLogger({
       const t = initialDraft[0]?.mealTime;
       if (typeof t === 'number' && !Number.isNaN(t)) return t;
     }
-    const fromClock = parseTimeStrToDecimal(getCurrentTimeHHmm());
-    return fromClock ?? getCurrentTimeRoundedTo15Min();
+    return getCurrentDecimalHours();
   }, [initialMealTime, initialDraft]);
   const composerInitialMealType =
     initialMealSlot
@@ -1702,8 +1759,9 @@ export default function FastMealLogger({
           onClose={onClose}
           onSave={onSave}
           personalDb={personalDb}
-          creaDb={resolvedCreaDb}
-          usdaDb={resolvedUsdaDb}
+          kentuItDb={resolvedKentuItDb}
+          globalDb={resolvedGlobalDb}
+          masterDb={resolvedGlobalDb}
           onAcquireExternalFood={onAcquireExternalFood}
           onSaveRecipe={onSaveRecipe}
           onPatchFoodDbEntry={onPatchFoodDbEntry}

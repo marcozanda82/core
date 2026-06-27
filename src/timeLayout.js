@@ -132,3 +132,18 @@ export function getDebugGridLineTimelineStyle(hour) {
     zIndex: 2,
   };
 }
+
+/** Arrotonda ora decimale 0–24 al quarto d'ora più vicino (Kentu Timeline). */
+export function snapDecimalHourToQuarter(hour) {
+  const h = Number(hour);
+  if (!Number.isFinite(h)) return null;
+  return Math.max(0, Math.min(24, Math.round(h * 4) / 4));
+}
+
+/** Pointer X su barra 0–24h → ora decimale arrotondata a 15 min. */
+export function computeHourFromTimelinePointer(clientX, rect) {
+  if (!rect || !(rect.width > 0)) return null;
+  const x = Number(clientX) - rect.left;
+  const ratio = Math.max(0, Math.min(1, x / rect.width));
+  return snapDecimalHourToQuarter(ratio * 24);
+}

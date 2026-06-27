@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { FOOD_PROVENANCE } from '../../../foodDbSource';
 import { addDays } from '../../../calendarDateUtils';
 
 const TRACKER_STORICO_KEY = (date) => `trackerStorico_${date}`;
@@ -273,6 +274,8 @@ function aggregatePredictiveFoodBlocks(allFoodEntries, targetMealType, limit) {
       return {
         key: group.key,
         foodDbKey: group.foodDbKey,
+        source: 'KENTU_IT',
+        provenance: FOOD_PROVENANCE.PERSONAL,
         desc: group.desc,
         count: group.count,
         type: 'food',

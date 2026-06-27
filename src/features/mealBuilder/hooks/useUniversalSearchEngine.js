@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 
-import { getCreaFusionPayload, getUsdaFusionPayload } from '../../../foodSourceFusion';
+
+
+import { FOOD_DB_SOURCE, FOOD_PROVENANCE, compareProvenancePriority } from '../../../foodDbSource';
 
 import { searchFoodsDetailed } from '../../../foodSearch';
 
@@ -8,9 +10,9 @@ import { searchFoodsDetailed } from '../../../foodSearch';
 
 const PERSONAL_SEARCH_LIMIT = 30;
 
-const CREA_SEARCH_LIMIT = 30;
+const KENTU_IT_SEARCH_LIMIT = 30;
 
-const USDA_SEARCH_LIMIT = 30;
+const GLOBAL_SEARCH_LIMIT = 30;
 
 
 
@@ -96,6 +98,8 @@ function buildUnifiedResult({
 
   source,
 
+  legacySource,
+
   matchScore,
 
   matchType,
@@ -107,6 +111,10 @@ function buildUnifiedResult({
 }) {
 
   const name = String(desc || row?.desc || row?.name || id || '').trim();
+
+  const dbSource = source === FOOD_DB_SOURCE.GLOBAL ? FOOD_DB_SOURCE.GLOBAL : FOOD_DB_SOURCE.KENTU_IT;
+
+
 
   return {
 
@@ -120,9 +128,17 @@ function buildUnifiedResult({
 
     barcode: row?.barcode != null ? String(row.barcode).trim() : undefined,
 
-    row: row || { id, desc: name, name },
+    row: row ? { ...row, source: row.source || dbSource } : { id, desc: name, name, source: dbSource },
 
-    _source: source,
+    _source: legacySource,
+
+    source: dbSource,
+
+    provenance: legacySource === 'master'
+      ? FOOD_PROVENANCE.GLOBAL
+      : legacySource === 'kentu_it'
+        ? FOOD_PROVENANCE.ITALY
+        : FOOD_PROVENANCE.PERSONAL,
 
     matchScore,
 
@@ -138,9 +154,151 @@ function buildUnifiedResult({
 
 
 
+function isDuplicateOfExisting(externalItem, existingResults) {
+
+  const extName = normalizeSearchText(externalItem.name || externalItem.desc);
+
+  const extBarcode = String(
+
+    externalItem.barcode ?? externalItem.row?.barcode ?? '',
+
+  ).replace(/\D/g, '');
+
+
+
+  for (const existingItem of existingResults) {
+
+    const existingName = normalizeSearchText(existingItem.desc || existingItem.name);
+
+    const existingBarcode = String(
+
+      existingItem.barcode ?? existingItem.row?.barcode ?? '',
+
+    ).replace(/\D/g, '');
+
+
+
+    if (extBarcode && existingBarcode && extBarcode === existingBarcode) {
+
+      return true;
+
+    }
+
+
+
+    if (extName && existingName && extName === existingName) {
+
+      return true;
+
+    }
+
+  }
+
+
+
+  return false;
+
+}
+
+
+
+function mapCatalogHitToResult(hit, row, legacySource, dbSource) {
+
+  const name = String(row?.desc ?? row?.name ?? hit.name ?? '').trim();
+
+  return buildUnifiedResult({
+
+    id: hit.id,
+
+    desc: name,
+
+    row,
+
+    source: dbSource,
+
+    legacySource,
+
+    matchScore: hit.textScore ?? hit.matchScore,
+
+    matchType: 'text',
+
+    textScore: hit.textScore,
+
+    recencyScore: hit.recencyScore,
+
+  });
+
+}
+
+
+
+function searchCatalogDb(query, catalogDb, existingResults, options = {}) {
+
+  const safeDb = normalizeCatalogDb(catalogDb);
+
+  const q = String(query || '').trim();
+
+  if (!q || !safeDb || Object.keys(safeDb).length === 0) return [];
+
+
+
+  const {
+
+    limit = KENTU_IT_SEARCH_LIMIT,
+
+    legacySource = 'kentu_it',
+
+    dbSource = FOOD_DB_SOURCE.KENTU_IT,
+
+  } = options;
+
+
+
+  const detailed = searchFoodsDetailed(safeDb, q, {
+
+    includeUserHistory: dbSource === FOOD_DB_SOURCE.KENTU_IT,
+
+    limit,
+
+    mode: 'search',
+
+  });
+
+
+
+  const results = [];
+
+
+
+  detailed.forEach((hit) => {
+
+    const row = safeDb[hit.id];
+
+    if (!row) return;
+
+
+
+    const mapped = mapCatalogHitToResult(hit, row, legacySource, dbSource);
+
+    if (!isDuplicateOfExisting(mapped, existingResults)) {
+
+      results.push(mapped);
+
+    }
+
+  });
+
+
+
+  return results.sort(compareProvenancePriority);
+
+}
+
+
+
 /**
 
- * Tier 1 — ricerca sincrona sul database personale Firebase.
+ * Tier 1 — ricerca sincrona sul database personale Firebase (Kentu DB IT).
 
  */
 
@@ -184,7 +342,9 @@ export function searchPersonalDb(personalDb, query) {
 
           row,
 
-          source: 'personal',
+          source: FOOD_DB_SOURCE.KENTU_IT,
+
+          legacySource: 'personal',
 
           matchScore: 1,
 
@@ -232,7 +392,9 @@ export function searchPersonalDb(personalDb, query) {
 
         row,
 
-        source: isRecipeRow(row) ? 'recipe' : 'personal',
+        source: FOOD_DB_SOURCE.KENTU_IT,
+
+        legacySource: isRecipeRow(row) ? 'recipe' : 'personal',
 
         matchScore: hit.textScore ?? hit.matchScore,
 
@@ -278,7 +440,9 @@ export function searchPersonalDb(personalDb, query) {
 
           row,
 
-          source: 'recipe',
+          source: FOOD_DB_SOURCE.KENTU_IT,
+
+          legacySource: 'recipe',
 
           matchScore: nameNorm.startsWith(qNorm) ? 0.95 : 0.75,
 
@@ -296,89 +460,27 @@ export function searchPersonalDb(personalDb, query) {
 
 
 
-  return results.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+  return results.sort(compareProvenancePriority);
 
 }
 
 
 
-function isDuplicateOfPersonal(externalItem, personalResults) {
-  const extName = normalizeSearchText(externalItem.name || externalItem.desc);
-  const extBarcode = String(
-    externalItem.barcode ?? externalItem.row?.barcode ?? '',
-  ).replace(/\D/g, '');
+/**
 
-  for (const personalItem of personalResults) {
-    const personalName = normalizeSearchText(personalItem.desc || personalItem.name);
-    const personalBarcode = String(
-      personalItem.barcode ?? personalItem.row?.barcode ?? '',
-    ).replace(/\D/g, '');
+ * Tier 2 — catalogo Kentu DB IT (CREA certificato).
 
-    if (extBarcode && personalBarcode && extBarcode === personalBarcode) {
-      return true;
-    }
+ */
 
-    if (extName && personalName && extName === personalName) {
-      return true;
-    }
-  }
+export function searchKentuItDb(query, kentuItDb, existingResults = []) {
 
-  return false;
-}
+  return searchCatalogDb(query, kentuItDb, existingResults, {
 
+    limit: KENTU_IT_SEARCH_LIMIT,
 
+    legacySource: 'kentu_it',
 
-function isDuplicateInList(item, list) {
-  const name = normalizeSearchText(item.name || item.desc);
-  return list.some((existing) => {
-    const existingName = normalizeSearchText(existing.name || existing.desc);
-    return existingName && name && existingName === name;
-  });
-}
-
-
-
-function mapCreaItemToResult(item) {
-
-  const row = item.row || {
-
-    id: item.id,
-
-    desc: item.name,
-
-    name: item.name,
-
-    kcal: item.kcalPer100g,
-
-    prot: item.protein,
-
-    carb: item.carbs,
-
-    fat: item.fat,
-
-    foodSource: 'CREA',
-
-    iconTag: item.iconTag || null,
-
-  };
-
-
-
-  return buildUnifiedResult({
-
-    id: item.id,
-
-    desc: item.name,
-
-    row,
-
-    source: 'crea',
-
-    matchScore: item.finalScore ?? item.textScore ?? item.matchScore,
-
-    matchType: 'text',
-
-    textScore: item.textScore ?? item.matchScore,
+    dbSource: FOOD_DB_SOURCE.KENTU_IT,
 
   });
 
@@ -386,49 +488,45 @@ function mapCreaItemToResult(item) {
 
 
 
-function mapUsdaItemToResult(item) {
+/**
 
-  const row = item.row || {
+ * Tier 3 — catalogo Kentu DB 🌐 (esplorazione globale).
 
-    id: item.id,
+ */
 
-    desc: item.name,
+export function searchGlobalDb(query, globalDb, existingResults = []) {
 
-    name: item.name,
+  return searchCatalogDb(query, globalDb, existingResults, {
 
-    kcal: item.kcalPer100g,
+    limit: GLOBAL_SEARCH_LIMIT,
 
-    prot: item.protein,
+    legacySource: 'master',
 
-    carb: item.carbs,
-
-    fat: item.fat,
-
-    foodSource: 'USDA',
-
-    iconTag: item.iconTag || null,
-
-  };
-
-
-
-  return buildUnifiedResult({
-
-    id: item.id,
-
-    desc: item.name,
-
-    row,
-
-    source: 'usda',
-
-    matchScore: item.finalScore ?? item.textScore ?? item.matchScore,
-
-    matchType: 'text',
-
-    textScore: item.textScore ?? item.matchScore,
+    dbSource: FOOD_DB_SOURCE.GLOBAL,
 
   });
+
+}
+
+
+
+/** @deprecated Usare searchGlobalDb */
+
+export function searchMasterDb(query, masterDb, personalResults = []) {
+
+  return searchGlobalDb(query, masterDb, personalResults);
+
+}
+
+
+
+/** @deprecated Usare searchGlobalDb */
+
+export function searchExternalSources(query, masterDb, _legacyUsdaDb, personalResults = []) {
+
+  void _legacyUsdaDb;
+
+  return searchGlobalDb(query, masterDb, personalResults);
 
 }
 
@@ -444,19 +542,19 @@ export const SEARCH_SOURCE_BADGE = {
 
   },
 
-  crea: {
+  kentu_it: {
 
-    label: 'CREA',
+    label: 'Kentu DB IT',
 
-    className: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
+    className: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
 
   },
 
-  usda: {
+  master: {
 
-    label: 'USDA',
+    label: 'Kentu DB 🌐',
 
-    className: 'border-sky-500/40 bg-sky-500/15 text-sky-300',
+    className: 'border-violet-500/40 bg-violet-500/15 text-violet-300',
 
   },
 
@@ -474,95 +572,7 @@ export const SEARCH_SOURCE_BADGE = {
 
 /**
 
- * Tier 2 — ricerca sincrona su cataloghi locali Unified/CREA + USDA.
-
- */
-
-export function searchExternalSources(query, creaDb, usdaDb, personalResults = []) {
-
-  const external = [];
-
-  const safeCreaDb = normalizeCatalogDb(creaDb);
-
-  const safeUsdaDb = normalizeCatalogDb(usdaDb);
-
-  const q = String(query || '').trim();
-
-
-
-  if (!q) return external;
-
-
-
-  if (safeCreaDb && Object.keys(safeCreaDb).length > 0) {
-
-    const { creaNormalized } = getCreaFusionPayload(safeCreaDb, q, {
-
-      includeUserHistory: false,
-
-      creaLimit: CREA_SEARCH_LIMIT,
-
-    });
-
-
-
-    creaNormalized.forEach((item) => {
-
-      const mapped = mapCreaItemToResult(item);
-
-      if (!isDuplicateOfPersonal(mapped, personalResults)) {
-
-        external.push(mapped);
-
-      }
-
-    });
-
-  }
-
-
-
-  if (safeUsdaDb && Object.keys(safeUsdaDb).length > 0) {
-
-    const { usdaNormalized } = getUsdaFusionPayload(safeUsdaDb, q, {
-
-      usdaLimit: USDA_SEARCH_LIMIT,
-
-    });
-
-
-
-    usdaNormalized.forEach((item) => {
-
-      const mapped = mapUsdaItemToResult(item);
-
-      if (
-
-        !isDuplicateOfPersonal(mapped, personalResults) &&
-
-        !isDuplicateInList(mapped, external)
-
-      ) {
-
-        external.push(mapped);
-
-      }
-
-    });
-
-  }
-
-
-
-  return external;
-
-}
-
-
-
-/**
-
- * Ricerca esterna sincrona per la barra inline della Vetrina.
+ * Ricerca Kentu DB IT + opzionale globale per la barra inline della Vetrina.
 
  */
 
@@ -572,13 +582,17 @@ export function useDebouncedExternalFoodSearch(
 
   personalDb,
 
-  creaDb = null,
+  globalDb = null,
 
-  usdaDb = null,
+  options = {},
 
 ) {
 
-  const externalResults = useMemo(() => {
+  const { kentuItDb = null, searchGlobal = false } = options;
+
+
+
+  const results = useMemo(() => {
 
     const trimmedQuery = String(query || '').trim();
 
@@ -588,13 +602,23 @@ export function useDebouncedExternalFoodSearch(
 
     const personalResults = searchPersonalDb(personalDb, trimmedQuery);
 
-    return searchExternalSources(trimmedQuery, creaDb, usdaDb, personalResults);
+    const kentuItResults = searchKentuItDb(trimmedQuery, kentuItDb, personalResults);
 
-  }, [query, personalDb, creaDb, usdaDb]);
+    const kentuItCombined = [...personalResults, ...kentuItResults];
 
 
 
-  return { externalResults, isSearchingExternal: false };
+    if (!searchGlobal) return [];
+
+
+
+    return searchGlobalDb(trimmedQuery, globalDb, kentuItCombined);
+
+  }, [query, personalDb, kentuItDb, globalDb, searchGlobal]);
+
+
+
+  return { externalResults: results, isSearchingExternal: false };
 
 }
 
@@ -602,19 +626,13 @@ export function useDebouncedExternalFoodSearch(
 
 /**
 
- * Motore di ricerca unificato: Personale + CREA + USDA (tutto sincrono, tempo reale).
-
- *
-
- * @param {object|Array|null} personalDb Database personale Firebase (`trackerFoodDatabase`)
-
- * @param {object|null} [creaDb] Catalogo unified locale
-
- * @param {object|null} [usdaDb] Catalogo USDA locale
+ * Motore di ricerca unificato: Kentu DB IT (priorità) + opzionale globale.
 
  */
 
-export function useUniversalSearchEngine(personalDb, creaDb = null, usdaDb = null) {
+export function useUniversalSearchEngine(personalDb, kentuItDb = null, globalDb = null, options = {}) {
+
+  const { searchGlobal = true } = options;
 
   const [query, setQuery] = useState('');
 
@@ -630,23 +648,25 @@ export function useUniversalSearchEngine(personalDb, creaDb = null, usdaDb = nul
 
     const personalResults = searchPersonalDb(personalDb, trimmedQuery);
 
-    const externalResults = searchExternalSources(
+    const kentuItResults = searchKentuItDb(trimmedQuery, kentuItDb, personalResults);
 
-      trimmedQuery,
-
-      creaDb,
-
-      usdaDb,
-
-      personalResults,
-
-    );
+    const combined = [...personalResults, ...kentuItResults];
 
 
 
-    return [...personalResults, ...externalResults];
+    if (!searchGlobal) {
 
-  }, [query, personalDb, creaDb, usdaDb]);
+      return combined.sort(compareProvenancePriority);
+
+    }
+
+
+
+    const globalResults = searchGlobalDb(trimmedQuery, globalDb, combined);
+
+    return [...combined, ...globalResults].sort(compareProvenancePriority);
+
+  }, [query, personalDb, kentuItDb, globalDb, searchGlobal]);
 
 
 
@@ -667,5 +687,4 @@ export function useUniversalSearchEngine(personalDb, creaDb = null, usdaDb = nul
 
 
 export default useUniversalSearchEngine;
-
 

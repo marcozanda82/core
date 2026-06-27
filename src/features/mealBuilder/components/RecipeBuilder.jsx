@@ -29,8 +29,7 @@ function SourceBadge({ source }) {
 
 export default function RecipeBuilder({
   personalDb,
-  creaDb = null,
-  usdaDb = null,
+  masterDb = null,
   onSave,
   onClose,
   onAcquireExternalFood,
@@ -45,8 +44,7 @@ export default function RecipeBuilder({
 
   const { query, setQuery, results, isSearchingExternal } = useUniversalSearchEngine(
     personalDb,
-    creaDb,
-    usdaDb,
+    masterDb,
   );
 
   const per100 = useMemo(() => computeMacrosFromIngredients(ingredients), [ingredients]);
@@ -65,8 +63,7 @@ export default function RecipeBuilder({
           prot: Number(row.prot) || 0,
           carb: Number(row.carb) || 0,
           fatTotal: Number(row.fatTotal ?? row.fat) || 0,
-          ...(result._source === 'crea' ? { foodSource: 'CREA' } : {}),
-          ...(result._source === 'usda' ? { foodSource: 'USDA' } : {}),
+          ...(result._source === 'master' ? { foodSource: 'KENTU' } : {}),
         });
       } catch {
         /* acquisizione silenziosa */
@@ -200,7 +197,7 @@ export default function RecipeBuilder({
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Cerca ingrediente (DB, CREA, USDA)..."
+                placeholder="Cerca ingrediente (DB personale, Kentu DB)..."
                 className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-4 text-sm text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus:border-violet-500/50 focus:outline-none focus:ring-2 focus:ring-violet-500/15"
               />
             </div>
@@ -210,7 +207,7 @@ export default function RecipeBuilder({
                 {isSearchingExternal ? (
                   <p className="mb-2 flex items-center gap-2 text-xs text-slate-500">
                     <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-violet-400" />
-                    Ricerca CREA e USDA...
+                    Ricerca Kentu DB...
                   </p>
                 ) : null}
                 {results.length === 0 && !isSearchingExternal ? (

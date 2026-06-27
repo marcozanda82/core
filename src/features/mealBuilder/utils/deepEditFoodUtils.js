@@ -4,6 +4,7 @@ import {
   resolveUnitWeight,
 } from './draftFoodUnits';
 import {
+  ADVANCED_NUTRIENTS,
   applyPer100ToRow,
   buildBaseMacroFields,
   computeMacrosForUnit,
@@ -14,38 +15,23 @@ import {
 
 const MACRO_KEYS = ['kcal', 'cal', 'prot', 'carb', 'fat', 'fatTotal'];
 
-const MICRO_KEYS = [
-  'fibre',
-  'zuccheri',
-  'fatSat',
-  'vitc',
-  'vitD',
-  'fe',
-  'ca',
-  'mg',
-  'k',
-  'na',
-  'omega3',
-];
+/** @deprecated Usare ADVANCED_NUTRIENTS */
+const MICRO_KEYS = ADVANCED_NUTRIENTS;
 
-export const DEEP_EDIT_MICRO_FIELDS = [
-  { key: 'fibre', label: 'Fibre (g)' },
-  { key: 'zuccheri', label: 'Zuccheri (g)' },
-  { key: 'fatSat', label: 'Grassi sat. (g)' },
-  { key: 'vitc', label: 'Vit. C (mg)' },
-  { key: 'vitD', label: 'Vit. D (µg)' },
-  { key: 'fe', label: 'Ferro (mg)' },
-  { key: 'ca', label: 'Calcio (mg)' },
-  { key: 'mg', label: 'Magnesio (mg)' },
-  { key: 'k', label: 'Potassio (mg)' },
-  { key: 'na', label: 'Sodio (mg)' },
-  { key: 'omega3', label: 'Omega 3 (g)' },
-];
+export const DEEP_EDIT_MICRO_FIELDS = ADVANCED_NUTRIENTS.map((key) => ({
+  key,
+  label: key,
+}));
 
 function roundMacro(value, asInt = false) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
   return asInt ? Math.round(n) : Math.round(n * 10) / 10;
+}
+
+function readPer100Nutrient(row, key) {
+  const value = Number(row?.[key]);
+  return Number.isFinite(value) ? value : null;
 }
 
 export function buildDefaultsFromRow(item) {
@@ -59,9 +45,10 @@ export function buildDefaultsFromRow(item) {
     fatTotal: roundMacro(per100.fat),
   };
 
-  const row = item?.row || {};
-  MICRO_KEYS.forEach((key) => {
-    defaults[key] = roundMacro(Number(row[key]) || 0);
+  const row = item?.row || item || {};
+  ADVANCED_NUTRIENTS.forEach((key) => {
+    const value = readPer100Nutrient(row, key);
+    defaults[key] = value != null ? roundMacro(value) : 0;
   });
 
   return defaults;
@@ -80,6 +67,7 @@ export function resolveDefaultUnitFromItem(item) {
 export function buildDeepEditFormState(item) {
   const { unitName, defaultUnitWeight } = resolveDefaultUnitFromItem(item);
   const per100 = getPer100Macros(item);
+  const row = item?.row || item || {};
 
   const form = {
     unitName,
@@ -90,16 +78,18 @@ export function buildDeepEditFormState(item) {
     fat: String(roundMacro(per100.fat)),
   };
 
-  const row = item?.row || {};
-  MICRO_KEYS.forEach((key) => {
-    form[key] = String(roundMacro(Number(row[key]) || 0));
+  ADVANCED_NUTRIENTS.forEach((key) => {
+    const value = readPer100Nutrient(row, key);
+    form[key] = value != null && value !== 0 ? String(roundMacro(value)) : '';
   });
 
   return form;
 }
 
 function parseFormNumber(raw, fallback = 0) {
-  const n = Number(String(raw ?? '').replace(',', '.'));
+  const trimmed = String(raw ?? '').trim();
+  if (trimmed === '') return fallback;
+  const n = Number(trimmed.replace(',', '.'));
   return Number.isFinite(n) ? n : fallback;
 }
 
@@ -139,6 +129,27 @@ function applyIconFields(row, next, iconState) {
   }
 }
 
+function applyAdvancedNutrientsFromForm(row, next, form, defaultUnitWeight) {
+  ADVANCED_NUTRIENTS.forEach((key) => {
+    const trimmed = String(form[key] ?? '').trim();
+    if (trimmed === '') {
+      delete row[key];
+      delete next[key];
+      return;
+    }
+
+    const per100Micro = roundMacro(parseFormNumber(trimmed));
+    if (per100Micro === 0) {
+      delete row[key];
+      delete next[key];
+      return;
+    }
+
+    row[key] = per100Micro;
+    next[key] = roundMacro((per100Micro * defaultUnitWeight) / 100);
+  });
+}
+
 export function applyDeepEditFormToItem(item, form, iconState) {
   const unitName = String(form.unitName ?? '').trim();
   const defaultUnitWeight = Math.max(1, parseFormNumber(form.defaultUnitWeight, 100));
@@ -159,10 +170,6 @@ export function applyDeepEditFormToItem(item, form, iconState) {
     row.defaultUnit = unitEntry;
     row.units = [unitEntry];
   }
-
-  MICRO_KEYS.forEach((key) => {
-    row[key] = roundMacro(parseFormNumber(form[key]));
-  });
 
   const selectedUnit = unitName
     ? resolveUnitIdFromUnit({ label: unitName, grams: defaultUnitWeight })
@@ -192,12 +199,8 @@ export function applyDeepEditFormToItem(item, form, iconState) {
   };
 
   applyIconFields(row, next, iconState);
+  applyAdvancedNutrientsFromForm(row, next, form, defaultUnitWeight);
   next.row = row;
-
-  MICRO_KEYS.forEach((key) => {
-    const per100Micro = roundMacro(parseFormNumber(form[key]));
-    next[key] = roundMacro((per100Micro * defaultUnitWeight) / 100);
-  });
 
   return next;
 }
@@ -212,7 +215,10 @@ export function restoreDeepEditFormFromDefaults(item, form) {
     carb: String(defaults.carb),
     fat: String(defaults.fat),
     ...Object.fromEntries(
-      MICRO_KEYS.map((key) => [key, String(defaults[key] ?? 0)]),
+      ADVANCED_NUTRIENTS.map((key) => [
+        key,
+        defaults[key] != null && defaults[key] !== 0 ? String(defaults[key]) : '',
+      ]),
     ),
   };
 }
@@ -221,4 +227,4 @@ export function getDeepEditUnits(item) {
   return getItemUnits(item);
 }
 
-export { resolveUnitIdFromUnit, resolveUnitWeight, MICRO_KEYS, MACRO_KEYS };
+export { resolveUnitIdFromUnit, resolveUnitWeight, MICRO_KEYS, MACRO_KEYS, ADVANCED_NUTRIENTS };

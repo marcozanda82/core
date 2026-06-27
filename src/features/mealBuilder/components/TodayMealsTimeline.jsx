@@ -1,152 +1,331 @@
-import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { decimalToTimeStr, NODE_TYPE_ICON } from '../../../coreEngine';
+import {
+  computeHourFromTimelinePointer,
+  getTimePositionPercent,
+  getWallClockDecimalHour,
+} from '../../../timeLayout';
+import {
+  KENTU_TIMELINE,
+  kentuTimelineAxisStyle,
+  kentuTimelineLabelAboveStyle,
+  kentuTimelineStripStyle,
+} from '../utils/kentuTimelineUi';
 import { collectTodayMealBatches } from '../utils/todayMealsTimelineUtils';
 
-const MEAL_TYPE_STYLES = {
-  colazione: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-  pranzo: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300',
-  cena: 'border-violet-500/30 bg-violet-500/10 text-violet-300',
-  snack: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-};
+/** Formato HH:MM da ore decimali (0–24). */
+export function formatTime(decimalHours) {
+  return decimalToTimeStr(decimalHours);
+}
 
-function TimelineList({ batches, compact = false }) {
+function clampTimelinePercent(percent) {
+  return Math.min(100, Math.max(0, percent));
+}
+
+function resolveNodeLeftPercent(hourDecimal) {
+  const hour = Number(hourDecimal);
+  if (!Number.isFinite(hour)) return 50;
+  return clampTimelinePercent(getTimePositionPercent(hour));
+}
+
+function LoggedMealNode({ batch }) {
+  const left = resolveNodeLeftPercent(batch.mealTime);
+  const { loggedNode, colors } = KENTU_TIMELINE;
+  const icon = NODE_TYPE_ICON.meal || '🥗';
+  const radius = loggedNode.sizePx / 2;
+
   return (
-    <ol className="relative space-y-0">
-      {batches.map((batch, index) => {
-        const typeStyle = MEAL_TYPE_STYLES[batch.mealType] || MEAL_TYPE_STYLES.snack;
-        const isLast = index === batches.length - 1;
-        const dotColor = batch.metabolicColor || '#22d3ee';
+    <>
+      <div
+        className="timeline-node meal-node kentu-timeline-logged-node pointer-events-none absolute z-[1]"
+        style={{
+          left: `${left}%`,
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: loggedNode.sizePx,
+          height: loggedNode.sizePx,
+          opacity: loggedNode.opacity,
+          filter: loggedNode.filter,
+        }}
+        title={`${batch.mealLabel}${batch.timeLabel ? ` · ${batch.timeLabel}` : ''}${batch.kcal ? ` · ${batch.kcal} kcal` : ''}`}
+      >
+        <span
+          className="flex h-full w-full items-center justify-center rounded-full"
+          style={{
+            background: colors.mealBgMuted,
+            border: `2px solid ${colors.meal}`,
+            boxShadow: colors.mealGlow,
+          }}
+          aria-hidden
+        >
+          <span style={{ lineHeight: 1, fontSize: '0.75rem' }}>{icon}</span>
+        </span>
+      </div>
+      {batch.timeLabel ? (
+        <span
+          className="node-time-label pointer-events-none absolute z-[1] whitespace-nowrap font-bold tabular-nums"
+          style={{
+            ...kentuTimelineLabelAboveStyle(left, radius),
+            ...KENTU_TIMELINE.timeLabel,
+            fontSize: '0.55rem',
+            opacity: 0.85,
+          }}
+        >
+          {batch.timeLabel}
+        </span>
+      ) : null}
+    </>
+  );
+}
 
-        return (
-          <li
-            key={batch.id}
-            className={`vetrina-cart-row-enter relative flex gap-3 ${compact ? 'pb-2.5' : 'pb-3'} ${isLast ? 'pb-0' : ''}`}
-            style={{ animationDelay: `${index * 40}ms` }}
-          >
-            {!isLast ? (
-              <span
-                className="absolute left-[1.125rem] top-8 bottom-0 w-px bg-gradient-to-b from-slate-600/60 to-transparent"
-                aria-hidden
-              />
-            ) : null}
+function GhostMealNode({
+  leftPercent,
+  timeLabel,
+  isDragging,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+}) {
+  const { ghostNode, colors } = KENTU_TIMELINE;
+  const visualRadius = (ghostNode.sizePx / 2) * ghostNode.scale;
 
-            <div className="flex w-9 shrink-0 flex-col items-center pt-0.5">
-              <span
-                className="flex h-9 w-9 items-center justify-center rounded-full border-2 bg-slate-900/90 shadow-inner"
-                style={{ borderColor: dotColor, boxShadow: `0 0 12px ${dotColor}44` }}
-              >
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: dotColor }}
-                  aria-hidden
-                />
-              </span>
-            </div>
+  return (
+    <>
+      <div
+        className={`timeline-node meal-node ghost-node kentu-timeline-ghost-node absolute z-20 flex items-center justify-center touch-none ${
+          isDragging ? 'is-dragging' : ''
+        }`}
+        style={{
+          left: `${leftPercent}%`,
+          top: '50%',
+          width: ghostNode.sizePx,
+          height: ghostNode.sizePx,
+          borderRadius: '50%',
+          background: isDragging ? colors.ghostBgActive : colors.ghostBg,
+          border: isDragging
+            ? `2px dashed ${colors.ghostBorderActive}`
+            : `1px dashed ${colors.ghostBorder}`,
+          opacity: ghostNode.opacity,
+          transform: `translate(-50%, -50%) scale(${ghostNode.scale})`,
+          boxShadow: colors.ghostGlow,
+          cursor: isDragging ? 'grabbing' : 'grab',
+        }}
+        role="slider"
+        aria-label={`Orario pasto${timeLabel ? `: ${timeLabel}` : ''}`}
+        aria-valuemin={0}
+        aria-valuemax={24}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+      >
+        <span style={{ lineHeight: 1, fontSize: '1rem' }} aria-hidden>
+          {NODE_TYPE_ICON.meal || '🥗'}
+        </span>
+      </div>
+      {timeLabel ? (
+        <span
+          className="node-time-label pointer-events-none absolute z-20 whitespace-nowrap font-bold tabular-nums"
+          style={{
+            ...kentuTimelineLabelAboveStyle(leftPercent, visualRadius),
+            ...KENTU_TIMELINE.ghostTimeLabel,
+          }}
+          aria-live="polite"
+        >
+          {timeLabel}
+        </span>
+      ) : null}
+    </>
+  );
+}
 
-            <div className="min-w-0 flex-1 rounded-xl border border-white/[0.05] bg-slate-950/40 px-3 py-2.5">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="font-mono text-sm font-bold tabular-nums text-slate-100">
-                      {batch.timeLabel}
-                    </span>
-                    <span
-                      className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${typeStyle}`}
-                    >
-                      {batch.mealLabel}
-                    </span>
-                  </div>
-                  <p className="mt-1 truncate text-xs text-slate-400">
-                    {batch.previewName}
-                    {batch.itemCount > 1 ? (
-                      <span className="text-slate-600"> +{batch.itemCount - 1}</span>
-                    ) : null}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="font-mono text-lg font-bold leading-none tabular-nums text-cyan-400">
-                    {batch.kcal}
-                  </p>
-                  <p className="mt-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-600">
-                    kcal
-                  </p>
-                </div>
-              </div>
-              <p className="mt-1.5 font-mono text-[10px] tabular-nums text-slate-600">
-                P{batch.prot} · C{batch.carb} · F{batch.fat}
-              </p>
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+function KentuTimelineBar({
+  batches,
+  currentMealTime,
+  onMealTimeChange,
+  manualOverrideRef,
+}) {
+  const trackRef = useRef(null);
+  const dragPointerIdRef = useRef(null);
+  const suppressTrackClickRef = useRef(false);
+  const localManualRef = useRef(false);
+  const [dragLiveTime, setDragLiveTime] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const isManualOverride = () =>
+    Boolean(manualOverrideRef?.current || localManualRef.current);
+
+  const displayHour = dragLiveTime ?? Number(currentMealTime);
+  const safeDisplayHour = Number.isFinite(displayHour)
+    ? displayHour
+    : getWallClockDecimalHour();
+  const ghostLeft = resolveNodeLeftPercent(safeDisplayHour);
+  const ghostTimeLabel = formatTime(safeDisplayHour);
+
+  const markManualOverride = useCallback(() => {
+    localManualRef.current = true;
+    if (manualOverrideRef) manualOverrideRef.current = true;
+  }, [manualOverrideRef]);
+
+  const resolveHourFromPointerEvent = useCallback((event) => {
+    const el = trackRef.current;
+    if (!el) return null;
+    const clientX =
+      typeof event?.clientX === 'number' && Number.isFinite(event.clientX)
+        ? event.clientX
+        : null;
+    if (clientX == null) return null;
+    return computeHourFromTimelinePointer(clientX, el.getBoundingClientRect());
+  }, []);
+
+  const commitMealTime = useCallback(
+    (hour, fromUser = false) => {
+      if (typeof onMealTimeChange !== 'function') return;
+      if (hour == null || !Number.isFinite(hour)) return;
+      if (fromUser) markManualOverride();
+      onMealTimeChange(hour);
+    },
+    [markManualOverride, onMealTimeChange],
+  );
+
+  useEffect(() => {
+    const tick = () => {
+      if (isManualOverride()) return;
+      commitMealTime(getWallClockDecimalHour(), false);
+    };
+
+    const intervalId = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, [commitMealTime, manualOverrideRef]);
+
+  const handleTrackClick = useCallback(
+    (event) => {
+      if (typeof onMealTimeChange !== 'function') return;
+      if (suppressTrackClickRef.current) {
+        suppressTrackClickRef.current = false;
+        return;
+      }
+      const hour = resolveHourFromPointerEvent(event);
+      commitMealTime(hour, true);
+    },
+    [commitMealTime, onMealTimeChange, resolveHourFromPointerEvent],
+  );
+
+  const handleGhostPointerDown = useCallback(
+    (event) => {
+      event.stopPropagation();
+      dragPointerIdRef.current = event.pointerId;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      suppressTrackClickRef.current = true;
+      setIsDragging(true);
+      markManualOverride();
+      const hour = resolveHourFromPointerEvent(event);
+      if (hour != null) setDragLiveTime(hour);
+    },
+    [markManualOverride, resolveHourFromPointerEvent],
+  );
+
+  const handleGhostPointerMove = useCallback(
+    (event) => {
+      if (dragPointerIdRef.current !== event.pointerId) return;
+      const hour = resolveHourFromPointerEvent(event);
+      if (hour != null) {
+        setDragLiveTime(hour);
+        commitMealTime(hour, true);
+      }
+    },
+    [commitMealTime, resolveHourFromPointerEvent],
+  );
+
+  const finishGhostDrag = useCallback(
+    (event) => {
+      if (dragPointerIdRef.current !== event.pointerId) return;
+      dragPointerIdRef.current = null;
+      setIsDragging(false);
+      const hour = resolveHourFromPointerEvent(event) ?? dragLiveTime;
+      setDragLiveTime(null);
+      commitMealTime(hour, true);
+      window.setTimeout(() => {
+        suppressTrackClickRef.current = false;
+      }, 0);
+    },
+    [commitMealTime, dragLiveTime, resolveHourFromPointerEvent],
+  );
+
+  const isInteractive = typeof onMealTimeChange === 'function';
+
+  return (
+    <div className="timeline-strip-container relative flex w-full items-center">
+      <div
+        ref={trackRef}
+        className={`timeline-nodes-strip relative flex w-full items-center ${isInteractive ? 'cursor-pointer' : ''}`}
+        style={kentuTimelineStripStyle(true)}
+        role="slider"
+        aria-label="Kentu Timeline: tocca la barra per impostare l'orario del pasto"
+        aria-valuemin={0}
+        aria-valuemax={24}
+        aria-valuenow={safeDisplayHour}
+        onClick={handleTrackClick}
+      >
+        <div aria-hidden style={kentuTimelineAxisStyle()} />
+
+        {batches.map((batch) => (
+          <LoggedMealNode key={batch.id} batch={batch} />
+        ))}
+
+        <GhostMealNode
+          leftPercent={ghostLeft}
+          timeLabel={ghostTimeLabel}
+          isDragging={isDragging}
+          onPointerDown={handleGhostPointerDown}
+          onPointerMove={handleGhostPointerMove}
+          onPointerUp={finishGhostDrag}
+          onPointerCancel={finishGhostDrag}
+        />
+
+        {batches.length === 0 ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span className="text-[9px] text-slate-600">Trascina o tocca per impostare l&apos;orario</span>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
 export default function TodayMealsTimeline({
   fullHistory,
   todayLog = null,
+  currentMealTime = null,
+  onMealTimeChange,
+  manualOverrideRef = null,
   className = '',
-  layout = 'inline',
-  defaultExpanded = true,
 }) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-
-  const batches = useMemo(
-    () => collectTodayMealBatches(fullHistory, { todayLog }),
-    [fullHistory, todayLog],
-  );
-
-  const totalKcal = useMemo(
-    () => batches.reduce((sum, batch) => sum + (Number(batch.kcal) || 0), 0),
-    [batches],
-  );
-
-  const isSidebar = layout === 'sidebar';
+  const batches = useMemo(() => {
+    try {
+      const result = collectTodayMealBatches(fullHistory, { todayLog });
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      if (import.meta.env?.DEV) {
+        console.warn('[TodayMealsTimeline] collectTodayMealBatches failed', error);
+      }
+      return [];
+    }
+  }, [fullHistory, todayLog]);
 
   return (
     <section
-      className={`rounded-2xl border border-white/[0.06] bg-gradient-to-br from-slate-800/50 to-slate-900/80 shadow-md shadow-black/20 ${
-        isSidebar ? 'p-4' : 'p-3'
-      } ${className}`}
-      aria-label="Pasti di oggi"
+      className={`block w-full shrink-0 pb-2 ${className}`}
+      style={{ paddingTop: KENTU_TIMELINE.label.sectionPaddingTopPx }}
+      aria-label="Kentu Timeline pasti di oggi"
     >
-      <div className="mb-2.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Clock className="h-3.5 w-3.5 text-cyan-400/80" aria-hidden />
-          <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Oggi
-          </h3>
-        </div>
-        <div className="flex items-center gap-2">
-          {batches.length > 0 ? (
-            <span className="font-mono text-[10px] tabular-nums text-slate-500">
-              {batches.length} {batches.length === 1 ? 'pasto' : 'pasti'} · {totalKcal} kcal
-            </span>
-          ) : null}
-          {!isSidebar ? (
-            <button
-              type="button"
-              onClick={() => setIsExpanded((prev) => !prev)}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-700/80 text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200 md:hidden"
-              aria-expanded={isExpanded}
-              aria-label={isExpanded ? 'Comprimi timeline' : 'Espandi timeline'}
-            >
-              {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {(isSidebar || isExpanded) ? (
-        batches.length > 0 ? (
-          <TimelineList batches={batches} compact={isSidebar} />
-        ) : (
-          <p className="rounded-xl border border-dashed border-slate-700/70 px-3 py-5 text-center text-xs text-slate-500">
-            Nessun pasto registrato oggi — aggiungi il primo dalla Vetrina
-          </p>
-        )
-      ) : null}
+      <KentuTimelineBar
+        batches={batches}
+        currentMealTime={currentMealTime}
+        onMealTimeChange={onMealTimeChange}
+        manualOverrideRef={manualOverrideRef}
+      />
     </section>
   );
 }

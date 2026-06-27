@@ -91,16 +91,18 @@ export default function UniversalSearchModal({
   onOpenScanner,
   onSaveManualFood,
   personalDb,
-  creaDb = null,
-  usdaDb = null,
+  kentuItDb = null,
+  globalDb = null,
+  masterDb = null,
   draftFoods = [],
   scannerError = '',
   isScannerResolving = false,
 }) {
   const { query, setQuery, results, isSearchingExternal } = useUniversalSearchEngine(
     personalDb,
-    creaDb,
-    usdaDb,
+    kentuItDb,
+    globalDb ?? masterDb,
+    { searchGlobal: true },
   );
   const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
   const [manualForm, setManualForm] = useState(EMPTY_MANUAL_FORM);
@@ -340,7 +342,7 @@ export default function UniversalSearchModal({
           </form>
         ) : query.trim().length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-10 text-center text-sm text-slate-500">
-            Digita per cercare alimenti, ricette salvate, CREA e USDA
+            Digita per cercare alimenti, ricette salvate e Kentu DB
           </p>
         ) : results.length === 0 && !isSearchingExternal ? (
           <div className="space-y-3">

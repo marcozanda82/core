@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Check, Clipboard, RotateCcw, Trash2, X } from 'lucide-react';
 import FoodThumbnail from './FoodThumbnail';
 import ImageSelectionSheet from './ImageSelectionSheet';
-import { FOOD_ICONS_LIBRARY } from '../utils/FoodIcons';import {
+import AdvancedNutrientsEditSections from './AdvancedNutrientsEditSections';
+import { FOOD_ICONS_LIBRARY } from '../utils/FoodIcons';
+import {
   applyDeepEditFormToItem,
   buildDeepEditFormState,
-  DEEP_EDIT_MICRO_FIELDS,
   restoreDeepEditFormFromDefaults,
-} from '../utils/deepEditFoodUtils';
-const inputClassName =
+} from '../utils/deepEditFoodUtils';const inputClassName =
   'w-full rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500/50';
 
 export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave }) {
@@ -227,9 +227,15 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
 
             <section className="mb-5">
               <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Etichetta nutrizionale (valori rigorosamente per 100g)
+                Macro principali · per 100g
               </h4>
-              <div className="grid grid-cols-2 gap-3">                {[
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-amber-500/30 bg-amber-950/30 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                  Valori per 100g
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
                   { key: 'kcal', label: 'Kcal' },
                   { key: 'prot', label: 'Proteine (g)' },
                   { key: 'carb', label: 'Carboidrati (g)' },
@@ -252,24 +258,14 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
 
             <section>
               <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Micro · per 100g
+                Micronutrienti avanzati
               </h4>
-              <div className="grid grid-cols-2 gap-3">                {DEEP_EDIT_MICRO_FIELDS.map(({ key, label }) => (
-                  <label key={key} className="block">
-                    <span className="mb-1 block text-xs text-slate-400">{label}</span>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      step="any"
-                      value={form[key] ?? '0'}
-                      onChange={(event) => patchForm({ [key]: event.target.value })}
-                      className={inputClassName}
-                    />
-                  </label>
-                ))}
-              </div>
-            </section>
-          </div>
+              <AdvancedNutrientsEditSections
+                form={form}
+                onFieldChange={(key, value) => patchForm({ [key]: value })}
+                inputClassName={inputClassName}
+              />
+            </section>          </div>
 
           <div className="shrink-0 space-y-2 border-t border-slate-800 px-4 py-4">
             <button

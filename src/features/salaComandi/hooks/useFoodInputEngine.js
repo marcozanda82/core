@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ref, set } from 'firebase/database';
 import { searchFoodsDetailed } from '../../../foodSearch';
-import { getCreaFusionPayload, fuseUsdaIntoCrea } from '../../../foodSourceFusion';
+import { getMasterFusionPayload } from '../../../foodSourceFusion';
 import { TARGETS, getDefaultNutrientValue } from '../../../useBiochimico';
 import { getBarcodeNutritionOverride } from '../../../barcodeFoodOverrides';
 import { enrichDbRowWithFoodUnits } from '../../../foodUnits';
@@ -516,25 +516,6 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
 
     const onlyUsda = opts.onlyUsda === true;
     if (onlyUsda) {
-      if (lastCreaQueryRef.current !== q || !Array.isArray(lastCreaNormalizedRef.current)) {
-        return;
-      }
-      if (usdaFusionDoneForQueryRef.current === q) return;
-      creaUsdaAbortRef.current?.abort();
-      const ac = new AbortController();
-      creaUsdaAbortRef.current = ac;
-      try {
-        const merged = await fuseUsdaIntoCrea(lastCreaNormalizedRef.current, q, {
-          signal: ac.signal,
-          minQueryLengthForUsda: 3,
-        });
-        if (!ac.signal.aborted) {
-          setCreaResults(merged);
-          usdaFusionDoneForQueryRef.current = q;
-        }
-      } catch {
-        /* CREA invariata */
-      }
       return;
     }
 
@@ -553,72 +534,34 @@ Esempio: {"desc":"${name}","kcal":120,"prot":25,"carb":0,"fatTotal":2,"fibre":0}
         return;
       }
 
-      const { creaNormalized, uiItems } = getCreaFusionPayload(csvFoodDb, q, {
+      const { masterNormalized, uiItems } = getMasterFusionPayload(csvFoodDb, q, {
         includeUserHistory: false,
-        creaLimit: 50,
+        masterLimit: 50,
       });
-      lastCreaNormalizedRef.current = creaNormalized;
+      lastCreaNormalizedRef.current = masterNormalized;
       setCreaResults(uiItems);
       setShowFoodDropdown(true);
       setIsCreaLoading(false);
 
       if (import.meta.env?.DEV) {
-        const sourceBoost = (s) => (s === 'CREA' ? 20 : s === 'USDA' ? 5 : 0);
-        const fuseOrdering = (n) =>
-          Number(n.textScore ?? n.matchScore ?? 0) * 100
-          + Number(n.recencyScore ?? 0) * 100
-          + Number(n.frequencyScore ?? 0) * 100
-          + sourceBoost(n.source);
         // eslint-disable-next-line no-console
         console.log('[classicFoodSearch:DEV]', {
-          path: 'creaDropdown',
+          path: 'masterDropdown',
           query: q,
           includeUserHistory: false,
-          dbScope: 'csvFoodDb (solo catalogo CREA locale)',
-          top: creaNormalized.slice(0, 10).map((n, i) => ({
+          dbScope: 'csvFoodDb (Kentu master DB locale)',
+          top: masterNormalized.slice(0, 10).map((n, i) => ({
             rank: i + 1,
             id: n.id,
-            candidateSource: n.source ?? 'CREA',
+            candidateSource: n.source ?? 'KENTU',
             textMatch100: Number(n.textScore ?? n.matchScore ?? 0) * 100,
             recency100: Number(n.recencyScore ?? 0) * 100,
             frequency100: Number(n.frequencyScore ?? 0) * 100,
-            sourceBoost: sourceBoost(n.source),
-            orderingScore: fuseOrdering(n),
           })),
         });
       }
-
-      const loadUsda = opts.loadUsda !== false && q.length >= 3;
-      if (!loadUsda) return;
-
-      try {
-        const merged = await fuseUsdaIntoCrea(creaNormalized, q, {
-          signal: ac.signal,
-          minQueryLengthForUsda: 3,
-        });
-        if (!ac.signal.aborted) {
-          setCreaResults(merged);
-          usdaFusionDoneForQueryRef.current = q;
-          if (import.meta.env?.DEV) {
-            // uiItems da fuseUsdaIntoCrea: ordine finale = fusion; punteggi interni non esposti su row UI
-            // eslint-disable-next-line no-console
-            console.log('[classicFoodSearch:DEV]', {
-              path: 'creaUsdaMerged',
-              query: q,
-              top: merged.slice(0, 10).map((it, i) => ({
-                rank: i + 1,
-                id: it.id,
-                name: it.name,
-                candidateSource: it.foodSource ?? it.row?.foodSource ?? 'unknown',
-              })),
-            });
-          }
-        }
-      } catch {
-        /* USDA opzionale: lista CREA già mostrata */
-      }
     } catch (err) {
-      console.error('CREA search failed', err);
+      console.error('Master DB search failed', err);
       setCreaResults([]);
     } finally {
       setIsCreaLoading(false);
