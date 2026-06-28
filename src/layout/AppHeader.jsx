@@ -1,8 +1,8 @@
 import React from 'react';
-import EnergyArc from '../components/EnergyArc';
+import MetabolicStatusBadge from '../components/MetabolicStatusBadge';
 
 /**
- * Testata dashboard: logo Core OS | navigazione data | stress SNC + Body Battery.
+ * Testata dashboard: logo | navigazione data | cruscotto metabolico + accessory + SNC.
  * Banner simulazione opzionale sotto la prima riga.
  */
 export default function AppHeader({
@@ -14,76 +14,35 @@ export default function AppHeader({
   nextDayDisabled,
   sncStressLevel,
   onSncStressClick,
-  bodyBattery,
-  accentColor,
-  onBatteryClick,
+  metabolicSnapshot,
+  onMetabolicBadgeClick,
   simulationActive,
   onExitSimulation,
   accessory,
 }) {
   return (
     <>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          width: '100%',
-          padding: '6px 4px 8px',
-          marginBottom: '8px',
-          gap: '6px',
-          boxSizing: 'border-box',
-        }}
-      >
-        <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+      <div className="mb-2 box-border flex w-full items-center justify-between gap-2 px-1 pb-2">
+        {/* Sinistra: logo + navigazione data */}
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={onLogoClick}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: '2px 4px',
-              margin: 0,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-              maxWidth: 'min(46vw, 168px)',
-            }}
+            className="m-0 flex max-w-[min(46vw,168px)] shrink-0 cursor-pointer items-center justify-start border-none bg-transparent p-0.5 px-1"
           >
             <img
               src="/nuovo%20logo%20trasparente2.png"
               alt="Kentuos Logo"
               decoding="async"
               draggable={false}
-              style={{
-                maxHeight: 52,
-                height: 'auto',
-                width: 'auto',
-                maxWidth: '100%',
-                objectFit: 'contain',
-                objectPosition: 'left center',
-                display: 'block',
-              }}
+              className="block h-auto max-h-[52px] w-auto max-w-full object-contain object-left"
             />
           </button>
-        </div>
-        <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
+          <div className="flex min-w-0 flex-nowrap items-center gap-1">
             <button
               type="button"
               onClick={onPrevDay}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#00e5ff',
-                fontSize: '1.1rem',
-                padding: '6px',
-                flexShrink: 0,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-              }}
+              className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-1.5 text-[#00e5ff] text-[1.1rem]"
               aria-label="Giorno precedente"
             >
               ◀
@@ -91,17 +50,7 @@ export default function AppHeader({
             <button
               type="button"
               onClick={onOpenCalendar}
-              style={{
-                color: '#fff',
-                fontWeight: 'bold',
-                fontSize: '0.85rem',
-                whiteSpace: 'nowrap',
-                padding: '0 6px',
-                textAlign: 'center',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-              }}
+              className="cursor-pointer truncate border-none bg-transparent px-1.5 text-center text-[0.85rem] font-bold whitespace-nowrap text-white"
               aria-label="Apri calendario storico"
               title="Apri calendario storico"
             >
@@ -111,25 +60,20 @@ export default function AppHeader({
               type="button"
               onClick={onNextDay}
               disabled={nextDayDisabled}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#00e5ff',
-                fontSize: '1.1rem',
-                padding: '6px',
-                flexShrink: 0,
-                cursor: nextDayDisabled ? 'default' : 'pointer',
-                opacity: nextDayDisabled ? 0.3 : 1,
-                display: 'flex',
-                alignItems: 'center',
-              }}
+              className="flex shrink-0 items-center border-none bg-transparent p-1.5 text-[1.1rem] text-[#00e5ff] disabled:cursor-default disabled:opacity-30"
               aria-label="Giorno successivo"
             >
               ▶
             </button>
           </div>
         </div>
-        <div className="flex min-w-0 flex-[1_1_0] items-center justify-end gap-2 sm:gap-3">
+
+        {/* Destra: badge metabolico + accessory + SNC */}
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-2 sm:gap-3">
+          <MetabolicStatusBadge
+            metabolicSnapshot={metabolicSnapshot}
+            onClick={onMetabolicBadgeClick}
+          />
           {accessory ? (
             <div className="flex shrink-0 items-center">{accessory}</div>
           ) : null}
@@ -139,50 +83,14 @@ export default function AppHeader({
               onClick={onSncStressClick}
               title={sncStressLevel >= 85 ? 'Allarme overtraining SNC' : 'Affaticamento SNC'}
               aria-label={sncStressLevel >= 85 ? 'Allarme overtraining SNC' : 'Affaticamento SNC'}
+              className="shrink-0 border-none bg-transparent p-1 text-[1.15rem] leading-none"
               style={{
-                background: 'transparent',
-                border: 'none',
-                fontSize: '1.15rem',
-                cursor: 'pointer',
-                padding: '4px',
-                lineHeight: 1,
                 animation: sncStressLevel >= 85 ? 'pulseDot 1.5s infinite ease-in-out' : 'none',
-                flexShrink: 0,
               }}
             >
               {sncStressLevel >= 85 ? '⚠️' : '⚡'}
             </button>
           )}
-          <div
-            role="button"
-            tabIndex={0}
-            aria-label={`Body Battery ${bodyBattery?.currentEnergy ?? 0} per cento. Apri dettaglio.`}
-            title="Body Battery — dettaglio"
-            onClick={onBatteryClick}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onBatteryClick();
-              }
-            }}
-            style={{
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              flexShrink: 0,
-              position: 'relative',
-            }}
-          >
-            <EnergyArc
-              percentage={bodyBattery?.currentEnergy ?? 0}
-              size="small"
-              hasNapBoost={!!bodyBattery?.hasNapBoost}
-              showText
-              textMode="energy"
-              accentColor={accentColor ?? '#22d3ee'}
-            />
-          </div>
         </div>
       </div>
 

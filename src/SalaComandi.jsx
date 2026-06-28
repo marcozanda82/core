@@ -69,7 +69,7 @@ import {
   sanitizeWeeklyBlockPlanFromFirebase,
 } from './features/weeklyBlocks/weeklyBlockSchema';
 import TimelineNodeReport from './components/TimelineNodeReport';
-import BodyBatteryModal from './components/BodyBatteryModal';
+import MetabolicTimelineSheet from './components/MetabolicTimelineSheet';
 import CustomDateTick from './components/CustomDateTick';
 import {
   MAIN_BOTTOM_TAB_ORDER,
@@ -127,7 +127,7 @@ import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
 import OverlayHost from './features/salaComandi/OverlayHost';
 import ChoiceModalOverlay from './features/salaComandi/overlays/ChoiceModalOverlay';
 import DateCalendarOverlay from './features/salaComandi/overlays/DateCalendarOverlay';
-import BatteryModalOverlay from './features/salaComandi/overlays/BatteryModalOverlay';
+import useMetabolicPhaseState from './features/salaComandi/hooks/useMetabolicPhaseState';
 import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverlay';
 import AlcoholPopupOverlay from './features/salaComandi/overlays/AlcoholPopupOverlay';
 import SleepModalOverlay from './features/salaComandi/overlays/SleepModalOverlay';
@@ -1346,7 +1346,7 @@ export default function SalaComandi() {
     setDrawerVisceralFat,
   });
   const [showReport, setShowReport] = useState(false);
-  const [showBatteryModal, setShowBatteryModal] = useState(false);
+  const [showMetabolicSheet, setShowMetabolicSheet] = useState(false);
   const [showDateCalendarModal, setShowDateCalendarModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showRecalibrationDetails, setShowRecalibrationDetails] = useState(false);
@@ -5749,6 +5749,23 @@ ${dbKeys || 'n/d'}`;
     [longevityEngineScore]
   );
 
+  const metabolicBiometrics = useMemo(
+    () => ({
+      stressLevel: sncStressLevel,
+      recoveryScore: typeof longevityEngineScore?.score === 'number'
+        ? longevityEngineScore.score
+        : undefined,
+    }),
+    [sncStressLevel, longevityEngineScore?.score],
+  );
+
+  const metabolicSnapshot = useMetabolicPhaseState(
+    fullHistory,
+    activeLog,
+    currentTrackerDate,
+    metabolicBiometrics,
+  );
+
   const userAge = calculateAge(birthDate);
 
   /** Punteggi giornalieri (matrice rischi su singolo giorno) prima del giorno ancorato al tracker, per media mobile età proiettata. */
@@ -7442,9 +7459,8 @@ ${dbKeys || 'n/d'}`;
         nextDayDisabled={currentTrackerDate === getTodayString()}
         sncStressLevel={sncStressLevel}
         onSncStressClick={() => setShowSncPopup(true)}
-        bodyBattery={bodyBattery}
-        accentColor={currentMetabolicColor}
-        onBatteryClick={() => setShowBatteryModal(true)}
+        metabolicSnapshot={metabolicSnapshot}
+        onMetabolicBadgeClick={() => setShowMetabolicSheet(true)}
         simulationActive={isSimulationMode}
         onExitSimulation={() => {
           setIsSimulationMode(false);
@@ -7750,7 +7766,6 @@ ${dbKeys || 'n/d'}`;
                   syncDatiFirebase={syncDatiFirebase}
                   setManualNodes={setManualNodes}
                   setDailyLog={setDailyLog}
-                  energyPercent={bodyBattery?.currentEnergy ?? 0}
                   nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                   timelineEnergySeries={timelineEnergySeries}
                   timelineQualityChartData={chartData}
@@ -10071,14 +10086,14 @@ ${dbKeys || 'n/d'}`;
         </div>
       )}
 
-      <BatteryModalOverlay
-        showBatteryModal={showBatteryModal}
-        BodyBatteryModalComponent={BodyBatteryModal}
-        onClose={() => setShowBatteryModal(false)}
-        batteryData={{
-          ...bodyBattery,
-          accentColor: currentMetabolicColor,
-          hoursFasted: fastingData?.hoursFasted,
+      <MetabolicTimelineSheet
+        isOpen={showMetabolicSheet}
+        metabolicSnapshot={metabolicSnapshot}
+        onClose={() => setShowMetabolicSheet(false)}
+        onNeuralReset={() => {
+          setShowMetabolicSheet(false);
+          setActiveAction('focus');
+          setIsDrawerOpen(false);
         }}
       />
 

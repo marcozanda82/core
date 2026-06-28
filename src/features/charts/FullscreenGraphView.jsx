@@ -284,7 +284,6 @@ export default function FullscreenGraphView({
                 syncDatiFirebase={syncDatiFirebase}
                 setManualNodes={setManualNodes}
                 setDailyLog={setDailyLog}
-                energyPercent={bodyBattery?.currentEnergy ?? 0}
                 nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
                 timelineEnergySeries={timelineEnergySeries}
                 timelineQualityChartData={chartData}

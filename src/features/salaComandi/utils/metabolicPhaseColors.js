@@ -1,4 +1,5 @@
 import { TRACKER_STORICO_KEY, normalizeLogData } from '../../../coreEngine';
+import { resolvePhaseColorForHoursSinceMeal } from './metabolicPhaseConfig';
 
 export const METABOLIC_PHASE_COLORS = Object.freeze({
   digestiva: '#22d3ee',
@@ -62,16 +63,13 @@ export function resolveMetabolicPhaseId(hoursFasted) {
 export function resolveMetabolicColorForHoursFasted(hoursFasted) {
   const raw = hoursFasted;
   if (raw == null || raw === '') {
-    return METABOLIC_PHASE_COLORS.digestiva;
+    return resolvePhaseColorForHoursSinceMeal(0);
   }
   const h = Number(raw);
   if (!Number.isFinite(h) || Number.isNaN(h) || h < 0) {
-    return METABOLIC_PHASE_COLORS.digestiva;
+    return resolvePhaseColorForHoursSinceMeal(0);
   }
-  if (h >= 16) return METABOLIC_PHASE_COLORS.autofagia;
-  if (h >= 12) return METABOLIC_PHASE_COLORS.adrenergico;
-  if (h >= 4) return METABOLIC_PHASE_COLORS.stabilita;
-  return METABOLIC_PHASE_COLORS.digestiva;
+  return resolvePhaseColorForHoursSinceMeal(h);
 }
 
 const MEAL_HOUR_EPS = 0.002;
@@ -341,7 +339,7 @@ export function buildMetabolicTimelineGradientStops(options = {}) {
     eventHours.add(mealHour);
     eventHours.add(Math.max(domainStart, mealHour - MEAL_HOUR_EPS));
     eventHours.add(Math.min(domainEnd, mealHour + MEAL_HOUR_EPS));
-    for (const delta of [4, 12, 16]) {
+    for (const delta of [2, 6, 12, 16, 24, 48]) {
       const boundary = mealHour + delta;
       if (boundary <= domainEnd + 1e-9) {
         eventHours.add(Math.min(domainEnd, boundary));

@@ -250,8 +250,6 @@ export default function TimelineNodi({
   syncDatiFirebase,
   setManualNodes,
   setDailyLog,
-  /** 0–100 body battery / energia; se omesso la barra non viene mostrata. */
-  energyPercent,
   /** Click sulla striscia (non sui nodi): apre pianificazione pasto all’orario cliccato. */
   onTimelineTrackClick,
   /** Long press sulla striscia vuota: stesso obiettivo del click (menu inserimento rapido). */
@@ -930,16 +928,11 @@ export default function TimelineNodi({
     [onNodeClick, handleNodeTap]
   );
 
-  const showEnergyBar = energyPercent != null && Number.isFinite(Number(energyPercent));
-  const energyFill = showEnergyBar ? Math.max(0, Math.min(100, Number(energyPercent))) : 0;
-
   const lineHour =
     typeof nowLineDecimalHour === 'number' && !Number.isNaN(nowLineDecimalHour)
       ? nowLineDecimalHour
       : nowDecimalHour;
   const nowLineLeft = `${getTimePositionPercent(lineHour)}%`;
-  /** Larghezza barra energia allineata alla linea “ora” (stesso mapping 0–24h della timeline). */
-  const energyBarWidthPercent = getTimePositionPercent(Math.max(0, Math.min(24, lineHour)));
 
   const energyStripGradient = useMemo(
     () => buildMetabolicTimelineCssGradient(metabolicGradientStops),
@@ -948,7 +941,6 @@ export default function TimelineNodi({
 
   return (
     <div ref={containerRef} style={{ width: '100%', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', alignItems: 'center', width: '100%', minHeight: '55px' }}>
       <div
         ref={timelineContainerRef}
         role={onTimelineTrackClick ? 'button' : undefined}
@@ -1767,47 +1759,7 @@ export default function TimelineNodi({
               </motion.div>
             );
           })}
-        </div>
       </div>
-      {showEnergyBar ? (
-        <div
-          style={{
-            width: '100%',
-            padding: 0,
-            marginTop: 8,
-            boxSizing: 'border-box',
-          }}
-        >
-          <div
-            role="meter"
-            aria-valuenow={Math.round(energyFill)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuetext={`Energia ${Math.round(energyFill)} percento; barra fino all’ora attuale (${energyBarWidthPercent.toFixed(1)}% del giorno)`}
-            aria-label={`Energia ${Math.round(energyFill)} per cento`}
-            style={{
-              width: '100%',
-              height: 5,
-              borderRadius: 5,
-              background: 'rgba(0,0,0,0.35)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              overflow: 'hidden',
-              boxSizing: 'border-box',
-            }}
-          >
-            <div
-              style={{
-                height: '100%',
-                width: `${energyBarWidthPercent}%`,
-                borderRadius: 4,
-                background: 'linear-gradient(90deg, #ef4444 0%, #eab308 50%, #22c55e 100%)',
-                opacity: 0.35 + (energyFill / 100) * 0.65,
-                transition: 'width 0.35s ease-out, opacity 0.35s ease-out',
-              }}
-            />
-        </div>
-        </div>
-      ) : null}
     </div>
   );
 }
