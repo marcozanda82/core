@@ -3,10 +3,12 @@ import {
   logSleepPayloadSchema,
   addWorkoutPayloadSchema,
   terminalCommandEnvelopeSchema,
+  consultantResponseSchema,
 } from '../contracts/commandSchemas.js';
 import { askAI } from '../../../services/aiService.js';
 
 const DEFAULT_MODEL = 'gemini-1.5-flash-latest';
+const CONSULTANT_MODEL = 'gemini-1.5-flash-latest';
 
 function asTrimmedString(value) {
   return String(value ?? '').trim();
@@ -19,6 +21,58 @@ function unwrapJsonText(rawText) {
     return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   }
   return text;
+}
+
+/** True se il testo utente menziona una quantità numerica esplicita. */
+function userTextMentionsExplicitQuantity(userText) {
+  const t = asTrimmedString(userText).toLowerCase();
+  if (!t) return false;
+  return (
+    /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b/.test(t)
+    || /\b(\d+(?:[.,]\d+)?)\s*(?:porzioni?|fette?|pezzi|uova?)\b/.test(t)
+    || /\b(?:mangiato|mangiata|preso|presa|bevuto|bevuta)\s+(?:circa\s+)?(\d+)/.test(t)
+    || /\b(\d+)\s*(?:grammi|g)\b/.test(t)
+  );
+}
+
+const MEAL_TYPES = ['colazione', 'snack', 'pranzo', 'cena'];
+
+function userTextMentionsExplicitMealType(userText) {
+  const t = asTrimmedString(userText).toLowerCase();
+  if (!t) return false;
+  return (
+    /\bcolaz/.test(t)
+    || /\b(pranzo|mezzogiorno)\b/.test(t)
+    || /\b(cena|sera|serale)\b/.test(t)
+    || /\b(snack|spuntino|merenda)\b/.test(t)
+    || MEAL_TYPES.some((slot) => new RegExp(`\\b${slot}\\b`).test(t))
+  );
+}
+
+/** Normalizza payload ADD_FOOD dal modello: niente grammi/pasto inventati. */
+function sanitizeAddFoodCommand(command, userText) {
+  if (!command || typeof command !== 'object') return command;
+  if (asTrimmedString(command.commandType).toUpperCase() !== 'ADD_FOOD') return command;
+
+  const payload = { ...(command.payload || {}) };
+  const gramsNum = Number(payload.grams);
+
+  if (!Number.isFinite(gramsNum) || gramsNum <= 0) {
+    delete payload.grams;
+  } else if (!userTextMentionsExplicitQuantity(userText)) {
+    delete payload.grams;
+  } else {
+    payload.grams = Math.round(gramsNum);
+  }
+
+  const mealRaw = asTrimmedString(payload.mealType).toLowerCase();
+  if (!mealRaw || !MEAL_TYPES.includes(mealRaw) || !userTextMentionsExplicitMealType(userText)) {
+    delete payload.mealType;
+  } else {
+    payload.mealType = mealRaw;
+  }
+
+  return { ...command, payload };
 }
 
 function getEnvelopeSchemaForIntent(commandHint) {
@@ -83,11 +137,20 @@ export class GeminiStructuredClient {
   buildSystemInstruction(commandHint, { hasImages = false } = {}) {
     const fixedHint = asTrimmedString(commandHint).toUpperCase();
     const includeSleepRules = fixedHint === 'LOG_SLEEP' || hasImages;
+    const includeFoodRules = fixedHint === 'ADD_FOOD' || fixedHint === 'UNKNOWN';
     const parts = [
       'Sei Kentu Command Terminal.',
       'Rispondi SOLO con JSON valido e conforme allo schema fornito.',
       'Non aggiungere markdown, spiegazioni o testo fuori dal JSON.',
     ];
+
+    if (includeFoodRules) {
+      parts.push(
+        "REGOLA ADD_FOOD: Se l'utente dichiara di aver mangiato qualcosa MA NON specifica la quantità in grammi/porzioni, NON DEVI in alcun modo inventare, dedurre o stimare il peso. Devi obbligatoriamente restituire il campo 'grams' vuoto (null/undefined/omesso). Sarà il sistema a richiedere il dato mancante all'utente.",
+        "REGOLA ADD_FOOD (mealType): Se l'utente NON indica esplicitamente colazione, snack, pranzo o cena, NON indovinare il pasto in base all'orario. Ometti mealType o impostalo a null.",
+        "Includi grams SOLO se l'utente ha scritto un numero esplicito (es. 200g, 150 grammi). Valori tipici come 100g di default sono VIETATI se non detti dall'utente.",
+      );
+    }
 
     if (includeSleepRules) {
       parts.push(
@@ -134,8 +197,13 @@ export class GeminiStructuredClient {
     const userPrompt = [
       `Richiesta utente: ${userPromptText}`,
       `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
+      asTrimmedString(commandHint).toUpperCase() === 'ADD_FOOD'
+        ? 'Slot filling attivo: se mancano grammi o pasto, ometti i campi corrispondenti (null) — non inventare valori.'
+        : null,
       'Produci esclusivamente l envelope commandType/payload/uiMessage/confidence/requiresConfirmation.',
-    ].join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
     const generationConfig = {
       temperature,
       response_mime_type: 'application/json',
@@ -158,10 +226,70 @@ export class GeminiStructuredClient {
     } catch {
       throw new Error('Gemini returned malformed JSON');
     }
+    parsed = sanitizeAddFoodCommand(parsed, normalizedUserText);
     return {
       command: parsed,
       rawText,
       model: this.model,
+    };
+  }
+
+  /**
+   * Risposta strutturata consulente (JSON): adviceMessage + suggestedAction opzionale.
+   * @param {{ prompt: string, systemInstruction?: string, temperature?: number }} params
+   */
+  async generateConsultantResponse({ prompt, systemInstruction, temperature = 0.35 } = {}) {
+    const userPrompt = asTrimmedString(prompt);
+    if (!userPrompt) throw new Error('Consultant prompt is empty');
+
+    const system =
+      asTrimmedString(systemInstruction)
+      || [
+        'Sei Kentu Meal Advice. Rispondi SOLO con JSON valido conforme allo schema.',
+        'Non aggiungere markdown né testo fuori dal JSON.',
+        'adviceMessage: italiano, max 4 frasi, include semaforo (verde/giallo/rosso).',
+        'suggestedAction: compila { foodName, grams, mealType } se verde o giallo (porzione consigliata,',
+        'foodName tra i candidati DB del prompt). Se rosso o sconsigliato: suggestedAction = null.',
+      ].join(' ');
+
+    const generationConfig = {
+      temperature,
+      response_mime_type: 'application/json',
+      responseMimeType: 'application/json',
+      response_schema: consultantResponseSchema,
+      responseSchema: consultantResponseSchema,
+    };
+
+    const rawText = await askAI(userPrompt, system, {
+      model: CONSULTANT_MODEL,
+      temperature,
+      responseSchema: consultantResponseSchema,
+      generationConfig,
+    });
+
+    const cleaned = unwrapJsonText(rawText);
+    if (!cleaned) throw new Error('Consultant LLM returned empty response');
+
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      throw new Error('Consultant LLM returned malformed JSON');
+    }
+
+    const adviceMessage = asTrimmedString(parsed?.adviceMessage);
+    if (!adviceMessage) throw new Error('Consultant response missing adviceMessage');
+
+    let suggestedAction = null;
+    if (parsed?.suggestedAction && typeof parsed.suggestedAction === 'object') {
+      suggestedAction = parsed.suggestedAction;
+    }
+
+    return {
+      adviceMessage,
+      suggestedAction,
+      rawText,
+      model: CONSULTANT_MODEL,
     };
   }
 }

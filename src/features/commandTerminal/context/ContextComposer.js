@@ -10,6 +10,27 @@ function normalizeMealType(value) {
   return null;
 }
 
+const MEAL_ADVICE_PATTERNS = [
+  /\bposso\s+(?:mangiare|prendere|avere)\b/,
+  /\bconviene\s+(?:mangiare|prendere)\b/,
+  /\bmi\s+consigli\b/,
+  /\b(?:è|e)\s+ok\s+mangiare\b/,
+  /\bva\s+bene\s+mangiare\b/,
+  /\bse\s+mangio\b/,
+  /\bdentro\s+(?:al\s+)?budget\b/,
+  /\bquanto\s+(?:posso\s+)?mangiare\b/,
+  /\bposso\s+.*\?/,
+];
+
+const FOOD_LOG_PATTERNS = [
+  /\bho\s+mangiat/,
+  /\bho\s+preso\b/,
+  /\bho\s+bevut/,
+  /\baggiung/i,
+  /\blogg/i,
+  /\bregistr/i,
+];
+
 export class ContextComposer {
   detectIntent(userText = '', { hasImages = false } = {}) {
     const text = toSafeString(userText).toLowerCase();
@@ -18,6 +39,9 @@ export class ContextComposer {
     if (sleepKeywords.some((token) => text.includes(token))) return 'LOG_SLEEP';
     const workoutKeywords = ['allenamento', 'workout', 'corsa', 'pesi', 'cardio', 'training'];
     if (workoutKeywords.some((token) => text.includes(token))) return 'ADD_WORKOUT';
+    const isFoodLog = FOOD_LOG_PATTERNS.some((pattern) => pattern.test(text));
+    const isMealAdvice = MEAL_ADVICE_PATTERNS.some((pattern) => pattern.test(text));
+    if (isMealAdvice && !isFoodLog) return 'ASK_MEAL_ADVICE';
     const foodKeywords = ['mang', 'cibo', 'alimento', 'pasto', 'colazione', 'pranzo', 'cena', 'snack'];
     if (foodKeywords.some((token) => text.includes(token))) return 'ADD_FOOD';
     return 'UNKNOWN';
@@ -44,6 +68,8 @@ export class ContextComposer {
         ? mealState.recentFoods.slice(0, 10).map((name) => toSafeString(name)).filter(Boolean)
         : [],
       knownFoods,
+      slotFillingPolicy:
+        'ADD_FOOD: ometti grams e mealType se non espliciti nel messaggio utente; il terminale chiederà i dati mancanti.',
     };
   }
 
@@ -77,6 +103,17 @@ export class ContextComposer {
         intent: 'ADD_WORKOUT',
         contextSlices: {
           workout: this.getWorkoutContext(currentState.dailyStats),
+        },
+      };
+    }
+    if (normalizedIntent === 'ASK_MEAL_ADVICE') {
+      return {
+        intent: 'ASK_MEAL_ADVICE',
+        contextSlices: {
+          app: {
+            activeDate: toSafeString(currentState?.activeDate) || null,
+            locale: toSafeString(currentState?.locale) || 'it-IT',
+          },
         },
       };
     }

@@ -339,6 +339,59 @@
   outline: none;
 }
 
+.kentu-advice-accept-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  background: linear-gradient(
+    135deg,
+    rgba(6, 78, 99, 0.55) 0%,
+    rgba(15, 23, 42, 0.72) 100%
+  );
+  color: #e0f2fe;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow:
+    0 0 18px rgba(34, 211, 238, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.kentu-advice-accept-btn:hover,
+.kentu-advice-accept-btn:focus-visible {
+  border-color: rgba(34, 211, 238, 0.75);
+  box-shadow:
+    0 0 22px rgba(34, 211, 238, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.kentu-advice-accept-btn:active {
+  transform: translateY(0);
+}
+
+.kentu-advice-accept-btn__icon {
+  font-size: 0.95rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px rgba(250, 204, 21, 0.45));
+}
+
+.kentu-advice-accept-btn__label {
+  text-align: left;
+}
+
 .kentu-btn--ghost {
   color: var(--kentu-text-muted);
   background: transparent;

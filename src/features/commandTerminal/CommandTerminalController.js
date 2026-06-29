@@ -9,6 +9,21 @@ import {
   DISPATCH_COMMAND_REJECTED,
   DISPATCH_SYSTEM_MESSAGE,
 } from './contracts/eventTypes.js';
+import {
+  CONVERSATION_STATE,
+  getFoodPayloadMissingFields,
+  inferDefaultMealType,
+  normalizeFoodPayload,
+  parseGramsFromUserText,
+  parseMealTypeFromUserText,
+  slotPromptForState,
+} from './conversation/conversationState.js';
+import {
+  buildAdviceContext,
+  extractTargetFoodFromQuery,
+  generateConsultantPrompt,
+  sanitizeSuggestedAction,
+} from '../../conversation/ConsultantEngine.js';
 
 const COMMAND_TO_EVENT = Object.freeze({
   ADD_FOOD: DISPATCH_ADD_FOOD,
@@ -68,16 +83,282 @@ function validateEnvelope(command) {
   return 'Unsupported commandType';
 }
 
+function nextFoodSlotState(missingFields) {
+  if (missingFields.includes('grams')) return CONVERSATION_STATE.AWAITING_FOOD_GRAMS;
+  if (missingFields.includes('mealType')) return CONVERSATION_STATE.AWAITING_TIME;
+  return CONVERSATION_STATE.IDLE;
+}
+
 export class CommandTerminalController {
   constructor({ bus = commandBus, llmClient = geminiStructuredClient, composer = contextComposer } = {}) {
     this.bus = bus;
     this.llmClient = llmClient;
     this.composer = composer;
+    this.conversationState = CONVERSATION_STATE.IDLE;
+    this.pendingCommandPayload = null;
+    this.pendingCommandType = null;
+  }
+
+  getConversationSnapshot() {
+    return {
+      conversationState: this.conversationState,
+      pendingCommandPayload: this.pendingCommandPayload
+        ? { ...this.pendingCommandPayload }
+        : null,
+      pendingCommandType: this.pendingCommandType,
+    };
+  }
+
+  resetConversationState() {
+    this.conversationState = CONVERSATION_STATE.IDLE;
+    this.pendingCommandPayload = null;
+    this.pendingCommandType = null;
+  }
+
+  publishSystemMessage(message) {
+    const text = String(message || '').trim();
+    if (!text) return;
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      { message: text, text },
+      { source: 'CommandTerminalController' },
+    );
+  }
+
+  publishAdviceMessage({ text, suggestedAction = null }) {
+    const adviceMessage = String(text || '').trim();
+    if (!adviceMessage) return;
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'ADVICE',
+        text: adviceMessage,
+        message: adviceMessage,
+        suggestedAction: suggestedAction || null,
+        adviceId: `advice_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      },
+      { source: 'CommandTerminalController' },
+    );
+  }
+
+  dispatchCommand(commandType, payload, meta = {}) {
+    const normalizedType = String(commandType || '').trim().toUpperCase();
+    const eventType = COMMAND_TO_EVENT[normalizedType];
+    if (!eventType) {
+      throw new Error(`Unsupported commandType: ${normalizedType}`);
+    }
+
+    const publishResult = this.bus.publish(eventType, payload, {
+      source: 'CommandTerminalController',
+      dedupeKey: {
+        commandType: normalizedType,
+        payload,
+      },
+    });
+
+    this.bus.publish(
+      DISPATCH_COMMAND_ACCEPTED,
+      {
+        commandType: normalizedType,
+        payload,
+        publishResult,
+        confidence: meta.confidence ?? null,
+        requiresConfirmation: meta.requiresConfirmation ?? false,
+      },
+      { source: 'CommandTerminalController' },
+    );
+
+    if (meta.uiMessage) {
+      this.publishSystemMessage(meta.uiMessage);
+    }
+
+    return { commandType: normalizedType, payload, publishResult };
+  }
+
+  beginFoodSlotFilling(partialPayload, currentState = {}, options = {}) {
+    const normalized = normalizeFoodPayload(partialPayload, currentState, {
+      inferMealTypeFromContext: false,
+      ...options,
+    });
+    this.pendingCommandType = 'ADD_FOOD';
+    this.pendingCommandPayload = { ...normalized };
+
+    const missing = getFoodPayloadMissingFields(this.pendingCommandPayload);
+    if (missing.length === 0) {
+      return this.completePendingFoodCommand(currentState, { fromSlotFilling: false });
+    }
+
+    this.conversationState = nextFoodSlotState(missing);
+    this.publishSystemMessage(slotPromptForState(this.conversationState, this.pendingCommandPayload));
+    return {
+      ok: true,
+      awaiting: true,
+      conversationState: this.conversationState,
+      pendingCommandPayload: { ...this.pendingCommandPayload },
+    };
+  }
+
+  completePendingFoodCommand(currentState = {}, options = {}) {
+    const payload = normalizeFoodPayload(this.pendingCommandPayload || {}, currentState);
+    const validationError = validateFoodPayload(payload);
+    if (validationError) {
+      const missing = getFoodPayloadMissingFields(payload);
+      if (missing.length > 0) {
+        this.pendingCommandPayload = { ...payload };
+        this.conversationState = nextFoodSlotState(missing);
+        this.publishSystemMessage(slotPromptForState(this.conversationState, payload));
+        return {
+          ok: true,
+          awaiting: true,
+          conversationState: this.conversationState,
+          reason: validationError,
+        };
+      }
+
+      this.bus.publish(
+        DISPATCH_COMMAND_REJECTED,
+        { reason: validationError, command: payload },
+        { source: 'CommandTerminalController' },
+      );
+      this.resetConversationState();
+      return { ok: false, reason: validationError };
+    }
+
+    const result = this.dispatchCommand('ADD_FOOD', payload, {
+      requiresConfirmation: false,
+      uiMessage: options.uiMessage,
+    });
+    this.resetConversationState();
+    return { ok: true, ...result };
+  }
+
+  processSlotFillingResponse(userText, currentState = {}) {
+    const text = String(userText || '').trim();
+    if (!text) {
+      this.bus.publish(
+        DISPATCH_COMMAND_REJECTED,
+        { reason: 'Risposta vuota.' },
+        { source: 'CommandTerminalController' },
+      );
+      return { ok: false, reason: 'empty_slot_response' };
+    }
+
+    if (this.pendingCommandType !== 'ADD_FOOD') {
+      this.resetConversationState();
+      return { ok: false, reason: 'unknown_pending_command' };
+    }
+
+    const pending = { ...(this.pendingCommandPayload || {}) };
+
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_FOOD_GRAMS) {
+      const grams = parseGramsFromUserText(text);
+      if (!grams) {
+        this.publishSystemMessage(
+          `Non ho capito la quantità. Quanti grammi di ${pending.foodName || 'alimento'}? (es. 200 o 200g)`,
+        );
+        return { ok: true, awaiting: true, conversationState: this.conversationState };
+      }
+      pending.grams = grams;
+      this.pendingCommandPayload = pending;
+
+      const missing = getFoodPayloadMissingFields(
+        normalizeFoodPayload(pending, currentState),
+      );
+      if (missing.includes('mealType')) {
+        const inferred = inferDefaultMealType(currentState);
+        if (inferred) {
+          pending.mealType = inferred;
+          this.pendingCommandPayload = pending;
+          return this.completePendingFoodCommand(currentState);
+        }
+        this.conversationState = CONVERSATION_STATE.AWAITING_TIME;
+        this.publishSystemMessage(slotPromptForState(this.conversationState, pending));
+        return {
+          ok: true,
+          awaiting: true,
+          conversationState: this.conversationState,
+        };
+      }
+
+      return this.completePendingFoodCommand(currentState);
+    }
+
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_TIME) {
+      const mealType = parseMealTypeFromUserText(text);
+      if (!mealType) {
+        this.publishSystemMessage(
+          'Non ho riconosciuto il pasto. Rispondi con: colazione, pranzo, cena o snack.',
+        );
+        return { ok: true, awaiting: true, conversationState: this.conversationState };
+      }
+      pending.mealType = mealType;
+      this.pendingCommandPayload = pending;
+      return this.completePendingFoodCommand(currentState);
+    }
+
+    this.resetConversationState();
+    return { ok: false, reason: 'invalid_conversation_state' };
+  }
+
+  async processMealAdvice(userText, currentState = {}) {
+    const targetFood = extractTargetFoodFromQuery(userText) || String(userText || '').trim();
+    if (!targetFood) {
+      this.publishSystemMessage('Dimmi quale alimento vuoi valutare (es. «Posso mangiare una pizza?»).');
+      return { ok: false, reason: 'empty_meal_advice_target' };
+    }
+
+    let adviceContext;
+    try {
+      adviceContext = await buildAdviceContext(targetFood, currentState);
+    } catch (error) {
+      const reason = `Consultant context failure: ${error?.message || 'unknown error'}`;
+      console.error('[CommandTerminalController] buildAdviceContext error', error);
+      this.bus.publish(
+        DISPATCH_COMMAND_REJECTED,
+        { reason, userText, intent: 'ASK_MEAL_ADVICE' },
+        { source: 'CommandTerminalController' },
+      );
+      return { ok: false, reason };
+    }
+
+    const consultantPrompt = generateConsultantPrompt(adviceContext, targetFood);
+
+    try {
+      const { adviceMessage, suggestedAction: rawAction, model } =
+        await this.llmClient.generateConsultantResponse({
+          prompt: consultantPrompt,
+          temperature: 0.35,
+        });
+      const suggestedAction = sanitizeSuggestedAction(rawAction, adviceContext);
+      this.publishAdviceMessage({
+        text: adviceMessage,
+        suggestedAction,
+      });
+      return { ok: true, intent: 'ASK_MEAL_ADVICE', model, adviceContext, suggestedAction };
+    } catch (error) {
+      const reason = `Consultant LLM failure: ${error?.message || 'unknown error'}`;
+      console.error('[CommandTerminalController] Meal advice LLM error', error);
+      this.bus.publish(
+        DISPATCH_COMMAND_REJECTED,
+        { reason, userText, intent: 'ASK_MEAL_ADVICE' },
+        { source: 'CommandTerminalController' },
+      );
+      return { ok: false, reason };
+    }
   }
 
   async processUserMessage(text, currentState = {}, options = {}) {
     const userText = String(text || '').trim();
     const images = Array.isArray(options?.images) ? options.images : [];
+
+    if (this.conversationState !== CONVERSATION_STATE.IDLE) {
+      if (images.length > 0) {
+        this.publishSystemMessage('Completa prima la domanda in sospeso, poi allega eventuali screenshot.');
+        return this.processSlotFillingResponse(userText, currentState);
+      }
+      return this.processSlotFillingResponse(userText, currentState);
+    }
+
     if (!userText && images.length === 0) {
       const reason = 'Empty user message';
       this.bus.publish(DISPATCH_COMMAND_REJECTED, { reason }, { source: 'CommandTerminalController' });
@@ -87,6 +368,11 @@ export class CommandTerminalController {
     const inferredIntent =
       String(options.intent || '').trim().toUpperCase() ||
       this.composer.detectIntent(userText, { hasImages: images.length > 0 });
+
+    if (inferredIntent === 'ASK_MEAL_ADVICE') {
+      return this.processMealAdvice(userText, currentState);
+    }
+
     const contextBundle = this.composer.buildPromptContext(inferredIntent, currentState);
 
     let commandResponse;
@@ -113,8 +399,26 @@ export class CommandTerminalController {
       return { ok: false, reason };
     }
 
+    const commandType = String(commandResponse.command?.commandType || '').trim().toUpperCase();
+    const rawPayload = commandResponse.command?.payload || {};
+
+    if (commandType === 'ADD_FOOD') {
+      const normalized = normalizeFoodPayload(rawPayload, currentState, {
+        inferMealTypeFromContext: false,
+      });
+      const missing = getFoodPayloadMissingFields(normalized);
+
+      if (missing.length > 0 && String(normalized.foodName || '').trim()) {
+        return this.beginFoodSlotFilling(normalized, currentState);
+      }
+    }
+
     const validationError = validateEnvelope(commandResponse.command);
     if (validationError) {
+      if (commandType === 'ADD_FOOD' && String(rawPayload.foodName || '').trim()) {
+        return this.beginFoodSlotFilling(rawPayload, currentState);
+      }
+
       this.bus.publish(
         DISPATCH_COMMAND_REJECTED,
         {
@@ -128,40 +432,17 @@ export class CommandTerminalController {
       return { ok: false, reason: validationError };
     }
 
-    const commandType = String(commandResponse.command.commandType).toUpperCase();
     console.log('✅ Intent completato con successo:', commandType);
-    const eventType = COMMAND_TO_EVENT[commandType];
-    const payload = { ...commandResponse.command.payload };
-    const publishResult = this.bus.publish(eventType, payload, {
-      source: 'CommandTerminalController',
-      dedupeKey: {
-        commandType,
-        payload,
-      },
+    const payload = { ...rawPayload };
+    const result = this.dispatchCommand(commandType, payload, {
+      confidence: commandResponse.command.confidence ?? null,
+      requiresConfirmation: commandResponse.command.requiresConfirmation ?? true,
+      uiMessage: commandResponse.command.uiMessage,
     });
-    this.bus.publish(
-      DISPATCH_COMMAND_ACCEPTED,
-      {
-        commandType,
-        payload,
-        publishResult,
-        confidence: commandResponse.command.confidence ?? null,
-        requiresConfirmation: commandResponse.command.requiresConfirmation ?? true,
-      },
-      { source: 'CommandTerminalController' },
-    );
-    if (commandResponse.command.uiMessage) {
-      this.bus.publish(
-        DISPATCH_SYSTEM_MESSAGE,
-        { message: String(commandResponse.command.uiMessage) },
-        { source: 'CommandTerminalController' },
-      );
-    }
+
     return {
       ok: true,
-      commandType,
-      payload,
-      publishResult,
+      ...result,
       model: commandResponse.model,
     };
   }

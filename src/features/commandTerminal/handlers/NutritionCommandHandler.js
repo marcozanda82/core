@@ -20,10 +20,13 @@ export function initNutritionHandlers({
   const unsubscribeAddFood = bus.subscribe(DISPATCH_ADD_FOOD, async (envelope) => {
     try {
       const result = await onAddFoodCommand(envelope?.payload || {}, envelope);
+      if (envelope?.meta?.correlationId === 'advice_accept') {
+        return;
+      }
       if (typeof result === 'string' && result.trim()) {
         bus.publish(
           DISPATCH_SYSTEM_MESSAGE,
-          { message: result.trim() },
+          { message: result.trim(), text: result.trim() },
           { source: 'NutritionCommandHandler' },
         );
       }

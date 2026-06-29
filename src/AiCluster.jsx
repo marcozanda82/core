@@ -65,6 +65,9 @@ export default function AiCluster({
   onDailyPlanConfirm,
   onDailyPlanCancel,
   onGeneratePlanGhostMealDraft,
+  activeQuickReplies = [],
+  onSlotQuickReplyClick,
+  onAcceptAdvice,
   /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
   dailyLog = [],
   onBack,
@@ -174,6 +177,29 @@ export default function AiCluster({
                         <KentuInsightCard key={si} block={block} />
                       )
                     )}
+                    {msg.suggestedAction
+                      && !msg.adviceAccepted
+                      && typeof onAcceptAdvice === 'function' ? (
+                        <button
+                          type="button"
+                          className="kentu-advice-accept-btn"
+                          onClick={() => {
+                            void onAcceptAdvice(msg.suggestedAction, msg.adviceId);
+                          }}
+                        >
+                          <span className="kentu-advice-accept-btn__icon" aria-hidden>
+                            ⚡
+                          </span>
+                          <span className="kentu-advice-accept-btn__label">
+                            Procedi e inserisci:
+                            {' '}
+                            {Math.round(Number(msg.suggestedAction.grams) || 0)}
+                            g
+                            {' '}
+                            {msg.suggestedAction.foodName}
+                          </span>
+                        </button>
+                      ) : null}
                   </div>
                 )
               ) : (
@@ -351,6 +377,23 @@ export default function AiCluster({
             )}
           </div>
         )}
+        {activeQuickReplies.length > 0 ? (
+          <div className="flex w-full flex-row gap-2 overflow-x-auto px-2 pb-2 scrollbar-hide">
+            {activeQuickReplies.map((label) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  onSlotQuickReplyClick?.(label);
+                  setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                }}
+                className="shrink-0 rounded-full border border-cyan-500/30 bg-slate-900/70 px-3.5 py-1.5 text-sm font-medium text-cyan-200 transition-colors hover:border-cyan-400/50 hover:bg-slate-800/90 hover:text-cyan-50"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="kentu-input-strip">
           {typeof onChatQuickAction === 'function' && (
             <KentuButton

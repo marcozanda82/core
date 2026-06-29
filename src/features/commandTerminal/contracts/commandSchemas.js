@@ -5,16 +5,20 @@ export const addFoodPayloadSchema = {
   properties: {
     foodName: {
       type: 'string',
-      description: 'Nome dell alimento o piatto',
+      description: 'Nome dell alimento o piatto dichiarato dall utente',
     },
     grams: {
       type: 'number',
-      description: 'Quantita in grammi',
+      nullable: true,
+      description:
+        'Quantita in grammi SOLO se l utente la ha indicato esplicitamente (es. 200g). Se non specificata: null o ometti il campo — NON stimare.',
     },
     mealType: {
       type: 'string',
       enum: mealTypeEnum,
-      description: 'Momento del pasto',
+      nullable: true,
+      description:
+        'Momento del pasto SOLO se l utente lo ha indicato esplicitamente (colazione/snack/pranzo/cena). Altrimenti null o ometti.',
     },
     timeString: {
       type: 'string',
@@ -25,7 +29,7 @@ export const addFoodPayloadSchema = {
       description: 'Note aggiuntive opzionali',
     },
   },
-  required: ['foodName', 'grams', 'mealType'],
+  required: ['foodName'],
 };
 
 export const addWorkoutPayloadSchema = {
@@ -106,11 +110,45 @@ export const terminalCommandEnvelopeSchema = {
   required: ['commandType', 'payload'],
 };
 
+export const consultantResponseSchema = {
+  type: 'object',
+  properties: {
+    adviceMessage: {
+      type: 'string',
+      description:
+        'Risposta coach in italiano (max 4 frasi) con semaforo verde/giallo/rosso e porzione consigliata.',
+    },
+    suggestedAction: {
+      type: 'object',
+      nullable: true,
+      description:
+        'Azione di inserimento rapido. Compila se semaforo verde o giallo; null se rosso o sconsigliato.',
+      properties: {
+        foodName: {
+          type: 'string',
+          description: 'Nome esatto dell alimento scelto tra i candidati DB forniti nel prompt.',
+        },
+        grams: {
+          type: 'number',
+          description: 'Porzione raccomandata in grammi (> 0).',
+        },
+        mealType: {
+          type: 'string',
+          enum: mealTypeEnum,
+          description: 'Pasto target: colazione, snack, pranzo o cena.',
+        },
+      },
+      required: ['foodName', 'grams', 'mealType'],
+    },
+  },
+  required: ['adviceMessage'],
+};
+
 export const geminiToolSchemas = Object.freeze({
   ADD_FOOD: {
     name: 'dispatch_add_food',
     description:
-      'Crea un comando tipizzato per aggiungere un alimento al diario (nome, grammi, pasto obbligatori).',
+      'Aggiunge un alimento al diario. foodName obbligatorio; grams e mealType solo se espliciti nel messaggio utente (altrimenti null/omessi per slot filling).',
     inputSchema: addFoodPayloadSchema,
   },
   ADD_WORKOUT: {

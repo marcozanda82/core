@@ -6879,14 +6879,17 @@ ${dbKeys || 'n/d'}`;
   );
 
   const {
-    messages,
     sendMessage,
     chatInput: commandChatInput,
     setChatInput: setCommandChatInput,
     chatImages: commandChatImages,
     setChatImages: setCommandChatImages,
+    activeQuickReplies,
+    handleQuickReplyClick,
+    handleAcceptAdvice,
   } = useCommandTerminal({
-    initialAiMessage: introPhrase,
+    chatHistory,
+    setChatHistory,
     onAddFoodCommand: commitAddFoodCommand,
     onAddWorkoutCommand: commitAddWorkoutCommand,
     onLogSleepCommand: commitLogSleepCommand,
@@ -6898,6 +6901,14 @@ ${dbKeys || 'n/d'}`;
         activeDate: currentTrackerDate || getTodayString(),
         locale: 'it-IT',
         foodDatabase: foodDb,
+        activeLog: activeLog || [],
+        userTargets: effectiveTargetsForCurrentDate,
+        dynamicDailyKcal:
+          dynamicDailyKcal
+          ?? (effectiveTargetsForCurrentDate?.kcal ?? userTargets?.kcal ?? 2000),
+        fullHistory,
+        decimalHour: getCurrentTimeRoundedTo15Min(),
+        predictMealType,
         mealState: {
           mealType: toCanonicalMealType(mealType) || 'pranzo',
           recentFoods: [],
@@ -8498,12 +8509,15 @@ ${dbKeys || 'n/d'}`;
         {/* VISTA CHAT AI */}
         {activeAction === 'ai_chat' && (
           <KentuChatUI
-            chatHistory={messages}
+            chatHistory={chatHistory}
             chatInput={commandChatInput}
             setChatInput={setCommandChatInput}
             chatImages={commandChatImages}
             setChatImages={setCommandChatImages}
             handleChatSubmit={sendMessage}
+            activeQuickReplies={activeQuickReplies}
+            handleQuickReplyClick={handleQuickReplyClick}
+            handleAcceptAdvice={handleAcceptAdvice}
             onBack={() => setActiveAction(null)}
             introPhrase={introPhrase}
           />

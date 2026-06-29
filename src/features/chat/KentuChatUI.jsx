@@ -11,6 +11,9 @@ export default function KentuChatUI({
   chatImages,
   setChatImages,
   handleChatSubmit,
+  activeQuickReplies = [],
+  handleQuickReplyClick,
+  handleAcceptAdvice,
   onBack,
   introPhrase,
 }) {
@@ -53,6 +56,9 @@ export default function KentuChatUI({
         setChatImages={setChatImages}
         onSendMessage={handleChatSubmit}
         onChatQuickAction={onChatQuickAction}
+        activeQuickReplies={activeQuickReplies}
+        onSlotQuickReplyClick={handleQuickReplyClick}
+        onAcceptAdvice={handleAcceptAdvice}
         onBack={onBack}
         introPhrase={introPhrase}
       />
