@@ -1,7 +1,7 @@
 const functions = require('firebase-functions');
 
 /** Modello Gemini fisso — ignoriamo il payload client per evitare alias obsoleti (es. *-latest). */
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-1.5-flash-002';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 function readLegacyConfigKey() {
