@@ -7,8 +7,8 @@ import {
 } from '../contracts/commandSchemas.js';
 import { askAI } from '../../../services/aiService.js';
 
-const DEFAULT_MODEL = 'gemini-1.5-flash-latest';
-const CONSULTANT_MODEL = 'gemini-1.5-flash-latest';
+const DEFAULT_MODEL = 'gemini-1.5-flash';
+const CONSULTANT_MODEL = 'gemini-1.5-flash';
 
 function asTrimmedString(value) {
   return String(value ?? '').trim();
