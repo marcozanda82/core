@@ -1,6 +1,6 @@
 const functions = require('firebase-functions');
 
-const DEFAULT_MODEL = 'gemini-1.5-flash-latest';
+const DEFAULT_MODEL = 'gemini-1.5-flash';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 function resolveModelName(rawModel) {
