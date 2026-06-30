@@ -1,12 +1,8 @@
 const functions = require('firebase-functions');
 
-const DEFAULT_MODEL = 'gemini-1.5-flash';
+/** Modello Gemini fisso — ignoriamo il payload client per evitare alias obsoleti (es. *-latest). */
+const GEMINI_MODEL = 'gemini-1.5-flash';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-
-function resolveModelName(rawModel) {
-  const modelName = String(rawModel || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
-  return modelName.replace(/^models\//i, '');
-}
 
 function readLegacyConfigKey() {
   try {
@@ -114,7 +110,7 @@ function extractGeminiText(geminiData) {
   return textPart?.text || '';
 }
 
-async function callGeminiGenerateContent({ prompt, systemInstruction, model, generationConfig, images, image }) {
+async function callGeminiGenerateContent({ prompt, systemInstruction, generationConfig, images, image }) {
   const geminiPayload = {
     contents: [
       {
@@ -132,8 +128,7 @@ async function callGeminiGenerateContent({ prompt, systemInstruction, model, gen
   }
 
   const apiKey = getGeminiApiKey();
-  const cleanModelName = resolveModelName(model);
-  const url = `${GEMINI_API_BASE}/models/${cleanModelName}:generateContent?key=${apiKey}`;
+  const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
   let response;
   try {
@@ -190,7 +185,6 @@ exports.callGemini = functions
       const payload = data || {};
       const prompt = String(payload.prompt || '');
       const systemInstruction = String(payload.systemInstruction || '').trim();
-      const model = resolveModelName(payload.model);
       const responseSchema = payload.responseSchema || null;
       const hasImages =
         (Array.isArray(payload.images) && payload.images.length > 0)
@@ -209,7 +203,6 @@ exports.callGemini = functions
       return await callGeminiGenerateContent({
         prompt,
         systemInstruction,
-        model,
         generationConfig,
         images: payload.images,
         image: payload.image,
