@@ -1,8 +1,8 @@
 const functions = require('firebase-functions');
 
-/** Modello Gemini fisso — ignoriamo il payload client per evitare alias obsoleti (es. *-latest). */
-const GEMINI_MODEL = 'gemini-1.5-flash-002';
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+/** REST v1 — payload JSON in camelCase (REST Gemini). */
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
 function readLegacyConfigKey() {
   try {
@@ -14,15 +14,20 @@ function readLegacyConfigKey() {
   }
 }
 
+//function getGeminiApiKey() {
+  //const key = process.env.GEMINI_API_KEY || readLegacyConfigKey();
+  //if (!key || !String(key).trim()) {
+    //throw new functions.https.HttpsError(
+      //'failed-precondition',
+      //'GEMINI_API_KEY non configurata sul server. Imposta il secret/env e ridistribuisci callGemini.',
+  //  );
+ // }
+ // return String(key).trim();
+//}
+
 function getGeminiApiKey() {
-  const key = process.env.GEMINI_API_KEY || readLegacyConfigKey();
-  if (!key || !String(key).trim()) {
-    throw new functions.https.HttpsError(
-      'failed-precondition',
-      'GEMINI_API_KEY non configurata sul server. Imposta il secret/env e ridistribuisci callGemini.',
-    );
-  }
-  return String(key).trim();
+  // Incolla qui la tua vera chiave API tra gli apici
+  return 'AIzaSyAyVWSvzg0cUFUYlaTR5s6UwodQ52MRlFM'; 
 }
 
 function dataUrlToInlinePart(imageSrc) {
@@ -43,7 +48,15 @@ function dataUrlToInlinePart(imageSrc) {
   };
 }
 
-function buildUserParts(prompt, images, image) {
+function mergeSystemIntoUserPrompt(userText, systemText) {
+  const user = String(userText || '').trim();
+  const system = String(systemText || '').trim();
+  if (!system) return user;
+  const userBlock = user || '(nessun testo — analizza allegati se presenti)';
+  return `[SISTEMA - REGOLE E SCHEMA]:\n${system}\n\n[INPUT UTENTE]:\n${userBlock}`;
+}
+
+function buildUserParts(userText, systemText, images, image) {
   const parts = [];
   const imageList = [];
 
@@ -55,52 +68,53 @@ function buildUserParts(prompt, images, image) {
     if (inlinePart) parts.push(inlinePart);
   }
 
-  const text = String(prompt || '').trim();
-  if (text) parts.push({ text });
+  const mergedText = mergeSystemIntoUserPrompt(userText, systemText);
+  if (mergedText) {
+    parts.push({ text: mergedText });
+  } else if (parts.length === 0) {
+    parts.push({ text: '' });
+  }
 
-  return parts.length > 0 ? parts : [{ text: '' }];
+  return parts;
 }
 
-function normalizeGenerationConfig(rawConfig = {}, responseSchema) {
-  const generationConfig = {
-    temperature: 0.3,
-  };
+/**
+ * generationConfig compatibile con REST v1 (camelCase).
+ * Esclude responseMimeType / responseSchema (non supportati su questo endpoint).
+ */
+function normalizeGenerationConfig(rawConfig = {}) {
+  const src = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+  const config = {};
 
-  if (rawConfig && typeof rawConfig === 'object') {
-    Object.assign(generationConfig, rawConfig);
+  const temp = Number(src.temperature);
+  config.temperature = Number.isFinite(temp) ? temp : 0.3;
+
+  const maxOut = Number(src.maxOutputTokens ?? src.max_output_tokens);
+  if (Number.isFinite(maxOut) && maxOut > 0) {
+    config.maxOutputTokens = Math.round(maxOut);
   }
 
-  if (generationConfig.response_mime_type) {
-    generationConfig.responseMimeType = generationConfig.response_mime_type;
-    delete generationConfig.response_mime_type;
+  const topP = Number(src.topP ?? src.top_p);
+  if (Number.isFinite(topP)) config.topP = topP;
+
+  const topK = Number(src.topK ?? src.top_k);
+  if (Number.isFinite(topK)) config.topK = Math.round(topK);
+
+  const stop = src.stopSequences ?? src.stop_sequences;
+  if (Array.isArray(stop) && stop.length > 0) {
+    config.stopSequences = stop.map((s) => String(s)).filter(Boolean);
   }
 
-  if (generationConfig.response_schema) {
-    generationConfig.responseSchema = generationConfig.response_schema;
-    delete generationConfig.response_schema;
-  }
+  return config;
+}
 
-  if (responseSchema) {
-    generationConfig.responseSchema = responseSchema;
-  }
-
-  const wantsJson =
-    generationConfig.responseMimeType === 'application/json'
-    || Boolean(generationConfig.responseSchema);
-
-  if (wantsJson) {
-    generationConfig.responseMimeType = 'application/json';
-  } else {
-    delete generationConfig.responseMimeType;
-    delete generationConfig.responseSchema;
-  }
-
-  if (generationConfig.temperature != null) {
-    const temp = Number(generationConfig.temperature);
-    generationConfig.temperature = Number.isFinite(temp) ? temp : 0.3;
-  }
-
-  return generationConfig;
+function appendJsonSchemaHint(systemInstruction, responseSchema) {
+  const base = String(systemInstruction || '').trim();
+  if (!responseSchema || typeof responseSchema !== 'object') return base;
+  const hint =
+    'Rispondi SOLO con JSON valido (nessun markdown) conforme a questo schema: '
+    + JSON.stringify(responseSchema);
+  return base ? `${base}\n\n${hint}` : hint;
 }
 
 function extractGeminiText(geminiData) {
@@ -110,22 +124,21 @@ function extractGeminiText(geminiData) {
   return textPart?.text || '';
 }
 
-async function callGeminiGenerateContent({ prompt, systemInstruction, generationConfig, images, image }) {
+async function callGeminiGenerateContent({
+  prompt,
+  systemText,
+  generationConfig,
+  images,
+  image,
+}) {
   const geminiPayload = {
     contents: [
       {
-        role: 'user',
-        parts: buildUserParts(prompt, images, image),
+        parts: buildUserParts(prompt, systemText, images, image),
       },
     ],
     generationConfig,
   };
-
-  if (systemInstruction) {
-    geminiPayload.systemInstruction = {
-      parts: [{ text: systemInstruction }],
-    };
-  }
 
   const apiKey = getGeminiApiKey();
   const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
@@ -184,8 +197,11 @@ exports.callGemini = functions
     try {
       const payload = data || {};
       const prompt = String(payload.prompt || '');
-      const systemInstruction = String(payload.systemInstruction || '').trim();
       const responseSchema = payload.responseSchema || null;
+      const systemText = appendJsonSchemaHint(
+        String(payload.systemInstruction || '').trim(),
+        responseSchema,
+      );
       const hasImages =
         (Array.isArray(payload.images) && payload.images.length > 0)
         || Boolean(payload.image);
@@ -194,15 +210,11 @@ exports.callGemini = functions
         throw new functions.https.HttpsError('invalid-argument', 'prompt o images richiesti.');
       }
 
-      const generationConfig = normalizeGenerationConfig(payload.generationConfig, responseSchema);
-
-      if (hasImages && !generationConfig.responseMimeType) {
-        generationConfig.responseMimeType = 'application/json';
-      }
+      const generationConfig = normalizeGenerationConfig(payload.generationConfig);
 
       return await callGeminiGenerateContent({
         prompt,
-        systemInstruction,
+        systemText,
         generationConfig,
         images: payload.images,
         image: payload.image,
