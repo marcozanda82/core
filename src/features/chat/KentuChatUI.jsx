@@ -1,8 +1,7 @@
-import { useCallback } from 'react';
 import AiCluster from '../../AiCluster';
 
 /**
- * KentuChatUI — vista drawer chat Kentu: messaggi e quick actions (AiCluster).
+ * KentuChatUI — vista drawer chat Kentu: messaggi e input.
  */
 export default function KentuChatUI({
   chatHistory,
@@ -17,24 +16,6 @@ export default function KentuChatUI({
   onBack,
   introPhrase,
 }) {
-  const onChatQuickAction = useCallback(
-    (kind) => {
-      const quickActionMap = {
-        briefing: 'Genera briefing sintetico della giornata.',
-        yesterday: 'Analizza i gap di ieri e suggerisci una correzione pratica.',
-        mealIdea: 'Suggerisci un pasto bilanciato per oggi.',
-        checkOggi: 'Esegui check nutrizionale di oggi.',
-        trainingCheck: 'Posso allenarmi ora? Valuta recupero e carico.',
-        reportMese: 'Genera report sintetico ultimi 30 giorni.',
-        scannerMetabolico: 'Esegui scanner metabolico e segnala priorita.',
-      };
-      const text = quickActionMap[kind];
-      if (!text) return;
-      void handleChatSubmit(text, { fromQuickReply: true });
-    },
-    [handleChatSubmit],
-  );
-
   return (
     <div
       className="view-animate"
@@ -55,7 +36,6 @@ export default function KentuChatUI({
         chatImages={chatImages}
         setChatImages={setChatImages}
         onSendMessage={handleChatSubmit}
-        onChatQuickAction={onChatQuickAction}
         activeQuickReplies={activeQuickReplies}
         onSlotQuickReplyClick={handleQuickReplyClick}
         onAcceptAdvice={handleAcceptAdvice}

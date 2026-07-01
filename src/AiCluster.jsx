@@ -1,7 +1,7 @@
 /**
- * AiCluster.jsx — KentuOS: superficie AI premium (insight cards, hub strumenti, input).
+ * AiCluster.jsx — KentuOS: superficie chat (messaggi, quick replies, input).
  */
-import React, { useRef, useEffect, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import MenuProposalCard from './MenuProposalCard';
 import DailyPlanCard from './DailyPlanCard';
 import {
@@ -9,7 +9,6 @@ import {
   KentuButton,
   KentuInsightHero,
   KentuInsightCard,
-  KentuGridItem,
 } from './components/kentuos/KentuOSUI';
 
 /** Allinea a stripInvisibleContextFromVisibleUserText in SalaComandi (contesto API non visibile). */
@@ -29,26 +28,6 @@ function splitAiMessageSections(text) {
   return s.split(/\n{2,}/).map((block) => block.replace(/\r\n/g, '\n'));
 }
 
-const COMMAND_HUB_SECTIONS = [
-  {
-    title: 'Coach & dispensa',
-    items: [
-      { key: 'briefing', icon: 'chart', title: 'Briefing', desc: 'Sintesi giornata', highlight: false },
-      { key: 'yesterday', icon: 'search', title: 'Analisi ieri', desc: 'Gap e trend' },
-      { key: 'mealIdea', icon: 'bulb', title: 'Idea pasto', desc: 'Dalla dispensa' },
-    ],
-  },
-  {
-    title: 'Controlli fisiologici',
-    items: [
-      { key: 'checkOggi', icon: 'scales', title: 'Check oggi', desc: 'Audit nutrizionale' },
-      { key: 'trainingCheck', icon: 'run', title: 'Workout', desc: 'Onda energetica' },
-      { key: 'reportMese', icon: 'calendar', title: 'Report mese', desc: 'Trend 30 gg' },
-      { key: 'scannerMetabolico', icon: 'dna', title: 'Scanner', desc: 'Analisi 14 gg' },
-    ],
-  },
-];
-
 export default function AiCluster({
   chatHistory,
   chatInput,
@@ -56,7 +35,6 @@ export default function AiCluster({
   chatImages,
   setChatImages,
   onSendMessage,
-  onChatQuickAction,
   onLogDinnerOption,
   onLoadAgenda,
   onMealProposalConfirm,
@@ -74,9 +52,6 @@ export default function AiCluster({
   /** Stessa frase del mount SalaComandi (rotazione kentuIntroPhrases); nessuna seconda estrazione qui. */
   introPhrase = '',
 }) {
-  const [isPanelOpen, setIsPanelOpen] = useState(false);
-  /** Con testo/immagini nell’input la hub si nascondeva: questo stato consente di forzarne la visibilità. */
-  const [hubCommandForced, setHubCommandForced] = useState(false);
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
 
@@ -88,11 +63,6 @@ export default function AiCluster({
     () => (chatHistory || []).some((m) => m.mealProposal || m.dailyPlan),
     [chatHistory]
   );
-
-  const hubInputBlocked = Boolean(chatInput.trim() || chatImages.length > 0);
-  const showCommandHubDock =
-    typeof onChatQuickAction === 'function' &&
-    (!hubInputBlocked || hubCommandForced);
 
   return (
     <div
@@ -315,68 +285,6 @@ export default function AiCluster({
             ))}
           </div>
         )}
-        {showCommandHubDock && (
-          <div style={{ flexShrink: 0, marginTop: 6, marginBottom: 4 }}>
-            {hubCommandForced && hubInputBlocked && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHubCommandForced(false);
-                    setIsPanelOpen(false);
-                  }}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    background: 'rgba(255,255,255,0.06)',
-                    color: 'var(--kentu-text-muted, #94a3b8)',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Riduci hub
-                </button>
-              </div>
-            )}
-            <button type="button" className="kentu-hub-toggle" onClick={() => setIsPanelOpen((o) => !o)} aria-expanded={isPanelOpen}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <KentuIcon name="sliders" size={22} />
-                <span>{isPanelOpen ? 'Chiudi strumenti' : 'Strumenti sistema'}</span>
-              </span>
-              <span style={{ display: 'flex', color: 'var(--kentu-text-muted)', transform: isPanelOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}>
-                <KentuIcon name="caret" size={20} />
-              </span>
-            </button>
-            {isPanelOpen && (
-              <div className="kentu-card kentu-hub-panel">
-                <div className="kentu-hub-section-title">Dashboard comandi</div>
-                {COMMAND_HUB_SECTIONS.map((section, secIdx) => (
-                  <div key={section.title} style={{ marginBottom: secIdx < COMMAND_HUB_SECTIONS.length - 1 ? 18 : 0 }}>
-                    <div className="kentu-hub-group-label">{section.title}</div>
-                    <div className="kentu-hub-grid">
-                      {section.items.map(({ key, icon, title: tileTitle, desc, highlight }) => (
-                        <KentuGridItem
-                          key={key}
-                          icon={icon}
-                          title={tileTitle}
-                          subtitle={desc}
-                          highlighted={!!highlight}
-                          onClick={() => {
-                            onChatQuickAction(key);
-                            setIsPanelOpen(false);
-                            setHubCommandForced(false);
-                            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
         {activeQuickReplies.length > 0 ? (
           <div className="flex w-full flex-row gap-2 overflow-x-auto px-2 pb-2 scrollbar-hide">
             {activeQuickReplies.map((label) => (
@@ -395,26 +303,6 @@ export default function AiCluster({
           </div>
         ) : null}
         <div className="kentu-input-strip">
-          {typeof onChatQuickAction === 'function' && (
-            <KentuButton
-              variant="ghost"
-              className="kentu-btn--icon"
-              type="button"
-              onClick={() => {
-                if (hubCommandForced && isPanelOpen) {
-                  setHubCommandForced(false);
-                  setIsPanelOpen(false);
-                  return;
-                }
-                if (hubInputBlocked) setHubCommandForced(true);
-                setIsPanelOpen(true);
-              }}
-              aria-label="Apri hub comandi"
-              title="Hub comandi · strumenti rapidi"
-            >
-              ⚡
-            </KentuButton>
-          )}
           <input
             type="file"
             accept="image/*"
