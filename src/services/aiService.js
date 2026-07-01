@@ -1,5 +1,6 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebaseConfig';
+import { recordUsage } from './apiUsageDiary';
 
 const callAiFunction = httpsCallable(functions, 'callGemini');
 
@@ -95,9 +96,14 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
     unwrapCallableError(error);
   }
 
-  const text = extractAiText(result.data);
+  const data = result.data;
+  if (data?.usage) {
+    recordUsage(data.usage);
+  }
+
+  const text = extractAiText(data);
   if (!text) {
-    console.warn('AI response missing text payload', { data: result.data });
+    console.warn('AI response missing text payload', { data });
   }
   return text;
 }

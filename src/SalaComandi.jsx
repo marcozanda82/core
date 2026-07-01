@@ -41,6 +41,7 @@ import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
 import KentuChatUI from './features/chat/KentuChatUI';
 import TargetSettingsModal from './components/modals/TargetSettingsModal';
 import MainMenuDrawer from './layout/MainMenuDrawer';
+import ApiDiary from './components/ApiDiary';
 import StrategicPlannerOverlay from './features/planning/StrategicPlannerOverlay';
 import { getTodayPlannedKcal, useStrategicPlanner } from './hooks/useStrategicPlanner';
 import { UserNutritionGoalsProvider } from './UserNutritionGoalsContext';
@@ -8521,6 +8522,10 @@ ${dbKeys || 'n/d'}`;
             onBack={() => setActiveAction(null)}
             introPhrase={introPhrase}
           />
+        )}
+
+        {import.meta.env.DEV && activeAction === 'api_diary' && (
+          <ApiDiary onBack={() => setActiveAction('menu_secondary')} />
         )}
 
         {/* VISTA ACQUA */}

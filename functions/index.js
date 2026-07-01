@@ -2,7 +2,7 @@ const functions = require('firebase-functions');
 
 /** REST v1 — payload JSON in camelCase (REST Gemini). */
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 function readLegacyConfigKey() {
   try {
@@ -14,21 +14,18 @@ function readLegacyConfigKey() {
   }
 }
 
-//function getGeminiApiKey() {
-  //const key = process.env.GEMINI_API_KEY || readLegacyConfigKey();
-  //if (!key || !String(key).trim()) {
-    //throw new functions.https.HttpsError(
-      //'failed-precondition',
-      //'GEMINI_API_KEY non configurata sul server. Imposta il secret/env e ridistribuisci callGemini.',
-  //  );
- // }
- // return String(key).trim();
-//}
-
 function getGeminiApiKey() {
-  // Incolla qui la tua vera chiave API tra gli apici
-  return 'AIzaSyAyVWSvzg0cUFUYlaTR5s6UwodQ52MRlFM'; 
+  const key = process.env.GEMINI_API_KEY || readLegacyConfigKey();
+  if (!key || !String(key).trim()) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'GEMINI_API_KEY non configurata sul server. Imposta il secret/env e ridistribuisci callGemini.',
+    );
+  }
+  return String(key).trim();
 }
+
+
 
 function dataUrlToInlinePart(imageSrc) {
   const raw = String(imageSrc || '').trim();
@@ -183,7 +180,11 @@ async function callGeminiGenerateContent({
     console.warn('Gemini empty text payload', JSON.stringify(geminiData).slice(0, 800));
   }
 
-  return { text, candidates: geminiData.candidates || [] };
+  return {
+    text,
+    candidates: geminiData.candidates || [],
+    usage: geminiData.usageMetadata || null,
+  };
 }
 
 /**
