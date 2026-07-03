@@ -1,25 +1,24 @@
 /**
  * Tacca di mantenimento (TDEE) sull'anello kcal rispetto al target pianificato.
+ * Coordinate normalizzate viewBox 0–100 (allineate a innerRadius 68% / outerRadius 85%).
+ *
  * @param {{
  *   tdeeRatio: number,
  *   isDeficit?: boolean,
- *   size?: number,
  * }} props — `tdeeRatio` = TDEE / target (può essere > 1 in deficit)
  */
-export default function DialMaintenanceMarker({ tdeeRatio, isDeficit = false, size = 310 }) {
+export default function DialMaintenanceMarker({ tdeeRatio, isDeficit = false }) {
   const rawRatio = Math.max(0, Number(tdeeRatio) || 0);
-  // Oltre il 100% del target (deficit): tacca al termine del giro anello
   const arcPosition = rawRatio > 1 ? 1 : rawRatio;
-  const cx = size / 2;
-  const cy = size / 2;
-  const half = size / 2;
-  const rInner = 0.68 * half;
-  const rOuter = 0.85 * half;
+  const cx = 50;
+  const cy = 50;
+  const rInner = 34;
+  const rOuter = 42.5;
   const angleRad = -Math.PI / 2 + arcPosition * 2 * Math.PI;
   const x1 = cx + rInner * Math.cos(angleRad);
   const y1 = cy + rInner * Math.sin(angleRad);
-  const x2 = cx + (rOuter + 5) * Math.cos(angleRad);
-  const y2 = cy + (rOuter + 5) * Math.sin(angleRad);
+  const x2 = cx + (rOuter + 1.6) * Math.cos(angleRad);
+  const y2 = cy + (rOuter + 1.6) * Math.sin(angleRad);
 
   const lineStroke = isDeficit ? '#0ea5e9' : '#f97316';
   const lineDash = isDeficit ? '4 4' : undefined;
@@ -29,10 +28,18 @@ export default function DialMaintenanceMarker({ tdeeRatio, isDeficit = false, si
   return (
     <svg
       aria-hidden
-      style={{ position: 'absolute', inset: 0, zIndex: 12, pointerEvents: 'none' }}
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 12,
+        pointerEvents: 'none',
+        width: '100%',
+        height: '100%',
+        maxWidth: '100%',
+        maxHeight: '100%',
+      }}
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMid meet"
     >
       <line
         x1={x1}
@@ -40,19 +47,13 @@ export default function DialMaintenanceMarker({ tdeeRatio, isDeficit = false, si
         x2={x2}
         y2={y2}
         stroke={lineStroke}
-        strokeWidth={2.5}
+        strokeWidth={0.8}
         strokeLinecap="round"
         strokeDasharray={lineDash}
         opacity={isDeficit ? 0.85 : 1}
+        vectorEffect="non-scaling-stroke"
       />
-      <circle
-        cx={x2}
-        cy={y2}
-        r={4}
-        fill={dotFill}
-        stroke={dotStroke}
-        strokeWidth={1}
-      />
+      <circle cx={x2} cy={y2} r={1.3} fill={dotFill} stroke={dotStroke} strokeWidth={0.25} />
     </svg>
   );
 }

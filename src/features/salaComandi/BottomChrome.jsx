@@ -18,6 +18,7 @@ export default function BottomChrome({
   return (
     <>
       <div
+        className="home-bottom-chat"
         style={{
           position: 'fixed',
           bottom: 'calc(75px + env(safe-area-inset-bottom, 0px))',

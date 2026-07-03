@@ -28,7 +28,7 @@ function musclesLabelFromBlock(block) {
 
 /** Shell card premium condivisa (allenamento, riposo, monitor metabolico). */
 const HOME_ACTIVITY_CARD_CLASS =
-  'mb-0 w-full rounded-xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 px-4 py-3 shadow-lg shadow-cyan-900/20 backdrop-blur-sm';
+  'home-oggi-rigid mb-0 w-full shrink-0 rounded-xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 px-4 py-3 shadow-lg shadow-cyan-900/20 backdrop-blur-sm';
 
 /**
  * @param {{

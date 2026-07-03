@@ -516,6 +516,8 @@ html, body, #root {
 }
 
 .nutrition-cluster {
+  flex: 1 1 0%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -524,7 +526,7 @@ html, body, #root {
   margin: 0;
 }
 
-/* Tab Oggi — colonna zero-scroll, gap unico tra i widget */
+/* Tab Oggi — viewport dinamico, zero scroll verticale */
 .home-oggi-scroll {
   flex: 1;
   min-height: 0;
@@ -532,9 +534,7 @@ html, body, #root {
   max-height: 100%;
   display: flex;
   flex-direction: column;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
   width: 100%;
 }
 
@@ -550,6 +550,69 @@ html, body, #root {
   overflow: hidden;
   width: 100%;
   box-sizing: border-box;
+}
+
+/* Widget inferiori: altezza naturale, mai compressi */
+.home-oggi-rigid {
+  flex-shrink: 0;
+}
+
+.home-oggi-macros {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Ammortizzatore elastico — cerchio kcal */
+.kcal-dial-shell {
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kcal-dial-inner {
+  position: relative;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 1 / 1;
+  container-type: size;
+  overflow: visible;
+}
+
+.kcal-dial-inner .recharts-responsive-container {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.kcal-dial-center-value {
+  font-size: clamp(1.35rem, 22cqmin, 3rem);
+  font-weight: bold;
+}
+
+.kcal-dial-center-surplus {
+  font-size: clamp(1rem, 16cqmin, 2.35rem);
+}
+
+.kcal-dial-center-label {
+  font-size: clamp(0.65rem, 6cqmin, 0.9rem);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.kcal-dial-center-sub {
+  font-size: clamp(0.62rem, 5.5cqmin, 0.8rem);
+}
+
+/* Barra chat fissa in basso (non partecipa al flex, ma altezza stabile) */
+.home-bottom-chat {
+  flex-shrink: 0;
 }
 
 .btn-primary-glow {

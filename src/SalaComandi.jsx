@@ -7814,7 +7814,7 @@ ${dbKeys || 'n/d'}`;
       )}
 
       {activeBottomTab === 'oggi' && userProfile?.level === 'pro' && (
-        <div style={{ width: '100%', flexShrink: 0, padding: '0 14px' }}>
+        <div className="home-oggi-rigid" style={{ width: '100%', flexShrink: 0, padding: '0 14px' }}>
           <MetabolicMonitorCard
             metabolicSnapshot={metabolicSnapshot}
             onClick={() => setShowMetabolicSheet(true)}
@@ -7860,15 +7860,14 @@ ${dbKeys || 'n/d'}`;
             return (
               <>
                 <div className="nutrition-cluster">
-                {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
                 <div
-                  style={{ position: 'relative', width: '310px', height: '310px', margin: 0, zIndex: 10, flexShrink: 0 }}
+                  className="kcal-dial-shell"
                   onClick={() => {
                     setSelectedMealCenter(null);
                     setActiveDialMode('kcal');
                   }}
                 >
-                  <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'visible' }}>
+                  <div className="kcal-dial-inner">
                     {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
                     <div
                       className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
@@ -7939,11 +7938,10 @@ ${dbKeys || 'n/d'}`;
                           </div>
                         </div>
                       ) : (
-                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
+                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none', width: '88%' }}>
                           <div
+                            className="kcal-dial-center-value"
                             style={{
-                              fontSize: '3rem',
-                              fontWeight: 'bold',
                               color:
                                 activeDialMode === 'kcal' && dialKcalSurplus > 0
                                   ? '#ef4444'
@@ -7961,7 +7959,7 @@ ${dbKeys || 'n/d'}`;
                             }}
                           >
                             {activeDialMode === 'kcal' && dialKcalSurplus > 0 && (
-                              <span style={{ fontSize: '2.35rem', letterSpacing: '0.02em' }}>
+                              <span className="kcal-dial-center-surplus" style={{ letterSpacing: '0.02em' }}>
                                 + {dialKcalSurplus}{' '}
                                 <span style={{ fontSize: '0.42em', fontWeight: 700 }}>kcal</span>
                               </span>
@@ -7972,19 +7970,15 @@ ${dbKeys || 'n/d'}`;
                             {activeDialMode === 'fat' && Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}
                           </div>
                           <div
-                            style={{
-                              color: '#888',
-                              fontSize: '0.9rem',
-                              textTransform: 'uppercase',
-                              letterSpacing: '2px',
-                            }}
+                            className="kcal-dial-center-label"
+                            style={{ color: '#888' }}
                           >
                             {activeDialMode === 'kcal' && dialKcalRestLabel}
                             {activeDialMode === 'pro' && 'g Proteine'}
                             {activeDialMode === 'cho' && 'g Carboidrati'}
                             {activeDialMode === 'fat' && 'g Grassi'}
                           </div>
-                          <div style={{ color: '#555', fontSize: '0.8rem', marginTop: '4px' }}>
+                          <div className="kcal-dial-center-sub" style={{ color: '#555', marginTop: '4px' }}>
                             {activeDialMode === 'kcal' && dialKcalGoalLine}
                             {activeDialMode === 'pro' && `obiettivo ${Math.round(targetProt)} g`}
                             {activeDialMode === 'cho' && `obiettivo ${Math.round(targetCarb)} g`}
@@ -8055,13 +8049,12 @@ ${dbKeys || 'n/d'}`;
                         <DialMaintenanceMarker
                           tdeeRatio={maintenanceMarkerRatio}
                           isDeficit={maintenanceMarkerIsDeficit}
-                          size={310}
                         />
                       ) : null}
                     </div>
                   </div>
                 </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', width: '100%', flexShrink: 0 }}>
+                  <div className="home-oggi-macros">
                     <div
                       role="button"
                       tabIndex={0}
