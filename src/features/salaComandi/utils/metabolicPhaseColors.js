@@ -1,4 +1,5 @@
 import { TRACKER_STORICO_KEY, normalizeLogData } from '../../../coreEngine';
+import { parseDecimalHourFromValue } from './mealConsumedTime';
 import { resolvePhaseColorForHoursSinceMeal } from './metabolicPhaseConfig';
 
 export const METABOLIC_PHASE_COLORS = Object.freeze({
@@ -152,14 +153,15 @@ function mergeGradientStops(stops) {
  */
 export function resolveMealTimeFromLogItem(item, mealTimesObj) {
   if (!isMealLikeLogItem(item)) return null;
-  if (typeof item.mealTime === 'number' && Number.isFinite(item.mealTime)) {
-    return normalizeMealHour(item.mealTime);
-  }
-  if (typeof item.time === 'number' && Number.isFinite(item.time)) {
-    return normalizeMealHour(item.time);
-  }
+  const fromMeal =
+    parseDecimalHourFromValue(item.mealTime)
+    ?? parseDecimalHourFromValue(item.time);
+  if (fromMeal != null) return normalizeMealHour(fromMeal);
   const slot = mealTimesObj?.[item.mealType];
-  if (typeof slot === 'number' && Number.isFinite(slot)) return normalizeMealHour(slot);
+  if (slot != null) {
+    const fromSlot = parseDecimalHourFromValue(slot);
+    if (fromSlot != null) return normalizeMealHour(fromSlot);
+  }
   return null;
 }
 
@@ -252,13 +254,6 @@ export function hoursFastedAtTimelineHour(hour, todayMealTimes = [], yesterdayLa
 export function collectMetabolicTimelineMeals(activeLog, options = {}) {
   const { fullHistory, anchorDate, mealTimesObj, referenceDateObj } = options;
   const eventTimes = new Set();
-
-  for (const item of activeLog || []) {
-    if (!isFastingBreakerLogItem(item)) continue;
-    if (typeof item.mealTime === 'number' && Number.isFinite(item.mealTime)) {
-      eventTimes.add(normalizeMealHour(item.mealTime));
-    }
-  }
 
   for (const item of activeLog || []) {
     if (!isFastingBreakerLogItem(item)) continue;

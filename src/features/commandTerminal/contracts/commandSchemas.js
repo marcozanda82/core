@@ -1,11 +1,36 @@
 const mealTypeEnum = ['colazione', 'snack', 'pranzo', 'cena'];
 
-export const addFoodPayloadSchema = {
+export const foodItemSchema = {
   type: 'object',
   properties: {
     foodName: {
       type: 'string',
-      description: 'Nome dell alimento o piatto dichiarato dall utente',
+      description: 'Nome dell alimento o piatto',
+    },
+    grams: {
+      type: 'number',
+      nullable: true,
+      description:
+        'Quantita in grammi SOLO se l utente la ha indicato esplicitamente. Se non specificata: null o ometti — NON stimare.',
+    },
+  },
+  required: ['foodName'],
+};
+
+export const addFoodPayloadSchema = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      description:
+        'TUTTI gli alimenti menzionati dall utente. Obbligatorio se l utente elenca piu alimenti (es. pollo e riso).',
+      items: foodItemSchema,
+      minItems: 1,
+    },
+    foodName: {
+      type: 'string',
+      description:
+        'Legacy: singolo alimento. Preferisci items[] se l utente ne elenca piu di uno.',
     },
     grams: {
       type: 'number',
@@ -29,7 +54,6 @@ export const addFoodPayloadSchema = {
       description: 'Note aggiuntive opzionali',
     },
   },
-  required: ['foodName'],
 };
 
 export const addWorkoutPayloadSchema = {
@@ -148,7 +172,7 @@ export const geminiToolSchemas = Object.freeze({
   ADD_FOOD: {
     name: 'dispatch_add_food',
     description:
-      'Aggiunge un alimento al diario. foodName obbligatorio; grams e mealType solo se espliciti nel messaggio utente (altrimenti null/omessi per slot filling).',
+      'Aggiunge uno o piu alimenti al diario. Usa items[] con TUTTI gli alimenti elencati; grams e mealType solo se espliciti (altrimenti null/omessi per slot filling).',
     inputSchema: addFoodPayloadSchema,
   },
   ADD_WORKOUT: {

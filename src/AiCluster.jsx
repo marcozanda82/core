@@ -4,6 +4,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import MenuProposalCard from './MenuProposalCard';
 import DailyPlanCard from './DailyPlanCard';
+import MealDraftConfirmation from './components/MealDraftConfirmation';
 import {
   KentuIcon,
   KentuButton,
@@ -46,6 +47,10 @@ export default function AiCluster({
   activeQuickReplies = [],
   onSlotQuickReplyClick,
   onAcceptAdvice,
+  onDraftConfirm,
+  onDraftCancel,
+  onDraftRemoveItem,
+  onDraftUpdateItemGrams,
   /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
   dailyLog = [],
   onBack,
@@ -60,7 +65,9 @@ export default function AiCluster({
   }, [chatHistory]);
 
   const suppressQuickReplies = useMemo(
-    () => (chatHistory || []).some((m) => m.mealProposal || m.dailyPlan),
+    () => (chatHistory || []).some(
+      (m) => m.mealProposal || m.dailyPlan || (m.mealDraft && !m.draftResolved),
+    ),
     [chatHistory]
   );
 
@@ -127,6 +134,17 @@ export default function AiCluster({
                     onConfirm={onDailyPlanConfirm}
                     onCancel={onDailyPlanCancel}
                     onGeneratePlanGhostMealDraft={onGeneratePlanGhostMealDraft}
+                  />
+                </div>
+              ) : msg.sender === 'ai' && msg.mealDraft && !msg.draftResolved && !msg.isTyping ? (
+                <div style={{ width: '100%' }}>
+                  <MealDraftConfirmation
+                    mealDraft={msg.mealDraft}
+                    draftId={msg.draftId}
+                    onConfirm={onDraftConfirm}
+                    onCancel={onDraftCancel}
+                    onRemoveItem={onDraftRemoveItem}
+                    onUpdateItemGrams={onDraftUpdateItemGrams}
                   />
                 </div>
               ) : msg.sender === 'ai' ? (

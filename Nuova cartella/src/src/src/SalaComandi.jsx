@@ -6479,7 +6479,7 @@ Ottimo! Diario aggiornato. 🥗`;
       const currentIndex = (activeKeyIndex + attempt) % validKeys.length;
       const currentKey = validKeys[currentIndex];
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${currentKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${currentKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)

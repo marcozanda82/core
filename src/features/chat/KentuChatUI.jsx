@@ -13,6 +13,10 @@ export default function KentuChatUI({
   activeQuickReplies = [],
   handleQuickReplyClick,
   handleAcceptAdvice,
+  onDraftConfirm,
+  onDraftCancel,
+  onDraftRemoveItem,
+  onDraftUpdateItemGrams,
   onBack,
   introPhrase,
 }) {
@@ -39,6 +43,10 @@ export default function KentuChatUI({
         activeQuickReplies={activeQuickReplies}
         onSlotQuickReplyClick={handleQuickReplyClick}
         onAcceptAdvice={handleAcceptAdvice}
+        onDraftConfirm={onDraftConfirm}
+        onDraftCancel={onDraftCancel}
+        onDraftRemoveItem={onDraftRemoveItem}
+        onDraftUpdateItemGrams={onDraftUpdateItemGrams}
         onBack={onBack}
         introPhrase={introPhrase}
       />

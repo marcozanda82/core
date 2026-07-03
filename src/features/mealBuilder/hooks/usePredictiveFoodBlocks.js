@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { FOOD_PROVENANCE } from '../../../foodDbSource';
 import { addDays } from '../../../calendarDateUtils';
+import { resolveEntryMealConsumedAtMs } from '../../salaComandi/utils/mealConsumedTime';
 
 const TRACKER_STORICO_KEY = (date) => `trackerStorico_${date}`;
 const DEFAULT_LOOKBACK_DAYS = 30;
@@ -66,42 +67,17 @@ function buildLabel(desc, qtyLabel) {
   return `${desc} (${qtyLabel})`;
 }
 
-function resolveEntryLoggedAtMs(entry, dayKey) {
-  const direct = Number(
-    entry?.lastUsedAt ?? entry?.lastUsed ?? entry?.timestamp ?? entry?.loggedAt,
-  );
-  if (Number.isFinite(direct) && direct > 0) return direct;
-
-  const id = String(entry?.id ?? entry?.batchId ?? '');
-  const batchMatch = id.match(/(?:^|_)(\d{10,13})(?:_|$)/);
-  if (batchMatch) {
-    const ts = Number(batchMatch[1]);
-    if (Number.isFinite(ts) && ts > 0) {
-      return ts > 1e12 ? ts : ts * 1000;
-    }
-  }
-
-  if (dayKey) {
-    const baseDate = new Date(`${dayKey}T00:00:00`);
-    if (!Number.isNaN(baseDate.getTime())) {
-      const mealTime = Number(entry?.mealTime ?? entry?.time);
-      if (Number.isFinite(mealTime)) {
-        const hours = Math.floor(mealTime);
-        const minutes = Math.round((mealTime - hours) * 60);
-        baseDate.setHours(hours, minutes, 0, 0);
-        return baseDate.getTime();
-      }
-      return baseDate.getTime();
-    }
-  }
-
-  return 0;
+function resolveEntryLoggedAtMs(entry, dayKey, mealTimesObj = null) {
+  return resolveEntryMealConsumedAtMs(entry, dayKey, mealTimesObj);
 }
 
-function enrichFoodEntryWithLoggedAt(entry, dayKey) {
+function enrichFoodEntryWithLoggedAt(entry, dayKey, mealTimesObj = null) {
+  const consumedAt = resolveEntryMealConsumedAtMs(entry, dayKey, mealTimesObj);
   return {
     ...entry,
-    _loggedAtMs: resolveEntryLoggedAtMs(entry, dayKey),
+    _dayKey: dayKey,
+    _loggedAtMs: consumedAt,
+    _consumedAtMs: consumedAt,
   };
 }
 
@@ -186,15 +162,16 @@ export function collectFoodEntriesFromFullHistory(fullHistory, options = {}) {
 
   if (isFlatFoodLogArray(fullHistory)) {
     const dayKey = anchorDate;
-    return fullHistory.map((entry) => enrichFoodEntryWithLoggedAt(entry, dayKey));
+    return fullHistory.map((entry) => enrichFoodEntryWithLoggedAt(entry, dayKey, null));
   }
 
   if (isDayNodeArray(fullHistory)) {
     const recentDays = fullHistory.slice(-lookbackDays);
     return recentDays.flatMap((day) => {
       const dayKey = day?.data ?? day?.date ?? anchorDate;
+      const mealTimesObj = day?.mealTimes ?? null;
       return flattenLogToFoodEntries(day.log).map((entry) =>
-        enrichFoodEntryWithLoggedAt(entry, dayKey),
+        enrichFoodEntryWithLoggedAt(entry, dayKey, mealTimesObj),
       );
     });
   }
@@ -212,7 +189,7 @@ export function collectFoodEntriesFromFullHistory(fullHistory, options = {}) {
 
     entries.push(
       ...flattenLogToFoodEntries(rawLog).map((entry) =>
-        enrichFoodEntryWithLoggedAt(entry, dateStr),
+        enrichFoodEntryWithLoggedAt(entry, dateStr, node?.mealTimes ?? null),
       ),
     );
   }

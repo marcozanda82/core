@@ -3445,10 +3445,14 @@ export default function SalaComandi() {
    * Usato da chat add_food e da espansione ghost timeline → costruttore pasto.
    */
   const mapProposalItemsToDiaryFoods = useCallback(
-    (addFoodItems, mealDecFood) => {
+    (addFoodItems, mealDecFood, explicitMealType = null) => {
       if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return [];
-      const predictedMealType = predictMealType(mealDecFood);
-      const batchGhostTypeFood = getGhostMealType(predictedMealType, dailyLogRef.current || []);
+      const canonicalMeal =
+        toCanonicalMealType(String(explicitMealType || '').split('_')[0])
+        || predictMealType(mealDecFood);
+      // Ogni conferma chat = nuovo carrello: slot sequenziale snack, snack_2, snack_3…
+      const batchMealType = getGhostMealType(canonicalMeal, dailyLogRef.current || []);
+      const mealDec = mealDecFood;
       const batchIdFood = `batch_${Date.now()}`;
       return addFoodItems
         .map((item, index) => {
@@ -3459,13 +3463,13 @@ export default function SalaComandi() {
               ? item.matchedKey
               : findBestFoodMatch(name, foodDb);
           if (matchedKey != null) {
-            const dati = estraiDatiFoodDb(name, qty, batchGhostTypeFood, matchedKey);
+            const dati = estraiDatiFoodDb(name, qty, batchMealType, matchedKey);
             const isRecipe = dati.type === 'recipe';
             return {
               ...dati,
               id: dati.id || `ai_${batchIdFood}_${index}`,
-              mealType: batchGhostTypeFood,
-              mealTime: mealDecFood,
+              mealType: batchMealType,
+              mealTime: mealDec,
               batchId: batchIdFood,
               isEstimated: false,
               type: isRecipe ? 'recipe' : 'food',
@@ -3488,12 +3492,12 @@ export default function SalaComandi() {
           if (!Number.isFinite(fat) || fat < 0) {
             fat = (getAverageEstimate('fatTotal', name) / 100) * qSafe;
           }
-          const baseEst = estraiDatiFoodDb(name, qty, batchGhostTypeFood);
+          const baseEst = estraiDatiFoodDb(name, qty, batchMealType);
           return {
             ...baseEst,
             id: `ai_food_${batchIdFood}_${index}`,
             type: 'food',
-            mealType: batchGhostTypeFood,
+            mealType: batchMealType,
             desc: name,
             name,
             qta: qSafe,
@@ -3504,14 +3508,14 @@ export default function SalaComandi() {
             carb,
             fatTotal: fat,
             fat,
-            mealTime: mealDecFood,
+            mealTime: mealDec,
             batchId: batchIdFood,
             isEstimated: true,
           };
         })
         .filter(Boolean);
     },
-    [predictMealType, getGhostMealType, foodDb, estraiDatiFoodDb, getAverageEstimate]
+    [predictMealType, getGhostMealType, foodDb, estraiDatiFoodDb, getAverageEstimate, toCanonicalMealType]
   );
 
   /** Apre FastMealLogger precompilato da ghost_meal (timeline / modale). */
@@ -3572,9 +3576,18 @@ export default function SalaComandi() {
   /** Salvataggio pasto da payload add_food / pendingHabit; items possono includere matchedKey (abitudine). */
   const commitAddFoodChatPayload = useCallback(
     (payload) => {
-      const { timeString: oraStringFood, mealDec: mealDecFood, items: addFoodItems } = payload || {};
+      const {
+        timeString: oraStringFood,
+        mealDec: mealDecFood,
+        items: addFoodItems,
+        mealType: targetMealType,
+      } = payload || {};
       if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
-      const alimentiProcessatiFood = mapProposalItemsToDiaryFoods(addFoodItems, mealDecFood);
+      const alimentiProcessatiFood = mapProposalItemsToDiaryFoods(
+        addFoodItems,
+        mealDecFood,
+        targetMealType,
+      );
       if (!alimentiProcessatiFood.length) return null;
 
       const totKcal = Math.round(
@@ -3597,10 +3610,10 @@ export default function SalaComandi() {
 Ottimo! Diario aggiornato. 🥗`;
 
       if (isSimulationMode) {
-        setSimulatedLog((prev) => [...alimentiProcessatiFood, ...(prev || [])]);
+        setSimulatedLog((prev) => [...(prev || []), ...alimentiProcessatiFood]);
       } else {
         setDailyLog((prev) => {
-          const nuovoLogFood = [...alimentiProcessatiFood, ...(prev || [])];
+          const nuovoLogFood = [...(prev || []), ...alimentiProcessatiFood];
           syncDatiFirebase(nuovoLogFood, manualNodesRef.current);
           return nuovoLogFood;
         });
@@ -6731,10 +6744,6 @@ ${dbKeys || 'n/d'}`;
 
   const commitAddFoodCommand = useCallback(
     (payload) => {
-      const foodName = String(payload?.foodName || '').trim();
-      if (!foodName) throw new Error('foodName mancante');
-      const grams = Math.max(1, Math.round(Number(payload?.grams) || 0));
-      if (!Number.isFinite(grams) || grams <= 0) throw new Error('grams non valido');
       const mealTypeCanonical = toCanonicalMealType(String(payload?.mealType || '').trim()) || 'pranzo';
       const defaultMealTimeMap = {
         colazione: 8,
@@ -6753,12 +6762,33 @@ ${dbKeys || 'n/d'}`;
             : getCurrentTimeRoundedTo15Min();
       }
       const timeString = String(payload?.timeString || decimalToTimeStr(mealDec)).trim();
+
+      const rawItems = Array.isArray(payload?.items) && payload.items.length > 0
+        ? payload.items
+        : payload?.foodName
+          ? [{ foodName: payload.foodName, grams: payload.grams }]
+          : [];
+      if (!rawItems.length) throw new Error('Nessun alimento nel payload');
+
+      const items = rawItems.map((item) => {
+        const name = String(item?.foodName || item?.name || '').trim();
+        const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qty) || 0));
+        if (!name) throw new Error('foodName mancante');
+        if (!Number.isFinite(grams) || grams <= 0) throw new Error('grams non valido');
+        return { name, qty: grams };
+      });
+
       const message = commitAddFoodChatPayload({
         timeString,
         mealDec,
-        items: [{ name: foodName, qty: grams }],
+        items,
+        mealType: mealTypeCanonical,
       });
-      return message || `✅ ${foodName} (${grams}g) aggiunto nel diario.`;
+      if (message) return message;
+      if (items.length > 1) {
+        return `✅ ${items.length} alimenti aggiunti nel diario.`;
+      }
+      return `✅ ${items[0].name} (${items[0].qty}g) aggiunto nel diario.`;
     },
     [
       commitAddFoodChatPayload,
@@ -6888,6 +6918,10 @@ ${dbKeys || 'n/d'}`;
     activeQuickReplies,
     handleQuickReplyClick,
     handleAcceptAdvice,
+    handleDraftConfirm,
+    handleDraftCancel,
+    handleDraftRemoveItem,
+    handleDraftUpdateItemGrams,
   } = useCommandTerminal({
     chatHistory,
     setChatHistory,
@@ -7740,6 +7774,10 @@ ${dbKeys || 'n/d'}`;
                   metabolicGradientStops={metabolicGradientStops}
                   metabolicChartGradientStops={metabolicChartGradientStops}
                   currentMetabolicColor={currentMetabolicColor}
+                  activeLog={activeLog}
+                  metabolicContextOptions={metabolicContextOptions}
+                  showMetabolicOverlay={activeBottomTab === 'analisi'}
+                  onMetabolicPhaseClick={() => setShowMetabolicSheet(true)}
                 />
               </div>
               <div
@@ -8519,6 +8557,10 @@ ${dbKeys || 'n/d'}`;
             activeQuickReplies={activeQuickReplies}
             handleQuickReplyClick={handleQuickReplyClick}
             handleAcceptAdvice={handleAcceptAdvice}
+            onDraftConfirm={handleDraftConfirm}
+            onDraftCancel={handleDraftCancel}
+            onDraftRemoveItem={handleDraftRemoveItem}
+            onDraftUpdateItemGrams={handleDraftUpdateItemGrams}
             onBack={() => setActiveAction(null)}
             introPhrase={introPhrase}
           />

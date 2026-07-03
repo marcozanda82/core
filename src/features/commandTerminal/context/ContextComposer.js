@@ -69,7 +69,7 @@ export class ContextComposer {
         : [],
       knownFoods,
       slotFillingPolicy:
-        'ADD_FOOD: ometti grams e mealType se non espliciti nel messaggio utente; il terminale chiederà i dati mancanti.',
+        'ADD_FOOD: usa items[] con tutti gli alimenti elencati; ometti grams e mealType se non espliciti nel messaggio utente; il terminale chiederà i dati mancanti e poi chiederà conferma.',
     };
   }
 

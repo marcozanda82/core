@@ -11,11 +11,17 @@ import {
 } from './contracts/eventTypes.js';
 import {
   CONVERSATION_STATE,
+  buildFoodConfirmationSummary,
+  buildSleepConfirmationSummary,
+  buildWorkoutConfirmationSummary,
+  expandFoodPayloadItems,
   getFoodPayloadMissingFields,
   inferDefaultMealType,
   normalizeFoodPayload,
+  parseConfirmationFromUserText,
   parseGramsFromUserText,
   parseMealTypeFromUserText,
+  parseMultiItemGramsFromUserText,
   slotPromptForState,
 } from './conversation/conversationState.js';
 import {
@@ -37,8 +43,14 @@ function isFiniteNumber(value) {
 
 function validateFoodPayload(payload) {
   if (!payload || typeof payload !== 'object') return 'Food payload must be an object';
-  if (!String(payload.foodName || '').trim()) return 'foodName is required';
-  if (!isFiniteNumber(payload.grams) || Number(payload.grams) <= 0) return 'grams must be > 0';
+  const items = expandFoodPayloadItems(payload);
+  if (items.length === 0) return 'At least one food item is required';
+  for (const item of items) {
+    if (!String(item.foodName || '').trim()) return 'foodName is required for each item';
+    if (!isFiniteNumber(item.grams) || Number(item.grams) <= 0) {
+      return 'grams must be > 0 for each item';
+    }
+  }
   const mealType = String(payload.mealType || '').trim().toLowerCase();
   if (!['colazione', 'snack', 'pranzo', 'cena'].includes(mealType)) {
     return 'mealType must be one of colazione/snack/pranzo/cena';
@@ -89,6 +101,14 @@ function nextFoodSlotState(missingFields) {
   return CONVERSATION_STATE.IDLE;
 }
 
+function buildConfirmationSummary(commandType, payload) {
+  const type = String(commandType || '').trim().toUpperCase();
+  if (type === 'ADD_FOOD') return buildFoodConfirmationSummary(payload);
+  if (type === 'ADD_WORKOUT') return buildWorkoutConfirmationSummary(payload);
+  if (type === 'LOG_SLEEP') return buildSleepConfirmationSummary(payload);
+  return 'Confermi l\'inserimento?';
+}
+
 export class CommandTerminalController {
   constructor({ bus = commandBus, llmClient = geminiStructuredClient, composer = contextComposer } = {}) {
     this.bus = bus;
@@ -97,6 +117,7 @@ export class CommandTerminalController {
     this.conversationState = CONVERSATION_STATE.IDLE;
     this.pendingCommandPayload = null;
     this.pendingCommandType = null;
+    this.pendingAction = null;
   }
 
   getConversationSnapshot() {
@@ -106,6 +127,9 @@ export class CommandTerminalController {
         ? { ...this.pendingCommandPayload }
         : null,
       pendingCommandType: this.pendingCommandType,
+      pendingAction: this.pendingAction
+        ? { ...this.pendingAction, payload: { ...(this.pendingAction.payload || {}) } }
+        : null,
     };
   }
 
@@ -113,6 +137,7 @@ export class CommandTerminalController {
     this.conversationState = CONVERSATION_STATE.IDLE;
     this.pendingCommandPayload = null;
     this.pendingCommandType = null;
+    this.pendingAction = null;
   }
 
   publishSystemMessage(message) {
@@ -175,6 +200,139 @@ export class CommandTerminalController {
     return { commandType: normalizedType, payload, publishResult };
   }
 
+  publishMealDraftMessage(payload) {
+    const draftId = `draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const items = expandFoodPayloadItems(payload);
+    const mealDraft = {
+      commandType: 'ADD_FOOD',
+      payload: {
+        ...payload,
+        items,
+      },
+    };
+    if (this.pendingAction) {
+      this.pendingAction.draftId = draftId;
+    }
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'MEAL_DRAFT',
+        draftId,
+        mealDraft,
+        text: '',
+      },
+      { source: 'CommandTerminalController' },
+    );
+    return draftId;
+  }
+
+  getMealDraftSnapshot() {
+    if (!this.pendingAction || this.pendingAction.commandType !== 'ADD_FOOD') return null;
+    const payload = normalizeFoodPayload(this.pendingAction.payload || {}, {}, {
+      inferMealTypeFromContext: false,
+    });
+    return {
+      commandType: 'ADD_FOOD',
+      payload,
+    };
+  }
+
+  updatePendingFoodItemGrams(itemIndex, grams) {
+    if (!this.pendingAction || this.pendingAction.commandType !== 'ADD_FOOD') return null;
+    const items = expandFoodPayloadItems(this.pendingAction.payload);
+    const index = Number(itemIndex);
+    const nextGrams = Math.max(1, Math.round(Number(grams) || 0));
+    if (!Number.isFinite(index) || index < 0 || index >= items.length || nextGrams <= 0) {
+      return null;
+    }
+    items[index] = { ...items[index], grams: nextGrams };
+    this.pendingAction.payload = { ...this.pendingAction.payload, items };
+    this.pendingCommandPayload = this.pendingAction.payload;
+    return this.getMealDraftSnapshot();
+  }
+
+  removePendingFoodItem(itemIndex) {
+    if (!this.pendingAction || this.pendingAction.commandType !== 'ADD_FOOD') return null;
+    const items = expandFoodPayloadItems(this.pendingAction.payload);
+    const index = Number(itemIndex);
+    if (!Number.isFinite(index) || index < 0 || index >= items.length) return null;
+    const nextItems = items.filter((_, i) => i !== index);
+    if (nextItems.length === 0) {
+      this.cancelPendingAction();
+      return null;
+    }
+    this.pendingAction.payload = { ...this.pendingAction.payload, items: nextItems };
+    this.pendingCommandPayload = this.pendingAction.payload;
+    return this.getMealDraftSnapshot();
+  }
+
+  cancelPendingAction() {
+    this.resetConversationState();
+  }
+
+  confirmPendingAction() {
+    return this.executePendingAction();
+  }
+
+  stagePendingAction(commandType, payload, meta = {}) {
+    const normalizedType = String(commandType || '').trim().toUpperCase();
+    this.pendingAction = {
+      commandType: normalizedType,
+      payload: { ...payload },
+      meta: { ...meta },
+    };
+    this.pendingCommandType = normalizedType;
+    this.pendingCommandPayload = { ...payload };
+    this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
+
+    if (normalizedType === 'ADD_FOOD') {
+      this.publishMealDraftMessage(payload);
+    } else {
+      const summary = buildConfirmationSummary(normalizedType, payload);
+      this.publishSystemMessage(summary);
+    }
+
+    return {
+      ok: true,
+      awaiting: true,
+      awaitingConfirmation: true,
+      conversationState: this.conversationState,
+      pendingAction: { ...this.pendingAction },
+    };
+  }
+
+  executePendingAction() {
+    if (!this.pendingAction?.commandType || !this.pendingAction?.payload) {
+      return { ok: false, reason: 'no_pending_action' };
+    }
+    const { commandType, payload, meta = {} } = this.pendingAction;
+    const result = this.dispatchCommand(commandType, payload, {
+      ...meta,
+      requiresConfirmation: false,
+    });
+    this.resetConversationState();
+    return { ok: true, ...result };
+  }
+
+  processConfirmationResponse(userText, currentState = {}, options = {}) {
+    const text = String(userText || '').trim();
+    const confirmation = parseConfirmationFromUserText(text);
+
+    if (confirmation === 'yes') {
+      return this.executePendingAction();
+    }
+
+    if (confirmation === 'no') {
+      this.resetConversationState();
+      this.publishSystemMessage('Inserimento annullato.');
+      return { ok: true, cancelled: true };
+    }
+
+    // Nuovo messaggio: annulla bozza e riprocessa come nuova richiesta.
+    this.resetConversationState();
+    return this.processUserMessage(text, currentState, options);
+  }
+
   beginFoodSlotFilling(partialPayload, currentState = {}, options = {}) {
     const normalized = normalizeFoodPayload(partialPayload, currentState, {
       inferMealTypeFromContext: false,
@@ -224,12 +382,29 @@ export class CommandTerminalController {
       return { ok: false, reason: validationError };
     }
 
-    const result = this.dispatchCommand('ADD_FOOD', payload, {
-      requiresConfirmation: false,
+    return this.stagePendingAction('ADD_FOOD', payload, {
+      requiresConfirmation: true,
       uiMessage: options.uiMessage,
     });
-    this.resetConversationState();
-    return { ok: true, ...result };
+  }
+
+  applyGramsUpdatesToPendingItems(pending, updates) {
+    const items = expandFoodPayloadItems(pending);
+    const nextItems = items.map((item) => ({ ...item }));
+
+    for (const update of updates) {
+      const targetName = String(update.foodName || '').trim().toLowerCase();
+      const idx = nextItems.findIndex(
+        (item) => String(item.foodName || '').trim().toLowerCase() === targetName
+          || String(item.foodName || '').trim().toLowerCase().includes(targetName)
+          || targetName.includes(String(item.foodName || '').trim().toLowerCase()),
+      );
+      if (idx >= 0) {
+        nextItems[idx].grams = update.grams;
+      }
+    }
+
+    return { ...pending, items: nextItems };
   }
 
   processSlotFillingResponse(userText, currentState = {}) {
@@ -249,35 +424,48 @@ export class CommandTerminalController {
     }
 
     const pending = { ...(this.pendingCommandPayload || {}) };
+    const pendingItems = expandFoodPayloadItems(pending);
 
     if (this.conversationState === CONVERSATION_STATE.AWAITING_FOOD_GRAMS) {
-      const grams = parseGramsFromUserText(text);
-      if (!grams) {
-        this.publishSystemMessage(
-          `Non ho capito la quantità. Quanti grammi di ${pending.foodName || 'alimento'}? (es. 200 o 200g)`,
-        );
-        return { ok: true, awaiting: true, conversationState: this.conversationState };
+      const multiUpdates = parseMultiItemGramsFromUserText(text, pendingItems);
+      if (multiUpdates) {
+        this.pendingCommandPayload = this.applyGramsUpdatesToPendingItems(pending, multiUpdates);
+      } else {
+        const grams = parseGramsFromUserText(text);
+        if (!grams) {
+          this.publishSystemMessage(
+            slotPromptForState(this.conversationState, pending),
+          );
+          return { ok: true, awaiting: true, conversationState: this.conversationState };
+        }
+        const nextItems = pendingItems.map((item) => ({ ...item, grams }));
+        this.pendingCommandPayload = { ...pending, items: nextItems };
       }
-      pending.grams = grams;
-      this.pendingCommandPayload = pending;
 
       const missing = getFoodPayloadMissingFields(
-        normalizeFoodPayload(pending, currentState),
+        normalizeFoodPayload(this.pendingCommandPayload, currentState),
       );
       if (missing.includes('mealType')) {
         const inferred = inferDefaultMealType(currentState);
         if (inferred) {
-          pending.mealType = inferred;
-          this.pendingCommandPayload = pending;
+          this.pendingCommandPayload = {
+            ...this.pendingCommandPayload,
+            mealType: inferred,
+          };
           return this.completePendingFoodCommand(currentState);
         }
         this.conversationState = CONVERSATION_STATE.AWAITING_TIME;
-        this.publishSystemMessage(slotPromptForState(this.conversationState, pending));
+        this.publishSystemMessage(slotPromptForState(this.conversationState, this.pendingCommandPayload));
         return {
           ok: true,
           awaiting: true,
           conversationState: this.conversationState,
         };
+      }
+
+      if (missing.includes('grams')) {
+        this.publishSystemMessage(slotPromptForState(this.conversationState, this.pendingCommandPayload));
+        return { ok: true, awaiting: true, conversationState: this.conversationState };
       }
 
       return this.completePendingFoodCommand(currentState);
@@ -351,6 +539,10 @@ export class CommandTerminalController {
     const userText = String(text || '').trim();
     const images = Array.isArray(options?.images) ? options.images : [];
 
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
+      return this.processConfirmationResponse(userText, currentState, options);
+    }
+
     if (this.conversationState !== CONVERSATION_STATE.IDLE) {
       if (images.length > 0) {
         this.publishSystemMessage('Completa prima la domanda in sospeso, poi allega eventuali screenshot.');
@@ -407,15 +599,16 @@ export class CommandTerminalController {
         inferMealTypeFromContext: false,
       });
       const missing = getFoodPayloadMissingFields(normalized);
+      const hasFood = expandFoodPayloadItems(normalized).length > 0;
 
-      if (missing.length > 0 && String(normalized.foodName || '').trim()) {
+      if (missing.length > 0 && hasFood) {
         return this.beginFoodSlotFilling(normalized, currentState);
       }
     }
 
     const validationError = validateEnvelope(commandResponse.command);
     if (validationError) {
-      if (commandType === 'ADD_FOOD' && String(rawPayload.foodName || '').trim()) {
+      if (commandType === 'ADD_FOOD' && expandFoodPayloadItems(rawPayload).length > 0) {
         return this.beginFoodSlotFilling(rawPayload, currentState);
       }
 
@@ -433,18 +626,15 @@ export class CommandTerminalController {
     }
 
     console.log('✅ Intent completato con successo:', commandType);
-    const payload = { ...rawPayload };
-    const result = this.dispatchCommand(commandType, payload, {
+    const payload = commandType === 'ADD_FOOD'
+      ? normalizeFoodPayload(rawPayload, currentState, { inferMealTypeFromContext: false })
+      : { ...rawPayload };
+
+    return this.stagePendingAction(commandType, payload, {
       confidence: commandResponse.command.confidence ?? null,
-      requiresConfirmation: commandResponse.command.requiresConfirmation ?? true,
+      requiresConfirmation: true,
       uiMessage: commandResponse.command.uiMessage,
     });
-
-    return {
-      ok: true,
-      ...result,
-      model: commandResponse.model,
-    };
   }
 }
 

@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { formatMetabolicCountdown, MAX_FASTING_HOURS } from '../features/salaComandi/utils/metabolicStateEngine';
+import { formatMetabolicCountdown, formatMetabolicPhaseClockLabel, formatMetabolicPhaseEta, formatMetabolicRelativeDuration, MAX_FASTING_HOURS } from '../features/salaComandi/utils/metabolicStateEngine';
 import { METABOLIC_PHASES } from '../features/salaComandi/utils/metabolicPhaseConfig';
 import MetabolicPhaseIcon from './MetabolicPhaseIcon';
 
@@ -89,7 +89,7 @@ function backgroundAtHours(hours) {
   return `color-mix(in srgb, ${accent} 24%, ${BG_BASE})`;
 }
 
-function MetabolicTimeCarousel({ hoursSinceLastMeal }) {
+function MetabolicTimeCarousel({ hoursSinceLastMeal, lastMealConsumedAtMs }) {
   const scrollRef = useRef(null);
   const presentScrollRef = useRef(0);
   const [sidePad, setSidePad] = useState(0);
@@ -107,6 +107,21 @@ function MetabolicTimeCarousel({ hoursSinceLastMeal }) {
   );
 
   const viewPhase = useMemo(() => resolvePhaseAtHours(viewHours), [viewHours]);
+  const viewPhaseClockLabel = useMemo(
+    () => formatMetabolicPhaseClockLabel(lastMealConsumedAtMs, viewPhase.startHour),
+    [lastMealConsumedAtMs, viewPhase.startHour],
+  );
+  const viewHoursUntil = Math.max(0, viewHours - presentHours);
+  const viewMirinoLabel = useMemo(() => {
+    if (lastMealConsumedAtMs == null) {
+      return `${Math.floor(viewHours)}h ${String(Math.round((viewHours % 1) * 60)).padStart(2, '0')}m · ${viewPhase.label}`;
+    }
+    if (viewHoursUntil > 0.02) {
+      const eta = formatMetabolicPhaseEta(lastMealConsumedAtMs, viewPhase.startHour, viewHoursUntil);
+      return `${eta ?? viewPhaseClockLabel} · ${viewPhase.label}`;
+    }
+    return `${viewPhaseClockLabel} · ${viewPhase.label}`;
+  }, [lastMealConsumedAtMs, viewHours, viewHoursUntil, viewPhase.label, viewPhase.startHour, viewPhaseClockLabel]);
 
   const measureSidePad = useCallback(() => {
     const el = scrollRef.current;
@@ -190,7 +205,15 @@ function MetabolicTimeCarousel({ hoursSinceLastMeal }) {
 
         <div className="flex shrink-0 items-center" style={{ width: sidePad }} aria-hidden />
 
-        {phaseBlocks.map((block) => (
+        {phaseBlocks.map((block) => {
+          const phaseClockLabel = formatMetabolicPhaseClockLabel(lastMealConsumedAtMs, block.startHour);
+          const isFuturePhase = block.startHour > presentHours + 0.02;
+          const hoursUntilPhase = Math.max(0, block.startHour - presentHours);
+          const phaseEtaLabel = isFuturePhase && lastMealConsumedAtMs != null
+            ? formatMetabolicPhaseEta(lastMealConsumedAtMs, block.startHour, hoursUntilPhase)
+            : phaseClockLabel;
+
+          return (
           <div
             key={block.id}
             className="relative flex h-full shrink-0 flex-col items-center justify-center"
@@ -219,20 +242,29 @@ function MetabolicTimeCarousel({ hoursSinceLastMeal }) {
               >
                 {block.label}
               </span>
+              {lastMealConsumedAtMs != null ? (
+                <span
+                  className={`mt-0.5 max-w-[7rem] truncate px-1 text-center font-mono text-[8px] tabular-nums ${
+                    viewPhase.id === block.id ? 'text-cyan-300/90' : 'text-slate-500'
+                  }`}
+                  title={phaseEtaLabel}
+                >
+                  {phaseEtaLabel}
+                </span>
+              ) : null}
               <span className="mt-0.5 font-mono text-[8px] tabular-nums text-slate-600">
                 {block.startHour}h–{block.endHour === DISPLAY_MAX_HOURS ? `${DISPLAY_MAX_HOURS}h+` : `${block.endHour}h`}
               </span>
             </div>
           </div>
-        ))}
+          );
+        })}
 
         <div className="flex shrink-0 items-center" style={{ width: sidePad }} aria-hidden />
       </div>
 
       <p className="mt-2 text-center font-mono text-[10px] tabular-nums text-slate-500">
-        Mirino: {Math.floor(viewHours)}h {String(Math.round((viewHours % 1) * 60)).padStart(2, '0')}m
-        {' · '}
-        {viewPhase.label}
+        Mirino: {viewMirinoLabel}
       </p>
 
       {showReturn ? (
@@ -265,12 +297,20 @@ export default function MetabolicTimelineSheet({
     isOverloadOverride,
     overloadReason,
     biometrics,
+    lastMealConsumedAtMs,
+    nextPhaseEtaLabel,
+    nextPhaseClockLabel,
   } = metabolicSnapshot;
 
   const isOverload = isOverloadOverride || phase.id === 'sovraccarico';
   const isFastingLimitOverload = overloadReason === 'fasting_limit';
   const hint = PHASE_HINTS[phase.id] || '';
   const countdown = formatMetabolicCountdown(hoursUntilNext);
+  const nextPhaseDisplay = nextPhaseEtaLabel
+    ?? (nextPhaseClockLabel && hoursUntilNext != null
+      ? `${nextPhaseClockLabel} (tra ${formatMetabolicRelativeDuration(hoursUntilNext)})`
+      : countdown !== '—' ? `tra ${formatMetabolicRelativeDuration(hoursUntilNext)}` : '—');
+  const currentPhaseClockLabel = formatMetabolicPhaseClockLabel(lastMealConsumedAtMs, phase.minHours ?? 0);
 
   const handleNeuralReset = () => {
     onClose?.();
@@ -348,6 +388,12 @@ export default function MetabolicTimelineSheet({
               {hasMealLogged ? (
                 <p className="mt-2 font-mono text-xs tabular-nums text-slate-500">
                   {Math.floor(hoursSinceLastMeal)}h {Math.round((hoursSinceLastMeal % 1) * 60)}m dall&apos;ultimo pasto
+                  {currentPhaseClockLabel !== '—' ? (
+                    <>
+                      {' · '}
+                      fase attiva dalle {currentPhaseClockLabel}
+                    </>
+                  ) : null}
                 </p>
               ) : null}
             </div>
@@ -362,7 +408,7 @@ export default function MetabolicTimelineSheet({
                   <p className="text-sm font-semibold text-slate-200">{nextPhase.label}</p>
                 </div>
                 <p className="mt-1 font-mono text-lg font-bold tabular-nums text-cyan-400">
-                  tra {countdown}
+                  {nextPhaseDisplay}
                 </p>
               </div>
             ) : (
@@ -371,7 +417,10 @@ export default function MetabolicTimelineSheet({
               </div>
             )}
 
-            <MetabolicTimeCarousel hoursSinceLastMeal={hoursSinceLastMeal} />
+            <MetabolicTimeCarousel
+              hoursSinceLastMeal={hoursSinceLastMeal}
+              lastMealConsumedAtMs={lastMealConsumedAtMs}
+            />
           </>
         )}
 

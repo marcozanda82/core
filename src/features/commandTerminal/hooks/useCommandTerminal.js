@@ -11,7 +11,7 @@ import {
 } from '../contracts/eventTypes.js';
 import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
 import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
-import { quickRepliesForConversationState } from '../conversation/conversationState.js';
+import { quickRepliesForConversationState, CONVERSATION_STATE } from '../conversation/conversationState.js';
 
 export function useCommandTerminal({
   chatHistory,
@@ -70,8 +70,39 @@ export function useCommandTerminal({
     });
   }, []);
 
+  const syncDraftMessageInChat = useCallback((draftId, mealDraft) => {
+    if (!draftId || typeof setChatHistoryRef.current !== 'function') return;
+    setChatHistoryRef.current((prev) =>
+      (prev || []).map((entry) =>
+        entry.draftId === draftId
+          ? { ...entry, mealDraft, draftResolved: false }
+          : entry,
+      ),
+    );
+  }, []);
+
+  const resolveDraftMessage = useCallback((draftId, { cancelled = false } = {}) => {
+    if (!draftId || typeof setChatHistoryRef.current !== 'function') return;
+    setChatHistoryRef.current((prev) =>
+      (prev || []).map((entry) =>
+        entry.draftId === draftId
+          ? {
+              ...entry,
+              mealDraft: null,
+              draftResolved: true,
+              draftCancelled: cancelled,
+            }
+          : entry,
+      ),
+    );
+  }, []);
+
   const syncActiveQuickRepliesFromController = useCallback(() => {
     const { conversationState } = controller.getConversationSnapshot();
+    if (conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
+      setActiveQuickReplies([]);
+      return;
+    }
     setActiveQuickReplies(quickRepliesForConversationState(conversationState));
   }, [controller]);
 
@@ -133,6 +164,15 @@ export function useCommandTerminal({
 
     const unsubscribeSystem = commandBus.subscribe(DISPATCH_SYSTEM_MESSAGE, (envelope) => {
       const payload = envelope?.payload || {};
+      if (payload.type === 'MEAL_DRAFT') {
+        appendAiMessage('', {
+          type: 'MEAL_DRAFT',
+          mealDraft: payload.mealDraft || null,
+          draftId: payload.draftId || null,
+        });
+        setActiveQuickReplies([]);
+        return;
+      }
       const text = String(payload.text || payload.message || '').trim();
       if (!text) return;
       appendAiMessage(text, {
@@ -209,6 +249,57 @@ export function useCommandTerminal({
     [sendMessage],
   );
 
+  const handleDraftConfirm = useCallback(
+    async (draftId) => {
+      const snap = controller.getConversationSnapshot();
+      if (snap.conversationState !== CONVERSATION_STATE.AWAITING_CONFIRMATION) {
+        return { ok: false, reason: 'no_pending_draft' };
+      }
+      resolveDraftMessage(draftId);
+      setActiveQuickReplies([]);
+      return controller.confirmPendingAction();
+    },
+    [controller, resolveDraftMessage],
+  );
+
+  const handleDraftCancel = useCallback(
+    (draftId) => {
+      controller.cancelPendingAction();
+      resolveDraftMessage(draftId, { cancelled: true });
+      setActiveQuickReplies([]);
+      appendAiMessage('Inserimento annullato.');
+      return { ok: true, cancelled: true };
+    },
+    [controller, resolveDraftMessage, appendAiMessage],
+  );
+
+  const handleDraftRemoveItem = useCallback(
+    (draftId, itemIndex) => {
+      const updated = controller.removePendingFoodItem(itemIndex);
+      if (!updated) {
+        resolveDraftMessage(draftId, { cancelled: true });
+        setActiveQuickReplies([]);
+        if (controller.getConversationSnapshot().conversationState === CONVERSATION_STATE.IDLE) {
+          appendAiMessage('Bozza annullata (nessun alimento rimasto).');
+        }
+        return { ok: true, cancelled: true };
+      }
+      syncDraftMessageInChat(draftId, updated);
+      return { ok: true, mealDraft: updated };
+    },
+    [controller, resolveDraftMessage, syncDraftMessageInChat, appendAiMessage],
+  );
+
+  const handleDraftUpdateItemGrams = useCallback(
+    (draftId, itemIndex, grams) => {
+      const updated = controller.updatePendingFoodItemGrams(itemIndex, grams);
+      if (!updated) return { ok: false, reason: 'invalid_draft_update' };
+      syncDraftMessageInChat(draftId, updated);
+      return { ok: true, mealDraft: updated };
+    },
+    [controller, syncDraftMessageInChat],
+  );
+
   const handleAcceptAdvice = useCallback(async (suggestedAction, adviceId) => {
     if (!suggestedAction || typeof suggestedAction !== 'object') {
       return { ok: false, reason: 'missing_suggested_action' };
@@ -265,6 +356,10 @@ export function useCommandTerminal({
     activeQuickReplies,
     handleQuickReplyClick,
     handleAcceptAdvice,
+    handleDraftConfirm,
+    handleDraftCancel,
+    handleDraftRemoveItem,
+    handleDraftUpdateItemGrams,
     getConversationSnapshot: () => controller.getConversationSnapshot(),
     resetConversationState,
   };

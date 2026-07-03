@@ -13,6 +13,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import NowVerticalLineOverlay from '../../NowVerticalLineOverlay';
+import MetabolicTimelineOverlay from '../../components/MetabolicTimelineOverlay';
 import TimeAlignmentChartDebugOverlay from '../../TimeAlignmentDebugOverlay';
 import { CustomChartTooltip } from '../../coreEngine';
 import { SncEnergyChartGradients, useMetabolicChartGradient } from '../../components/charts/MetabolicTimelineGradient';
@@ -31,14 +32,20 @@ export default function MainDashboardCharts({
   metabolicGradientStops,
   metabolicChartGradientStops,
   currentMetabolicColor,
+  activeLog = [],
+  metabolicContextOptions = {},
+  showMetabolicOverlay = false,
+  onMetabolicPhaseClick,
 }) {
   const chartGradientStops = metabolicChartGradientStops ?? metabolicGradientStops;
   const energyGradient = useMetabolicChartGradient(chartGradientStops, 'colorEnergia');
   const sncChartMargin = { top: 8, right: 0, left: 0, bottom: 0 };
+  const metabolicOverlayNowHour = showMetabolicOverlay && !isViewingPastDate ? currentTime : null;
+  const chartShellStyle = { position: 'relative', width: '100%', height: '100%', flex: 1, minHeight: 0 };
   return (
     <>
       {chartUnit === 'percent' ? (
-        <>
+        <div style={chartShellStyle}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={mainChartData} margin={sncChartMargin}>
               <defs>
@@ -87,9 +94,17 @@ export default function MainDashboardCharts({
           </ResponsiveContainer>
           {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
           <TimeAlignmentChartDebugOverlay />
-        </>
+          {showMetabolicOverlay ? (
+            <MetabolicTimelineOverlay
+              activeLog={activeLog}
+              options={metabolicContextOptions}
+              nowHour={metabolicOverlayNowHour}
+              onPhaseClick={onMetabolicPhaseClick}
+            />
+          ) : null}
+        </div>
       ) : (
-        <>
+        <div style={chartShellStyle}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={mainChartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
               <defs>
@@ -262,7 +277,15 @@ export default function MainDashboardCharts({
           </ResponsiveContainer>
           {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
           <TimeAlignmentChartDebugOverlay />
-        </>
+          {showMetabolicOverlay ? (
+            <MetabolicTimelineOverlay
+              activeLog={activeLog}
+              options={metabolicContextOptions}
+              nowHour={metabolicOverlayNowHour}
+              onPhaseClick={onMetabolicPhaseClick}
+            />
+          ) : null}
+        </div>
       )}
     </>
   );

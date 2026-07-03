@@ -6,38 +6,29 @@ import {
   METABOLIC_PHASES,
   METABOLIC_OVERLOAD_PHASE,
 } from './metabolicPhaseConfig';
+import { resolveEntryMealConsumedAtMs } from './mealConsumedTime';
 import {
   addDays,
   computeAccumuloSNC,
   getLogFromStoricoTree,
   getTodayString,
+  TRACKER_STORICO_KEY,
 } from '../../../coreEngine';
 
 export { METABOLIC_PHASES, METABOLIC_OVERLOAD_PHASE } from './metabolicPhaseConfig';
 
-function resolveEntryLoggedAtMs(entry, dayKey) {
-  const direct = Number(
-    entry?.lastUsedAt ?? entry?.lastUsed ?? entry?.timestamp ?? entry?.loggedAt ?? entry?._loggedAtMs,
-  );
-  if (Number.isFinite(direct) && direct > 0) return direct;
-
-  const mealTime = Number(entry?.mealTime ?? entry?.time);
-  if (!Number.isFinite(mealTime) || !dayKey) return 0;
-
-  const baseDate = new Date(`${dayKey}T00:00:00`);
-  if (Number.isNaN(baseDate.getTime())) return 0;
-
-  const hours = Math.floor(mealTime);
-  const minutes = Math.round((mealTime - hours) * 60);
-  baseDate.setHours(hours, minutes, 0, 0);
-  return baseDate.getTime();
+function mealTimesForDay(fullHistory, dayKey) {
+  if (!fullHistory || !dayKey || typeof fullHistory !== 'object') return null;
+  const node = fullHistory[TRACKER_STORICO_KEY(dayKey)];
+  return node?.mealTimes && typeof node.mealTimes === 'object' ? node.mealTimes : null;
 }
 
-function enrichActiveLogEntries(activeLog, dayKey) {
+function enrichActiveLogEntries(activeLog, dayKey, fullHistory) {
+  const mealTimesObj = mealTimesForDay(fullHistory, dayKey);
   return flattenLogToFoodEntries(activeLog).map((entry) => ({
     ...entry,
     _dayKey: dayKey,
-    _loggedAtMs: resolveEntryLoggedAtMs(entry, dayKey),
+    _consumedAtMs: resolveEntryMealConsumedAtMs(entry, dayKey, mealTimesObj),
   }));
 }
 
@@ -51,10 +42,10 @@ function resolveReferenceMs(anchorDate, now) {
 }
 
 /**
- * Ore trascorse dall'ultimo pasto loggato (fullHistory + log giornaliero attivo).
- * @returns {number|null} null se nessun pasto trovato nel lookback
+ * Timestamp ms dell'ultimo pasto consumato (mealTime/time, non loggedAt).
+ * @returns {number|null}
  */
-export function getHoursSinceLastMeal(fullHistory, activeLog, options = {}) {
+export function resolveLastMealConsumedAtMs(fullHistory, activeLog, options = {}) {
   const now = options.now instanceof Date ? options.now : new Date();
   const anchorDate = options.anchorDate ?? now.toISOString().slice(0, 10);
   const lookbackDays = Math.max(1, Number(options.lookbackDays) || 60);
@@ -73,7 +64,7 @@ export function getHoursSinceLastMeal(fullHistory, activeLog, options = {}) {
   });
 
   if (Array.isArray(activeLog) && activeLog.length > 0) {
-    enrichActiveLogEntries(activeLog, anchorDate).forEach((entry) => {
+    enrichActiveLogEntries(activeLog, anchorDate, fullHistory).forEach((entry) => {
       const key = `${entry._dayKey}|${entry.mealTime}|${entry.desc}|${entry.id ?? entry.foodDbKey ?? ''}`;
       if (seen.has(key)) return;
       seen.add(key);
@@ -81,18 +72,43 @@ export function getHoursSinceLastMeal(fullHistory, activeLog, options = {}) {
     });
   }
 
-  let lastMs = null;
+  let lastConsumedMs = null;
 
   candidates.forEach((entry) => {
-    const loggedAt = resolveEntryLoggedAtMs(entry, entry._dayKey);
-    if (!loggedAt || loggedAt > referenceMs) return;
-    if (lastMs == null || loggedAt > lastMs) {
-      lastMs = loggedAt;
+    const mealTimesObj = mealTimesForDay(fullHistory, entry._dayKey);
+    const consumedAt =
+      entry._consumedAtMs
+      ?? resolveEntryMealConsumedAtMs(entry, entry._dayKey, mealTimesObj);
+    if (!consumedAt || consumedAt > referenceMs) return;
+    if (lastConsumedMs == null || consumedAt > lastConsumedMs) {
+      lastConsumedMs = consumedAt;
     }
   });
 
-  if (lastMs == null) return null;
-  return Math.max(0, (referenceMs - lastMs) / 3600000);
+  return lastConsumedMs;
+}
+
+/**
+ * Ore trascorse dall'ultimo pasto loggato (fullHistory + log giornaliero attivo).
+ * Usa mealTime/time del diario, non loggedAt di salvataggio.
+ * @returns {number|null} null se nessun pasto trovato nel lookback
+ */
+export function getHoursSinceLastMeal(fullHistory, activeLog, options = {}) {
+  const now = options.now instanceof Date ? options.now : new Date();
+  const anchorDate = options.anchorDate ?? now.toISOString().slice(0, 10);
+  const referenceMs = Number.isFinite(Number(options.referenceMs))
+    ? Number(options.referenceMs)
+    : resolveReferenceMs(anchorDate, now);
+
+  const lastConsumedMs = resolveLastMealConsumedAtMs(fullHistory, activeLog, {
+    ...options,
+    now,
+    anchorDate,
+    referenceMs,
+  });
+
+  if (lastConsumedMs == null) return null;
+  return Math.max(0, (referenceMs - lastConsumedMs) / 3600000);
 }
 
 export function getMetabolicPhaseIndex(hoursSinceLastMeal) {
@@ -323,9 +339,98 @@ export function formatMetabolicCountdown(hoursFraction) {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
+/** Durata relativa leggibile (es. "2h e 30m"). */
+export function formatMetabolicRelativeDuration(hoursFraction) {
+  if (hoursFraction == null || !Number.isFinite(hoursFraction)) return '—';
+  const totalMinutes = Math.max(0, Math.ceil(hoursFraction * 60));
+  const hh = Math.floor(totalMinutes / 60);
+  const mm = totalMinutes % 60;
+  if (hh === 0) return `${mm}m`;
+  if (mm === 0) return `${hh}h`;
+  return `${hh}h e ${mm}m`;
+}
+
+/** Orario locale HH:mm dal timestamp ms (fuso del dispositivo). */
+export function formatLocalClockTime(timestampMs) {
+  if (timestampMs == null || !Number.isFinite(Number(timestampMs))) return '—';
+  const date = new Date(Number(timestampMs));
+  if (Number.isNaN(date.getTime())) return '—';
+  const hh = date.getHours();
+  const mm = date.getMinutes();
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+/**
+ * Istante di clock in cui inizia una fase metabolica, dato l'ultimo pasto e l'offset ore.
+ * @param {number|null} lastMealConsumedAtMs
+ * @param {number} hoursOffsetFromLastMeal — es. phase.minHours
+ * @returns {number|null}
+ */
+export function resolveMetabolicPhaseClockMs(lastMealConsumedAtMs, hoursOffsetFromLastMeal) {
+  if (lastMealConsumedAtMs == null || !Number.isFinite(Number(lastMealConsumedAtMs))) return null;
+  const offset = Number(hoursOffsetFromLastMeal);
+  if (!Number.isFinite(offset)) return null;
+  return lastMealConsumedAtMs + offset * 3600000;
+}
+
+/** Etichetta orario locale per l'inizio di una fase (es. "16:30"). */
+export function formatMetabolicPhaseClockLabel(lastMealConsumedAtMs, hoursOffsetFromLastMeal) {
+  const clockMs = resolveMetabolicPhaseClockMs(lastMealConsumedAtMs, hoursOffsetFromLastMeal);
+  return clockMs == null ? '—' : formatLocalClockTime(clockMs);
+}
+
+/**
+ * Testo combinato: orario assoluto + countdown relativo.
+ * Es. "16:30 (tra 2h e 30m)"
+ */
+export function formatMetabolicPhaseEta(lastMealConsumedAtMs, hoursOffsetFromLastMeal, hoursUntil = null) {
+  const clockLabel = formatMetabolicPhaseClockLabel(lastMealConsumedAtMs, hoursOffsetFromLastMeal);
+  if (clockLabel === '—') return null;
+
+  const relative =
+    hoursUntil != null && Number.isFinite(Number(hoursUntil)) && Number(hoursUntil) > 0
+      ? formatMetabolicRelativeDuration(hoursUntil)
+      : null;
+
+  return relative ? `${clockLabel} (tra ${relative})` : clockLabel;
+}
+
 export function buildMetabolicSnapshot(fullHistory, activeLog, options = {}) {
+  const now = options.now instanceof Date ? options.now : new Date();
+  const anchorDate = options.anchorDate ?? now.toISOString().slice(0, 10);
+  const referenceMs = Number.isFinite(Number(options.referenceMs))
+    ? Number(options.referenceMs)
+    : resolveReferenceMs(anchorDate, now);
+
   const biometrics = options.biometrics
     ?? resolveMetabolicBiometrics(fullHistory, activeLog, options);
-  const hoursSinceLastMeal = getHoursSinceLastMeal(fullHistory, activeLog, options);
-  return getMetabolicState(hoursSinceLastMeal, biometrics);
+  const lastMealConsumedAtMs = resolveLastMealConsumedAtMs(fullHistory, activeLog, {
+    ...options,
+    now,
+    anchorDate,
+    referenceMs,
+  });
+  const hoursSinceLastMeal = lastMealConsumedAtMs == null
+    ? null
+    : Math.max(0, (referenceMs - lastMealConsumedAtMs) / 3600000);
+  const state = getMetabolicState(hoursSinceLastMeal, biometrics);
+
+  const nextPhaseClockMs = state.nextPhase && lastMealConsumedAtMs != null
+    ? resolveMetabolicPhaseClockMs(lastMealConsumedAtMs, state.nextPhase.minHours)
+    : null;
+
+  return {
+    ...state,
+    lastMealConsumedAtMs,
+    referenceMs,
+    nextPhaseClockMs,
+    nextPhaseClockLabel: nextPhaseClockMs != null ? formatLocalClockTime(nextPhaseClockMs) : null,
+    nextPhaseEtaLabel: state.nextPhase && lastMealConsumedAtMs != null
+      ? formatMetabolicPhaseEta(
+        lastMealConsumedAtMs,
+        state.nextPhase.minHours,
+        state.hoursUntilNext,
+      )
+      : null,
+  };
 }

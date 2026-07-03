@@ -7,8 +7,8 @@ import {
 } from '../contracts/commandSchemas.js';
 import { askAI } from '../../../services/aiService.js';
 
-const DEFAULT_MODEL = 'gemini-2.0-flash-001';
-const CONSULTANT_MODEL = 'gemini-2.0-flash-001';
+const DEFAULT_MODEL = 'gemini-2.5-flash-001';
+const CONSULTANT_MODEL = 'gemini-2.5-flash-001';
 
 function asTrimmedString(value) {
   return String(value ?? '').trim();
@@ -49,20 +49,46 @@ function userTextMentionsExplicitMealType(userText) {
   );
 }
 
-/** Normalizza payload ADD_FOOD dal modello: niente grammi/pasto inventati. */
+/** Normalizza payload ADD_FOOD dal modello: niente grammi/pasto inventati; supporta items[]. */
 function sanitizeAddFoodCommand(command, userText) {
   if (!command || typeof command !== 'object') return command;
   if (asTrimmedString(command.commandType).toUpperCase() !== 'ADD_FOOD') return command;
 
   const payload = { ...(command.payload || {}) };
-  const gramsNum = Number(payload.grams);
+  const hasItems = Array.isArray(payload.items) && payload.items.length > 0;
 
-  if (!Number.isFinite(gramsNum) || gramsNum <= 0) {
-    delete payload.grams;
-  } else if (!userTextMentionsExplicitQuantity(userText)) {
-    delete payload.grams;
+  const sanitizeItem = (item) => {
+    const next = { ...(item || {}) };
+    const foodName = asTrimmedString(next.foodName || next.name);
+    if (!foodName) return null;
+    next.foodName = foodName;
+
+    const gramsNum = Number(next.grams ?? next.qty ?? next.weight);
+    if (!Number.isFinite(gramsNum) || gramsNum <= 0) {
+      delete next.grams;
+    } else if (!userTextMentionsExplicitQuantity(userText)) {
+      delete next.grams;
+    } else {
+      next.grams = Math.round(gramsNum);
+    }
+    delete next.name;
+    delete next.qty;
+    delete next.weight;
+    return next;
+  };
+
+  if (hasItems) {
+    payload.items = payload.items.map(sanitizeItem).filter(Boolean);
   } else {
-    payload.grams = Math.round(gramsNum);
+    const single = sanitizeItem({
+      foodName: payload.foodName,
+      grams: payload.grams,
+    });
+    if (single) {
+      payload.items = [single];
+    }
+    delete payload.foodName;
+    delete payload.grams;
   }
 
   const mealRaw = asTrimmedString(payload.mealType).toLowerCase();
@@ -146,6 +172,7 @@ export class GeminiStructuredClient {
 
     if (includeFoodRules) {
       parts.push(
+        "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti, devi estrarre TUTTI in payload.items[] — uno oggetto per ciascun alimento. Non troncare al primo.",
         "REGOLA ADD_FOOD: Se l'utente dichiara di aver mangiato qualcosa MA NON specifica la quantità in grammi/porzioni, NON DEVI in alcun modo inventare, dedurre o stimare il peso. Devi obbligatoriamente restituire il campo 'grams' vuoto (null/undefined/omesso). Sarà il sistema a richiedere il dato mancante all'utente.",
         "REGOLA ADD_FOOD (mealType): Se l'utente NON indica esplicitamente colazione, snack, pranzo o cena, NON indovinare il pasto in base all'orario. Ometti mealType o impostalo a null.",
         "Includi grams SOLO se l'utente ha scritto un numero esplicito (es. 200g, 150 grammi). Valori tipici come 100g di default sono VIETATI se non detti dall'utente.",
@@ -198,7 +225,7 @@ export class GeminiStructuredClient {
       `Richiesta utente: ${userPromptText}`,
       `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_FOOD'
-        ? 'Slot filling attivo: se mancano grammi o pasto, ometti i campi corrispondenti (null) — non inventare valori.'
+        ? 'Slot filling attivo: usa payload.items[] con TUTTI gli alimenti menzionati; se mancano grammi o pasto, ometti i campi corrispondenti (null) — non inventare valori.'
         : null,
       'Produci esclusivamente l envelope commandType/payload/uiMessage/confidence/requiresConfirmation.',
     ]
