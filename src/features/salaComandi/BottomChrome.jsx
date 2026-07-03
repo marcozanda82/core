@@ -71,12 +71,13 @@ export default function BottomChrome({
             />
           ) : null}
           <img
-            src="/nuova-icona.png"
+            src="/nuova%20icon_fixed_192.png"
             alt=""
             className="action-icon-img action-icon-img-fab"
             width={22}
             height={22}
             decoding="async"
+            style={{ objectFit: 'contain' }}
           />
           <span style={{ color: '#888', fontSize: '0.95rem' }}>Chiedi a Kentu...</span>
         </div>

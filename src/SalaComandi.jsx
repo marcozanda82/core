@@ -119,6 +119,7 @@ import {
 } from './utils/durationMinutesInput';
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
+import MetabolicMonitorCard from './components/MetabolicMonitorCard';
 import WeeklyMetabolicIndicator from './components/WeeklyMetabolicIndicator';
 import FullscreenGraphView from './features/charts/FullscreenGraphView';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
@@ -7467,8 +7468,6 @@ ${dbKeys || 'n/d'}`;
         nextDayDisabled={currentTrackerDate === getTodayString()}
         sncStressLevel={sncStressLevel}
         onSncStressClick={() => setShowSncPopup(true)}
-        metabolicSnapshot={metabolicSnapshot}
-        onMetabolicBadgeClick={() => setShowMetabolicSheet(true)}
         simulationActive={isSimulationMode}
         onExitSimulation={() => {
           setIsSimulationMode(false);
@@ -7811,9 +7810,18 @@ ${dbKeys || 'n/d'}`;
       </>
       )}
 
+      {activeBottomTab === 'oggi' && userProfile?.level === 'pro' && (
+        <div style={{ width: '100%', flexShrink: 0, padding: '0 14px' }}>
+          <MetabolicMonitorCard
+            metabolicSnapshot={metabolicSnapshot}
+            onClick={() => setShowMetabolicSheet(true)}
+          />
+        </div>
+      )}
+
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && activeBottomTab === 'oggi' && (
-        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '8px', padding: '4px 14px 0', marginBottom: 0, overflowX: 'hidden', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ position: 'relative', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '6px', padding: '0 14px', marginBottom: 0, overflowX: 'hidden', width: '100%' }}>
           {/* --- CRUSCOTTO BIOLOGICO: Anello Calorie + Box Macro Neon + Fase Metabolica --- */}
           {(() => {
             const targetProt = userTargets?.prot ?? 150;
@@ -7842,11 +7850,16 @@ ${dbKeys || 'n/d'}`;
               ? profileTdeeKcal / dialDailyTargetKcal
               : 0;
             const maintenanceMarkerIsDeficit = dialPlannedDelta < 0;
+            const macroCardBase =
+              'flex-1 rounded-xl border backdrop-blur-sm bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 shadow-lg px-3 py-2.5 text-center overflow-hidden cursor-pointer transition-transform active:scale-[0.99]';
+            const macroCardTone = (mode, borderClass, ringClass, shadowClass) =>
+              `${macroCardBase} ${activeDialMode === mode ? `${borderClass} ring-2 ${ringClass} ${shadowClass}` : borderClass}`;
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', flexShrink: 0, gap: '8px' }}>
+                <div className="nutrition-cluster">
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
                 <div
-                  style={{ position: 'relative', width: '310px', height: '310px', margin: '0 auto 0 auto', zIndex: 10, flexShrink: 0 }}
+                  style={{ position: 'relative', width: '310px', height: '310px', margin: 0, zIndex: 10, flexShrink: 0 }}
                   onClick={() => {
                     setSelectedMealCenter(null);
                     setActiveDialMode('kcal');
@@ -8045,14 +8058,16 @@ ${dbKeys || 'n/d'}`;
                     </div>
                   </div>
                 </div>
-                <div style={{ flexGrow: 1, minHeight: '2vh' }} aria-hidden />
-                {/* Macro + Fase */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', marginBottom: '16px', gap: '8px', flexShrink: 0 }}>
-                  {/* Box macronutrienti neon (3 colonne) */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', width: '100%', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', width: '100%', flexShrink: 0 }}>
                     <div
                       role="button"
                       tabIndex={0}
+                      className={macroCardTone(
+                        'pro',
+                        'border-[#b666d2]/35',
+                        'ring-[#b666d2]/45',
+                        'shadow-[#b666d2]/20',
+                      )}
                       onKeyDown={(ev) => {
                         if (ev.key === 'Enter' || ev.key === ' ') {
                           ev.preventDefault();
@@ -8063,20 +8078,6 @@ ${dbKeys || 'n/d'}`;
                         ev.stopPropagation();
                         setActiveDialMode('pro');
                       }}
-                      style={{
-                        flex: 1,
-                        background: '#1a1a1c',
-                        border: activeDialMode === 'pro' ? '1px solid #b666d2' : '1px solid #333',
-                        borderRadius: '12px',
-                        padding: '8px 4px',
-                        textAlign: 'center',
-                        boxShadow:
-                          activeDialMode === 'pro'
-                            ? '0 0 0 2px rgba(182, 102, 210, 0.45), 0 4px 14px rgba(182, 102, 210, 0.2)'
-                            : '0 4px 10px rgba(0,0,0,0.5)',
-                        overflow: 'hidden',
-                        cursor: 'pointer',
-                      }}
                     >
                       <div style={{ color: '#b666d2', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Proteine</div>
                       <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
@@ -8086,6 +8087,12 @@ ${dbKeys || 'n/d'}`;
                     <div
                       role="button"
                       tabIndex={0}
+                      className={macroCardTone(
+                        'cho',
+                        'border-[#00ff88]/35',
+                        'ring-[#00ff88]/40',
+                        'shadow-[#00ff88]/15',
+                      )}
                       onKeyDown={(ev) => {
                         if (ev.key === 'Enter' || ev.key === ' ') {
                           ev.preventDefault();
@@ -8096,20 +8103,6 @@ ${dbKeys || 'n/d'}`;
                         ev.stopPropagation();
                         setActiveDialMode('cho');
                       }}
-                      style={{
-                        flex: 1,
-                        background: '#1a1a1c',
-                        border: activeDialMode === 'cho' ? '1px solid #00ff88' : '1px solid #333',
-                        borderRadius: '12px',
-                        padding: '8px 4px',
-                        textAlign: 'center',
-                        boxShadow:
-                          activeDialMode === 'cho'
-                            ? '0 0 0 2px rgba(0, 255, 136, 0.35), 0 4px 14px rgba(0, 255, 136, 0.15)'
-                            : '0 4px 10px rgba(0,0,0,0.5)',
-                        overflow: 'hidden',
-                        cursor: 'pointer',
-                      }}
                     >
                       <div style={{ color: '#00ff88', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Carboidrati</div>
                       <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
@@ -8119,6 +8112,12 @@ ${dbKeys || 'n/d'}`;
                     <div
                       role="button"
                       tabIndex={0}
+                      className={macroCardTone(
+                        'fat',
+                        'border-[#ffd700]/35',
+                        'ring-[#ffd700]/40',
+                        'shadow-[#ffd700]/12',
+                      )}
                       onKeyDown={(ev) => {
                         if (ev.key === 'Enter' || ev.key === ' ') {
                           ev.preventDefault();
@@ -8129,20 +8128,6 @@ ${dbKeys || 'n/d'}`;
                         ev.stopPropagation();
                         setActiveDialMode('fat');
                       }}
-                      style={{
-                        flex: 1,
-                        background: '#1a1a1c',
-                        border: activeDialMode === 'fat' ? '1px solid #ffd700' : '1px solid #333',
-                        borderRadius: '12px',
-                        padding: '8px 4px',
-                        textAlign: 'center',
-                        boxShadow:
-                          activeDialMode === 'fat'
-                            ? '0 0 0 2px rgba(255, 215, 0, 0.4), 0 4px 14px rgba(255, 215, 0, 0.12)'
-                            : '0 4px 10px rgba(0,0,0,0.5)',
-                        overflow: 'hidden',
-                        cursor: 'pointer',
-                      }}
                     >
                       <div style={{ color: '#ffd700', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Grassi</div>
                       <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
@@ -8150,12 +8135,16 @@ ${dbKeys || 'n/d'}`;
                       </div>
                     </div>
                   </div>
-                  <DayPlanWidget
-                    todayPlanBlock={todayPlanBlock}
-                    isWorkoutDoneToday={hasRealWorkoutInActiveLog}
-                    onOpenActionSheet={() => setIsPlanActionSheetOpen(true)}
-                  />
                 </div>
+                <DayPlanWidget
+                  todayPlanBlock={todayPlanBlock}
+                  isWorkoutDoneToday={hasRealWorkoutInActiveLog}
+                  onOpenActionSheet={() => setIsPlanActionSheetOpen(true)}
+                />
+                <MetabolicMonitorCard
+                  metabolicSnapshot={metabolicSnapshot}
+                  onClick={() => setShowMetabolicSheet(true)}
+                />
               </div>
             );
           })()}

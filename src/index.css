@@ -515,6 +515,14 @@ html, body, #root {
   min-height: 56px;
 }
 
+.nutrition-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
 .btn-primary-glow {
   display: inline-flex;
   align-items: center;

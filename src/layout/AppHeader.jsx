@@ -1,8 +1,7 @@
 import React from 'react';
-import MetabolicStatusBadge from '../components/MetabolicStatusBadge';
 
 /**
- * Testata dashboard: logo | navigazione data | cruscotto metabolico + accessory + SNC.
+ * Testata dashboard: logo | navigazione data | accessory + SNC.
  * Banner simulazione opzionale sotto la prima riga.
  */
 export default function AppHeader({
@@ -14,8 +13,6 @@ export default function AppHeader({
   nextDayDisabled,
   sncStressLevel,
   onSncStressClick,
-  metabolicSnapshot,
-  onMetabolicBadgeClick,
   simulationActive,
   onExitSimulation,
   accessory,
@@ -68,12 +65,9 @@ export default function AppHeader({
           </div>
         </div>
 
-        {/* Destra: badge metabolico + accessory + SNC */}
+        {/* Destra: accessory + SNC */}
+        {(accessory || sncStressLevel > 65) ? (
         <div className="ml-auto flex shrink-0 items-center justify-end gap-2 sm:gap-3">
-          <MetabolicStatusBadge
-            metabolicSnapshot={metabolicSnapshot}
-            onClick={onMetabolicBadgeClick}
-          />
           {accessory ? (
             <div className="flex shrink-0 items-center">{accessory}</div>
           ) : null}
@@ -92,6 +86,7 @@ export default function AppHeader({
             </button>
           )}
         </div>
+        ) : null}
       </div>
 
       {simulationActive && (
