@@ -6,10 +6,8 @@ import MetabolicCompass from './MetabolicCompass';
 import MetabolicMap from './MetabolicMap';
 import {
   calculateBodyComposition,
-  calculateDynamicTarget,
   calculateMetabolicTrajectory,
 } from './features/salaComandi/engines/adaptiveTDEEEngine';
-import { generateCoachAdvice } from './features/salaComandi/engines/coachEngine';
 import MetabolicCoachCompact from '@/features/salaComandi/components/MetabolicCoachCompact';
 import useMetabolicCoach from './features/salaComandi/hooks/useMetabolicCoach';
 import { mapBundleToPillars } from './features/metabolic/pillarsMapper';
@@ -29,12 +27,6 @@ const METABOLIC_GOALS = [
   { value: 'PERFORMANCE', label: '⚡ Performance (Massa)' },
   { value: 'DEFINITION', label: '🔪 Definizione (Estetica)' },
 ];
-
-function metabolicGoalToRoute(metabolicGoal) {
-  if (metabolicGoal === 'PERFORMANCE') return 'performance';
-  if (metabolicGoal === 'DEFINITION') return 'definition';
-  return 'longevity';
-}
 
 function metabolicGoalToCompassGoal(metabolicGoal) {
   if (metabolicGoal === 'PERFORMANCE') return METABOLIC_GOAL.MASSA;
@@ -261,7 +253,6 @@ export default function MetabolicUnifiedView({
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
-  const [currentView, setCurrentView] = useState('MAP');
   const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_TIMEFRAME);
   const [radarTimeframe, setRadarTimeframe] = useState('1D');
   const [metabolicGoal, setMetabolicGoal] = useState('LONGEVITY');
@@ -411,36 +402,6 @@ export default function MetabolicUnifiedView({
     return calculateMetabolicTrajectory(cumulativeCaloricDelta, 1, trainingStimulus);
   }, [dailyHistory, bodyMetricsHistory, radarTimeframe, metabolicMapInputs]);
 
-  const currentMapPos = useMemo(() => {
-    const history = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
-    for (let i = history.length - 1; i >= 0; i -= 1) {
-      const weight = Number(history[i]?.weight);
-      const bodyFat = Number(history[i]?.bodyFat);
-      if (Number.isFinite(weight) && weight > 0 && Number.isFinite(bodyFat) && bodyFat >= 0) {
-        return calculateBodyComposition(weight, bodyFat);
-      }
-    }
-    return { fatMassKg: targetFatKg, leanMassKg: targetLeanKg };
-  }, [bodyMetricsHistory, targetFatKg, targetLeanKg]);
-
-  const routeForGoal = useMemo(() => metabolicGoalToRoute(metabolicGoal), [metabolicGoal]);
-
-  const dynamicTarget = useMemo(
-    () => calculateDynamicTarget('M', 174, routeForGoal),
-    [routeForGoal],
-  );
-
-  const coachMessage = useMemo(
-    () =>
-      generateCoachAdvice(
-        { fatMassKg: currentMapPos.fatMassKg, leanMassKg: currentMapPos.leanMassKg },
-        dynamicTarget,
-        { expectedFatDeltaKg, expectedLeanDeltaKg },
-        routeForGoal,
-      ),
-    [currentMapPos, dynamicTarget, expectedFatDeltaKg, expectedLeanDeltaKg, routeForGoal],
-  );
-
   const reducedMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const compassGoal = useMemo(
@@ -448,70 +409,25 @@ export default function MetabolicUnifiedView({
     [metabolicGoal],
   );
 
-  return (
-    <div
-      style={{
-        position: 'relative',
-        width: '100%',
-        maxWidth: 440,
-        margin: '0 auto',
-        boxSizing: 'border-box',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
-          padding: '10px',
-          borderRadius: 14,
-          border: '1px solid rgba(255,255,255,0.14)',
-          background: 'rgba(10, 12, 16, 0.74)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
-        }}
-      >
-        <div
-          role="tablist"
-          aria-label="Vista principale"
-          style={{
-            display: 'flex',
-            width: '100%',
-            gap: 6,
-          }}
-        >
-          {[
-            { value: 'MAP', label: '🗺️ Mappa' },
-            { value: 'COMPASS', label: '🧭 Bussola' },
-          ].map(({ value, label }) => (
-            <MetabolicTabButton
-              key={value}
-              active={currentView === value}
-              onClick={() => setCurrentView(value)}
-              variant="view"
-              reducedMotion={reducedMotion}
-            >
-              {label}
-            </MetabolicTabButton>
-          ))}
-        </div>
+  const slideTitleStyle = {
+    margin: '0 0 8px',
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.42)',
+    textAlign: 'center',
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+    flexShrink: 0,
+  };
 
+  return (
+    <div className="trend-unified-root">
+      <div className="trend-sticky-controls">
         <div
           role="tablist"
           aria-label="Periodo ago predittivo"
-          style={{
-            display: 'flex',
-            width: '100%',
-            gap: 4,
-            padding: 3,
-            borderRadius: 11,
-            background: 'rgba(255,255,255,0.04)',
-          }}
+          className="trend-timeframe-tablist"
         >
           {RADAR_TIMEFRAMES.map(({ value, label }) => (
             <MetabolicTabButton
@@ -528,139 +444,13 @@ export default function MetabolicUnifiedView({
       </div>
 
       <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'stretch',
-          gap: 16,
-          width: '100%',
-          boxSizing: 'border-box',
-        }}
+        className="trend-carousel scrollbar-hide"
+        role="region"
+        aria-label="Strumenti metabolici"
       >
-        {currentView === 'MAP' ? (
-          <div style={{ width: '100%', padding: 'clamp(0.75rem, 3vw, 1rem)', boxSizing: 'border-box' }}>
-            <h3
-              style={{
-                margin: '0 0 12px',
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                color: 'rgba(255,255,255,0.42)',
-                textAlign: 'center',
-                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-              }}
-            >
-              Analisi Stato Metabolico
-            </h3>
-            <MetabolicMap
-              energyBalance={metabolicMapInputs.energyBalance}
-              trainingLoad={metabolicMapInputs.trainingLoad}
-              sleepHours={metabolicMapInputs.sleepHours}
-              glycemicInstability={metabolicMapInputs.glycemicInstability}
-              realSleepDays={metabolicMapInputs.realSleepDays}
-              totalWindowDays={metabolicMapInputs.totalWindowDays}
-              selectedTimeframe={selectedTimeframe}
-              baselineOffset={baselineOffset}
-              bodyMetricsHistory={bodyMetricsHistory}
-              zoomLevel={mapZoom}
-              onZoomLevelChange={setMapZoom}
-              dailyPositions={dailyMapPositions}
-              currentPosition={dailyMapPositions[dailyMapPositions.length - 1] || null}
-              mapPositionInertial={mapData.mapPositionInertial ?? null}
-              projectedPosition={projectedTrajectory.projected}
-              trajectoryVelocity={projectedTrajectory.velocity}
-              mapSignalStrength={mapData.mapSignalStrength}
-              persistFracOutsideDeadband={mapData.persistFracOutsideDeadband ?? null}
-              mapPresentation={mapData.mapPresentation}
-              targetFatKg={targetFatKg}
-              targetLeanKg={targetLeanKg}
-              expectedFatDeltaKg={expectedFatDeltaKg}
-              expectedLeanDeltaKg={expectedLeanDeltaKg}
-              metabolicGoal={metabolicGoal}
-            />
-            <div
-              style={{
-                marginTop: '16px',
-                padding: '16px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  paddingBottom: '8px',
-                }}
-              >
-                <span style={{ fontSize: '1.2rem' }}>🧭</span>
-                <span
-                  style={{
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    color: 'rgba(255,255,255,0.7)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  Navigatore di Rotta
-                </span>
-              </div>
-              <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.9)', lineHeight: '1.5' }}>
-                {coachMessage || 'In attesa di dati per calcolare la traiettoria...'}
-              </div>
-            </div>
-            <div
-              role="tablist"
-              aria-label="Obiettivo metabolico"
-              style={{
-                display: 'flex',
-                width: '100%',
-                gap: 6,
-                marginTop: 16,
-              }}
-            >
-              {METABOLIC_GOALS.map(({ value, label }) => (
-                <MetabolicTabButton
-                  key={value}
-                  active={metabolicGoal === value}
-                  onClick={() => setMetabolicGoal(value)}
-                  variant="goal"
-                  reducedMotion={reducedMotion}
-                >
-                  {label}
-                </MetabolicTabButton>
-              ))}
-            </div>
-            {SHOW_METABOLIC_DEBUG ? (
-              <MetabolicDataAudit
-                rawDetails={metabolicMapRawDetails}
-                mapInputs={metabolicMapInputs}
-              />
-            ) : null}
-          </div>
-        ) : (
-          <div
-            style={{
-              width: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-            }}
-          >
-            <MetabolicPillarsTelemetry pillars={pillarTelemetry} />
-            <MetabolicBubbleRadar
-              pillars={pillarTelemetry}
-              dailyHistory={dailyHistory}
-              selectedTimeframe={selectedTimeframe}
-            />
+        <section className="trend-carousel-slide" aria-label="La Rotta">
+          <h3 style={slideTitleStyle}>La Rotta</h3>
+          <div className="trend-slide-body">
             <MetabolicCompass
               dailyHistory={dailyHistory}
               bodyMetricsHistory={bodyMetricsHistory}
@@ -688,7 +478,74 @@ export default function MetabolicUnifiedView({
             ) : null}
             <MetabolicCoachCompact coach={coachInsight} />
           </div>
-        )}
+        </section>
+
+        <section className="trend-carousel-slide" aria-label="L'Assetto">
+          <h3 style={slideTitleStyle}>L&apos;Assetto</h3>
+          <div className="trend-slide-body">
+            <MetabolicPillarsTelemetry pillars={pillarTelemetry} />
+            <MetabolicBubbleRadar
+              pillars={pillarTelemetry}
+              dailyHistory={dailyHistory}
+              selectedTimeframe={selectedTimeframe}
+            />
+          </div>
+        </section>
+
+        <section className="trend-carousel-slide" aria-label="La Destinazione">
+          <h3 style={slideTitleStyle}>La Destinazione</h3>
+          <div className="trend-slide-body">
+            <MetabolicMap
+              energyBalance={metabolicMapInputs.energyBalance}
+              trainingLoad={metabolicMapInputs.trainingLoad}
+              sleepHours={metabolicMapInputs.sleepHours}
+              glycemicInstability={metabolicMapInputs.glycemicInstability}
+              realSleepDays={metabolicMapInputs.realSleepDays}
+              totalWindowDays={metabolicMapInputs.totalWindowDays}
+              selectedTimeframe={selectedTimeframe}
+              baselineOffset={baselineOffset}
+              bodyMetricsHistory={bodyMetricsHistory}
+              zoomLevel={mapZoom}
+              onZoomLevelChange={setMapZoom}
+              dailyPositions={dailyMapPositions}
+              currentPosition={dailyMapPositions[dailyMapPositions.length - 1] || null}
+              mapPositionInertial={mapData.mapPositionInertial ?? null}
+              projectedPosition={projectedTrajectory.projected}
+              trajectoryVelocity={projectedTrajectory.velocity}
+              mapSignalStrength={mapData.mapSignalStrength}
+              persistFracOutsideDeadband={mapData.persistFracOutsideDeadband ?? null}
+              mapPresentation={mapData.mapPresentation}
+              targetFatKg={targetFatKg}
+              targetLeanKg={targetLeanKg}
+              expectedFatDeltaKg={expectedFatDeltaKg}
+              expectedLeanDeltaKg={expectedLeanDeltaKg}
+              metabolicGoal={metabolicGoal}
+            />
+            <div
+              role="tablist"
+              aria-label="Obiettivo metabolico"
+              className="trend-goal-tablist"
+            >
+              {METABOLIC_GOALS.map(({ value, label }) => (
+                <MetabolicTabButton
+                  key={value}
+                  active={metabolicGoal === value}
+                  onClick={() => setMetabolicGoal(value)}
+                  variant="goal"
+                  reducedMotion={reducedMotion}
+                >
+                  {label}
+                </MetabolicTabButton>
+              ))}
+            </div>
+            {SHOW_METABOLIC_DEBUG ? (
+              <MetabolicDataAudit
+                rawDetails={metabolicMapRawDetails}
+                mapInputs={metabolicMapInputs}
+              />
+            ) : null}
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -8340,17 +8340,17 @@ ${dbKeys || 'n/d'}`;
       )}
       {activeBottomTab === 'bussola' && (
         <div
+          className="trend-tab-shell"
           style={{
             flex: 1,
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'center',
+            alignItems: 'stretch',
             justifyContent: 'flex-start',
-            padding: '16px 12px',
-            overflowY: 'auto',
+            padding: '12px 12px 0',
+            overflowY: 'hidden',
             overflowX: 'hidden',
-            WebkitOverflowScrolling: 'touch',
             width: '100%',
             boxSizing: 'border-box',
           }}
