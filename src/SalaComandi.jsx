@@ -7499,7 +7499,10 @@ ${dbKeys || 'n/d'}`;
         onTouchCancel={handleMainTabTouchCancel}
       >
       {(activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}>
+      <div
+        className={activeBottomTab === 'oggi' ? 'home-oggi-scroll' : undefined}
+        style={activeBottomTab === 'analisi' ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' } : undefined}
+      >
       {(activeBottomTab === 'analisi' || (activeBottomTab === 'oggi' && userProfile?.level === 'pro')) && (
       <>
       {/* Cruscotto energetico giornaliero 0-24h */}
@@ -7821,8 +7824,8 @@ ${dbKeys || 'n/d'}`;
 
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
       {userProfile?.level !== 'pro' && activeBottomTab === 'oggi' && (
-        <div style={{ position: 'relative', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '6px', padding: '0 14px', marginBottom: 0, overflowX: 'hidden', width: '100%' }}>
-          {/* --- CRUSCOTTO BIOLOGICO: Anello Calorie + Box Macro Neon + Fase Metabolica --- */}
+        <div className="home-oggi-column">
+          {/* --- CRUSCOTTO BIOLOGICO: Anello Calorie + Box Macro Neon --- */}
           {(() => {
             const targetProt = userTargets?.prot ?? 150;
             const targetCarb = userTargets?.carb ?? 200;
@@ -7855,7 +7858,7 @@ ${dbKeys || 'n/d'}`;
             const macroCardTone = (mode, borderClass, ringClass, shadowClass) =>
               `${macroCardBase} ${activeDialMode === mode ? `${borderClass} ring-2 ${ringClass} ${shadowClass}` : borderClass}`;
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', flexShrink: 0, gap: '8px' }}>
+              <>
                 <div className="nutrition-cluster">
                 {/* Quadrante Biologico: grafico circolare pasti (tachimetro) */}
                 <div
@@ -8145,7 +8148,7 @@ ${dbKeys || 'n/d'}`;
                   metabolicSnapshot={metabolicSnapshot}
                   onClick={() => setShowMetabolicSheet(true)}
                 />
-              </div>
+              </>
             );
           })()}
           {/* Riga widget macro: griglia 4 colonne (nascosta - sostituita da Cruscotto Biologico) */}

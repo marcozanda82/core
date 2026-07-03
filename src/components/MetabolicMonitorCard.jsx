@@ -107,7 +107,7 @@ export default function MetabolicMonitorCard({ metabolicSnapshot, onClick }) {
         type="button"
         onClick={onClick}
         aria-label={`Monitor metabolico: ${phaseLabel}. Apri cruscotto.`}
-        className={`mb-3 w-full rounded-xl border px-3 py-2.5 text-left shadow-lg backdrop-blur-sm transition-transform active:scale-[0.99] ${cardTone}`}
+        className={`mb-0 w-full rounded-xl border px-3 py-2.5 text-left shadow-lg backdrop-blur-sm transition-transform active:scale-[0.99] ${cardTone}`}
       >
         {body}
       </button>
@@ -117,7 +117,7 @@ export default function MetabolicMonitorCard({ metabolicSnapshot, onClick }) {
   return (
     <article
       aria-label={`Monitor metabolico: ${phaseLabel}`}
-      className={`mb-3 w-full rounded-xl border px-3 py-2.5 shadow-md backdrop-blur-sm ${cardTone}`}
+      className={`mb-0 w-full rounded-xl border px-3 py-2.5 shadow-md backdrop-blur-sm ${cardTone}`}
     >
       {body}
     </article>

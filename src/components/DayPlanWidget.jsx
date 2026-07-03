@@ -26,6 +26,10 @@ function musclesLabelFromBlock(block) {
   return activityLabelFromBlock(block);
 }
 
+/** Shell card premium condivisa (allenamento, riposo, monitor metabolico). */
+const HOME_ACTIVITY_CARD_CLASS =
+  'mb-0 w-full rounded-xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 px-4 py-3 shadow-lg shadow-cyan-900/20 backdrop-blur-sm';
+
 /**
  * @param {{
  *   todayPlanBlock: DayBlock | null,
@@ -45,14 +49,14 @@ export default function DayPlanWidget({ todayPlanBlock, isWorkoutDoneToday, onOp
   if (isRestDay) {
     return (
       <div
-        className="mb-3 w-full rounded-xl border border-slate-700/50 bg-slate-800/40 px-4 py-3 shadow-md backdrop-blur-sm"
+        className={HOME_ACTIVITY_CARD_CLASS}
         aria-label="Riposo attivo oggi"
       >
         <div className="flex items-center gap-3">
-          <span className="text-xl opacity-60" aria-hidden>
+          <span className="text-xl" aria-hidden style={{ filter: 'brightness(1.1)' }}>
             🔋
           </span>
-          <p className="text-sm font-medium text-slate-400">Oggi: Riposo Attivo</p>
+          <p className="text-sm font-semibold text-cyan-100">Oggi: Riposo Attivo</p>
         </div>
       </div>
     );
@@ -61,7 +65,7 @@ export default function DayPlanWidget({ todayPlanBlock, isWorkoutDoneToday, onOp
   if (isDone) {
     return (
       <div
-        className="mb-3 w-full rounded-xl border border-emerald-700/40 bg-emerald-950/35 px-4 py-3 shadow-md backdrop-blur-sm"
+        className="mb-0 w-full rounded-xl border border-emerald-700/40 bg-emerald-950/35 px-4 py-3 shadow-md backdrop-blur-sm"
         aria-label="Allenamento completato oggi"
       >
         <div className="flex items-center gap-3">
@@ -78,7 +82,7 @@ export default function DayPlanWidget({ todayPlanBlock, isWorkoutDoneToday, onOp
     <button
       type="button"
       onClick={() => onOpenActionSheet?.()}
-      className="mb-3 w-full rounded-xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 px-4 py-3 text-left shadow-lg shadow-cyan-900/20 backdrop-blur-sm transition-transform active:scale-[0.99]"
+      className={`${HOME_ACTIVITY_CARD_CLASS} text-left transition-transform active:scale-[0.99]`}
       aria-label="Apri azioni piano di oggi"
     >
       <div className="flex items-center gap-3">
