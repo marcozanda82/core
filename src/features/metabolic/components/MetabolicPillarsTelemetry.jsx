@@ -42,9 +42,8 @@ export default function MetabolicPillarsTelemetry({ pillars }) {
   return (
     <section
       aria-label="Telemetria pilastri metabolici"
+      className="trend-radar-pillars"
       style={{
-        width: '100%',
-        margin: 0,
         padding: '10px 12px',
         borderRadius: 12,
         border: '1px solid rgba(255, 255, 255, 0.08)',

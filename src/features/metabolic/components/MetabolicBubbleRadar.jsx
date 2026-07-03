@@ -85,28 +85,8 @@ export default function MetabolicBubbleRadar({
   }, [headKey, fullPathD, svgRail, progress, headX, headY]);
 
   return (
-    <section
-      aria-label="Radar metabolico a bolla"
-      style={{
-        width: '100%',
-        maxWidth: 320,
-        margin: '0 auto',
-        boxSizing: 'border-box',
-      }}
-    >
-      <div
-        style={{
-          position: 'relative',
-          width: '100%',
-          aspectRatio: '1 / 1',
-          borderRadius: 14,
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          background:
-            'radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.35) 0%, rgba(8, 10, 16, 0.98) 72%)',
-          overflow: 'hidden',
-          boxShadow: 'inset 0 0 24px rgba(0, 0, 0, 0.55)',
-        }}
-      >
+    <section aria-label="Radar metabolico a bolla" className="trend-bubble-radar">
+      <div className="trend-bubble-radar__face">
         <EdgeLabel position="top" color="#f472b6">
           Ipertrofia
         </EdgeLabel>
@@ -123,7 +103,7 @@ export default function MetabolicBubbleRadar({
         <svg
           viewBox="0 0 100 100"
           preserveAspectRatio="xMidYMid meet"
-          style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, display: 'block' }}
+          className="trend-bubble-radar__svg"
         >
           <defs>
             <linearGradient id="comet-fade" x1="0%" y1="0%" x2="100%" y2="0%">

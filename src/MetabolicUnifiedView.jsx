@@ -495,14 +495,16 @@ export default function MetabolicUnifiedView({
         ) : null}
 
         {activeTool === 'RADAR' ? (
-          <>
+          <div className="trend-radar-panel">
             <MetabolicPillarsTelemetry pillars={pillarTelemetry} />
-            <MetabolicBubbleRadar
-              pillars={pillarTelemetry}
-              dailyHistory={dailyHistory}
-              selectedTimeframe={selectedTimeframe}
-            />
-          </>
+            <div className="trend-radar-shell">
+              <MetabolicBubbleRadar
+                pillars={pillarTelemetry}
+                dailyHistory={dailyHistory}
+                selectedTimeframe={selectedTimeframe}
+              />
+            </div>
+          </div>
         ) : null}
 
         {activeTool === 'MAP' ? (
