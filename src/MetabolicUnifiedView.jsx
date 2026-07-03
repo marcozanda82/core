@@ -8,13 +8,17 @@ import {
   calculateBodyComposition,
   calculateMetabolicTrajectory,
 } from './features/salaComandi/engines/adaptiveTDEEEngine';
-import MetabolicCoachCompact from '@/features/salaComandi/components/MetabolicCoachCompact';
-import useMetabolicCoach from './features/salaComandi/hooks/useMetabolicCoach';
 import { mapBundleToPillars } from './features/metabolic/pillarsMapper';
 import MetabolicPillarsTelemetry from './features/metabolic/components/MetabolicPillarsTelemetry';
 import MetabolicBubbleRadar from './features/metabolic/components/MetabolicBubbleRadar';
 
 const DEFAULT_TIMEFRAME = '1d';
+const DEFAULT_ACTIVE_TOOL = 'COMPASS';
+const TREND_TOOLS = [
+  { value: 'COMPASS', label: '🧭 Bussola' },
+  { value: 'RADAR', label: '🕸️ Radar' },
+  { value: 'MAP', label: '🗺️ Mappa' },
+];
 const RADAR_TIMEFRAMES = [
   { value: 'AUTO', label: 'AUTO' },
   { value: '1D', label: 'IERI' },
@@ -22,11 +26,25 @@ const RADAR_TIMEFRAMES = [
   { value: '14D', label: '14G' },
   { value: '30D', label: '30G' },
 ];
-const METABOLIC_GOALS = [
-  { value: 'LONGEVITY', label: '🌱 Longevità (Equilibrio)' },
-  { value: 'PERFORMANCE', label: '⚡ Performance (Massa)' },
-  { value: 'DEFINITION', label: '🔪 Definizione (Estetica)' },
-];
+const DEFAULT_METABOLIC_GOAL = 'LONGEVITY';
+
+function TrendToolSegmentButton({ active, onClick, children, reducedMotion = false, ...rest }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`trend-tool-segment${active ? ' trend-tool-segment--active' : ''}`}
+      style={{
+        transition: reducedMotion ? 'none' : 'background 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease',
+      }}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
 
 function metabolicGoalToCompassGoal(metabolicGoal) {
   if (metabolicGoal === 'PERFORMANCE') return METABOLIC_GOAL.MASSA;
@@ -254,9 +272,10 @@ export default function MetabolicUnifiedView({
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
   const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_TIMEFRAME);
+  const [activeTool, setActiveTool] = useState(DEFAULT_ACTIVE_TOOL);
   const [radarTimeframe, setRadarTimeframe] = useState('1D');
-  const [metabolicGoal, setMetabolicGoal] = useState('LONGEVITY');
   const [mapZoom, setMapZoom] = useState(1);
+  const metabolicGoal = DEFAULT_METABOLIC_GOAL;
 
   const isTfControlled =
     selectedTimeframeProp !== undefined && typeof onTimeframeChange === 'function';
@@ -314,13 +333,6 @@ export default function MetabolicUnifiedView({
       };
     });
   }, [dailyHistory, bodyMetricsHistory, fullHistory, userTargets, projectionAnchorDate]);
-
-  const coachInsight = useMetabolicCoach({
-    mapData,
-    userTargets,
-    selectedTimeframe,
-    dailyHistory,
-  });
 
   const pillarTelemetry = useMemo(() => mapBundleToPillars(mapData), [mapData]);
 
@@ -409,17 +421,7 @@ export default function MetabolicUnifiedView({
     [metabolicGoal],
   );
 
-  const slideTitleStyle = {
-    margin: '0 0 8px',
-    fontSize: 11,
-    fontWeight: 600,
-    letterSpacing: '0.14em',
-    textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.42)',
-    textAlign: 'center',
-    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-    flexShrink: 0,
-  };
+  const compassVisible = compassScreenActive && activeTool === 'COMPASS';
 
   return (
     <div className="trend-unified-root">
@@ -441,23 +443,36 @@ export default function MetabolicUnifiedView({
             </MetabolicTabButton>
           ))}
         </div>
+
+        <div
+          role="tablist"
+          aria-label="Strumento metabolico"
+          className="trend-tool-segmented"
+        >
+          {TREND_TOOLS.map(({ value, label }) => (
+            <TrendToolSegmentButton
+              key={value}
+              active={activeTool === value}
+              onClick={() => setActiveTool(value)}
+              reducedMotion={reducedMotion}
+              aria-label={label}
+            >
+              {label}
+            </TrendToolSegmentButton>
+          ))}
+        </div>
       </div>
 
-      <div
-        className="trend-carousel scrollbar-hide"
-        role="region"
-        aria-label="Strumenti metabolici"
-      >
-        <section className="trend-carousel-slide" aria-label="La Rotta">
-          <h3 style={slideTitleStyle}>La Rotta</h3>
-          <div className="trend-slide-body">
+      <div className="trend-tool-stage">
+        {activeTool === 'COMPASS' ? (
+          <>
             <MetabolicCompass
               dailyHistory={dailyHistory}
               bodyMetricsHistory={bodyMetricsHistory}
               userTargets={userTargets}
               expectedFatDeltaKg={expectedFatDeltaKg}
               expectedLeanDeltaKg={expectedLeanDeltaKg}
-              compassScreenActive={compassScreenActive}
+              compassScreenActive={compassVisible}
               mapZoneColor={mapZoneColor}
               compassAmbientStyle={mapData.compassAmbientStyle}
               hideMetabolicMapSection
@@ -476,25 +491,22 @@ export default function MetabolicUnifiedView({
                 compassDebugByTimeframe={compassDebugByTimeframe}
               />
             ) : null}
-            <MetabolicCoachCompact coach={coachInsight} />
-          </div>
-        </section>
+          </>
+        ) : null}
 
-        <section className="trend-carousel-slide" aria-label="L'Assetto">
-          <h3 style={slideTitleStyle}>L&apos;Assetto</h3>
-          <div className="trend-slide-body">
+        {activeTool === 'RADAR' ? (
+          <>
             <MetabolicPillarsTelemetry pillars={pillarTelemetry} />
             <MetabolicBubbleRadar
               pillars={pillarTelemetry}
               dailyHistory={dailyHistory}
               selectedTimeframe={selectedTimeframe}
             />
-          </div>
-        </section>
+          </>
+        ) : null}
 
-        <section className="trend-carousel-slide" aria-label="La Destinazione">
-          <h3 style={slideTitleStyle}>La Destinazione</h3>
-          <div className="trend-slide-body">
+        {activeTool === 'MAP' ? (
+          <>
             <MetabolicMap
               energyBalance={metabolicMapInputs.energyBalance}
               trainingLoad={metabolicMapInputs.trainingLoad}
@@ -521,31 +533,14 @@ export default function MetabolicUnifiedView({
               expectedLeanDeltaKg={expectedLeanDeltaKg}
               metabolicGoal={metabolicGoal}
             />
-            <div
-              role="tablist"
-              aria-label="Obiettivo metabolico"
-              className="trend-goal-tablist"
-            >
-              {METABOLIC_GOALS.map(({ value, label }) => (
-                <MetabolicTabButton
-                  key={value}
-                  active={metabolicGoal === value}
-                  onClick={() => setMetabolicGoal(value)}
-                  variant="goal"
-                  reducedMotion={reducedMotion}
-                >
-                  {label}
-                </MetabolicTabButton>
-              ))}
-            </div>
             {SHOW_METABOLIC_DEBUG ? (
               <MetabolicDataAudit
                 rawDetails={metabolicMapRawDetails}
                 mapInputs={metabolicMapInputs}
               />
             ) : null}
-          </div>
-        </section>
+          </>
+        ) : null}
       </div>
     </div>
   );

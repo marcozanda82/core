@@ -553,7 +553,7 @@ export default function MetabolicCompass({
         width: '100%',
         maxWidth: 400,
         margin: '0 auto',
-        padding: 'clamp(1rem, 4vw, 1.25rem)',
+        padding: '0 clamp(1rem, 4vw, 1.25rem)',
         boxSizing: 'border-box',
         overflow: 'visible',
       }}
@@ -796,7 +796,7 @@ export default function MetabolicCompass({
           className="metabolic-compass-ambient-debug"
           aria-hidden
           style={{
-            marginTop: 8,
+            marginTop: 0,
             width: '100%',
             textAlign: 'center',
             fontSize: 10,
@@ -818,7 +818,7 @@ export default function MetabolicCompass({
         aria-live="polite"
         aria-atomic="true"
         style={{
-          margin: '16px 0 0',
+          margin: '8px 0 0',
           width: '100%',
           maxWidth: 340,
           minHeight: '1.25em',

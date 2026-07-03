@@ -90,7 +90,7 @@ export default function MetabolicBubbleRadar({
       style={{
         width: '100%',
         maxWidth: 320,
-        margin: '12px auto 8px',
+        margin: '0 auto',
         boxSizing: 'border-box',
       }}
     >

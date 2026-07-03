@@ -44,8 +44,7 @@ export default function MetabolicPillarsTelemetry({ pillars }) {
       aria-label="Telemetria pilastri metabolici"
       style={{
         width: '100%',
-        marginTop: 10,
-        marginBottom: 4,
+        margin: 0,
         padding: '10px 12px',
         borderRadius: 12,
         border: '1px solid rgba(255, 255, 255, 0.08)',

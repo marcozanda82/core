@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LocateFixed } from 'lucide-react';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import { sortBiometricsByTimeAsc } from './biometricHistory';
 import {
@@ -11,6 +12,190 @@ const KG_TO_SVG_SCALE = 2.5;
 
 const DEFAULT_TARGET_FAT_KG = 15;
 const DEFAULT_TARGET_LEAN_KG = 60;
+
+const MAP_MIN_SCALE = 0.5;
+const MAP_MAX_SCALE = 4;
+/** Δscala per frame al massimo della velocità rocker (|100|). */
+const ROCKER_SCALE_PER_FRAME = 0.05;
+
+/**
+ * Coordinate pixel non scalate del marker bussola nel content (viewBox 0–100 → px layout).
+ */
+function resolveMarkerPivotPixels(instance, markerSvg) {
+  if (!markerSvg || !Number.isFinite(markerSvg.cx) || !Number.isFinite(markerSvg.cy)) {
+    return null;
+  }
+  const content = instance?.contentComponent;
+  if (!content) return null;
+
+  const unscaledW = content.offsetWidth ?? 0;
+  const unscaledH = content.offsetHeight ?? 0;
+  if (unscaledW <= 0 || unscaledH <= 0) return null;
+
+  return {
+    pivotX: (markerSvg.cx / 100) * unscaledW,
+    pivotY: (markerSvg.cy / 100) * unscaledH,
+  };
+}
+
+/**
+ * Zoom incrementale ancorato al pivot del marker (formula libreria react-zoom-pan-pinch).
+ * newPosition = oldPosition − pivot × Δscale
+ */
+function computeMarkerAnchoredZoom(oldX, oldY, oldScale, scaleDelta, instance, markerSvg) {
+  const newScale = Math.max(
+    MAP_MIN_SCALE,
+    Math.min(MAP_MAX_SCALE, oldScale + scaleDelta),
+  );
+  if (Math.abs(newScale - oldScale) < 1e-6) return null;
+
+  const pivot = resolveMarkerPivotPixels(instance, markerSvg);
+  const pivotX = pivot?.pivotX ?? 0;
+  const pivotY = pivot?.pivotY ?? 0;
+  const deltaScale = newScale - oldScale;
+
+  return {
+    positionX: oldX - pivotX * deltaScale,
+    positionY: oldY - pivotY * deltaScale,
+    scale: newScale,
+  };
+}
+
+function stopSwipePropagation(event) {
+  event.stopPropagation();
+}
+
+/**
+ * Pitch bender: range -100…0…+100 → zoom continuo ancorato al marker bussola.
+ */
+function MapZoomControlBar({ transformState, instance, setTransform, resetTransform, markerAnchor }) {
+  const [zoomVelocity, setZoomVelocity] = useState(0);
+  const zoomVelocityRef = useRef(0);
+  const transformStateRef = useRef(transformState);
+  const instanceRef = useRef(instance);
+  const setTransformRef = useRef(setTransform);
+  const markerAnchorRef = useRef(markerAnchor);
+
+  useEffect(() => {
+    transformStateRef.current = transformState;
+  }, [transformState]);
+
+  useEffect(() => {
+    instanceRef.current = instance;
+  }, [instance]);
+
+  useEffect(() => {
+    setTransformRef.current = setTransform;
+  }, [setTransform]);
+
+  useEffect(() => {
+    markerAnchorRef.current = markerAnchor;
+  }, [markerAnchor]);
+
+  useEffect(() => {
+    zoomVelocityRef.current = zoomVelocity;
+  }, [zoomVelocity]);
+
+  const resetRocker = useCallback(() => {
+    zoomVelocityRef.current = 0;
+    setZoomVelocity(0);
+  }, []);
+
+  const handleRockerChange = useCallback((event) => {
+    const nextVelocity = Number(event.target.value);
+    zoomVelocityRef.current = nextVelocity;
+    setZoomVelocity(nextVelocity);
+  }, []);
+
+  useEffect(() => {
+    if (zoomVelocity === 0) return undefined;
+
+    let rafId = 0;
+    const tick = () => {
+      const velocity = zoomVelocityRef.current;
+      if (velocity === 0) return;
+
+      const state = transformStateRef.current ?? {};
+      const { scale: oldScale, positionX: oldX, positionY: oldY } = state;
+      const scaleDelta = (velocity / 100) * ROCKER_SCALE_PER_FRAME;
+
+      const next = computeMarkerAnchoredZoom(
+        oldX ?? 0,
+        oldY ?? 0,
+        oldScale ?? 1,
+        scaleDelta,
+        instanceRef.current,
+        markerAnchorRef.current,
+      );
+
+      if (next) {
+        setTransformRef.current(next.positionX, next.positionY, next.scale, 0);
+        transformStateRef.current = {
+          ...state,
+          positionX: next.positionX,
+          positionY: next.positionY,
+          scale: next.scale,
+        };
+      }
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [zoomVelocity]);
+
+  const rockerIsolationProps = {
+    onTouchStart: stopSwipePropagation,
+    onTouchMove: stopSwipePropagation,
+    onPointerDown: stopSwipePropagation,
+    onPointerMove: stopSwipePropagation,
+  };
+
+  return (
+    <div className="map-zoom-controls">
+      <div className="map-zoom-rocker-row">
+        <span className="map-zoom-rocker-mark" aria-hidden>
+          −
+        </span>
+
+        <div className="map-zoom-rocker-wrap" style={{ touchAction: 'none' }} {...rockerIsolationProps}>
+          <input
+            type="range"
+            className="map-zoom-rocker"
+            style={{ touchAction: 'none' }}
+            min={-100}
+            max={100}
+            step={1}
+            value={zoomVelocity}
+            onChange={handleRockerChange}
+            onPointerUp={resetRocker}
+            onPointerLeave={resetRocker}
+            onMouseUp={resetRocker}
+            onTouchEnd={resetRocker}
+            {...rockerIsolationProps}
+            aria-label="Cursore zoom elastico"
+          />
+        </div>
+
+        <div className="map-zoom-plus-column">
+          <span className="map-zoom-rocker-mark" aria-hidden>
+            +
+          </span>
+          <button
+            type="button"
+            className="map-zoom-btn map-zoom-btn--square btn-glass map-zoom-btn--accent"
+            onClick={() => resetTransform(300, 'easeOutCubic')}
+            title="Ricentra mappa"
+            aria-label="Ricentra mappa"
+          >
+            <LocateFixed size={16} strokeWidth={2.2} aria-hidden />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const ROUTE_VOCABULARY = {
   longevity: {
@@ -182,39 +367,50 @@ export default function MetabolicMap({
 
   return (
     <div
-      className="overscroll-none touch-none"
+      className="metabolic-map-root overscroll-none"
       style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 16,
         width: '100%',
         maxWidth: 400,
         margin: '0 auto',
-        position: 'relative',
         overscrollBehavior: 'none',
-        touchAction: 'none',
       }}
     >
       <TransformWrapper
         initialScale={1}
-        minScale={0.5}
-        maxScale={4}
+        minScale={MAP_MIN_SCALE}
+        maxScale={MAP_MAX_SCALE}
         wheel={{ step: 0.1 }}
         pinch={{ step: 5 }}
         doubleClick={{ disabled: true }}
       >
-        {({ zoomToElement, resetTransform, state: zoomState }) => (
-          <div className="relative w-full h-full">
-            <TransformComponent
-              wrapperClass="w-full h-full cursor-grab active:cursor-grabbing overscroll-none touch-none"
-              wrapperStyle={{ width: '100%', height: '100%', overscrollBehavior: 'none', touchAction: 'none' }}
-              contentStyle={{ width: '100%' }}
+        {({ setTransform, resetTransform, instance, state: transformState }) => (
+          <>
+            <div
+              className="metabolic-map-viewport overscroll-none touch-none"
+              style={{
+                width: '100%',
+                position: 'relative',
+                overscrollBehavior: 'none',
+                touchAction: 'none',
+              }}
             >
-              <svg
-                viewBox="0 0 100 100"
-                preserveAspectRatio="xMidYMid meet"
-                role="img"
-                aria-label="Mappa composizione corporea: massa grassa e massa magra rispetto all'obiettivo"
-                style={{ width: '100%', background: '#12181f', borderRadius: 16 }}
-                onClick={() => setSelectedPoint(null)}
+              <TransformComponent
+                wrapperClass="w-full h-full cursor-grab active:cursor-grabbing overscroll-none touch-none"
+                wrapperStyle={{ width: '100%', height: '100%', overscrollBehavior: 'none', touchAction: 'none' }}
+                contentStyle={{ width: '100%' }}
               >
+                <svg
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="xMidYMid meet"
+                  role="img"
+                  aria-label="Mappa composizione corporea: massa grassa e massa magra rispetto all'obiettivo"
+                  style={{ width: '100%', background: '#12181f', borderRadius: 16 }}
+                  onClick={() => setSelectedPoint(null)}
+                >
         {/* NW: Picco Atletico */}
         <rect x="0" y="0" width="50" height="50" fill="rgba(16, 185, 129, 0.05)" />
         {/* NE: Bulking Sporco */}
@@ -395,7 +591,7 @@ export default function MetabolicMap({
                 <div
                   className="bg-slate-900/90 border border-slate-700 rounded px-1.5 py-1 flex items-center justify-center shadow-lg backdrop-blur-sm transition-transform duration-75"
                   style={{
-                    transform: `scale(${0.2 / (zoomState?.scale || 1)})`,
+                    transform: `scale(${0.2 / (transformState?.scale || 1)})`,
                     transformOrigin: 'center bottom',
                     pointerEvents: 'none',
                     whiteSpace: 'nowrap',
@@ -410,95 +606,17 @@ export default function MetabolicMap({
               </foreignObject>
             )}
               </svg>
-            </TransformComponent>
-
-            {/* Controlli Spaziali Mappa */}
-            <div className="absolute bottom-4 right-4 flex flex-col gap-1 bg-slate-900/70 backdrop-blur-md border border-slate-700 p-1 rounded-lg z-10 shadow-xl">
-              <button
-                type="button"
-                onClick={() =>
-                  zoomToElement(
-                    'kentu-anchor',
-                    (zoomState?.scale || 1) + 0.5,
-                    400,
-                    'easeOutCubic',
-                  )
-                }
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700/50 rounded transition-colors"
-                title="Zoom In"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M5 12h14" />
-                  <path d="M12 5v14" />
-                </svg>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  zoomToElement(
-                    'kentu-anchor',
-                    Math.max(0.5, (zoomState?.scale || 1) - 0.5),
-                    400,
-                    'easeOutCubic',
-                  )
-                }
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700/50 rounded transition-colors"
-                title="Zoom Out"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M5 12h14" />
-                </svg>
-              </button>
-
-              <div className="w-6 h-px bg-slate-700 mx-auto my-0.5" />
-
-              <button
-                type="button"
-                onClick={() => resetTransform()}
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-[#38bdf8] hover:bg-slate-700/50 rounded transition-colors"
-                title="Ricentra Mappa"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-                  <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-                  <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-                  <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              </button>
+              </TransformComponent>
             </div>
-          </div>
+
+            <MapZoomControlBar
+              transformState={transformState}
+              instance={instance}
+              setTransform={setTransform}
+              resetTransform={resetTransform}
+              markerAnchor={anchorSvg}
+            />
+          </>
         )}
       </TransformWrapper>
     </div>
