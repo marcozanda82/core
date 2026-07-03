@@ -21,40 +21,28 @@ const COLOR_STYLE = {
   },
 };
 
-function microDeficit(omega3) {
-  return (Number(omega3) ?? 0) < 1;
-}
-
 /**
- * Barra indicatori giornalieri: priorità ai problemi; target calorico solo se tutto ok.
+ * Barra indicatori giornalieri: target calorico quando disponibile.
  *
  * @param {{
  *   calorieStrategyLabel?: string,
- *   omega3?: number | string | null,
  *   onClick?: () => void,
  * }} props
  */
 export default function DailyIndicatorsBar({
   calorieStrategyLabel,
-  omega3,
   onClick,
 } = {}) {
   /** @type {{ type: string, label: string, color: 'red' | 'orange' | 'neutral' }[]} */
   const indicators = [];
 
-  if (microDeficit(omega3)) {
-    indicators.push({ type: 'micro', label: 'Carenza Micro', color: 'red' });
-  }
-
-  if (indicators.length === 0) {
-    const label = calorieStrategyLabel != null ? String(calorieStrategyLabel).trim() : '';
-    if (label) {
-      indicators.push({
-        type: 'target',
-        label: `Target: ${label}`,
-        color: 'neutral',
-      });
-    }
+  const label = calorieStrategyLabel != null ? String(calorieStrategyLabel).trim() : '';
+  if (label) {
+    indicators.push({
+      type: 'target',
+      label: `Target: ${label}`,
+      color: 'neutral',
+    });
   }
 
   if (indicators.length === 0) {

@@ -120,9 +120,6 @@ import {
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
 import WeeklyMetabolicIndicator from './components/WeeklyMetabolicIndicator';
-import MesocycleRadarBadge from './components/MesocycleRadarBadge';
-import FastingBannerWidget from './components/FastingBannerWidget';
-import { computeMesocycleRadar } from './utils/mesocycleRadar';
 import FullscreenGraphView from './features/charts/FullscreenGraphView';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
 import OverlayHost from './features/salaComandi/OverlayHost';
@@ -132,7 +129,6 @@ import useMetabolicPhaseState from './features/salaComandi/hooks/useMetabolicPha
 import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverlay';
 import AlcoholPopupOverlay from './features/salaComandi/overlays/AlcoholPopupOverlay';
 import SleepModalOverlay from './features/salaComandi/overlays/SleepModalOverlay';
-import SpieInfoOverlay from './features/salaComandi/overlays/SpieInfoOverlay';
 import SleepPromptOverlay from './features/salaComandi/overlays/SleepPromptOverlay';
 import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
 import WaterActionModal from './components/modals/WaterActionModal';
@@ -203,7 +199,6 @@ import {
   resolveMetabolicColorForHoursFasted,
 } from './features/salaComandi/utils/metabolicPhaseColors';
 import MetabolicUnifiedView from './MetabolicUnifiedView';
-import DailyIndicatorsBar from '@/features/salaComandi/components/DailyIndicatorsBar';
 import useMetabolicMapEngine from './features/salaComandi/hooks/useMetabolicMapEngine';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { computeMetabolicNotification } from './notificationEngine';
@@ -294,7 +289,6 @@ import {
   parseKentuInvisibleCmd,
   normalizeCalorieStrategyTarget,
   applyCalorieStrategyToProfileKcal,
-  calorieStrategyShortLabelIt,
   generateLocalNutritionalAudit,
   generateLocalTrainingAdvice,
   generateLocalMonthlyAudit,
@@ -834,7 +828,6 @@ export default function SalaComandi() {
   const weeklyPlanRef = useRef(weeklyPlan);
   weeklyPlanRef.current = weeklyPlan;
 
-  const [showSpieInfo, setShowSpieInfo] = useState(false); // Modale spiegazione spie
   const [isFullScreenGraph, setIsFullScreenGraph] = useState(false);
   const availableFullscreenCharts = ['percent', 'cortisolo', 'calorieTimeline', 'glicemia', 'idratazione', 'neuro', 'digestione', 'kcal'];
   const [fullscreenChartIndex, setFullscreenChartIndex] = useState(0);
@@ -960,7 +953,6 @@ export default function SalaComandi() {
     plannedTargetKcal,
     todayPlanBlock,
     dayPlanBlock,
-    mesocycleSettings,
   } = usePlannedDayDelta({
     db,
     user,
@@ -968,27 +960,6 @@ export default function SalaComandi() {
     profileKcal: userProfileKcalBase,
     isSimulationMode,
   });
-
-  const mesocycleRadar = useMemo(
-    () =>
-      computeMesocycleRadar({
-        mesocycleStartDate: mesocycleSettings?.startDate,
-        mesocycleLoadWeeks: mesocycleSettings?.loadWeeks,
-        mesocycleDeloadWeeks: mesocycleSettings?.deloadWeeks,
-        viewDateIso: currentTrackerDate || getTodayString(),
-        isDeload: dayPlanBlock?.meta?.isDeload,
-        phase: dayPlanBlock?.meta?.phase,
-      }),
-    [
-      mesocycleSettings?.startDate,
-      mesocycleSettings?.loadWeeks,
-      mesocycleSettings?.deloadWeeks,
-      currentTrackerDate,
-      dayPlanBlock?.meta?.isDeload,
-      dayPlanBlock?.meta?.phase,
-      getTodayString,
-    ]
-  );
 
   const [isPlanActionSheetOpen, setIsPlanActionSheetOpen] = useState(false);
   /** Bozza tracker aperta da Widget del Giorno (piano odierno). */
@@ -5815,15 +5786,6 @@ ${dbKeys || 'n/d'}`;
     return typeof m === 'number' && !Number.isNaN(m) ? m : 0;
   }, [currentTrackerDate, longevityEngineScore, fullHistory, userTargets]);
 
-  const homeLongevityInsightLine = useMemo(() => {
-    const t = longevityEngineScore?.priorityFocus?.title;
-    if (typeof t === 'string' && t.trim()) return t.trim();
-    const ex = (longevityExplanation || '').trim();
-    if (!ex) return '';
-    const parts = ex.split(/(?<=[.!?])\s+/);
-    return (parts[0] || ex).trim();
-  }, [longevityEngineScore?.priorityFocus?.title, longevityExplanation]);
-
   const dailyReportDisplay = useMemo(() => {
     if (!dailyReport) return null;
     const neuroVal = dailyReport.neuro;
@@ -7527,26 +7489,6 @@ ${dbKeys || 'n/d'}`;
         }
       />
 
-      {activeBottomTab === 'oggi' && mesocycleRadar?.show ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            width: '100%',
-            marginTop: '-4px',
-            marginBottom: '6px',
-            padding: '0 12px',
-            boxSizing: 'border-box',
-          }}
-        >
-          <MesocycleRadarBadge
-            inDeload={mesocycleRadar.inDeload}
-            currentWeek={mesocycleRadar.currentWeek}
-            totalWeeks={mesocycleRadar.totalWeeks}
-          />
-        </div>
-      ) : null}
-
       {MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab) && (
       <div
         key={activeBottomTab}
@@ -7559,20 +7501,6 @@ ${dbKeys || 'n/d'}`;
       >
       {(activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}>
-      {/* Barra Telemetria Rapida Premium - wrap attivato e centrato (solo tab Oggi) */}
-      {activeBottomTab === 'oggi' && (
-      <DailyIndicatorsBar
-        calorieStrategyLabel={calorieStrategyShortLabelIt(kentuDailyCalorieStrategy)}
-        omega3={totali?.omega3}
-        onClick={() => setShowSpieInfo(true)}
-      />
-      )}
-
-      {activeBottomTab === 'oggi' && (!activeAction || activeAction === 'home') && homeLongevityInsightLine ? (
-        <div style={{ fontSize: '13px', opacity: 0.7, color: '#94a3b8', marginBottom: '6px' }}>
-          {homeLongevityInsightLine}
-        </div>
-      ) : null}
       {(activeBottomTab === 'analisi' || (activeBottomTab === 'oggi' && userProfile?.level === 'pro')) && (
       <>
       {/* Cruscotto energetico giornaliero 0-24h */}
@@ -7924,7 +7852,6 @@ ${dbKeys || 'n/d'}`;
                     setActiveDialMode('kcal');
                   }}
                 >
-                  <FastingBannerWidget fastingData={fastingData} />
                   <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'visible' }}>
                     {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
                     <div
@@ -9870,8 +9797,6 @@ ${dbKeys || 'n/d'}`;
         handleUndo={handleUndo}
         bodyMetricsSaveToast={bodyMetricsSaveToast}
       />
-
-      <SpieInfoOverlay showSpieInfo={showSpieInfo} onClose={() => setShowSpieInfo(false)} />
 
       <SleepPromptOverlay
         showSleepPrompt={showSleepPrompt}
