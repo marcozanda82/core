@@ -177,26 +177,27 @@ function MetabolicTimeCarousel({ hoursSinceLastMeal, lastMealConsumedAtMs }) {
   }, [syncFromScroll]);
 
   return (
-    <div className="relative w-full">
-      <div
-        className="pointer-events-none absolute left-1/2 top-0 z-30 flex h-48 -translate-x-1/2 flex-col items-center"
-        aria-hidden
-      >
-        <div className="h-full w-[2px] bg-cyan-400 shadow-[0_0_8px_cyan]" />
-        <span className="mt-1 text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-400">
-          NOW
-        </span>
-      </div>
+    <div className="metabolic-carousel-root relative w-full">
+      <div className="metabolic-carousel-shell">
+        <div
+          className="metabolic-carousel-now pointer-events-none absolute left-1/2 top-0 z-30 flex -translate-x-1/2 flex-col items-center"
+          aria-hidden
+        >
+          <div className="h-full w-[2px] bg-cyan-400 shadow-[0_0_8px_cyan]" />
+          <span className="mt-1 shrink-0 text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-400">
+            NOW
+          </span>
+        </div>
 
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="relative flex h-48 w-full items-center overflow-x-auto scrollbar-hide"
-        style={{
-          backgroundColor: bgColor,
-          transition: 'background-color 0.1s ease-out',
-        }}
-      >
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="metabolic-carousel-track scrollbar-hide relative"
+          style={{
+            backgroundColor: bgColor,
+            transition: 'background-color 0.1s ease-out',
+          }}
+        >
         <div
           aria-hidden
           className="pointer-events-none absolute top-1/2 h-[2px] -translate-y-1/2 bg-slate-800/80"
@@ -227,12 +228,12 @@ function MetabolicTimeCarousel({ hoursSinceLastMeal, lastMealConsumedAtMs }) {
                 src={block.iconPath}
                 alt={block.label}
                 draggable={false}
-                className={`object-contain drop-shadow-[0_0_12px_currentColor] transition-transform duration-300 ${
+                className={`metabolic-carousel-icon object-contain drop-shadow-[0_0_12px_currentColor] transition-transform duration-300 ${
                   viewPhase.id === block.id
-                    ? 'h-16 w-16 scale-125'
+                    ? 'metabolic-carousel-icon--active'
                     : viewHours >= block.endHour
-                      ? 'h-12 w-12 opacity-40 grayscale'
-                      : 'h-12 w-12 opacity-30'
+                      ? 'opacity-40 grayscale'
+                      : 'opacity-30'
                 }`}
               />
               <span
@@ -262,8 +263,9 @@ function MetabolicTimeCarousel({ hoursSinceLastMeal, lastMealConsumedAtMs }) {
 
         <div className="flex shrink-0 items-center" style={{ width: sidePad }} aria-hidden />
       </div>
+      </div>
 
-      <p className="mt-2 text-center font-mono text-[10px] tabular-nums text-slate-500">
+      <p className="metabolic-sheet-rigid mt-2 text-center font-mono text-[10px] tabular-nums text-slate-500">
         Mirino: {viewMirinoLabel}
       </p>
 
@@ -329,22 +331,14 @@ export default function MetabolicTimelineSheet({
         role="dialog"
         aria-modal="true"
         aria-label="Cruscotto metabolico"
-        className="fixed inset-x-0 bottom-0 z-[100051] max-h-[88dvh] overflow-y-auto rounded-t-3xl border-t border-slate-700/80 bg-slate-900 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl shadow-black/40"
+        className="metabolic-sheet-root fixed inset-x-0 bottom-0 z-[100051] rounded-t-3xl border-t border-slate-700/80 bg-slate-900 shadow-2xl shadow-black/40"
       >
-        <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-slate-600" />
+        <div className="metabolic-sheet-rigid mx-auto mt-3 h-1 w-10 shrink-0 rounded-full bg-slate-600" />
 
         {isOverload ? (
           <>
-            <div className="mb-6 text-center">
-              <div className="mx-auto flex h-32 w-32 items-center justify-center">
-                <img
-                  src={phase.iconPath}
-                  alt={phase.label}
-                  draggable={false}
-                  className="h-28 w-28 object-contain drop-shadow-[0_0_30px_rgba(239,68,68,0.5)]"
-                />
-              </div>
-              <h2 className="mt-5 text-xl font-bold uppercase tracking-[0.18em] text-red-400">
+            <div className="metabolic-sheet-rigid metabolic-sheet-header text-center">
+              <h2 className="text-xl font-bold uppercase tracking-[0.18em] text-red-400">
                 SOVRACCARICO
               </h2>
               <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-red-300/90">
@@ -353,7 +347,7 @@ export default function MetabolicTimelineSheet({
                   : 'Troppe stimolazioni, poco recupero.'}
               </p>
               {biometrics && !isFastingLimitOverload ? (
-                <p className="mt-4 font-mono text-xs tabular-nums text-slate-500">
+                <p className="mt-3 font-mono text-xs tabular-nums text-slate-500">
                   SNC {Math.round(biometrics.stressLevel)}%
                   {biometrics.recoveryScore != null ? ` · Recupero ${Math.round(biometrics.recoveryScore)}%` : ''}
                   {biometrics.sleepHours != null ? ` · Sonno ${biometrics.sleepHours.toFixed(1)}h` : ''}
@@ -364,29 +358,47 @@ export default function MetabolicTimelineSheet({
               ) : null}
             </div>
 
-            <button
-              type="button"
-              onClick={handleNeuralReset}
-              className="mb-4 w-full rounded-xl border border-red-500/50 bg-red-900/20 py-3.5 text-sm font-bold uppercase tracking-wide text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.2)] transition-colors hover:bg-red-900/40 active:scale-[0.98]"
-            >
-              ⚠️ SCARICA E RIPOSA
-            </button>
+            <div className="metabolic-sheet-icon-shell">
+              <img
+                src={phase.iconPath}
+                alt={phase.label}
+                draggable={false}
+                className="metabolic-sheet-hero-icon object-contain drop-shadow-[0_0_30px_rgba(239,68,68,0.5)]"
+              />
+            </div>
+
+            <div className="metabolic-sheet-rigid metabolic-sheet-actions">
+              <button
+                type="button"
+                onClick={handleNeuralReset}
+                className="w-full rounded-xl border border-red-500/50 bg-red-900/20 py-3.5 text-sm font-bold uppercase tracking-wide text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.2)] transition-colors hover:bg-red-900/40 active:scale-[0.98]"
+              >
+                ⚠️ SCARICA E RIPOSA
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full rounded-xl border border-slate-700 bg-slate-800/80 py-3 text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-800"
+              >
+                Chiudi
+              </button>
+            </div>
           </>
         ) : (
           <>
-            <div className="mb-6 text-center">
+            <div className="metabolic-sheet-rigid metabolic-sheet-header text-center">
               <MetabolicPhaseIcon phase={phase} size="xl" withHalo />
-              <h2 className="mt-4 text-xl font-bold uppercase tracking-wide text-slate-50">
+              <h2 className="mt-3 text-xl font-bold uppercase tracking-wide text-slate-50">
                 {phase.label}
               </h2>
-              <p className="mt-2 text-sm font-medium" style={{ color: phase.iconColor }}>
+              <p className="mt-1.5 text-sm font-medium" style={{ color: phase.iconColor }}>
                 {phase.action}
               </p>
-              <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-slate-400">
+              <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-400">
                 {hasMealLogged ? hint : 'Logga un pasto per attivare la timeline metabolica.'}
               </p>
               {hasMealLogged ? (
-                <p className="mt-2 font-mono text-xs tabular-nums text-slate-500">
+                <p className="mt-1.5 font-mono text-xs tabular-nums text-slate-500">
                   {Math.floor(hoursSinceLastMeal)}h {Math.round((hoursSinceLastMeal % 1) * 60)}m dall&apos;ultimo pasto
                   {currentPhaseClockLabel !== '—' ? (
                     <>
@@ -399,7 +411,7 @@ export default function MetabolicTimelineSheet({
             </div>
 
             {nextPhase ? (
-              <div className="mb-6 rounded-2xl border border-slate-700/70 bg-slate-950/60 px-4 py-3 text-center">
+              <div className="metabolic-sheet-rigid metabolic-sheet-next rounded-2xl border border-slate-700/70 bg-slate-950/60 px-4 py-3 text-center">
                 <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
                   Prossima fase
                 </p>
@@ -412,25 +424,29 @@ export default function MetabolicTimelineSheet({
                 </p>
               </div>
             ) : (
-              <div className="mb-6 rounded-2xl border border-teal-500/25 bg-teal-500/10 px-4 py-3 text-center text-sm text-teal-200">
+              <div className="metabolic-sheet-rigid metabolic-sheet-next rounded-2xl border border-teal-500/25 bg-teal-500/10 px-4 py-3 text-center text-sm text-teal-200">
                 Fase massima raggiunta — mantieni idratazione e ascolta il corpo.
               </div>
             )}
 
-            <MetabolicTimeCarousel
-              hoursSinceLastMeal={hoursSinceLastMeal}
-              lastMealConsumedAtMs={lastMealConsumedAtMs}
-            />
+            <div className="metabolic-sheet-stage">
+              <MetabolicTimeCarousel
+                hoursSinceLastMeal={hoursSinceLastMeal}
+                lastMealConsumedAtMs={lastMealConsumedAtMs}
+              />
+            </div>
+
+            <div className="metabolic-sheet-rigid">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full rounded-xl border border-slate-700 bg-slate-800/80 py-3 text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-800"
+              >
+                Chiudi
+              </button>
+            </div>
           </>
         )}
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-6 w-full rounded-xl border border-slate-700 bg-slate-800/80 py-3 text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-800"
-        >
-          Chiudi
-        </button>
       </div>
     </>
   );

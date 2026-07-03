@@ -1150,6 +1150,107 @@ html, body, #root {
   max-height: 100%;
 }
 
+/* Cruscotto metabolico — zero scroll, layout elastico */
+.metabolic-sheet-root {
+  height: 88dvh;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 0 1.5rem max(1.5rem, env(safe-area-inset-bottom));
+  gap: 10px;
+}
+
+.metabolic-sheet-rigid {
+  flex-shrink: 0;
+  width: 100%;
+}
+
+.metabolic-sheet-header {
+  padding-top: 4px;
+}
+
+.metabolic-sheet-next {
+  margin: 0;
+}
+
+.metabolic-sheet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metabolic-sheet-stage {
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.metabolic-sheet-icon-shell {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.metabolic-sheet-hero-icon {
+  max-height: 100%;
+  max-width: min(7rem, 72%);
+  width: auto;
+  height: auto;
+}
+
+.metabolic-carousel-root {
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.metabolic-carousel-shell {
+  flex: 1 1 0%;
+  min-height: 0;
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.metabolic-carousel-now {
+  bottom: 0;
+}
+
+.metabolic-carousel-track {
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.metabolic-carousel-icon {
+  max-height: min(3rem, 28%);
+  max-width: min(3rem, 28%);
+  height: auto;
+  width: auto;
+}
+
+.metabolic-carousel-icon--active {
+  max-height: min(4rem, 36%);
+  max-width: min(4rem, 36%);
+  transform: scale(1.12);
+}
+
 .map-zoom-controls {
   width: 100%;
   max-width: 400px;
