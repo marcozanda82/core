@@ -561,7 +561,7 @@ html, body, #root {
   flex-shrink: 0;
   display: flex;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: 12px;
   width: 100%;
   overflow-x: auto;
   overflow-y: hidden;

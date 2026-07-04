@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { TARGETS } from '../useBiochimico';
 
-/** Stesso identico shell dei macro originali + peeking carosello. */
+/** Stesso identico shell dei macro originali — 3 card visibili + peek 4ª/5ª. */
 const CHIP_CLASS =
-  'home-oggi-macros__chip w-[85vw] max-w-[320px] shrink-0 snap-center rounded-xl border backdrop-blur-sm bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 shadow-lg px-3 py-2.5 text-center overflow-hidden cursor-pointer transition-transform active:scale-[0.99]';
+  'home-oggi-macros__chip flex-none w-[30%] min-w-[100px] max-w-[130px] snap-start rounded-xl border backdrop-blur-sm bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 shadow-lg px-3 py-2.5 text-center overflow-hidden cursor-pointer transition-transform active:scale-[0.99]';
 
 const VITAMIN_KEYS = Object.keys(TARGETS.vit);
 
@@ -160,7 +160,7 @@ export default function HomeNutrientStrip({
   return (
     <div
       ref={stripRef}
-      className="home-oggi-macros"
+      className="home-oggi-macros flex flex-nowrap overflow-x-auto gap-3 snap-x snap-mandatory"
       onTouchStart={blockTouchStartEnd}
       onTouchMove={blockTouchMove}
       onTouchEnd={blockTouchStartEnd}

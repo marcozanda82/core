@@ -165,8 +165,7 @@ export default function VitaminsDetailsSheet({
 
   const weeklyTotals = useMemo(() => {
     if (!isOpen) return null;
-    return calculateWeeklyVitamins({
-      anchorDate,
+    return calculateWeeklyVitamins(anchorDate, {
       todayLog: dailyLog,
       fullHistory,
     });

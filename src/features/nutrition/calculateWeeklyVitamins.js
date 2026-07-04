@@ -55,11 +55,15 @@ function readLogFromHistoryTree(fullHistory, dateStr) {
 }
 
 /**
- * Somma liposolubili + B12 sugli ultimi 7 giorni (incluso oggi).
- * Legge prima `localStorage` (`trackerStorico_YYYY-MM-DD`), poi opzionalmente `fullHistory` Firebase.
+ * Somma liposolubili + B12 sugli ultimi 7 giorni a partire da `giornoVisualizzato` (incluso).
+ * Legge `localStorage` (`trackerStorico_YYYY-MM-DD`), con fallback su `fullHistory` Firebase.
  *
- * @param {{
+ * @param {string | {
  *   anchorDate?: string,
+ *   todayLog?: Array<Record<string, unknown>> | null,
+ *   fullHistory?: Record<string, unknown> | null,
+ * }} [giornoVisualizzato]
+ * @param {{
  *   todayLog?: Array<Record<string, unknown>> | null,
  *   fullHistory?: Record<string, unknown> | null,
  * }} [options]
@@ -73,10 +77,15 @@ function readLogFromHistoryTree(fullHistory, dateStr) {
  *   daysInWindow: number,
  * }}
  */
-export function calculateWeeklyVitamins(options = {}) {
-  const anchorDate = String(options.anchorDate || getTodayString()).slice(0, 10);
-  const todayLog = Array.isArray(options.todayLog) ? options.todayLog : null;
-  const fullHistory = options.fullHistory ?? null;
+export function calculateWeeklyVitamins(giornoVisualizzato, options = {}) {
+  const resolved =
+    typeof giornoVisualizzato === 'object' && giornoVisualizzato !== null && !Array.isArray(giornoVisualizzato)
+      ? giornoVisualizzato
+      : { ...options, anchorDate: giornoVisualizzato ?? options.anchorDate };
+
+  const anchorDate = String(resolved.anchorDate || getTodayString()).slice(0, 10);
+  const todayLog = Array.isArray(resolved.todayLog) ? resolved.todayLog : null;
+  const fullHistory = resolved.fullHistory ?? null;
 
   /** @type {Record<string, number>} */
   const totals = Object.fromEntries(VAULT_KEYS.map((key) => [key, 0]));
@@ -84,16 +93,14 @@ export function calculateWeeklyVitamins(options = {}) {
 
   for (let i = 0; i < 7; i += 1) {
     const dateStr = dateOffsetIso(anchorDate, i);
-    let log =
-      i === 0 && todayLog && todayLog.length > 0
-        ? todayLog
-        : readLogFromLocalStorage(dateStr);
+
+    let log = readLogFromLocalStorage(dateStr);
 
     if ((!log || log.length === 0) && fullHistory) {
       log = readLogFromHistoryTree(fullHistory, dateStr);
     }
 
-    if (i === 0 && (!log || log.length === 0) && todayLog) {
+    if (i === 0 && todayLog && todayLog.length > 0) {
       log = todayLog;
     }
 
@@ -118,7 +125,11 @@ export function calculateWeeklyVitamins(options = {}) {
   });
 
   return {
-    ...totals,
+    vitA: totals.vitA,
+    vitD: totals.vitD,
+    vitE: totals.vitE,
+    vitK: totals.vitK,
+    vitB12: totals.vitB12,
     daysWithData,
     daysInWindow: 7,
   };
