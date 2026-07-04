@@ -331,8 +331,11 @@ const PHYSIOLOGY_CONFIG = {
  * idealStrategy: { colazione, snack, pranzo, cena, allenamento } kcal obiettivo (legacy: merenda_am/pm/spuntino → snack).
  * Restituisce { chartData, realTotals } per grafico doppia curva e semafori.
  */
-function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, currentTime = null, accumuloSNC = 0) {
+function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterIntake = 0, dailyWaterGoal = 2500, initialEnergy = null, initialIdealEnergy = null, userModel = null, nervousSystemLoad = 30, currentTime = null, accumuloSNC = 0, metabolicPenalty = 1) {
   const log = dailyLog || [];
+  const sleepMetabolicPenalty = Number.isFinite(Number(metabolicPenalty))
+    ? Math.max(1, Math.min(1.3, Number(metabolicPenalty)))
+    : 1;
   const graphTimelineNodes = Array.isArray(timelineNodes) ? [...timelineNodes] : [];
   // Sonnellini: sleep con durata < 3 h → nodi 'nap' (anche se unici nel log); notte principale resta type sleep nel log
   const allSleepsForChart = log.filter(e => e && e.type === 'sleep');
@@ -625,7 +628,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       const windowEnd = onsetDelay + duration;
       if (diff < 0 || diff > windowEnd + 0.5) return;
 
-      const contribution = calculateGlycemicContribution(diff, node);
+      const contribution = calculateGlycemicContribution(diff, node, sleepMetabolicPenalty);
       if (contribution <= 0) return;
 
       gl += contribution;

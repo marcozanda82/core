@@ -107,6 +107,7 @@ import {
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
 import MetabolicMonitorCard from './components/MetabolicMonitorCard';
+import EnergyArcWidget from './components/EnergyArcWidget';
 import DiaryDetailsSheet from './components/DiaryDetailsSheet';
 import FatDetailsSheet from './components/FatDetailsSheet';
 import CarbsDetailsSheet from './components/CarbsDetailsSheet';
@@ -124,6 +125,7 @@ import OverlayHost from './features/salaComandi/OverlayHost';
 import ChoiceModalOverlay from './features/salaComandi/overlays/ChoiceModalOverlay';
 import DateCalendarOverlay from './features/salaComandi/overlays/DateCalendarOverlay';
 import useMetabolicPhaseState from './features/salaComandi/hooks/useMetabolicPhaseState';
+import useSleepEngine from './hooks/useSleepEngine';
 import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverlay';
 import AlcoholPopupOverlay from './features/salaComandi/overlays/AlcoholPopupOverlay';
 import SleepModalOverlay from './features/salaComandi/overlays/SleepModalOverlay';
@@ -5392,6 +5394,15 @@ ${dbKeys || 'n/d'}`;
   
   const workoutsLog = activeLog.filter(item => item.type === 'workout');
 
+  const {
+    recoveryScore: sleepRecoveryScore,
+    metabolicPenalty: sleepMetabolicPenalty,
+    mainNightSleep,
+    hasSleepData: hasSleepEngineData,
+  } = useSleepEngine(activeLog);
+
+  const sleepWakeTime = mainNightSleep?.wakeTime ?? mainNightSleep?.sleepEnd ?? 7.5;
+  
   const todayStr = getTodayString();
 
   const selectedDayData = useMemo(() => {
@@ -5648,11 +5659,11 @@ ${dbKeys || 'n/d'}`;
         sleepStart: yesterdaySleep.sleepStart
       });
     }
-    const result = generateRealEnergyData(yesterdayNodes, yesterdayLog, idealStrategy, 0, 2500, null, null, userModel, 30, null, accumuloSNC);
+    const result = generateRealEnergyData(yesterdayNodes, yesterdayLog, idealStrategy, 0, 2500, null, null, userModel, 30, null, accumuloSNC, sleepMetabolicPenalty);
     const last = result?.chartData?.[24];
     if (!last) return null;
     return { energy: last.energy, idealEnergy: last.idealEnergy };
-  }, [currentTrackerDate, fullHistory, idealStrategy, userModel, accumuloSNC]);
+  }, [currentTrackerDate, fullHistory, idealStrategy, userModel, accumuloSNC, sleepMetabolicPenalty]);
 
   const sleepStatus = getSleepStatus(activeLog);
   const activeWaterIntake = simulationMode ? activeNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0) : waterIntake;
@@ -5671,7 +5682,8 @@ ${dbKeys || 'n/d'}`;
       userModel,
       nervousSystemLoad,
       currentTime,
-      accumuloSNC
+      accumuloSNC,
+      sleepMetabolicPenalty,
     );
   }, [
     sleepStatus,
@@ -5684,7 +5696,8 @@ ${dbKeys || 'n/d'}`;
     userModel,
     nervousSystemLoad,
     currentTime,
-    accumuloSNC
+    accumuloSNC,
+    sleepMetabolicPenalty,
   ]);
   const chartDataCommitted = energySimulation?.chartData ?? EMPTY_ENERGY_CHART_DATA;
   const chartData = timelineStripPreview?.chartData ?? chartDataCommitted;
@@ -5715,6 +5728,7 @@ ${dbKeys || 'n/d'}`;
     nervousSystemLoad,
     currentTime,
     accumuloSNC,
+    sleepMetabolicPenalty,
     sleepStatus,
     isSimulationMode,
   };
@@ -5780,7 +5794,8 @@ ${dbKeys || 'n/d'}`;
               d.userModel,
               d.nervousSystemLoad,
               d.currentTime,
-              d.accumuloSNC
+              d.accumuloSNC,
+              d.sleepMetabolicPenalty ?? 1,
             );
           } catch {
             return;
@@ -7984,16 +7999,26 @@ ${dbKeys || 'n/d'}`;
       )}
 
       {activeBottomTab === 'oggi' && userProfile?.level === 'pro' && (
-        <div className="home-oggi-rigid" style={{ width: '100%', flexShrink: 0, padding: '0 14px' }}>
-          <MetabolicMonitorCard
-            metabolicSnapshot={metabolicSnapshot}
-            onClick={(e) => {
-              e.stopPropagation();
-              console.log('[Diario] tap MetabolicMonitorCard (Pro) → apertura sheet');
-              setShowDiarySheet(true);
-            }}
-          />
-        </div>
+        <>
+          <div className="home-oggi-rigid" style={{ width: '100%', flexShrink: 0, padding: '8px 14px 0' }}>
+            <EnergyArcWidget
+              recoveryScore={sleepRecoveryScore}
+              wakeTime={sleepWakeTime}
+              currentHour={currentTime}
+              metabolicPhase={metabolicSnapshot?.phase}
+              hasSleepData={hasSleepEngineData}
+            />
+          </div>
+          <div className="home-oggi-rigid" style={{ width: '100%', flexShrink: 0, padding: '0 14px' }}>
+            <MetabolicMonitorCard
+              metabolicSnapshot={metabolicSnapshot}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowDiarySheet(true);
+              }}
+            />
+          </div>
+        </>
       )}
 
       {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}

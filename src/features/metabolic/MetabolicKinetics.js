@@ -64,9 +64,10 @@ export function mealKineticsWindowEnd(kinetics) {
  * Contributo glicemico orario (mg/dL scalati) — campana post-onset, picco ~peakTime, blunted se duration↑.
  * @param {number} timeSinceMeal ore dall'istante del pasto
  * @param {object} mealNode
+ * @param {number} [metabolicPenalty=1] moltiplicatore sonno scarso (1.0–1.3) → picco glicemico più alto
  * @returns {number}
  */
-export function calculateGlycemicContribution(timeSinceMeal, mealNode) {
+export function calculateGlycemicContribution(timeSinceMeal, mealNode, metabolicPenalty = 1) {
   const timeSince = Number(timeSinceMeal);
   if (!Number.isFinite(timeSince)) return 0;
 
@@ -81,7 +82,10 @@ export function calculateGlycemicContribution(timeSinceMeal, mealNode) {
   if (carb <= 0) return 0;
 
   const bluntFactor = Math.max(0.45, 1 - duration * 0.07 - fat * 0.008 - fibre * 0.006);
-  const amplitude = carb * bluntFactor;
+  const penalty = Number.isFinite(Number(metabolicPenalty))
+    ? Math.max(1, Math.min(1.3, Number(metabolicPenalty)))
+    : 1;
+  const amplitude = carb * bluntFactor * penalty;
 
   return Math.exp(-Math.pow((tActive - peakActive) / width, 2)) * amplitude;
 }

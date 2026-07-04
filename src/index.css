@@ -2164,6 +2164,66 @@ html, body, #root {
   font-weight: 700;
 }
 
+/* EnergyArcWidget — Body Battery (arco SVG) */
+.energy-arc-widget {
+  position: relative;
+  width: 100%;
+  max-width: 220px;
+  margin: 0 auto;
+  padding: 4px 0 2px;
+}
+
+.energy-arc-widget__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.energy-arc-widget__fill {
+  transition: stroke-dasharray 0.45s ease, stroke 0.35s ease;
+}
+
+.energy-arc-widget__center {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: 88%;
+  pointer-events: none;
+}
+
+.energy-arc-widget__value {
+  font-size: 1.65rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.energy-arc-widget__label {
+  margin-top: 2px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.energy-arc-widget__sub {
+  margin-top: 3px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: rgba(148, 163, 184, 0.72);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* CarbsDetailsSheet — frazioni + KPI glicemico */
 .carbs-details-fractions {
   display: flex;
