@@ -120,6 +120,16 @@ import {
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
 import MetabolicMonitorCard from './components/MetabolicMonitorCard';
+import FatDetailsSheet from './components/FatDetailsSheet';
+import CarbsDetailsSheet from './components/CarbsDetailsSheet';
+import ProteinDetailsSheet from './components/ProteinDetailsSheet';
+import MineralsDetailsSheet from './components/MineralsDetailsSheet';
+import VitaminsDetailsSheet from './components/VitaminsDetailsSheet';
+import HomeNutrientStrip from './components/HomeNutrientStrip';
+import { buildFatDetailsData } from './features/nutrition/buildFatDetailsData';
+import { buildCarbsDetailsData } from './features/nutrition/buildCarbsDetailsData';
+import { buildProteinDetailsData } from './features/nutrition/buildProteinDetailsData';
+import { buildMineralsDetailsData } from './features/nutrition/buildMineralsDetailsData';
 import WeeklyMetabolicIndicator from './components/WeeklyMetabolicIndicator';
 import FullscreenGraphView from './features/charts/FullscreenGraphView';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
@@ -529,7 +539,7 @@ export default function SalaComandi() {
   const handleMainTabTouchStart = useCallback((e) => {
     const el = e.target;
     if (el && typeof el.closest === 'function') {
-      if (el.closest('.chart-scroll-container') || el.closest('.mini-timeline-hitbox')) {
+      if (el.closest('.chart-scroll-container') || el.closest('.mini-timeline-hitbox') || el.closest('.home-oggi-macros')) {
         mainTabSwipeIgnoreRef.current = true;
         return;
       }
@@ -1320,6 +1330,11 @@ export default function SalaComandi() {
   });
   const [showReport, setShowReport] = useState(false);
   const [showMetabolicSheet, setShowMetabolicSheet] = useState(false);
+  const [showFatSheet, setShowFatSheet] = useState(false);
+  const [showCarbsSheet, setShowCarbsSheet] = useState(false);
+  const [showProteinSheet, setShowProteinSheet] = useState(false);
+  const [showMineralsSheet, setShowMineralsSheet] = useState(false);
+  const [showVitaminsSheet, setShowVitaminsSheet] = useState(false);
   const [showDateCalendarModal, setShowDateCalendarModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showRecalibrationDetails, setShowRecalibrationDetails] = useState(false);
@@ -2517,6 +2532,22 @@ export default function SalaComandi() {
   // Motore biochimico
   const baseKcal = (effectiveTargetsForCurrentDate.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
   const { totali, obiettiviPasti } = useBiochimico(activeLog, baseKcal);
+  const realFatData = useMemo(
+    () => buildFatDetailsData(activeLog, userTargets),
+    [activeLog, userTargets],
+  );
+  const realCarbsData = useMemo(
+    () => buildCarbsDetailsData(activeLog, userTargets),
+    [activeLog, userTargets],
+  );
+  const realProteinData = useMemo(
+    () => buildProteinDetailsData(activeLog, userTargets),
+    [activeLog, userTargets],
+  );
+  const realMineralsData = useMemo(
+    () => buildMineralsDetailsData(activeLog, userTargets),
+    [activeLog, userTargets],
+  );
   const targetKcal = baseKcal + (totali?.workout ?? 0);
 
   const todayMicrosForDiagnostics = useMemo(
@@ -2545,7 +2576,7 @@ export default function SalaComandi() {
     [totali],
   );
 
-  const weeklyLiposolubleHistoryForDiagnostics = useMemo(() => {
+  const weeklyVitaminHistoryForDiagnostics = useMemo(() => {
     const out = [];
     const seen = new Set();
     const parseDateFromKey = (key) => {
@@ -2577,6 +2608,7 @@ export default function SalaComandi() {
         vitD: Number(totalsLike?.vitD) || 0,
         vitE: Number(totalsLike?.vitE) || 0,
         vitK: Number(totalsLike?.vitK) || 0,
+        vitB12: Number(totalsLike?.vitB12) || 0,
       });
     };
 
@@ -8054,83 +8086,18 @@ ${dbKeys || 'n/d'}`;
                     </div>
                   </div>
                 </div>
-                  <div className="home-oggi-macros">
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className={macroCardTone(
-                        'pro',
-                        'border-[#b666d2]/35',
-                        'ring-[#b666d2]/45',
-                        'shadow-[#b666d2]/20',
-                      )}
-                      onKeyDown={(ev) => {
-                        if (ev.key === 'Enter' || ev.key === ' ') {
-                          ev.preventDefault();
-                          setActiveDialMode('pro');
-                        }
-                      }}
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        setActiveDialMode('pro');
-                      }}
-                    >
-                      <div style={{ color: '#b666d2', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Proteine</div>
-                      <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                        {Math.round(totali?.prot || 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetProt)} g</span>
-                      </div>
-                    </div>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className={macroCardTone(
-                        'cho',
-                        'border-[#00ff88]/35',
-                        'ring-[#00ff88]/40',
-                        'shadow-[#00ff88]/15',
-                      )}
-                      onKeyDown={(ev) => {
-                        if (ev.key === 'Enter' || ev.key === ' ') {
-                          ev.preventDefault();
-                          setActiveDialMode('cho');
-                        }
-                      }}
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        setActiveDialMode('cho');
-                      }}
-                    >
-                      <div style={{ color: '#00ff88', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Carboidrati</div>
-                      <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                        {Math.round(totali?.carb || 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetCarb)} g</span>
-                      </div>
-                    </div>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className={macroCardTone(
-                        'fat',
-                        'border-[#ffd700]/35',
-                        'ring-[#ffd700]/40',
-                        'shadow-[#ffd700]/12',
-                      )}
-                      onKeyDown={(ev) => {
-                        if (ev.key === 'Enter' || ev.key === ' ') {
-                          ev.preventDefault();
-                          setActiveDialMode('fat');
-                        }
-                      }}
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        setActiveDialMode('fat');
-                      }}
-                    >
-                      <div style={{ color: '#ffd700', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', whiteSpace: 'nowrap' }}>Grassi</div>
-                      <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                        {Math.round(totali?.fatTotal ?? totali?.fat ?? 0)} <span style={{ color: '#555', fontSize: '0.75rem' }}>/ {Math.round(targetFat)} g</span>
-                      </div>
-                    </div>
-                  </div>
+                  <HomeNutrientStrip
+                    totali={totali}
+                    targets={userTargets}
+                    targetProt={targetProt}
+                    targetCarb={targetCarb}
+                    targetFat={targetFat}
+                    onProteinClick={() => setShowProteinSheet(true)}
+                    onCarbsClick={() => setShowCarbsSheet(true)}
+                    onFatClick={() => setShowFatSheet(true)}
+                    onMineralsClick={() => setShowMineralsSheet(true)}
+                    onVitaminsClick={() => setShowVitaminsSheet(true)}
+                  />
                 </div>
                 <DayPlanWidget
                   todayPlanBlock={todayPlanBlock}
@@ -9491,7 +9458,7 @@ ${dbKeys || 'n/d'}`;
         <BiochemicalDiagnostics
           todayMicros={todayMicrosForDiagnostics}
           aminoAcidProfile={aminoAcidProfileForDiagnostics}
-          weeklyLiposolubleHistory={weeklyLiposolubleHistoryForDiagnostics}
+          weeklyLiposolubleHistory={weeklyVitaminHistoryForDiagnostics}
           dailyLog={activeLog}
           detailModal={biochemicalDetailModal}
           setDetailModal={setBiochemicalDetailModal}
@@ -10066,6 +10033,43 @@ ${dbKeys || 'n/d'}`;
           setActiveAction('focus');
           setIsDrawerOpen(false);
         }}
+      />
+
+      <FatDetailsSheet
+        isOpen={showFatSheet}
+        onClose={() => setShowFatSheet(false)}
+        data={realFatData}
+        dailyLog={activeLog}
+      />
+
+      <CarbsDetailsSheet
+        isOpen={showCarbsSheet}
+        onClose={() => setShowCarbsSheet(false)}
+        data={realCarbsData}
+        dailyLog={activeLog}
+      />
+
+      <ProteinDetailsSheet
+        isOpen={showProteinSheet}
+        onClose={() => setShowProteinSheet(false)}
+        data={realProteinData}
+        dailyLog={activeLog}
+      />
+
+      <MineralsDetailsSheet
+        isOpen={showMineralsSheet}
+        onClose={() => setShowMineralsSheet(false)}
+        data={realMineralsData}
+        dailyLog={activeLog}
+      />
+
+      <VitaminsDetailsSheet
+        isOpen={showVitaminsSheet}
+        onClose={() => setShowVitaminsSheet(false)}
+        dailyLog={activeLog}
+        userTargets={userTargets}
+        anchorDate={currentTrackerDate}
+        fullHistory={fullHistory}
       />
 
       {showSncPopup && (

@@ -560,9 +560,26 @@ html, body, #root {
 .home-oggi-macros {
   flex-shrink: 0;
   display: flex;
-  justify-content: space-between;
+  flex-wrap: nowrap;
   gap: 8px;
   width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  box-sizing: border-box;
+}
+
+.home-oggi-macros::-webkit-scrollbar {
+  display: none;
+}
+
+.home-oggi-macros__chip {
+  box-sizing: border-box;
 }
 
 /* Ammortizzatore elastico — cerchio kcal */
@@ -1251,6 +1268,970 @@ html, body, #root {
   transform: scale(1.12);
 }
 
+/* FatDetailsSheet — bottom sheet glassmorphism (dettaglio grassi) */
+.fat-details-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100020;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.fat-details-panel {
+  position: relative;
+  bottom: 0;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  max-height: 85dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 24px 24px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(
+    165deg,
+    rgba(30, 41, 59, 0.82) 0%,
+    rgba(15, 23, 42, 0.88) 55%,
+    rgba(8, 12, 22, 0.94) 100%
+  );
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  box-shadow:
+    0 -12px 48px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.fat-details-panel__chrome {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px 4px;
+}
+
+.fat-details-panel__handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.55);
+}
+
+.fat-details-panel__close {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.65);
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.fat-details-panel__close:hover {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.fat-details-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 18px max(20px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.fat-details-section {
+  flex-shrink: 0;
+}
+
+.fat-details-title {
+  margin: 0 0 14px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.96);
+}
+
+/* Blocco 1 — quadrante distribuzione pasti */
+.fat-details-quadrant {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.fat-details-quadrant__disc {
+  position: relative;
+  flex-shrink: 0;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.06),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.fat-details-quadrant__core {
+  position: absolute;
+  inset: 22%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(8, 12, 22, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: center;
+}
+
+.fat-details-quadrant__core-label {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.fat-details-quadrant__core-sub {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.75);
+}
+
+.fat-details-quadrant__legend {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.fat-details-quadrant__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.fat-details-quadrant__dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.fat-details-quadrant__legend-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+  color: rgba(203, 213, 225, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fat-details-quadrant__legend-pct {
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(248, 250, 252, 0.9);
+}
+
+/* Blocco 2 — barre gerarchiche */
+.fat-details-breakdown {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(2, 6, 14, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fat-details-bar {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.fat-details-bar--interactive {
+  cursor: pointer;
+  border-radius: 10px;
+  transition: transform 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fat-details-bar--interactive:active {
+  transform: scale(0.97);
+}
+
+.fat-details-bar--interactive:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.fat-contributors-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.fat-contributors-modal {
+  width: 100%;
+  max-width: 360px;
+  max-height: min(70dvh, 420px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(
+    165deg,
+    rgba(30, 41, 59, 0.96) 0%,
+    rgba(15, 23, 42, 0.98) 100%
+  );
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+
+.fat-contributors-modal__header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fat-contributors-modal__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.96);
+}
+
+.fat-contributors-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.65);
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fat-contributors-modal__list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.fat-contributors-modal__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.fat-contributors-modal__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.fat-contributors-modal__stats {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.fat-contributors-modal__empty {
+  padding: 24px 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.fat-details-bar__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.fat-details-bar__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.88);
+}
+
+.fat-details-bar__value {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.9);
+  white-space: nowrap;
+}
+
+.fat-details-bar__value strong {
+  color: rgba(248, 250, 252, 0.96);
+  font-weight: 700;
+}
+
+.fat-details-bar__track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.fat-details-bar__track--thick {
+  height: 11px;
+}
+
+.fat-details-bar__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.fat-details-bar__fill--over {
+  background: #f87171 !important;
+}
+
+.fat-details-breakdown__row {
+  display: flex;
+  gap: 12px;
+}
+
+.fat-details-breakdown__row > .fat-details-bar {
+  flex: 1;
+  min-width: 0;
+}
+
+.fat-details-unsaturated {
+  padding-top: 4px;
+  border-top: 1px solid rgba(34, 211, 238, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fat-details-unsaturated__title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #22d3ee;
+  text-shadow: 0 0 12px rgba(34, 211, 238, 0.25);
+}
+
+/* Blocco 3 — rapporto omega */
+.fat-details-omega {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.75) 0%,
+    rgba(6, 24, 18, 0.55) 100%
+  );
+  box-shadow: 0 0 24px rgba(34, 197, 94, 0.08);
+}
+
+.fat-details-omega__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.fat-details-omega__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.fat-details-omega__value {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #4ade80;
+}
+
+.fat-details-omega__track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  overflow: visible;
+}
+
+.fat-details-omega__gradient {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    #22c55e 0%,
+    #84cc16 18%,
+    #eab308 38%,
+    #f97316 58%,
+    #ef4444 82%,
+    #dc2626 100%
+  );
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.fat-details-omega__ideal-zone {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 12.5%;
+  width: 37.5%;
+  border-radius: 6px;
+  border: 1px dashed rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+
+.fat-details-omega__thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: #f8fafc;
+  border: 2px solid rgba(15, 23, 42, 0.9);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.45);
+  transition: left 0.35s ease;
+}
+
+.fat-details-omega__scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.fat-details-omega__ideal-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.75);
+  letter-spacing: 0.02em;
+}
+
+/* CarbsDetailsSheet — frazioni + KPI glicemico */
+.carbs-details-fractions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(0, 255, 136, 0.12);
+}
+
+.carbs-details-kpi {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.75) 0%,
+    rgba(6, 28, 18, 0.55) 100%
+  );
+  box-shadow: 0 0 24px rgba(34, 197, 94, 0.08);
+}
+
+.carbs-details-kpi__net {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding-right: 8px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.carbs-details-kpi__net-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.carbs-details-kpi__net-value {
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #00ff88;
+  line-height: 1.1;
+  text-shadow: 0 0 16px rgba(0, 255, 136, 0.25);
+}
+
+.carbs-details-kpi__net-hint {
+  font-size: 9px;
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.carbs-details-kpi__ratio-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.carbs-details-kpi__ratio-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.carbs-details-kpi__ratio-value {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #4ade80;
+}
+
+.carbs-details-kpi__ratio-track {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.carbs-details-kpi__ratio-gradient {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    #ef4444 0%,
+    #f97316 25%,
+    #eab308 50%,
+    #84cc16 75%,
+    #22c55e 100%
+  );
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.carbs-details-kpi__ratio-thumb {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  margin-left: -5px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: #f8fafc;
+  border: 2px solid rgba(15, 23, 42, 0.9);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+  transition: left 0.35s ease;
+}
+
+.carbs-details-kpi__ratio-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 8px;
+  color: rgba(148, 163, 184, 0.8);
+}
+
+@media (max-width: 380px) {
+  .carbs-details-kpi {
+    grid-template-columns: 1fr;
+  }
+
+  .carbs-details-kpi__net {
+    padding-right: 0;
+    padding-bottom: 10px;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* ProteinQualityBadge — semaforo affidabilità */
+.protein-quality-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  font-family: inherit;
+}
+
+.protein-quality-badge--interactive {
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.protein-quality-badge--interactive:active {
+  transform: scale(0.96);
+}
+
+.protein-quality-badge--interactive:hover {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.protein-quality-badge__dot {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.protein-quality-badge__text {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(248, 250, 252, 0.92);
+  white-space: nowrap;
+}
+
+.protein-quality-badge--green .protein-quality-badge__dot {
+  background: #22c55e;
+  color: #22c55e;
+}
+
+.protein-quality-badge--yellow .protein-quality-badge__dot {
+  background: #eab308;
+  color: #eab308;
+}
+
+.protein-quality-badge--red .protein-quality-badge__dot {
+  background: #ef4444;
+  color: #ef4444;
+}
+
+/* AminoHealingModal — sanatoria profilo amminoacidico */
+.amino-healing-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100030;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.amino-healing-modal {
+  width: 100%;
+  max-width: 420px;
+  max-height: min(80dvh, 520px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(
+    165deg,
+    rgba(30, 41, 59, 0.96) 0%,
+    rgba(15, 23, 42, 0.98) 100%
+  );
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.55);
+}
+
+.amino-healing-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 18px 8px;
+}
+
+.amino-healing-modal__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.96);
+}
+
+.amino-healing-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.65);
+  color: rgba(226, 232, 240, 0.85);
+  cursor: pointer;
+}
+
+.amino-healing-modal__intro {
+  margin: 0;
+  padding: 0 18px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.amino-healing-modal__list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 12px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.amino-healing-modal__row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.amino-healing-modal__food {
+  min-width: 0;
+}
+
+.amino-healing-modal__name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.amino-healing-modal__meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.amino-healing-modal__action {
+  align-self: flex-start;
+  margin: 0;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(179, 136, 255, 0.45);
+  background: rgba(179, 136, 255, 0.12);
+  color: #d8b4fe;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.amino-healing-modal__action:hover {
+  background: rgba(179, 136, 255, 0.22);
+}
+
+.amino-healing-modal__empty {
+  padding: 28px 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: rgba(148, 163, 184, 0.8);
+}
+
+/* ProteinDetailsSheet */
+.protein-details-reliability {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.protein-details-reliability__hint {
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.protein-details-amino {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(179, 136, 255, 0.2);
+  background: rgba(2, 6, 14, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.protein-details-amino__title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #c084fc;
+  text-shadow: 0 0 12px rgba(192, 132, 252, 0.25);
+}
+
+.protein-details-amino__footnote {
+  margin: 0;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.8);
+  text-align: center;
+}
+
+.protein-quality-split {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.protein-quality-split__labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.protein-quality-split__label-btn {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: rgba(226, 232, 240, 0.88);
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease;
+}
+
+.protein-quality-split__label-btn--incomplete {
+  text-align: right;
+  align-items: flex-end;
+}
+
+.protein-quality-split__label-btn:active {
+  opacity: 0.75;
+}
+
+.protein-quality-split__label-btn span:last-child {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.protein-quality-split__track {
+  display: flex;
+  height: 11px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.protein-quality-split__segment {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.protein-quality-split__segment:active {
+  transform: scaleY(0.92);
+  filter: brightness(1.15);
+}
+
+.protein-quality-split__segment--noble {
+  background: linear-gradient(90deg, #a855f7, #c084fc);
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.35);
+}
+
+.protein-quality-split__segment--incomplete {
+  background: linear-gradient(90deg, #64748b, #94a3b8);
+}
+
 .map-zoom-controls {
   width: 100%;
   max-width: 400px;
@@ -1385,5 +2366,172 @@ html, body, #root {
 
 .map-zoom-rocker:active::-moz-range-thumb {
   transform: scale(1.06);
+}
+
+/* MineralsDetailsSheet — bilancia idrica Na/K */
+.minerals-water-balance {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(45, 212, 191, 0.22);
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.minerals-water-balance__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.minerals-water-balance__title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(45, 212, 191, 0.95);
+}
+
+.minerals-water-balance__ratio {
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.minerals-water-balance__metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.minerals-water-balance__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.minerals-water-balance__metric:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.minerals-water-balance__metric--na {
+  border-color: rgba(248, 113, 113, 0.25);
+}
+
+.minerals-water-balance__metric--k {
+  border-color: rgba(52, 211, 153, 0.25);
+}
+
+.minerals-water-balance__metric-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.minerals-water-balance__metric-value {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #f8fafc;
+  font-variant-numeric: tabular-nums;
+}
+
+.minerals-water-balance__metric-target {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.minerals-water-balance__track {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  overflow: visible;
+}
+
+.minerals-water-balance__gradient {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ef4444 0%, #f59e0b 45%, #22c55e 100%);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.minerals-water-balance__thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  border: 2px solid #34d399;
+  background: #0f172a;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.55);
+}
+
+.minerals-water-balance__scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.minerals-water-balance__ideal {
+  font-size: 0.58rem;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.75);
+  text-align: center;
+  flex: 1;
+  padding: 0 6px;
+}
+
+/* VitaminsDetailsSheet — caveau settimanale */
+.vitamins-weekly-vault {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px dashed rgba(196, 181, 253, 0.35);
+  background: rgba(76, 29, 149, 0.12);
+}
+
+.vitamins-weekly-vault__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.vitamins-weekly-vault__title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(196, 181, 253, 0.95);
+}
+
+.vitamins-weekly-vault__badge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(196, 181, 253, 0.28);
+  color: rgba(216, 180, 254, 0.9);
+  font-variant-numeric: tabular-nums;
 }
 
