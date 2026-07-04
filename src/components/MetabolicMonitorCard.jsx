@@ -106,7 +106,7 @@ export default function MetabolicMonitorCard({ metabolicSnapshot, onClick }) {
       <button
         type="button"
         onClick={onClick}
-        aria-label={`Monitor metabolico: ${phaseLabel}. Apri cruscotto.`}
+        aria-label={`Monitor metabolico: ${phaseLabel}. Apri diario giornaliero.`}
         className={`home-oggi-rigid mb-0 w-full shrink-0 rounded-xl border px-3 py-2.5 text-left shadow-lg backdrop-blur-sm transition-transform active:scale-[0.99] ${cardTone}`}
       >
         {body}

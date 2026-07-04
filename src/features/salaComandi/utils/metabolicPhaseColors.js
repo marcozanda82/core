@@ -1,6 +1,14 @@
 import { TRACKER_STORICO_KEY, normalizeLogData } from '../../../coreEngine';
 import { parseDecimalHourFromValue } from './mealConsumedTime';
-import { resolvePhaseColorForHoursSinceMeal } from './metabolicPhaseConfig';
+import { METABOLIC_PHASES, resolvePhaseColorForHoursSinceMeal } from './metabolicPhaseConfig';
+import {
+  calculateMealKinetics,
+  KINETIC_ABSORPTION_PHASE,
+  KINETIC_GASTRIC_PHASE,
+  mealKineticsWindowEnd,
+  POST_ABSORPTION_PHASES,
+  resolveKineticMetabolicPhase,
+} from '../../metabolic/MetabolicKinetics';
 
 export const METABOLIC_PHASE_COLORS = Object.freeze({
   digestiva: '#22d3ee',
@@ -115,7 +123,8 @@ export function isFastingBreakerLogItem(item) {
   );
 }
 
-function normalizeMealHour(hour) {
+/** Ore decimali 0–24 arrotondate a 30s (allineamento timeline ↔ overlay metabolico). */
+export function normalizeMealHour(hour) {
   if (typeof hour !== 'number' || !Number.isFinite(hour)) return null;
   return Math.round(Math.max(0, Math.min(24, hour)) * 120) / 120;
 }
@@ -266,6 +275,217 @@ export function collectMetabolicTimelineMeals(activeLog, options = {}) {
   return { todayMealTimes, yesterdayLastMealTime };
 }
 
+/** Aggrega voci diario allo stesso slot orario pasto (per cinetica macro). */
+function buildMealAggregateAtHour(activeLog, mealHour, mealTimesObj) {
+  const items = [];
+  for (const item of activeLog || []) {
+    if (!item || (item.type !== 'food' && item.type !== 'recipe')) continue;
+    const resolved =
+      resolveMealTimeFromLogItem(item, mealTimesObj)
+      ?? parseDecimalHourFromValue(item.mealTime ?? item.time);
+    if (resolved == null || Math.abs(Number(resolved) - mealHour) > 0.02) continue;
+    items.push(item);
+  }
+  if (items.length === 0) return null;
+  const kcal = items.reduce((sum, entry) => sum + (Number(entry.kcal ?? entry.cal) || 0), 0);
+  return { type: 'meal', time: mealHour, items, kcal };
+}
+
+function buildYesterdayMealAggregate(fullHistory, anchorDate, referenceDateObj, yesterdayLastMealTime) {
+  if (!fullHistory || yesterdayLastMealTime == null) return null;
+  const yesterdayStr = getYesterdayDateStr(referenceDateObj, anchorDate);
+  if (!yesterdayStr) return null;
+  const yesterdayNode = fullHistory[TRACKER_STORICO_KEY(yesterdayStr)];
+  if (!yesterdayNode?.log) return null;
+  const yesterdayLog = normalizeLogData(
+    Array.isArray(yesterdayNode.log) ? yesterdayNode.log : Object.values(yesterdayNode.log),
+  );
+  return buildMealAggregateAtHour(
+    yesterdayLog,
+    yesterdayLastMealTime,
+    yesterdayNode.mealTimes ?? null,
+  );
+}
+
+function buildMealAggregateCache(activeLog, options = {}) {
+  const {
+    todayMealTimes = [],
+    yesterdayLastMealTime = null,
+    mealTimesObj = null,
+    fullHistory,
+    anchorDate,
+    referenceDateObj,
+  } = options;
+  const cache = new Map();
+
+  for (const mealHour of todayMealTimes) {
+    cache.set(
+      mealHour,
+      buildMealAggregateAtHour(activeLog, mealHour, mealTimesObj) ?? { type: 'meal', time: mealHour, items: [] },
+    );
+  }
+
+  if (yesterdayLastMealTime != null) {
+    cache.set(
+      `y_${yesterdayLastMealTime}`,
+      buildYesterdayMealAggregate(fullHistory, anchorDate, referenceDateObj, yesterdayLastMealTime)
+        ?? { type: 'meal', time: yesterdayLastMealTime, items: [] },
+    );
+  }
+
+  return cache;
+}
+
+/**
+ * Ultimo pasto rilevante e ore trascorse in un punto orario della timeline 0–24h.
+ * @returns {{ mealHour: number, hoursSinceMeal: number, fromYesterday: boolean } | null}
+ */
+export function resolveLastMealContextAtTimelineHour(hour, todayMealTimes = [], yesterdayLastMealTime = null) {
+  const clampedHour = Math.max(0, Math.min(24, Number(hour) || 0));
+  const mealsBefore = (todayMealTimes || []).filter((t) => t <= clampedHour + MEAL_HOUR_EPS);
+  if (mealsBefore.length > 0) {
+    const mealHour = mealsBefore[mealsBefore.length - 1];
+    return {
+      mealHour,
+      hoursSinceMeal: Math.max(0, clampedHour - mealHour),
+      fromYesterday: false,
+    };
+  }
+  if (yesterdayLastMealTime != null && Number.isFinite(yesterdayLastMealTime)) {
+    return {
+      mealHour: yesterdayLastMealTime,
+      hoursSinceMeal: Math.max(0, (24 - yesterdayLastMealTime) + clampedHour),
+      fromYesterday: true,
+    };
+  }
+  return null;
+}
+
+/**
+ * Colore fase metabolica (iconColor Radar) in un punto orario della timeline.
+ */
+export function resolveKineticColorAtTimelineHour(hour, options = {}) {
+  const {
+    todayMealTimes = [],
+    yesterdayLastMealTime = null,
+    mealAggregateCache = null,
+  } = options;
+
+  const ctx = resolveLastMealContextAtTimelineHour(hour, todayMealTimes, yesterdayLastMealTime);
+  if (!ctx) return METABOLIC_PHASES[0].iconColor;
+
+  const cacheKey = ctx.fromYesterday ? `y_${ctx.mealHour}` : ctx.mealHour;
+  const mealNode = mealAggregateCache?.get(cacheKey) ?? null;
+  const { phase } = resolveKineticMetabolicPhase(ctx.hoursSinceMeal, mealNode);
+  return phase?.iconColor ?? METABOLIC_PHASES[0].iconColor;
+}
+
+function collectKineticBoundaryHours(mealHour, mealNode, domainStart, domainEnd) {
+  const kinetics = calculateMealKinetics(mealNode ?? {});
+  const windowEnd = mealKineticsWindowEnd(kinetics);
+  const boundaries = [mealHour, mealHour + kinetics.onsetDelay, mealHour + windowEnd];
+
+  for (const band of POST_ABSORPTION_PHASES) {
+    if (band.minHours > 0) {
+      boundaries.push(mealHour + windowEnd + band.minHours);
+    }
+  }
+
+  const hours = new Set();
+  for (const boundary of boundaries) {
+    if (boundary < domainStart - 1e-9 || boundary > domainEnd + 1e-9) continue;
+    const clamped = Math.max(domainStart, Math.min(domainEnd, boundary));
+    hours.add(clamped);
+    hours.add(Math.max(domainStart, clamped - MEAL_HOUR_EPS));
+    hours.add(Math.min(domainEnd, clamped + MEAL_HOUR_EPS));
+  }
+  return hours;
+}
+
+/** Confini cinetici del pasto di ieri proiettati sull'asse 0–24h di oggi (carry-over notturno). */
+function collectYesterdayKineticBoundaryHours(yesterdayMealHour, mealNode, domainStart, domainEndBeforeFirstMeal) {
+  const kinetics = calculateMealKinetics(mealNode ?? {});
+  const windowEnd = mealKineticsWindowEnd(kinetics);
+  const offsets = [
+    kinetics.onsetDelay,
+    windowEnd,
+    ...POST_ABSORPTION_PHASES.filter((band) => band.minHours > 0).map((band) => band.minHours),
+  ];
+
+  const hours = new Set();
+  for (const offset of offsets) {
+    const absolute = yesterdayMealHour + offset;
+    if (absolute < 24 - 1e-9) continue;
+    const todayHour = absolute - 24;
+    if (todayHour < domainStart - 1e-9 || todayHour > domainEndBeforeFirstMeal + 1e-9) continue;
+    const clamped = Math.max(domainStart, Math.min(domainEndBeforeFirstMeal, todayHour));
+    hours.add(clamped);
+    hours.add(Math.max(domainStart, clamped - MEAL_HOUR_EPS));
+    hours.add(Math.min(domainEndBeforeFirstMeal, clamped + MEAL_HOUR_EPS));
+  }
+  return hours;
+}
+
+function pushKineticMealTransitionStops(rawStops, mealHour, mealNode, domainStart, domainEnd, offsetDomainEnd, options) {
+  const kinetics = calculateMealKinetics(mealNode ?? {});
+  const windowEnd = mealKineticsWindowEnd(kinetics);
+  const gastricColor = KINETIC_GASTRIC_PHASE.iconColor;
+  const absorptionColor = KINETIC_ABSORPTION_PHASE.iconColor;
+
+  const beforeHour = Math.max(domainStart, mealHour - MEAL_HOUR_EPS);
+  rawStops.push({
+    offset: hourToOffsetPct(beforeHour, domainStart, offsetDomainEnd),
+    color: resolveKineticColorAtTimelineHour(beforeHour, options),
+  });
+
+  rawStops.push({
+    offset: hourToOffsetPct(mealHour, domainStart, offsetDomainEnd),
+    color: gastricColor,
+  });
+
+  const absorptionStart = mealHour + kinetics.onsetDelay;
+  if (absorptionStart <= domainEnd + 1e-9) {
+    rawStops.push({
+      offset: hourToOffsetPct(
+        Math.max(domainStart, Math.min(domainEnd, absorptionStart - MEAL_HOUR_EPS)),
+        domainStart,
+        offsetDomainEnd,
+      ),
+      color: gastricColor,
+    });
+    rawStops.push({
+      offset: hourToOffsetPct(
+        Math.max(domainStart, Math.min(domainEnd, absorptionStart)),
+        domainStart,
+        offsetDomainEnd,
+      ),
+      color: absorptionColor,
+    });
+  }
+
+  const postStart = mealHour + windowEnd;
+  if (postStart <= domainEnd + 1e-9) {
+    const postColor = resolveKineticMetabolicPhase(windowEnd, mealNode).phase.iconColor
+      ?? METABOLIC_PHASES[2].iconColor;
+    rawStops.push({
+      offset: hourToOffsetPct(
+        Math.max(domainStart, Math.min(domainEnd, postStart - MEAL_HOUR_EPS)),
+        domainStart,
+        offsetDomainEnd,
+      ),
+      color: absorptionColor,
+    });
+    rawStops.push({
+      offset: hourToOffsetPct(
+        Math.max(domainStart, Math.min(domainEnd, postStart)),
+        domainStart,
+        offsetDomainEnd,
+      ),
+      color: postColor,
+    });
+  }
+}
+
 /**
  * Snapshot digiuno + fasi (Body Battery / Energy Arc).
  * @param {Array} activeLog
@@ -273,42 +493,39 @@ export function collectMetabolicTimelineMeals(activeLog, options = {}) {
  * @param {{ fullHistory?: object, anchorDate?: string, mealTimesObj?: object, referenceDateObj?: Date }} [options]
  */
 export function buildMetabolicFastingSnapshot(activeLog, referenceHour, options = {}) {
-  const hoursFasted = computeHoursFastedAtHour(referenceHour, activeLog, options);
+  const { todayMealTimes, yesterdayLastMealTime } = collectMetabolicTimelineMeals(activeLog, options);
+  const mealAggregateCache = buildMealAggregateCache(activeLog, {
+    ...options,
+    todayMealTimes,
+    yesterdayLastMealTime,
+  });
+  const ctx = resolveLastMealContextAtTimelineHour(referenceHour, todayMealTimes, yesterdayLastMealTime);
+  const hoursFasted = ctx?.hoursSinceMeal ?? computeHoursFastedAtHour(referenceHour, activeLog, options);
+  const cacheKey = ctx?.fromYesterday ? `y_${ctx.mealHour}` : ctx?.mealHour;
+  const mealNode = cacheKey != null ? mealAggregateCache.get(cacheKey) ?? null : null;
+  const kineticState = resolveKineticMetabolicPhase(hoursFasted, mealNode);
   const h = Math.floor(hoursFasted);
   const m = Math.round((hoursFasted - h) * 60);
   const timeString = `${h}h ${m}m`;
-  let phaseName = 'ASSORBIMENTO';
-  let phaseColor = '#00e676';
-  let phaseDesc = 'Digestione attiva • Sintesi glicogeno';
-  let progress = Math.min((hoursFasted / 4) * 100, 100);
-  if (hoursFasted >= 16) {
-    phaseName = 'AUTOFAGIA';
-    phaseColor = '#9c27b0';
-    phaseDesc = 'Rigenerazione profonda • Pulizia cellulare';
-    progress = 100;
-  } else if (hoursFasted >= 12) {
-    phaseName = 'CHETOSI / LIPOLISI';
-    phaseColor = '#ffea00';
-    phaseDesc = 'Uso intensivo grassi • Chetoni attivi';
-    progress = ((hoursFasted - 12) / 4) * 100;
-  } else if (hoursFasted >= 4) {
-    phaseName = 'DIGIUNO / CATABOLISMO';
-    phaseColor = '#00e5ff';
-    phaseDesc = 'Esaurimento scorte • Calo insulina';
-    progress = ((hoursFasted - 4) / 8) * 100;
-  }
+  const phase = kineticState.phase;
+  const phaseColor = phase?.iconColor ?? METABOLIC_PHASES[0].iconColor;
+  const phaseName = String(phase?.label ?? 'Digestione').toUpperCase();
+  const phaseDesc = phase?.action ?? 'Transizione metabolica';
+  const progress = Math.round(Math.min(100, Math.max(0, (kineticState.progressInPhase ?? 0) * 100)));
   return { hoursFasted, timeString, phaseName, phaseColor, phaseDesc, progress };
 }
 
 /**
  * Stop orizzontali (0–100%) per gradiente SVG lungo asse X del grafico Energia SNC.
- * @param {{ todayMealTimes?: number[], yesterdayLastMealTime?: number | null, domainStart?: number, domainEnd?: number, offsetDomainEnd?: number, sampleStep?: number }} options
+ * Fasi allineate a calculateMealKinetics: svuotamento → assorbimento → post-assorbimento.
+ * @param {{ todayMealTimes?: number[], yesterdayLastMealTime?: number | null, activeLog?: Array, mealTimesObj?: object, fullHistory?: object, anchorDate?: string, referenceDateObj?: Date, domainStart?: number, domainEnd?: number, offsetDomainEnd?: number, sampleStep?: number }} options
  * @param {number} [options.offsetDomainEnd] — larghezza mapping offset (24 = timeline CSS; displayTime = bbox area SVG Recharts)
  */
 export function buildMetabolicTimelineGradientStops(options = {}) {
   const {
     todayMealTimes = [],
     yesterdayLastMealTime = null,
+    activeLog = [],
     domainStart = 0,
     domainEnd = 24,
     offsetDomainEnd = domainEnd,
@@ -318,12 +535,23 @@ export function buildMetabolicTimelineGradientStops(options = {}) {
   const domainSpan = domainEnd - domainStart;
   if (domainSpan <= 0) {
     return [
-      { offset: '0%', color: METABOLIC_PHASE_COLORS.digestiva },
-      { offset: '100%', color: METABOLIC_PHASE_COLORS.digestiva },
+      { offset: '0%', color: METABOLIC_PHASES[0].iconColor },
+      { offset: '100%', color: METABOLIC_PHASES[0].iconColor },
     ];
   }
 
   const meals = uniqueSortedMealHours(todayMealTimes);
+  const mealAggregateCache = buildMealAggregateCache(activeLog, {
+    ...options,
+    todayMealTimes: meals,
+    yesterdayLastMealTime,
+  });
+  const colorOptions = {
+    todayMealTimes: meals,
+    yesterdayLastMealTime,
+    mealAggregateCache,
+  };
+
   const eventHours = new Set();
 
   for (let h = domainStart; h <= domainEnd + 1e-9; h += sampleStep) {
@@ -331,15 +559,22 @@ export function buildMetabolicTimelineGradientStops(options = {}) {
   }
 
   for (const mealHour of meals) {
-    eventHours.add(mealHour);
-    eventHours.add(Math.max(domainStart, mealHour - MEAL_HOUR_EPS));
-    eventHours.add(Math.min(domainEnd, mealHour + MEAL_HOUR_EPS));
-    for (const delta of [2, 6, 12, 16, 24, 48]) {
-      const boundary = mealHour + delta;
-      if (boundary <= domainEnd + 1e-9) {
-        eventHours.add(Math.min(domainEnd, boundary));
-        eventHours.add(Math.max(domainStart, boundary - MEAL_HOUR_EPS));
-      }
+    const mealNode = mealAggregateCache.get(mealHour);
+    for (const boundaryHour of collectKineticBoundaryHours(mealHour, mealNode, domainStart, domainEnd)) {
+      eventHours.add(boundaryHour);
+    }
+  }
+
+  if (yesterdayLastMealTime != null) {
+    const yesterdayNode = mealAggregateCache.get(`y_${yesterdayLastMealTime}`);
+    const windowEndBeforeFirstMeal = meals[0] ?? domainEnd;
+    for (const boundaryHour of collectYesterdayKineticBoundaryHours(
+      yesterdayLastMealTime,
+      yesterdayNode,
+      domainStart,
+      windowEndBeforeFirstMeal,
+    )) {
+      eventHours.add(boundaryHour);
     }
   }
 
@@ -352,8 +587,7 @@ export function buildMetabolicTimelineGradientStops(options = {}) {
 
   for (const h of sortedEvents) {
     const clampedH = Math.max(domainStart, Math.min(domainEnd, h));
-    const hoursFasted = hoursFastedAtTimelineHour(clampedH, meals, yesterdayLastMealTime);
-    const color = resolveMetabolicColorForHoursFasted(hoursFasted);
+    const color = resolveKineticColorAtTimelineHour(clampedH, colorOptions);
     if (color !== prevColor) {
       rawStops.push({
         offset: hourToOffsetPct(clampedH, domainStart, offsetDomainEnd),
@@ -364,39 +598,32 @@ export function buildMetabolicTimelineGradientStops(options = {}) {
   }
 
   for (const mealHour of meals) {
-    const beforeHour = Math.max(domainStart, mealHour - MEAL_HOUR_EPS);
-    const beforeColor = resolveMetabolicColorForHoursFasted(
-      hoursFastedAtTimelineHour(beforeHour, meals, yesterdayLastMealTime),
+    pushKineticMealTransitionStops(
+      rawStops,
+      mealHour,
+      mealAggregateCache.get(mealHour),
+      domainStart,
+      domainEnd,
+      offsetDomainEnd,
+      colorOptions,
     );
-    rawStops.push({
-      offset: hourToOffsetPct(beforeHour, domainStart, offsetDomainEnd),
-      color: beforeColor,
-    });
-    rawStops.push({
-      offset: hourToOffsetPct(mealHour, domainStart, offsetDomainEnd),
-      color: METABOLIC_PHASE_COLORS.digestiva,
-    });
-    rawStops.push({
-      offset: hourToOffsetPct(Math.min(domainEnd, mealHour + MEAL_HOUR_EPS), domainStart, offsetDomainEnd),
-      color: METABOLIC_PHASE_COLORS.digestiva,
-    });
   }
 
-  const endColor = resolveMetabolicColorForHoursFasted(
-    hoursFastedAtTimelineHour(domainEnd, meals, yesterdayLastMealTime),
-  );
   rawStops.push({
     offset: hourToOffsetPct(domainStart, domainStart, offsetDomainEnd),
-    color: resolveMetabolicColorForHoursFasted(hoursFastedAtTimelineHour(domainStart, meals, yesterdayLastMealTime)),
+    color: resolveKineticColorAtTimelineHour(domainStart, colorOptions),
   });
-  rawStops.push({ offset: hourToOffsetPct(Math.min(domainEnd, offsetDomainEnd), domainStart, offsetDomainEnd), color: endColor });
+  rawStops.push({
+    offset: hourToOffsetPct(Math.min(domainEnd, offsetDomainEnd), domainStart, offsetDomainEnd),
+    color: resolveKineticColorAtTimelineHour(domainEnd, colorOptions),
+  });
 
   const stops = mergeGradientStops(rawStops);
 
   if (stops.length === 0) {
     return [
-      { offset: '0%', color: METABOLIC_PHASE_COLORS.digestiva },
-      { offset: '100%', color: METABOLIC_PHASE_COLORS.digestiva },
+      { offset: '0%', color: METABOLIC_PHASES[0].iconColor },
+      { offset: '100%', color: METABOLIC_PHASES[0].iconColor },
     ];
   }
 
@@ -449,6 +676,7 @@ export function buildMetabolicTimelineCssGradient(stops, options = {}) {
  * @param {{ hoursFasted?: number, phaseName?: string } | null | undefined} fastingData
  */
 export function resolveMetabolicAccentColor(fastingData) {
+  if (fastingData?.phaseColor) return fastingData.phaseColor;
   return resolveMetabolicColorForHoursFasted(fastingData?.hoursFasted);
 }
 

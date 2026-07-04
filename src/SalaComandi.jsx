@@ -8,7 +8,7 @@
  * 
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './styles/SalaComandiInline.css';
 import { createPortal } from 'react-dom';
@@ -30,19 +30,13 @@ import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandT
 import { callGeminiAPIWithRotation } from './services/aiService';
 import { useProfileAndTargets } from './hooks/useProfileAndTargets';
 import { useTimelineDrag } from './hooks/useTimelineDrag';
-import MainDashboardCharts from './features/charts/MainDashboardCharts';
 import {
   enrichDbRowWithFoodUnits,
 } from './foodUnits';
 import { withDefaultUsageStats } from './features/mealBuilder/utils/timeSlotUtils';
-import ChartModal from './ChartModal';
-import TimelineNodi from './TimelineNodi';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
-import KentuChatUI from './features/chat/KentuChatUI';
 import TargetSettingsModal from './components/modals/TargetSettingsModal';
 import MainMenuDrawer from './layout/MainMenuDrawer';
-import ApiDiary from './components/ApiDiary';
-import StrategicPlannerOverlay from './features/planning/StrategicPlannerOverlay';
 import { getTodayPlannedKcal, useStrategicPlanner } from './hooks/useStrategicPlanner';
 import { UserNutritionGoalsProvider } from './UserNutritionGoalsContext';
 import { mergeProfileNutritionFromServer, buildNutritionGoalsSnapshot } from './userNutritionGoals';
@@ -88,9 +82,6 @@ import {
   AI_COACH_EVAL_INACTIVE,
   AI_COACH_EMPTY_HISTORY,
 } from './constants/salaComandiConstants';
-import LongevityView from './LongevityView';
-import BiochemicalDiagnostics from './features/nutrition/BiochemicalDiagnostics';
-import TacticalCoach from './features/coach/TacticalCoach';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
   getWorkoutActivityTypeDef,
@@ -99,7 +90,6 @@ import {
   normalizeMuscleGroupArray,
   resolveWorkoutActivityTypeId,
 } from './activityCatalog';
-import WorkoutView, { workoutActivityRequiresStrengthDetailNote } from './drawers/vistas/WorkoutView';
 import {
   createInitialWeeklyPlan,
   getWeekStartMondayKeyLocal,
@@ -107,9 +97,6 @@ import {
   weeklyPlanStableJson,
   weeklyPlanToFirebasePayload,
 } from './weeklyPlanning';
-import WeeklyPlanning from './components/WeeklyPlanning';
-import WeeklyBuilder from './features/weeklyBlocks/components/WeeklyBuilder';
-import FastMealLogger from './features/mealBuilder/FastMealLogger';
 import { normalizeMealSlotType } from './features/mealBuilder/utils/slotPredictor';
 import {
   parseDurationMinutesInput,
@@ -120,6 +107,7 @@ import {
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
 import MetabolicMonitorCard from './components/MetabolicMonitorCard';
+import DiaryDetailsSheet from './components/DiaryDetailsSheet';
 import FatDetailsSheet from './components/FatDetailsSheet';
 import CarbsDetailsSheet from './components/CarbsDetailsSheet';
 import ProteinDetailsSheet from './components/ProteinDetailsSheet';
@@ -131,7 +119,6 @@ import { buildCarbsDetailsData } from './features/nutrition/buildCarbsDetailsDat
 import { buildProteinDetailsData } from './features/nutrition/buildProteinDetailsData';
 import { buildMineralsDetailsData } from './features/nutrition/buildMineralsDetailsData';
 import WeeklyMetabolicIndicator from './components/WeeklyMetabolicIndicator';
-import FullscreenGraphView from './features/charts/FullscreenGraphView';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
 import OverlayHost from './features/salaComandi/OverlayHost';
 import ChoiceModalOverlay from './features/salaComandi/overlays/ChoiceModalOverlay';
@@ -150,7 +137,6 @@ import {
 } from './components/modals/FastChargeQuickActionPanels';
 import TimelineInsertOverlay from './components/modals/TimelineInsertOverlay';
 import FoodInspectorModal from './components/modals/FoodInspectorModal';
-import HealthspanOverlay from './features/longevity/HealthspanOverlay';
 import useBodyMetricsEngine from './features/salaComandi/hooks/useBodyMetricsEngine';
 import {
   estraiDatiFoodDb as resolveFoodDataFromEngine,
@@ -208,8 +194,9 @@ import {
   buildMetabolicFastingSnapshot,
   hoursFastedAtTimelineHour,
   resolveMetabolicColorForHoursFasted,
+  resolveMealTimeFromLogItem,
+  normalizeMealHour,
 } from './features/salaComandi/utils/metabolicPhaseColors';
-import MetabolicUnifiedView from './MetabolicUnifiedView';
 import useMetabolicMapEngine from './features/salaComandi/hooks/useMetabolicMapEngine';
 import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistory';
 import { computeMetabolicNotification } from './notificationEngine';
@@ -334,6 +321,54 @@ import {
 } from './utils/salaComandiUtils';
 
 const ZEN_SUN_MAX = 2.2;
+
+/** SWR: aggiorna localStorage per il giorno corrente (sync, best-effort). */
+function writeTodayTrackerLocalCache(dateStr, log, mealTimes) {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  if (dateStr !== getTodayString()) return;
+  try {
+    window.localStorage.setItem(
+      TRACKER_STORICO_KEY(dateStr),
+      JSON.stringify({ log: log ?? [], mealTimes: mealTimes ?? {} }),
+    );
+  } catch (err) {
+    console.warn('tracker local cache write failed:', err);
+  }
+}
+
+function workoutActivityRequiresStrengthDetailNote(typeId) {
+  if (typeId === 'pesi') return false;
+  const def = getWorkoutActivityTypeDef(typeId);
+  if (def?.category === 'strength') return true;
+  const raw = String(typeId || '').toLowerCase();
+  return raw.includes('strength') || raw.includes('bodybuilding');
+}
+
+function KentuLazySectionFallback({ label = 'Caricamento…' }) {
+  return (
+    <div className="kentu-lazy-section-fallback" role="status" aria-live="polite" aria-label={label}>
+      <div className="kentu-lazy-section-fallback__spinner" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+const MainDashboardCharts = lazy(() => import('./features/charts/MainDashboardCharts'));
+const TimelineNodi = lazy(() => import('./TimelineNodi'));
+const ChartModal = lazy(() => import('./ChartModal'));
+const FullscreenGraphView = lazy(() => import('./features/charts/FullscreenGraphView'));
+const KentuChatUI = lazy(() => import('./features/chat/KentuChatUI'));
+const LongevityView = lazy(() => import('./LongevityView'));
+const MetabolicUnifiedView = lazy(() => import('./MetabolicUnifiedView'));
+const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
+const WeeklyBuilder = lazy(() => import('./features/weeklyBlocks/components/WeeklyBuilder'));
+const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
+const ApiDiary = lazy(() => import('./components/ApiDiary'));
+const StrategicPlannerOverlay = lazy(() => import('./features/planning/StrategicPlannerOverlay'));
+const HealthspanOverlay = lazy(() => import('./features/longevity/HealthspanOverlay'));
+const TacticalCoach = lazy(() => import('./features/coach/TacticalCoach'));
+const BiochemicalDiagnostics = lazy(() => import('./features/nutrition/BiochemicalDiagnostics'));
+const FastMealLogger = lazy(() => import('./features/mealBuilder/FastMealLogger'));
 
 /** Pattern respirazione Neural Reset: fasi in ordine, ms e scala sole per fase */
 const NEURAL_RESET_PATTERNS = {
@@ -721,7 +756,6 @@ export default function SalaComandi() {
   const [selectedHistoryDate, setSelectedHistoryDate] = useState('');
 
   // SOTTO-NAVIGAZIONE DIARIO
-  const [diarioTab, setDiarioTab] = useState('storico');
   const [expandedRecipes, setExpandedRecipes] = useState({});
   const [telemetrySubTab, setTelemetrySubTab] = useState('macro');
 
@@ -1330,6 +1364,10 @@ export default function SalaComandi() {
   });
   const [showReport, setShowReport] = useState(false);
   const [showMetabolicSheet, setShowMetabolicSheet] = useState(false);
+  const [showDiarySheet, setShowDiarySheet] = useState(false);
+  useEffect(() => {
+    console.log('Stato diario:', showDiarySheet);
+  }, [showDiarySheet]);
   const [showFatSheet, setShowFatSheet] = useState(false);
   const [showCarbsSheet, setShowCarbsSheet] = useState(false);
   const [showProteinSheet, setShowProteinSheet] = useState(false);
@@ -1459,14 +1497,6 @@ export default function SalaComandi() {
   useEffect(() => {
     setExpandedRecipes({});
   }, [currentTrackerDate]);
-
-  useEffect(() => {
-    if (activeAction !== 'diario_giornaliero') setExpandedRecipes({});
-  }, [activeAction]);
-
-  useEffect(() => {
-    setExpandedRecipes({});
-  }, [diarioTab]);
 
   useEffect(() => {
     if (selectedNodeReportPrevRef.current != null && selectedNodeReport == null) {
@@ -1732,14 +1762,19 @@ export default function SalaComandi() {
   };
 
   const computedMealNodes = useMemo(() => {
+    const anchorDate = currentTrackerDate || getTodayString();
+    const mealTimesObj = fullHistory?.[TRACKER_STORICO_KEY(anchorDate)]?.mealTimes ?? {};
     const groups = {};
     (activeLog || []).forEach((f) => {
       if (f.type !== 'food' && f.type !== 'recipe') return;
       const typeKey = f.mealType || 'pasto';
-      const timeKey =
-        typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime)
-          ? String(f.mealTime)
-          : 'unknown';
+      const resolvedHour =
+        resolveMealTimeFromLogItem(f, mealTimesObj)
+        ?? normalizeMealHour(
+          typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 12,
+        )
+        ?? 12;
+      const timeKey = String(resolvedHour);
       const mealId = `${typeKey}_${timeKey}`;
       const foodKcal = Number(f.kcal ?? f.cal ?? 0) || 0;
       if (!groups[mealId]) {
@@ -1747,7 +1782,7 @@ export default function SalaComandi() {
           mealId,
           mealType: typeKey,
           originalTypes: new Set(),
-          time: typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 12,
+          time: resolvedHour,
           strategyKey: getStrategyKey(toCanonicalMealType(String(typeKey).split('_')[0])),
           kcal: 0,
           items: [],
@@ -1756,9 +1791,6 @@ export default function SalaComandi() {
       groups[mealId].kcal += foodKcal;
       groups[mealId].originalTypes.add(f.mealType);
       groups[mealId].items.push({ ...f });
-      if (typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime)) {
-        groups[mealId].time = f.mealTime;
-      }
     });
 
     return Object.values(groups).map((m) => ({
@@ -1774,7 +1806,7 @@ export default function SalaComandi() {
       foods: (m.items || []).map((it) => ({ ...it })),
       icon: getMealIcon(String(m.mealType).split('_')[0]),
     }));
-  }, [activeLog]);
+  }, [activeLog, fullHistory, currentTrackerDate]);
 
   const ghostMealTimelineNodes = useMemo(() => {
     return (activeLog || [])
@@ -1785,6 +1817,7 @@ export default function SalaComandi() {
           const parsed = parseFlexibleTimeToDecimal(String(e.time || e.mealTime || '12:00'));
           t = parsed != null ? parsed : 12;
         }
+        t = normalizeMealHour(t) ?? t;
         return {
           id: e.id || `ghost_tl_${e.mealType}_${t}`,
           type: 'ghost_meal',
@@ -2102,93 +2135,157 @@ export default function SalaComandi() {
     return () => window.clearTimeout(t);
   }, [weeklyPlan, db, user?.uid, isSimulationMode]);
 
-  // Caricamento dati al login (user da useFirebase); onValue/set restano qui
+  // Bootstrap: today node + profile_targets in parallelo (gate UI); storico completo in background
   useEffect(() => {
     if (!user) {
       setIsInitialLoadComplete(false);
       setWeeklyPlan(createInitialWeeklyPlan());
       weeklyPlanningListenerReadyRef.current = false;
       weeklyPlanningRemoteSigRef.current = '';
-      return;
+      return undefined;
     }
+
+    let cancelled = false;
     let unsubToday = null;
     const today = getTodayString();
     const basePath = `users/${user.uid}/tracker_data`;
+    const todayRef = ref(db, `${basePath}/${TRACKER_STORICO_KEY(today)}`);
+    const profileRef = ref(db, `users/${user.uid}/profile_targets`);
 
-    get(ref(db, basePath)).then(snap => {
-      const tree = snap.exists() ? snap.val() : null;
-      setFullStorico(tree);
-      setFullHistory(tree || {});
-      const todayNode = tree?.[TRACKER_STORICO_KEY(today)];
-      const initialLog = getLogFromStoricoTree(tree, today);
-      setDailyLog(applyMealTimes(initialLog, todayNode?.mealTimes ?? {}));
-      unsubToday = onValue(ref(db, `${basePath}/${TRACKER_STORICO_KEY(today)}`), (liveSnap) => {
+    // Stale-While-Revalidate: idratazione immediata da cache locale (zero-latency cold start)
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const cacheRaw = window.localStorage.getItem(TRACKER_STORICO_KEY(today));
+        if (cacheRaw) {
+          const cached = JSON.parse(cacheRaw);
+          const incomingLog = cached?.log ?? cached?.dati?.log ?? [];
+          const normalized = normalizeLogData(
+            Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
+          );
+          const mealTimes = cached?.mealTimes ?? {};
+          lastLogFromFirebaseRef.current = JSON.stringify(normalized);
+          setDailyLog(applyMealTimes(normalized, mealTimes));
+          setActiveAction('home');
+          setIsInitialLoadComplete(true);
+        }
+      }
+    } catch (err) {
+      console.warn('Bootstrap cache read failed:', err);
+    }
+
+    const attachTodayLiveListener = () => {
+      unsubToday = onValue(todayRef, (liveSnap) => {
+        if (cancelled) return;
         if (liveSnap.exists() && currentTrackerDateRef.current === getTodayString()) {
           const val = liveSnap.val();
           const incomingLog = val?.log ?? [];
-          const normalized = normalizeLogData(Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}));
+          const normalized = normalizeLogData(
+            Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
+          );
           const mealTimes = val?.mealTimes ?? {};
           lastLogFromFirebaseRef.current = JSON.stringify(normalized);
           setDailyLog(applyMealTimes(normalized, mealTimes));
+          writeTodayTrackerLocalCache(
+            getTodayString(),
+            Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
+            mealTimes,
+          );
         }
       });
-      setActiveAction('home');
-      setIsInitialLoadComplete(true);
-    });
+    };
 
-    get(ref(db, `users/${user.uid}/profile_targets`)).then(profileSnap => {
-      if (profileSnap.exists()) {
-        const data = profileSnap.val();
-        if (data?.targets) {
-          setUserTargets((prev) => ({
-            ...prev,
-            ...data.targets,
-            autoCalculated: data?.targets?.autoCalculated === true,
-            targetHistory: Array.isArray(data?.targets?.targetHistory)
-              ? data.targets.targetHistory
-              : prev.targetHistory || [],
-          }));
-        }
-        if (data?.profile) {
-          const merged = mergeProfileNutritionFromServer(data.profile);
-          setUserProfile(prev => ({ ...prev, ...merged }));
-          setBirthDate(typeof merged?.birthDate === 'string' ? merged.birthDate : '');
-          if (merged.targetCalories != null && Number.isFinite(Number(merged.targetCalories))) {
-            setUserTargets(prev => ({
-              ...prev,
-              kcal: Math.round(Number(merged.targetCalories)),
-            }));
-          }
-          if (merged.proteinTarget != null && merged.proteinTarget !== '') {
-            setUserTargets(prev => ({
-              ...prev,
-              prot: Math.round(Number(merged.proteinTarget)),
-            }));
-          }
-        }
-      }
-    });
+    Promise.all([get(todayRef), get(profileRef)])
+      .then(([todaySnap, profileSnap]) => {
+        if (cancelled) return;
 
-    get(ref(db, `users/${user.uid}/physiology_model`)).then(physSnap => {
-      if (physSnap.exists()) {
-        const data = physSnap.val();
-        const { lastCalibrationWeek: savedCalWeek, ...model } = data;
-        if (savedCalWeek) setLastCalibrationWeek(savedCalWeek);
-        if (model && typeof model === 'object') {
-          setUserModel(prev => ({
-            ...DEFAULT_USER_MODEL,
-            ...model,
-            caffeineSensitivity: clampModelValue(model.caffeineSensitivity ?? 1),
-            carbCrashSensitivity: clampModelValue(model.carbCrashSensitivity ?? 1),
-            stressSensitivity: clampModelValue(model.stressSensitivity ?? 1),
-            hydrationSensitivity: clampModelValue(model.hydrationSensitivity ?? 1),
-            recoveryRate: clampModelValue(model.recoveryRate ?? 1)
-          }));
+        const todayVal = todaySnap.exists() ? todaySnap.val() : null;
+        const incomingLog = todayVal?.log ?? [];
+        const normalized = normalizeLogData(
+          Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
+        );
+        const mealTimes = todayVal?.mealTimes ?? {};
+        lastLogFromFirebaseRef.current = JSON.stringify(normalized);
+        setDailyLog(applyMealTimes(normalized, mealTimes));
+        writeTodayTrackerLocalCache(
+          today,
+          Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
+          mealTimes,
+        );
+
+        if (profileSnap.exists()) {
+          const data = profileSnap.val();
+          const mergedProfile = data?.profile
+            ? mergeProfileNutritionFromServer(data.profile)
+            : null;
+          if (mergedProfile) {
+            setUserProfile((prev) => ({ ...prev, ...mergedProfile }));
+            setBirthDate(typeof mergedProfile?.birthDate === 'string' ? mergedProfile.birthDate : '');
+          }
+          setUserTargets((prev) => {
+            let next = { ...prev };
+            if (data?.targets) {
+              next = {
+                ...next,
+                ...data.targets,
+                autoCalculated: data?.targets?.autoCalculated === true,
+                targetHistory: Array.isArray(data?.targets?.targetHistory)
+                  ? data.targets.targetHistory
+                  : next.targetHistory || [],
+              };
+            }
+            if (mergedProfile) {
+              if (mergedProfile.targetCalories != null && Number.isFinite(Number(mergedProfile.targetCalories))) {
+                next.kcal = Math.round(Number(mergedProfile.targetCalories));
+              }
+              if (mergedProfile.proteinTarget != null && mergedProfile.proteinTarget !== '') {
+                next.prot = Math.round(Number(mergedProfile.proteinTarget));
+              }
+            }
+            return next;
+          });
         }
+
+        setActiveAction('home');
+        setIsInitialLoadComplete(true);
+        attachTodayLiveListener();
+
+        get(ref(db, basePath))
+          .then((histSnap) => {
+            if (cancelled) return;
+            const tree = histSnap.exists() ? histSnap.val() : null;
+            setFullStorico(tree);
+            setFullHistory(tree || {});
+          })
+          .catch((err) => console.warn('tracker_data background load:', err));
+      })
+      .catch((err) => {
+        console.warn('Bootstrap load failed:', err);
+        if (cancelled) return;
+        setActiveAction('home');
+        setIsInitialLoadComplete(true);
+        attachTodayLiveListener();
+      });
+
+    get(ref(db, `users/${user.uid}/physiology_model`)).then((physSnap) => {
+      if (cancelled || !physSnap.exists()) return;
+      const data = physSnap.val();
+      const { lastCalibrationWeek: savedCalWeek, ...model } = data;
+      if (savedCalWeek) setLastCalibrationWeek(savedCalWeek);
+      if (model && typeof model === 'object') {
+        setUserModel((prev) => ({
+          ...DEFAULT_USER_MODEL,
+          ...model,
+          caffeineSensitivity: clampModelValue(model.caffeineSensitivity ?? 1),
+          carbCrashSensitivity: clampModelValue(model.carbCrashSensitivity ?? 1),
+          stressSensitivity: clampModelValue(model.stressSensitivity ?? 1),
+          hydrationSensitivity: clampModelValue(model.hydrationSensitivity ?? 1),
+          recoveryRate: clampModelValue(model.recoveryRate ?? 1),
+        }));
       }
     });
 
     get(ref(db, `${basePath}/trackerFoodDatabase`)).then((s) => {
+      if (cancelled) return;
       if (!s.exists()) return;
       const val = s.val();
       if (!val || typeof val !== 'object') {
@@ -2205,6 +2302,7 @@ export default function SalaComandi() {
     });
 
     return () => {
+      cancelled = true;
       unsubToday?.();
     };
   }, [user]);
@@ -2313,6 +2411,8 @@ export default function SalaComandi() {
         hasEditedNodes: true
       };
       const sanitized = stripUndefined(payload);
+
+      writeTodayTrackerLocalCache(dateStr, sanitizedLog, mealTimes);
 
       const dbPath = `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(dateStr)}`;
       console.log("📁 Percorso di salvataggio:", dbPath);
@@ -2869,7 +2969,7 @@ export default function SalaComandi() {
       if (isSimulationMode) return;
       const t = Number(newTimeRaw);
       if (!Number.isFinite(t)) return;
-      const finalTimeRounded = Math.max(0, Math.min(24, Math.round(t * 12) / 12));
+      const finalTimeRounded = normalizeMealHour(Math.max(0, Math.min(24, t))) ?? Math.max(0, Math.min(24, t));
       const dragId = nodeId;
       const dlSnap = dailyLogRef.current;
       const mnSnap = manualNodesRef.current;
@@ -3073,6 +3173,33 @@ export default function SalaComandi() {
     setActiveAction('allenamento');
     setIsDrawerOpen(true);
   }, [todayPlanBlock]);
+
+  const openWorkoutEditorFromLogItem = useCallback((workout) => {
+    if (!workout?.id) return;
+    const startT = typeof workout.time === 'number' && !Number.isNaN(workout.time) ? workout.time : 12;
+    const durH = Math.max(0.25, Number(workout.duration) || 1);
+    const editSt = workout.subType || 'pesi';
+
+    setEditingWorkoutId(workout.id);
+    setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
+    setWorkoutEndTime(Math.min(24, startT + durH));
+    setWorkoutDurationMin(String(Math.max(15, Math.min(600, Math.round(durH * 60)))));
+    setWorkoutKcal(Number(workout.kcal || workout.cal) || 300);
+    setWorkoutStrengthDetail(String(workout.workoutDetailNote || '').trim());
+    setWorkoutMuscles(
+      normalizeMuscleGroupArray(
+        Array.isArray(workout.muscles)
+          ? workout.muscles
+          : Array.isArray(workout.workoutMuscles)
+            ? workout.workoutMuscles
+            : [],
+      ),
+    );
+    setWorkoutPlanDraft(null);
+    setShowDiarySheet(false);
+    setActiveAction('allenamento');
+    setIsDrawerOpen(true);
+  }, []);
 
   const handleStartWorkoutSession = useCallback(() => {
     const startT = getCurrentTimeRoundedTo15Min();
@@ -3289,8 +3416,8 @@ export default function SalaComandi() {
         break;
       case 'diary':
         if (fromModal) setShowChoiceModal(false);
-        setActiveAction('diario_giornaliero');
-        if (fromModal) setIsDrawerOpen(true);
+        closeDrawer();
+        setShowDiarySheet(true);
         break;
       case 'menu':
         if (fromModal) setShowChoiceModal(false);
@@ -6679,16 +6806,21 @@ ${dbKeys || 'n/d'}`;
   );
 
   const metabolicGradientStops = useMemo(
-    () => buildMetabolicTimelineGradientStops(metabolicTimelineMeals),
-    [metabolicTimelineMeals],
+    () => buildMetabolicTimelineGradientStops({
+      ...metabolicTimelineMeals,
+      activeLog,
+      ...metabolicContextOptions,
+    }),
+    [activeLog, metabolicTimelineMeals, metabolicContextOptions],
   );
 
   const metabolicChartGradientStops = useMemo(
     () => buildMetabolicTimelineGradientStops({
       ...metabolicTimelineMeals,
-      offsetDomainEnd: isViewingPastDate ? 24 : Math.max(displayTime, 0.1),
+      activeLog,
+      ...metabolicContextOptions,
     }),
-    [metabolicTimelineMeals, displayTime, isViewingPastDate],
+    [activeLog, metabolicTimelineMeals, metabolicContextOptions],
   );
 
   useEffect(() => {
@@ -7263,6 +7395,7 @@ ${dbKeys || 'n/d'}`;
     );
   } else if (isFullScreenGraph) {
     salaContent = (
+      <Suspense fallback={<KentuLazySectionFallback label="Grafico fullscreen…" />}>
       <FullscreenGraphView
         fullscreenChartScrollRef={fullscreenChartScrollRef}
         availableFullscreenCharts={availableFullscreenCharts}
@@ -7322,6 +7455,7 @@ ${dbKeys || 'n/d'}`;
         metabolicChartGradientStops={metabolicChartGradientStops}
         currentMetabolicColor={currentMetabolicColor}
       />
+      </Suspense>
     );
   } else {
     salaContent = (
@@ -7722,6 +7856,7 @@ ${dbKeys || 'n/d'}`;
                 style={{ flex: 1, minHeight: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', position: 'relative' }}
                 aria-label="Apri grafico a tutto schermo"
               >
+                <Suspense fallback={<KentuLazySectionFallback label="Cruscotto energetico…" />}>
                 <MainDashboardCharts
                   chartUnit={chartUnit}
                   mainChartData={mainChartData}
@@ -7741,20 +7876,19 @@ ${dbKeys || 'n/d'}`;
                   showMetabolicOverlay={activeBottomTab === 'analisi'}
                   onMetabolicPhaseClick={() => setShowMetabolicSheet(true)}
                 />
-              </div>
-              <div
-                style={{
-                  flexShrink: 0,
-                  position: 'relative',
-                  width: '100%',
-                  paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
-                  paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
-                  boxSizing: 'border-box',
-                  paddingTop: 6,
-                  zIndex: 10,
-                }}
-              >
-                <TimelineNodi
+                <div
+                  style={{
+                    flexShrink: 0,
+                    position: 'relative',
+                    width: '100%',
+                    paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
+                    paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
+                    boxSizing: 'border-box',
+                    paddingTop: 6,
+                    zIndex: 10,
+                  }}
+                >
+                  <TimelineNodi
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}
                   activeAction={activeAction}
@@ -7788,6 +7922,8 @@ ${dbKeys || 'n/d'}`;
                   onStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
                   metabolicGradientStops={metabolicGradientStops}
                 />
+                </div>
+                </Suspense>
               </div>
             </div>
             {/* SPACER PER PULSANTIERA: permette di scrollare oltre la fine del grafico */}
@@ -7800,6 +7936,7 @@ ${dbKeys || 'n/d'}`;
 
         {/* Modale Grafico Fullscreen con Glossario e Carosello Swipe */}
         {expandedChart != null && (
+          <Suspense fallback={<KentuLazySectionFallback label="Dettaglio grafico…" />}>
           <ChartModal
             expandedChart={expandedChart}
             onClose={() => setExpandedChart(null)}
@@ -7841,6 +7978,7 @@ ${dbKeys || 'n/d'}`;
             metabolicChartGradientStops={metabolicChartGradientStops}
             currentMetabolicColor={currentMetabolicColor}
           />
+          </Suspense>
         )}
       </>
       )}
@@ -7849,7 +7987,11 @@ ${dbKeys || 'n/d'}`;
         <div className="home-oggi-rigid" style={{ width: '100%', flexShrink: 0, padding: '0 14px' }}>
           <MetabolicMonitorCard
             metabolicSnapshot={metabolicSnapshot}
-            onClick={() => setShowMetabolicSheet(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log('[Diario] tap MetabolicMonitorCard (Pro) → apertura sheet');
+              setShowDiarySheet(true);
+            }}
           />
         </div>
       )}
@@ -7909,7 +8051,8 @@ ${dbKeys || 'n/d'}`;
                           loadMealToConstructor(String(selectedMealCenter.id));
                           return;
                         }
-                        setShowBiochemicalDiagnostics(true);
+                        console.log('[Diario] tap centro tachimetro → apertura sheet');
+                        setShowDiarySheet(true);
                       }}
                       style={{
                         position: 'absolute',
@@ -8106,7 +8249,11 @@ ${dbKeys || 'n/d'}`;
                 />
                 <MetabolicMonitorCard
                   metabolicSnapshot={metabolicSnapshot}
-                  onClick={() => setShowMetabolicSheet(true)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    console.log('[Diario] tap MetabolicMonitorCard (Base) → apertura sheet');
+                    setShowDiarySheet(true);
+                  }}
                 />
               </>
             );
@@ -8289,12 +8436,14 @@ ${dbKeys || 'n/d'}`;
             }}
           >
             <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#e8f4ff' }}>Piano settimanale</h3>
+            <Suspense fallback={<KentuLazySectionFallback label="Pianificazione…" />}>
             <WeeklyPlanning
               value={weeklyPlan}
               onChange={setWeeklyPlan}
               anchorDate={new Date(`${currentTrackerDate || getTodayString()}T12:00:00`)}
               profileDailyKcal={Number(userTargets?.kcal) || 2000}
             />
+            </Suspense>
           </div>
         </div>
       )}
@@ -8315,6 +8464,7 @@ ${dbKeys || 'n/d'}`;
             boxSizing: 'border-box',
           }}
         >
+          <Suspense fallback={<KentuLazySectionFallback label="Bussola metabolica…" />}>
           <MetabolicUnifiedView
             mapData={metabolicMapData}
             dailyHistory={metabolicCompassDailyHistory}
@@ -8326,6 +8476,7 @@ ${dbKeys || 'n/d'}`;
             selectedTimeframe={metabolicCompassTimeframe}
             onTimeframeChange={setMetabolicCompassTimeframe}
           />
+          </Suspense>
         </div>
       )}
       </div>
@@ -8355,6 +8506,7 @@ ${dbKeys || 'n/d'}`;
               width: '100%',
             }}
           >
+            <Suspense fallback={<KentuLazySectionFallback label="Longevità…" />}>
             <LongevityView
               data={longevityData}
               minimalOnly={false}
@@ -8377,6 +8529,7 @@ ${dbKeys || 'n/d'}`;
               weeklyMicrosTotals={weeklyMicrosTotals}
               weeklyKcalChartReference={weeklyKcalChartReference}
             />
+            </Suspense>
           </div>
         </div>
       )}
@@ -8395,6 +8548,7 @@ ${dbKeys || 'n/d'}`;
             paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)',
           }}
         >
+          <Suspense fallback={<KentuLazySectionFallback label="Planner settimanale…" />}>
           <WeeklyBuilder
             db={db}
             userUid={user?.uid ?? null}
@@ -8402,6 +8556,7 @@ ${dbKeys || 'n/d'}`;
             authReady={authReady}
             onSaveSuccess={() => setActiveBottomTab('oggi')}
           />
+          </Suspense>
         </div>
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
@@ -8424,6 +8579,7 @@ ${dbKeys || 'n/d'}`;
           onOpenTacticalCoach={() => setIsCoachOpen(true)}
         />
 
+        <Suspense fallback={<KentuLazySectionFallback label="Apertura vista…" />}>
         {/* VISTA CHAT AI */}
         {activeAction === 'ai_chat' && (
           <KentuChatUI
@@ -8552,296 +8708,7 @@ ${dbKeys || 'n/d'}`;
             removeLogItem={removeLogItem}
           />
         )}
-
-        {/* VISTA DIARIO GIORNALIERO */}
-        {activeAction === 'diario_giornaliero' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#00e676', letterSpacing: '2px', margin: 0 }}>📓 DIARIO GIORNALIERO</h2>
-              <div style={{ width: '70px' }}></div>
-            </div>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', background: '#111', padding: '5px', borderRadius: '15px' }}>
-              <button className={`type-btn ${diarioTab === 'storico' ? 'active blue' : ''}`} onClick={() => setDiarioTab('storico')} style={{ border: 'none' }}>Registro voci</button>
-              <button className={`type-btn ${diarioTab === 'telemetria' ? 'active blue' : ''}`} onClick={() => setDiarioTab('telemetria')} style={{ border: 'none' }}>Bioscan 40</button>
-            </div>
-            {diarioTab === 'storico' && (
-              <div style={{ minHeight: '200px' }}>
-                {(activeLog || []).filter(item => item.type === 'sleep').map(item => (
-                  <div
-                    key={item.id}
-                    style={{
-                      background: 'linear-gradient(145deg, #1a1c29, #11121a)',
-                      borderLeft: '4px solid #4ba3e3',
-                      borderRadius: '12px',
-                      padding: '15px',
-                      marginBottom: '10px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#4ba3e3', fontWeight: 'bold', fontSize: '1.1rem' }}>🌙 Riposo Notturno</span>
-                      <span style={{ color: '#888', fontSize: '0.85rem', textAlign: 'right' }}>
-                        {(() => {
-                          const bed = item.bedtime ?? item.sleepStart;
-                          const wak = item.wakeTime ?? item.sleepEnd;
-                          const bedStr =
-                            typeof bed === 'number' && Number.isFinite(bed)
-                              ? `${Math.floor(bed)}:${String(Math.round((bed % 1) * 60)).padStart(2, '0')}`
-                              : '—';
-                          const wakeStr =
-                            typeof wak === 'number' && Number.isFinite(wak)
-                              ? `${Math.floor(wak)}:${String(Math.round((wak % 1) * 60)).padStart(2, '0')}`
-                              : '—';
-                          return (
-                            <>
-                              Addormentato {bedStr}
-                              <br />
-                              Risveglio {wakeStr}
-                            </>
-                          );
-                        })()}
-                      </span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '5px' }}>
-                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '0.75rem', color: '#888' }}>Durata Totale</div>
-                        <div style={{ color: '#fff', fontWeight: 'bold' }}>{item.hours != null ? `${Number(item.hours).toFixed(1)}h` : '--'}</div>
-                      </div>
-                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '0.75rem', color: '#888' }}>Battito Medio</div>
-                        <div style={{ color: '#ff4d4d', fontWeight: 'bold' }}>{item.hr != null ? `${item.hr} bpm` : '--'}</div>
-                      </div>
-                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '0.75rem', color: '#888' }}>Sonno Profondo</div>
-                        <div style={{ color: '#8c52ff', fontWeight: 'bold' }}>{item.deepMin != null ? `${Math.floor(item.deepMin / 60)}h ${item.deepMin % 60}m` : '--'}</div>
-                      </div>
-                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '0.75rem', color: '#888' }}>Fase REM</div>
-                        <div style={{ color: '#00e5ff', fontWeight: 'bold' }}>{item.remMin != null ? `${Math.floor(item.remMin / 60)}h ${item.remMin % 60}m` : '--'}</div>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        onClick={() => setSleepModal({ editingId: item.id })}
-                        style={{ background: 'transparent', border: '1px solid #4ba3e3', color: '#4ba3e3', fontSize: '0.8rem', cursor: 'pointer', padding: '6px 12px', borderRadius: '8px' }}
-                      >
-                        Modifica
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeLogItem(item.id)}
-                        style={{ background: 'transparent', border: 'none', color: '#ff4d4d', fontSize: '0.8rem', cursor: 'pointer', padding: '6px 0' }}
-                      >
-                        Rimuovi dati
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {workoutsLog.length > 0 && (
-                  <div style={{ marginBottom: '20px' }}>
-                    <h4 style={{ fontSize: '0.7rem', color: '#ff6d00', letterSpacing: '1px', marginBottom: '8px' }}>OUTPUT ENERGETICO</h4>
-                    {workoutsLog.map(wk => (
-                      <div key={wk.id} className="food-pill" style={{ borderLeft: '3px solid #ff6d00', background: 'rgba(255, 109, 0, 0.05)' }}>
-                        <div>
-                          <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#fff' }}>{wk.desc || wk.name}</div>
-                          <div style={{ fontSize: '0.65rem', color: '#888', marginTop: '2px' }}>Stima: {wk.duration || Math.round((wk.kcal || 0) / 6)} min</div>
-                        </div>
-                        <div className="food-pill-actions">
-                          <div style={{ color: '#ff6d00', fontWeight: 'bold', fontSize: '1rem', marginRight: '10px' }}>🔥 {Math.round(wk.kcal || wk.cal || 0)}</div>
-                          <button className="food-pill-btn btn-delete" onClick={() => removeLogItem(wk.id)}>✕</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {Object.keys(groupedFoods).length === 0 && workoutsLog.length === 0 && !(activeLog || []).some(i => i.type === 'sleep') ? (
-                  <p style={{ textAlign: 'center', color: '#444', fontSize: '0.8rem', fontStyle: 'italic' }}>Nessuna traccia registrata oggi.</p>
-                ) : (
-                  Object.keys(groupedFoods)
-                    .sort((a, b) => {
-                      const timeA = Math.min(...(groupedFoods[a] || []).map(f => Number(f.mealTime ?? f.time ?? 12) || 0));
-                      const timeB = Math.min(...(groupedFoods[b] || []).map(f => Number(f.mealTime ?? f.time ?? 12) || 0));
-                      return timeA - timeB;
-                    })
-                    .map(slotKey => {
-                    const items = groupedFoods[slotKey];
-                    const mType = items[0]?.mealType || slotKey.split('_')[0];
-                    const baseType = mType.split('_')[0];
-                    const suffixType = mType.includes('_') ? ` ${mType.split('_')[1]}` : '';
-                    const mTime = items[0]?.mealTime ?? 12;
-                    const label = `${MEAL_LABELS_SAVE[toCanonicalMealType(baseType)] || baseType}${suffixType} (${decimalToTimeStr(mTime)})`;
-
-                    return (
-                      <div key={slotKey} style={{ marginBottom: '20px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                          <h4 style={{ fontSize: '0.7rem', color: '#888', letterSpacing: '1px', margin: 0, cursor: 'pointer', flex: 1 }} onClick={() => loadMealToConstructor(slotKey)}>
-                            {label}
-                          </h4>
-                          <button type="button" className="food-pill-btn" onClick={() => loadMealToConstructor(slotKey)} title="Modifica pasto">✏️</button>
-                        </div>
-                        {items.map(food => {
-                          const recipeExpandable = (food.type === 'recipe' || food.isRecipe === true)
-                            && Array.isArray(food.ingredients)
-                            && food.ingredients.length > 0;
-                          const recipeKey = food.id != null ? String(food.id) : '';
-                          const recipeExpanded = recipeKey && !!expandedRecipes[recipeKey];
-                          return (
-                            <div key={food.id} style={{ marginBottom: '8px' }}>
-                              <div className="food-pill" style={{ borderLeft: '3px solid #333', cursor: 'pointer' }} onClick={() => loadMealToConstructor(slotKey)}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, flex: 1 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                                    <span className="food-pill-name">{food.desc || food.name}</span>
-                                    {recipeExpandable && (
-                                      <button
-                                        type="button"
-                                        className="food-pill-btn"
-                                        aria-expanded={recipeExpanded}
-                                        aria-label={recipeExpanded ? 'Nascondi ingredienti' : 'Mostra ingredienti'}
-                                        title={recipeExpanded ? 'Nascondi ingredienti' : 'Mostra ingredienti'}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          toggleRecipe(food.id);
-                                        }}
-                                        style={{ fontSize: '0.65rem', opacity: 0.85, padding: '2px 6px' }}
-                                      >
-                                        {recipeExpanded ? '▲' : '▼'}
-                                      </button>
-                                    )}
-                                    <span className="food-pill-weight">{food.qta || food.weight}g</span>
-                                  </div>
-                                </div>
-                                <div className="food-pill-actions" onClick={(e) => e.stopPropagation()}>
-                                  <button className="food-pill-btn" onClick={(e) => { e.stopPropagation(); setSelectedFoodForInfo(food); }} title="Info macro/micro">ℹ️</button>
-                                  <button className="food-pill-btn" onClick={(e) => { e.stopPropagation(); loadMealToConstructor(slotKey); }} title="Modifica pasto">✏️</button>
-                                  <div style={{ fontSize: '0.75rem', color: '#888', marginRight: '10px' }}>{Math.round(food.kcal || food.cal || 0)} kcal</div>
-                                  <button className="food-pill-btn btn-delete" onClick={(e) => { e.stopPropagation(); removeLogItem(food.id); }}>✕</button>
-                                </div>
-                              </div>
-                              {recipeExpandable && recipeExpanded && (
-                                <div
-                                  style={{
-                                    marginTop: '8px',
-                                    marginLeft: '4px',
-                                    paddingLeft: '15px',
-                                    paddingTop: '8px',
-                                    paddingBottom: '8px',
-                                    paddingRight: '10px',
-                                    borderLeft: '2px solid #444',
-                                    background: 'rgba(0,0,0,0.28)',
-                                    borderRadius: '0 10px 10px 0'
-                                  }}
-                                >
-                                  {food.ingredients.map((ing, ingIdx) => {
-                                    const w = Number(ing.weight);
-                                    const wg = Number.isFinite(w) ? `${Math.round(w)}g` : '—';
-                                    const kc = Math.round(Number(ing.kcal) || 0);
-                                    const p = Number(ing.prot);
-                                    const c = Number(ing.carb);
-                                    const g = Number(ing.fat);
-                                    const pStr = Number.isFinite(p) ? p.toFixed(1) : '0';
-                                    const cStr = Number.isFinite(c) ? c.toFixed(1) : '0';
-                                    const gStr = Number.isFinite(g) ? g.toFixed(1) : '0';
-                                    const nm = ing.name != null ? String(ing.name) : 'Ingrediente';
-                                    return (
-                                      <div
-                                        key={ing.id != null ? String(ing.id) : `ing_${ingIdx}`}
-                                        style={{
-                                          fontSize: '0.85rem',
-                                          color: '#aaa',
-                                          lineHeight: 1.45,
-                                          marginBottom: ingIdx < food.ingredients.length - 1 ? '6px' : 0
-                                        }}
-                                      >
-                                        {nm} · {wg} · {kc} kcal · P {pStr}g · C {cStr}g · G {gStr}g
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-            {diarioTab === 'telemetria' && (
-              <div className="view-animate">
-                <div style={{ display: 'flex', gap: '5px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '5px', flexShrink: 0 }}>
-                  {TELEMETRY_TABS.map((t, idx) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => {
-                        setTelemetrySubTab(t);
-                        if (telemetryScrollRef.current) {
-                          telemetryScrollRef.current.scrollTo({ left: telemetryScrollRef.current.clientWidth * idx, behavior: 'smooth' });
-                        }
-                      }}
-                      style={{ padding: '8px 15px', fontSize: '0.7rem', background: telemetrySubTab === t ? '#00e676' : '#111', color: telemetrySubTab === t ? '#000' : '#888', border: 'none', borderRadius: '20px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: 'pointer' }}
-                    >{t}</button>
-                  ))}
-                </div>
-                <div
-                  ref={telemetryScrollRef}
-                  className="telemetry-carousel"
-                  onScroll={() => {
-                    const el = telemetryScrollRef.current;
-                    if (!el) return;
-                    const idx = Math.round(el.scrollLeft / el.clientWidth);
-                    const tab = TELEMETRY_TABS[idx];
-                    if (tab && tab !== telemetrySubTab) setTelemetrySubTab(tab);
-                  }}
-                  style={{ width: '100%', flex: 1, minHeight: 0 }}
-                >
-                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
-                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-                      {renderProgressBar('Calorie', totali.kcal || 0, dynamicDailyKcal, 'kcal', 'kcal')}
-                      {renderProgressBar('PROTEINE', totali.prot, userTargets.prot ?? TARGETS.macro.prot, 'g', 'prot')}
-                      {renderProgressBar('CARBOIDRATI', totali.carb, userTargets.carb ?? TARGETS.macro.carb, 'g', 'carb')}
-                      {renderProgressBar('GRASSI TOTALI', totali.fatTotal, userTargets.fatTotal ?? TARGETS.macro.fatTotal, 'g', 'fatTotal')}
-                    </div>
-                  </div>
-                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
-                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-                      <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '15px' }}>RAPPORTI BIOCHIMICI</h4>
-                      {renderRatioBar('Equilibrio Elettrolitico (Idratazione)', 'Sodio (Na)', totali?.na, 'Potassio (K)', totali?.k, 'Ideale: Na < K', (Number(totali?.na) || 0) < (Number(totali?.k) || 0))}
-                      {renderRatioBar('Indice Infiammatorio (Grassi)', 'Omega 6', totali?.omega6, 'Omega 3', totali?.omega3, 'Ideale: W6:W3 < 4:1', (Number(totali?.omega6) || 0) <= (Number(totali?.omega3) || 1) * 4)}
-                    </div>
-                  </div>
-                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
-                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-                      {Object.keys(TARGETS.amino).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.amino[k], 'mg', k))}
-                    </div>
-                  </div>
-                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
-                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-                      {Object.keys(TARGETS.vit).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.vit[k], k === 'vitA' || k === 'b9' ? 'µg' : 'mg', k))}
-                    </div>
-                  </div>
-                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
-                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-                      {Object.keys(TARGETS.min).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.min[k], k === 'se' ? 'µg' : 'mg', k))}
-                    </div>
-                  </div>
-                  <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>
-                    <div style={{ background: '#111', padding: '20px', borderRadius: '15px' }}>
-                      {renderProgressBar('Grassi Totali', totali.fatTotal || totali.fat || 0, userTargets.fatTotal ?? userTargets.fat ?? 70, 'g', 'fatTotal')}
-                      {Object.keys(TARGETS.fat).map(k => renderProgressBar(k.toUpperCase(), totali[k] || 0, TARGETS.fat[k], 'g', k))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        </Suspense>
 
         {/* VISTA ARCHIVIO STORICO */}
         {activeAction === 'storico' && (
@@ -9455,6 +9322,7 @@ ${dbKeys || 'n/d'}`;
       />
 
       {showBiochemicalDiagnostics ? (
+        <Suspense fallback={<KentuLazySectionFallback label="Diagnostica…" />}>
         <BiochemicalDiagnostics
           todayMicros={todayMicrosForDiagnostics}
           aminoAcidProfile={aminoAcidProfileForDiagnostics}
@@ -9467,9 +9335,11 @@ ${dbKeys || 'n/d'}`;
             setBiochemicalDetailModal(null);
           }}
         />
+        </Suspense>
       ) : null}
 
       {isCoachOpen ? (
+        <Suspense fallback={<KentuLazySectionFallback label="Coach tattico…" />}>
         <TacticalCoach
           totals={{
             kcal: Number(totali?.kcal) || 0,
@@ -9500,6 +9370,7 @@ ${dbKeys || 'n/d'}`;
           isDayEnded={isViewingPastDate}
           onClose={() => setIsCoachOpen(false)}
         />
+        </Suspense>
       ) : null}
 
       {createPortal(
@@ -9663,7 +9534,9 @@ ${dbKeys || 'n/d'}`;
         );
       })()}
 
-      <StrategicPlannerOverlay
+      {showStrategicPlanner && (
+        <Suspense fallback={<KentuLazySectionFallback label="Planner strategico…" />}>
+        <StrategicPlannerOverlay
         isOpen={showStrategicPlanner}
         onClose={() => setShowStrategicPlanner(false)}
         strategicPlan={strategicPlan}
@@ -9672,6 +9545,8 @@ ${dbKeys || 'n/d'}`;
         updateSettings={updateSettings}
         saveCalorieMemory={saveCalorieMemory}
       />
+        </Suspense>
+      )}
       <TargetSettingsModal
         open={showProfile}
         onClose={() => setShowProfile(false)}
@@ -10024,6 +9899,23 @@ ${dbKeys || 'n/d'}`;
         </div>
       )}
 
+      <DiaryDetailsSheet
+        isOpen={showDiarySheet}
+        onClose={() => setShowDiarySheet(false)}
+        groupedFoods={groupedFoods}
+        workoutsLog={workoutsLog}
+        totali={totali}
+        dynamicDailyKcal={dynamicDailyKcal}
+        decimalToTimeStr={decimalToTimeStr}
+        onEditMeal={(slotKey) => {
+          setShowDiarySheet(false);
+          loadMealToConstructor(slotKey);
+        }}
+        onEditWorkout={openWorkoutEditorFromLogItem}
+        onDeleteItem={removeLogItem}
+        onInspectFood={setSelectedFoodForInfo}
+      />
+
       <MetabolicTimelineSheet
         isOpen={showMetabolicSheet}
         metabolicSnapshot={metabolicSnapshot}
@@ -10127,6 +10019,7 @@ ${dbKeys || 'n/d'}`;
       />
 
       {showLongevityModal && longevityData && (
+        <Suspense fallback={<KentuLazySectionFallback label="Healthspan…" />}>
         <HealthspanOverlay
           longevityData={longevityData}
           longevityDays={longevityDays}
@@ -10161,9 +10054,11 @@ ${dbKeys || 'n/d'}`;
           expandedRiskId={expandedRiskId}
           setExpandedRiskId={setExpandedRiskId}
         />
+        </Suspense>
       )}
 
       {showFastLogger ? (
+        <Suspense fallback={<KentuLazySectionFallback label="Logger pasti…" />}>
         <FastMealLogger
           key={editingMealId ?? pendingGhostMealId ?? 'new-meal'}
           fullHistory={fullHistory}
@@ -10190,6 +10085,7 @@ ${dbKeys || 'n/d'}`;
           onPatchFoodDbEntry={patchFoodDbEntry}
           onSaveRecipe={saveCustomRecipeToFoodDb}
         />
+        </Suspense>
       ) : null}
 
       {fixedAppBottomChrome}

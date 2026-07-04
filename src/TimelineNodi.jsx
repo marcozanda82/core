@@ -7,6 +7,7 @@ import {
   DEBUG_TIME_GRID_HOURS,
   getDebugGridLineTimelineStyle,
 } from './timeLayout';
+import { getLeftPercentage } from './utils/unifiedTimelineLayout';
 import { buildMetabolicTimelineCssGradient } from './features/salaComandi/utils/metabolicPhaseColors';
 import { SHOW_TIME_ALIGNMENT_DEBUG } from './TimeAlignmentDebugOverlay';
 import {
@@ -1064,7 +1065,6 @@ export default function TimelineNodi({
             const isNodeFocused =
               analysisTabActive ||
               (!activeAction || activeAction === 'home') ||
-              activeAction === 'diario_giornaliero' ||
               (activeAction === 'pasto' && (node.type === 'meal' || isGhostMeal)) ||
               (activeAction === 'allenamento' &&
                 (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive' || isGhostWorkout)) ||
@@ -1128,7 +1128,7 @@ export default function TimelineNodi({
               const percent =
                 draggingId === node.id && dragX != null && Number.isFinite(Number(dragX))
                   ? clampTimelineDragPercent(dragX)
-                  : clampTimelineDragPercent(getTimePositionPercent(timeHours) / 100);
+                  : clampTimelineDragPercent(getLeftPercentage(timeHours) / 100);
               return `${clampTimelineDragPercent(percent) * 100}%`;
             };
             const stripDragLiveHourDecimal =

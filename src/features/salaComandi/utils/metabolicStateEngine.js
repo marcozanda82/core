@@ -8,6 +8,9 @@ import {
 } from './metabolicPhaseConfig';
 import { resolveEntryMealConsumedAtMs } from './mealConsumedTime';
 import {
+  resolveKineticMetabolicPhase,
+} from '../../metabolic/MetabolicKinetics';
+import {
   addDays,
   computeAccumuloSNC,
   getLogFromStoricoTree,
@@ -86,6 +89,81 @@ export function resolveLastMealConsumedAtMs(fullHistory, activeLog, options = {}
   });
 
   return lastConsumedMs;
+}
+
+const LAST_MEAL_MS_TOLERANCE = 5 * 60 * 1000;
+
+function collectMealEntryCandidates(fullHistory, activeLog, options = {}) {
+  const now = options.now instanceof Date ? options.now : new Date();
+  const anchorDate = options.anchorDate ?? now.toISOString().slice(0, 10);
+  const lookbackDays = Math.max(1, Number(options.lookbackDays) || 60);
+
+  const seen = new Set();
+  const candidates = [];
+
+  collectFoodEntriesFromFullHistory(fullHistory, { lookbackDays, anchorDate }).forEach((entry) => {
+    const key = `${entry._dayKey}|${entry.mealTime}|${entry.desc}|${entry.id ?? entry.foodDbKey ?? ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push(entry);
+  });
+
+  if (Array.isArray(activeLog) && activeLog.length > 0) {
+    enrichActiveLogEntries(activeLog, anchorDate, fullHistory).forEach((entry) => {
+      const key = `${entry._dayKey}|${entry.mealTime}|${entry.desc}|${entry.id ?? entry.foodDbKey ?? ''}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      candidates.push(entry);
+    });
+  }
+
+  return candidates;
+}
+
+/**
+ * Nodo pasto aggregato dell'ultimo pasto consumato (per cinetica macro).
+ * @returns {{ type: 'meal', items: object[], kcal: number }|null}
+ */
+export function resolveLastMealAggregateNode(fullHistory, activeLog, options = {}) {
+  const now = options.now instanceof Date ? options.now : new Date();
+  const anchorDate = options.anchorDate ?? now.toISOString().slice(0, 10);
+  const referenceMs = Number.isFinite(Number(options.referenceMs))
+    ? Number(options.referenceMs)
+    : resolveReferenceMs(anchorDate, now);
+
+  const lastConsumedMs = resolveLastMealConsumedAtMs(fullHistory, activeLog, {
+    ...options,
+    now,
+    anchorDate,
+    referenceMs,
+  });
+  if (lastConsumedMs == null) return null;
+
+  const items = [];
+  const seen = new Set();
+
+  collectMealEntryCandidates(fullHistory, activeLog, { ...options, now, anchorDate }).forEach((entry) => {
+    const mealTimesObj = mealTimesForDay(fullHistory, entry._dayKey);
+    const consumedAt =
+      entry._consumedAtMs
+      ?? resolveEntryMealConsumedAtMs(entry, entry._dayKey, mealTimesObj);
+    if (!consumedAt || consumedAt > referenceMs) return;
+    if (Math.abs(consumedAt - lastConsumedMs) > LAST_MEAL_MS_TOLERANCE) return;
+
+    const key = `${entry._dayKey}|${entry.mealTime}|${entry.desc}|${entry.id ?? entry.foodDbKey ?? ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push(entry);
+  });
+
+  if (items.length === 0) return null;
+
+  const kcal = items.reduce(
+    (sum, entry) => sum + (Number(entry.kcal ?? entry.cal) || 0),
+    0,
+  );
+
+  return { type: 'meal', items, kcal };
 }
 
 /**
@@ -271,7 +349,11 @@ export function isMetabolicOverload(biometrics, hoursSinceLastMeal = null) {
   return resolveMetabolicOverloadReason(biometrics, hoursSinceLastMeal) != null;
 }
 
-function buildTimeBasedMetabolicState(hoursSinceLastMeal) {
+function buildTimeBasedMetabolicState(hoursSinceLastMeal, lastMealNode = null) {
+  if (lastMealNode && hoursSinceLastMeal != null) {
+    return resolveKineticMetabolicPhase(hoursSinceLastMeal, lastMealNode);
+  }
+
   const hours = hoursSinceLastMeal == null ? 0 : Math.max(0, Number(hoursSinceLastMeal) || 0);
   const phaseIndex = getMetabolicPhaseIndex(hours);
   const phase = METABOLIC_PHASES[phaseIndex];
@@ -301,8 +383,8 @@ function buildTimeBasedMetabolicState(hoursSinceLastMeal) {
  * @param {number|null} hoursSinceLastMeal
  * @param {{ stressLevel?: number, sleepQuality?: number|null, recoveryScore?: number }|null} [biometrics]
  */
-export function getMetabolicState(hoursSinceLastMeal, biometrics = null) {
-  const timeBasedState = buildTimeBasedMetabolicState(hoursSinceLastMeal);
+export function getMetabolicState(hoursSinceLastMeal, biometrics = null, lastMealNode = null) {
+  const timeBasedState = buildTimeBasedMetabolicState(hoursSinceLastMeal, lastMealNode);
   const overloadReason = resolveMetabolicOverloadReason(
     biometrics,
     timeBasedState.hoursSinceLastMeal,
@@ -410,13 +492,23 @@ export function buildMetabolicSnapshot(fullHistory, activeLog, options = {}) {
     anchorDate,
     referenceMs,
   });
+  const lastMealAggregateNode = resolveLastMealAggregateNode(fullHistory, activeLog, {
+    ...options,
+    now,
+    anchorDate,
+    referenceMs,
+  });
   const hoursSinceLastMeal = lastMealConsumedAtMs == null
     ? null
     : Math.max(0, (referenceMs - lastMealConsumedAtMs) / 3600000);
-  const state = getMetabolicState(hoursSinceLastMeal, biometrics);
+  const state = getMetabolicState(hoursSinceLastMeal, biometrics, lastMealAggregateNode);
 
-  const nextPhaseClockMs = state.nextPhase && lastMealConsumedAtMs != null
-    ? resolveMetabolicPhaseClockMs(lastMealConsumedAtMs, state.nextPhase.minHours)
+  const nextPhaseOffsetHours = state.nextTransitionHours != null
+    ? state.nextTransitionHours
+    : state.nextPhase?.minHours;
+
+  const nextPhaseClockMs = nextPhaseOffsetHours != null && lastMealConsumedAtMs != null
+    ? resolveMetabolicPhaseClockMs(lastMealConsumedAtMs, nextPhaseOffsetHours)
     : null;
 
   return {
@@ -425,12 +517,13 @@ export function buildMetabolicSnapshot(fullHistory, activeLog, options = {}) {
     referenceMs,
     nextPhaseClockMs,
     nextPhaseClockLabel: nextPhaseClockMs != null ? formatLocalClockTime(nextPhaseClockMs) : null,
-    nextPhaseEtaLabel: state.nextPhase && lastMealConsumedAtMs != null
+    nextPhaseEtaLabel: state.nextPhase && lastMealConsumedAtMs != null && nextPhaseOffsetHours != null
       ? formatMetabolicPhaseEta(
         lastMealConsumedAtMs,
-        state.nextPhase.minHours,
+        nextPhaseOffsetHours,
         state.hoursUntilNext,
       )
       : null,
+    lastMealAggregateNode,
   };
 }

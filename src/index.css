@@ -1782,6 +1782,388 @@ html, body, #root {
   letter-spacing: 0.02em;
 }
 
+/* DiaryDetailsSheet — diario alimentare (bottom sheet) */
+.diary-details-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100020;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.diary-details-panel {
+  position: relative;
+  bottom: 0;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 24px 24px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(
+    165deg,
+    rgba(30, 41, 59, 0.82) 0%,
+    rgba(15, 23, 42, 0.88) 55%,
+    rgba(8, 12, 22, 0.94) 100%
+  );
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  box-shadow:
+    0 -12px 48px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.diary-details-panel__chrome {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px 4px;
+}
+
+.diary-details-panel__handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.55);
+}
+
+.diary-details-panel__close {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.65);
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.diary-details-summary {
+  flex-shrink: 0;
+  padding: 4px 18px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.diary-details-summary__title {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.diary-details-summary__kcal {
+  margin: 0;
+  font-size: 1.65rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #f8fafc;
+}
+
+.diary-details-summary__unit {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.diary-details-summary__macros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(203, 213, 225, 0.88);
+}
+
+.diary-details-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px max(18px, env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+
+.diary-details-empty {
+  margin: 24px 8px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: rgba(148, 163, 184, 0.75);
+  font-style: italic;
+}
+
+.diary-details-meal {
+  margin-bottom: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.45);
+  overflow: hidden;
+}
+
+.diary-details-meal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.diary-details-meal__title-wrap {
+  min-width: 0;
+  flex: 1;
+}
+
+.diary-details-meal__title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  line-height: 1.25;
+}
+
+.diary-details-meal__time {
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.diary-details-meal__subtotals {
+  margin: 4px 0 0;
+  font-size: 0.76rem;
+  color: rgba(203, 213, 225, 0.88);
+}
+
+.diary-details-meal__macro-mini {
+  color: rgba(148, 163, 184, 0.78);
+}
+
+.diary-details-meal__edit {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(8, 47, 73, 0.45);
+  color: #67e8f9;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.diary-details-food-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diary-details-food-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 10px 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.diary-details-food-row:last-child {
+  border-bottom: none;
+}
+
+.diary-details-food-row__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.diary-details-food-row__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.diary-details-food-row__qty {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.9);
+  white-space: nowrap;
+}
+
+.diary-details-food-row__kcal {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: rgba(251, 191, 36, 0.95);
+  white-space: nowrap;
+}
+
+.diary-details-food-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.diary-details-food-menu__trigger {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.55);
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.diary-details-food-menu__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.diary-details-food-menu[open] .diary-details-food-menu__trigger {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(8, 47, 73, 0.65);
+}
+
+.diary-details-food-menu__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 2;
+  min-width: 148px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.diary-details-food-menu__panel button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diary-details-food-menu__panel button:hover,
+.diary-details-food-menu__panel button:focus-visible {
+  background: rgba(51, 65, 85, 0.65);
+}
+
+.diary-details-food-menu__danger {
+  color: #fca5a5 !important;
+}
+
+.diary-details-summary__burn {
+  color: #fb923c;
+  font-weight: 600;
+}
+
+.diary-sheet-workout-group {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(251, 146, 60, 0.18);
+}
+
+.diary-sheet-workout-group__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.diary-sheet-workout-group__title-wrap {
+  min-width: 0;
+  flex: 1;
+}
+
+.diary-sheet-workout-group__title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fdba74;
+  letter-spacing: 0.02em;
+}
+
+.diary-sheet-workout-group__subtotals {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: rgba(251, 146, 60, 0.92);
+  font-weight: 600;
+}
+
+.diary-sheet-workout-group__count {
+  color: rgba(148, 163, 184, 0.85);
+  font-weight: 500;
+}
+
+.diary-details-food-row--workout {
+  border-left: 2px solid rgba(251, 146, 60, 0.45);
+}
+
+.diary-details-food-row__meta {
+  color: rgba(148, 163, 184, 0.9);
+  font-size: 0.72rem;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diary-details-food-row__time-inline {
+  color: rgba(148, 163, 184, 0.85);
+  font-weight: 500;
+}
+
+.diary-details-food-row__kcal--burn {
+  color: #fb923c;
+  font-weight: 700;
+}
+
 /* CarbsDetailsSheet — frazioni + KPI glicemico */
 .carbs-details-fractions {
   display: flex;

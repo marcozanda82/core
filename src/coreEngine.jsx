@@ -3,6 +3,11 @@
 import React from 'react';
 import { computeTotali, DEFAULT_TARGETS } from './useBiochimico';
 import { addDays } from './calendarDateUtils';
+import {
+  calculateGlycemicContribution,
+  calculateMealKinetics,
+  readMealMacroGrams,
+} from './features/metabolic/MetabolicKinetics';
 
 const RADIAN = Math.PI / 180;
 
@@ -479,19 +484,6 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
 
   const out = [];
 
-  function carbAbsorption(t, carbs, fibre = 0, fat = 0) {
-    if (t < 0 || t > 4) return 0;
-
-    const peakTime = 1 + (fat * 0.015) + (fibre * 0.02);
-    const width = 0.8 + fibre * 0.015;
-
-    const fatReduction = Math.max(0.6, 1 - fat * 0.01);
-    const amplitude = carbs * fatReduction;
-
-    const peak = Math.exp(-Math.pow((t - peakTime) / width, 2));
-    return peak * amplitude;
-  }
-
   function circadianEnergyModifier(h) {
     const morningPeak = Math.exp(-Math.pow((h - 9) / 3, 2)) * 6;
     const afternoonDip = Math.exp(-Math.pow((h - 14) / 2, 2)) * -5;
@@ -552,8 +544,10 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       if (node.type === 'meal') {
         if (node.time >= h && node.time < h + 1) hadMealThisHour = true;
         const timeSince = h - node.time;
-        if (timeSince >= 0 && timeSince <= 3) {
-          const mealEffect = responseCurve(timeSince, 1, 3);
+        const { onsetDelay, duration, peakTime } = calculateMealKinetics(node);
+        const windowEnd = onsetDelay + duration;
+        if (timeSince >= onsetDelay && timeSince <= windowEnd) {
+          const mealEffect = responseCurve(timeSince, peakTime, windowEnd);
           const realK = node.kcal || node.cal || 500;
           let sk = node.strategyKey;
           if (sk === 'spuntino' || sk === 'merenda_pm' || sk === 'merenda_am' || sk === 'merenda2') sk = 'snack';
@@ -605,39 +599,42 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     graphTimelineNodes.forEach(node => {
       if (node.type === 'meal') {
         const diff = h - node.time;
-        if (diff >= 0 && diff <= 3) {
-          const digestionFactor = 1 - diff / 3;
+        const { onsetDelay, duration } = calculateMealKinetics(node);
+        const windowEnd = onsetDelay + duration;
+        if (diff >= onsetDelay && diff <= windowEnd) {
+          const elapsed = diff - onsetDelay;
+          const digestionFactor = duration > 0 ? 1 - elapsed / duration : 0;
           const mealKcal = node.kcal ?? node.cal ?? 500;
           const mealLoad = Math.max(0, Math.min(3, mealKcal / 600));
           const digestionPenalty =
             mealLoad *
             PHYSIOLOGY_CONFIG.digestionEnergyImpact *
-            Math.sqrt(digestionFactor);
+            Math.sqrt(Math.max(0, digestionFactor));
           metabolicEnergy -= digestionPenalty;
           const digestionSignal =
-            100 * (1 - diff / 3) +
-            mealLoad * 30 * (1 - diff / 3);
+            100 * Math.max(0, digestionFactor) +
+            mealLoad * 30 * Math.max(0, digestionFactor);
           currentDigestione = Math.max(currentDigestione, digestionSignal);
         }
       }
     });
-    log.forEach(entry => {
-      if (entry.type === 'food') {
-        const ft = typeof entry.mealTime === 'number' && !Number.isNaN(entry.mealTime) ? entry.mealTime : 12;
-        if (ft >= h && ft < h + 1) hadMealThisHour = true;
-        const diff = h - ft;
-        if (diff >= 0 && diff <= 3) {
-          const carb = Number(entry.carb) || 0;
-          const fibre = Number(entry.fibre) || 0;
-          const fat = Number(entry.fatTotal || entry.fat) || 0;
-          gl += carbAbsorption(diff, carb, fibre, fat);
-          glycemicMemory += carb * 0.4;
-          glycemicMemory *= 0.92;
-          if (carb > 40 && fibre < 4 && fat < 10 && diff >= 1.5 && diff < 2.5) {
-            gl -= 15 * model.carbCrashSensitivity;
-            globalCrashRisk = true;
-          }
-        }
+    graphTimelineNodes.forEach((node) => {
+      if (node.type !== 'meal') return;
+      const diff = h - node.time;
+      const { onsetDelay, duration, peakTime } = calculateMealKinetics(node);
+      const windowEnd = onsetDelay + duration;
+      if (diff < 0 || diff > windowEnd + 0.5) return;
+
+      const contribution = calculateGlycemicContribution(diff, node);
+      if (contribution <= 0) return;
+
+      gl += contribution;
+      glycemicMemory += contribution * 0.4;
+
+      const { carb, fibre, fat } = readMealMacroGrams(node);
+      if (carb > 40 && fibre < 4 && fat < 10 && diff >= peakTime + 0.3 && diff < peakTime + 1.3) {
+        gl -= 15 * model.carbCrashSensitivity;
+        globalCrashRisk = true;
       }
     });
     currentDigestione = Math.max(0, Math.min(100, currentDigestione));
@@ -2322,7 +2319,6 @@ export const ADD_EVENT_MENU_DEFAULT_ORDER = [
   'meditation',
   'alcohol',
   'plan',
-  'diary',
   'menu',
 ];
 
