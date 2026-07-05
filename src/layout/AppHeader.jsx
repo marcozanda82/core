@@ -68,9 +68,7 @@ export default function AppHeader({
         {/* Destra: accessory + SNC */}
         {(accessory || sncStressLevel > 65) ? (
         <div className="ml-auto flex shrink-0 items-center justify-end gap-2 sm:gap-3">
-          {accessory ? (
-            <div className="flex shrink-0 items-center">{accessory}</div>
-          ) : null}
+          {accessory ?? null}
           {sncStressLevel > 65 && (
             <button
               type="button"

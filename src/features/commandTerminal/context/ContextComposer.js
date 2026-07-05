@@ -1,3 +1,7 @@
+import { isGenericMealSuggestionQuery } from '../../../conversation/ConsultantEngine.js';
+import { looksLikeComplexMealLog } from '../conversation/mealLogIntent.js';
+import { formatCurrentSystemTimeContext } from '../conversation/mealSmartDefaults.js';
+
 const MAX_FOOD_CONTEXT_ITEMS = 40;
 
 function toSafeString(value) {
@@ -22,6 +26,15 @@ const MEAL_ADVICE_PATTERNS = [
   /\bposso\s+.*\?/,
 ];
 
+/** Richieste di proposta pasto — priorità assoluta su ADD_FOOD. */
+const MEAL_PROPOSAL_PATTERNS = [
+  /\b(?:proponi|suggerisci)\b/,
+  /\bconsigli\b.*\b(?:pranzo|colazione|cena|snack|pasto|mangio|mangiare)\b/,
+  /\b(?:che|cosa)\s+mangio\b/,
+  /\bidee\b.*\b(?:pasto|pranzo|colazione|cena|mangio|mangiare)\b/,
+  /\b(?:cosa|che)\s+(?:mi\s+)?(?:proponi|consigli|suggerisci)\b/,
+];
+
 const FOOD_LOG_PATTERNS = [
   /\bho\s+mangiat/,
   /\bho\s+preso\b/,
@@ -29,6 +42,8 @@ const FOOD_LOG_PATTERNS = [
   /\baggiung/i,
   /\blogg/i,
   /\bregistr/i,
+  /\b(?:per\s+)?(?:colazione|pranzo|cena|snack)\s+(?:ho\s+)?(?:mangiat|preso|bevut)/,
+  /\d+\s*(?:g|grammi|gr)\s+(?:di\s+)?\w+/,
 ];
 
 export class ContextComposer {
@@ -40,8 +55,13 @@ export class ContextComposer {
     const workoutKeywords = ['allenamento', 'workout', 'corsa', 'pesi', 'cardio', 'training'];
     if (workoutKeywords.some((token) => text.includes(token))) return 'ADD_WORKOUT';
     const isFoodLog = FOOD_LOG_PATTERNS.some((pattern) => pattern.test(text));
+    const isMealProposal =
+      isGenericMealSuggestionQuery(text)
+      || MEAL_PROPOSAL_PATTERNS.some((pattern) => pattern.test(text));
+    if (isMealProposal && !isFoodLog) return 'ASK_MEAL_ADVICE';
     const isMealAdvice = MEAL_ADVICE_PATTERNS.some((pattern) => pattern.test(text));
     if (isMealAdvice && !isFoodLog) return 'ASK_MEAL_ADVICE';
+    if (looksLikeComplexMealLog(text) || isFoodLog) return 'ADD_FOOD';
     const foodKeywords = ['mang', 'cibo', 'alimento', 'pasto', 'colazione', 'pranzo', 'cena', 'snack'];
     if (foodKeywords.some((token) => text.includes(token))) return 'ADD_FOOD';
     return 'UNKNOWN';
@@ -69,7 +89,7 @@ export class ContextComposer {
         : [],
       knownFoods,
       slotFillingPolicy:
-        'ADD_FOOD: usa items[] con tutti gli alimenti elencati; ometti grams e mealType se non espliciti nel messaggio utente; il terminale chiederà i dati mancanti e poi chiederà conferma.',
+        'ADD_FOOD Smart Defaults: se mancano tipo pasto o orario, deduci da CURRENT_SYSTEM_TIME (06:00-10:30 colazione, 12:00-15:00 pranzo, 19:00-22:30 cena, altro snack). Orario assente = ora corrente. Chiedi SOLO grammature mancanti.',
     };
   }
 
@@ -90,10 +110,16 @@ export class ContextComposer {
 
   composeForIntent(intent, currentState = {}) {
     const normalizedIntent = toSafeString(intent).toUpperCase();
+    const systemTime = formatCurrentSystemTimeContext();
     if (normalizedIntent === 'ADD_FOOD') {
       return {
         intent: 'ADD_FOOD',
         contextSlices: {
+          systemTime: {
+            currentTime: systemTime.timeHHmm,
+            currentDate: systemTime.dateISO,
+            header: systemTime.header,
+          },
           food: this.getFoodContext(currentState.foodDatabase, currentState.mealState),
         },
       };

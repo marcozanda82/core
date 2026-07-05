@@ -47,7 +47,15 @@ export const addFoodPayloadSchema = {
     },
     timeString: {
       type: 'string',
-      description: 'Opzionale, formato HH:MM',
+      nullable: true,
+      description:
+        'Orario esplicito del pasto in HH:mm SOLO se l utente lo indica (es. ore 14:45, alle 20:30). Altrimenti null o ometti.',
+    },
+    exactTime: {
+      type: 'string',
+      nullable: true,
+      description:
+        'Alias di timeString: orario esplicito HH:mm se indicato dall utente nel messaggio.',
     },
     notes: {
       type: 'string',
@@ -146,7 +154,7 @@ export const consultantResponseSchema = {
       type: 'object',
       nullable: true,
       description:
-        'Azione di inserimento rapido. Compila se semaforo verde o giallo; null se rosso o sconsigliato.',
+        'Azione di inserimento rapido singolo alimento. Compila se semaforo verde o giallo; null se rosso o sconsigliato.',
       properties: {
         foodName: {
           type: 'string',
@@ -163,6 +171,51 @@ export const consultantResponseSchema = {
         },
       },
       required: ['foodName', 'grams', 'mealType'],
+    },
+    mealProposals: {
+      type: 'array',
+      description:
+        'Proposte pasto complete pronte per conferma rapida. Priorità alle abitudini [USER_HABITS_FOR_CURRENT_MEAL].',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          label: { type: 'string' },
+          mealType: { type: 'string', enum: mealTypeEnum },
+          exactTime: {
+            type: 'string',
+            nullable: true,
+            description: 'Orario esplicito HH:mm se indicato dall utente (es. ore 14:45).',
+          },
+          source: { type: 'string' },
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                foodName: { type: 'string' },
+                foodDbKey: { type: 'string', nullable: true },
+                grams: { type: 'number' },
+                kcal: { type: 'number' },
+                pro: { type: 'number' },
+                carbo: { type: 'number' },
+                fat: { type: 'number' },
+              },
+              required: ['foodName', 'grams'],
+            },
+          },
+          totals: {
+            type: 'object',
+            properties: {
+              kcal: { type: 'number' },
+              pro: { type: 'number' },
+              carbo: { type: 'number' },
+              fat: { type: 'number' },
+            },
+          },
+        },
+        required: ['label', 'mealType', 'items'],
+      },
     },
   },
   required: ['adviceMessage'],

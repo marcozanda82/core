@@ -2224,6 +2224,515 @@ html, body, #root {
   white-space: nowrap;
 }
 
+.energy-arc-widget--interactive {
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+}
+
+.energy-arc-widget--mini {
+  width: 52px;
+  max-width: 52px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.energy-arc-widget--mini .energy-arc-widget__center {
+  bottom: 2px;
+  width: 92%;
+}
+
+.energy-arc-widget--mini .energy-arc-widget__value {
+  font-size: 0.72rem;
+}
+
+/* EnergyBalanceSheet — bilancio energetico (bottom sheet) */
+.energy-balance-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100021;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.energy-balance-panel {
+  position: relative;
+  bottom: 0;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 24px 24px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(
+    165deg,
+    rgba(15, 35, 55, 0.88) 0%,
+    rgba(10, 18, 32, 0.92) 50%,
+    rgba(6, 10, 20, 0.96) 100%
+  );
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  box-shadow:
+    0 -16px 56px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.energy-balance-panel__chrome {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px 4px;
+  touch-action: none;
+}
+
+.energy-balance-panel__handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.55);
+}
+
+.energy-balance-panel__close {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.65);
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.energy-balance-header {
+  flex-shrink: 0;
+  padding: 4px 20px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.energy-balance-header__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e2e8f0;
+}
+
+.energy-balance-header__subtitle {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.85);
+  letter-spacing: 0.02em;
+}
+
+.energy-balance-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.energy-balance-header--compact {
+  padding-bottom: 10px;
+}
+
+.energy-balance-global {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.energy-balance-global__icon {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.energy-balance-global__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.energy-balance-global__label {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.energy-balance-global__sub {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.85);
+  letter-spacing: 0.04em;
+}
+
+.energy-balance-age-note {
+  margin: -4px 0 0;
+  padding: 0 2px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: rgba(148, 163, 184, 0.82);
+  letter-spacing: 0.01em;
+}
+
+.energy-balance-sleep-range {
+  margin-bottom: 0;
+}
+
+.energy-balance-sleep-band {
+  margin-top: 2px;
+}
+
+.energy-balance-sleep-band__track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  overflow: visible;
+}
+
+.energy-balance-sleep-band__comfort {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+}
+
+.energy-balance-sleep-band__marker {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.45);
+  z-index: 1;
+}
+
+.energy-balance-sleep-band__scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.65);
+  font-variant-numeric: tabular-nums;
+}
+
+.energy-balance-sleep-band__scale-center {
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.energy-balance-rested-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.energy-balance-rested-prompt__label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.88);
+}
+
+.energy-balance-rested-prompt__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.energy-balance-rested-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(30, 41, 59, 0.55);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.energy-balance-rested-btn:hover {
+  background: rgba(51, 65, 85, 0.65);
+}
+
+.energy-balance-rested-btn--active {
+  border-color: rgba(52, 211, 153, 0.55);
+  background: rgba(52, 211, 153, 0.14);
+  color: #6ee7b7;
+}
+
+.energy-balance-rested-prompt__saved {
+  margin: 0;
+  font-size: 0.62rem;
+  color: rgba(148, 163, 184, 0.75);
+  line-height: 1.35;
+}
+
+.energy-balance-status {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.42);
+  padding: 12px 14px;
+}
+
+.energy-balance-status__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.energy-balance-status__icon {
+  flex-shrink: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 1.35rem;
+  text-align: center;
+}
+
+.energy-balance-status__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.energy-balance-status__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.energy-balance-status__value {
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #e2e8f0;
+}
+
+.energy-balance-status__sub {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(148, 163, 184, 0.9);
+  font-variant-numeric: tabular-nums;
+}
+
+.energy-balance-status__track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  overflow: hidden;
+}
+
+.energy-balance-status__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.35s ease, background 0.25s ease;
+}
+
+.energy-balance-status__hint {
+  margin: 8px 0 0;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.78);
+  line-height: 1.3;
+}
+
+.energy-balance-section {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.45);
+  padding: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.energy-balance-section__head {
+  margin-bottom: 12px;
+}
+
+.energy-balance-section__title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #00e5ff;
+}
+
+.energy-balance-section__subtitle {
+  margin: 5px 0 0;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: rgba(148, 163, 184, 0.78);
+}
+
+.energy-balance-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.energy-balance-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.energy-balance-chip-grid--compact {
+  margin-top: 4px;
+}
+
+.energy-balance-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 96px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.energy-balance-chip__label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.energy-balance-chip__value {
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #e2e8f0;
+}
+
+.energy-balance-net-card {
+  border-radius: 14px;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  background: linear-gradient(
+    145deg,
+    rgba(8, 47, 73, 0.55) 0%,
+    rgba(15, 23, 42, 0.65) 100%
+  );
+  padding: 14px 16px;
+}
+
+.energy-balance-net-card__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.energy-balance-net-card__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.energy-balance-net-card__value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.energy-balance-net-card__value--in {
+  color: #34d399;
+}
+
+.energy-balance-net-card__value--out {
+  color: #fb923c;
+}
+
+.energy-balance-net-card__divider {
+  height: 1px;
+  margin: 10px 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.energy-balance-net-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.energy-balance-net-card__net-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.75);
+}
+
+.energy-balance-net-card__net-value {
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 /* CarbsDetailsSheet — frazioni + KPI glicemico */
 .carbs-details-fractions {
   display: flex;

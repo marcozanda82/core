@@ -280,6 +280,20 @@ function aggregatePredictiveFoodBlocks(allFoodEntries, targetMealType, limit) {
 }
 
 /**
+ * Blocchi food più frequenti per slot pasto (funzione pura, senza React).
+ *
+ * @param {object|Array} fullHistory
+ * @param {string} targetMealType
+ * @param {number} [limit=30]
+ * @returns {Array<object>}
+ */
+export function getPredictiveFoodBlocksForMeal(fullHistory, targetMealType, limit = 30) {
+  if (!targetMealType) return [];
+  const allFoodEntries = collectFoodEntriesFromFullHistory(fullHistory);
+  return aggregatePredictiveFoodBlocks(allFoodEntries, targetMealType, limit);
+}
+
+/**
  * Analizza fullHistory KentuOS e restituisce i blocchi food più frequenti per uno slot pasto.
  *
  * @param {object|Array} fullHistory Albero tracker_data Firebase (`trackerStorico_YYYY-MM-DD`)

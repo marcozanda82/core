@@ -43,10 +43,11 @@ export function formatSinceLastMealLabel(hoursSinceLastMeal) {
  *
  * @param {{
  *   metabolicSnapshot: import('../features/salaComandi/utils/metabolicStateEngine').buildMetabolicSnapshot extends (...args: any[]) => infer R ? R : object | null | undefined,
- *   onClick?: () => void,
+ *   onClick?: (event: React.MouseEvent) => void,
+ *   onCenterTap?: (event: React.MouseEvent) => void,
  * }} props
  */
-export default function MetabolicMonitorCard({ metabolicSnapshot, onClick }) {
+export default function MetabolicMonitorCard({ metabolicSnapshot, onClick, onCenterTap }) {
   const phase = metabolicSnapshot?.phase;
   if (!phase) return null;
 
@@ -78,10 +79,23 @@ export default function MetabolicMonitorCard({ metabolicSnapshot, onClick }) {
     ? 'border-red-500/40 bg-gradient-to-r from-red-950/70 via-slate-900/70 to-slate-900/50 shadow-red-900/20'
     : 'border-cyan-500/35 bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 shadow-cyan-900/20';
 
+  const cardClassName = `home-oggi-rigid mb-0 w-full shrink-0 rounded-xl border px-3 py-2.5 shadow-lg backdrop-blur-sm ${cardTone}${onClick ? ' cursor-pointer transition-transform active:scale-[0.99]' : ''}`;
+
   const body = (
     <>
       <div className="flex items-center gap-2.5">
-        <MetabolicPhaseIcon phase={phase} size="sm" className="shrink-0" />
+        <button
+          type="button"
+          className="metabolic-monitor-card__center shrink-0 rounded-full border-0 bg-transparent p-0 transition-transform active:scale-95"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCenterTap?.(e);
+          }}
+          aria-label={`Fase ${phaseLabel}. Apri diario giornaliero.`}
+          title="Apri diario"
+        >
+          <MetabolicPhaseIcon phase={phase} size="sm" className="pointer-events-none" />
+        </button>
         <div className="min-w-0 flex-1">
           <p
             className={`truncate text-base font-bold leading-tight ${isOverload ? 'text-red-400' : ''}`}
@@ -103,21 +117,28 @@ export default function MetabolicMonitorCard({ metabolicSnapshot, onClick }) {
 
   if (onClick) {
     return (
-      <button
-        type="button"
+      <article
+        role="button"
+        tabIndex={0}
         onClick={onClick}
-        aria-label={`Monitor metabolico: ${phaseLabel}. Apri diario giornaliero.`}
-        className={`home-oggi-rigid mb-0 w-full shrink-0 rounded-xl border px-3 py-2.5 text-left shadow-lg backdrop-blur-sm transition-transform active:scale-[0.99] ${cardTone}`}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick(e);
+          }
+        }}
+        aria-label={`Monitor metabolico: ${phaseLabel}. Apri cruscotto metabolico.`}
+        className={cardClassName}
       >
         {body}
-      </button>
+      </article>
     );
   }
 
   return (
     <article
       aria-label={`Monitor metabolico: ${phaseLabel}`}
-      className={`home-oggi-rigid mb-0 w-full shrink-0 rounded-xl border px-3 py-2.5 shadow-md backdrop-blur-sm ${cardTone}`}
+      className={cardClassName}
     >
       {body}
     </article>

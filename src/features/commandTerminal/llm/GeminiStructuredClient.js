@@ -6,6 +6,19 @@ import {
   consultantResponseSchema,
 } from '../contracts/commandSchemas.js';
 import { askAI } from '../../../services/aiService.js';
+import { generateConsultantSystemInstruction } from '../../../conversation/ConsultantEngine.js';
+import {
+  buildCombinedConversationText,
+  buildGeminiContentsFromChatHistory,
+} from '../conversation/mealRegistrationSlots.js';
+import {
+  formatCurrentSystemTimeContext,
+  MEAL_SMART_DEFAULTS_PROMPT_RULES,
+} from '../conversation/mealSmartDefaults.js';
+import {
+  normalizeExactTime,
+  parseExactTimeFromUserText,
+} from '../conversation/mealLogIntent.js';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-001';
 const CONSULTANT_MODEL = 'gemini-2.5-flash-001';
@@ -49,10 +62,16 @@ function userTextMentionsExplicitMealType(userText) {
   );
 }
 
-/** Normalizza payload ADD_FOOD dal modello: niente grammi/pasto inventati; supporta items[]. */
-function sanitizeAddFoodCommand(command, userText) {
+function userTextMentionsExplicitTime(userText) {
+  return Boolean(parseExactTimeFromUserText(userText));
+}
+
+/** Normalizza payload ADD_FOOD dal modello: niente grammi/pasto/orario inventati; supporta items[]. */
+function sanitizeAddFoodCommand(command, userText, conversationText = '') {
   if (!command || typeof command !== 'object') return command;
   if (asTrimmedString(command.commandType).toUpperCase() !== 'ADD_FOOD') return command;
+
+  const combinedText = asTrimmedString(conversationText) || asTrimmedString(userText);
 
   const payload = { ...(command.payload || {}) };
   const hasItems = Array.isArray(payload.items) && payload.items.length > 0;
@@ -66,7 +85,7 @@ function sanitizeAddFoodCommand(command, userText) {
     const gramsNum = Number(next.grams ?? next.qty ?? next.weight);
     if (!Number.isFinite(gramsNum) || gramsNum <= 0) {
       delete next.grams;
-    } else if (!userTextMentionsExplicitQuantity(userText)) {
+    } else if (!userTextMentionsExplicitQuantity(combinedText)) {
       delete next.grams;
     } else {
       next.grams = Math.round(gramsNum);
@@ -92,10 +111,26 @@ function sanitizeAddFoodCommand(command, userText) {
   }
 
   const mealRaw = asTrimmedString(payload.mealType).toLowerCase();
-  if (!mealRaw || !MEAL_TYPES.includes(mealRaw) || !userTextMentionsExplicitMealType(userText)) {
+  if (!mealRaw || !MEAL_TYPES.includes(mealRaw) || !userTextMentionsExplicitMealType(combinedText)) {
     delete payload.mealType;
   } else {
     payload.mealType = mealRaw;
+  }
+
+  const timeFromPayload = normalizeExactTime(payload.exactTime || payload.timeString);
+  const timeFromUser = parseExactTimeFromUserText(combinedText);
+  if (userTextMentionsExplicitTime(combinedText)) {
+    const resolvedTime = timeFromPayload || timeFromUser;
+    if (resolvedTime) {
+      payload.timeString = resolvedTime;
+      payload.exactTime = resolvedTime;
+    } else {
+      delete payload.timeString;
+      delete payload.exactTime;
+    }
+  } else {
+    delete payload.timeString;
+    delete payload.exactTime;
   }
 
   return { ...command, payload };
@@ -173,9 +208,14 @@ export class GeminiStructuredClient {
     if (includeFoodRules) {
       parts.push(
         "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti, devi estrarre TUTTI in payload.items[] — uno oggetto per ciascun alimento. Non troncare al primo.",
+        "REGOLA ADD_FOOD (orario): Se l'utente indica un orario esplicito (es. 'ore 14.45', 'alle 20:30'), estrailo in HH:mm in payload.timeString ed exactTime. Se NON indica orario, ometti exactTime — il sistema usera l'ora corrente.",
+        "REGOLA ADD_FOOD (entity resolution): Estrai SOLO foodName grezzo e grams per ogni alimento. NON inventare foodDbKey né macronutrienti: li risolve il codice locale dal DB.",
+        "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato con grammature esplicite (es. 'per pranzo ho mangiato 230g di gnocchi, 100g di passato di pomodoro'), estrai OGNI alimento con il suo peso in items[].",
         "REGOLA ADD_FOOD: Se l'utente dichiara di aver mangiato qualcosa MA NON specifica la quantità in grammi/porzioni, NON DEVI in alcun modo inventare, dedurre o stimare il peso. Devi obbligatoriamente restituire il campo 'grams' vuoto (null/undefined/omesso). Sarà il sistema a richiedere il dato mancante all'utente.",
-        "REGOLA ADD_FOOD (mealType): Se l'utente NON indica esplicitamente colazione, snack, pranzo o cena, NON indovinare il pasto in base all'orario. Ometti mealType o impostalo a null.",
         "Includi grams SOLO se l'utente ha scritto un numero esplicito (es. 200g, 150 grammi). Valori tipici come 100g di default sono VIETATI se non detti dall'utente.",
+        MEAL_SMART_DEFAULTS_PROMPT_RULES,
+        "Se l'utente indica esplicitamente tipo pasto o orario, estraili nel payload. Se omette tipo pasto o orario, ometti i campi — il codice applica Smart Defaults da [CURRENT_SYSTEM_TIME].",
+        "Questa logica NON si applica a richieste di consiglio pasto (ADVICE): quelle sono gestite dal consulente, non da ADD_FOOD.",
       );
     }
 
@@ -206,6 +246,7 @@ export class GeminiStructuredClient {
     commandHint = 'UNKNOWN',
     temperature = 0,
     images = [],
+    chatHistory = [],
   }) {
     const responseSchema = getEnvelopeSchemaForIntent(asTrimmedString(commandHint).toUpperCase());
     const imageParts = Array.isArray(images)
@@ -215,6 +256,9 @@ export class GeminiStructuredClient {
           .slice(0, 4)
       : [];
     const normalizedUserText = asTrimmedString(userText);
+    const contents = buildGeminiContentsFromChatHistory(chatHistory);
+    const conversationText = buildCombinedConversationText(normalizedUserText, chatHistory);
+    const systemTimeCtx = formatCurrentSystemTimeContext();
     const userPromptText =
       normalizedUserText ||
       (imageParts.length > 0
@@ -222,10 +266,11 @@ export class GeminiStructuredClient {
         : '');
     const systemInstruction = this.buildSystemInstruction(commandHint, { hasImages: imageParts.length > 0 });
     const userPrompt = [
+      systemTimeCtx.header,
       `Richiesta utente: ${userPromptText}`,
       `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_FOOD'
-        ? 'Slot filling attivo: usa payload.items[] con TUTTI gli alimenti menzionati; se mancano grammi o pasto, ometti i campi corrispondenti (null) — non inventare valori.'
+        ? 'Registrazione pasto: usa payload.items[] con TUTTI gli alimenti menzionati (anche da cronologia). Se l utente indica orario esplicito, compila exactTime in HH:mm. Se omette tipo pasto o orario, ometti i campi — Smart Defaults li deducono da CURRENT_SYSTEM_TIME.'
         : null,
       'Produci esclusivamente l envelope commandType/payload/uiMessage/confidence/requiresConfirmation.',
     ]
@@ -243,6 +288,7 @@ export class GeminiStructuredClient {
       images: imageParts.length > 0 ? images : undefined,
       responseSchema,
       generationConfig,
+      contents: contents.length > 0 ? contents : undefined,
     });
     console.log('RAW_GEMINI_RESPONSE:', rawText);
     const cleaned = unwrapJsonText(rawText);
@@ -253,7 +299,7 @@ export class GeminiStructuredClient {
     } catch {
       throw new Error('Gemini returned malformed JSON');
     }
-    parsed = sanitizeAddFoodCommand(parsed, normalizedUserText);
+    parsed = sanitizeAddFoodCommand(parsed, normalizedUserText, conversationText);
     return {
       command: parsed,
       rawText,
@@ -265,19 +311,16 @@ export class GeminiStructuredClient {
    * Risposta strutturata consulente (JSON): adviceMessage + suggestedAction opzionale.
    * @param {{ prompt: string, systemInstruction?: string, temperature?: number }} params
    */
-  async generateConsultantResponse({ prompt, systemInstruction, temperature = 0.35 } = {}) {
+  async generateConsultantResponse({ prompt, systemInstruction, temperature = 0.35, chatHistory = [] } = {}) {
     const userPrompt = asTrimmedString(prompt);
     if (!userPrompt) throw new Error('Consultant prompt is empty');
 
     const system =
       asTrimmedString(systemInstruction)
-      || [
-        'Sei Kentu Meal Advice. Rispondi SOLO con JSON valido conforme allo schema.',
-        'Non aggiungere markdown né testo fuori dal JSON.',
-        'adviceMessage: italiano, max 4 frasi, include semaforo (verde/giallo/rosso).',
-        'suggestedAction: compila { foodName, grams, mealType } se verde o giallo (porzione consigliata,',
-        'foodName tra i candidati DB del prompt). Se rosso o sconsigliato: suggestedAction = null.',
-      ].join(' ');
+      || generateConsultantSystemInstruction();
+
+    const contents = buildGeminiContentsFromChatHistory(chatHistory);
+    const systemTimeCtx = formatCurrentSystemTimeContext();
 
     const generationConfig = {
       temperature,
@@ -287,12 +330,17 @@ export class GeminiStructuredClient {
       responseSchema: consultantResponseSchema,
     };
 
-    const rawText = await askAI(userPrompt, system, {
-      model: CONSULTANT_MODEL,
-      temperature,
-      responseSchema: consultantResponseSchema,
-      generationConfig,
-    });
+    const rawText = await askAI(
+      `${systemTimeCtx.header}\n${userPrompt}`,
+      system,
+      {
+        model: CONSULTANT_MODEL,
+        temperature,
+        responseSchema: consultantResponseSchema,
+        generationConfig,
+        contents: contents.length > 0 ? contents : undefined,
+      },
+    );
 
     const cleaned = unwrapJsonText(rawText);
     if (!cleaned) throw new Error('Consultant LLM returned empty response');
@@ -312,9 +360,15 @@ export class GeminiStructuredClient {
       suggestedAction = parsed.suggestedAction;
     }
 
+    let mealProposals = [];
+    if (Array.isArray(parsed?.mealProposals)) {
+      mealProposals = parsed.mealProposals;
+    }
+
     return {
       adviceMessage,
       suggestedAction,
+      mealProposals,
       rawText,
       model: CONSULTANT_MODEL,
     };

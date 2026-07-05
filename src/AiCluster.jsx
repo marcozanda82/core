@@ -5,6 +5,7 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import MenuProposalCard from './MenuProposalCard';
 import DailyPlanCard from './DailyPlanCard';
 import MealDraftConfirmation from './components/MealDraftConfirmation';
+import MealProposalCards from './components/MealProposalCards';
 import {
   KentuIcon,
   KentuButton,
@@ -47,6 +48,8 @@ export default function AiCluster({
   activeQuickReplies = [],
   onSlotQuickReplyClick,
   onAcceptAdvice,
+  onAcceptMealProposal,
+  onModifyMealProposal,
   onDraftConfirm,
   onDraftCancel,
   onDraftRemoveItem,
@@ -56,17 +59,21 @@ export default function AiCluster({
   onBack,
   /** Stessa frase del mount SalaComandi (rotazione kentuIntroPhrases); nessuna seconda estrazione qui. */
   introPhrase = '',
+  isProcessing = false,
 }) {
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
 
   useEffect(() => {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory]);
+  }, [chatHistory, isProcessing]);
 
   const suppressQuickReplies = useMemo(
     () => (chatHistory || []).some(
-      (m) => m.mealProposal || m.dailyPlan || (m.mealDraft && !m.draftResolved),
+      (m) => m.mealProposal
+        || m.dailyPlan
+        || (m.mealDraft && !m.draftResolved)
+        || (Array.isArray(m.mealProposals) && m.mealProposals.length > 0),
     ),
     [chatHistory]
   );
@@ -188,6 +195,18 @@ export default function AiCluster({
                           </span>
                         </button>
                       ) : null}
+                    {msg.type === 'ADVICE'
+                      && Array.isArray(msg.mealProposals)
+                      && msg.mealProposals.length > 0
+                      && typeof onAcceptMealProposal === 'function' ? (
+                        <MealProposalCards
+                          proposals={msg.mealProposals}
+                          adviceId={msg.adviceId}
+                          loadedProposalIds={msg.mealProposalsLoadedIds || []}
+                          onConfirm={onAcceptMealProposal}
+                          onModify={onModifyMealProposal}
+                        />
+                      ) : null}
                   </div>
                 )
               ) : (
@@ -272,6 +291,23 @@ export default function AiCluster({
               )}
             </div>
           ))}
+          {isProcessing ? (
+            <div
+              className="kentu-typing-row"
+              aria-live="polite"
+              aria-busy="true"
+              aria-label="Elaborazione in corso"
+            >
+              <div className="kentu-typing-bubble">
+                <span className="kentu-typing-bubble__label">Elaborazione in corso</span>
+                <div className="typing-indicator kentu-typing-indicator">
+                  <div className="dot" />
+                  <div className="dot" />
+                  <div className="dot" />
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div ref={chatEndRef} />
         </div>
         {chatImages.length > 0 && (
@@ -354,9 +390,10 @@ export default function AiCluster({
             className="chat-input"
             placeholder={chatImages.length > 0 ? 'Commento immagini…' : 'Query sistema…'}
             value={chatInput}
+            disabled={isProcessing}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' && !isProcessing) {
                 onSendMessage(undefined, { fromInput: true });
                 setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
               }
@@ -365,9 +402,11 @@ export default function AiCluster({
           />
           <KentuButton
             variant="primary"
-            className={`kentu-send-btn ${!(chatInput.trim() || chatImages.length > 0) ? 'kentu-send-btn--idle' : ''}`}
+            className={`kentu-send-btn ${!(chatInput.trim() || chatImages.length > 0) || isProcessing ? 'kentu-send-btn--idle' : ''}`}
             aria-label="Invia"
+            disabled={isProcessing}
             onClick={() => {
+              if (isProcessing) return;
               onSendMessage(undefined, { fromInput: true });
               setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}

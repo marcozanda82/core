@@ -13,12 +13,15 @@ export default function KentuChatUI({
   activeQuickReplies = [],
   handleQuickReplyClick,
   handleAcceptAdvice,
+  onAcceptMealProposal,
+  onModifyMealProposal,
   onDraftConfirm,
   onDraftCancel,
   onDraftRemoveItem,
   onDraftUpdateItemGrams,
   onBack,
   introPhrase,
+  isProcessing = false,
 }) {
   return (
     <div
@@ -43,12 +46,15 @@ export default function KentuChatUI({
         activeQuickReplies={activeQuickReplies}
         onSlotQuickReplyClick={handleQuickReplyClick}
         onAcceptAdvice={handleAcceptAdvice}
+        onAcceptMealProposal={onAcceptMealProposal}
+        onModifyMealProposal={onModifyMealProposal}
         onDraftConfirm={onDraftConfirm}
         onDraftCancel={onDraftCancel}
         onDraftRemoveItem={onDraftRemoveItem}
         onDraftUpdateItemGrams={onDraftUpdateItemGrams}
         onBack={onBack}
         introPhrase={introPhrase}
+        isProcessing={isProcessing}
       />
     </div>
   );

@@ -20,7 +20,8 @@ export function initNutritionHandlers({
   const unsubscribeAddFood = bus.subscribe(DISPATCH_ADD_FOOD, async (envelope) => {
     try {
       const result = await onAddFoodCommand(envelope?.payload || {}, envelope);
-      if (envelope?.meta?.correlationId === 'advice_accept') {
+      if (envelope?.meta?.correlationId === 'advice_accept'
+        || envelope?.meta?.correlationId === 'meal_proposal_accept') {
         return;
       }
       if (typeof result === 'string' && result.trim()) {

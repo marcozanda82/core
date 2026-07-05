@@ -27,9 +27,14 @@ export function useCommandTerminal({
   const [activeQuickReplies, setActiveQuickReplies] = useState([]);
 
   const setChatHistoryRef = useRef(setChatHistory);
+  const chatHistoryRef = useRef(chatHistory);
   useEffect(() => {
     setChatHistoryRef.current = setChatHistory;
   }, [setChatHistory]);
+
+  useEffect(() => {
+    chatHistoryRef.current = chatHistory;
+  }, [chatHistory]);
 
   const appendAiMessage = useCallback((text, extra = {}) => {
     const line = String(text || '').trim();
@@ -178,11 +183,14 @@ export function useCommandTerminal({
       appendAiMessage(text, {
         type: payload.type || null,
         suggestedAction: payload.suggestedAction || null,
+        mealProposals: Array.isArray(payload.mealProposals) ? payload.mealProposals : null,
         adviceId: payload.adviceId || null,
+        isError: payload.type === 'ERROR',
       });
     });
 
     const unsubscribeRejected = commandBus.subscribe(DISPATCH_COMMAND_REJECTED, (envelope) => {
+      if (envelope?.payload?.silent) return;
       const reason = String(envelope?.payload?.reason || 'Comando rifiutato.').trim();
       appendAiMessage(`⚠️ ${reason}`);
     });
@@ -217,7 +225,9 @@ export function useCommandTerminal({
 
       const userBubbleText =
         resolvedText || `📷 ${attachedImages.length} immagine/i allegata/e`;
+      const priorHistory = chatHistoryRef.current || [];
       setChatHistoryRef.current((prev) => [...(prev || []), { sender: 'user', text: userBubbleText }]);
+      const historyForLlm = [...priorHistory, { sender: 'user', text: userBubbleText }];
       setChatInput('');
       setChatImages([]);
       setIsLoading(true);
@@ -228,10 +238,25 @@ export function useCommandTerminal({
         const fallbackText =
           resolvedText ||
           'Analizza lo screenshot allegato dell app fitness/sonno (es. Xiaomi Fitness) ed estrai i dati per LOG_SLEEP.';
-        return await controller.processUserMessage(fallbackText, currentState, {
+        const result = await controller.processUserMessage(fallbackText, currentState, {
           images: attachedImages,
           intent: imageOnly ? 'LOG_SLEEP' : undefined,
+          chatHistory: historyForLlm,
         });
+        if (result && result.ok === false && !result.userNotified) {
+          appendAiMessage('Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?', {
+            type: 'ERROR',
+            isError: true,
+          });
+        }
+        return result;
+      } catch (error) {
+        console.error('[useCommandTerminal] sendMessage error', error);
+        appendAiMessage('Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?', {
+          type: 'ERROR',
+          isError: true,
+        });
+        return { ok: false, reason: error?.message || 'send_message_error', userNotified: true };
       } finally {
         setIsLoading(false);
         syncActiveQuickRepliesFromController();
@@ -344,11 +369,100 @@ export function useCommandTerminal({
     }
   }, [appendAiMessage]);
 
+  const handleAcceptMealProposal = useCallback(async (proposal, proposalIndex, adviceId) => {
+    if (!proposal || typeof proposal !== 'object') {
+      return { ok: false, reason: 'missing_meal_proposal' };
+    }
+
+    const mealType = String(proposal.mealType || 'pranzo').trim().toLowerCase();
+    const items = Array.isArray(proposal.items) ? proposal.items : [];
+    const proposalId = String(proposal.id || `proposal_${proposalIndex ?? 0}`);
+
+    const payloadItems = items
+      .map((item) => {
+        const foodName = String(item?.foodName || item?.name || '').trim();
+        const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
+        const foodDbKey = item?.foodDbKey != null ? String(item.foodDbKey).trim() : '';
+        if (!foodName || !Number.isFinite(grams) || grams <= 0) return null;
+        return {
+          foodName,
+          grams,
+          ...(foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {}),
+        };
+      })
+      .filter(Boolean);
+
+    if (payloadItems.length === 0) {
+      return { ok: false, reason: 'empty_meal_proposal' };
+    }
+
+    if (typeof setChatHistoryRef.current === 'function' && adviceId) {
+      setChatHistoryRef.current((prev) =>
+        (prev || []).map((entry) => {
+          if (entry.adviceId !== adviceId) return entry;
+          const loaded = new Set(entry.mealProposalsLoadedIds || []);
+          loaded.add(proposalId);
+          return {
+            ...entry,
+            mealProposalsLoadedIds: Array.from(loaded),
+          };
+        }),
+      );
+    }
+
+    const exactTime = String(proposal.exactTime || proposal.timeString || '').trim();
+    const payload = {
+      mealType,
+      items: payloadItems,
+      ...(exactTime ? { timeString: exactTime, exactTime } : {}),
+    };
+
+    try {
+      commandBus.publish(DISPATCH_ADD_FOOD, payload, {
+        source: 'useCommandTerminal',
+        correlationId: 'meal_proposal_accept',
+        dedupeKey: {
+          adviceId: adviceId || proposalId,
+          proposalId,
+          mealType,
+          items: payloadItems,
+        },
+      });
+      appendAiMessage(`✅ Pasto caricato: ${String(proposal.label || proposal.name || mealType).trim()}.`);
+      return { ok: true };
+    } catch (error) {
+      const reason = `Meal proposal accept failure: ${error?.message || 'unknown error'}`;
+      commandBus.publish(
+        DISPATCH_COMMAND_REJECTED,
+        { reason, command: payload },
+        { source: 'useCommandTerminal' },
+      );
+      return { ok: false, reason };
+    }
+  }, [appendAiMessage]);
+
+  const handleModifyMealProposal = useCallback((proposal) => {
+    const items = Array.isArray(proposal?.items) ? proposal.items : [];
+    const parts = items
+      .map((item) => {
+        const name = String(item?.foodName || item?.name || '').trim();
+        const grams = Math.round(Number(item?.grams ?? item?.qta) || 0);
+        return grams > 0 && name ? `${name} ${grams}g` : name;
+      })
+      .filter(Boolean);
+    const query = parts.length > 0
+      ? `Modifica pasto: ${parts.join(', ')}`
+      : `Modifica pasto: ${String(proposal?.label || 'proposta').trim()}`;
+    setChatInput(query);
+    return { ok: true, query };
+  }, []);
+
   return {
     chatHistory,
     setChatHistory,
     sendMessage,
     isLoading,
+    isProcessing: isLoading,
     chatInput,
     setChatInput,
     chatImages,
@@ -356,6 +470,8 @@ export function useCommandTerminal({
     activeQuickReplies,
     handleQuickReplyClick,
     handleAcceptAdvice,
+    handleAcceptMealProposal,
+    handleModifyMealProposal,
     handleDraftConfirm,
     handleDraftCancel,
     handleDraftRemoveItem,

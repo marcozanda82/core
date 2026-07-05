@@ -239,12 +239,17 @@ function buildComboItemFromOccurrences(identityKey, occurrences) {
 /**
  * Aggrega combo ricorrenti per firma del nucleo calorico.
  */
-export function aggregatePredictiveMealCombos(fullHistory, targetMealType, limit = 2) {
+export function aggregatePredictiveMealCombos(
+  fullHistory,
+  targetMealType,
+  limit = 2,
+  lookbackDays = DEFAULT_LOOKBACK_DAYS,
+) {
   const slot = normalizeMealType(targetMealType);
   const safeLimit = Math.max(0, Number(limit) || 0);
   if (!slot || safeLimit === 0) return [];
 
-  const mealEvents = collectMealEventsFromFullHistory(fullHistory, slot);
+  const mealEvents = collectMealEventsFromFullHistory(fullHistory, slot, lookbackDays);
   const signatureGroups = new Map();
 
   mealEvents.forEach((event) => {

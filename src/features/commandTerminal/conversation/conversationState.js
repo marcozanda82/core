@@ -2,6 +2,7 @@ export const CONVERSATION_STATE = Object.freeze({
   IDLE: 'IDLE',
   AWAITING_FOOD_GRAMS: 'AWAITING_FOOD_GRAMS',
   AWAITING_TIME: 'AWAITING_TIME',
+  AWAITING_EXACT_TIME: 'AWAITING_EXACT_TIME',
   AWAITING_CONFIRMATION: 'AWAITING_CONFIRMATION',
 });
 
@@ -128,12 +129,13 @@ export function normalizeFoodPayload(payload, currentState = {}, options = {}) {
     explicitMeal
     || (inferMealTypeFromContext ? inferDefaultMealType(currentState) : null)
     || null;
-  const timeString = payload?.timeString != null ? String(payload.timeString).trim() : undefined;
+  const exactTimeRaw = payload?.exactTime ?? payload?.timeString;
+  const exactTime = exactTimeRaw != null ? String(exactTimeRaw).trim() : '';
 
   return {
     items,
     mealType: MEAL_TYPES.includes(mealType) ? mealType : null,
-    ...(timeString ? { timeString } : {}),
+    ...(exactTime ? { exactTime, timeString: exactTime } : {}),
     ...(payload?.notes ? { notes: String(payload.notes) } : {}),
   };
 }
@@ -151,6 +153,9 @@ export function slotPromptForState(state, pendingPayload = {}) {
   }
   if (state === CONVERSATION_STATE.AWAITING_TIME) {
     return 'Per quale pasto? (colazione, pranzo, cena, snack)';
+  }
+  if (state === CONVERSATION_STATE.AWAITING_EXACT_TIME) {
+    return "A che ora l'hai mangiato? (es. 14:45)";
   }
   return '';
 }
@@ -206,6 +211,13 @@ export const CONFIRMATION_QUICK_REPLIES = Object.freeze([
   'No, annulla',
 ]);
 
+export const EXACT_TIME_SLOT_QUICK_REPLIES = Object.freeze([
+  '12:30',
+  '13:00',
+  '14:00',
+  '20:00',
+]);
+
 /** Quick replies da mostrare sopra l'input in base allo stato conversazionale. */
 export function quickRepliesForConversationState(state) {
   if (state === CONVERSATION_STATE.AWAITING_FOOD_GRAMS) {
@@ -213,6 +225,9 @@ export function quickRepliesForConversationState(state) {
   }
   if (state === CONVERSATION_STATE.AWAITING_TIME) {
     return [...MEAL_SLOT_QUICK_REPLIES];
+  }
+  if (state === CONVERSATION_STATE.AWAITING_EXACT_TIME) {
+    return [...EXACT_TIME_SLOT_QUICK_REPLIES];
   }
   if (state === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
     return [...CONFIRMATION_QUICK_REPLIES];

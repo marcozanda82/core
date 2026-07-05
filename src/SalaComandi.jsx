@@ -109,6 +109,7 @@ import AppHeader from './layout/AppHeader';
 import MetabolicMonitorCard from './components/MetabolicMonitorCard';
 import EnergyArcWidget from './components/EnergyArcWidget';
 import DiaryDetailsSheet from './components/DiaryDetailsSheet';
+import EnergyBalanceSheet from './components/EnergyBalanceSheet';
 import FatDetailsSheet from './components/FatDetailsSheet';
 import CarbsDetailsSheet from './components/CarbsDetailsSheet';
 import ProteinDetailsSheet from './components/ProteinDetailsSheet';
@@ -1367,6 +1368,7 @@ export default function SalaComandi() {
   const [showReport, setShowReport] = useState(false);
   const [showMetabolicSheet, setShowMetabolicSheet] = useState(false);
   const [showDiarySheet, setShowDiarySheet] = useState(false);
+  const [showEnergySheet, setShowEnergySheet] = useState(false);
   useEffect(() => {
     console.log('Stato diario:', showDiarySheet);
   }, [showDiarySheet]);
@@ -5398,6 +5400,7 @@ ${dbKeys || 'n/d'}`;
     recoveryScore: sleepRecoveryScore,
     metabolicPenalty: sleepMetabolicPenalty,
     mainNightSleep,
+    totalSleepHours,
     hasSleepData: hasSleepEngineData,
   } = useSleepEngine(activeLog);
 
@@ -6917,7 +6920,14 @@ ${dbKeys || 'n/d'}`;
         const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qty) || 0));
         if (!name) throw new Error('foodName mancante');
         if (!Number.isFinite(grams) || grams <= 0) throw new Error('grams non valido');
-        return { name, qty: grams };
+        const dbKey = item?.foodDbKey ?? item?.matchedKey;
+        return {
+          name,
+          qty: grams,
+          ...(dbKey != null && String(dbKey).trim() !== ''
+            ? { matchedKey: String(dbKey).trim(), foodDbKey: String(dbKey).trim() }
+            : {}),
+        };
       });
 
       const message = commitAddFoodChatPayload({
@@ -7053,6 +7063,7 @@ ${dbKeys || 'n/d'}`;
 
   const {
     sendMessage,
+    isLoading: isChatProcessing,
     chatInput: commandChatInput,
     setChatInput: setCommandChatInput,
     chatImages: commandChatImages,
@@ -7060,6 +7071,8 @@ ${dbKeys || 'n/d'}`;
     activeQuickReplies,
     handleQuickReplyClick,
     handleAcceptAdvice,
+    handleAcceptMealProposal,
+    handleModifyMealProposal,
     handleDraftConfirm,
     handleDraftCancel,
     handleDraftRemoveItem,
@@ -7095,6 +7108,12 @@ ${dbKeys || 'n/d'}`;
           bodyBatteryPercent: Number(bodyBattery?.currentEnergy ?? 0),
           recoveryScore: Number(longevityEngineScore ?? 0),
         },
+        todayPlanBlock: todayPlanBlock ?? null,
+        hasRealWorkoutToday: hasRealWorkoutInActiveLog,
+        isWorkoutDoneToday: hasRealWorkoutInActiveLog,
+        scheduledWorkout: scheduledWorkoutContextRef.current,
+        timelineNodes: allNodes,
+        manualNodes: manualNodesForTimeline,
       };
     },
   });
@@ -7655,17 +7674,30 @@ ${dbKeys || 'n/d'}`;
           setSimulatedLog(null);
         }}
         accessory={
-          user?.uid ? (
-            <WeeklyMetabolicIndicator
-              db={db}
-              user={user}
-              fullHistory={fullHistory}
-              userTargets={userTargets}
-              currentTrackerDate={currentTrackerDate}
-              isSimulationMode={isSimulationMode}
-              getTodayString={getTodayString}
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            {user?.uid && (
+              <WeeklyMetabolicIndicator
+                db={db}
+                user={user}
+                fullHistory={fullHistory}
+                userTargets={userTargets}
+                currentTrackerDate={currentTrackerDate}
+                isSimulationMode={isSimulationMode}
+                getTodayString={getTodayString}
+              />
+            )}
+            <EnergyArcWidget
+              variant="mini"
+              recoveryScore={sleepRecoveryScore}
+              wakeTime={sleepWakeTime}
+              currentHour={currentTime}
+              metabolicPhase={metabolicSnapshot?.phase}
+              dynamicDailyKcal={dynamicDailyKcal}
+              workoutsLog={workoutsLog}
+              hasSleepData={hasSleepEngineData}
+              onClick={() => setShowEnergySheet(true)}
             />
-          ) : null
+          </div>
         }
       />
 
@@ -7679,12 +7711,10 @@ ${dbKeys || 'n/d'}`;
         onTouchEnd={handleMainTabTouchEnd}
         onTouchCancel={handleMainTabTouchCancel}
       >
-      {(activeBottomTab === 'oggi' || activeBottomTab === 'analisi') && (
+      {activeBottomTab === 'analisi' && (
       <div
-        className={activeBottomTab === 'oggi' ? 'home-oggi-scroll' : undefined}
-        style={activeBottomTab === 'analisi' ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' } : undefined}
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}
       >
-      {(activeBottomTab === 'analisi' || (activeBottomTab === 'oggi' && userProfile?.level === 'pro')) && (
       <>
       {/* Cruscotto energetico giornaliero 0-24h */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
@@ -7693,11 +7723,10 @@ ${dbKeys || 'n/d'}`;
           style={{
             flexShrink: 0,
             marginBottom: '10px',
-            order: activeBottomTab === 'analisi' ? 2 : 0,
+            order: 2,
           }}
         >
-          {/* Dashboard Allarmi: Analisi = riga scrollabile icona+testo; Oggi Pro = pill compatte */}
-          {activeBottomTab === 'analisi' ? (
+          {/* Dashboard Allarmi — Timeline */}
             <div className="chart-selector-container">
               {(() => {
                 const activeAlerts = [];
@@ -7774,35 +7803,13 @@ ${dbKeys || 'n/d'}`;
                 );
               })()}
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'flex-start', paddingBottom: '10px', alignItems: 'center' }}>
-              {(() => {
-                const activeAlerts = [];
-                if (hasCrashRisk) activeAlerts.push('glicemia');
-                if (hasWaterRisk) activeAlerts.push('idratazione');
-                if (hasCortisolRisk) activeAlerts.push('cortisolo');
-                if (hasDigestionRisk) activeAlerts.push('digestione');
-                return (
-                  <>
-                    <button type="button" onClick={() => setChartUnit('percent')} className={`telemetry-btn ${chartUnit === 'percent' ? 'active' : ''} ${activeAlerts.includes('percent') ? 'telemetry-btn-alarm' : ''}`}>⚡ %</button>
-                    <button type="button" onClick={() => setChartUnit('calorieTimeline')} className={`telemetry-btn ${chartUnit === 'calorieTimeline' ? 'active' : ''} ${activeAlerts.includes('calorieTimeline') ? 'telemetry-btn-alarm' : ''}`} style={chartUnit === 'calorieTimeline' ? { color: '#ff9800', borderColor: '#ff9800' } : undefined}>📈 CUMUL</button>
-                    <button type="button" onClick={() => setChartUnit('glicemia')} className={`telemetry-btn ${chartUnit === 'glicemia' ? 'active blood' : ''} ${hasCrashRisk && chartUnit !== 'glicemia' ? 'pulse-alert telemetry-btn-alarm' : ''}`}>🩸 GLICEM</button>
-                    <button type="button" onClick={() => setChartUnit('idratazione')} className={`telemetry-btn ${chartUnit === 'idratazione' ? 'active water' : ''} ${hasWaterRisk && chartUnit !== 'idratazione' ? 'pulse-alert-water telemetry-btn-alarm' : ''}`}>💧 IDRAT</button>
-                    <button type="button" onClick={() => setChartUnit('neuro')} className={`telemetry-btn ${chartUnit === 'neuro' ? 'active' : ''} ${activeAlerts.includes('neuro') ? 'telemetry-btn-alarm' : ''}`} style={chartUnit === 'neuro' ? { color: '#6366f1', borderColor: '#6366f1' } : undefined}>🧠 NEURO</button>
-                    <button type="button" onClick={() => setChartUnit('cortisolo')} className={`telemetry-btn ${chartUnit === 'cortisolo' ? 'active cortisol' : ''} ${hasCortisolRisk && chartUnit !== 'cortisolo' ? 'pulse-alert-cortisol telemetry-btn-alarm' : ''}`}>🧠 CORTISOL</button>
-                    <button type="button" onClick={() => setChartUnit('digestione')} className={`telemetry-btn ${chartUnit === 'digestione' ? 'active' : ''} ${hasDigestionRisk && chartUnit !== 'digestione' ? 'pulse-alert telemetry-btn-alarm' : ''}`} style={chartUnit === 'digestione' ? { color: '#9333ea', borderColor: '#9333ea' } : undefined}>⚙️ DIGEST</button>
-                  </>
-                );
-              })()}
-            </div>
-          )}
         </div>
         <div
           className="analisi-top-visual-container"
           style={{
             flex: 1,
             minHeight: 0,
-            order: activeBottomTab === 'analisi' ? 1 : 0,
+            order: 1,
           }}
         >
         <div className="chart-wrapper" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -7821,7 +7828,6 @@ ${dbKeys || 'n/d'}`;
             </div>
           </div>
           <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', transform: 'none' }}>
-            {(activeBottomTab === 'analisi' || !activeAction || activeAction === 'home') && (
             <div className="zoom-vertical-bar" aria-label="Controlli zoom">
               <button
                 type="button"
@@ -7840,7 +7846,6 @@ ${dbKeys || 'n/d'}`;
               <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
             </div>
-            )}
             <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
             <div
               className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
@@ -7888,7 +7893,7 @@ ${dbKeys || 'n/d'}`;
                   currentMetabolicColor={currentMetabolicColor}
                   activeLog={activeLog}
                   metabolicContextOptions={metabolicContextOptions}
-                  showMetabolicOverlay={activeBottomTab === 'analisi'}
+                  showMetabolicOverlay={true}
                   onMetabolicPhaseClick={() => setShowMetabolicSheet(true)}
                 />
                 <div
@@ -7907,7 +7912,7 @@ ${dbKeys || 'n/d'}`;
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}
                   activeAction={activeAction}
-                  analysisTabActive={activeBottomTab === 'analisi'}
+                  analysisTabActive={true}
                   idealStrategy={idealStrategy}
                   realTotals={realTotals}
                   NODE_IMPORTANCE={NODE_IMPORTANCE}
@@ -7996,35 +8001,13 @@ ${dbKeys || 'n/d'}`;
           </Suspense>
         )}
       </>
+
+      </div>
       )}
 
-      {activeBottomTab === 'oggi' && userProfile?.level === 'pro' && (
-        <>
-          <div className="home-oggi-rigid" style={{ width: '100%', flexShrink: 0, padding: '8px 14px 0' }}>
-            <EnergyArcWidget
-              recoveryScore={sleepRecoveryScore}
-              wakeTime={sleepWakeTime}
-              currentHour={currentTime}
-              metabolicPhase={metabolicSnapshot?.phase}
-              hasSleepData={hasSleepEngineData}
-            />
-          </div>
-          <div className="home-oggi-rigid" style={{ width: '100%', flexShrink: 0, padding: '0 14px' }}>
-            <MetabolicMonitorCard
-              metabolicSnapshot={metabolicSnapshot}
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowDiarySheet(true);
-              }}
-            />
-          </div>
-        </>
-      )}
-
-      {/* Cruscotto Essenziale (Modalità Base) - ottimizzazione spaziale */}
-      {userProfile?.level !== 'pro' && activeBottomTab === 'oggi' && (
-        <div className="home-oggi-column">
-          {/* --- CRUSCOTTO BIOLOGICO: Anello Calorie + Box Macro Neon --- */}
+      {activeBottomTab === 'oggi' && (
+        <div className="home-oggi-scroll">
+          <div className="home-oggi-column" style={{ paddingLeft: 0, paddingRight: 0 }}>
           {(() => {
             const targetProt = userTargets?.prot ?? 150;
             const targetCarb = userTargets?.carb ?? 200;
@@ -8057,7 +8040,6 @@ ${dbKeys || 'n/d'}`;
             const macroCardTone = (mode, borderClass, ringClass, shadowClass) =>
               `${macroCardBase} ${activeDialMode === mode ? `${borderClass} ring-2 ${ringClass} ${shadowClass}` : borderClass}`;
             return (
-              <>
                 <div className="nutrition-cluster">
                 <div
                   className="kcal-dial-shell"
@@ -8254,55 +8236,38 @@ ${dbKeys || 'n/d'}`;
                     </div>
                   </div>
                 </div>
-                  <HomeNutrientStrip
-                    totali={totali}
-                    targets={userTargets}
-                    targetProt={targetProt}
-                    targetCarb={targetCarb}
-                    targetFat={targetFat}
-                    onProteinClick={() => setShowProteinSheet(true)}
-                    onCarbsClick={() => setShowCarbsSheet(true)}
-                    onFatClick={() => setShowFatSheet(true)}
-                    onMineralsClick={() => setShowMineralsSheet(true)}
-                    onVitaminsClick={() => setShowVitaminsSheet(true)}
-                  />
                 </div>
-                <DayPlanWidget
-                  todayPlanBlock={todayPlanBlock}
-                  isWorkoutDoneToday={hasRealWorkoutInActiveLog}
-                  onOpenActionSheet={() => setIsPlanActionSheetOpen(true)}
-                />
-                <MetabolicMonitorCard
-                  metabolicSnapshot={metabolicSnapshot}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    console.log('[Diario] tap MetabolicMonitorCard (Base) → apertura sheet');
-                    setShowDiarySheet(true);
-                  }}
-                />
-              </>
             );
           })()}
-          {/* Riga widget macro: griglia 4 colonne (nascosta - sostituita da Cruscotto Biologico) */}
-            <div className="macrosRow" style={{ display: 'none', width: '100%', marginTop: '25px', padding: '0 10px', position: 'relative', zIndex: 10 }}>
-              <div className="macroBox" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(179,136,255,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
-                <span style={{ fontSize: '0.65rem', color: '#b388ff', fontWeight: 'bold', letterSpacing: '1px' }}>PRO</span>
-                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.prot || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.prot || 0)}g</span></span>
-              </div>
-              <div className="macroBox" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(0,230,118,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
-                <span style={{ fontSize: '0.65rem', color: '#00e676', fontWeight: 'bold', letterSpacing: '1px' }}>CARB</span>
-                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.carb || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.carb || 0)}g</span></span>
-              </div>
-              <div className="macroBox" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(255,234,0,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
-                <span style={{ fontSize: '0.65rem', color: '#ffea00', fontWeight: 'bold', letterSpacing: '1px' }}>FAT</span>
-                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fatTotal ?? userTargets?.fat ?? 0)}g</span></span>
-              </div>
-              <div className="macroBox" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(249,115,22,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', zIndex: 10 }}>
-                <span style={{ fontSize: '0.65rem', color: '#f97316', fontWeight: 'bold', letterSpacing: '1px' }}>FIBRE</span>
-                <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '2px', whiteSpace: 'nowrap' }}>{Math.round(totali?.fibre || 0)}<span style={{ fontSize: '0.7rem', color: '#888' }}>/{Math.round(userTargets?.fibre || 30)}g</span></span>
-              </div>
-            </div>
 
+            <div
+              className="flex w-full flex-col gap-2 box-border shrink-0"
+              style={{ width: '100%', padding: '0 14px', boxSizing: 'border-box' }}
+            >
+              <HomeNutrientStrip
+                totali={totali}
+                targets={userTargets}
+                targetProt={userTargets?.prot ?? 150}
+                targetCarb={userTargets?.carb ?? 200}
+                targetFat={userTargets?.fatTotal ?? userTargets?.fat ?? 65}
+                onProteinClick={() => setShowProteinSheet(true)}
+                onCarbsClick={() => setShowCarbsSheet(true)}
+                onFatClick={() => setShowFatSheet(true)}
+                onMineralsClick={() => setShowMineralsSheet(true)}
+                onVitaminsClick={() => setShowVitaminsSheet(true)}
+              />
+              <DayPlanWidget
+                todayPlanBlock={todayPlanBlock}
+                isWorkoutDoneToday={hasRealWorkoutInActiveLog}
+                onOpenActionSheet={() => setIsPlanActionSheetOpen(true)}
+              />
+              <MetabolicMonitorCard
+                metabolicSnapshot={metabolicSnapshot}
+                onClick={() => setShowMetabolicSheet(true)}
+                onCenterTap={() => setShowDiarySheet(true)}
+              />
+            </div>
+          </div>
         </div>
       )}
 
@@ -8410,8 +8375,6 @@ ${dbKeys || 'n/d'}`;
             })()}
           </div>
         </div>
-      )}
-      </div>
       )}
       {activeBottomTab === 'planning' && (
         <div
@@ -8617,12 +8580,15 @@ ${dbKeys || 'n/d'}`;
             activeQuickReplies={activeQuickReplies}
             handleQuickReplyClick={handleQuickReplyClick}
             handleAcceptAdvice={handleAcceptAdvice}
+            onAcceptMealProposal={handleAcceptMealProposal}
+            onModifyMealProposal={handleModifyMealProposal}
             onDraftConfirm={handleDraftConfirm}
             onDraftCancel={handleDraftCancel}
             onDraftRemoveItem={handleDraftRemoveItem}
             onDraftUpdateItemGrams={handleDraftUpdateItemGrams}
             onBack={() => setActiveAction(null)}
             introPhrase={introPhrase}
+            isProcessing={isChatProcessing}
           />
         )}
 
@@ -9939,6 +9905,20 @@ ${dbKeys || 'n/d'}`;
         onEditWorkout={openWorkoutEditorFromLogItem}
         onDeleteItem={removeLogItem}
         onInspectFood={setSelectedFoodForInfo}
+      />
+
+      <EnergyBalanceSheet
+        isOpen={showEnergySheet}
+        onClose={() => setShowEnergySheet(false)}
+        userAge={calculateAge(birthDate) ?? userProfile?.age ?? 30}
+        recoveryScore={sleepRecoveryScore}
+        totalSleepHours={totalSleepHours}
+        dynamicDailyKcal={dynamicDailyKcal}
+        consumedKcal={totali?.kcal}
+        workoutBurnKcal={workoutsLog.reduce(
+          (sum, wk) => sum + (Number(wk?.kcal ?? wk?.cal) || 0),
+          0,
+        )}
       />
 
       <MetabolicTimelineSheet
