@@ -1,20 +1,28 @@
 import React, { useState } from 'react';
 import { KentuButton } from './kentuos/KentuOSUI';
+import { buildFoodNameSelectOptions } from '../features/commandTerminal/conversation/recentFoodNames.js';
 
-const MEAL_LABELS = {
-  colazione: 'Colazione',
-  snack: 'Snack',
-  pranzo: 'Pranzo',
-  cena: 'Cena',
-};
+const MEAL_OPTIONS = [
+  { value: 'colazione', label: 'Colazione' },
+  { value: 'pranzo', label: 'Pranzo' },
+  { value: 'cena', label: 'Cena' },
+  { value: 'snack', label: 'Snack' },
+];
 
-function mealLabel(mealType) {
-  const base = String(mealType || '').split('_')[0].toLowerCase();
-  return MEAL_LABELS[base] || base || 'Pasto';
+function normalizeMealTypeValue(mealType) {
+  const base = String(mealType || '').split('_')[0].trim().toLowerCase();
+  return MEAL_OPTIONS.some((opt) => opt.value === base) ? base : 'pranzo';
+}
+
+function normalizeTimeValue(exactTime, timeString) {
+  const raw = String(exactTime || timeString || '').trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return '12:00';
+  return `${String(match[1]).padStart(2, '0')}:${match[2]}`;
 }
 
 /**
- * Bozza interattiva in chat: lista alimenti, modifica/rimuovi, conferma o annulla.
+ * Bozza interattiva in chat: tipo pasto, orario, alimenti, conferma o annulla.
  */
 export default function MealDraftConfirmation({
   mealDraft,
@@ -23,11 +31,16 @@ export default function MealDraftConfirmation({
   onCancel,
   onRemoveItem,
   onUpdateItemGrams,
+  onUpdateMealMeta,
+  onUpdateFoodItemName,
 }) {
   const payload = mealDraft?.payload || {};
   const items = Array.isArray(payload.items) ? payload.items : [];
   const [editingIndex, setEditingIndex] = useState(null);
   const [editGrams, setEditGrams] = useState('');
+
+  const mealTypeValue = normalizeMealTypeValue(payload.mealType);
+  const timeValue = normalizeTimeValue(payload.exactTime, payload.timeString);
 
   if (!items.length) return null;
 
@@ -48,10 +61,33 @@ export default function MealDraftConfirmation({
     <div className="kentu-meal-draft">
       <div className="kentu-meal-draft__header">
         <span className="kentu-meal-draft__badge">Bozza</span>
-        <span className="kentu-meal-draft__title">
-          {mealLabel(payload.mealType)}
-          {payload.timeString ? ` · ${payload.timeString}` : ''}
-        </span>
+        <div className="kentu-meal-draft__meta">
+          <label className="kentu-meal-draft__meta-field">
+            <span className="kentu-meal-draft__meta-label">Pasto</span>
+            <select
+              className="kentu-meal-draft__select"
+              value={mealTypeValue}
+              onChange={(e) => onUpdateMealMeta?.(draftId, { mealType: e.target.value })}
+              aria-label="Tipo di pasto"
+            >
+              {MEAL_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="kentu-meal-draft__meta-field">
+            <span className="kentu-meal-draft__meta-label">Orario</span>
+            <input
+              type="time"
+              className="kentu-meal-draft__time-input"
+              value={timeValue}
+              onChange={(e) => onUpdateMealMeta?.(draftId, { exactTime: e.target.value })}
+              aria-label="Orario del pasto"
+            />
+          </label>
+        </div>
       </div>
 
       <ul className="kentu-meal-draft__list">
@@ -59,11 +95,29 @@ export default function MealDraftConfirmation({
           const name = String(item.foodName || item.name || 'Alimento').trim();
           const grams = Math.round(Number(item.grams ?? item.qty) || 0);
           const isEditing = editingIndex === index;
+          const nameOptions = buildFoodNameSelectOptions(
+            name,
+            Array.isArray(item?.historicalVariations) ? item.historicalVariations : [],
+          );
 
           return (
             <li key={`${draftId}_${index}_${name}`} className="kentu-meal-draft__row">
               <div className="kentu-meal-draft__row-main">
-                <span className="kentu-meal-draft__name">{name}</span>
+                <label className="kentu-meal-draft__food-field">
+                  <span className="kentu-meal-draft__meta-label">Alimento</span>
+                  <select
+                    className="kentu-meal-draft__select kentu-meal-draft__food-select"
+                    value={name}
+                    onChange={(e) => onUpdateFoodItemName?.(draftId, index, e.target.value)}
+                    aria-label={`Alimento ${index + 1}`}
+                  >
+                    {nameOptions.map((optionName) => (
+                      <option key={`${draftId}_${index}_${optionName}`} value={optionName}>
+                        {optionName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 {isEditing ? (
                   <div className="kentu-meal-draft__edit-inline">
                     <input

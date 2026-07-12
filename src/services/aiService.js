@@ -21,6 +21,8 @@ function buildPromptWithHistory(promptText, options = null) {
   const opts = options || {};
   let prompt = String(promptText ?? '');
 
+  // I tag [MEMORIA DI SISTEMA - ...] nei turni Assistente (mealProposals/mealDraft)
+  // sono iniettati da buildGeminiContentsFromChatHistory e devono restare nel testo appiattito.
   if (opts.systemInstruction && Array.isArray(opts.contents) && opts.contents.length > 0) {
     const history = opts.contents
       .map((entry) => {

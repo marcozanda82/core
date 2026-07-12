@@ -67,11 +67,17 @@ export function parseMealTypeFromUserText(text) {
 export function parseConfirmationFromUserText(text) {
   const t = String(text || '').trim().toLowerCase();
   if (!t) return null;
-  if (/^(s[iì]|ok|okay|confermo|va bene|certo|procedi|yes|yep|sure|conferma|inserisci|vai)\b/.test(t)) {
+  if (
+    /^(s[iì](?:\s*,?\s*(?:salva|confermo))?|ok|okay|confermo|va bene|certo|procedi|yes|yep|sure|conferma|inserisci|vai|salva)\b/.test(t)
+    || /^s[iì]\s*,\s*salva\b/.test(t)
+  ) {
     return 'yes';
   }
-  if (/^(no|nope|annulla|stop|cancel|non confermo|rifiuto)\b/.test(t)) {
+  if (/^(no(?:\s*,?\s*annulla)?|nope|annulla|stop|cancel|non confermo|rifiuto)\b/.test(t)) {
     return 'no';
+  }
+  if (/^modifica\b/.test(t)) {
+    return 'modify';
   }
   return null;
 }
@@ -102,6 +108,91 @@ export function expandFoodPayloadItems(payload) {
   const foodName = String(payload?.foodName || '').trim();
   if (!foodName) return [];
   return [normalizeFoodItem(payload)];
+}
+
+/** Alimenti nel payload senza grammatura valida. */
+export function getFoodItemsMissingGrams(payload = {}) {
+  return expandFoodPayloadItems(payload).filter(
+    (item) => item.foodName && (!Number.isFinite(item.grams) || item.grams <= 0),
+  );
+}
+
+/** Prompt per richiedere grammature mancanti (un solo alimento vs più alimenti). */
+export function buildMissingGramsPrompt(payload = {}) {
+  const missing = getFoodItemsMissingGrams(payload);
+  if (missing.length === 0) {
+    return 'Cosa hai mangiato e in che quantità? (es. 230g di gnocchi, 100g di passato di pomodoro)';
+  }
+  if (missing.length === 1) {
+    return `Quanti grammi di ${missing[0].foodName}?`;
+  }
+  const exampleGrams = [100, 150, 200];
+  const examples = missing
+    .slice(0, 3)
+    .map((item, index) => `${item.foodName} ${exampleGrams[index] || 150}g`)
+    .join(', ');
+  return `Quanti grammi per ciascuno? (es. ${examples})`;
+}
+
+function applyGramsUpdatesToItems(items, updates) {
+  const nextItems = items.map((item) => ({ ...item }));
+
+  for (const update of updates) {
+    const targetName = String(update.foodName || '').trim().toLowerCase();
+    const idx = nextItems.findIndex(
+      (item) => String(item.foodName || '').trim().toLowerCase() === targetName
+        || String(item.foodName || '').trim().toLowerCase().includes(targetName)
+        || targetName.includes(String(item.foodName || '').trim().toLowerCase()),
+    );
+    if (idx >= 0) {
+      nextItems[idx].grams = update.grams;
+    }
+  }
+
+  return nextItems;
+}
+
+/**
+ * Applica la risposta utente allo slot grammature sul payload in sospeso.
+ * @returns {{ ok: boolean, payload: object, applied: boolean }}
+ */
+export function applyGramsSlotResponse(pendingPayload = {}, userText = '') {
+  const pending = { ...(pendingPayload || {}) };
+  const pendingItems = expandFoodPayloadItems(pending);
+  const missingGramsItems = getFoodItemsMissingGrams(pending);
+
+  if (missingGramsItems.length === 0) {
+    return { ok: true, payload: pending, applied: false };
+  }
+
+  const multiUpdates = parseMultiItemGramsFromUserText(userText, missingGramsItems);
+  if (multiUpdates?.length) {
+    return {
+      ok: true,
+      payload: { ...pending, items: applyGramsUpdatesToItems(pendingItems, multiUpdates) },
+      applied: true,
+    };
+  }
+
+  const grams = parseGramsFromUserText(userText);
+  if (!grams) {
+    return { ok: false, payload: pending, applied: false };
+  }
+
+  const missingKeys = new Set(
+    missingGramsItems.map((item) => String(item.foodName || '').trim().toLowerCase()),
+  );
+  const nextItems = pendingItems.map((item) => {
+    const key = String(item.foodName || '').trim().toLowerCase();
+    if (!missingKeys.has(key)) return { ...item };
+    return { ...item, grams };
+  });
+
+  return {
+    ok: true,
+    payload: { ...pending, items: nextItems },
+    applied: true,
+  };
 }
 
 /** Campi mancanti per completare ADD_FOOD (supporta multi-alimento). */
@@ -141,15 +232,8 @@ export function normalizeFoodPayload(payload, currentState = {}, options = {}) {
 }
 
 export function slotPromptForState(state, pendingPayload = {}) {
-  const items = expandFoodPayloadItems(pendingPayload);
-  const names = items.map((item) => item.foodName).filter(Boolean);
-  const label = names.length > 1 ? names.join(', ') : (names[0] || 'alimento');
-
   if (state === CONVERSATION_STATE.AWAITING_FOOD_GRAMS) {
-    if (names.length > 1) {
-      return `Quanti grammi per ciascuno? (es. ${names[0]} 200g, ${names[1] || 'altro'} 150g)`;
-    }
-    return `Quanti grammi di ${label}?`;
+    return buildMissingGramsPrompt(pendingPayload);
   }
   if (state === CONVERSATION_STATE.AWAITING_TIME) {
     return 'Per quale pasto? (colazione, pranzo, cena, snack)';
@@ -158,6 +242,26 @@ export function slotPromptForState(state, pendingPayload = {}) {
     return "A che ora l'hai mangiato? (es. 14:45)";
   }
   return '';
+}
+
+const MEAL_TYPE_LABELS = Object.freeze({
+  colazione: 'Colazione',
+  pranzo: 'Pranzo',
+  cena: 'Cena',
+  snack: 'Snack',
+});
+
+/** Riepilogo esplicito stile McDrive per la bozza pasto. */
+export function buildMealDraftUiMessage(payload = {}) {
+  const items = expandFoodPayloadItems(payload);
+  const mealType = String(payload?.mealType || '').trim().toLowerCase();
+  const mealLabel = MEAL_TYPE_LABELS[mealType] || 'Pasto';
+  const time = String(payload?.exactTime || payload?.timeString || '').trim() || '--:--';
+  const lines = items.map((item) => {
+    const grams = Math.round(Number(item.grams) || 0);
+    return `- ${item.foodName} (${grams}g)`;
+  });
+  return `Riepilogo [${mealLabel}] delle [${time}]:\n${lines.join('\n')}\nConfermi?`;
 }
 
 export function buildFoodConfirmationSummary(payload) {
@@ -206,10 +310,14 @@ export const MEAL_SLOT_QUICK_REPLIES = Object.freeze([
   'Snack',
 ]);
 
-export const CONFIRMATION_QUICK_REPLIES = Object.freeze([
-  'Sì, confermo',
+export const MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES = Object.freeze([
+  'Sì, salva',
   'No, annulla',
+  'Modifica',
 ]);
+
+/** @deprecated Usa MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES */
+export const CONFIRMATION_QUICK_REPLIES = MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES;
 
 export const EXACT_TIME_SLOT_QUICK_REPLIES = Object.freeze([
   '12:30',
@@ -230,7 +338,7 @@ export function quickRepliesForConversationState(state) {
     return [...EXACT_TIME_SLOT_QUICK_REPLIES];
   }
   if (state === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
-    return [...CONFIRMATION_QUICK_REPLIES];
+    return [...MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES];
   }
   return [];
 }

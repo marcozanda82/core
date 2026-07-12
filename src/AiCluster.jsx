@@ -54,6 +54,8 @@ export default function AiCluster({
   onDraftCancel,
   onDraftRemoveItem,
   onDraftUpdateItemGrams,
+  onDraftUpdateMealMeta,
+  onDraftUpdateFoodItemName,
   /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
   dailyLog = [],
   onBack,
@@ -144,7 +146,16 @@ export default function AiCluster({
                   />
                 </div>
               ) : msg.sender === 'ai' && msg.mealDraft && !msg.draftResolved && !msg.isTyping ? (
-                <div style={{ width: '100%' }}>
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {msg.text ? (
+                    splitAiMessageSections(msg.text).map((block, si) =>
+                      si === 0 ? (
+                        <KentuInsightHero key={`draft-text-${si}`} block={block} />
+                      ) : (
+                        <KentuInsightCard key={`draft-text-${si}`} block={block} />
+                      )
+                    )
+                  ) : null}
                   <MealDraftConfirmation
                     mealDraft={msg.mealDraft}
                     draftId={msg.draftId}
@@ -152,6 +163,8 @@ export default function AiCluster({
                     onCancel={onDraftCancel}
                     onRemoveItem={onDraftRemoveItem}
                     onUpdateItemGrams={onDraftUpdateItemGrams}
+                    onUpdateMealMeta={onDraftUpdateMealMeta}
+                    onUpdateFoodItemName={onDraftUpdateFoodItemName}
                   />
                 </div>
               ) : msg.sender === 'ai' ? (

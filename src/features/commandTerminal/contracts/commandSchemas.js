@@ -64,16 +64,53 @@ export const addFoodPayloadSchema = {
   },
 };
 
+export const addWorkoutExerciseItemSchema = {
+  type: 'object',
+  properties: {
+    exerciseName: {
+      type: 'string',
+      description: 'Nome esercizio citato dall utente o risolto via SMART RESOLUTION',
+    },
+    sets: {
+      type: 'number',
+      nullable: true,
+      description: 'Serie solo se citate o da storico abituale',
+    },
+    reps: {
+      type: 'number',
+      nullable: true,
+      description: 'Ripetizioni solo se citate o da storico abituale',
+    },
+    weightKg: {
+      type: 'number',
+      nullable: true,
+      description: 'Carico in kg solo se citato o da storico abituale',
+    },
+    durationMinutes: {
+      type: 'number',
+      nullable: true,
+      description: 'Durata esercizio in minuti se citata',
+    },
+  },
+  required: ['exerciseName'],
+};
+
 export const addWorkoutPayloadSchema = {
   type: 'object',
   properties: {
     workoutName: {
       type: 'string',
-      description: 'Nome dell allenamento',
+      description: 'Nome sintetico dell allenamento',
     },
     durationMinutes: {
       type: 'number',
       description: 'Durata allenamento in minuti',
+    },
+    exercises: {
+      type: 'array',
+      description:
+        'Un oggetto per OGNI esercizio esplicitamente citato. Vietato aggiungere riscaldamento/defaticamento non menzionati.',
+      items: addWorkoutExerciseItemSchema,
     },
     estimatedKcal: {
       type: 'number',
@@ -129,6 +166,12 @@ export const terminalCommandEnvelopeSchema = {
     uiMessage: {
       type: 'string',
       description: 'Messaggio utente opzionale separato dal comando',
+    },
+    adviceMessage: {
+      type: 'string',
+      nullable: true,
+      description:
+        'Consiglio breve opzionale (max 1 frase) per ADD_FOOD se budget/metabolico/workout lo richiede. Ometti se non necessario.',
     },
     confidence: {
       type: 'number',

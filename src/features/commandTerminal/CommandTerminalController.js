@@ -11,18 +11,18 @@ import {
 } from './contracts/eventTypes.js';
 import {
   CONVERSATION_STATE,
+  applyGramsSlotResponse,
   buildFoodConfirmationSummary,
+  buildMealDraftUiMessage,
   buildSleepConfirmationSummary,
   buildWorkoutConfirmationSummary,
   expandFoodPayloadItems,
+  getFoodItemsMissingGrams,
   getFoodPayloadMissingFields,
-  inferDefaultMealType,
+  MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES,
   normalizeFoodPayload,
   parseConfirmationFromUserText,
-  parseGramsFromUserText,
   parseMealTypeFromUserText,
-  parseMultiItemGramsFromUserText,
-  slotPromptForState,
 } from './conversation/conversationState.js';
 import {
   buildAdviceContext,
@@ -49,7 +49,7 @@ import {
   promptForMissingMealRegistrationSlot,
   registrationSlotToConversationState,
 } from './conversation/mealRegistrationSlots.js';
-import { applyMealRegistrationSmartDefaults } from './conversation/mealSmartDefaults.js';
+import { applyMealRegistrationSmartDefaults, applyMealTimingDefaultsOnly } from './conversation/mealSmartDefaults.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -121,10 +121,8 @@ function validateEnvelope(command) {
   return 'Unsupported commandType';
 }
 
-function nextFoodSlotState(missingFields) {
-  if (missingFields.includes('grams')) return CONVERSATION_STATE.AWAITING_FOOD_GRAMS;
-  if (missingFields.includes('mealType')) return CONVERSATION_STATE.AWAITING_TIME;
-  return CONVERSATION_STATE.IDLE;
+function lockPendingFoodItems(pending = {}) {
+  return expandFoodPayloadItems(pending).map((item) => ({ ...item }));
 }
 
 function buildConfirmationSummary(commandType, payload) {
@@ -223,24 +221,14 @@ export class CommandTerminalController {
   }
 
   advanceMealRegistrationSlotFilling(currentState = {}, userText = '', chatHistory = []) {
-    const merged = mergeMealRegistrationFromConversation(
-      this.pendingCommandPayload || {},
-      chatHistory,
-      userText,
-    );
-    const texts = buildConversationTextsFromChatHistory(chatHistory, userText);
-    const withDefaults = applyMealRegistrationSmartDefaults(merged, texts);
-    this.pendingCommandPayload = withDefaults;
-    const missing = getMealRegistrationMissingSlots(withDefaults, texts);
+    const missing = getMealRegistrationMissingSlots(this.pendingCommandPayload || {}, []);
 
     if (missing.length === 0) {
-      this.pendingMealRegistration = false;
-      this.conversationState = CONVERSATION_STATE.IDLE;
-      this.pendingCommandType = null;
-      this.pendingCommandPayload = null;
-      return this.publishMealLogProposalCardDirect(withDefaults, currentState, userText, chatHistory);
+      return this.publishFoodDraftAfterGrams(currentState);
     }
 
+    const withDefaults = applyMealTimingDefaultsOnly(this.pendingCommandPayload || {});
+    this.pendingCommandPayload = withDefaults;
     const firstSlot = MEAL_REGISTRATION_SLOT_ORDER.find((slot) => missing.includes(slot));
     this.conversationState = registrationSlotToConversationState(firstSlot);
     this.publishSystemMessage(promptForMissingMealRegistrationSlot(firstSlot, withDefaults));
@@ -249,6 +237,61 @@ export class CommandTerminalController {
       awaiting: true,
       conversationState: this.conversationState,
     };
+  }
+
+  /**
+   * Applica Smart Defaults (solo mealType + exactTime) e pubblica la card MEAL_DRAFT.
+   * Gli items provengono ESCLUSIVAMENTE da pendingCommandPayload (post applyGramsSlotResponse).
+   */
+  publishFoodDraftAfterGrams(currentState = {}) {
+    const lockedItems = lockPendingFoodItems(this.pendingCommandPayload || {});
+    const withTiming = applyMealTimingDefaultsOnly({
+      ...(this.pendingCommandPayload || {}),
+      items: lockedItems,
+    });
+    const payload = normalizeFoodPayload(withTiming, currentState, {
+      inferMealTypeFromContext: false,
+    });
+    payload.items = lockedItems;
+    this.pendingCommandPayload = payload;
+    this.pendingMealRegistration = false;
+
+    const missingGrams = getFoodItemsMissingGrams(payload);
+    if (missingGrams.length > 0) {
+      this.pendingCommandType = 'ADD_FOOD';
+      this.conversationState = CONVERSATION_STATE.AWAITING_FOOD_GRAMS;
+      this.publishSystemMessage(promptForMissingMealRegistrationSlot('foods', payload));
+      return {
+        ok: true,
+        awaiting: true,
+        conversationState: this.conversationState,
+        pendingCommandPayload: { ...payload },
+      };
+    }
+
+    const validationError = validateFoodPayload(payload);
+    if (validationError) {
+      console.error(
+        '[CommandTerminalController] Payload non valido dopo smart defaults',
+        validationError,
+        payload,
+      );
+      this.publishErrorMessage(USER_FACING_PARSE_ERROR_MESSAGE);
+      this.resetConversationState();
+      return { ok: false, reason: validationError, userNotified: true };
+    }
+
+    const uiMessage = buildMealDraftUiMessage(payload);
+    return this.stagePendingAction('ADD_FOOD', payload, {
+      requiresConfirmation: true,
+      uiMessage,
+    });
+  }
+
+  publishAddFoodContextAdvice(command) {
+    const note = String(command?.adviceMessage || '').trim();
+    if (!note) return;
+    this.publishSystemMessage(note);
   }
 
   publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = []) {
@@ -397,7 +440,7 @@ export class CommandTerminalController {
     return { commandType: normalizedType, payload, publishResult };
   }
 
-  publishMealDraftMessage(payload) {
+  publishMealDraftMessage(payload, options = {}) {
     const draftId = `draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const items = expandFoodPayloadItems(payload);
     const mealDraft = {
@@ -410,13 +453,17 @@ export class CommandTerminalController {
     if (this.pendingAction) {
       this.pendingAction.draftId = draftId;
     }
+    const summaryText = String(options.summaryText || buildMealDraftUiMessage(payload)).trim();
     this.bus.publish(
       DISPATCH_SYSTEM_MESSAGE,
       {
         type: 'MEAL_DRAFT',
         draftId,
         mealDraft,
-        text: '',
+        text: summaryText,
+        quickReplies: Array.isArray(options.quickReplies) && options.quickReplies.length > 0
+          ? options.quickReplies
+          : [...MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES],
       },
       { source: 'CommandTerminalController' },
     );
@@ -445,6 +492,48 @@ export class CommandTerminalController {
     items[index] = { ...items[index], grams: nextGrams };
     this.pendingAction.payload = { ...this.pendingAction.payload, items };
     this.pendingCommandPayload = this.pendingAction.payload;
+    return this.getMealDraftSnapshot();
+  }
+
+  updatePendingFoodItemName(itemIndex, foodName) {
+    if (!this.pendingAction || this.pendingAction.commandType !== 'ADD_FOOD') return null;
+    const items = expandFoodPayloadItems(this.pendingAction.payload);
+    const index = Number(itemIndex);
+    const nextName = String(foodName || '').trim();
+    if (!nextName || !Number.isFinite(index) || index < 0 || index >= items.length) {
+      return null;
+    }
+    items[index] = { ...items[index], foodName: nextName };
+    this.pendingAction.payload = { ...this.pendingAction.payload, items };
+    this.pendingCommandPayload = this.pendingAction.payload;
+    return this.getMealDraftSnapshot();
+  }
+
+  updatePendingFoodMealMeta({ mealType, exactTime } = {}) {
+    if (!this.pendingAction || this.pendingAction.commandType !== 'ADD_FOOD') return null;
+
+    const MEAL_TYPES = ['colazione', 'snack', 'pranzo', 'cena'];
+    const next = { ...this.pendingAction.payload };
+
+    if (mealType != null && String(mealType).trim()) {
+      const normalized = String(mealType).trim().toLowerCase().split('_')[0];
+      if (MEAL_TYPES.includes(normalized)) {
+        next.mealType = normalized;
+      }
+    }
+
+    if (exactTime != null && String(exactTime).trim()) {
+      const raw = String(exactTime).trim();
+      const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+      if (match) {
+        const formatted = `${String(match[1]).padStart(2, '0')}:${match[2]}`;
+        next.exactTime = formatted;
+        next.timeString = formatted;
+      }
+    }
+
+    this.pendingAction.payload = next;
+    this.pendingCommandPayload = next;
     return this.getMealDraftSnapshot();
   }
 
@@ -483,7 +572,10 @@ export class CommandTerminalController {
     this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
 
     if (normalizedType === 'ADD_FOOD') {
-      this.publishMealDraftMessage(payload);
+      this.publishMealDraftMessage(payload, {
+        summaryText: meta.uiMessage || buildMealDraftUiMessage(payload),
+        quickReplies: MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES,
+      });
     } else {
       const summary = buildConfirmationSummary(normalizedType, payload);
       this.publishSystemMessage(summary);
@@ -503,8 +595,9 @@ export class CommandTerminalController {
       return { ok: false, reason: 'no_pending_action' };
     }
     const { commandType, payload, meta = {} } = this.pendingAction;
+    const { uiMessage: _uiMessage, ...execMeta } = meta;
     const result = this.dispatchCommand(commandType, payload, {
-      ...meta,
+      ...execMeta,
       requiresConfirmation: false,
     });
     this.resetConversationState();
@@ -525,6 +618,11 @@ export class CommandTerminalController {
       return { ok: true, cancelled: true };
     }
 
+    if (confirmation === 'modify') {
+      this.publishSystemMessage('Modifica grammature o alimenti nella card qui sopra, poi conferma.');
+      return { ok: true, awaiting: true, conversationState: this.conversationState };
+    }
+
     // Nuovo messaggio: annulla bozza e riprocessa come nuova richiesta.
     this.resetConversationState();
     return this.processUserMessage(text, currentState, options);
@@ -538,13 +636,15 @@ export class CommandTerminalController {
     this.pendingCommandType = 'ADD_FOOD';
     this.pendingCommandPayload = { ...normalized };
 
-    const missing = getFoodPayloadMissingFields(this.pendingCommandPayload);
-    if (missing.length === 0) {
-      return this.completePendingFoodCommand(currentState, { fromSlotFilling: false });
+    const missingGrams = getFoodItemsMissingGrams(this.pendingCommandPayload);
+    if (missingGrams.length === 0) {
+      return this.publishFoodDraftAfterGrams(currentState);
     }
 
-    this.conversationState = nextFoodSlotState(missing);
-    this.publishSystemMessage(slotPromptForState(this.conversationState, this.pendingCommandPayload));
+    this.conversationState = CONVERSATION_STATE.AWAITING_FOOD_GRAMS;
+    this.publishSystemMessage(
+      promptForMissingMealRegistrationSlot('foods', this.pendingCommandPayload),
+    );
     return {
       ok: true,
       awaiting: true,
@@ -554,14 +654,23 @@ export class CommandTerminalController {
   }
 
   completePendingFoodCommand(currentState = {}, options = {}) {
-    const payload = normalizeFoodPayload(this.pendingCommandPayload || {}, currentState);
+    const lockedItems = lockPendingFoodItems(this.pendingCommandPayload || {});
+    const withTiming = applyMealTimingDefaultsOnly({
+      ...(this.pendingCommandPayload || {}),
+      items: lockedItems,
+    });
+    const payload = normalizeFoodPayload(withTiming, currentState, {
+      inferMealTypeFromContext: false,
+    });
+    payload.items = lockedItems;
+    this.pendingCommandPayload = payload;
     const validationError = validateFoodPayload(payload);
     if (validationError) {
       const missing = getFoodPayloadMissingFields(payload);
-      if (missing.length > 0) {
+      if (missing.includes('grams')) {
         this.pendingCommandPayload = { ...payload };
-        this.conversationState = nextFoodSlotState(missing);
-        this.publishSystemMessage(slotPromptForState(this.conversationState, payload));
+        this.conversationState = CONVERSATION_STATE.AWAITING_FOOD_GRAMS;
+        this.publishSystemMessage(promptForMissingMealRegistrationSlot('foods', payload));
         return {
           ok: true,
           awaiting: true,
@@ -579,29 +688,11 @@ export class CommandTerminalController {
       return { ok: false, reason: validationError };
     }
 
+    const uiMessage = options.uiMessage || buildMealDraftUiMessage(payload);
     return this.stagePendingAction('ADD_FOOD', payload, {
       requiresConfirmation: true,
-      uiMessage: options.uiMessage,
+      uiMessage,
     });
-  }
-
-  applyGramsUpdatesToPendingItems(pending, updates) {
-    const items = expandFoodPayloadItems(pending);
-    const nextItems = items.map((item) => ({ ...item }));
-
-    for (const update of updates) {
-      const targetName = String(update.foodName || '').trim().toLowerCase();
-      const idx = nextItems.findIndex(
-        (item) => String(item.foodName || '').trim().toLowerCase() === targetName
-          || String(item.foodName || '').trim().toLowerCase().includes(targetName)
-          || targetName.includes(String(item.foodName || '').trim().toLowerCase()),
-      );
-      if (idx >= 0) {
-        nextItems[idx].grams = update.grams;
-      }
-    }
-
-    return { ...pending, items: nextItems };
   }
 
   processSlotFillingResponse(userText, currentState = {}, options = {}) {
@@ -622,56 +713,17 @@ export class CommandTerminalController {
     }
 
     const pending = { ...(this.pendingCommandPayload || {}) };
-    const pendingItems = expandFoodPayloadItems(pending);
 
     if (this.conversationState === CONVERSATION_STATE.AWAITING_FOOD_GRAMS) {
-      const multiUpdates = parseMultiItemGramsFromUserText(text, pendingItems);
-      if (multiUpdates) {
-        this.pendingCommandPayload = this.applyGramsUpdatesToPendingItems(pending, multiUpdates);
-      } else {
-        const grams = parseGramsFromUserText(text);
-        if (!grams) {
-          const prompt = this.pendingMealRegistration
-            ? promptForMissingMealRegistrationSlot('foods', pending)
-            : slotPromptForState(this.conversationState, pending);
-          this.publishSystemMessage(prompt);
-          return { ok: true, awaiting: true, conversationState: this.conversationState };
-        }
-        const nextItems = pendingItems.map((item) => ({ ...item, grams }));
-        this.pendingCommandPayload = { ...pending, items: nextItems };
-      }
-
-      if (this.pendingMealRegistration) {
-        return this.advanceMealRegistrationSlotFilling(currentState, text, chatHistory);
-      }
-
-      const missing = getFoodPayloadMissingFields(
-        normalizeFoodPayload(this.pendingCommandPayload, currentState),
-      );
-      if (missing.includes('mealType')) {
-        const inferred = inferDefaultMealType(currentState);
-        if (inferred) {
-          this.pendingCommandPayload = {
-            ...this.pendingCommandPayload,
-            mealType: inferred,
-          };
-          return this.completePendingFoodCommand(currentState);
-        }
-        this.conversationState = CONVERSATION_STATE.AWAITING_TIME;
-        this.publishSystemMessage(slotPromptForState(this.conversationState, this.pendingCommandPayload));
-        return {
-          ok: true,
-          awaiting: true,
-          conversationState: this.conversationState,
-        };
-      }
-
-      if (missing.includes('grams')) {
-        this.publishSystemMessage(slotPromptForState(this.conversationState, this.pendingCommandPayload));
+      const gramsResult = applyGramsSlotResponse(pending, text);
+      if (!gramsResult.ok || !gramsResult.applied) {
+        this.publishSystemMessage(promptForMissingMealRegistrationSlot('foods', pending));
         return { ok: true, awaiting: true, conversationState: this.conversationState };
       }
 
-      return this.completePendingFoodCommand(currentState);
+      this.pendingCommandPayload = gramsResult.payload;
+
+      return this.publishFoodDraftAfterGrams(currentState);
     }
 
     if (this.conversationState === CONVERSATION_STATE.AWAITING_TIME) {
@@ -901,16 +953,14 @@ export class CommandTerminalController {
     }
 
     if (commandType === 'ADD_FOOD') {
-      let normalized = mergeMealRegistrationFromConversation(
-        normalizeFoodPayload(rawPayload, currentState, { inferMealTypeFromContext: false }),
-        chatHistory,
-        userText,
-      );
-      if (!normalized.mealType) {
-        const mealFromUser = parseMealTypeFromUserText(userText);
-        if (mealFromUser) {
-          normalized = { ...normalized, mealType: mealFromUser };
-        }
+      this.publishAddFoodContextAdvice(commandResponse.command);
+
+      let normalized = normalizeFoodPayload(rawPayload, currentState, {
+        inferMealTypeFromContext: false,
+      });
+      const mealFromUser = parseMealTypeFromUserText(userText);
+      if (mealFromUser && !normalized.mealType) {
+        normalized = { ...normalized, mealType: mealFromUser };
       }
       const missing = getFoodPayloadMissingFields(normalized);
       const hasFood = expandFoodPayloadItems(normalized).length > 0;

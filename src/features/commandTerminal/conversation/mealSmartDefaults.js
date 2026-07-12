@@ -89,6 +89,36 @@ function resolveExactTimeFromPayloadAndTexts(payload = {}, conversationTexts = [
 }
 
 /**
+ * Applica SOLO mealType ed exactTime — non tocca payload.items.
+ * Usa campi già presenti nel payload; altrimenti deduce da orario di sistema.
+ * @param {object} payload
+ * @param {{ now?: Date }} [options]
+ */
+export function applyMealTimingDefaultsOnly(payload = {}, options = {}) {
+  const ctx = formatCurrentSystemTimeContext(options.now);
+
+  let exactTime = resolveExactTimeForMeal(payload, '');
+  if (!exactTime) {
+    exactTime = ctx.timeHHmm;
+  }
+
+  let mealType = String(payload?.mealType || '').trim().toLowerCase();
+  if (!MEAL_TYPES.includes(mealType)) {
+    const hourForSlot =
+      parseTimeStringToDecimalHour(exactTime)
+      ?? ctx.decimalHour;
+    mealType = deduceMealTypeFromDecimalHour(hourForSlot);
+  }
+
+  return {
+    ...payload,
+    mealType,
+    exactTime,
+    timeString: exactTime,
+  };
+}
+
+/**
  * Applica ipotesi intelligente: mealType ed exactTime sempre popolati.
  * @param {object} payload
  * @param {string[]} [conversationTexts]

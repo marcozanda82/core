@@ -7077,6 +7077,8 @@ ${dbKeys || 'n/d'}`;
     handleDraftCancel,
     handleDraftRemoveItem,
     handleDraftUpdateItemGrams,
+    handleDraftUpdateMealMeta,
+    handleDraftUpdateFoodItemName,
   } = useCommandTerminal({
     chatHistory,
     setChatHistory,
@@ -8586,6 +8588,8 @@ ${dbKeys || 'n/d'}`;
             onDraftCancel={handleDraftCancel}
             onDraftRemoveItem={handleDraftRemoveItem}
             onDraftUpdateItemGrams={handleDraftUpdateItemGrams}
+            onDraftUpdateMealMeta={handleDraftUpdateMealMeta}
+            onDraftUpdateFoodItemName={handleDraftUpdateFoodItemName}
             onBack={() => setActiveAction(null)}
             introPhrase={introPhrase}
             isProcessing={isChatProcessing}

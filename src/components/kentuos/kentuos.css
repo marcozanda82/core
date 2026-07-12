@@ -784,9 +784,55 @@
 
 .kentu-meal-draft__header {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.kentu-meal-draft__meta {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.kentu-meal-draft__meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+}
+
+.kentu-meal-draft__meta-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(251, 191, 36, 0.75);
+}
+
+.kentu-meal-draft__select,
+.kentu-meal-draft__time-input {
+  appearance: none;
+  border-radius: 8px;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  background: rgba(12, 10, 8, 0.85);
+  color: #fef3c7;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.kentu-meal-draft__select:focus,
+.kentu-meal-draft__time-input:focus {
+  outline: none;
+  border-color: rgba(251, 191, 36, 0.55);
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.12);
+}
+
+.kentu-meal-draft__time-input {
+  min-width: 110px;
 }
 
 .kentu-meal-draft__badge {
@@ -827,10 +873,24 @@
 
 .kentu-meal-draft__row-main {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
   flex: 1;
   min-width: 0;
+}
+
+.kentu-meal-draft__food-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 160px;
+}
+
+.kentu-meal-draft__food-select {
+  width: 100%;
+  max-width: 100%;
 }
 
 .kentu-meal-draft__name {

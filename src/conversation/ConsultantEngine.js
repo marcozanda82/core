@@ -247,6 +247,11 @@ export function ensureMealProposalsForAdvice(mealProposals, adviceContext = {}) 
       .slice(0, MAX_HABIT_PROPOSALS);
   }
 
+  // Backfill da abitudini/DB solo su richieste esplicite di suggerimento pasto (ADVICE generico).
+  if (!adviceContext.isGenericMealSuggestion) {
+    return [];
+  }
+
   const habits = adviceContext?.userHabitsForCurrentMeal?.proposals || [];
   const fromHabits = habits
     .map((habit) => enrichMealProposal(habitProposalToCard(habit), adviceContext))
@@ -644,6 +649,26 @@ export function extractTargetFoodFromQuery(userText) {
 }
 
 /**
+ * Contesto nutrizionale condiviso (budget, abitudini, workout) per ADD_FOOD e ADVICE.
+ * @param {object} currentAppState
+ * @returns {{
+ *   currentMealType: string,
+ *   remainingBudget: { kcal: number, pro: number, carbo: number, fat: number },
+ *   userHabitsForCurrentMeal: { mealType: string, proposals: Array<object> },
+ *   upcomingWorkout: object | null,
+ * }}
+ */
+export function buildNutritionContextForState(currentAppState = {}) {
+  const currentMealType = resolveCurrentMealType(currentAppState);
+  return {
+    currentMealType,
+    remainingBudget: computeRemainingBudget(currentAppState),
+    userHabitsForCurrentMeal: buildUserHabitsForCurrentMeal(currentAppState, currentMealType),
+    upcomingWorkout: resolveUpcomingWorkout(currentAppState),
+  };
+}
+
+/**
  * Costruisce il contesto compatto per il consulente nutrizionale (Cameriere).
  * @param {string} targetFood
  * @param {object} currentAppState
@@ -655,14 +680,15 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
   const isGenericSuggestion = isGenericMealSuggestionQuery(rawQuery);
   const foodQuery = isGenericSuggestion ? '' : (extractTargetFoodFromQuery(rawQuery) || rawQuery);
   const foodDb = currentAppState?.foodDatabase || {};
-  const currentMealType = resolveCurrentMealType(currentAppState);
-  const remainingBudget = computeRemainingBudget(currentAppState);
+  const nutrition = buildNutritionContextForState(currentAppState);
+  const currentMealType = nutrition.currentMealType;
+  const remainingBudget = nutrition.remainingBudget;
   const foodCandidates = foodQuery
     ? buildFoodCandidates(foodQuery, currentAppState, currentMealType)
     : [];
-  const userHabitsForCurrentMeal = buildUserHabitsForCurrentMeal(currentAppState, currentMealType);
+  const userHabitsForCurrentMeal = nutrition.userHabitsForCurrentMeal;
   const fallbackMealProposals = buildFallbackMealProposalsFromFoodDb(currentAppState, currentMealType);
-  const upcomingWorkout = resolveUpcomingWorkout(currentAppState);
+  const upcomingWorkout = nutrition.upcomingWorkout;
 
   return {
     targetFood: foodQuery,
@@ -868,6 +894,14 @@ function enrichProposalItemWithResolver(item, adviceContext, mealType) {
 }
 
 /**
+ * Espansione combo abitudini consentita solo su richieste ADVICE generiche ("cosa mi proponi?").
+ * Per registrazione pasto / singolo alimento: mai sostituire items LLM con combo storica.
+ */
+function shouldAllowHabitComboExpansion(adviceContext = {}) {
+  return adviceContext.isGenericMealSuggestion === true;
+}
+
+/**
  * @param {unknown} raw
  * @returns {Array<object>}
  */
@@ -877,6 +911,7 @@ export function sanitizeMealProposals(raw, adviceContext = {}) {
   const habits = adviceContext?.userHabitsForCurrentMeal?.proposals || [];
   const habitById = new Map(habits.map((p) => [p.id, p]));
   const mealTypeDefault = String(adviceContext?.currentMealType || 'pranzo').toLowerCase();
+  const allowHabitExpansion = shouldAllowHabitComboExpansion(adviceContext);
 
   return raw
     .map((proposal, index) => {
@@ -886,9 +921,14 @@ export function sanitizeMealProposals(raw, adviceContext = {}) {
       if (!MEAL_TYPES.includes(mealType)) return null;
 
       const habitRef = habitById.get(proposal.id);
-      const rawItems = Array.isArray(proposal.items) ? proposal.items : habitRef?.items || [];
+      const llmItems = Array.isArray(proposal.items) ? proposal.items : [];
+      const rawItems =
+        llmItems.length > 0
+          ? llmItems
+          : (allowHabitExpansion && Array.isArray(habitRef?.items) ? habitRef.items : []);
+
       const habitItemsByName = new Map(
-        (habitRef?.items || [])
+        (allowHabitExpansion ? (habitRef?.items || []) : llmItems)
           .filter((it) => it?.foodName)
           .map((it) => [String(it.foodName).toLowerCase(), it]),
       );
@@ -908,9 +948,18 @@ export function sanitizeMealProposals(raw, adviceContext = {}) {
 
       return {
         id: String(proposal.id || habitRef?.id || `proposal_${index + 1}`),
-        label: String(proposal.label || proposal.name || habitRef?.name || `Proposta ${index + 1}`).trim(),
+        label: String(
+          proposal.label
+          || proposal.name
+          || (allowHabitExpansion ? habitRef?.name : null)
+          || `Proposta ${index + 1}`,
+        ).trim(),
         mealType,
-        source: String(proposal.source || habitRef?.source || 'llm').trim(),
+        source: String(
+          proposal.source
+          || (allowHabitExpansion ? habitRef?.source : null)
+          || 'llm',
+        ).trim(),
         items,
         totals,
         ...(exactTime ? { exactTime } : {}),

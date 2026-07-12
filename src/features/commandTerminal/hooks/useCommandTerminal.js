@@ -11,7 +11,8 @@ import {
 } from '../contracts/eventTypes.js';
 import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
 import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
-import { quickRepliesForConversationState, CONVERSATION_STATE } from '../conversation/conversationState.js';
+import { quickRepliesForConversationState, CONVERSATION_STATE, buildMealDraftUiMessage } from '../conversation/conversationState.js';
+import { enrichMealDraftWithHistoricalVariations } from '../conversation/recentFoodNames.js';
 
 export function useCommandTerminal({
   chatHistory,
@@ -75,12 +76,22 @@ export function useCommandTerminal({
     });
   }, []);
 
-  const syncDraftMessageInChat = useCallback((draftId, mealDraft) => {
+  const syncDraftMessageInChat = useCallback((draftId, mealDraft, summaryText) => {
     if (!draftId || typeof setChatHistoryRef.current !== 'function') return;
+    const currentState =
+      typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
+    const enrichedMealDraft = enrichMealDraftWithHistoricalVariations(mealDraft, currentState, {
+      limit: 5,
+    });
     setChatHistoryRef.current((prev) =>
       (prev || []).map((entry) =>
         entry.draftId === draftId
-          ? { ...entry, mealDraft, draftResolved: false }
+          ? {
+              ...entry,
+              mealDraft: enrichedMealDraft,
+              ...(summaryText ? { text: summaryText } : {}),
+              draftResolved: false,
+            }
           : entry,
       ),
     );
@@ -104,10 +115,6 @@ export function useCommandTerminal({
 
   const syncActiveQuickRepliesFromController = useCallback(() => {
     const { conversationState } = controller.getConversationSnapshot();
-    if (conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
-      setActiveQuickReplies([]);
-      return;
-    }
     setActiveQuickReplies(quickRepliesForConversationState(conversationState));
   }, [controller]);
 
@@ -170,12 +177,24 @@ export function useCommandTerminal({
     const unsubscribeSystem = commandBus.subscribe(DISPATCH_SYSTEM_MESSAGE, (envelope) => {
       const payload = envelope?.payload || {};
       if (payload.type === 'MEAL_DRAFT') {
-        appendAiMessage('', {
+        const summaryText = String(payload.text || '').trim();
+        const currentState =
+          typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
+        const enrichedMealDraft = enrichMealDraftWithHistoricalVariations(
+          payload.mealDraft || null,
+          currentState,
+          { limit: 5 },
+        );
+        appendAiMessage(summaryText, {
           type: 'MEAL_DRAFT',
-          mealDraft: payload.mealDraft || null,
+          mealDraft: enrichedMealDraft,
           draftId: payload.draftId || null,
         });
-        setActiveQuickReplies([]);
+        setActiveQuickReplies(
+          Array.isArray(payload.quickReplies) && payload.quickReplies.length > 0
+            ? payload.quickReplies
+            : quickRepliesForConversationState(CONVERSATION_STATE.AWAITING_CONFIRMATION),
+        );
         return;
       }
       const text = String(payload.text || payload.message || '').trim();
@@ -227,6 +246,8 @@ export function useCommandTerminal({
         resolvedText || `📷 ${attachedImages.length} immagine/i allegata/e`;
       const priorHistory = chatHistoryRef.current || [];
       setChatHistoryRef.current((prev) => [...(prev || []), { sender: 'user', text: userBubbleText }]);
+      // History completa (inclusi mealProposals/mealDraft): serializzazione memoria in
+      // buildGeminiContentsFromChatHistory prima della chiamata LLM.
       const historyForLlm = [...priorHistory, { sender: 'user', text: userBubbleText }];
       setChatInput('');
       setChatImages([]);
@@ -265,13 +286,41 @@ export function useCommandTerminal({
     [chatInput, chatImages, controller, syncActiveQuickRepliesFromController],
   );
 
+  const handleDraftCancel = useCallback(
+    (draftId) => {
+      controller.cancelPendingAction();
+      resolveDraftMessage(draftId, { cancelled: true });
+      setActiveQuickReplies([]);
+      appendAiMessage('Inserimento annullato.');
+      return { ok: true, cancelled: true };
+    },
+    [controller, resolveDraftMessage, appendAiMessage],
+  );
+
   const handleQuickReplyClick = useCallback(
     (text) => {
       const label = String(text ?? '').trim();
       if (!label) return Promise.resolve({ ok: false, reason: 'empty_quick_reply' });
+
+      const snap = controller.getConversationSnapshot();
+      if (snap.conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
+        const draftId = snap.pendingAction?.draftId || null;
+        if (/^s[iì]\s*,\s*salva\b/i.test(label) || /^s[iì]\s*,\s*confermo\b/i.test(label)) {
+          if (draftId) resolveDraftMessage(draftId);
+          setActiveQuickReplies([]);
+          return Promise.resolve(controller.confirmPendingAction());
+        }
+        if (/^no\s*,\s*annulla\b/i.test(label)) {
+          return Promise.resolve(handleDraftCancel(draftId));
+        }
+        if (/^modifica\b/i.test(label)) {
+          return sendMessage(label, { fromSlotQuickReply: true });
+        }
+      }
+
       return sendMessage(label, { fromSlotQuickReply: true });
     },
-    [sendMessage],
+    [controller, handleDraftCancel, resolveDraftMessage, sendMessage],
   );
 
   const handleDraftConfirm = useCallback(
@@ -285,17 +334,6 @@ export function useCommandTerminal({
       return controller.confirmPendingAction();
     },
     [controller, resolveDraftMessage],
-  );
-
-  const handleDraftCancel = useCallback(
-    (draftId) => {
-      controller.cancelPendingAction();
-      resolveDraftMessage(draftId, { cancelled: true });
-      setActiveQuickReplies([]);
-      appendAiMessage('Inserimento annullato.');
-      return { ok: true, cancelled: true };
-    },
-    [controller, resolveDraftMessage, appendAiMessage],
   );
 
   const handleDraftRemoveItem = useCallback(
@@ -319,7 +357,27 @@ export function useCommandTerminal({
     (draftId, itemIndex, grams) => {
       const updated = controller.updatePendingFoodItemGrams(itemIndex, grams);
       if (!updated) return { ok: false, reason: 'invalid_draft_update' };
-      syncDraftMessageInChat(draftId, updated);
+      syncDraftMessageInChat(draftId, updated, buildMealDraftUiMessage(updated.payload));
+      return { ok: true, mealDraft: updated };
+    },
+    [controller, syncDraftMessageInChat],
+  );
+
+  const handleDraftUpdateMealMeta = useCallback(
+    (draftId, { mealType, exactTime } = {}) => {
+      const updated = controller.updatePendingFoodMealMeta({ mealType, exactTime });
+      if (!updated) return { ok: false, reason: 'invalid_draft_meta_update' };
+      syncDraftMessageInChat(draftId, updated, buildMealDraftUiMessage(updated.payload));
+      return { ok: true, mealDraft: updated };
+    },
+    [controller, syncDraftMessageInChat],
+  );
+
+  const handleDraftUpdateFoodItemName = useCallback(
+    (draftId, itemIndex, foodName) => {
+      const updated = controller.updatePendingFoodItemName(itemIndex, foodName);
+      if (!updated) return { ok: false, reason: 'invalid_draft_food_name_update' };
+      syncDraftMessageInChat(draftId, updated, buildMealDraftUiMessage(updated.payload));
       return { ok: true, mealDraft: updated };
     },
     [controller, syncDraftMessageInChat],
@@ -476,6 +534,8 @@ export function useCommandTerminal({
     handleDraftCancel,
     handleDraftRemoveItem,
     handleDraftUpdateItemGrams,
+    handleDraftUpdateMealMeta,
+    handleDraftUpdateFoodItemName,
     getConversationSnapshot: () => controller.getConversationSnapshot(),
     resetConversationState,
   };

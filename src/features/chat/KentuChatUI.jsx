@@ -19,6 +19,8 @@ export default function KentuChatUI({
   onDraftCancel,
   onDraftRemoveItem,
   onDraftUpdateItemGrams,
+  onDraftUpdateMealMeta,
+  onDraftUpdateFoodItemName,
   onBack,
   introPhrase,
   isProcessing = false,
@@ -52,6 +54,8 @@ export default function KentuChatUI({
         onDraftCancel={onDraftCancel}
         onDraftRemoveItem={onDraftRemoveItem}
         onDraftUpdateItemGrams={onDraftUpdateItemGrams}
+        onDraftUpdateMealMeta={onDraftUpdateMealMeta}
+        onDraftUpdateFoodItemName={onDraftUpdateFoodItemName}
         onBack={onBack}
         introPhrase={introPhrase}
         isProcessing={isProcessing}

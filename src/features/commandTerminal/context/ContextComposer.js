@@ -1,4 +1,4 @@
-import { isGenericMealSuggestionQuery } from '../../../conversation/ConsultantEngine.js';
+import { isGenericMealSuggestionQuery, buildNutritionContextForState } from '../../../conversation/ConsultantEngine.js';
 import { looksLikeComplexMealLog } from '../conversation/mealLogIntent.js';
 import { formatCurrentSystemTimeContext } from '../conversation/mealSmartDefaults.js';
 
@@ -108,10 +108,50 @@ export class ContextComposer {
     };
   }
 
+  getWorkoutHabitsFromState(currentState = {}) {
+    const habits = [];
+    const seen = new Set();
+
+    const pushHabit = (raw = {}) => {
+      if (!raw || typeof raw !== 'object') return;
+      const exerciseName = toSafeString(raw.exerciseName || raw.desc || raw.name);
+      if (!exerciseName) return;
+      const key = exerciseName.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      habits.push({
+        exerciseName,
+        sets: Number.isFinite(Number(raw.sets)) ? Number(raw.sets) : null,
+        reps: Number.isFinite(Number(raw.reps)) ? Number(raw.reps) : null,
+        weightKg: Number.isFinite(Number(raw.weightKg ?? raw.weight)) ? Number(raw.weightKg ?? raw.weight) : null,
+        durationMinutes: Number.isFinite(Number(raw.durationMinutes)) ? Number(raw.durationMinutes) : null,
+      });
+    };
+
+    const activeLog = Array.isArray(currentState?.activeLog) ? currentState.activeLog : [];
+    [...activeLog].reverse().forEach((item) => {
+      if (item?.type !== 'workout') return;
+      pushHabit(item);
+      const detail = toSafeString(item.strengthDetail || item.notes);
+      if (detail) {
+        pushHabit({
+          exerciseName: detail,
+          sets: item.sets,
+          reps: item.reps,
+          weightKg: item.weightKg ?? item.weight,
+          durationMinutes: item.durationMinutes,
+        });
+      }
+    });
+
+    return habits.slice(0, 15);
+  }
+
   composeForIntent(intent, currentState = {}) {
     const normalizedIntent = toSafeString(intent).toUpperCase();
     const systemTime = formatCurrentSystemTimeContext();
     if (normalizedIntent === 'ADD_FOOD') {
+      const nutrition = buildNutritionContextForState(currentState);
       return {
         intent: 'ADD_FOOD',
         contextSlices: {
@@ -120,6 +160,10 @@ export class ContextComposer {
             currentDate: systemTime.dateISO,
             header: systemTime.header,
           },
+          currentMealType: nutrition.currentMealType,
+          METABOLIC_BUDGET: nutrition.remainingBudget,
+          USER_HABITS_FOR_CURRENT_MEAL: nutrition.userHabitsForCurrentMeal,
+          UPCOMING_WORKOUT: nutrition.upcomingWorkout,
           food: this.getFoodContext(currentState.foodDatabase, currentState.mealState),
         },
       };
@@ -129,6 +173,7 @@ export class ContextComposer {
         intent: 'ADD_WORKOUT',
         contextSlices: {
           workout: this.getWorkoutContext(currentState.dailyStats),
+          USER_WORKOUT_HABITS: this.getWorkoutHabitsFromState(currentState),
         },
       };
     }
