@@ -16,13 +16,17 @@ import {
   buildMealDraftUiMessage,
   buildSleepConfirmationSummary,
   buildWorkoutConfirmationSummary,
+  buildWorkoutDraftUiMessage,
   expandFoodPayloadItems,
+  expandWorkoutPayloadExercises,
   getFoodItemsMissingGrams,
   getFoodPayloadMissingFields,
   MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES,
   normalizeFoodPayload,
+  normalizeWorkoutPayload,
   parseConfirmationFromUserText,
   parseMealTypeFromUserText,
+  WORKOUT_DRAFT_CONFIRMATION_QUICK_REPLIES,
 } from './conversation/conversationState.js';
 import {
   buildAdviceContext,
@@ -50,6 +54,12 @@ import {
   registrationSlotToConversationState,
 } from './conversation/mealRegistrationSlots.js';
 import { applyMealRegistrationSmartDefaults, applyMealTimingDefaultsOnly } from './conversation/mealSmartDefaults.js';
+import {
+  applyHistoricalWorkoutKcalDefault,
+  applyWorkoutTimeSlotResponse,
+  hasWorkoutToday,
+  parseWorkoutConflictResponse,
+} from './conversation/workoutRegistrationSlots.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -86,9 +96,23 @@ function validateFoodPayload(payload) {
 
 function validateWorkoutPayload(payload) {
   if (!payload || typeof payload !== 'object') return 'Workout payload must be an object';
-  if (!String(payload.workoutName || '').trim()) return 'workoutName is required';
+  const exercises = expandWorkoutPayloadExercises(payload);
+  const workoutName = String(payload.workoutName || '').trim();
+  if (exercises.length === 0 && !workoutName) return 'workoutName is required';
+  if (exercises.some((item) => !String(item.exerciseName || '').trim())) {
+    return 'exerciseName is required for each exercise';
+  }
   if (!isFiniteNumber(payload.durationMinutes) || Number(payload.durationMinutes) <= 0) {
     return 'durationMinutes must be > 0';
+  }
+  return null;
+}
+
+function validateWorkoutDraftPayload(payload) {
+  const baseError = validateWorkoutPayload(payload);
+  if (baseError) return baseError;
+  if (!String(payload?.timeString || payload?.exactTime || '').trim()) {
+    return 'timeString is required';
   }
   return null;
 }
@@ -143,6 +167,9 @@ export class CommandTerminalController {
     this.pendingCommandType = null;
     this.pendingAction = null;
     this.pendingMealRegistration = false;
+    this.pendingWorkoutBypassConflict = false;
+    this.pendingWorkoutOriginUserText = '';
+    this.isExecutingAction = false;
   }
 
   getConversationSnapshot() {
@@ -165,6 +192,9 @@ export class CommandTerminalController {
     this.pendingCommandType = null;
     this.pendingAction = null;
     this.pendingMealRegistration = false;
+    this.pendingWorkoutBypassConflict = false;
+    this.pendingWorkoutOriginUserText = '';
+    this.isExecutingAction = false;
   }
 
   publishSystemMessage(message) {
@@ -415,8 +445,10 @@ export class CommandTerminalController {
 
     const publishResult = this.bus.publish(eventType, payload, {
       source: 'CommandTerminalController',
-      dedupeKey: {
+      correlationId: meta.correlationId ?? null,
+      dedupeKey: meta.dedupeKey ?? {
         commandType: normalizedType,
+        correlationId: meta.correlationId ?? null,
         payload,
       },
     });
@@ -468,6 +500,165 @@ export class CommandTerminalController {
       { source: 'CommandTerminalController' },
     );
     return draftId;
+  }
+
+  publishWorkoutDraftMessage(payload, options = {}) {
+    const draftId = `workout_draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const exercises = expandWorkoutPayloadExercises(payload);
+    const workoutDraft = {
+      commandType: 'ADD_WORKOUT',
+      payload: normalizeWorkoutPayload({
+        ...payload,
+        exercises,
+      }),
+    };
+    if (this.pendingAction) {
+      this.pendingAction.draftId = draftId;
+    }
+    const summaryText = String(options.summaryText || buildWorkoutDraftUiMessage(workoutDraft.payload)).trim();
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'WORKOUT_DRAFT',
+        draftId,
+        workoutDraft,
+        text: summaryText,
+        quickReplies: Array.isArray(options.quickReplies) && options.quickReplies.length > 0
+          ? options.quickReplies
+          : [...WORKOUT_DRAFT_CONFIRMATION_QUICK_REPLIES],
+      },
+      { source: 'CommandTerminalController' },
+    );
+    return draftId;
+  }
+
+  getWorkoutDraftSnapshot() {
+    if (!this.pendingAction || this.pendingAction.commandType !== 'ADD_WORKOUT') return null;
+    const payload = normalizeWorkoutPayload(this.pendingAction.payload || {});
+    return {
+      commandType: 'ADD_WORKOUT',
+      payload,
+    };
+  }
+
+  updatePendingWorkoutMeta({ workoutName, durationMinutes, exactTime, estimatedKcal } = {}, currentState = {}) {
+    if (!this.pendingAction || this.pendingAction.commandType !== 'ADD_WORKOUT') return null;
+    const next = { ...this.pendingAction.payload };
+    const userEditedKcal = estimatedKcal != null && String(estimatedKcal).trim() !== '';
+
+    if (workoutName != null && String(workoutName).trim()) {
+      next.workoutName = String(workoutName).trim();
+    }
+
+    if (durationMinutes != null && String(durationMinutes).trim() !== '') {
+      const mins = Math.max(1, Math.round(Number(durationMinutes) || 0));
+      if (Number.isFinite(mins) && mins > 0) {
+        next.durationMinutes = mins;
+      }
+    }
+
+    if (exactTime != null && String(exactTime).trim()) {
+      const raw = String(exactTime).trim();
+      const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+      if (match) {
+        const formatted = `${String(match[1]).padStart(2, '0')}:${match[2]}`;
+        next.exactTime = formatted;
+        next.timeString = formatted;
+      }
+    }
+
+    if (userEditedKcal) {
+      const kcal = Math.max(0, Math.round(Number(estimatedKcal) || 0));
+      if (Number.isFinite(kcal) && kcal >= 0) {
+        next.estimatedKcal = kcal;
+      }
+    } else if (workoutName != null) {
+      const withHistorical = applyHistoricalWorkoutKcalDefault(next, currentState);
+      if (withHistorical.estimatedKcal != null && withHistorical.estimatedKcal > 0) {
+        next.estimatedKcal = withHistorical.estimatedKcal;
+      }
+    }
+
+    this.pendingAction.payload = next;
+    this.pendingCommandPayload = next;
+    if (this.pendingAction.meta) {
+      this.pendingAction.meta.uiMessage = buildWorkoutDraftUiMessage(next);
+    }
+    return this.getWorkoutDraftSnapshot();
+  }
+
+  updatePendingWorkoutExercise(itemIndex, fields = {}) {
+    if (!this.pendingAction || this.pendingAction.commandType !== 'ADD_WORKOUT') return null;
+    const exercises = expandWorkoutPayloadExercises(this.pendingAction.payload);
+    const index = Number(itemIndex);
+    if (!Number.isFinite(index) || index < 0 || index >= exercises.length) return null;
+
+    const current = { ...exercises[index] };
+    if (fields.exerciseName != null && String(fields.exerciseName).trim()) {
+      current.exerciseName = String(fields.exerciseName).trim();
+    }
+    if (fields.sets != null) {
+      if (String(fields.sets).trim() === '') {
+        delete current.sets;
+      } else {
+        const sets = Math.max(1, Math.round(Number(fields.sets) || 0));
+        if (Number.isFinite(sets) && sets > 0) current.sets = sets;
+      }
+    }
+    if (fields.reps != null) {
+      if (String(fields.reps).trim() === '') {
+        delete current.reps;
+      } else {
+        const reps = Math.max(1, Math.round(Number(fields.reps) || 0));
+        if (Number.isFinite(reps) && reps > 0) current.reps = reps;
+      }
+    }
+    if (fields.weightKg != null) {
+      if (String(fields.weightKg).trim() === '') {
+        delete current.weightKg;
+      } else {
+        const weightKg = Math.max(0, Number(fields.weightKg) || 0);
+        if (Number.isFinite(weightKg) && weightKg > 0) {
+          current.weightKg = Math.round(weightKg * 10) / 10;
+        } else {
+          delete current.weightKg;
+        }
+      }
+    }
+
+    exercises[index] = current;
+    const next = normalizeWorkoutPayload({
+      ...this.pendingAction.payload,
+      exercises,
+    });
+    this.pendingAction.payload = next;
+    this.pendingCommandPayload = next;
+    if (this.pendingAction.meta) {
+      this.pendingAction.meta.uiMessage = buildWorkoutDraftUiMessage(next);
+    }
+    return this.getWorkoutDraftSnapshot();
+  }
+
+  removePendingWorkoutExercise(itemIndex) {
+    if (!this.pendingAction || this.pendingAction.commandType !== 'ADD_WORKOUT') return null;
+    const exercises = expandWorkoutPayloadExercises(this.pendingAction.payload);
+    const index = Number(itemIndex);
+    if (!Number.isFinite(index) || index < 0 || index >= exercises.length) return null;
+    const nextExercises = exercises.filter((_, i) => i !== index);
+    if (nextExercises.length === 0 && !String(this.pendingAction.payload?.workoutName || '').trim()) {
+      this.cancelPendingAction();
+      return null;
+    }
+    const next = normalizeWorkoutPayload({
+      ...this.pendingAction.payload,
+      exercises: nextExercises,
+    });
+    this.pendingAction.payload = next;
+    this.pendingCommandPayload = next;
+    if (this.pendingAction.meta) {
+      this.pendingAction.meta.uiMessage = buildWorkoutDraftUiMessage(next);
+    }
+    return this.getWorkoutDraftSnapshot();
   }
 
   getMealDraftSnapshot() {
@@ -576,6 +767,11 @@ export class CommandTerminalController {
         summaryText: meta.uiMessage || buildMealDraftUiMessage(payload),
         quickReplies: MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES,
       });
+    } else if (normalizedType === 'ADD_WORKOUT') {
+      this.publishWorkoutDraftMessage(payload, {
+        summaryText: meta.uiMessage || buildWorkoutDraftUiMessage(payload),
+        quickReplies: WORKOUT_DRAFT_CONFIRMATION_QUICK_REPLIES,
+      });
     } else {
       const summary = buildConfirmationSummary(normalizedType, payload);
       this.publishSystemMessage(summary);
@@ -591,17 +787,173 @@ export class CommandTerminalController {
   }
 
   executePendingAction() {
+    if (this.isExecutingAction) {
+      return { ok: false, reason: 'already_executing' };
+    }
     if (!this.pendingAction?.commandType || !this.pendingAction?.payload) {
       return { ok: false, reason: 'no_pending_action' };
     }
-    const { commandType, payload, meta = {} } = this.pendingAction;
-    const { uiMessage: _uiMessage, ...execMeta } = meta;
-    const result = this.dispatchCommand(commandType, payload, {
-      ...execMeta,
-      requiresConfirmation: false,
+
+    this.isExecutingAction = true;
+    try {
+      const snapshot = {
+        commandType: this.pendingAction.commandType,
+        payload: { ...this.pendingAction.payload },
+        meta: { ...(this.pendingAction.meta || {}) },
+        draftId: this.pendingAction.draftId || null,
+      };
+      this.resetConversationState();
+
+      const { uiMessage: _uiMessage, ...execMeta } = snapshot.meta;
+      const result = this.dispatchCommand(snapshot.commandType, snapshot.payload, {
+        ...execMeta,
+        requiresConfirmation: false,
+        correlationId: snapshot.draftId
+          ? `workout_draft_confirm_${snapshot.draftId}`
+          : `workout_confirm_${Date.now()}`,
+        dedupeKey: {
+          commandType: snapshot.commandType,
+          draftId: snapshot.draftId,
+          payload: snapshot.payload,
+        },
+      });
+      return { ok: true, ...result };
+    } finally {
+      this.isExecutingAction = false;
+    }
+  }
+
+  applyWorkoutDraftClock(payload = {}, originUserText = '') {
+    const next = { ...(payload || {}) };
+    const userProvidedTime = Boolean(parseExactTimeFromUserText(originUserText));
+    if (!userProvidedTime) {
+      const now = new Date();
+      const currentClock = now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      next.exactTime = currentClock;
+      next.timeString = currentClock;
+      return next;
+    }
+
+    const fromText = parseExactTimeFromUserText(originUserText);
+    if (fromText) {
+      next.exactTime = fromText;
+      next.timeString = fromText;
+    }
+    return next;
+  }
+
+  beginWorkoutRegistration(payload, currentState = {}, userText = '', options = {}) {
+    this.pendingWorkoutOriginUserText = String(userText || '').trim();
+    let normalized = normalizeWorkoutPayload(payload);
+
+    if (parseExactTimeFromUserText(this.pendingWorkoutOriginUserText)) {
+      const fromText = parseExactTimeFromUserText(this.pendingWorkoutOriginUserText);
+      normalized = { ...normalized, exactTime: fromText, timeString: fromText };
+    } else {
+      delete normalized.exactTime;
+      delete normalized.timeString;
+    }
+
+    this.pendingCommandType = 'ADD_WORKOUT';
+    this.pendingCommandPayload = { ...normalized };
+    this.pendingWorkoutBypassConflict = Boolean(options.bypassConflict);
+
+    if (!this.pendingWorkoutBypassConflict && hasWorkoutToday(currentState?.activeLog)) {
+      this.conversationState = CONVERSATION_STATE.AWAITING_WORKOUT_CONFLICT_RESOLUTION;
+      this.publishSystemMessage(
+        'Hai già un allenamento nel diario oggi. Vuoi procedere con un nuovo inserimento o annullare?',
+      );
+      return {
+        ok: true,
+        awaiting: true,
+        conversationState: this.conversationState,
+        pendingCommandPayload: { ...this.pendingCommandPayload },
+      };
+    }
+
+    return this.advanceWorkoutRegistration(currentState, userText);
+  }
+
+  advanceWorkoutRegistration(currentState = {}, userText = '') {
+    this.pendingCommandPayload = this.applyWorkoutDraftClock(
+      this.pendingCommandPayload || {},
+      this.pendingWorkoutOriginUserText || userText,
+    );
+    return this.publishWorkoutDraft(currentState);
+  }
+
+  publishWorkoutDraft(currentState = {}) {
+    let payload = this.applyWorkoutDraftClock(
+      { ...(this.pendingCommandPayload || {}) },
+      this.pendingWorkoutOriginUserText || '',
+    );
+    payload = applyHistoricalWorkoutKcalDefault(payload, currentState);
+    payload = normalizeWorkoutPayload(payload);
+    this.pendingCommandPayload = payload;
+
+    const validationError = validateWorkoutDraftPayload(payload);
+    if (validationError) {
+      this.bus.publish(
+        DISPATCH_COMMAND_REJECTED,
+        { reason: validationError, command: payload },
+        { source: 'CommandTerminalController' },
+      );
+      this.resetConversationState();
+      return { ok: false, reason: validationError };
+    }
+
+    const uiMessage = buildWorkoutDraftUiMessage(payload);
+    return this.stagePendingAction('ADD_WORKOUT', payload, {
+      requiresConfirmation: true,
+      uiMessage,
     });
+  }
+
+  processWorkoutSlotFillingResponse(userText, currentState = {}, options = {}) {
+    const text = String(userText || '').trim();
+    if (!text) {
+      this.bus.publish(
+        DISPATCH_COMMAND_REJECTED,
+        { reason: 'Risposta vuota.' },
+        { source: 'CommandTerminalController' },
+      );
+      return { ok: false, reason: 'empty_slot_response' };
+    }
+
+    if (this.pendingCommandType !== 'ADD_WORKOUT') {
+      this.resetConversationState();
+      return { ok: false, reason: 'unknown_pending_command' };
+    }
+
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_WORKOUT_CONFLICT_RESOLUTION) {
+      const action = parseWorkoutConflictResponse(text);
+      if (action === 'cancel') {
+        this.resetConversationState();
+        this.publishSystemMessage('Inserimento annullato.');
+        return { ok: true, cancelled: true };
+      }
+      if (action === 'proceed') {
+        this.pendingWorkoutBypassConflict = true;
+        return this.advanceWorkoutRegistration(currentState, text);
+      }
+      this.publishSystemMessage(
+        'Hai già un allenamento nel diario oggi. Vuoi procedere con un nuovo inserimento o annullare?',
+      );
+      return { ok: true, awaiting: true, conversationState: this.conversationState };
+    }
+
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_WORKOUT_TIME) {
+      const timeResult = applyWorkoutTimeSlotResponse(this.pendingCommandPayload || {}, text);
+      if (!timeResult.ok) {
+        this.publishSystemMessage('A che ora ti sei allenato? (es. 18:30)');
+        return { ok: true, awaiting: true, conversationState: this.conversationState };
+      }
+      this.pendingCommandPayload = timeResult.payload;
+      return this.publishWorkoutDraft(currentState);
+    }
+
     this.resetConversationState();
-    return { ok: true, ...result };
+    return { ok: false, reason: 'invalid_workout_slot_state' };
   }
 
   processConfirmationResponse(userText, currentState = {}, options = {}) {
@@ -619,7 +971,7 @@ export class CommandTerminalController {
     }
 
     if (confirmation === 'modify') {
-      this.publishSystemMessage('Modifica grammature o alimenti nella card qui sopra, poi conferma.');
+      this.publishSystemMessage('Modifica i dati nella card qui sopra, poi conferma.');
       return { ok: true, awaiting: true, conversationState: this.conversationState };
     }
 
@@ -858,6 +1210,13 @@ export class CommandTerminalController {
       return this.processConfirmationResponse(userText, currentState, options);
     }
 
+    if (
+      this.conversationState === CONVERSATION_STATE.AWAITING_WORKOUT_CONFLICT_RESOLUTION
+      || this.conversationState === CONVERSATION_STATE.AWAITING_WORKOUT_TIME
+    ) {
+      return this.processWorkoutSlotFillingResponse(userText, currentState, options);
+    }
+
     if (this.conversationState !== CONVERSATION_STATE.IDLE) {
       if (images.length > 0) {
         this.publishSystemMessage('Completa prima la domanda in sospeso, poi allega eventuali screenshot.');
@@ -931,7 +1290,12 @@ export class CommandTerminalController {
     }
 
     const commandType = String(commandResponse.command?.commandType || '').trim().toUpperCase();
-    const rawPayload = commandResponse.command?.payload || {};
+    let rawPayload = commandResponse.command?.payload || {};
+
+    if (commandType === 'ADD_WORKOUT') {
+      rawPayload = normalizeWorkoutPayload(rawPayload);
+      commandResponse.command = { ...commandResponse.command, payload: rawPayload };
+    }
 
     if (!COMMAND_TO_EVENT[commandType]) {
       if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
@@ -1007,7 +1371,9 @@ export class CommandTerminalController {
     console.log('✅ Intent completato con successo:', commandType);
     let payload = commandType === 'ADD_FOOD'
       ? normalizeFoodPayload(rawPayload, currentState, { inferMealTypeFromContext: true })
-      : { ...rawPayload };
+      : commandType === 'ADD_WORKOUT'
+        ? normalizeWorkoutPayload(rawPayload)
+        : { ...rawPayload };
 
     if (commandType === 'ADD_FOOD' && !payload.mealType) {
       const mealFromUser = parseMealTypeFromUserText(userText);
@@ -1016,6 +1382,10 @@ export class CommandTerminalController {
 
     if (commandType === 'ADD_FOOD' && this.shouldUseMealLogProposalCard(userText, payload)) {
       return this.publishMealLogProposalCard(payload, currentState, userText, chatHistory);
+    }
+
+    if (commandType === 'ADD_WORKOUT') {
+      return this.beginWorkoutRegistration(payload, currentState, userText);
     }
 
     return this.stagePendingAction(commandType, payload, {

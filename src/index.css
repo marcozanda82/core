@@ -1790,6 +1790,7 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  align-items: stretch;
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
@@ -1801,7 +1802,8 @@ html, body, #root {
   width: 100%;
   max-width: 480px;
   margin: 0 auto;
-  max-height: 88dvh;
+  height: min(96dvh, 100%);
+  max-height: 96dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1826,7 +1828,7 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 16px 4px;
+  padding: 8px 16px 2px;
 }
 
 .diary-details-panel__handle {
@@ -1860,7 +1862,7 @@ html, body, #root {
 
 .diary-details-summary {
   flex-shrink: 0;
-  padding: 4px 18px 14px;
+  padding: 0 18px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -1901,8 +1903,16 @@ html, body, #root {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px 14px max(18px, env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  padding: 10px 14px 0;
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
   -webkit-overflow-scrolling: touch;
+}
+
+.diary-details-scroll__spacer {
+  flex-shrink: 0;
+  height: max(150px, 20vh);
+  pointer-events: none;
 }
 
 .diary-details-empty {
@@ -1918,7 +1928,7 @@ html, body, #root {
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(15, 23, 42, 0.45);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .diary-details-meal__header {
@@ -2061,7 +2071,7 @@ html, body, #root {
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  z-index: 2;
+  z-index: 24;
   min-width: 148px;
   margin: 0;
   padding: 6px;
@@ -2070,6 +2080,11 @@ html, body, #root {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(15, 23, 42, 0.96);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.diary-details-food-row--menu-up .diary-details-food-menu__panel {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 .diary-details-food-menu__panel button {
@@ -2104,7 +2119,9 @@ html, body, #root {
 .diary-sheet-workout-group {
   margin-top: 4px;
   padding-top: 12px;
+  padding-bottom: 4px;
   border-top: 1px solid rgba(251, 146, 60, 0.18);
+  overflow: visible;
 }
 
 .diary-sheet-workout-group__header {

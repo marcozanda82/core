@@ -1,8 +1,15 @@
+import {
+  WORKOUT_CONFLICT_QUICK_REPLIES,
+  WORKOUT_TIME_QUICK_REPLIES,
+} from './workoutRegistrationSlots.js';
+
 export const CONVERSATION_STATE = Object.freeze({
   IDLE: 'IDLE',
   AWAITING_FOOD_GRAMS: 'AWAITING_FOOD_GRAMS',
   AWAITING_TIME: 'AWAITING_TIME',
   AWAITING_EXACT_TIME: 'AWAITING_EXACT_TIME',
+  AWAITING_WORKOUT_CONFLICT_RESOLUTION: 'AWAITING_WORKOUT_CONFLICT_RESOLUTION',
+  AWAITING_WORKOUT_TIME: 'AWAITING_WORKOUT_TIME',
   AWAITING_CONFIRMATION: 'AWAITING_CONFIRMATION',
 });
 
@@ -282,6 +289,92 @@ export function buildWorkoutConfirmationSummary(payload) {
   return `Ho preparato: allenamento "${name}" (${mins} min)${timeLabel}. Confermi l'inserimento?`;
 }
 
+export function expandWorkoutPayloadExercises(payload = {}) {
+  if (!payload || typeof payload !== 'object') return [];
+  if (Array.isArray(payload.exercises) && payload.exercises.length > 0) {
+    return payload.exercises
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => ({
+        exerciseName: String(item.exerciseName || item.name || '').trim(),
+        sets: Number.isFinite(Number(item.sets)) ? Math.round(Number(item.sets)) : null,
+        reps: Number.isFinite(Number(item.reps)) ? Math.round(Number(item.reps)) : null,
+        weightKg: Number.isFinite(Number(item.weightKg ?? item.weight))
+          ? Math.round(Number(item.weightKg ?? item.weight) * 10) / 10
+          : null,
+        durationMinutes: Number.isFinite(Number(item.durationMinutes))
+          ? Math.round(Number(item.durationMinutes))
+          : null,
+      }))
+      .filter((item) => item.exerciseName);
+  }
+  const singleName = String(payload.workoutName || '').trim();
+  return singleName ? [{ exerciseName: singleName }] : [];
+}
+
+export function normalizeWorkoutPayload(payload = {}) {
+  const next = { ...(payload || {}) };
+  const exercises = expandWorkoutPayloadExercises(next);
+  if (exercises.length > 0) {
+    next.exercises = exercises.map((item) => {
+      const row = { exerciseName: item.exerciseName };
+      if (item.sets != null && item.sets > 0) row.sets = item.sets;
+      if (item.reps != null && item.reps > 0) row.reps = item.reps;
+      if (item.weightKg != null && item.weightKg > 0) row.weightKg = item.weightKg;
+      if (item.durationMinutes != null && item.durationMinutes > 0) {
+        row.durationMinutes = item.durationMinutes;
+      }
+      return row;
+    });
+  }
+
+  if (!String(next.workoutName || '').trim()) {
+    next.workoutName = exercises.map((item) => item.exerciseName).join(', ') || 'Allenamento';
+  }
+
+  const mins = Number(next.durationMinutes);
+  if (!Number.isFinite(mins) || mins <= 0) {
+    next.durationMinutes = 45;
+  } else {
+    next.durationMinutes = Math.round(mins);
+  }
+
+  return next;
+}
+
+function formatWorkoutExerciseLine(exercise = {}) {
+  const name = String(exercise.exerciseName || exercise.name || '').trim() || 'Esercizio';
+  const parts = [];
+  const sets = Number(exercise.sets);
+  const reps = Number(exercise.reps);
+  const weightKg = Number(exercise.weightKg ?? exercise.weight);
+  if (Number.isFinite(sets) && sets > 0 && Number.isFinite(reps) && reps > 0) {
+    parts.push(`${sets} serie x ${reps} reps`);
+  } else if (Number.isFinite(sets) && sets > 0) {
+    parts.push(`${sets} serie`);
+  } else if (Number.isFinite(reps) && reps > 0) {
+    parts.push(`${reps} reps`);
+  }
+  if (Number.isFinite(weightKg) && weightKg > 0) {
+    parts.push(`${weightKg}kg`);
+  }
+  const suffix = parts.length ? ` (${parts.join(', ')})` : '';
+  return `- ${name}${suffix}`;
+}
+
+/** Riepilogo esplicito stile McDrive per la bozza allenamento. */
+export function buildWorkoutDraftUiMessage(payload = {}) {
+  const mins = Math.round(Number(payload?.durationMinutes) || 0);
+  const durationLabel = mins > 0 ? `${mins} min` : '-- min';
+  const time = String(payload?.exactTime || payload?.timeString || '').trim() || '--:--';
+  const kcal = Number(payload?.estimatedKcal ?? payload?.kcal);
+  const kcalLabel = Number.isFinite(kcal) && kcal > 0 ? `, ~${Math.round(kcal)} kcal` : '';
+  const exercises = expandWorkoutPayloadExercises(payload);
+  const lines = exercises.length > 0
+    ? exercises.map((item) => formatWorkoutExerciseLine(item))
+    : [`- ${String(payload?.workoutName || 'Allenamento').trim()}`];
+  return `Riepilogo Allenamento delle [${time}] (${durationLabel}${kcalLabel}):\n${lines.join('\n')}\nConfermi?`;
+}
+
 export function buildSleepConfirmationSummary(payload) {
   const hours = Math.round(Number(payload?.durationHours) * 100) / 100;
   const extras = [];
@@ -316,6 +409,13 @@ export const MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES = Object.freeze([
   'Modifica',
 ]);
 
+export const WORKOUT_DRAFT_CONFIRMATION_QUICK_REPLIES = MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES;
+
+export {
+  WORKOUT_CONFLICT_QUICK_REPLIES,
+  WORKOUT_TIME_QUICK_REPLIES,
+} from './workoutRegistrationSlots.js';
+
 /** @deprecated Usa MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES */
 export const CONFIRMATION_QUICK_REPLIES = MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES;
 
@@ -336,6 +436,12 @@ export function quickRepliesForConversationState(state) {
   }
   if (state === CONVERSATION_STATE.AWAITING_EXACT_TIME) {
     return [...EXACT_TIME_SLOT_QUICK_REPLIES];
+  }
+  if (state === CONVERSATION_STATE.AWAITING_WORKOUT_CONFLICT_RESOLUTION) {
+    return [...WORKOUT_CONFLICT_QUICK_REPLIES];
+  }
+  if (state === CONVERSATION_STATE.AWAITING_WORKOUT_TIME) {
+    return [...WORKOUT_TIME_QUICK_REPLIES];
   }
   if (state === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
     return [...MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES];

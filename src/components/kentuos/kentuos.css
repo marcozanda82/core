@@ -977,6 +977,160 @@
   width: 100%;
 }
 
+.kentu-workout-draft {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  background: linear-gradient(145deg, rgba(8, 47, 73, 0.42) 0%, rgba(15, 23, 42, 0.78) 100%);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kentu-workout-draft__header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kentu-workout-draft__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.kentu-workout-draft__meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 120px;
+}
+
+.kentu-workout-draft__meta-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+
+.kentu-workout-draft__text-input,
+.kentu-workout-draft__number-input {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.65);
+  color: inherit;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.kentu-workout-draft__text-input:focus,
+.kentu-workout-draft__number-input:focus {
+  outline: none;
+  border-color: rgba(34, 211, 238, 0.65);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.15);
+}
+
+.kentu-workout-draft__duration-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kentu-workout-draft__suffix {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.kentu-workout-draft__badge {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.15);
+  color: #67e8f9;
+}
+
+.kentu-workout-draft__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kentu-workout-draft__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.kentu-workout-draft__row-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+}
+
+.kentu-workout-draft__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 64px;
+}
+
+.kentu-workout-draft__field--name {
+  flex: 1 1 180px;
+  min-width: 140px;
+}
+
+.kentu-workout-draft__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kentu-workout-draft__icon-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 6px;
+  opacity: 0.85;
+}
+
+.kentu-workout-draft__icon-btn:hover {
+  opacity: 1;
+  background: rgba(148, 163, 184, 0.15);
+}
+
+.kentu-workout-draft__icon-btn--danger:hover {
+  background: rgba(248, 113, 113, 0.15);
+}
+
+.kentu-workout-draft__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kentu-workout-draft__confirm,
+.kentu-workout-draft__cancel {
+  width: 100%;
+}
+
 /* —— Meal proposal cards (Cameriere) —— */
 .kentu-meal-proposals {
   display: flex;

@@ -167,6 +167,24 @@ export default function DiaryDetailsSheet({
     [workoutEntries],
   );
 
+  const lastScrollItemKey = useMemo(() => {
+    if (workoutEntries.length > 0) {
+      const lastWorkout = workoutEntries[workoutEntries.length - 1]?.workout;
+      return lastWorkout?.id != null
+        ? `workout-${String(lastWorkout.id)}`
+        : `workout-${workoutEntries.length - 1}`;
+    }
+    if (mealSections.length > 0) {
+      const lastSection = mealSections[mealSections.length - 1];
+      const lastFood = lastSection?.items?.[lastSection.items.length - 1];
+      if (!lastFood) return null;
+      return lastFood.id != null
+        ? `food-${String(lastFood.id)}`
+        : `food-${lastSection.slotKey}-${lastSection.items.length - 1}`;
+    }
+    return null;
+  }, [mealSections, workoutEntries]);
+
   if (!isOpen) return null;
 
   const consumedKcal = Math.round(Number(totali?.kcal) || 0);
@@ -174,6 +192,16 @@ export default function DiaryDetailsSheet({
   const hasMeals = mealSections.length > 0;
   const hasWorkouts = workoutEntries.length > 0;
   const isEmpty = !hasMeals && !hasWorkouts;
+
+  const resolveFoodRowKey = (food, section) => (
+    food.id != null
+      ? `food-${String(food.id)}`
+      : `food-${section.slotKey}-${section.items.indexOf(food)}`
+  );
+
+  const resolveWorkoutRowKey = (workout, index) => (
+    workout.id != null ? `workout-${String(workout.id)}` : `workout-${index}`
+  );
 
   return createPortal(
     <div
@@ -259,8 +287,14 @@ export default function DiaryDetailsSheet({
                     {section.items.map((food) => {
                       const foodId = food.id != null ? String(food.id) : `${section.slotKey}-${food.desc}`;
                       const name = food.desc || food.name || 'Alimento';
+                      const rowKey = resolveFoodRowKey(food, section);
+                      const menuOpensUp = rowKey === lastScrollItemKey
+                        || food === section.items[section.items.length - 1];
                       return (
-                        <li key={foodId} className="diary-details-food-row">
+                        <li
+                          key={foodId}
+                          className={`diary-details-food-row${menuOpensUp ? ' diary-details-food-row--menu-up' : ''}`}
+                        >
                           <div className="diary-details-food-row__main">
                             <span className="diary-details-food-row__name" title={name}>
                               {name}
@@ -325,10 +359,16 @@ export default function DiaryDetailsSheet({
               </header>
 
               <ul className="diary-details-food-list">
-                {workoutEntries.map(({ workout, name, meta, timeLabel, burnedKcal }) => {
+                {workoutEntries.map(({ workout, name, meta, timeLabel, burnedKcal }, index) => {
                   const workoutId = workout.id != null ? String(workout.id) : name;
+                  const rowKey = resolveWorkoutRowKey(workout, index);
+                  const menuOpensUp = rowKey === lastScrollItemKey
+                    || index === workoutEntries.length - 1;
                   return (
-                    <li key={workoutId} className="diary-details-food-row diary-details-food-row--workout">
+                    <li
+                      key={workoutId}
+                      className={`diary-details-food-row diary-details-food-row--workout${menuOpensUp ? ' diary-details-food-row--menu-up' : ''}`}
+                    >
                       <div className="diary-details-food-row__main">
                         <span className="diary-details-food-row__name" title={name}>
                           {name}
@@ -378,6 +418,8 @@ export default function DiaryDetailsSheet({
               </ul>
             </section>
           ) : null}
+
+          <div className="diary-details-scroll__spacer" aria-hidden />
         </div>
       </div>
     </div>,

@@ -11,7 +11,7 @@ import {
 } from '../contracts/eventTypes.js';
 import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
 import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
-import { quickRepliesForConversationState, CONVERSATION_STATE, buildMealDraftUiMessage } from '../conversation/conversationState.js';
+import { quickRepliesForConversationState, CONVERSATION_STATE, buildMealDraftUiMessage, buildWorkoutDraftUiMessage } from '../conversation/conversationState.js';
 import { enrichMealDraftWithHistoricalVariations } from '../conversation/recentFoodNames.js';
 
 export function useCommandTerminal({
@@ -76,19 +76,21 @@ export function useCommandTerminal({
     });
   }, []);
 
-  const syncDraftMessageInChat = useCallback((draftId, mealDraft, summaryText) => {
+  const syncDraftMessageInChat = useCallback((draftId, draft, summaryText) => {
     if (!draftId || typeof setChatHistoryRef.current !== 'function') return;
+    const isWorkout = draft?.commandType === 'ADD_WORKOUT';
     const currentState =
       typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
-    const enrichedMealDraft = enrichMealDraftWithHistoricalVariations(mealDraft, currentState, {
-      limit: 5,
-    });
+    const enrichedMealDraft = !isWorkout
+      ? enrichMealDraftWithHistoricalVariations(draft, currentState, { limit: 5 })
+      : null;
     setChatHistoryRef.current((prev) =>
       (prev || []).map((entry) =>
         entry.draftId === draftId
           ? {
               ...entry,
-              mealDraft: enrichedMealDraft,
+              mealDraft: isWorkout ? entry.mealDraft : enrichedMealDraft,
+              workoutDraft: isWorkout ? draft : entry.workoutDraft,
               ...(summaryText ? { text: summaryText } : {}),
               draftResolved: false,
             }
@@ -105,6 +107,7 @@ export function useCommandTerminal({
           ? {
               ...entry,
               mealDraft: null,
+              workoutDraft: null,
               draftResolved: true,
               draftCancelled: cancelled,
             }
@@ -113,9 +116,23 @@ export function useCommandTerminal({
     );
   }, []);
 
+  const confirmingDraftRef = useRef(false);
+
+  const hasActiveWorkoutDraftInChat = useCallback(() => (
+    (chatHistoryRef.current || []).some((m) => m.workoutDraft && !m.draftResolved)
+  ), []);
+
   const syncActiveQuickRepliesFromController = useCallback(() => {
     const { conversationState } = controller.getConversationSnapshot();
-    setActiveQuickReplies(quickRepliesForConversationState(conversationState));
+    const replies = quickRepliesForConversationState(conversationState);
+    const hasActiveWorkoutDraft = (chatHistoryRef.current || []).some(
+      (m) => m.workoutDraft && !m.draftResolved,
+    );
+    setActiveQuickReplies(
+      hasActiveWorkoutDraft
+        ? replies.filter((label) => !/^s[iì]\s*,\s*salva\b/i.test(String(label ?? '').trim()))
+        : replies,
+    );
   }, [controller]);
 
   const resetConversationState = useCallback(() => {
@@ -195,6 +212,21 @@ export function useCommandTerminal({
             ? payload.quickReplies
             : quickRepliesForConversationState(CONVERSATION_STATE.AWAITING_CONFIRMATION),
         );
+        return;
+      }
+      if (payload.type === 'WORKOUT_DRAFT') {
+        const summaryText = String(payload.text || '').trim();
+        appendAiMessage(summaryText, {
+          type: 'WORKOUT_DRAFT',
+          workoutDraft: payload.workoutDraft || null,
+          draftId: payload.draftId || null,
+        });
+        const workoutQuickReplies = (
+          Array.isArray(payload.quickReplies) && payload.quickReplies.length > 0
+            ? payload.quickReplies
+            : quickRepliesForConversationState(CONVERSATION_STATE.AWAITING_CONFIRMATION)
+        ).filter((label) => !/^s[iì]\s*,\s*salva\b/i.test(String(label ?? '').trim()));
+        setActiveQuickReplies(workoutQuickReplies);
         return;
       }
       const text = String(payload.text || payload.message || '').trim();
@@ -303,35 +335,78 @@ export function useCommandTerminal({
       if (!label) return Promise.resolve({ ok: false, reason: 'empty_quick_reply' });
 
       const snap = controller.getConversationSnapshot();
+
+      if (snap.conversationState === CONVERSATION_STATE.AWAITING_WORKOUT_CONFLICT_RESOLUTION) {
+        if (/^annulla\b/i.test(label)) {
+          controller.resetConversationState();
+          setActiveQuickReplies([]);
+          appendAiMessage('Inserimento annullato.');
+          return Promise.resolve({ ok: true, cancelled: true });
+        }
+        return sendMessage(label, { fromSlotQuickReply: true });
+      }
+
+      if (snap.conversationState === CONVERSATION_STATE.AWAITING_WORKOUT_TIME) {
+        return sendMessage(label, { fromSlotQuickReply: true });
+      }
+
       if (snap.conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
         const draftId = snap.pendingAction?.draftId || null;
+        const hasActiveWorkoutDraft = (chatHistoryRef.current || []).some(
+          (m) => m.workoutDraft && !m.draftResolved,
+        );
         if (/^s[iì]\s*,\s*salva\b/i.test(label) || /^s[iì]\s*,\s*confermo\b/i.test(label)) {
+          if (hasActiveWorkoutDraft && snap.pendingAction?.commandType === 'ADD_WORKOUT') {
+            return Promise.resolve({ ok: false, reason: 'use_workout_card_confirm' });
+          }
+          if (confirmingDraftRef.current) {
+            return Promise.resolve({ ok: false, reason: 'confirm_in_flight' });
+          }
+          confirmingDraftRef.current = true;
           if (draftId) resolveDraftMessage(draftId);
           setActiveQuickReplies([]);
-          return Promise.resolve(controller.confirmPendingAction());
+          return Promise.resolve(controller.confirmPendingAction()).finally(() => {
+            confirmingDraftRef.current = false;
+          });
         }
         if (/^no\s*,\s*annulla\b/i.test(label)) {
           return Promise.resolve(handleDraftCancel(draftId));
         }
         if (/^modifica\b/i.test(label)) {
+          if (hasActiveWorkoutDraftInChat() && snap.pendingAction?.commandType === 'ADD_WORKOUT') {
+            appendAiMessage('Modifica i dati nella card qui sopra, poi conferma.');
+            return Promise.resolve({ ok: true, awaiting: true, reason: 'inline_workout_edit' });
+          }
           return sendMessage(label, { fromSlotQuickReply: true });
         }
       }
 
       return sendMessage(label, { fromSlotQuickReply: true });
     },
-    [controller, handleDraftCancel, resolveDraftMessage, sendMessage],
+    [controller, handleDraftCancel, resolveDraftMessage, sendMessage, appendAiMessage, hasActiveWorkoutDraftInChat],
   );
 
   const handleDraftConfirm = useCallback(
     async (draftId) => {
+      if (confirmingDraftRef.current) {
+        return { ok: false, reason: 'confirm_in_flight' };
+      }
       const snap = controller.getConversationSnapshot();
       if (snap.conversationState !== CONVERSATION_STATE.AWAITING_CONFIRMATION) {
         return { ok: false, reason: 'no_pending_draft' };
       }
-      resolveDraftMessage(draftId);
-      setActiveQuickReplies([]);
-      return controller.confirmPendingAction();
+      if (snap.pendingAction?.draftId && draftId && snap.pendingAction.draftId !== draftId) {
+        return { ok: false, reason: 'stale_draft_confirm' };
+      }
+      // ADD_WORKOUT: conferma solo via card inline — mai aprire drawer/cassetto nativo.
+      confirmingDraftRef.current = true;
+      try {
+        resolveDraftMessage(draftId);
+        setActiveQuickReplies([]);
+        return controller.confirmPendingAction();
+      } finally {
+        confirmingDraftRef.current = false;
+      }
     },
     [controller, resolveDraftMessage],
   );
@@ -381,6 +456,50 @@ export function useCommandTerminal({
       return { ok: true, mealDraft: updated };
     },
     [controller, syncDraftMessageInChat],
+  );
+
+  const handleWorkoutDraftUpdateMeta = useCallback(
+    (draftId, { workoutName, durationMinutes, exactTime, estimatedKcal } = {}) => {
+      const currentState =
+        typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
+      const updated = controller.updatePendingWorkoutMeta({
+        workoutName,
+        durationMinutes,
+        exactTime,
+        estimatedKcal,
+      }, currentState);
+      if (!updated) return { ok: false, reason: 'invalid_workout_draft_meta_update' };
+      syncDraftMessageInChat(draftId, updated, buildWorkoutDraftUiMessage(updated.payload));
+      return { ok: true, workoutDraft: updated };
+    },
+    [controller, syncDraftMessageInChat],
+  );
+
+  const handleWorkoutDraftUpdateExercise = useCallback(
+    (draftId, itemIndex, fields) => {
+      const updated = controller.updatePendingWorkoutExercise(itemIndex, fields);
+      if (!updated) return { ok: false, reason: 'invalid_workout_exercise_update' };
+      syncDraftMessageInChat(draftId, updated, buildWorkoutDraftUiMessage(updated.payload));
+      return { ok: true, workoutDraft: updated };
+    },
+    [controller, syncDraftMessageInChat],
+  );
+
+  const handleWorkoutDraftRemoveExercise = useCallback(
+    (draftId, itemIndex) => {
+      const updated = controller.removePendingWorkoutExercise(itemIndex);
+      if (!updated) {
+        resolveDraftMessage(draftId, { cancelled: true });
+        setActiveQuickReplies([]);
+        if (controller.getConversationSnapshot().conversationState === CONVERSATION_STATE.IDLE) {
+          appendAiMessage('Bozza annullata (nessun esercizio rimasto).');
+        }
+        return { ok: true, cancelled: true };
+      }
+      syncDraftMessageInChat(draftId, updated, buildWorkoutDraftUiMessage(updated.payload));
+      return { ok: true, workoutDraft: updated };
+    },
+    [controller, resolveDraftMessage, syncDraftMessageInChat, appendAiMessage],
   );
 
   const handleAcceptAdvice = useCallback(async (suggestedAction, adviceId) => {
@@ -536,6 +655,9 @@ export function useCommandTerminal({
     handleDraftUpdateItemGrams,
     handleDraftUpdateMealMeta,
     handleDraftUpdateFoodItemName,
+    handleWorkoutDraftUpdateMeta,
+    handleWorkoutDraftUpdateExercise,
+    handleWorkoutDraftRemoveExercise,
     getConversationSnapshot: () => controller.getConversationSnapshot(),
     resetConversationState,
   };

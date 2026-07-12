@@ -5,6 +5,7 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import MenuProposalCard from './MenuProposalCard';
 import DailyPlanCard from './DailyPlanCard';
 import MealDraftConfirmation from './components/MealDraftConfirmation';
+import WorkoutDraftConfirmation from './components/WorkoutDraftConfirmation';
 import MealProposalCards from './components/MealProposalCards';
 import {
   KentuIcon,
@@ -56,6 +57,9 @@ export default function AiCluster({
   onDraftUpdateItemGrams,
   onDraftUpdateMealMeta,
   onDraftUpdateFoodItemName,
+  onWorkoutDraftUpdateMeta,
+  onWorkoutDraftUpdateExercise,
+  onWorkoutDraftRemoveExercise,
   /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
   dailyLog = [],
   onBack,
@@ -75,10 +79,23 @@ export default function AiCluster({
       (m) => m.mealProposal
         || m.dailyPlan
         || (m.mealDraft && !m.draftResolved)
+        || (m.workoutDraft && !m.draftResolved)
         || (Array.isArray(m.mealProposals) && m.mealProposals.length > 0),
     ),
     [chatHistory]
   );
+
+  const hasActiveWorkoutDraft = useMemo(
+    () => (chatHistory || []).some((m) => m.workoutDraft && !m.draftResolved),
+    [chatHistory],
+  );
+
+  const visibleQuickReplies = useMemo(() => {
+    if (!hasActiveWorkoutDraft) return activeQuickReplies;
+    return activeQuickReplies.filter(
+      (label) => !/^s[iì]\s*,\s*salva\b/i.test(String(label ?? '').trim()),
+    );
+  }, [activeQuickReplies, hasActiveWorkoutDraft]);
 
   return (
     <div
@@ -165,6 +182,27 @@ export default function AiCluster({
                     onUpdateItemGrams={onDraftUpdateItemGrams}
                     onUpdateMealMeta={onDraftUpdateMealMeta}
                     onUpdateFoodItemName={onDraftUpdateFoodItemName}
+                  />
+                </div>
+              ) : msg.sender === 'ai' && msg.workoutDraft && !msg.draftResolved && !msg.isTyping ? (
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {msg.text ? (
+                    splitAiMessageSections(msg.text).map((block, si) =>
+                      si === 0 ? (
+                        <KentuInsightHero key={`workout-draft-text-${si}`} block={block} />
+                      ) : (
+                        <KentuInsightCard key={`workout-draft-text-${si}`} block={block} />
+                      )
+                    )
+                  ) : null}
+                  <WorkoutDraftConfirmation
+                    workoutDraft={msg.workoutDraft}
+                    draftId={msg.draftId}
+                    onConfirm={onDraftConfirm}
+                    onCancel={onDraftCancel}
+                    onRemoveExercise={onWorkoutDraftRemoveExercise}
+                    onUpdateWorkoutMeta={onWorkoutDraftUpdateMeta}
+                    onUpdateExercise={onWorkoutDraftUpdateExercise}
                   />
                 </div>
               ) : msg.sender === 'ai' ? (
@@ -352,9 +390,9 @@ export default function AiCluster({
             ))}
           </div>
         )}
-        {activeQuickReplies.length > 0 ? (
+        {visibleQuickReplies.length > 0 ? (
           <div className="flex w-full flex-row gap-2 overflow-x-auto px-2 pb-2 scrollbar-hide">
-            {activeQuickReplies.map((label) => (
+            {visibleQuickReplies.map((label) => (
               <button
                 key={label}
                 type="button"

@@ -21,6 +21,9 @@ export default function KentuChatUI({
   onDraftUpdateItemGrams,
   onDraftUpdateMealMeta,
   onDraftUpdateFoodItemName,
+  onWorkoutDraftUpdateMeta,
+  onWorkoutDraftUpdateExercise,
+  onWorkoutDraftRemoveExercise,
   onBack,
   introPhrase,
   isProcessing = false,
@@ -56,6 +59,9 @@ export default function KentuChatUI({
         onDraftUpdateItemGrams={onDraftUpdateItemGrams}
         onDraftUpdateMealMeta={onDraftUpdateMealMeta}
         onDraftUpdateFoodItemName={onDraftUpdateFoodItemName}
+        onWorkoutDraftUpdateMeta={onWorkoutDraftUpdateMeta}
+        onWorkoutDraftUpdateExercise={onWorkoutDraftUpdateExercise}
+        onWorkoutDraftRemoveExercise={onWorkoutDraftRemoveExercise}
         onBack={onBack}
         introPhrase={introPhrase}
         isProcessing={isProcessing}

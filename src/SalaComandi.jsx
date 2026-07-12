@@ -27,6 +27,7 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
 import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandTerminal';
+import { mapChatWorkoutToNativePayload } from './features/workout/workoutAdapter';
 import { callGeminiAPIWithRotation } from './services/aiService';
 import { useProfileAndTargets } from './hooks/useProfileAndTargets';
 import { useTimelineDrag } from './hooks/useTimelineDrag';
@@ -1309,6 +1310,7 @@ export default function SalaComandi() {
   const kentuAgendaAwaitingRef = useRef(false);
   /** Flusso chat: conferma orario allenamento prima del log. */
   const pendingWorkoutFlowRef = useRef(null);
+  const lastWorkoutCommitRef = useRef({ key: '', at: 0 });
   /** Contesto per prompt AI: allenamento programmato nel futuro (no pasti "adesso"). */
   const scheduledWorkoutContextRef = useRef(null);
   const lastLogFromFirebaseRef = useRef(null);
@@ -6953,50 +6955,70 @@ ${dbKeys || 'n/d'}`;
 
   const commitAddWorkoutCommand = useCallback(
     (payload) => {
-      const workoutName = String(payload?.workoutName || '').trim();
-      if (!workoutName) throw new Error('workoutName mancante');
-      const durationMinutes = Math.max(1, Math.round(Number(payload?.durationMinutes) || 0));
-      if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
-        throw new Error('durationMinutes non valido');
+      const fingerprint = JSON.stringify({
+        workoutName: payload?.workoutName,
+        timeString: payload?.timeString || payload?.exactTime,
+        durationMinutes: payload?.durationMinutes,
+        estimatedKcal: payload?.estimatedKcal,
+        exercises: payload?.exercises,
+      });
+      const now = Date.now();
+      if (
+        lastWorkoutCommitRef.current.key === fingerprint
+        && now - lastWorkoutCommitRef.current.at < 4000
+      ) {
+        return null;
       }
-      const duration = Math.max(0.1, durationMinutes / 60);
-      const parsedKcal = Number(payload?.estimatedKcal);
-      const kcal = Number.isFinite(parsedKcal) && parsedKcal >= 0
-        ? Math.round(parsedKcal)
-        : Math.round(durationMinutes * 6);
-      const workoutDec =
-        payload?.timeString != null && String(payload.timeString).trim()
-          ? parseFlexibleTimeToDecimal(String(payload.timeString).trim())
-          : getCurrentTimeRoundedTo15Min();
-      const timeSafe = Number.isFinite(workoutDec) ? workoutDec : getCurrentTimeRoundedTo15Min();
-      const logEntry = {
-        id: `cmd_workout_${Date.now()}`,
-        type: 'workout',
-        workoutType: 'misto',
-        desc: workoutName,
-        name: workoutName,
-        kcal,
-        cal: kcal,
-        duration,
-        time: timeSafe,
-        mealTime: timeSafe,
-      };
+      lastWorkoutCommitRef.current = { key: fingerprint, at: now };
+
+      const workoutName = String(payload?.workoutName || '').trim()
+        || (Array.isArray(payload?.exercises)
+          ? payload.exercises.map((item) => String(item?.exerciseName || '').trim()).filter(Boolean).join(', ')
+          : '');
+      if (!workoutName && !(Array.isArray(payload?.exercises) && payload.exercises.length > 0)) {
+        throw new Error('workoutName mancante');
+      }
+
+      const timeLabel = String(payload?.timeString || payload?.exactTime || '').trim();
+      if (!timeLabel) {
+        throw new Error('timeString mancante');
+      }
+      const timeDecimal = parseFlexibleTimeToDecimal(timeLabel);
+      if (!Number.isFinite(timeDecimal)) {
+        throw new Error('orario non valido');
+      }
+
+      const { logItem, timelineNode } = mapChatWorkoutToNativePayload(payload, timeDecimal);
+      const durationMinutes = Math.max(1, Math.round((Number(logItem.duration) || 0) * 60));
+      const label = String(logItem.desc || logItem.name || workoutName).trim();
+
       if (isSimulationMode) {
-        setSimulatedLog((prev) => [logEntry, ...(prev || [])]);
+        setSimulatedLog((prev) => {
+          const filteredLog = (prev || []).filter((item) => item?.id !== logItem.id);
+          return [logItem, ...filteredLog];
+        });
       } else {
         setDailyLog((prev) => {
-          const nextLog = [logEntry, ...(prev || [])];
-          syncDatiFirebase(nextLog, manualNodesRef.current);
-          return nextLog;
+          const filteredLog = (prev || []).filter((item) => item?.id !== logItem.id);
+          const newLog = [logItem, ...filteredLog];
+          const filteredNodes = (manualNodesRef.current || []).filter(
+            (node) => node?.id !== timelineNode.id,
+          );
+          const newNodes = [...filteredNodes, timelineNode].filter(
+            (node) => node && node.type !== 'ghost_workout',
+          );
+          setManualNodes(newNodes);
+          syncDatiFirebase(newLog, newNodes);
+          return newLog;
         });
       }
-      return `✅ Allenamento registrato: ${workoutName} (${durationMinutes} min, ~${kcal} kcal).`;
+      return `✅ Allenamento registrato: ${label} (${durationMinutes} min, ~${logItem.kcal} kcal).`;
     },
     [
-      getCurrentTimeRoundedTo15Min,
       isSimulationMode,
       parseFlexibleTimeToDecimal,
       setDailyLog,
+      setManualNodes,
       setSimulatedLog,
       syncDatiFirebase,
     ],
@@ -7079,6 +7101,9 @@ ${dbKeys || 'n/d'}`;
     handleDraftUpdateItemGrams,
     handleDraftUpdateMealMeta,
     handleDraftUpdateFoodItemName,
+    handleWorkoutDraftUpdateMeta,
+    handleWorkoutDraftUpdateExercise,
+    handleWorkoutDraftRemoveExercise,
   } = useCommandTerminal({
     chatHistory,
     setChatHistory,
@@ -8590,6 +8615,9 @@ ${dbKeys || 'n/d'}`;
             onDraftUpdateItemGrams={handleDraftUpdateItemGrams}
             onDraftUpdateMealMeta={handleDraftUpdateMealMeta}
             onDraftUpdateFoodItemName={handleDraftUpdateFoodItemName}
+            onWorkoutDraftUpdateMeta={handleWorkoutDraftUpdateMeta}
+            onWorkoutDraftUpdateExercise={handleWorkoutDraftUpdateExercise}
+            onWorkoutDraftRemoveExercise={handleWorkoutDraftRemoveExercise}
             onBack={() => setActiveAction(null)}
             introPhrase={introPhrase}
             isProcessing={isChatProcessing}

@@ -686,9 +686,7 @@ function sanitizeAddWorkoutCommand(command, userText, conversationText = '', con
   }
 
   const durationMinutes = Number(payload.durationMinutes);
-  if (!userTextMentionsExplicitWorkoutDuration(combinedText)) {
-    delete payload.durationMinutes;
-  } else if (Number.isFinite(durationMinutes) && durationMinutes > 0) {
+  if (Number.isFinite(durationMinutes) && durationMinutes > 0) {
     payload.durationMinutes = Math.round(durationMinutes);
   } else {
     delete payload.durationMinutes;
