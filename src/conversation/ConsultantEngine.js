@@ -1,7 +1,7 @@
 import { computeTotali } from '../useBiochimico';
 import { searchFoodsDetailed } from '../foodSearch';
 import { estraiDatiFoodDb } from '../features/salaComandi/engines/foodDataEngine';
-import { toCanonicalMealType } from '../coreEngine';
+import { toCanonicalMealType, generateCortisolCurve } from '../coreEngine';
 import { inferDefaultMealType, expandFoodPayloadItems } from '../features/commandTerminal/conversation/conversationState';
 import {
   applyMealRegistrationSmartDefaults,
@@ -19,6 +19,13 @@ import {
   collectMealEventsFromFullHistory,
 } from '../features/mealBuilder/hooks/usePredictiveMealCombos';
 import { activityLabelFromBlock } from '../features/weeklyBlocks/activityCatalog';
+import {
+  DEFAULT_STRATEGY_DELTA,
+  isActiveDayBlock,
+  isUserAssignedDayBlock,
+  resolveBlockKcalTarget,
+} from '../features/weeklyBlocks/weeklyBlockSchema';
+import { isMealProposalQuery } from '../features/commandTerminal/conversation/mealLogIntent.js';
 import {
   formatDecimalHourIt,
   parseFlexibleTimeToDecimal,
@@ -337,6 +344,96 @@ function pushWorkoutCandidate(bucket, candidate) {
 }
 
 /**
+ * Giorno di riposo / recupero nel Costruttore Settimanale (nessun allenamento imminente).
+ * @param {import('../features/weeklyBlocks/weeklyBlockSchema').DayBlock | null | undefined} planBlock
+ * @returns {boolean}
+ */
+export function isPlannedRestDayBlock(planBlock) {
+  if (!planBlock?.activity) return false;
+  const kind = String(planBlock.activity.kind || '').toUpperCase();
+  if (kind === 'REST' || kind === 'RECOVERY') return true;
+  return String(planBlock.meta?.plannerWorkoutType || '').toLowerCase() === 'riposo';
+}
+
+/**
+ * Strategia calorica del giorno dal piano settimanale (surplus in allenamento, deficit in riposo).
+ * @param {object} currentAppState
+ * @returns {{
+ *   hasWeeklyDayPlan: boolean,
+ *   directive: 'deficit' | 'surplus' | 'maintenance' | 'refeed' | 'custom' | null,
+ *   status: string | null,
+ *   deltaKcal: number,
+ *   targetKcal: number,
+ *   activityLabel: string | null,
+ *   dayKind: string | null,
+ *   isRestDay: boolean,
+ *   isTrainingDay: boolean,
+ *   rationale: string | null,
+ * }}
+ */
+export function buildDailyCalorieStrategyContext(currentAppState = {}) {
+  const planBlock = currentAppState?.todayPlanBlock;
+  const profileKcal = Math.round(Number(currentAppState?.userTargets?.kcal) || 2000);
+  const dynamicKcal = Number(currentAppState?.dynamicDailyKcal);
+
+  if (!isUserAssignedDayBlock(planBlock)) {
+    const fallbackTarget = Number.isFinite(dynamicKcal) && dynamicKcal > 0
+      ? Math.round(dynamicKcal)
+      : profileKcal;
+    return {
+      hasWeeklyDayPlan: false,
+      directive: null,
+      status: null,
+      deltaKcal: 0,
+      targetKcal: fallbackTarget,
+      activityLabel: null,
+      dayKind: null,
+      isRestDay: false,
+      isTrainingDay: false,
+      rationale: null,
+    };
+  }
+
+  const isRestDay = isPlannedRestDayBlock(planBlock);
+  const isTrainingDay = isActiveDayBlock(planBlock);
+  const strat = planBlock.calorieStrategy || {};
+  const blockDelta = Math.round(Number(strat.deltaKcal) || 0);
+
+  let directive = String(strat.status || 'maintenance');
+  let deltaKcal = blockDelta;
+
+  if (isRestDay) {
+    directive = 'deficit';
+    deltaKcal = blockDelta < 0 ? blockDelta : DEFAULT_STRATEGY_DELTA.deficit;
+  } else if (isTrainingDay) {
+    directive = 'surplus';
+    deltaKcal = blockDelta > 0 ? blockDelta : DEFAULT_STRATEGY_DELTA.surplus;
+  }
+
+  const plannedTarget = resolveBlockKcalTarget(planBlock, profileKcal);
+  const targetKcal = Number.isFinite(dynamicKcal) && dynamicKcal > 0
+    ? Math.round(dynamicKcal)
+    : plannedTarget;
+
+  return {
+    hasWeeklyDayPlan: true,
+    directive,
+    status: String(strat.status || directive),
+    deltaKcal,
+    targetKcal,
+    activityLabel: activityLabelFromBlock(planBlock),
+    dayKind: String(planBlock.activity?.kind || '').toUpperCase() || null,
+    isRestDay,
+    isTrainingDay,
+    rationale: isRestDay
+      ? 'Giorno di riposo nel Costruttore Settimanale: priorità deficit calorico e recupero.'
+      : isTrainingDay
+        ? 'Giorno di allenamento nel Costruttore Settimanale: priorità surplus calorico per performance.'
+        : 'Giorno pianificato nel Costruttore Settimanale: rispetta la strategia del blocco.',
+  };
+}
+
+/**
  * Prossimo allenamento futuro rispetto all'orario attuale (null se assente o già svolto).
  *
  * @param {object} currentAppState
@@ -358,53 +455,63 @@ export function resolveUpcomingWorkout(currentAppState = {}) {
     || currentAppState?.isWorkoutDoneToday === true;
   if (hasRealWorkout) return null;
 
+  const planBlock = currentAppState?.todayPlanBlock;
+  const hasAssignedWeeklyPlan = isUserAssignedDayBlock(planBlock);
+
+  // Il Costruttore Settimanale è fonte di verità: in riposo/recupero non c'è pre-workout.
+  if (hasAssignedWeeklyPlan && isPlannedRestDayBlock(planBlock)) {
+    return null;
+  }
+
   const candidates = [];
 
-  const scheduled = currentAppState?.scheduledWorkout;
-  if (scheduled && Number.isFinite(Number(scheduled.workoutDecimalHour))) {
-    pushWorkoutCandidate(candidates, {
-      timeDecimal: Number(scheduled.workoutDecimalHour),
-      name: String(scheduled.label || 'Allenamento').trim(),
-      source: 'chat_scheduled',
-    });
-  }
-
-  const planBlock = currentAppState?.todayPlanBlock;
-  if (planBlock?.activity) {
-    const kind = String(planBlock.activity.kind || planBlock.meta?.plannerWorkoutType || '').toUpperCase();
-    const isRest = kind === 'REST' || planBlock.meta?.plannerWorkoutType === 'riposo';
-    if (!isRest) {
-      const hourRaw = planBlock.activity.hour ?? planBlock.meta?.plannerStartTime;
-      const hourDec = typeof hourRaw === 'number'
-        ? hourRaw
-        : parseFlexibleTimeToDecimal(String(hourRaw || ''));
-      pushWorkoutCandidate(candidates, {
-        timeDecimal: hourDec,
-        name: activityLabelFromBlock(planBlock),
-        source: 'day_plan_block',
-      });
-    }
-  }
-
-  const nodeSources = [
-    ...(Array.isArray(currentAppState?.timelineNodes) ? currentAppState.timelineNodes : []),
-    ...(Array.isArray(currentAppState?.manualNodes) ? currentAppState.manualNodes : []),
-    ...(Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : []),
-  ];
-
-  nodeSources.forEach((entry) => {
-    if (!entry) return;
-    const type = String(entry.type || '').toLowerCase();
-    if (type !== 'workout' && type !== 'ghost_workout' && type !== 'work') return;
-    if (type === 'workout' && entry.isGhost === true) return;
-
-    const hourDec = resolveActivityOrWorkoutTimelineHour(entry);
+  const pushPlanBlockCandidate = () => {
+    if (!planBlock?.activity || !isActiveDayBlock(planBlock)) return;
+    const hourRaw = planBlock.activity.hour ?? planBlock.meta?.plannerStartTime;
+    const hourDec = typeof hourRaw === 'number'
+      ? hourRaw
+      : parseFlexibleTimeToDecimal(String(hourRaw || ''));
     pushWorkoutCandidate(candidates, {
       timeDecimal: hourDec,
-      name: resolveWorkoutCandidateName(entry),
-      source: type === 'ghost_workout' ? 'ghost_timeline' : 'diary_or_timeline',
+      name: activityLabelFromBlock(planBlock),
+      source: 'day_plan_block',
     });
-  });
+  };
+
+  if (hasAssignedWeeklyPlan) {
+    pushPlanBlockCandidate();
+  } else {
+    const scheduled = currentAppState?.scheduledWorkout;
+    if (scheduled && Number.isFinite(Number(scheduled.workoutDecimalHour))) {
+      pushWorkoutCandidate(candidates, {
+        timeDecimal: Number(scheduled.workoutDecimalHour),
+        name: String(scheduled.label || 'Allenamento').trim(),
+        source: 'chat_scheduled',
+      });
+    }
+
+    pushPlanBlockCandidate();
+
+    const nodeSources = [
+      ...(Array.isArray(currentAppState?.timelineNodes) ? currentAppState.timelineNodes : []),
+      ...(Array.isArray(currentAppState?.manualNodes) ? currentAppState.manualNodes : []),
+      ...(Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : []),
+    ];
+
+    nodeSources.forEach((entry) => {
+      if (!entry) return;
+      const type = String(entry.type || '').toLowerCase();
+      if (type !== 'workout' && type !== 'ghost_workout' && type !== 'work') return;
+      if (type === 'workout' && entry.isGhost === true) return;
+
+      const hourDec = resolveActivityOrWorkoutTimelineHour(entry);
+      pushWorkoutCandidate(candidates, {
+        timeDecimal: hourDec,
+        name: resolveWorkoutCandidateName(entry),
+        source: type === 'ghost_workout' ? 'ghost_timeline' : 'diary_or_timeline',
+      });
+    });
+  }
 
   const deduped = [];
   const seenTimes = new Set();
@@ -486,32 +593,18 @@ export function buildUserHabitsForCurrentMeal(currentAppState = {}, mealType) {
  * @returns {boolean}
  */
 export function isGenericMealSuggestionQuery(userText) {
-  const t = String(userText || '').trim().toLowerCase();
-  if (!t) return false;
-
-  const patterns = [
-    /\b(?:proponi|suggerisci)\b/,
-    /\bconsigli\b.*\b(?:pranzo|colazione|cena|snack|pasto|mangio|mangiare)\b/,
-    /\bche\s+mangio\b/,
-    /\bidee\b.*\b(?:pasto|pranzo|colazione|cena|mangio|mangiare)\b/,
-    /cosa\s+(?:mi\s+)?(?:proponi|suggerisci|consigli)/,
-    /(?:che|cosa)\s+(?:pasto|cosa)\s+(?:mangio|preparo|faccio)/,
-    /cosa\s+mangio/,
-    /(?:colazione|pranzo|cena|snack)\s+(?:cosa|che\s+cosa)/,
-    /mang(?:io|erò|ere)\s+\w+(?:\s+e\s+\w+)+/,
-    /(?:proponi|suggerisci)\s+(?:un\s+)?pasto/,
-    /(?:carica|registra)\s+(?:il\s+)?(?:mio\s+)?(?:solito|abituale)/,
-  ];
-
-  return patterns.some((pattern) => pattern.test(t));
+  return isMealProposalQuery(userText);
 }
 
 function pickTargets(currentAppState) {
   const targets = currentAppState?.userTargets || {};
+  const strategy = buildDailyCalorieStrategyContext(currentAppState);
   const dynamicKcal = Number(currentAppState?.dynamicDailyKcal);
   const kcalTarget = Number.isFinite(dynamicKcal) && dynamicKcal > 0
     ? Math.round(dynamicKcal)
-    : Math.round(Number(targets.kcal) || 2000);
+    : strategy.hasWeeklyDayPlan && strategy.targetKcal > 0
+      ? strategy.targetKcal
+      : Math.round(Number(targets.kcal) || 2000);
   return {
     kcal: kcalTarget,
     pro: Number(targets.prot ?? targets.pro ?? 150) || 150,
@@ -529,6 +622,70 @@ function computeRemainingBudget(currentAppState) {
     pro: roundMacro(targets.pro - (Number(totali.prot) || 0)),
     carbo: roundMacro(targets.carbo - (Number(totali.carb) || 0)),
     fat: roundMacro(targets.fat - (Number(totali.fatTotal ?? totali.fat) || 0)),
+  };
+}
+
+function resolveCortisolScoreAtHour(currentAppState = {}, decimalHour) {
+  const h = Number(decimalHour);
+  if (!Number.isFinite(h)) return null;
+  const activeLog = Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : [];
+  const manualNodes = Array.isArray(currentAppState?.manualNodes)
+    ? currentAppState.manualNodes
+    : Array.isArray(currentAppState?.timelineNodes)
+      ? currentAppState.timelineNodes
+      : [];
+  const curve = generateCortisolCurve(activeLog, manualNodes);
+  if (!Array.isArray(curve) || curve.length === 0) return null;
+  let closest = curve[0];
+  let minDist = Math.abs(curve[0].time - h);
+  for (let i = 1; i < curve.length; i += 1) {
+    const dist = Math.abs(curve[i].time - h);
+    if (dist < minDist) {
+      minDist = dist;
+      closest = curve[i];
+    }
+  }
+  const score = Number(closest?.cortisolScore);
+  return Number.isFinite(score) ? Math.round(score) : null;
+}
+
+/**
+ * Contesto serale per regole anti-cortisolo e Digestive Safety Gate.
+ * @param {object} currentAppState
+ * @returns {{
+ *   isDinnerContext: boolean,
+ *   isEvening: boolean,
+ *   cortisolScore: number | null,
+ *   eveningStressRisk: 'high' | 'low',
+ *   bodyBatteryPercent: number | null,
+ * }}
+ */
+export function buildEveningMetabolicContext(currentAppState = {}) {
+  const decimalHour = Number(currentAppState?.decimalHour);
+  const isEvening = Number.isFinite(decimalHour) && decimalHour >= 18;
+  const currentMealType = resolveCurrentMealType(currentAppState);
+  const isDinnerContext = currentMealType === 'cena' || isEvening;
+
+  const cortisolFromState = Number(currentAppState?.dailyStats?.cortisolScore);
+  const cortisolScore = Number.isFinite(cortisolFromState)
+    ? Math.round(cortisolFromState)
+    : resolveCortisolScoreAtHour(currentAppState, decimalHour);
+
+  const bodyBattery = Number(currentAppState?.dailyStats?.bodyBatteryPercent);
+  const energyAt20 = Number(currentAppState?.dailyStats?.energyAt20);
+
+  const eveningStressRisk = (
+    (Number.isFinite(cortisolScore) && cortisolScore >= 50 && isEvening)
+    || (Number.isFinite(energyAt20) && energyAt20 < 40)
+    || (Number.isFinite(bodyBattery) && bodyBattery < 40 && isEvening)
+  ) ? 'high' : 'low';
+
+  return {
+    isDinnerContext,
+    isEvening,
+    cortisolScore: Number.isFinite(cortisolScore) ? cortisolScore : null,
+    eveningStressRisk,
+    bodyBatteryPercent: Number.isFinite(bodyBattery) ? Math.round(bodyBattery) : null,
   };
 }
 
@@ -665,6 +822,7 @@ export function buildNutritionContextForState(currentAppState = {}) {
     remainingBudget: computeRemainingBudget(currentAppState),
     userHabitsForCurrentMeal: buildUserHabitsForCurrentMeal(currentAppState, currentMealType),
     upcomingWorkout: resolveUpcomingWorkout(currentAppState),
+    dailyCalorieStrategy: buildDailyCalorieStrategyContext(currentAppState),
   };
 }
 
@@ -689,6 +847,8 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
   const userHabitsForCurrentMeal = nutrition.userHabitsForCurrentMeal;
   const fallbackMealProposals = buildFallbackMealProposalsFromFoodDb(currentAppState, currentMealType);
   const upcomingWorkout = nutrition.upcomingWorkout;
+  const dailyCalorieStrategy = nutrition.dailyCalorieStrategy;
+  const eveningMetabolicContext = buildEveningMetabolicContext(currentAppState);
 
   return {
     targetFood: foodQuery,
@@ -701,6 +861,8 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     fallbackMealProposals,
     isGenericMealSuggestion: isGenericSuggestion,
     upcomingWorkout,
+    dailyCalorieStrategy,
+    eveningMetabolicContext,
     foodDatabase: foodDb,
     fullHistory: currentAppState?.fullHistory || {},
   };
@@ -725,15 +887,24 @@ export function generateConsultantSystemInstruction() {
     'REGOLA TASSATIVA ABITUDINI: se l utente chiede suggerimenti per il pasto o dichiara un pasto generico',
     '(es. "mangio pane e pomodoro", "cosa mi proponi per pranzo"), cerca PRIMA in [USER_HABITS_FOR_CURRENT_MEAL].',
     'Proponi la combinazione e grammatura storica. Non inventare grammature se esistono nello storico.',
-    'CORREZIONE PROPORZIONALE PRE-ALLENAMENTO: se [UPCOMING_WORKOUT] indica un allenamento entro 2-3 ore,',
+    'STRATEGIA MACROCICLICA GIORNALIERA: leggi [DAILY_CALORIE_STRATEGY] dal Costruttore Settimanale. Se directive è deficit (giorno riposo/recupero), orienta mealProposals verso porzioni coerenti con deficit: evita surplus calorico non necessario, privilegia proteine e fibre, carboidrati moderati. Se directive è surplus (giorno allenamento), favorisci carboidrati e calorie sufficienti per performance e recupero. Il [METABOLIC_BUDGET] riflette già targetKcal e delta della strategia: rispettalo. Se hasWeeklyDayPlan è true, NON ignorare il programma settimanale dell utente.',
+    'RIPOSO PIANIFICATO E PRE-WORKOUT: se [DAILY_CALORIE_STRATEGY].isRestDay è true O [UPCOMING_WORKOUT] è null, NON applicare CORREZIONE PROPORZIONALE PRE-ALLENAMENTO, Digestive Safety Gate pre-workout né semaforo giallo pre-allenamento. Tratta il giorno come recupero metabolico.',
+    'CORREZIONE PROPORZIONALE PRE-ALLENAMENTO: SOLO se [UPCOMING_WORKOUT] non è null e [DAILY_CALORIE_STRATEGY].isRestDay non è true, e indica un allenamento entro 2-3 ore,',
     'adatta le [USER_HABITS] prima di proporle in mealProposals: lieve riduzione di grassi e fibre rispetto',
     'alla grammatura abituale, o adattamento dei carboidrati per favorire lo svuotamento gastrico.',
     'Spiega brevemente in adviceMessage come e perche hai modificato la porzione abituale.',
     'Regola Budget (Solo Avviso): Se la proposta del pasto pescata dallo storico ([USER_HABITS]) fa superare il [METABOLIC_BUDGET] calorico o dei macronutrienti residuo, NON DEVI MAI modificare o tagliare le grammature storiche. Lascia l abitudine dell utente intatta nel payload mealProposals. Limitati a scrivere un avviso chiaro e discorsivo nel campo testuale adviceMessage (es. "Attenzione: se mangi la tua solita porzione, sforerai il target di carboidrati di oggi"). L utente deve avere la libertà di scegliere se confermare o meno.',
+    'REGOLA CORTISOLO SERALE E RECUPERO NERVOSO: quando il pasto di contesto è la cena, è orario serale (dopo le 18:00), o [EVENING_STRESS_CONTEXT].eveningStressRisk è "high", analizza il livello di cortisolo stimato in [EVENING_STRESS_CONTEXT].cortisolScore. Se il cortisolo è medio-alto in orario serale, è un segnale di allarme per il sistema nervoso. In adviceMessage e nelle proposte DEVI prioritizzare scelte calmanti: carboidrati complessi (aiutano ad abbassare il cortisolo e favoriscono il sonno), alimenti ricchi di magnesio, omega-3 o triptofano. Evita pasti serali composti solo da proteine magre se lo stress è alto. Tono assertivo e focalizzato sul recupero.',
+    'PASTI ANTI-CORTISOLO (CENA): se l utente chiede consigli per la cena o il tema è serale, orienta mealProposals verso combinazioni anti-stress: privilegia carboidrati complessi e fibre moderate, evita eccessi di grassi saturi, caffeina o pasti troppo proteici-magri se [EVENING_STRESS_CONTEXT].eveningStressRisk è "high". Puoi etichettare le proposte in label (es. "Cena recupero") senza cambiare lo schema JSON.',
+    'DIGESTIVE SAFETY GATE (CENA + ALLENAMENTO SERALE): quando consigli o valuti un allenamento in fascia serale, calcola la somma tra i macro residui in [METABOLIC_BUDGET], il costo calorico stimato della cena proposta in mealProposals e l impatto dell allenamento in [UPCOMING_WORKOUT]. Se il totale calorico risultante per la cena supera circa 900-1000 kcal, oppure se il volume di cibo previsto è eccessivo per l orario serale, DEVI sconsigliare l allenamento intenso in adviceMessage. Spiega che un pasto troppo pesante compromette recupero e gestione del cortisolo serale; suggerisci pasto più bilanciato e rinvio dell attività intensa. Non modificare le grammature storiche in mealProposals per applicare questo gate: usa solo adviceMessage per l avviso.',
+    'ALLENAMENTO SERALE E TRAINING WAVE: se [UPCOMING_WORKOUT] indica una sessione serale o l utente chiede se può allenarsi stasera, incrocia orario attuale [CURRENT_SYSTEM_TIME], finestra in [UPCOMING_WORKOUT] e Digestive Safety Gate. Prima della finestra ideale: sconsiglia l immediato e indica di pianificare dentro la finestra. Dentro la finestra: via libera con sessione ben pianificata e pasto coerente. Dopo la finestra o se non c è finestra utile: evita HIIT intenso, preferisci riposo attivo o ripresa il giorno dopo.',
     'Se proponi un pasto completo dalle abitudini, compila mealProposals con items (foodName + grams).',
     'I macronutrienti definitivi li calcola il resolver locale dal DB: puoi ometterli o lasciare 0.',
     'I totals devono essere la somma degli items. Mantieni id/source delle abitudini quando possibile.',
-    'adviceMessage: italiano, max 4 frasi, include semaforo (verde/giallo/rosso).',
+    'adviceMessage: italiano, max 5 frasi, include semaforo (verde/giallo/rosso).',
+    'FLUSSO CONVERSAZIONALE (OBBLIGATORIO): nell adviceMessage presenta SEMPRE le proposte numerate esplicitamente come "Opzione 1", "Opzione 2", "Opzione 3" (una riga sintetica ciascuna, allineata a mealProposals[0..2]).',
+    'L adviceMessage DEVE concludersi SEMPRE con questa Call to Action (o equivalente): "Quale di queste 3 opzioni preferisci? Scegline una e, se serve, la modifichiamo insieme."',
+    'Imposta mealProposals[].label su "Opzione 1", "Opzione 2", "Opzione 3" (mantieni eventuale sottotitolo descrittivo nel name se serve, ma label numerata è obbligatoria).',
     'suggestedAction: { foodName, grams, mealType } solo per singolo alimento (fallback rapido).',
     'mealProposals: array di 2-3 proposte strutturate pronte per [CONFERMA E CARICA] (priorità alle abitudini).',
     'REGOLA SMART DEFAULTS (registrazione pasto consumato via ADD_FOOD): se mancano tipo pasto o orario, il sistema li deduce da [CURRENT_SYSTEM_TIME] — NON chiedere all utente.',
@@ -759,6 +930,16 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
   const fallbackJson = JSON.stringify(fallbackProposals, null, 0);
   const upcomingWorkout = ctx.upcomingWorkout ?? null;
   const upcomingJson = JSON.stringify(upcomingWorkout, null, 0);
+  const dailyCalorieStrategy = ctx.dailyCalorieStrategy || buildDailyCalorieStrategyContext({});
+  const strategyJson = JSON.stringify(dailyCalorieStrategy, null, 0);
+  const eveningContext = ctx.eveningMetabolicContext || {
+    isDinnerContext: meal === 'cena',
+    isEvening: false,
+    cortisolScore: null,
+    eveningStressRisk: 'low',
+    bodyBatteryPercent: null,
+  };
+  const eveningJson = JSON.stringify(eveningContext, null, 0);
 
   const candidateLines = candidates.length > 0
     ? candidates
@@ -785,6 +966,8 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     `[USER_HABITS_FOR_CURRENT_MEAL: ${habitsJson}]`,
     `[FALLBACK_MEAL_PROPOSALS: ${fallbackJson}]`,
     `[UPCOMING_WORKOUT: ${upcomingJson}]`,
+    `[DAILY_CALORIE_STRATEGY: ${strategyJson}]`,
+    `[EVENING_STRESS_CONTEXT: ${eveningJson}]`,
     `Opzioni DB locale (porzione ${STANDARD_PORTION_G}g, solo se serve integrare): ${candidateLines}.`,
     '',
     'REGOLA FERREA: Se l utente chiede una proposta (es. "Cosa mi proponi?"), NON DEVI MAI rispondere',
@@ -792,14 +975,22 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     '(più alimenti combinati) estrapolati da [USER_HABITS_FOR_CURRENT_MEAL], compilando mealProposals.',
     'Se [USER_HABITS] è vuoto, usa [FALLBACK_MEAL_PROPOSALS] con porzioni standard dal DB alimenti.',
     'mealProposals NON deve mai essere vuoto per richieste di proposta.',
+    'FLUSSO CONVERSAZIONALE: in adviceMessage numera Opzione 1, Opzione 2, Opzione 3 e chiudi con: "Quale di queste 3 opzioni preferisci? Scegline una e, se serve, la modifichiamo insieme."',
     'ORARIO ESPLICITO: se la richiesta contiene un orario (es. "ore 14.45"), imposta exactTime in HH:mm nella proposta/card.',
     '',
     'REGOLA TASSATIVA: Se l utente chiede suggerimenti per il pasto o dichiara un pasto generico',
     '(es. "mangio pane e pomodoro"), cerca PRIMA in [USER_HABITS_FOR_CURRENT_MEAL].',
     'Proponi l esatta combinazione e grammatura storica. Non inventare grammature se esistono nello storico.',
     '',
-    'CORREZIONE PROPORZIONALE PRE-ALLENAMENTO (tassativa se [UPCOMING_WORKOUT] non è null',
-    'e startsInMinutes <= 180): adatta le abitudini in mealProposals prima di proporle.',
+    dailyCalorieStrategy.isRestDay
+      ? 'GIORNO DI RIPOSO PIANIFICATO: [UPCOMING_WORKOUT] è disattivato. NON applicare logica pre-allenamento né semaforo giallo pre-workout. Priorità deficit da [DAILY_CALORIE_STRATEGY].'
+      : '',
+    dailyCalorieStrategy.isTrainingDay
+      ? `GIORNO DI ALLENAMENTO PIANIFICATO (${dailyCalorieStrategy.activityLabel || 'sessione'}): priorità surplus da [DAILY_CALORIE_STRATEGY]. Target giornaliero ${dailyCalorieStrategy.targetKcal} kcal.`
+      : '',
+    '',
+    'CORREZIONE PROPORZIONALE PRE-ALLENAMENTO (tassativa SOLO se [UPCOMING_WORKOUT] non è null,',
+    '[DAILY_CALORIE_STRATEGY].isRestDay non è true, e startsInMinutes <= 180): adatta le abitudini in mealProposals prima di proporle.',
     'Riduci leggermente grassi e fibre rispetto alla grammatura abituale, o adatta i carboidrati',
     'per favorire lo svuotamento gastrico. In adviceMessage spiega brevemente la modifica.',
     '',
@@ -808,11 +999,21 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     'Scrivi solo un avviso chiaro in adviceMessage (es. "Attenzione: se mangi la tua solita porzione, sforerai il target di carboidrati di oggi").',
     'L utente decide liberamente se confermare.',
     '',
+    eveningContext.isDinnerContext || eveningContext.isEvening
+      ? [
+        'CONTESTO SERALE ATTIVO: applica REGOLA CORTISOLO SERALE, PASTI ANTI-CORTISOLO e DIGESTIVE SAFETY GATE.',
+        `Cortisolo stimato: ${eveningContext.cortisolScore ?? 'n/d'}/100. Rischio stress serale: ${eveningContext.eveningStressRisk}.`,
+        eveningContext.eveningStressRisk === 'high'
+          ? 'Priorità: carboidrati complessi, magnesio, omega-3, triptofano; evita cene solo proteiche-magre e grassi saturi in eccesso.'
+          : 'Mantieni equilibrio macro rispetto al [METABOLIC_BUDGET] con attenzione al recupero notturno.',
+      ].join('\n')
+      : '',
+    '',
     'OUTPUT JSON richiesto:',
-    '- adviceMessage: testo breve per l utente (max 4 frasi, italiano, semaforo).',
+    '- adviceMessage: testo conversazionale per l utente (max 5 frasi, italiano, semaforo). Presenta Opzione 1/2/3 nel testo e chiudi con CTA: "Quale di queste 3 opzioni preferisci? Scegline una e, se serve, la modifichiamo insieme."',
     '- suggestedAction: { foodName, grams, mealType } | null — solo per un singolo alimento rapido.',
     '- mealProposals: array (2-3) di proposte pasto complete, ciascuna:',
-    '  { id, label, mealType, exactTime (HH:mm opzionale se l utente ha indicato orario), source, items: [...], totals }.',
+    '  { id, label ("Opzione 1"|"Opzione 2"|"Opzione 3"), mealType, exactTime (HH:mm opzionale se l utente ha indicato orario), source, items: [...], totals }.',
     'Ogni grams deve essere > 0. totals DEVE coincidere con la somma degli items.',
     'Preferisci mealProposals dalle abitudini quando disponibili. Usa id/source dall abitudine corrispondente.',
     'Alternativa testuale ammessa nel adviceMessage: blocco <MEAL_PROPOSAL>...</MEAL_PROPOSAL> con lo stesso JSON interno.',

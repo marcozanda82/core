@@ -393,6 +393,7 @@ export default function SalaComandi() {
     try {
       await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
     } catch (error) {
+      alert("ERRORE REALE: " + error.code + " | " + error.message);
       alert("ACCESSO NEGATO: Controlla le credenziali.");
       setIsBooting(false);
     }

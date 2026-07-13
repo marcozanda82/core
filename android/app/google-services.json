@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "382993217593",
+    "firebase_url": "https://mio-tracker-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "mio-tracker",
+    "storage_bucket": "mio-tracker.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:382993217593:android:6197098574c8e32f03f5e8",
+        "android_client_info": {
+          "package_name": "com.marcozanda.kentuos"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "382993217593-8kftgddgpro97p6s38qoeem4vbrp5jsp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.marcozanda.kentuos",
+            "certificate_hash": "d52ebd1e1a8fcd2731f322c16182c219c072a55b"
+          }
+        },
+        {
+          "client_id": "382993217593-ekmjfc66dh22su9qva0dmnj8nmle936j.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcru2aNJoL2Q_RBtPoHvDQhwkR1golueg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "382993217593-ekmjfc66dh22su9qva0dmnj8nmle936j.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

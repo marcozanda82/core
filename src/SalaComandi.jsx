@@ -7094,7 +7094,6 @@ ${dbKeys || 'n/d'}`;
     handleQuickReplyClick,
     handleAcceptAdvice,
     handleAcceptMealProposal,
-    handleModifyMealProposal,
     handleDraftConfirm,
     handleDraftCancel,
     handleDraftRemoveItem,
@@ -8608,7 +8607,8 @@ ${dbKeys || 'n/d'}`;
             handleQuickReplyClick={handleQuickReplyClick}
             handleAcceptAdvice={handleAcceptAdvice}
             onAcceptMealProposal={handleAcceptMealProposal}
-            onModifyMealProposal={handleModifyMealProposal}
+            foodDatabase={foodDb}
+            fullHistory={fullHistory}
             onDraftConfirm={handleDraftConfirm}
             onDraftCancel={handleDraftCancel}
             onDraftRemoveItem={handleDraftRemoveItem}

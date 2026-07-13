@@ -618,22 +618,6 @@ export function useCommandTerminal({
     }
   }, [appendAiMessage]);
 
-  const handleModifyMealProposal = useCallback((proposal) => {
-    const items = Array.isArray(proposal?.items) ? proposal.items : [];
-    const parts = items
-      .map((item) => {
-        const name = String(item?.foodName || item?.name || '').trim();
-        const grams = Math.round(Number(item?.grams ?? item?.qta) || 0);
-        return grams > 0 && name ? `${name} ${grams}g` : name;
-      })
-      .filter(Boolean);
-    const query = parts.length > 0
-      ? `Modifica pasto: ${parts.join(', ')}`
-      : `Modifica pasto: ${String(proposal?.label || 'proposta').trim()}`;
-    setChatInput(query);
-    return { ok: true, query };
-  }, []);
-
   return {
     chatHistory,
     setChatHistory,
@@ -648,7 +632,6 @@ export function useCommandTerminal({
     handleQuickReplyClick,
     handleAcceptAdvice,
     handleAcceptMealProposal,
-    handleModifyMealProposal,
     handleDraftConfirm,
     handleDraftCancel,
     handleDraftRemoveItem,

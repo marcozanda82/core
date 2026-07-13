@@ -1369,3 +1369,59 @@
   width: 100%;
   font-size: 0.72rem;
 }
+
+.kentu-meal-proposal-card--editing {
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.2);
+}
+
+.kentu-meal-proposal-card__item--editing {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.kentu-meal-proposal-card__edit-fields {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.kentu-meal-proposal-card__edit-name,
+.kentu-meal-proposal-card__edit-grams {
+  width: 100%;
+  min-width: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.85);
+  color: #f1f5f9;
+  font-size: 0.74rem;
+  padding: 6px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.kentu-meal-proposal-card__edit-name:focus,
+.kentu-meal-proposal-card__edit-grams:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.75);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+}
+
+.kentu-meal-proposal-card__edit-grams {
+  width: 4.5rem;
+  text-align: right;
+}
+
+.kentu-meal-proposal-card__edit-grams-suffix {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(125, 211, 252, 0.95);
+}
+
+.kentu-meal-proposal-card__save,
+.kentu-meal-proposal-card__cancel {
+  width: 100%;
+  font-size: 0.72rem;
+}

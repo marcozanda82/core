@@ -14,7 +14,8 @@ export default function KentuChatUI({
   handleQuickReplyClick,
   handleAcceptAdvice,
   onAcceptMealProposal,
-  onModifyMealProposal,
+  foodDatabase = {},
+  fullHistory = {},
   onDraftConfirm,
   onDraftCancel,
   onDraftRemoveItem,
@@ -52,7 +53,8 @@ export default function KentuChatUI({
         onSlotQuickReplyClick={handleQuickReplyClick}
         onAcceptAdvice={handleAcceptAdvice}
         onAcceptMealProposal={onAcceptMealProposal}
-        onModifyMealProposal={onModifyMealProposal}
+        foodDatabase={foodDatabase}
+        fullHistory={fullHistory}
         onDraftConfirm={onDraftConfirm}
         onDraftCancel={onDraftCancel}
         onDraftRemoveItem={onDraftRemoveItem}

@@ -1,5 +1,8 @@
-import { isGenericMealSuggestionQuery, buildNutritionContextForState } from '../../../conversation/ConsultantEngine.js';
-import { looksLikeComplexMealLog } from '../conversation/mealLogIntent.js';
+import { buildNutritionContextForState } from '../../../conversation/ConsultantEngine.js';
+import {
+  isFoodRegistrationIntent,
+  isMealAdviceIntent,
+} from '../conversation/mealLogIntent.js';
 import { formatCurrentSystemTimeContext } from '../conversation/mealSmartDefaults.js';
 
 const MAX_FOOD_CONTEXT_ITEMS = 40;
@@ -14,38 +17,6 @@ function normalizeMealType(value) {
   return null;
 }
 
-const MEAL_ADVICE_PATTERNS = [
-  /\bposso\s+(?:mangiare|prendere|avere)\b/,
-  /\bconviene\s+(?:mangiare|prendere)\b/,
-  /\bmi\s+consigli\b/,
-  /\b(?:è|e)\s+ok\s+mangiare\b/,
-  /\bva\s+bene\s+mangiare\b/,
-  /\bse\s+mangio\b/,
-  /\bdentro\s+(?:al\s+)?budget\b/,
-  /\bquanto\s+(?:posso\s+)?mangiare\b/,
-  /\bposso\s+.*\?/,
-];
-
-/** Richieste di proposta pasto — priorità assoluta su ADD_FOOD. */
-const MEAL_PROPOSAL_PATTERNS = [
-  /\b(?:proponi|suggerisci)\b/,
-  /\bconsigli\b.*\b(?:pranzo|colazione|cena|snack|pasto|mangio|mangiare)\b/,
-  /\b(?:che|cosa)\s+mangio\b/,
-  /\bidee\b.*\b(?:pasto|pranzo|colazione|cena|mangio|mangiare)\b/,
-  /\b(?:cosa|che)\s+(?:mi\s+)?(?:proponi|consigli|suggerisci)\b/,
-];
-
-const FOOD_LOG_PATTERNS = [
-  /\bho\s+mangiat/,
-  /\bho\s+preso\b/,
-  /\bho\s+bevut/,
-  /\baggiung/i,
-  /\blogg/i,
-  /\bregistr/i,
-  /\b(?:per\s+)?(?:colazione|pranzo|cena|snack)\s+(?:ho\s+)?(?:mangiat|preso|bevut)/,
-  /\d+\s*(?:g|grammi|gr)\s+(?:di\s+)?\w+/,
-];
-
 export class ContextComposer {
   detectIntent(userText = '', { hasImages = false } = {}) {
     const text = toSafeString(userText).toLowerCase();
@@ -54,16 +25,8 @@ export class ContextComposer {
     if (sleepKeywords.some((token) => text.includes(token))) return 'LOG_SLEEP';
     const workoutKeywords = ['allenamento', 'workout', 'corsa', 'pesi', 'cardio', 'training'];
     if (workoutKeywords.some((token) => text.includes(token))) return 'ADD_WORKOUT';
-    const isFoodLog = FOOD_LOG_PATTERNS.some((pattern) => pattern.test(text));
-    const isMealProposal =
-      isGenericMealSuggestionQuery(text)
-      || MEAL_PROPOSAL_PATTERNS.some((pattern) => pattern.test(text));
-    if (isMealProposal && !isFoodLog) return 'ASK_MEAL_ADVICE';
-    const isMealAdvice = MEAL_ADVICE_PATTERNS.some((pattern) => pattern.test(text));
-    if (isMealAdvice && !isFoodLog) return 'ASK_MEAL_ADVICE';
-    if (looksLikeComplexMealLog(text) || isFoodLog) return 'ADD_FOOD';
-    const foodKeywords = ['mang', 'cibo', 'alimento', 'pasto', 'colazione', 'pranzo', 'cena', 'snack'];
-    if (foodKeywords.some((token) => text.includes(token))) return 'ADD_FOOD';
+    if (isMealAdviceIntent(text)) return 'ASK_MEAL_ADVICE';
+    if (isFoodRegistrationIntent(text)) return 'ADD_FOOD';
     return 'UNKNOWN';
   }
 
@@ -147,23 +110,30 @@ export class ContextComposer {
     return habits.slice(0, 15);
   }
 
+  buildNutritionContextSlices(currentState = {}) {
+    const nutrition = buildNutritionContextForState(currentState);
+    const systemTime = formatCurrentSystemTimeContext();
+    return {
+      systemTime: {
+        currentTime: systemTime.timeHHmm,
+        currentDate: systemTime.dateISO,
+        header: systemTime.header,
+      },
+      currentMealType: nutrition.currentMealType,
+      METABOLIC_BUDGET: nutrition.remainingBudget,
+      USER_HABITS_FOR_CURRENT_MEAL: nutrition.userHabitsForCurrentMeal,
+      UPCOMING_WORKOUT: nutrition.upcomingWorkout,
+      DAILY_CALORIE_STRATEGY: nutrition.dailyCalorieStrategy,
+    };
+  }
+
   composeForIntent(intent, currentState = {}) {
     const normalizedIntent = toSafeString(intent).toUpperCase();
-    const systemTime = formatCurrentSystemTimeContext();
     if (normalizedIntent === 'ADD_FOOD') {
-      const nutrition = buildNutritionContextForState(currentState);
       return {
         intent: 'ADD_FOOD',
         contextSlices: {
-          systemTime: {
-            currentTime: systemTime.timeHHmm,
-            currentDate: systemTime.dateISO,
-            header: systemTime.header,
-          },
-          currentMealType: nutrition.currentMealType,
-          METABOLIC_BUDGET: nutrition.remainingBudget,
-          USER_HABITS_FOR_CURRENT_MEAL: nutrition.userHabitsForCurrentMeal,
-          UPCOMING_WORKOUT: nutrition.upcomingWorkout,
+          ...this.buildNutritionContextSlices(currentState),
           food: this.getFoodContext(currentState.foodDatabase, currentState.mealState),
         },
       };
@@ -181,6 +151,7 @@ export class ContextComposer {
       return {
         intent: 'ASK_MEAL_ADVICE',
         contextSlices: {
+          ...this.buildNutritionContextSlices(currentState),
           app: {
             activeDate: toSafeString(currentState?.activeDate) || null,
             locale: toSafeString(currentState?.locale) || 'it-IT',

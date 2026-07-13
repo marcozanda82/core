@@ -7,6 +7,86 @@ const FOOD_LOG_VERB_PATTERN =
   /\b(?:ho\s+)?(?:mangiat|consumat|assunt|preso|bevut|bevut[oa])\b|\b(?:per\s+)?(?:colazione|pranzo|cena|snack)\b.*\d+\s*(?:g|grammi|gr)\b/i;
 const MEAL_SLOT_PATTERN = /\b(?:colazione|pranzo|cena|snack|pasto)\b/;
 
+/** Richieste di proposta pasto (nessun alimento specifico da registrare). */
+const MEAL_PROPOSAL_QUERY_PATTERNS = [
+  /\b(?:cosa|che)\s+(?:potrei|posso|devo|dovrei|vorrei)\s+mangiar/i,
+  /\b(?:cosa|che)\s+mangio\b/i,
+  /\b(?:cosa|che)\s+(?:mi\s+)?(?:proponi|consigli|suggerisci)\b/i,
+  /\b(?:proponi|suggerisci|consigliami)\b/i,
+  /\bconsigli\b.*\b(?:pranzo|colazione|cena|snack|pasto|mangio|mangiare)\b/i,
+  /\b(?:che|quali)\s+opzioni\s+(?:ho|abbiamo)\b/i,
+  /\bidee\b.*\b(?:pasto|pranzo|colazione|cena|mangio|mangiare)\b/i,
+  /(?:colazione|pranzo|cena|snack)\s+(?:cosa|che\s+cosa)/i,
+  /(?:che|cosa)\s+(?:pasto|cosa)\s+(?:mangio|preparo|faccio)/i,
+  /\b(?:proponi|suggerisci)\s+(?:un\s+)?pasto/i,
+  /\b(?:carica|registra)\s+(?:il\s+)?(?:mio\s+)?(?:solito|abituale)/i,
+];
+
+/** Valutazione / consiglio su cosa mangiare (incluso alimento specifico). */
+const MEAL_ADVICE_EVALUATION_PATTERNS = [
+  /\bposso\s+(?:mangiare|prendere|avere)\b/i,
+  /\bconviene\s+(?:mangiare|prendere)\b/i,
+  /\bmi\s+consigli\b/i,
+  /\b(?:è|e)\s+ok\s+mangiare\b/i,
+  /\bva\s+bene\s+mangiare\b/i,
+  /\bse\s+mangio\b/i,
+  /\bdentro\s+(?:al\s+)?budget\b/i,
+  /\bquanto\s+(?:posso\s+)?mangiare\b/i,
+  /\bposso\s+.*\?/i,
+];
+
+const FOOD_REGISTRATION_PATTERNS = [
+  /\bho\s+mangiat/i,
+  /\bho\s+preso\b/i,
+  /\bho\s+bevut/i,
+  /\baggiung/i,
+  /\blogg/i,
+  /\bregistr/i,
+  /\b(?:per\s+)?(?:colazione|pranzo|cena|snack)\s+(?:ho\s+)?(?:mangiat|preso|bevut)/i,
+  /\d+\s*(?:g|grammi|gr)\s+(?:di\s+)?\w+/i,
+];
+
+/**
+ * Proposta generica di pasto (es. "cosa mangio?", "cosa potrei mangiare per cena?").
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isMealProposalQuery(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  return MEAL_PROPOSAL_QUERY_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Richiesta di consiglio nutrizionale — DEVE routare a ASK_MEAL_ADVICE, non ADD_FOOD.
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isMealAdviceIntent(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+
+  if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) {
+    return false;
+  }
+
+  if (isMealProposalQuery(text)) return true;
+  return MEAL_ADVICE_EVALUATION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Registrazione pasto al diario (alimenti/quantità da aggiungere).
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isFoodRegistrationIntent(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  if (isMealAdviceIntent(text)) return false;
+  if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return true;
+  return FOOD_REGISTRATION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 /**
  * Descrizione libera di un pasto già consumato con quantità (es. "per pranzo ho mangiato 230g di gnocchi...").
  */

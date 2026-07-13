@@ -50,7 +50,8 @@ export default function AiCluster({
   onSlotQuickReplyClick,
   onAcceptAdvice,
   onAcceptMealProposal,
-  onModifyMealProposal,
+  foodDatabase = {},
+  fullHistory = {},
   onDraftConfirm,
   onDraftCancel,
   onDraftRemoveItem,
@@ -254,8 +255,9 @@ export default function AiCluster({
                           proposals={msg.mealProposals}
                           adviceId={msg.adviceId}
                           loadedProposalIds={msg.mealProposalsLoadedIds || []}
+                          foodDatabase={foodDatabase}
+                          fullHistory={fullHistory}
                           onConfirm={onAcceptMealProposal}
-                          onModify={onModifyMealProposal}
                         />
                       ) : null}
                   </div>

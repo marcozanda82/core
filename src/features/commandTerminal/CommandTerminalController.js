@@ -40,6 +40,8 @@ import {
 } from '../../conversation/ConsultantEngine.js';
 import {
   isConsumedMealLogDescription,
+  isFoodRegistrationIntent,
+  isMealAdviceIntent,
   looksLikeComplexMealLog,
   normalizeExactTime,
   parseConsumedMealFromNaturalText,
@@ -380,10 +382,12 @@ export class CommandTerminalController {
     const explicit = String(options.intent || '').trim().toUpperCase();
     if (explicit && explicit !== 'UNKNOWN') return explicit;
 
+    if (isMealAdviceIntent(userText)) return 'ASK_MEAL_ADVICE';
+
     const detected = this.composer.detectIntent(userText, { hasImages: options.hasImages });
     if (detected !== 'UNKNOWN') return detected;
 
-    if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
+    if (isFoodRegistrationIntent(userText)) {
       return 'ADD_FOOD';
     }
 
@@ -1243,15 +1247,14 @@ export class CommandTerminalController {
 
     if (
       inferredIntent === 'ASK_MEAL_ADVICE'
-      && !isConsumedMealLogDescription(userText)
-      && !looksLikeComplexMealLog(userText)
+      || (isMealAdviceIntent(userText) && !isConsumedMealLogDescription(userText) && !looksLikeComplexMealLog(userText))
     ) {
       return this.processMealAdvice(userText, currentState, options);
     }
 
     const commandHint =
       inferredIntent === 'UNKNOWN'
-      && (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText))
+      && isFoodRegistrationIntent(userText)
         ? 'ADD_FOOD'
         : inferredIntent;
 
@@ -1291,6 +1294,15 @@ export class CommandTerminalController {
 
     const commandType = String(commandResponse.command?.commandType || '').trim().toUpperCase();
     let rawPayload = commandResponse.command?.payload || {};
+
+    if (
+      commandType === 'ADD_FOOD'
+      && isMealAdviceIntent(userText)
+      && !isConsumedMealLogDescription(userText)
+      && !looksLikeComplexMealLog(userText)
+    ) {
+      return this.processMealAdvice(userText, currentState, options);
+    }
 
     if (commandType === 'ADD_WORKOUT') {
       rawPayload = normalizeWorkoutPayload(rawPayload);
