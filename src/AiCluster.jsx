@@ -7,6 +7,7 @@ import DailyPlanCard from './DailyPlanCard';
 import MealDraftConfirmation from './components/MealDraftConfirmation';
 import WorkoutDraftConfirmation from './components/WorkoutDraftConfirmation';
 import MealProposalCards from './components/MealProposalCards';
+import NewFoodPreviewCard from './components/NewFoodPreviewCard';
 import {
   KentuIcon,
   KentuButton,
@@ -61,6 +62,7 @@ export default function AiCluster({
   onWorkoutDraftUpdateMeta,
   onWorkoutDraftUpdateExercise,
   onWorkoutDraftRemoveExercise,
+  onSaveNewFoodEntry,
   /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
   dailyLog = [],
   onBack,
@@ -258,6 +260,14 @@ export default function AiCluster({
                           foodDatabase={foodDatabase}
                           fullHistory={fullHistory}
                           onConfirm={onAcceptMealProposal}
+                        />
+                      ) : null}
+                    {msg.type === 'NEW_FOOD_PREVIEW'
+                      && msg.newFoodDraft
+                      && typeof onSaveNewFoodEntry === 'function' ? (
+                        <NewFoodPreviewCard
+                          draft={msg.newFoodDraft}
+                          onSave={onSaveNewFoodEntry}
                         />
                       ) : null}
                   </div>

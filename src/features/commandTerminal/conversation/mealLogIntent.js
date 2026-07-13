@@ -46,6 +46,25 @@ const FOOD_REGISTRATION_PATTERNS = [
   /\d+\s*(?:g|grammi|gr)\s+(?:di\s+)?\w+/i,
 ];
 
+/** Intent "Sous-Chef": utente ha già iniziato il piatto e chiede cosa aggiungere. */
+const MEAL_COMPLETION_PATTERNS = [
+  /\bho\s+gi[aà]\s+(?:preparat|cucin|fatto|messo)\b/i,
+  /\b(?:cosa|che)\s+(?:aggiungo|metto)\s+a\b/i,
+  /\bcome\s+integro\b/i,
+  /\b(?:ho\s+messo\s+su|ho\s+gi[aà]\s+messo\s+su)\b/i,
+  /\b(?:completo|finisco)\s+(?:il\s+)?pasto\b/i,
+];
+
+/** Intent resoconto giornata / debrief serale. */
+const DAY_REVIEW_PATTERNS = [
+  /\bcom(?:e|'?è)\s+andat[ao]\s+oggi\b/i,
+  /\bfammi\s+(?:il\s+)?resoconto\b/i,
+  /\b(?:analisi|resoconto)\s+della\s+giornata\b/i,
+  /\bho\s+fatt[oa]\s+tutto\s+bene\b/i,
+  /\btiriamo\s+le\s+somme\b/i,
+  /\b(?:review|debrief)(?:ing)?\b.*\b(?:oggi|giornata)\b/i,
+];
+
 /**
  * Proposta generica di pasto (es. "cosa mangio?", "cosa potrei mangiare per cena?").
  * @param {string} userText
@@ -85,6 +104,62 @@ export function isFoodRegistrationIntent(userText) {
   if (isMealAdviceIntent(text)) return false;
   if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return true;
   return FOOD_REGISTRATION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Completamento pasto in corso: richiede integrazione, non registrazione e non proposta da zero.
+ * Scatta solo se ci sono alimenti citati (idealmente con grammature).
+ *
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isMealCompletionIntent(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return false;
+  if (isMealAdviceIntent(text)) return false;
+
+  const hasTrigger = MEAL_COMPLETION_PATTERNS.some((pattern) => pattern.test(text));
+  if (!hasTrigger) return false;
+
+  // Richiede almeno un alimento citato. Preferiamo la presenza di grammature per poter calcolare residuo.
+  const parsed = parseConsumedMealFromNaturalText(text);
+  if (parsed?.items?.length) return true;
+
+  // Fallback: se non parsea, ma ci sono grammature esplicite, consideralo comunque completamento.
+  return WEIGHT_PATTERN.test(text);
+}
+
+/**
+ * Debriefing / resoconto giornata.
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isDayReviewIntent(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return false;
+  if (isFoodRegistrationIntent(text)) return false;
+  if (isMealCompletionIntent(text)) return false;
+  return DAY_REVIEW_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Richiesta scansione etichetta / creazione nuovo alimento da foto.
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isCreateNewFoodIntent(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  return (
+    /\betichett/.test(text)
+    || /\bvalori\s+nutriz/.test(text)
+    || /\bmacro\b/.test(text)
+    || /\bscansion/.test(text)
+    || /\bnuovo\s+alimento\b/.test(text)
+    || /\bcrea(?:re)?\s+alimento\b/.test(text)
+  );
 }
 
 /**

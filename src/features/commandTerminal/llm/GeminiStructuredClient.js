@@ -4,6 +4,7 @@ import {
   addWorkoutPayloadSchema,
   terminalCommandEnvelopeSchema,
   consultantResponseSchema,
+  createNewFoodPayloadSchema,
 } from '../contracts/commandSchemas.js';
 import { askAI } from '../../../services/aiService.js';
 import { generateConsultantSystemInstruction } from '../../../conversation/ConsultantEngine.js';
@@ -846,6 +847,16 @@ function getEnvelopeSchemaForIntent(commandHint) {
       },
     };
   }
+  if (commandHint === 'CREATE_NEW_FOOD') {
+    return {
+      ...terminalCommandEnvelopeSchema,
+      properties: {
+        ...terminalCommandEnvelopeSchema.properties,
+        commandType: { type: 'string', enum: ['CREATE_NEW_FOOD'] },
+        payload: createNewFoodPayloadSchema,
+      },
+    };
+  }
   return terminalCommandEnvelopeSchema;
 }
 
@@ -879,11 +890,22 @@ export class GeminiStructuredClient {
     const includeSleepRules = fixedHint === 'LOG_SLEEP' || hasImages;
     const includeFoodRules = fixedHint === 'ADD_FOOD' || fixedHint === 'UNKNOWN';
     const includeWorkoutRules = fixedHint === 'ADD_WORKOUT' || fixedHint === 'UNKNOWN';
+    const includeNewFoodRules = fixedHint === 'CREATE_NEW_FOOD' || (hasImages && fixedHint === 'UNKNOWN');
     const parts = [
       'Sei Kentu Command Terminal.',
       'Rispondi SOLO con JSON valido e conforme allo schema fornito.',
       'Non aggiungere markdown, spiegazioni o testo fuori dal JSON.',
     ];
+
+    if (includeNewFoodRules) {
+      parts.push(
+        "INTENTO CREATE_NEW_FOOD (VISION ETICHETTA): l'utente ha allegato una foto di un'etichetta nutrizionale.",
+        "VINCOLO ASSOLUTO NO-HALLUCINATION: estrai ESCLUSIVAMENTE i valori STAMPATI sull'etichetta. È VIETATO inventare o stimare valori mancanti.",
+        "Output per 100g (o per 100 ml se indicato come tale): compila solo desc, kcal, prot, carb, fatTotal (e fibre se è stampata).",
+        "Se un valore NON è visibile/assente sulla scatola: restituisci null (o ometti) per quel campo.",
+        "Non compilare vitamine/minerali/micro-nutrienti extra: saranno eventualmente stimati dal sistema locale tramite Similarity Match, non da te.",
+      );
+    }
 
     if (includeFoodRules) {
       parts.push(

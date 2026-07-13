@@ -1,7 +1,12 @@
 import { buildNutritionContextForState } from '../../../conversation/ConsultantEngine.js';
+import { computeTotali } from '../../../useBiochimico.js';
 import {
   isFoodRegistrationIntent,
   isMealAdviceIntent,
+  isMealCompletionIntent,
+  isDayReviewIntent,
+  isCreateNewFoodIntent,
+  parseConsumedMealFromNaturalText,
 } from '../conversation/mealLogIntent.js';
 import { formatCurrentSystemTimeContext } from '../conversation/mealSmartDefaults.js';
 
@@ -25,6 +30,9 @@ export class ContextComposer {
     if (sleepKeywords.some((token) => text.includes(token))) return 'LOG_SLEEP';
     const workoutKeywords = ['allenamento', 'workout', 'corsa', 'pesi', 'cardio', 'training'];
     if (workoutKeywords.some((token) => text.includes(token))) return 'ADD_WORKOUT';
+    if (hasImages && isCreateNewFoodIntent(text)) return 'CREATE_NEW_FOOD';
+    if (isDayReviewIntent(text)) return 'ASK_DAY_REVIEW';
+    if (isMealCompletionIntent(text)) return 'ASK_MEAL_COMPLETION';
     if (isMealAdviceIntent(text)) return 'ASK_MEAL_ADVICE';
     if (isFoodRegistrationIntent(text)) return 'ADD_FOOD';
     return 'UNKNOWN';
@@ -127,7 +135,7 @@ export class ContextComposer {
     };
   }
 
-  composeForIntent(intent, currentState = {}) {
+  composeForIntent(intent, currentState = {}, { userText = '' } = {}) {
     const normalizedIntent = toSafeString(intent).toUpperCase();
     if (normalizedIntent === 'ADD_FOOD') {
       return {
@@ -159,6 +167,58 @@ export class ContextComposer {
         },
       };
     }
+    if (normalizedIntent === 'ASK_MEAL_COMPLETION') {
+      const parsed = parseConsumedMealFromNaturalText(String(userText || ''));
+      const items = Array.isArray(parsed?.items) ? parsed.items : [];
+      return {
+        intent: 'ASK_MEAL_COMPLETION',
+        contextSlices: {
+          ...this.buildNutritionContextSlices(currentState),
+          PARTIAL_MEAL: {
+            items,
+            mealType: parsed?.mealType || null,
+            exactTime: parsed?.exactTime || null,
+            source: items.length > 0 ? 'user_text' : 'none',
+          },
+          app: {
+            activeDate: toSafeString(currentState?.activeDate) || null,
+            locale: toSafeString(currentState?.locale) || 'it-IT',
+          },
+        },
+      };
+    }
+    if (normalizedIntent === 'ASK_DAY_REVIEW') {
+      const activeLog = Array.isArray(currentState?.activeLog) ? currentState.activeLog : [];
+      const totali = computeTotali(activeLog);
+      const nutrition = buildNutritionContextForState(currentState);
+      const targets = currentState?.userTargets || {};
+
+      const targetKcal = Math.round(Number(currentState?.dynamicDailyKcal) || Number(targets.kcal) || 2000);
+      const targetMacro = {
+        kcal: targetKcal,
+        prot: Math.round(Number(targets.prot ?? targets.pro ?? 150) || 150),
+        carb: Math.round(Number(targets.carb ?? targets.cho ?? 200) || 200),
+        fat: Math.round(Number(targets.fatTotal ?? targets.fat ?? 65) || 65),
+      };
+
+      return {
+        intent: 'ASK_DAY_REVIEW',
+        contextSlices: {
+          ...this.buildNutritionContextSlices(currentState),
+          DAILY_TOTALS: totali,
+          DAILY_TARGETS: targetMacro,
+          WORKOUT_STATUS: {
+            hasRealWorkoutToday: currentState?.hasRealWorkoutToday === true || currentState?.isWorkoutDoneToday === true,
+            upcomingWorkout: nutrition.upcomingWorkout,
+          },
+          DAILY_CALORIE_STRATEGY: nutrition.dailyCalorieStrategy,
+          app: {
+            activeDate: toSafeString(currentState?.activeDate) || null,
+            locale: toSafeString(currentState?.locale) || 'it-IT',
+          },
+        },
+      };
+    }
     return {
       intent: 'UNKNOWN',
       contextSlices: {
@@ -170,8 +230,8 @@ export class ContextComposer {
     };
   }
 
-  buildPromptContext(intent, currentState = {}) {
-    const bundle = this.composeForIntent(intent, currentState);
+  buildPromptContext(intent, currentState = {}, userText = '') {
+    const bundle = this.composeForIntent(intent, currentState, { userText });
     return {
       ...bundle,
       promptContextText: JSON.stringify(bundle.contextSlices),

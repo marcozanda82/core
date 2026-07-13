@@ -264,6 +264,20 @@ export const consultantResponseSchema = {
   required: ['adviceMessage'],
 };
 
+// Nuovo alimento da etichetta (Vision): solo dati stampati, per 100g.
+export const createNewFoodPayloadSchema = {
+  type: 'object',
+  properties: {
+    desc: { type: 'string', description: 'Nome del prodotto/alimento come stampato o ricostruito dal titolo etichetta.' },
+    kcal: { type: 'number', nullable: true, description: 'kcal per 100g se stampate, altrimenti null' },
+    prot: { type: 'number', nullable: true, description: 'Proteine per 100g se stampate, altrimenti null' },
+    carb: { type: 'number', nullable: true, description: 'Carboidrati per 100g se stampati, altrimenti null' },
+    fatTotal: { type: 'number', nullable: true, description: 'Grassi per 100g se stampati, altrimenti null' },
+    fibre: { type: 'number', nullable: true, description: 'Fibre per 100g se stampate, altrimenti null' },
+  },
+  required: ['desc'],
+};
+
 export const geminiToolSchemas = Object.freeze({
   ADD_FOOD: {
     name: 'dispatch_add_food',

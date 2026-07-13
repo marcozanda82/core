@@ -7103,12 +7103,22 @@ ${dbKeys || 'n/d'}`;
     handleWorkoutDraftUpdateMeta,
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
+    handleSaveNewFoodEntry,
   } = useCommandTerminal({
     chatHistory,
     setChatHistory,
     onAddFoodCommand: commitAddFoodCommand,
     onAddWorkoutCommand: commitAddWorkoutCommand,
     onLogSleepCommand: commitLogSleepCommand,
+    onSaveFoodDbEntry: async (entryPer100, donorMeta = null) => {
+      const safe = entryPer100 && typeof entryPer100 === 'object' ? entryPer100 : null;
+      if (!safe?.desc) throw new Error('missing_desc');
+      const payload = { ...safe };
+      if (donorMeta && typeof donorMeta === 'object') {
+        payload.micronutrientDonor = donorMeta;
+      }
+      await saveFoodEntryPer100ToFoodDb(payload);
+    },
     getCurrentState: () => {
       const todayWorkoutKcal = (activeLog || [])
         .filter((item) => item?.type === 'workout')
@@ -8618,6 +8628,7 @@ ${dbKeys || 'n/d'}`;
             onWorkoutDraftUpdateMeta={handleWorkoutDraftUpdateMeta}
             onWorkoutDraftUpdateExercise={handleWorkoutDraftUpdateExercise}
             onWorkoutDraftRemoveExercise={handleWorkoutDraftRemoveExercise}
+            onSaveNewFoodEntry={handleSaveNewFoodEntry}
             onBack={() => setActiveAction(null)}
             introPhrase={introPhrase}
             isProcessing={isChatProcessing}

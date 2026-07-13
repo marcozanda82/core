@@ -1183,6 +1183,18 @@
   background: rgba(8, 47, 73, 0.45);
 }
 
+.kentu-badge--macro-read {
+  color: rgba(253, 230, 138, 0.95);
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(120, 53, 15, 0.28);
+}
+
+.kentu-badge--micro-inherited {
+  color: rgba(196, 181, 253, 0.95);
+  border-color: rgba(167, 139, 250, 0.35);
+  background: rgba(76, 29, 149, 0.22);
+}
+
 .kentu-meal-proposal-card__label {
   margin: 0;
   font-size: 0.88rem;

@@ -40,6 +40,9 @@ import {
 } from '../../conversation/ConsultantEngine.js';
 import {
   isConsumedMealLogDescription,
+  isDayReviewIntent,
+  isMealCompletionIntent,
+  isCreateNewFoodIntent,
   isFoodRegistrationIntent,
   isMealAdviceIntent,
   looksLikeComplexMealLog,
@@ -47,6 +50,7 @@ import {
   parseConsumedMealFromNaturalText,
   parseExactTimeFromUserText,
 } from './conversation/mealLogIntent.js';
+import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
 import {
   buildConversationTextsFromChatHistory,
   getMealRegistrationMissingSlots,
@@ -382,6 +386,9 @@ export class CommandTerminalController {
     const explicit = String(options.intent || '').trim().toUpperCase();
     if (explicit && explicit !== 'UNKNOWN') return explicit;
 
+    if (options?.hasImages && isCreateNewFoodIntent(userText)) return 'CREATE_NEW_FOOD';
+    if (isDayReviewIntent(userText)) return 'ASK_DAY_REVIEW';
+    if (isMealCompletionIntent(userText)) return 'ASK_MEAL_COMPLETION';
     if (isMealAdviceIntent(userText)) return 'ASK_MEAL_ADVICE';
 
     const detected = this.composer.detectIntent(userText, { hasImages: options.hasImages });
@@ -435,6 +442,28 @@ export class CommandTerminalController {
           ? mealProposals
           : null,
         adviceId: `advice_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      },
+      { source: 'CommandTerminalController' },
+    );
+  }
+
+  publishNewFoodPreview({ entryPer100, donor = null, sourceImageCount = 0 }) {
+    const name = String(entryPer100?.desc || '').trim() || 'Nuovo alimento';
+    const donorName = donor?.donorName ? String(donor.donorName).trim() : '';
+    const badge = donorName ? ` (micro stimati da: ${donorName})` : '';
+    const text = `🧾 Etichetta letta: ${name}${badge}. Controlla e salva nel database.`;
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'NEW_FOOD_PREVIEW',
+        text,
+        newFoodDraft: {
+          entryPer100,
+          donor: donor
+            ? { key: donor.key, donorName: donor.donorName, score: donor.score }
+            : null,
+          sourceImageCount,
+        },
       },
       { source: 'CommandTerminalController' },
     );
@@ -1129,8 +1158,13 @@ export class CommandTerminalController {
   async processMealAdvice(userText, currentState = {}, options = {}) {
     const rawQuery = String(userText || '').trim();
     const chatHistory = Array.isArray(options?.chatHistory) ? options.chatHistory : [];
+    const isCompletion = isMealCompletionIntent(rawQuery);
+    const partialMeal = isCompletion ? parseConsumedMealFromNaturalText(rawQuery) : null;
+    const isDayReview = isDayReviewIntent(rawQuery);
     const isGeneric = isGenericMealSuggestionQuery(rawQuery);
-    const targetFood = isGeneric
+    const targetFood = isDayReview
+      ? rawQuery
+      : isGeneric
       ? rawQuery
       : (extractTargetFoodFromQuery(rawQuery) || rawQuery);
     if (!targetFood) {
@@ -1140,7 +1174,14 @@ export class CommandTerminalController {
 
     let adviceContext;
     try {
-      adviceContext = await buildAdviceContext(targetFood, currentState);
+      adviceContext = await buildAdviceContext(targetFood, currentState, {
+        intent: isDayReview
+          ? 'ASK_DAY_REVIEW'
+          : isCompletion
+            ? 'ASK_MEAL_COMPLETION'
+            : 'ASK_MEAL_ADVICE',
+        partialMeal,
+      });
     } catch (error) {
       const reason = `Consultant context failure: ${error?.message || 'unknown error'}`;
       console.error('[CommandTerminalController] buildAdviceContext error', error);
@@ -1246,7 +1287,9 @@ export class CommandTerminalController {
     });
 
     if (
-      inferredIntent === 'ASK_MEAL_ADVICE'
+      inferredIntent === 'ASK_DAY_REVIEW'
+      || inferredIntent === 'ASK_MEAL_ADVICE'
+      || inferredIntent === 'ASK_MEAL_COMPLETION'
       || (isMealAdviceIntent(userText) && !isConsumedMealLogDescription(userText) && !looksLikeComplexMealLog(userText))
     ) {
       return this.processMealAdvice(userText, currentState, options);
@@ -1258,7 +1301,7 @@ export class CommandTerminalController {
         ? 'ADD_FOOD'
         : inferredIntent;
 
-    const contextBundle = this.composer.buildPromptContext(commandHint, currentState);
+    const contextBundle = this.composer.buildPromptContext(commandHint, currentState, userText);
 
     let commandResponse;
     try {
@@ -1294,6 +1337,26 @@ export class CommandTerminalController {
 
     const commandType = String(commandResponse.command?.commandType || '').trim().toUpperCase();
     let rawPayload = commandResponse.command?.payload || {};
+
+    if (commandType === 'CREATE_NEW_FOOD') {
+      const desc = String(rawPayload?.desc || '').trim();
+      const entryPer100 = {
+        desc: desc || 'Nuovo alimento',
+        kcal: Number.isFinite(Number(rawPayload?.kcal)) ? Number(rawPayload.kcal) : null,
+        prot: Number.isFinite(Number(rawPayload?.prot)) ? Number(rawPayload.prot) : null,
+        carb: Number.isFinite(Number(rawPayload?.carb)) ? Number(rawPayload.carb) : null,
+        fatTotal: Number.isFinite(Number(rawPayload?.fatTotal)) ? Number(rawPayload.fatTotal) : null,
+        fibre: Number.isFinite(Number(rawPayload?.fibre)) ? Number(rawPayload.fibre) : null,
+      };
+      const donor = findNutritionalDonor(entryPer100, currentState?.foodDatabase || {});
+      const inherited = donor?.donorRow ? inheritMicrosFromDonor(entryPer100, donor.donorRow) : entryPer100;
+      this.publishNewFoodPreview({
+        entryPer100: inherited,
+        donor,
+        sourceImageCount: images.length,
+      });
+      return { ok: true, intent: 'CREATE_NEW_FOOD', commandType: 'CREATE_NEW_FOOD', entryPer100: inherited, donor };
+    }
 
     if (
       commandType === 'ADD_FOOD'

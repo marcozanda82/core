@@ -21,6 +21,7 @@ export function useCommandTerminal({
   onAddFoodCommand = null,
   onAddWorkoutCommand = null,
   onLogSleepCommand = null,
+  onSaveFoodDbEntry = null,
 } = {}) {
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
@@ -49,6 +50,7 @@ export function useCommandTerminal({
   const onAddFoodRef = useRef(onAddFoodCommand);
   const onAddWorkoutRef = useRef(onAddWorkoutCommand);
   const onLogSleepRef = useRef(onLogSleepCommand);
+  const onSaveFoodDbEntryRef = useRef(onSaveFoodDbEntry);
 
   useEffect(() => {
     onAddFoodRef.current = onAddFoodCommand;
@@ -61,6 +63,10 @@ export function useCommandTerminal({
   useEffect(() => {
     onLogSleepRef.current = onLogSleepCommand;
   }, [onLogSleepCommand]);
+
+  useEffect(() => {
+    onSaveFoodDbEntryRef.current = onSaveFoodDbEntry;
+  }, [onSaveFoodDbEntry]);
 
   const getCurrentStateRef = useRef(getCurrentState);
   useEffect(() => {
@@ -115,6 +121,22 @@ export function useCommandTerminal({
       ),
     );
   }, []);
+
+  const handleSaveNewFoodEntry = useCallback(async (entryPer100, donorMeta = null) => {
+    if (typeof onSaveFoodDbEntryRef.current !== 'function') {
+      appendAiMessage('⚠️ Salvataggio non disponibile in questa vista.');
+      return { ok: false, reason: 'save_food_db_not_configured' };
+    }
+    try {
+      await onSaveFoodDbEntryRef.current(entryPer100, donorMeta);
+      appendAiMessage('✅ Alimento salvato nel database.');
+      return { ok: true };
+    } catch (error) {
+      const reason = error?.message || 'save_failed';
+      appendAiMessage(`⚠️ Salvataggio fallito: ${reason}`);
+      return { ok: false, reason };
+    }
+  }, [appendAiMessage]);
 
   const confirmingDraftRef = useRef(false);
 
@@ -236,6 +258,7 @@ export function useCommandTerminal({
         suggestedAction: payload.suggestedAction || null,
         mealProposals: Array.isArray(payload.mealProposals) ? payload.mealProposals : null,
         adviceId: payload.adviceId || null,
+        newFoodDraft: payload.newFoodDraft || null,
         isError: payload.type === 'ERROR',
       });
     });
@@ -641,6 +664,7 @@ export function useCommandTerminal({
     handleWorkoutDraftUpdateMeta,
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
+    handleSaveNewFoodEntry,
     getConversationSnapshot: () => controller.getConversationSnapshot(),
     resetConversationState,
   };

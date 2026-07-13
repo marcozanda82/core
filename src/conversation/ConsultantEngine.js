@@ -1,4 +1,5 @@
 import { computeTotali } from '../useBiochimico';
+import { getTargetForNutrient } from '../useBiochimico';
 import { searchFoodsDetailed } from '../foodSearch';
 import { estraiDatiFoodDb } from '../features/salaComandi/engines/foodDataEngine';
 import { toCanonicalMealType, generateCortisolCurve } from '../coreEngine';
@@ -38,6 +39,30 @@ const MAX_HABIT_PROPOSALS = 3;
 const HABIT_LOOKBACK_DAYS = 45;
 const PRE_WORKOUT_WINDOW_MINUTES = 180;
 
+const MICRO_TELEMETRY_KEYS = [
+  'fibre',
+  'mg',
+  'na',
+  'k',
+  'ca',
+  'fe',
+  'vitc',
+  'vitD',
+  'omega3',
+];
+
+const MICRO_UNITS = {
+  fibre: 'g',
+  omega3: 'g',
+  vitD: 'µg',
+  vitc: 'mg',
+  mg: 'mg',
+  na: 'mg',
+  k: 'mg',
+  ca: 'mg',
+  fe: 'mg',
+};
+
 function roundMacro(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -54,6 +79,24 @@ function sumItemMacros(items) {
     }),
     { kcal: 0, pro: 0, carbo: 0, fat: 0 },
   );
+}
+
+function clampBudgetValue(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, roundMacro(v));
+}
+
+function computeResidualBudgetAfterPartialMeal(remainingBudget, partialMealTotals) {
+  const b = remainingBudget && typeof remainingBudget === 'object' ? remainingBudget : {};
+  const p = partialMealTotals && typeof partialMealTotals === 'object' ? partialMealTotals : {};
+  return {
+    kcal: clampBudgetValue((b.kcal ?? 0) - (p.kcal ?? 0)),
+    pro: clampBudgetValue((b.pro ?? 0) - (p.pro ?? 0)),
+    carbo: clampBudgetValue((b.carbo ?? 0) - (p.carbo ?? 0)),
+    fat: clampBudgetValue((b.fat ?? 0) - (p.fat ?? 0)),
+    micros: b.micros || undefined,
+  };
 }
 
 function roundTotals(totals) {
@@ -617,11 +660,33 @@ function computeRemainingBudget(currentAppState) {
   const log = Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : [];
   const totali = computeTotali(log);
   const targets = pickTargets(currentAppState);
+  const userTargets = currentAppState?.userTargets || {};
+
+  const micros = {};
+  MICRO_TELEMETRY_KEYS.forEach((key) => {
+    const current = Number(totali?.[key]) || 0;
+    const explicitTarget = Number(userTargets?.[key]);
+    const fallbackTarget = Number(getTargetForNutrient(key));
+    const target = Number.isFinite(explicitTarget) && explicitTarget > 0
+      ? explicitTarget
+      : Number.isFinite(fallbackTarget) && fallbackTarget > 0
+        ? fallbackTarget
+        : 0;
+    const remaining = Math.max(0, roundMacro(target - current));
+    micros[key] = {
+      current: roundMacro(current),
+      target: roundMacro(target),
+      remaining,
+      unit: MICRO_UNITS[key] || 'g',
+    };
+  });
+
   return {
     kcal: roundMacro(targets.kcal - (Number(totali.kcal) || 0)),
     pro: roundMacro(targets.pro - (Number(totali.prot) || 0)),
     carbo: roundMacro(targets.carbo - (Number(totali.carb) || 0)),
     fat: roundMacro(targets.fat - (Number(totali.fatTotal ?? totali.fat) || 0)),
+    micros,
   };
 }
 
@@ -833,6 +898,9 @@ export function buildNutritionContextForState(currentAppState = {}) {
  * @returns {Promise<object>}
  */
 export async function buildAdviceContext(targetFood, currentAppState = {}) {
+  // Backward compatible signature: buildAdviceContext(targetFood, state, options?)
+  const maybeOptions = arguments.length >= 3 ? arguments[2] : null; // eslint-disable-line prefer-rest-params
+  const options = maybeOptions && typeof maybeOptions === 'object' ? maybeOptions : {};
   void (await Promise.resolve());
   const rawQuery = String(targetFood || '').trim();
   const isGenericSuggestion = isGenericMealSuggestionQuery(rawQuery);
@@ -850,16 +918,74 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
   const dailyCalorieStrategy = nutrition.dailyCalorieStrategy;
   const eveningMetabolicContext = buildEveningMetabolicContext(currentAppState);
 
+  // Day review payload (local aggregation).
+  const activeLog = Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : [];
+  const dailyTotals = computeTotali(activeLog);
+  const targets = currentAppState?.userTargets || {};
+  const dailyTargets = {
+    kcal: Math.round(Number(currentAppState?.dynamicDailyKcal) || Number(targets.kcal) || 2000),
+    prot: Math.round(Number(targets.prot ?? targets.pro ?? 150) || 150),
+    carb: Math.round(Number(targets.carb ?? targets.cho ?? 200) || 200),
+    fat: Math.round(Number(targets.fatTotal ?? targets.fat ?? 65) || 65),
+  };
+
+  const partialMealRaw = options?.partialMeal && typeof options.partialMeal === 'object'
+    ? options.partialMeal
+    : null;
+  const partialMealItemsRaw = Array.isArray(partialMealRaw?.items) ? partialMealRaw.items : [];
+  const partialMealType = String(partialMealRaw?.mealType || currentMealType || '').trim() || currentMealType;
+
+  const partialMealResolvedItems = partialMealItemsRaw
+    .map((it) => enrichProposalItemWithResolver(
+      {
+        foodName: String(it?.foodName || it?.name || '').trim(),
+        grams: Math.round(Number(it?.grams ?? it?.qta) || 0),
+        rawQuery: String(it?.foodName || it?.name || '').trim(),
+      },
+      { foodDatabase: foodDb, fullHistory: currentAppState?.fullHistory || {} },
+      partialMealType,
+    ))
+    .filter(Boolean);
+
+  const partialMealTotals = partialMealResolvedItems.length > 0
+    ? roundTotals(sumItemMacros(partialMealResolvedItems))
+    : { kcal: 0, pro: 0, carbo: 0, fat: 0 };
+
+  const residualBudgetAfterPartialMeal =
+    partialMealResolvedItems.length > 0
+      ? computeResidualBudgetAfterPartialMeal(remainingBudget, partialMealTotals)
+      : null;
+
   return {
     targetFood: foodQuery,
     rawUserQuery: rawQuery,
     remainingBudget,
+    partialMeal: partialMealResolvedItems.length > 0
+      ? {
+          items: partialMealResolvedItems.map((it) => ({
+            foodName: it.foodName,
+            foodDbKey: it.foodDbKey ?? null,
+            grams: it.grams,
+            kcal: it.kcal,
+            pro: it.pro,
+            carbo: it.carbo,
+            fat: it.fat,
+          })),
+          totals: partialMealTotals,
+          mealType: partialMealType,
+          exactTime: partialMealRaw?.exactTime || null,
+        }
+      : null,
+    residualBudgetAfterPartialMeal,
+    dailyTotals,
+    dailyTargets,
     foodCandidates,
     currentMealType,
     activeDate: String(currentAppState?.activeDate || '').trim() || null,
     userHabitsForCurrentMeal,
     fallbackMealProposals,
     isGenericMealSuggestion: isGenericSuggestion,
+    intent: String(options?.intent || '').trim() || null,
     upcomingWorkout,
     dailyCalorieStrategy,
     eveningMetabolicContext,
@@ -893,7 +1019,15 @@ export function generateConsultantSystemInstruction() {
     'adatta le [USER_HABITS] prima di proporle in mealProposals: lieve riduzione di grassi e fibre rispetto',
     'alla grammatura abituale, o adattamento dei carboidrati per favorire lo svuotamento gastrico.',
     'Spiega brevemente in adviceMessage come e perche hai modificato la porzione abituale.',
-    'Regola Budget (Solo Avviso): Se la proposta del pasto pescata dallo storico ([USER_HABITS]) fa superare il [METABOLIC_BUDGET] calorico o dei macronutrienti residuo, NON DEVI MAI modificare o tagliare le grammature storiche. Lascia l abitudine dell utente intatta nel payload mealProposals. Limitati a scrivere un avviso chiaro e discorsivo nel campo testuale adviceMessage (es. "Attenzione: se mangi la tua solita porzione, sforerai il target di carboidrati di oggi"). L utente deve avere la libertà di scegliere se confermare o meno.',
+    'HARD CONSTRAINT — VINCOLO MATEMATICO (INVIOLABILE): il totale calorico (totals.kcal) di OGNI singola mealProposal NON deve MAI, in nessun caso, superare [METABOLIC_BUDGET].kcal. Se una proposta sfora anche di 1 kcal, DEVI correggerla prima di rispondere.',
+    'HARD CONSTRAINT — SCALING OBBLIGATORIO: per far rientrare pasti storici nel budget, DEVI SCALARE I GRAMMI in output. Taglia drasticamente (anche 50-70%) fonti glucidiche (pane, pasta, patate, pizza, gnocchi) e fonti lipidiche (olio, noci, pesto, edamame), preservando invece le grammature delle fonti proteiche (salmone, merluzzo, tonno, pollo, uova).',
+    'HARD CONSTRAINT — PULIZIA ACCAVALLAMENTI STORICI: non proporre combinazioni insensate da log sovrapposti. Se nella stessa proposta compaiono più fonti di carboidrati (es. pizza + pane + patate + pasta), SELEZIONANE SOLO UNA e rimuovi le altre. Stessa logica per grassi aggiunti: non sommare olio + noci + pesto insieme se porta a sforare; scegline uno o riducili.',
+    'HARD CONSTRAINT — STOP AVVISI SENZA TAGLIO: è vietato dire "sfora il budget ma lascio intatto". Se sfora, tagli i grammi e adattI mealProposals. In adviceMessage devi dire esplicitamente che hai ridotto carboidrati e grassi per rispettare il budget (es. "Ho ridotto carboidrati e grassi delle tue abitudini per rispettare le tue 1454 kcal").',
+    'INTENTO ASK_MEAL_COMPLETION (SOUS-CHEF): se nel prompt è presente [PARTIAL_MEAL] con items[], NON devi proporre un pasto da zero. Devi completare il piatto aggiungendo SOLO gli ingredienti mancanti. Calcola il budget residuo sottraendo il pasto parziale e rispetta il VINCOLO MATEMATICO sulle kcal totali.',
+    'HARD CONSTRAINT — OTTIMIZZAZIONE MICRO-NUTRIENTI: quando completi un pasto (ASK_MEAL_COMPLETION), devi dare priorità assoluta a ingredienti che colmano le carenze segnalate in [METABOLIC_BUDGET].micros (alte remaining). Esempio: se fibre e magnesio sono bassi, preferisci legumi/verdure/frutta secca in quantità compatibili col budget; se sodio basso, valuta un aggiustamento controllato. Mantieni sempre il vincolo kcal.',
+    'HARD CONSTRAINT — COMPLETION OUTPUT: quando [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL] è presente, mealProposals DEVONO contenere SOLO alimenti integrativi (NON ripetere gli alimenti già in [PARTIAL_MEAL]). Il totale kcal degli alimenti integrativi di ciascuna opzione deve essere <= [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL].kcal (vincolo assoluto).',
+    'INTENTO ASK_DAY_REVIEW (DEBRIEFING SERALE): quando l intent è ASK_DAY_REVIEW o nel contesto sono presenti [DAILY_TOTALS] e [DAILY_TARGETS], NON devi generare mealProposals. Devi produrre SOLO adviceMessage (reviewMessage) empatico e serale, considerando stress/cortisolo alto.',
+    'STRUTTURA OBBLIGATORIA adviceMessage (ASK_DAY_REVIEW):\n- L Esito: (es. "Ottimo lavoro" / "Giornata discreta") basato sul rispetto di [DAILY_CALORIE_STRATEGY] e scostamento kcal.\n- Cosa ha funzionato: elogia 1-2 target centrati.\n- Cosa migliorare: 1-2 punti su eccessi/carenze, con priorità ai micro-nutrienti in [METABOLIC_BUDGET].micros.\n- Il Consiglio per domani: 1 azione pratica.\nTono: empatico, rassicurante, chiusura serale senza stress. Max ~10 righe.',
     'REGOLA CORTISOLO SERALE E RECUPERO NERVOSO: quando il pasto di contesto è la cena, è orario serale (dopo le 18:00), o [EVENING_STRESS_CONTEXT].eveningStressRisk è "high", analizza il livello di cortisolo stimato in [EVENING_STRESS_CONTEXT].cortisolScore. Se il cortisolo è medio-alto in orario serale, è un segnale di allarme per il sistema nervoso. In adviceMessage e nelle proposte DEVI prioritizzare scelte calmanti: carboidrati complessi (aiutano ad abbassare il cortisolo e favoriscono il sonno), alimenti ricchi di magnesio, omega-3 o triptofano. Evita pasti serali composti solo da proteine magre se lo stress è alto. Tono assertivo e focalizzato sul recupero.',
     'PASTI ANTI-CORTISOLO (CENA): se l utente chiede consigli per la cena o il tema è serale, orienta mealProposals verso combinazioni anti-stress: privilegia carboidrati complessi e fibre moderate, evita eccessi di grassi saturi, caffeina o pasti troppo proteici-magri se [EVENING_STRESS_CONTEXT].eveningStressRisk è "high". Puoi etichettare le proposte in label (es. "Cena recupero") senza cambiare lo schema JSON.',
     'DIGESTIVE SAFETY GATE (CENA + ALLENAMENTO SERALE): quando consigli o valuti un allenamento in fascia serale, calcola la somma tra i macro residui in [METABOLIC_BUDGET], il costo calorico stimato della cena proposta in mealProposals e l impatto dell allenamento in [UPCOMING_WORKOUT]. Se il totale calorico risultante per la cena supera circa 900-1000 kcal, oppure se il volume di cibo previsto è eccessivo per l orario serale, DEVI sconsigliare l allenamento intenso in adviceMessage. Spiega che un pasto troppo pesante compromette recupero e gestione del cortisolo serale; suggerisci pasto più bilanciato e rinvio dell attività intensa. Non modificare le grammature storiche in mealProposals per applicare questo gate: usa solo adviceMessage per l avviso.',
@@ -932,6 +1066,13 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
   const upcomingJson = JSON.stringify(upcomingWorkout, null, 0);
   const dailyCalorieStrategy = ctx.dailyCalorieStrategy || buildDailyCalorieStrategyContext({});
   const strategyJson = JSON.stringify(dailyCalorieStrategy, null, 0);
+  const partialMeal = ctx.partialMeal ?? null;
+  const partialJson = JSON.stringify(partialMeal, null, 0);
+  const residualAfterPartial = ctx.residualBudgetAfterPartialMeal ?? null;
+  const residualJson = JSON.stringify(residualAfterPartial, null, 0);
+  const intent = String(ctx.intent || '').trim().toUpperCase();
+  const dailyTotalsJson = JSON.stringify(ctx.dailyTotals || ctx.DAILY_TOTALS || null, null, 0);
+  const dailyTargetsJson = JSON.stringify(ctx.dailyTargets || ctx.DAILY_TARGETS || null, null, 0);
   const eveningContext = ctx.eveningMetabolicContext || {
     isDinnerContext: meal === 'cena',
     isEvening: false,
@@ -962,11 +1103,16 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     `Richiesta utente: ${ctx.rawUserQuery || food}.`,
     genericHint,
     `Pasto di contesto: ${meal}.`,
-    `[METABOLIC_BUDGET: {"kcal":${budget.kcal ?? 0},"pro":${budget.pro ?? 0},"carbo":${budget.carbo ?? 0},"fat":${budget.fat ?? 0}}]`,
+    `[METABOLIC_BUDGET: ${JSON.stringify(budget || {}, null, 0)}]`,
     `[USER_HABITS_FOR_CURRENT_MEAL: ${habitsJson}]`,
     `[FALLBACK_MEAL_PROPOSALS: ${fallbackJson}]`,
     `[UPCOMING_WORKOUT: ${upcomingJson}]`,
     `[DAILY_CALORIE_STRATEGY: ${strategyJson}]`,
+    `[PARTIAL_MEAL: ${partialJson}]`,
+    `[RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL: ${residualJson}]`,
+    `[INTENT: ${intent || 'ASK_MEAL_ADVICE'}]`,
+    ctx.dailyTotals || ctx.DAILY_TOTALS ? `[DAILY_TOTALS: ${dailyTotalsJson}]` : '',
+    ctx.dailyTargets || ctx.DAILY_TARGETS ? `[DAILY_TARGETS: ${dailyTargetsJson}]` : '',
     `[EVENING_STRESS_CONTEXT: ${eveningJson}]`,
     `Opzioni DB locale (porzione ${STANDARD_PORTION_G}g, solo se serve integrare): ${candidateLines}.`,
     '',
@@ -994,10 +1140,27 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     'Riduci leggermente grassi e fibre rispetto alla grammatura abituale, o adatta i carboidrati',
     'per favorire lo svuotamento gastrico. In adviceMessage spiega brevemente la modifica.',
     '',
-    'Regola Budget (Solo Avviso): Se la proposta dallo storico ([USER_HABITS]) supera il [METABOLIC_BUDGET] residuo,',
-    'NON tagliare né ridurre le grammature in mealProposals. Lascia l abitudine intatta.',
-    'Scrivi solo un avviso chiaro in adviceMessage (es. "Attenzione: se mangi la tua solita porzione, sforerai il target di carboidrati di oggi").',
-    'L utente decide liberamente se confermare.',
+    'HARD CONSTRAINT (INVIOLABILE) — VINCOLO MATEMATICO: totals.kcal di OGNI proposta deve essere <= [METABOLIC_BUDGET].kcal. Se sfora, devi scalare i grammi finché rientra.',
+    'SCALING OBBLIGATORIO: taglia carboidrati e grassi (anche 50-70%) e preserva le proteine. Non lasciare porzioni storiche intatte se sforano.',
+    'PULIZIA ACCAVALLAMENTI: se appaiono più fonti di carboidrati nella stessa proposta, selezionane solo una ed elimina le altre.',
+    'In adviceMessage spiega chiaramente che hai ridotto carboidrati e grassi per rispettare il budget kcal.',
+    '',
+    residualAfterPartial
+      ? [
+        'SOUS-CHEF MODE ATTIVO: [PARTIAL_MEAL] è già in preparazione.',
+        'Il tuo UNICO compito è proporre 2-3 opzioni di COMPLETAMENTO con SOLO ingredienti integrativi (non ripetere quelli in PARTIAL_MEAL).',
+        'Vincolo assoluto: il totale kcal degli ingredienti integrativi per ogni opzione deve essere <= [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL].kcal.',
+        'Ottimizza i micro: priorità agli ingredienti che aumentano i nutrienti con remaining più alto in [METABOLIC_BUDGET].micros, restando nel residuo.',
+      ].join('\n')
+      : '',
+    intent === 'ASK_DAY_REVIEW'
+      ? [
+        'DEBRIEFING SERALE ATTIVO (ASK_DAY_REVIEW).',
+        'NON generare mealProposals. NON generare suggestedAction. Produci SOLO adviceMessage con la struttura richiesta (Esito / Cosa ha funzionato / Cosa migliorare / Consiglio per domani).',
+        'Basa il giudizio su [DAILY_CALORIE_STRATEGY] e su [DAILY_TOTALS] vs [DAILY_TARGETS].',
+        'Dai priorità alle carenze micro in [METABOLIC_BUDGET].micros. Tono empatico, senza stress.',
+      ].join('\n')
+      : '',
     '',
     eveningContext.isDinnerContext || eveningContext.isEvening
       ? [
