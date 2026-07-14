@@ -772,6 +772,133 @@
   margin-top: 10px;
 }
 
+/* —— WIP Meal Builder (carrello + Smart Chips) —— */
+.wip-meal-cart-bar {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  background: linear-gradient(145deg, rgba(8, 28, 36, 0.95), rgba(10, 18, 28, 0.98));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.wip-meal-cart-bar__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.wip-meal-cart-bar__eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(34, 211, 238, 0.85);
+}
+
+.wip-meal-cart-bar__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.wip-meal-cart-bar__totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.wip-meal-cart-bar__clear {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: transparent;
+  color: rgba(226, 232, 240, 0.85);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.wip-meal-cart-bar__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wip-meal-cart-bar__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.wip-meal-cart-bar__chip-name {
+  font-size: 13px;
+  color: #f8fafc;
+}
+
+.wip-meal-cart-bar__chip-meta {
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.wip-meal-cart-bar__chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: rgba(248, 113, 113, 0.9);
+  cursor: pointer;
+  padding: 0;
+}
+
+.wip-meal-smart-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.wip-meal-smart-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(8, 47, 73, 0.55);
+  color: #e0f2fe;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.wip-meal-smart-chip:hover:not(:disabled) {
+  background: rgba(14, 116, 144, 0.45);
+  border-color: rgba(34, 211, 238, 0.65);
+}
+
+.wip-meal-smart-chip--added,
+.wip-meal-smart-chip:disabled {
+  opacity: 0.72;
+  border-color: rgba(74, 222, 128, 0.45);
+  background: rgba(20, 83, 45, 0.35);
+  color: #bbf7d0;
+  cursor: default;
+}
+
+.wip-meal-smart-chip__added-label {
+  font-size: 11px;
+  opacity: 0.9;
+}
+
 /* —— Meal draft confirmation (cameriere) —— */
 .kentu-meal-draft {
   width: 100%;

@@ -29,6 +29,12 @@ export default function KentuChatUI({
   onBack,
   introPhrase,
   isProcessing = false,
+  wipMealItems = [],
+  wipMealTotals = null,
+  wipMealType = 'pranzo',
+  onRemoveWipItem,
+  onClearWipMeal,
+  onAddWipSuggestion,
 }) {
   return (
     <div
@@ -69,6 +75,12 @@ export default function KentuChatUI({
         onBack={onBack}
         introPhrase={introPhrase}
         isProcessing={isProcessing}
+        wipMealItems={wipMealItems}
+        wipMealTotals={wipMealTotals}
+        wipMealType={wipMealType}
+        onRemoveWipItem={onRemoveWipItem}
+        onClearWipMeal={onClearWipMeal}
+        onAddWipSuggestion={onAddWipSuggestion}
       />
     </div>
   );

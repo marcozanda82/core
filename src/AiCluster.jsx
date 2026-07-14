@@ -8,6 +8,8 @@ import MealDraftConfirmation from './components/MealDraftConfirmation';
 import WorkoutDraftConfirmation from './components/WorkoutDraftConfirmation';
 import MealProposalCards from './components/MealProposalCards';
 import NewFoodPreviewCard from './components/NewFoodPreviewCard';
+import WipMealCartBar from './features/wipMealBuilder/components/WipMealCartBar';
+import WipMealSmartChips from './features/wipMealBuilder/components/WipMealSmartChips';
 import {
   KentuIcon,
   KentuButton,
@@ -69,6 +71,12 @@ export default function AiCluster({
   /** Stessa frase del mount SalaComandi (rotazione kentuIntroPhrases); nessuna seconda estrazione qui. */
   introPhrase = '',
   isProcessing = false,
+  wipMealItems = [],
+  wipMealTotals = null,
+  wipMealType = 'pranzo',
+  onRemoveWipItem,
+  onClearWipMeal,
+  onAddWipSuggestion,
 }) {
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -133,6 +141,13 @@ export default function AiCluster({
           height: 'auto',
         }}
       >
+        <WipMealCartBar
+          items={wipMealItems}
+          totals={wipMealTotals}
+          mealType={wipMealType}
+          onRemoveItem={onRemoveWipItem}
+          onClear={onClearWipMeal}
+        />
         <div className="chat-messages" style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', paddingRight: '5px' }}>
           {chatHistory.map((msg, idx) => (
             <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'ai' ? 'flex-start' : 'flex-end', width: '100%' }}>
@@ -260,6 +275,17 @@ export default function AiCluster({
                           foodDatabase={foodDatabase}
                           fullHistory={fullHistory}
                           onConfirm={onAcceptMealProposal}
+                        />
+                      ) : null}
+                    {Array.isArray(msg.wipSuggestions)
+                      && msg.wipSuggestions.length > 0
+                      && typeof onAddWipSuggestion === 'function' ? (
+                        <WipMealSmartChips
+                          suggestions={msg.wipSuggestions}
+                          addedChipIds={msg.wipAddedChipIds || []}
+                          onAddSuggestion={(suggestion, chipId) => {
+                            onAddWipSuggestion(suggestion, chipId, msg.adviceId);
+                          }}
                         />
                       ) : null}
                     {msg.type === 'NEW_FOOD_PREVIEW'

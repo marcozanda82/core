@@ -27,6 +27,8 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
 import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandTerminal';
+import { getWipMealSnapshotFromBridge, seedWipMealFromBridge } from './features/wipMealBuilder/wipMealBridge.js';
+import { WipMealProvider } from './features/wipMealBuilder/context/WipMealContext.jsx';
 import { mapChatWorkoutToNativePayload } from './features/workout/workoutAdapter';
 import { callGeminiAPIWithRotation } from './services/aiService';
 import { useProfileAndTargets } from './hooks/useProfileAndTargets';
@@ -371,7 +373,7 @@ const MainDashboardCharts = lazy(() => import('./features/charts/MainDashboardCh
 const TimelineNodi = lazy(() => import('./TimelineNodi'));
 const ChartModal = lazy(() => import('./ChartModal'));
 const FullscreenGraphView = lazy(() => import('./features/charts/FullscreenGraphView'));
-const KentuChatUI = lazy(() => import('./features/chat/KentuChatUI'));
+const KentuChatUI = lazy(() => import('./features/chat/KentuChatWithWipMeal'));
 const LongevityView = lazy(() => import('./LongevityView'));
 const MetabolicUnifiedView = lazy(() => import('./MetabolicUnifiedView'));
 const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
@@ -5253,6 +5255,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   } = useCommandTerminal({
     chatHistory,
     setChatHistory,
+    getWipMealSnapshot: getWipMealSnapshotFromBridge,
+    onWipMealSeed: seedWipMealFromBridge,
     onAddFoodCommand: commitAddFoodCommand,
     onAddWorkoutCommand: commitAddWorkoutCommand,
     onLogSleepCommand: commitLogSleepCommand,
@@ -8135,10 +8139,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   return (
     <UserNutritionGoalsProvider value={nutritionGoalsValue}>
-      <>
-        <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} />
-        {salaContent}
-      </>
+      <WipMealProvider>
+        <>
+          <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} />
+          {salaContent}
+        </>
+      </WipMealProvider>
     </UserNutritionGoalsProvider>
   );
 }

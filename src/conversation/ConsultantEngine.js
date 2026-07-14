@@ -659,6 +659,65 @@ export function buildConsultantMealAdviceMessage(adviceContext = {}) {
   return `Ho usato ${anchor} come base per la tua ${mealLabel.toLowerCase()}. Ecco 3 combinazioni che completano i macro rimanenti (${kcal} kcal). Scegli un'opzione e caricala nel diario.`;
 }
 
+export function buildWipMealAdviceMessage(adviceContext = {}) {
+  const items = Array.isArray(adviceContext?.wipMealProjection?.items)
+    ? adviceContext.wipMealProjection.items
+    : [];
+  const lastItem = items[items.length - 1];
+  const foodLabel = String(lastItem?.foodName || 'alimento').trim();
+  return `Ottima scelta il ${foodLabel}. Per bilanciare il pasto ti mancano ancora macro: usa i pulsanti qui sotto per aggiungere ingredienti al carrello.`;
+}
+
+/**
+ * Sanitizza Smart Chips WIP Meal Builder dall'LLM.
+ * @param {Array<object>} suggestions
+ * @param {object} [adviceContext]
+ * @returns {Array<object>}
+ */
+export function sanitizeWipSuggestions(suggestions, adviceContext = {}) {
+  const wipItems = Array.isArray(adviceContext?.wipMealProjection?.items)
+    ? adviceContext.wipMealProjection.items
+    : [];
+  const wipNames = new Set(
+    wipItems.map((item) => String(item?.foodName || '').trim().toLowerCase()).filter(Boolean),
+  );
+  const residualKcal = Math.round(
+    Number(adviceContext?.residualBudgetAfterWipMeal?.kcal)
+    || Number(adviceContext?.remainingBudget?.kcal)
+    || 0,
+  );
+
+  return (Array.isArray(suggestions) ? suggestions : [])
+    .map((entry, index) => {
+      const name = String(entry?.name || entry?.foodName || '').trim();
+      const weight = Math.round(Number(entry?.weight ?? entry?.grams) || 0);
+      if (!name || weight <= 0) return null;
+
+      const normalizedName = name.toLowerCase();
+      if (wipNames.has(normalizedName)) return null;
+      if (wipNames.has(normalizedName.split(/\s+/)[0])) return null;
+
+      const macros = entry?.macros && typeof entry.macros === 'object' ? entry.macros : entry;
+      const calories = Math.round(Number(entry?.calories ?? entry?.kcal) || 0);
+      const prot = Number(macros?.prot ?? macros?.pro) || 0;
+      const carb = Number(macros?.carb ?? macros?.carbo) || 0;
+      const fat = Number(macros?.fat) || 0;
+
+      if (residualKcal > 0 && calories > residualKcal * 1.15) return null;
+
+      return {
+        id: `wip_chip_${index}_${normalizedName.replace(/\s+/g, '_')}`,
+        name,
+        weight,
+        calories: calories > 0 ? calories : null,
+        macros: { prot, carb, fat },
+        reason: String(entry?.reason || '').trim() || null,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
 /**
  * Card preview locale (turno 1) clonando gli items del nodo esistente.
  * @param {object} existingMealNode
@@ -1342,12 +1401,16 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     ? options.consultantMealRequest
     : null;
   const isConsultantMealMode = intent === 'CONSULTANT_MEAL' || Boolean(consultantMealRequest?.anchorFood);
+  const isWipMealMode = intent === 'WIP_MEAL_BUILD';
   const foodQuery = isGenericSuggestion ? '' : (extractTargetFoodFromQuery(rawQuery) || rawQuery);
   const foodDb = currentAppState?.foodDatabase || {};
   const nutrition = buildNutritionContextForState(currentAppState);
   let currentMealType = nutrition.currentMealType;
   if (isConsultantMealMode && consultantMealRequest?.mealType) {
     currentMealType = consultantMealRequest.mealType;
+  }
+  if (isWipMealMode && options?.wipMealDeclaration?.mealType) {
+    currentMealType = options.wipMealDeclaration.mealType;
   }
   const remainingBudget = nutrition.remainingBudget;
   const foodCandidates = foodQuery
@@ -1396,6 +1459,38 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     partialMealResolvedItems.length > 0
       ? computeResidualBudgetAfterPartialMeal(remainingBudget, partialMealTotals)
       : null;
+
+  const wipMealItemsRaw = Array.isArray(options?.wipMealItems) ? options.wipMealItems : [];
+  const wipMealType = String(
+    options?.wipMealDeclaration?.mealType
+    || options?.wipMealMealType
+    || currentMealType
+    || '',
+  ).trim() || currentMealType;
+
+  const wipMealResolvedItems = wipMealItemsRaw
+    .map((it) => enrichProposalItemWithResolver(
+      {
+        foodName: String(it?.foodName || it?.name || '').trim(),
+        grams: Math.round(Number(it?.grams ?? it?.weight ?? it?.qta) || 0),
+        rawQuery: String(it?.foodName || it?.name || '').trim(),
+        kcal: Number(it?.kcal ?? it?.cal) || 0,
+        pro: Number(it?.prot) || 0,
+        carbo: Number(it?.carbo) || 0,
+        fat: Number(it?.fat) || 0,
+      },
+      { foodDatabase: foodDb, fullHistory: currentAppState?.fullHistory || {} },
+      wipMealType,
+    ))
+    .filter(Boolean);
+
+  const wipMealTotals = wipMealResolvedItems.length > 0
+    ? roundTotals(sumItemMacros(wipMealResolvedItems))
+    : { kcal: 0, pro: 0, carbo: 0, fat: 0 };
+
+  const residualBudgetAfterWipMeal = wipMealResolvedItems.length > 0
+    ? computeResidualBudgetAfterPartialMeal(remainingBudget, wipMealTotals)
+    : remainingBudget;
 
   const mealDraftRaw = options?.mealDraftProjection && typeof options.mealDraftProjection === 'object'
     ? options.mealDraftProjection
@@ -1522,6 +1617,22 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     intent: intent || null,
     consultantMealRequest,
     isConsultantMealMode,
+    isWipMealMode,
+    wipMealProjection: wipMealResolvedItems.length > 0
+      ? {
+          items: wipMealResolvedItems.map((item) => ({
+            foodName: item.foodName,
+            grams: item.grams,
+            kcal: item.kcal,
+            pro: item.pro,
+            carbo: item.carbo,
+            fat: item.fat,
+          })),
+          totals: wipMealTotals,
+          mealType: wipMealType,
+        }
+      : null,
+    residualBudgetAfterWipMeal,
     dailyBudgetRemaining: {
       remainingCalories: Math.round(Number(remainingBudget?.kcal) || 0),
       remainingProtein: Math.round(Number(remainingBudget?.pro) || 0),
@@ -1581,6 +1692,9 @@ export function generateConsultantSystemInstruction() {
     'INTENTO CONSULTANT_MEAL (MODALITÀ CONSULENTE): quando l intent è CONSULTANT_MEAL e nel prompt è presente [CONSULTANT_MEAL_REQUEST], sei un nutrizionista. L utente ha inserito [CONSULTANT_MEAL_REQUEST].anchorFood come alimento base fisso. DEVI creare ESATTAMENTE 3 opzioni di pasto complete (mealProposals) che includano SEMPRE quell alimento base + altri ingredienti che bilanciano il pasto rispetto a [dailyBudgetRemaining] e [METABOLIC_BUDGET]. Ogni opzione deve avere items[] completi (foodName + grams > 0) e totals coerenti. label: "Opzione 1", "Opzione 2", "Opzione 3". source: "consultant_meal".',
     'HARD CONSTRAINT CONSULTANT_MEAL: totals.kcal di OGNI opzione deve essere <= [METABOLIC_BUDGET].kcal. Ogni items[] DEVE contenere [CONSULTANT_MEAL_REQUEST].anchorFood. Varia gli accompagnamenti tra le 3 opzioni (es. verdure diverse, carboidrati complementari).',
     'STRUTTURA OBBLIGATORIA adviceMessage (CONSULTANT_MEAL): conferma l alimento base scelto, cita il budget residuo in kcal, presenta Opzione 1/2/3 in sintesi e chiudi con CTA per scegliere e caricare una proposta.',
+    'INTENTO WIP_MEAL_BUILD (COSTRUZIONE PASTO IN CORSO): quando l intent è WIP_MEAL_BUILD e nel prompt è presente [WIP_MEAL_ITEMS], sei un nutrizionista. L utente sta costruendo un pasto nel carrello WIP. NON generare mealProposals. DEVI restituire adviceMessage (messaggio breve) + suggestions[] (3-5 Smart Chips) con name, weight (grammi), calories, macros {prot,carb,fat}, reason. Ogni suggestion deve essere un alimento INTEGRATIVO diverso da quelli già in [WIP_MEAL_ITEMS]. Bilancia rispetto a [dailyBudgetRemaining] e [RESIDUAL_BUDGET_AFTER_WIP_MEAL].',
+    'HARD CONSTRAINT WIP_MEAL_BUILD: suggestions[].weight > 0. La somma calories di ciascun chip non deve superare [RESIDUAL_BUDGET_AFTER_WIP_MEAL].kcal. Varia carboidrati complessi, verdure e grassi buoni. mealProposals DEVE essere array vuoto o omesso.',
+    'STRUTTURA OBBLIGATORIA adviceMessage (WIP_MEAL_BUILD): conferma l ultimo alimento aggiunto, indica cosa manca (carboidrati/grassi/verdure) e invita a usare i pulsanti Smart Chip sotto.',
     'HARD CONSTRAINT UPDATE_LOGGED_MEAL — ITEMS COMPLETI: DEVI SEMPRE restituire l array COMPLETO items[] con foodName e grams compilati per OGNI alimento. Se la richiesta è vaga o non specifica modifiche, restituisci l elenco ESATTO degli alimenti originali da [EXISTING_MEAL_NODE] senza alterazioni. MAI restituire items[] vuoto o con foodName/grams mancanti.',
     'STRUTTURA OBBLIGATORIA adviceMessage (UPDATE_LOGGED_MEAL): "Ho recuperato il tuo [Pasto]. Ecco la versione aggiornata, conferma per sovrascrivere." Nessun semaforo, nessuna Opzione 2/3.',
     'STRUTTURA OBBLIGATORIA adviceMessage (EVALUATE_MEAL_DRAFT):\n1) Check Matematico: cita il totale kcal della bozza ([DRAFT_TOTAL_KCAL]) vs [METABOLIC_BUDGET].kcal. Se [BUDGET_OVERFLOW_AMOUNT] > 0, dichiara esplicitamente di quanto sfora (es. "sforeresti il budget di 600 kcal"). Se è 0, conferma che rientri.\n2) Intervento (tagli chirurgici): individua quale alimento in [MEAL_DRAFT_PROJECTION] causa l esubero (es. pizza, noci, grassi) e proponi tagli precisi (es. "Dimezza la porzione di pizza e togli le noci").\n3) CTA finale: "Vuoi che calcoli le porzioni esatte per farti rientrare, o vuoi sostituire [alimento] con qualcos altro?"\nTono: diretto, da buttafuori nutrizionale, max ~8 righe. Nessuna Opzione 1/2/3.',
@@ -1646,6 +1760,10 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     remainingFat: Math.round(Number(budget?.fat) || 0),
   };
   const dailyBudgetRemainingJson = JSON.stringify(dailyBudgetRemaining, null, 0);
+  const wipMealProjection = ctx.wipMealProjection ?? null;
+  const wipMealJson = JSON.stringify(wipMealProjection, null, 0);
+  const residualAfterWipMeal = ctx.residualBudgetAfterWipMeal ?? null;
+  const residualWipJson = JSON.stringify(residualAfterWipMeal, null, 0);
   const draftTotalKcal = ctx.draftTotalKcal ?? null;
   const budgetOverflowAmount = ctx.budgetOverflowAmount ?? null;
   const intent = String(ctx.intent || '').trim().toUpperCase();
@@ -1694,6 +1812,9 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     existingMealNode ? `[EXISTING_MEAL_NODE: ${existingMealJson}]` : '',
     consultantMealRequest ? `[CONSULTANT_MEAL_REQUEST: ${consultantMealJson}]` : '',
     consultantMealRequest ? `[dailyBudgetRemaining: ${dailyBudgetRemainingJson}]` : '',
+    wipMealProjection ? `[WIP_MEAL_ITEMS: ${wipMealJson}]` : '',
+    wipMealProjection ? `[RESIDUAL_BUDGET_AFTER_WIP_MEAL: ${residualWipJson}]` : '',
+    intent === 'WIP_MEAL_BUILD' ? `[dailyBudgetRemaining: ${dailyBudgetRemainingJson}]` : '',
     mealDraftProjection ? `[MEAL_DRAFT_PROJECTION: ${mealDraftJson}]` : '',
     mealDraftProjection ? `[DRAFT_TOTAL_KCAL: ${draftTotalKcal}]` : '',
     mealDraftProjection ? `[BUDGET_OVERFLOW_AMOUNT: ${budgetOverflowAmount}]` : '',
@@ -1796,6 +1917,16 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
         'Rispetta [dailyBudgetRemaining] e [METABOLIC_BUDGET]: totals.kcal di ogni opzione <= [METABOLIC_BUDGET].kcal.',
         'Compila items[] completi (foodName + grams > 0) e totals coerenti. label: "Opzione 1", "Opzione 2", "Opzione 3". source: "consultant_meal".',
         'adviceMessage: conferma alimento base, cita budget residuo, sintetizza le 3 opzioni e invita a sceglierne una da caricare.',
+      ].join('\n')
+      : '',
+    intent === 'WIP_MEAL_BUILD'
+      ? [
+        'WIP MEAL BUILDER ATTIVO (WIP_MEAL_BUILD).',
+        'L utente sta costruendo un pasto nel carrello [WIP_MEAL_ITEMS]. NON generare mealProposals.',
+        'Restituisci adviceMessage breve + suggestions[] (3-5 Smart Chips integrativi).',
+        'Ogni suggestion: { name, weight, calories, macros: { prot, carb, fat }, reason }.',
+        'NON ripetere alimenti già in [WIP_MEAL_ITEMS]. Rispetta [RESIDUAL_BUDGET_AFTER_WIP_MEAL] e [dailyBudgetRemaining].',
+        'mealProposals: array vuoto. suggestedAction: null.',
       ].join('\n')
       : '',
     '',

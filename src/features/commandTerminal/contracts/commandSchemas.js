@@ -216,6 +216,29 @@ export const consultantResponseSchema = {
       },
       required: ['foodName', 'grams', 'mealType'],
     },
+    suggestions: {
+      type: 'array',
+      description:
+        'WIP Meal Builder: Smart Chips integrativi da aggiungere al carrello pasto in corso. Compila SOLO per intent WIP_MEAL_BUILD. 3-5 suggerimenti con name, weight (grammi), calories, macros {prot,carb,fat}, reason.',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Nome alimento puro senza grammature.' },
+          weight: { type: 'number', description: 'Grammi consigliati (> 0).' },
+          calories: { type: 'number', description: 'Kcal stimate per la porzione.' },
+          macros: {
+            type: 'object',
+            properties: {
+              prot: { type: 'number' },
+              carb: { type: 'number' },
+              fat: { type: 'number' },
+            },
+          },
+          reason: { type: 'string', description: 'Breve motivazione nutrizionale.' },
+        },
+        required: ['name', 'weight'],
+      },
+    },
     mealProposals: {
       type: 'array',
       description:

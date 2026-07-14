@@ -1089,10 +1089,16 @@ export class GeminiStructuredClient {
       mealProposals = parsed.mealProposals;
     }
 
+    let suggestions = [];
+    if (Array.isArray(parsed?.suggestions)) {
+      suggestions = parsed.suggestions;
+    }
+
     return {
       adviceMessage,
       suggestedAction,
       mealProposals,
+      suggestions,
       rawText,
       model: CONSULTANT_MODEL,
     };

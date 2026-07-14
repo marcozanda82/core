@@ -12,6 +12,8 @@ import {
   isUpdateLoggedMealIntent,
   isConsultantMealIntent,
   parseConsultantMealIntent,
+  isWipMealBuildIntent,
+  parseWipMealDeclaration,
   parseTargetMealTypeFromUpdateText,
   resolveUpdateMealContext,
   findPendingUpdateLoggedMealContext,
@@ -72,6 +74,7 @@ export class ContextComposer {
     if (isMealCompletionIntent(text)) return 'ASK_MEAL_COMPLETION';
     if (isUpdateLoggedMealIntent(text, chatHistory)) return 'UPDATE_LOGGED_MEAL';
     if (isConsultantMealIntent(text, chatHistory)) return 'CONSULTANT_MEAL';
+    if (isWipMealBuildIntent(text, chatHistory)) return 'WIP_MEAL_BUILD';
     if (isMealAdviceIntent(text, chatHistory)) return 'ASK_MEAL_ADVICE';
     if (isFoodRegistrationIntent(text)) return 'ADD_FOOD';
     return 'UNKNOWN';
@@ -219,6 +222,26 @@ export class ContextComposer {
             anchorFood: consultantRequest?.anchorFood || null,
             userText: toSafeString(userText),
           },
+          app: {
+            activeDate: toSafeString(currentState?.activeDate) || null,
+            locale: toSafeString(currentState?.locale) || 'it-IT',
+          },
+        },
+      };
+    }
+    if (normalizedIntent === 'WIP_MEAL_BUILD') {
+      const wipDeclaration = parseWipMealDeclaration(userText);
+      const dailyBudgetRemaining = buildDailyBudgetRemaining(currentState);
+      const wipMealItems = Array.isArray(currentState?.wipMealItems)
+        ? currentState.wipMealItems
+        : [];
+      return {
+        intent: 'WIP_MEAL_BUILD',
+        contextSlices: {
+          ...this.buildNutritionContextSlices(currentState),
+          dailyBudgetRemaining,
+          WIP_MEAL_ITEMS: wipMealItems,
+          WIP_MEAL_DECLARATION: wipDeclaration,
           app: {
             activeDate: toSafeString(currentState?.activeDate) || null,
             locale: toSafeString(currentState?.locale) || 'it-IT',

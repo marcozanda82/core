@@ -36,6 +36,8 @@ import {
   buildUpdateLoggedMealAdviceMessage,
   buildUpdateLoggedMealPreviewProposal,
   buildConsultantMealAdviceMessage,
+  buildWipMealAdviceMessage,
+  sanitizeWipSuggestions,
   ensureMealProposalsForAdvice,
   ensureMealProposalsForConsultantMeal,
   ensureMealProposalsForFixDraft,
@@ -59,6 +61,8 @@ import {
   isMealAdviceIntent,
   isConsultantMealIntent,
   parseConsultantMealIntent,
+  isWipMealBuildIntent,
+  parseWipMealDeclaration,
   isUpdateLoggedMealIntent,
   parseTargetMealTypeFromUpdateText,
   resolveUpdateMealContext,
@@ -444,6 +448,11 @@ export class CommandTerminalController {
     if (isMealCompletionIntent(userText)) return 'ASK_MEAL_COMPLETION';
     if (isUpdateLoggedMealIntent(userText, options?.chatHistory || [])) return 'UPDATE_LOGGED_MEAL';
     if (isConsultantMealIntent(userText, options?.chatHistory || [])) return 'CONSULTANT_MEAL';
+    if (isWipMealBuildIntent(
+      userText,
+      options?.chatHistory || [],
+      options?.wipMealItems || [],
+    )) return 'WIP_MEAL_BUILD';
     if (isMealAdviceIntent(userText, options?.chatHistory || [])) return 'ASK_MEAL_ADVICE';
 
     const detected = this.composer.detectIntent(userText, {
@@ -492,6 +501,7 @@ export class CommandTerminalController {
     suggestedAction = null,
     mealProposals = null,
     mealDraftProjection = null,
+    wipSuggestions = null,
     pendingMealUpdate = null,
   }) {
     const adviceMessage = String(text || '').trim();
@@ -505,6 +515,9 @@ export class CommandTerminalController {
         suggestedAction: suggestedAction || null,
         mealProposals: Array.isArray(mealProposals) && mealProposals.length > 0
           ? mealProposals
+          : null,
+        wipSuggestions: Array.isArray(wipSuggestions) && wipSuggestions.length > 0
+          ? wipSuggestions
           : null,
         mealDraftProjection: mealDraftProjection && typeof mealDraftProjection === 'object'
           ? mealDraftProjection
@@ -1282,6 +1295,34 @@ export class CommandTerminalController {
     const consultantMealRequest = isConsultantMeal
       ? parseConsultantMealIntent(rawQuery)
       : null;
+    const wipMealSnapshot = Array.isArray(options?.wipMealItems) ? options.wipMealItems : [];
+    const isWipMealBuild = isWipMealBuildIntent(rawQuery, chatHistory, wipMealSnapshot)
+      || String(options?.forcedIntent || '').toUpperCase() === 'WIP_MEAL_BUILD';
+    const wipMealDeclaration = isWipMealBuild ? parseWipMealDeclaration(rawQuery) : null;
+    const mergedWipMealItems = (() => {
+      const base = [...wipMealSnapshot];
+      if (!wipMealDeclaration?.items?.length) return base;
+      wipMealDeclaration.items.forEach((item) => {
+        const name = String(item?.foodName || '').trim().toLowerCase();
+        const grams = Math.round(Number(item?.grams) || 0);
+        if (!name || grams <= 0) return;
+        const duplicate = base.some((entry) => {
+          const entryName = String(entry?.foodName || entry?.name || '').trim().toLowerCase();
+          const entryGrams = Math.round(Number(entry?.grams ?? entry?.weight) || 0);
+          return entryName === name && entryGrams === grams;
+        });
+        if (!duplicate) {
+          base.push({
+            foodName: item.foodName,
+            name: item.foodName,
+            grams,
+            weight: grams,
+            qta: grams,
+          });
+        }
+      });
+      return base;
+    })();
 
     if ((isFixDraft || isSubstituteDraft) && !mealDraftProjection?.items?.length) {
       this.publishSystemMessage(
@@ -1411,6 +1452,8 @@ export class CommandTerminalController {
             ? 'UPDATE_LOGGED_MEAL'
           : isConsultantMeal
             ? 'CONSULTANT_MEAL'
+          : isWipMealBuild
+            ? 'WIP_MEAL_BUILD'
           : isSubstituteDraft
             ? 'SUBSTITUTE_MEAL_DRAFT_ITEM'
           : isFixDraft
@@ -1424,6 +1467,9 @@ export class CommandTerminalController {
         mealDraftProjection,
         existingMealNode,
         consultantMealRequest,
+        wipMealItems: mergedWipMealItems,
+        wipMealDeclaration,
+        wipMealMealType: wipMealDeclaration?.mealType || options?.wipMealMealType || null,
         removedFoodQuery: isSubstituteDraft
           ? parseRemovedFoodQueryFromSubstituteText(rawQuery)
           : null,
@@ -1443,7 +1489,7 @@ export class CommandTerminalController {
     const consultantPrompt = generateConsultantPrompt(adviceContext, targetFood);
 
     try {
-      const { adviceMessage, suggestedAction: rawAction, mealProposals: rawProposals, model } =
+      const { adviceMessage, suggestedAction: rawAction, mealProposals: rawProposals, suggestions: rawSuggestions, model } =
         await this.llmClient.generateConsultantResponse({
           prompt: consultantPrompt,
           temperature: 0.35,
@@ -1451,6 +1497,7 @@ export class CommandTerminalController {
         });
       const suggestedAction = sanitizeSuggestedAction(rawAction, adviceContext);
       let mealProposals = sanitizeMealProposals(rawProposals, adviceContext);
+      let wipSuggestions = [];
       if (isSubstituteDraft) {
         mealProposals = ensureMealProposalsForSubstituteDraft(mealProposals, adviceContext);
       } else if (isFixDraft) {
@@ -1459,6 +1506,9 @@ export class CommandTerminalController {
         mealProposals = ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceContext);
       } else if (isConsultantMeal) {
         mealProposals = ensureMealProposalsForConsultantMeal(mealProposals, adviceContext);
+      } else if (isWipMealBuild) {
+        mealProposals = [];
+        wipSuggestions = sanitizeWipSuggestions(rawSuggestions, adviceContext);
       } else if (isGeneric || adviceContext.isGenericMealSuggestion) {
         mealProposals = ensureMealProposalsForAdvice(mealProposals, adviceContext);
       }
@@ -1474,14 +1524,17 @@ export class CommandTerminalController {
           ? buildUpdateLoggedMealAdviceMessage(adviceContext)
         : isConsultantMeal
           ? (String(adviceMessage || '').trim() || buildConsultantMealAdviceMessage(adviceContext))
+        : isWipMealBuild
+          ? (String(adviceMessage || '').trim() || buildWipMealAdviceMessage(adviceContext))
         : adviceMessage;
 
       this.publishAdviceMessage({
         text: finalAdviceMessage,
-        suggestedAction: isDraftEval || isFixDraft || isSubstituteDraft || isUpdateLogged || isConsultantMeal
+        suggestedAction: isDraftEval || isFixDraft || isSubstituteDraft || isUpdateLogged || isConsultantMeal || isWipMealBuild
           ? null
           : suggestedAction,
         mealProposals: mealProposals.length > 0 ? mealProposals : null,
+        wipSuggestions: wipSuggestions.length > 0 ? wipSuggestions : null,
         mealDraftProjection: isDraftEval
           ? adviceContext?.mealDraftProjection || null
           : isSubstituteDraft
@@ -1501,6 +1554,8 @@ export class CommandTerminalController {
             ? 'UPDATE_LOGGED_MEAL'
           : isConsultantMeal
             ? 'CONSULTANT_MEAL'
+          : isWipMealBuild
+            ? 'WIP_MEAL_BUILD'
           : isDraftEval
             ? 'EVALUATE_MEAL_DRAFT'
             : isDayReview
@@ -1510,10 +1565,45 @@ export class CommandTerminalController {
                 : 'ASK_MEAL_ADVICE',
         model,
         adviceContext,
-        suggestedAction: isDraftEval || isFixDraft || isSubstituteDraft || isUpdateLogged || isConsultantMeal
+        suggestedAction: isDraftEval || isFixDraft || isSubstituteDraft || isUpdateLogged || isConsultantMeal || isWipMealBuild
           ? null
           : suggestedAction,
         mealProposals,
+        wipSuggestions,
+        wipSeed: isWipMealBuild && wipMealDeclaration?.items?.length
+          ? (() => {
+              const projectionItems = Array.isArray(adviceContext?.wipMealProjection?.items)
+                ? adviceContext.wipMealProjection.items
+                : [];
+              const snapshotKeys = new Set(
+                wipMealSnapshot.map((entry) => {
+                  const name = String(entry?.foodName || entry?.name || '').trim().toLowerCase();
+                  const grams = Math.round(Number(entry?.grams ?? entry?.weight) || 0);
+                  return `${name}_${grams}`;
+                }),
+              );
+              const items = projectionItems
+                .map((item) => ({
+                  foodName: item.foodName,
+                  grams: item.grams,
+                  kcal: item.kcal,
+                  prot: item.pro,
+                  carbo: item.carbo,
+                  fat: item.fat,
+                }))
+                .filter((item) => {
+                  const key = `${String(item.foodName || '').trim().toLowerCase()}_${item.grams}`;
+                  return item.foodName && item.grams > 0 && !snapshotKeys.has(key);
+                });
+              return items.length > 0
+                ? {
+                    items,
+                    mealType: wipMealDeclaration.mealType || null,
+                    exactTime: wipMealDeclaration.exactTime || null,
+                  }
+                : null;
+            })()
+          : null,
       };
     } catch (error) {
       const reason = `Consultant LLM failure: ${error?.message || 'unknown error'}`;
@@ -1607,6 +1697,7 @@ export class CommandTerminalController {
       || inferredIntent === 'SUBSTITUTE_MEAL_DRAFT_ITEM'
       || inferredIntent === 'ASK_MEAL_ADVICE'
       || inferredIntent === 'CONSULTANT_MEAL'
+      || inferredIntent === 'WIP_MEAL_BUILD'
       || inferredIntent === 'ASK_MEAL_COMPLETION'
       || inferredIntent === 'UPDATE_LOGGED_MEAL'
       || (isMealAdviceIntent(userText, chatHistory) && !isConsumedMealLogDescription(userText) && !looksLikeComplexMealLog(userText))

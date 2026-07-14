@@ -332,6 +332,66 @@ export function isConsultantMealIntent(userText, chatHistory = []) {
   return Boolean(parseConsultantMealIntent(text));
 }
 
+const WIP_MEAL_FUTURE_VERB_RE = /\b(?:mangio|manger[oò]|prendo|prender[oò]|avr[oò]|user[oò]|voglio\s+mangiare)\b/i;
+const WIP_MEAL_TIME_RE = /\b(?:stasera|questa\s+sera|stanotte|domani|oggi|per\s+(?:la\s+)?(?:colazione|pranzo|cena|snack|spuntino|merenda))\b/i;
+const WIP_MEAL_PAST_LOG_RE = /\b(?:ho\s+)?(?:mangiat|consumat|assunt|preso|bevut)\w*\b/i;
+
+function inferWipMealTypeFromText(text) {
+  const normalized = String(text || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (/\b(?:stasera|questa\s+sera|stanotte)\b/.test(normalized)) return 'cena';
+  if (/\b(?:domani\s+)?(?:a\s+)?colaz/.test(normalized)) return 'colazione';
+  if (/\b(?:domani\s+)?(?:a\s+)?pranzo\b/.test(normalized)) return 'pranzo';
+  if (/\b(?:domani\s+)?(?:a\s+)?cena\b/.test(normalized)) return 'cena';
+  return parseMealTypeFromUserText(normalized);
+}
+
+/**
+ * Estrae alimenti dichiarati per WIP Meal Builder (futuro/imperativo).
+ * @param {string} userText
+ * @returns {{ mealType: string|null, items: Array<{foodName:string, grams:number}>, exactTime: string|null } | null}
+ */
+export function parseWipMealDeclaration(userText) {
+  const parsed = parseConsumedMealFromNaturalText(userText);
+  if (!parsed?.items?.length) return null;
+
+  const mealType = inferWipMealTypeFromText(userText) || parsed.mealType || null;
+  return {
+    mealType,
+    items: parsed.items,
+    exactTime: parsed.exactTime || null,
+  };
+}
+
+/**
+ * WIP Meal Builder: l'utente dichiara un alimento per un pasto in costruzione.
+ * @param {string} userText
+ * @param {Array<object>} [chatHistory]
+ * @param {Array<object>} [wipMealItems]
+ * @returns {boolean}
+ */
+export function isWipMealBuildIntent(userText, chatHistory = [], wipMealItems = []) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  if (WIP_MEAL_PAST_LOG_RE.test(text)) return false;
+  if (isConsumedMealLogDescription(text)) return false;
+  if (isUpdateLoggedMealIntent(text, chatHistory)) return false;
+  if (isConsultantMealIntent(text, chatHistory)) return false;
+  if (isMealAdviceIntent(text, chatHistory)) return false;
+  if (isMealDraftEvaluationIntent(text)) return false;
+  if (isMealCompletionIntent(text)) return false;
+  if (isDayReviewIntent(text)) return false;
+  if (/\?\s*$/.test(text)) return false;
+
+  const parsed = parseWipMealDeclaration(text);
+  if (!parsed?.items?.length) return false;
+
+  const hasFutureCue = WIP_MEAL_FUTURE_VERB_RE.test(text) || WIP_MEAL_TIME_RE.test(text);
+  const hasActiveWip = Array.isArray(wipMealItems) && wipMealItems.length > 0;
+
+  return hasFutureCue || hasActiveWip;
+}
+
 /**
  * Richiesta di consiglio nutrizionale — DEVE routare a ASK_MEAL_ADVICE, non ADD_FOOD.
  * @param {string} userText
@@ -362,6 +422,7 @@ export function isFoodRegistrationIntent(userText) {
   const text = String(userText || '').trim().toLowerCase();
   if (!text) return false;
   if (looksLikeUpdateLoggedMealRequest(text)) return false;
+  if (isWipMealBuildIntent(text)) return false;
   if (isMealAdviceIntent(text)) return false;
   if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return true;
   return FOOD_REGISTRATION_PATTERNS.some((pattern) => pattern.test(text));

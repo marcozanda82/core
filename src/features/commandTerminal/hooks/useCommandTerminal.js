@@ -18,6 +18,8 @@ export function useCommandTerminal({
   chatHistory,
   setChatHistory,
   getCurrentState = null,
+  getWipMealSnapshot = null,
+  onWipMealSeed = null,
   onAddFoodCommand = null,
   onAddWorkoutCommand = null,
   onLogSleepCommand = null,
@@ -70,9 +72,13 @@ export function useCommandTerminal({
   }, [onSaveFoodDbEntry]);
 
   const getCurrentStateRef = useRef(getCurrentState);
+  const getWipMealSnapshotRef = useRef(getWipMealSnapshot);
+  const onWipMealSeedRef = useRef(onWipMealSeed);
   useEffect(() => {
     getCurrentStateRef.current = getCurrentState;
-  }, [getCurrentState]);
+    getWipMealSnapshotRef.current = getWipMealSnapshot;
+    onWipMealSeedRef.current = onWipMealSeed;
+  }, [getCurrentState, getWipMealSnapshot, onWipMealSeed]);
 
   const controller = useMemo(() => {
     const llmClient = new GeminiStructuredClient();
@@ -264,6 +270,8 @@ export function useCommandTerminal({
         pendingMealUpdate: payload.pendingMealUpdate && typeof payload.pendingMealUpdate === 'object'
           ? payload.pendingMealUpdate
           : null,
+        wipSuggestions: Array.isArray(payload.wipSuggestions) ? payload.wipSuggestions : null,
+        wipAddedChipIds: [],
         adviceId: payload.adviceId || null,
         newFoodDraft: payload.newFoodDraft || null,
         isError: payload.type === 'ERROR',
@@ -317,15 +325,26 @@ export function useCommandTerminal({
       try {
         const currentState =
           typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() : {};
+        const wipSnapshot = typeof getWipMealSnapshotRef.current === 'function'
+          ? getWipMealSnapshotRef.current()
+          : { wipMealItems: [], mealType: null };
         const imageOnly = !resolvedText && attachedImages.length > 0;
         const fallbackText =
           resolvedText ||
           'Analizza lo screenshot allegato dell app fitness/sonno (es. Xiaomi Fitness) ed estrai i dati per LOG_SLEEP.';
-        const result = await controller.processUserMessage(fallbackText, currentState, {
+        const result = await controller.processUserMessage(fallbackText, {
+          ...currentState,
+          wipMealItems: wipSnapshot.wipMealItems || [],
+        }, {
           images: attachedImages,
           intent: imageOnly ? 'LOG_SLEEP' : undefined,
           chatHistory: historyForLlm,
+          wipMealItems: wipSnapshot.wipMealItems || [],
+          wipMealMealType: wipSnapshot.mealType || null,
         });
+        if (result?.wipSeed && typeof onWipMealSeedRef.current === 'function') {
+          onWipMealSeedRef.current(result.wipSeed);
+        }
         pendingMealUpdateRef.current = controller.getPendingMealUpdate();
         if (result && result.ok === false && !result.userNotified) {
           appendAiMessage('Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?', {
