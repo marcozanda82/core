@@ -10,6 +10,8 @@ import {
   isDayReviewIntent,
   isCreateNewFoodIntent,
   isUpdateLoggedMealIntent,
+  isConsultantMealIntent,
+  parseConsultantMealIntent,
   parseTargetMealTypeFromUpdateText,
   resolveUpdateMealContext,
   findPendingUpdateLoggedMealContext,
@@ -42,6 +44,17 @@ function normalizeFoodToken(value) {
     .trim();
 }
 
+function buildDailyBudgetRemaining(currentState = {}) {
+  const nutrition = buildNutritionContextForState(currentState);
+  const budget = nutrition?.remainingBudget || {};
+  return {
+    remainingCalories: Math.round(Number(budget.kcal) || 0),
+    remainingProtein: Math.round(Number(budget.pro) || 0),
+    remainingCarbs: Math.round(Number(budget.carbo) || 0),
+    remainingFat: Math.round(Number(budget.fat) || 0),
+  };
+}
+
 export class ContextComposer {
   detectIntent(userText = '', { hasImages = false, chatHistory = [], pendingMealUpdate = null } = {}) {
     const text = toSafeString(userText).toLowerCase();
@@ -58,6 +71,7 @@ export class ContextComposer {
     if (isMealDraftEvaluationIntent(text)) return 'EVALUATE_MEAL_DRAFT';
     if (isMealCompletionIntent(text)) return 'ASK_MEAL_COMPLETION';
     if (isUpdateLoggedMealIntent(text, chatHistory)) return 'UPDATE_LOGGED_MEAL';
+    if (isConsultantMealIntent(text, chatHistory)) return 'CONSULTANT_MEAL';
     if (isMealAdviceIntent(text, chatHistory)) return 'ASK_MEAL_ADVICE';
     if (isFoodRegistrationIntent(text)) return 'ADD_FOOD';
     return 'UNKNOWN';
@@ -185,6 +199,26 @@ export class ContextComposer {
         intent: 'ASK_MEAL_ADVICE',
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
+          app: {
+            activeDate: toSafeString(currentState?.activeDate) || null,
+            locale: toSafeString(currentState?.locale) || 'it-IT',
+          },
+        },
+      };
+    }
+    if (normalizedIntent === 'CONSULTANT_MEAL') {
+      const consultantRequest = parseConsultantMealIntent(userText);
+      const dailyBudgetRemaining = buildDailyBudgetRemaining(currentState);
+      return {
+        intent: 'CONSULTANT_MEAL',
+        contextSlices: {
+          ...this.buildNutritionContextSlices(currentState),
+          dailyBudgetRemaining,
+          CONSULTANT_MEAL_REQUEST: {
+            mealType: consultantRequest?.mealType || null,
+            anchorFood: consultantRequest?.anchorFood || null,
+            userText: toSafeString(userText),
+          },
           app: {
             activeDate: toSafeString(currentState?.activeDate) || null,
             locale: toSafeString(currentState?.locale) || 'it-IT',

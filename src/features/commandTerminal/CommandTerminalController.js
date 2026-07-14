@@ -35,7 +35,9 @@ import {
   buildSubstituteMealDraftAdviceMessage,
   buildUpdateLoggedMealAdviceMessage,
   buildUpdateLoggedMealPreviewProposal,
+  buildConsultantMealAdviceMessage,
   ensureMealProposalsForAdvice,
+  ensureMealProposalsForConsultantMeal,
   ensureMealProposalsForFixDraft,
   ensureMealProposalsForSubstituteDraft,
   ensureMealProposalsForUpdateLoggedMeal,
@@ -55,6 +57,8 @@ import {
   isCreateNewFoodIntent,
   isFoodRegistrationIntent,
   isMealAdviceIntent,
+  isConsultantMealIntent,
+  parseConsultantMealIntent,
   isUpdateLoggedMealIntent,
   parseTargetMealTypeFromUpdateText,
   resolveUpdateMealContext,
@@ -439,6 +443,7 @@ export class CommandTerminalController {
     if (isMealDraftEvaluationIntent(userText)) return 'EVALUATE_MEAL_DRAFT';
     if (isMealCompletionIntent(userText)) return 'ASK_MEAL_COMPLETION';
     if (isUpdateLoggedMealIntent(userText, options?.chatHistory || [])) return 'UPDATE_LOGGED_MEAL';
+    if (isConsultantMealIntent(userText, options?.chatHistory || [])) return 'CONSULTANT_MEAL';
     if (isMealAdviceIntent(userText, options?.chatHistory || [])) return 'ASK_MEAL_ADVICE';
 
     const detected = this.composer.detectIntent(userText, {
@@ -1272,6 +1277,11 @@ export class CommandTerminalController {
         : null;
     const isDayReview = isDayReviewIntent(rawQuery);
     const isGeneric = isGenericMealSuggestionQuery(rawQuery);
+    const isConsultantMeal = isConsultantMealIntent(rawQuery, chatHistory)
+      || String(options?.forcedIntent || '').toUpperCase() === 'CONSULTANT_MEAL';
+    const consultantMealRequest = isConsultantMeal
+      ? parseConsultantMealIntent(rawQuery)
+      : null;
 
     if ((isFixDraft || isSubstituteDraft) && !mealDraftProjection?.items?.length) {
       this.publishSystemMessage(
@@ -1399,6 +1409,8 @@ export class CommandTerminalController {
           ? 'ASK_DAY_REVIEW'
           : isUpdateLogged
             ? 'UPDATE_LOGGED_MEAL'
+          : isConsultantMeal
+            ? 'CONSULTANT_MEAL'
           : isSubstituteDraft
             ? 'SUBSTITUTE_MEAL_DRAFT_ITEM'
           : isFixDraft
@@ -1411,6 +1423,7 @@ export class CommandTerminalController {
         partialMeal,
         mealDraftProjection,
         existingMealNode,
+        consultantMealRequest,
         removedFoodQuery: isSubstituteDraft
           ? parseRemovedFoodQueryFromSubstituteText(rawQuery)
           : null,
@@ -1444,6 +1457,8 @@ export class CommandTerminalController {
         mealProposals = ensureMealProposalsForFixDraft(mealProposals, adviceContext);
       } else if (isUpdateLogged) {
         mealProposals = ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceContext);
+      } else if (isConsultantMeal) {
+        mealProposals = ensureMealProposalsForConsultantMeal(mealProposals, adviceContext);
       } else if (isGeneric || adviceContext.isGenericMealSuggestion) {
         mealProposals = ensureMealProposalsForAdvice(mealProposals, adviceContext);
       }
@@ -1457,11 +1472,15 @@ export class CommandTerminalController {
         ? buildFixMealDraftAdviceMessage(adviceContext)
         : isUpdateLogged
           ? buildUpdateLoggedMealAdviceMessage(adviceContext)
+        : isConsultantMeal
+          ? (String(adviceMessage || '').trim() || buildConsultantMealAdviceMessage(adviceContext))
         : adviceMessage;
 
       this.publishAdviceMessage({
         text: finalAdviceMessage,
-        suggestedAction: isDraftEval || isFixDraft || isSubstituteDraft || isUpdateLogged ? null : suggestedAction,
+        suggestedAction: isDraftEval || isFixDraft || isSubstituteDraft || isUpdateLogged || isConsultantMeal
+          ? null
+          : suggestedAction,
         mealProposals: mealProposals.length > 0 ? mealProposals : null,
         mealDraftProjection: isDraftEval
           ? adviceContext?.mealDraftProjection || null
@@ -1480,6 +1499,8 @@ export class CommandTerminalController {
           ? 'FIX_MEAL_DRAFT'
           : isUpdateLogged
             ? 'UPDATE_LOGGED_MEAL'
+          : isConsultantMeal
+            ? 'CONSULTANT_MEAL'
           : isDraftEval
             ? 'EVALUATE_MEAL_DRAFT'
             : isDayReview
@@ -1489,7 +1510,9 @@ export class CommandTerminalController {
                 : 'ASK_MEAL_ADVICE',
         model,
         adviceContext,
-        suggestedAction: isDraftEval || isFixDraft || isSubstituteDraft || isUpdateLogged ? null : suggestedAction,
+        suggestedAction: isDraftEval || isFixDraft || isSubstituteDraft || isUpdateLogged || isConsultantMeal
+          ? null
+          : suggestedAction,
         mealProposals,
       };
     } catch (error) {
@@ -1583,6 +1606,7 @@ export class CommandTerminalController {
       || inferredIntent === 'FIX_MEAL_DRAFT'
       || inferredIntent === 'SUBSTITUTE_MEAL_DRAFT_ITEM'
       || inferredIntent === 'ASK_MEAL_ADVICE'
+      || inferredIntent === 'CONSULTANT_MEAL'
       || inferredIntent === 'ASK_MEAL_COMPLETION'
       || inferredIntent === 'UPDATE_LOGGED_MEAL'
       || (isMealAdviceIntent(userText, chatHistory) && !isConsumedMealLogDescription(userText) && !looksLikeComplexMealLog(userText))

@@ -317,6 +317,49 @@ export function ensureMealProposalsForAdvice(mealProposals, adviceContext = {}) 
     .slice(0, MAX_HABIT_PROPOSALS);
 }
 
+function proposalIncludesAnchorFood(proposal, anchorFood) {
+  const anchor = String(anchorFood || '').trim().toLowerCase();
+  if (!anchor) return true;
+  const items = Array.isArray(proposal?.items) ? proposal.items : [];
+  return items.some((item) => {
+    const name = String(item?.foodName || '').trim().toLowerCase();
+    return name.includes(anchor) || anchor.includes(name);
+  });
+}
+
+/**
+ * Garantisce 3 mealProposals Consultant Mode con alimento base incluso in ogni opzione.
+ * @param {Array<object>} mealProposals
+ * @param {object} adviceContext
+ * @returns {Array<object>}
+ */
+export function ensureMealProposalsForConsultantMeal(mealProposals, adviceContext = {}) {
+  const anchorFood = String(adviceContext?.consultantMealRequest?.anchorFood || '').trim();
+  const mealType = String(
+    adviceContext?.consultantMealRequest?.mealType
+    || adviceContext?.currentMealType
+    || 'pranzo',
+  ).toLowerCase();
+
+  const enriched = (Array.isArray(mealProposals) ? mealProposals : [])
+    .map((proposal, index) => enrichMealProposal({
+      ...proposal,
+      mealType: proposal?.mealType || mealType,
+      label: proposal?.label || `Opzione ${index + 1}`,
+      source: proposal?.source || 'consultant_meal',
+    }, adviceContext))
+    .filter(Boolean);
+
+  const withAnchor = enriched.filter((proposal) => proposalIncludesAnchorFood(proposal, anchorFood));
+  const picked = (withAnchor.length > 0 ? withAnchor : enriched).slice(0, 3);
+
+  return picked.map((proposal, index) => ({
+    ...proposal,
+    label: `Opzione ${index + 1}`,
+    source: proposal.source || 'consultant_meal',
+  }));
+}
+
 const CARB_HEAVY_FOOD_PATTERN = /pizza|pasta|riso|pane|patat|gnocch|crack|farro|orzo|cous|polenta/i;
 const FAT_HEAVY_FOOD_PATTERN = /olio|noci|pesto|edamame|burro|formagg|mandorl|avocado|semi/i;
 const PROTEIN_PRESERVE_FOOD_PATTERN = /salmone|merluzzo|tonno|pollo|uov|manzo|tacchino|gamber|bresaol|prosciutt/i;
@@ -605,6 +648,15 @@ export function buildUpdateLoggedMealAdviceMessage(adviceContext = {}) {
   const mealType = String(adviceContext?.existingMealNode?.mealType || 'pasto').toLowerCase();
   const mealLabel = MEAL_TYPE_LABELS[mealType] || 'Pasto';
   return `Ho recuperato il tuo ${mealLabel}. Ecco la versione aggiornata, conferma per sovrascrivere.`;
+}
+
+export function buildConsultantMealAdviceMessage(adviceContext = {}) {
+  const anchor = String(adviceContext?.consultantMealRequest?.anchorFood || 'alimento').trim();
+  const mealType = String(adviceContext?.consultantMealRequest?.mealType || 'pasto').toLowerCase();
+  const mealLabel = MEAL_TYPE_LABELS[mealType] || 'Pasto';
+  const budget = adviceContext?.remainingBudget || {};
+  const kcal = Math.round(Number(budget.kcal) || 0);
+  return `Ho usato ${anchor} come base per la tua ${mealLabel.toLowerCase()}. Ecco 3 combinazioni che completano i macro rimanenti (${kcal} kcal). Scegli un'opzione e caricala nel diario.`;
 }
 
 /**
@@ -1285,10 +1337,18 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
   void (await Promise.resolve());
   const rawQuery = String(targetFood || '').trim();
   const isGenericSuggestion = isGenericMealSuggestionQuery(rawQuery);
+  const intent = String(options?.intent || '').trim().toUpperCase() || null;
+  const consultantMealRequest = options?.consultantMealRequest && typeof options.consultantMealRequest === 'object'
+    ? options.consultantMealRequest
+    : null;
+  const isConsultantMealMode = intent === 'CONSULTANT_MEAL' || Boolean(consultantMealRequest?.anchorFood);
   const foodQuery = isGenericSuggestion ? '' : (extractTargetFoodFromQuery(rawQuery) || rawQuery);
   const foodDb = currentAppState?.foodDatabase || {};
   const nutrition = buildNutritionContextForState(currentAppState);
-  const currentMealType = nutrition.currentMealType;
+  let currentMealType = nutrition.currentMealType;
+  if (isConsultantMealMode && consultantMealRequest?.mealType) {
+    currentMealType = consultantMealRequest.mealType;
+  }
   const remainingBudget = nutrition.remainingBudget;
   const foodCandidates = foodQuery
     ? buildFoodCandidates(foodQuery, currentAppState, currentMealType)
@@ -1367,7 +1427,6 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
   const draftTotalKcal = Math.round(Number(mealDraftTotals.kcal) || 0);
   const budgetOverflowAmount = Math.max(0, draftTotalKcal - budgetKcal);
 
-  const intent = String(options?.intent || '').trim().toUpperCase();
   const removedFoodQuery = String(options?.removedFoodQuery || '').trim() || null;
   const existingMealNodeRaw = options?.existingMealNode && typeof options.existingMealNode === 'object'
     ? options.existingMealNode
@@ -1460,7 +1519,15 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     userHabitsForCurrentMeal,
     fallbackMealProposals,
     isGenericMealSuggestion: isGenericSuggestion,
-    intent: String(options?.intent || '').trim() || null,
+    intent: intent || null,
+    consultantMealRequest,
+    isConsultantMealMode,
+    dailyBudgetRemaining: {
+      remainingCalories: Math.round(Number(remainingBudget?.kcal) || 0),
+      remainingProtein: Math.round(Number(remainingBudget?.pro) || 0),
+      remainingCarbs: Math.round(Number(remainingBudget?.carbo) || 0),
+      remainingFat: Math.round(Number(remainingBudget?.fat) || 0),
+    },
     existingMealNode: existingMealNodeRaw,
     upcomingWorkout,
     dailyCalorieStrategy,
@@ -1511,6 +1578,9 @@ export function generateConsultantSystemInstruction() {
     'INTENTO SUBSTITUTE_MEAL_DRAFT_ITEM (SOSTITUZIONE ALIMENTO): quando l intent è SUBSTITUTE_MEAL_DRAFT_ITEM, DEVI generare mealProposals (2-3 opzioni). Mantieni TUTTI gli alimenti in [KEPT_DRAFT_PROJECTION] invariati in ogni proposta. Sostituisci SOLO [REMOVED_DRAFT_ITEM] con un alimento alternativo diverso per opzione. Il totale kcal di ogni proposta DEVE essere <= [METABOLIC_BUDGET].kcal. Gli alimenti sostitutivi di ciascuna opzione DEVONO avere totals.kcal <= [RESIDUAL_BUDGET_AFTER_REMOVAL].kcal (vincolo assoluto sul buco da riempire).',
     'STRUTTURA OBBLIGATORIA adviceMessage (SUBSTITUTE_MEAL_DRAFT_ITEM): "Ho rimosso [REMOVED_DRAFT_ITEM].foodName. Ecco 3 alternative che completano il tuo pasto tenendoti perfettamente nel budget." Poi elenca Opzione 1/2/3 allineate a mealProposals. Nessun semaforo.',
     'INTENTO UPDATE_LOGGED_MEAL (MODIFICA PASTO REGISTRATO): quando l intent è UPDATE_LOGGED_MEAL e nel prompt è presente [EXISTING_MEAL_NODE], DEVI generare UNA SOLA mealProposal. Parti dagli alimenti in [EXISTING_MEAL_NODE].items, applica le aggiunte/rimozioni/modifiche richieste dall utente, e restituisci la lista aggiornata completa. OBBLIGATORIO: imposta targetNodeId uguale a [EXISTING_MEAL_NODE].targetNodeId. Preserva mealType ed exactTime del nodo esistente salvo richiesta esplicita di cambio orario. NON creare un nuovo pasto: stai sovrascrivendo quello esistente. label: "Pasto aggiornato". source: "logged_meal_update".',
+    'INTENTO CONSULTANT_MEAL (MODALITÀ CONSULENTE): quando l intent è CONSULTANT_MEAL e nel prompt è presente [CONSULTANT_MEAL_REQUEST], sei un nutrizionista. L utente ha inserito [CONSULTANT_MEAL_REQUEST].anchorFood come alimento base fisso. DEVI creare ESATTAMENTE 3 opzioni di pasto complete (mealProposals) che includano SEMPRE quell alimento base + altri ingredienti che bilanciano il pasto rispetto a [dailyBudgetRemaining] e [METABOLIC_BUDGET]. Ogni opzione deve avere items[] completi (foodName + grams > 0) e totals coerenti. label: "Opzione 1", "Opzione 2", "Opzione 3". source: "consultant_meal".',
+    'HARD CONSTRAINT CONSULTANT_MEAL: totals.kcal di OGNI opzione deve essere <= [METABOLIC_BUDGET].kcal. Ogni items[] DEVE contenere [CONSULTANT_MEAL_REQUEST].anchorFood. Varia gli accompagnamenti tra le 3 opzioni (es. verdure diverse, carboidrati complementari).',
+    'STRUTTURA OBBLIGATORIA adviceMessage (CONSULTANT_MEAL): conferma l alimento base scelto, cita il budget residuo in kcal, presenta Opzione 1/2/3 in sintesi e chiudi con CTA per scegliere e caricare una proposta.',
     'HARD CONSTRAINT UPDATE_LOGGED_MEAL — ITEMS COMPLETI: DEVI SEMPRE restituire l array COMPLETO items[] con foodName e grams compilati per OGNI alimento. Se la richiesta è vaga o non specifica modifiche, restituisci l elenco ESATTO degli alimenti originali da [EXISTING_MEAL_NODE] senza alterazioni. MAI restituire items[] vuoto o con foodName/grams mancanti.',
     'STRUTTURA OBBLIGATORIA adviceMessage (UPDATE_LOGGED_MEAL): "Ho recuperato il tuo [Pasto]. Ecco la versione aggiornata, conferma per sovrascrivere." Nessun semaforo, nessuna Opzione 2/3.',
     'STRUTTURA OBBLIGATORIA adviceMessage (EVALUATE_MEAL_DRAFT):\n1) Check Matematico: cita il totale kcal della bozza ([DRAFT_TOTAL_KCAL]) vs [METABOLIC_BUDGET].kcal. Se [BUDGET_OVERFLOW_AMOUNT] > 0, dichiara esplicitamente di quanto sfora (es. "sforeresti il budget di 600 kcal"). Se è 0, conferma che rientri.\n2) Intervento (tagli chirurgici): individua quale alimento in [MEAL_DRAFT_PROJECTION] causa l esubero (es. pizza, noci, grassi) e proponi tagli precisi (es. "Dimezza la porzione di pizza e togli le noci").\n3) CTA finale: "Vuoi che calcoli le porzioni esatte per farti rientrare, o vuoi sostituire [alimento] con qualcos altro?"\nTono: diretto, da buttafuori nutrizionale, max ~8 righe. Nessuna Opzione 1/2/3.',
@@ -1567,6 +1637,15 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
   const removedDraftJson = JSON.stringify(removedDraftItem, null, 0);
   const existingMealNode = ctx.existingMealNode ?? null;
   const existingMealJson = JSON.stringify(existingMealNode, null, 0);
+  const consultantMealRequest = ctx.consultantMealRequest ?? null;
+  const consultantMealJson = JSON.stringify(consultantMealRequest, null, 0);
+  const dailyBudgetRemaining = ctx.dailyBudgetRemaining ?? {
+    remainingCalories: Math.round(Number(budget?.kcal) || 0),
+    remainingProtein: Math.round(Number(budget?.pro) || 0),
+    remainingCarbs: Math.round(Number(budget?.carbo) || 0),
+    remainingFat: Math.round(Number(budget?.fat) || 0),
+  };
+  const dailyBudgetRemainingJson = JSON.stringify(dailyBudgetRemaining, null, 0);
   const draftTotalKcal = ctx.draftTotalKcal ?? null;
   const budgetOverflowAmount = ctx.budgetOverflowAmount ?? null;
   const intent = String(ctx.intent || '').trim().toUpperCase();
@@ -1613,6 +1692,8 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     keptDraftProjection ? `[KEPT_DRAFT_PROJECTION: ${keptDraftJson}]` : '',
     removedDraftItem ? `[REMOVED_DRAFT_ITEM: ${removedDraftJson}]` : '',
     existingMealNode ? `[EXISTING_MEAL_NODE: ${existingMealJson}]` : '',
+    consultantMealRequest ? `[CONSULTANT_MEAL_REQUEST: ${consultantMealJson}]` : '',
+    consultantMealRequest ? `[dailyBudgetRemaining: ${dailyBudgetRemainingJson}]` : '',
     mealDraftProjection ? `[MEAL_DRAFT_PROJECTION: ${mealDraftJson}]` : '',
     mealDraftProjection ? `[DRAFT_TOTAL_KCAL: ${draftTotalKcal}]` : '',
     mealDraftProjection ? `[BUDGET_OVERFLOW_AMOUNT: ${budgetOverflowAmount}]` : '',
@@ -1705,6 +1786,16 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
         'HARD CONSTRAINT: items[] DEVE contenere TUTTI gli alimenti con foodName e grams > 0. Se la richiesta è vaga, restituisci gli alimenti originali invariati.',
         'label: "Pasto aggiornato". source: "logged_meal_update". NON generare Opzione 2/3.',
         'adviceMessage: "Ho recuperato il tuo [Pasto]. Ecco la versione aggiornata, conferma per sovrascrivere."',
+      ].join('\n')
+      : '',
+    intent === 'CONSULTANT_MEAL'
+      ? [
+        'CONSULTANT MODE ATTIVA (CONSULTANT_MEAL).',
+        'Sei un nutrizionista. L utente ha dichiarato un alimento base fisso in [CONSULTANT_MEAL_REQUEST].anchorFood.',
+        'Crea ESATTAMENTE 3 mealProposals distinte. Ogni proposta DEVE includere l alimento base + ingredienti complementari che bilanciano il pasto.',
+        'Rispetta [dailyBudgetRemaining] e [METABOLIC_BUDGET]: totals.kcal di ogni opzione <= [METABOLIC_BUDGET].kcal.',
+        'Compila items[] completi (foodName + grams > 0) e totals coerenti. label: "Opzione 1", "Opzione 2", "Opzione 3". source: "consultant_meal".',
+        'adviceMessage: conferma alimento base, cita budget residuo, sintetizza le 3 opzioni e invita a sceglierne una da caricare.',
       ].join('\n')
       : '',
     '',

@@ -244,6 +244,94 @@ export function isMealProposalQuery(userText) {
   return MEAL_PROPOSAL_QUERY_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+const CONSULTANT_MEAL_TYPE_TOKEN_RE = '(?:colazione|pranzo|cena|snack|spuntino|merenda)';
+const CONSULTANT_CERTAINTY_RE = /\b(?:sicuramente|di\s+sicuro|sicuro|certamente|comunque|per\s+forza)\b/i;
+const CONSULTANT_EVALUATION_BLOCK_RE = /\b(?:posso|conviene|va\s+bene)\s+(?:mangiare|prendere|avere)\b/i;
+
+const CONSULTANT_MEAL_PATTERNS = [
+  new RegExp(`\\bconsigl\\w*\\s+(?:un\\s+|una\\s+|il\\s+|la\\s+|lo\\s+|l')?${CONSULTANT_MEAL_TYPE_TOKEN_RE}\\s+con\\s+`, 'i'),
+  new RegExp(`\\b${CONSULTANT_MEAL_TYPE_TOKEN_RE}\\s+con\\s+`, 'i'),
+  new RegExp(`\\bper\\s+(?:la\\s+|il\\s+|lo\\s+|l')?${CONSULTANT_MEAL_TYPE_TOKEN_RE}\\b.+${CONSULTANT_CERTAINTY_RE.source}`, 'i'),
+  new RegExp(`\\b${CONSULTANT_MEAL_TYPE_TOKEN_RE}\\b.+\\b(?:mangio|avr[oò]|prendo|user[oò])\\s+(?:sicuramente|di\\s+sicuro|certamente)\\b`, 'i'),
+  new RegExp(`\\b(?:mangio|avr[oò]|prendo|user[oò])\\s+(?:sicuramente|di\\s+sicuro|certamente)\\s+`, 'i'),
+];
+
+function cleanConsultantAnchorFood(raw) {
+  let text = String(raw || '').trim().toLowerCase();
+  if (!text) return null;
+  text = text.replace(/\b(?:per|alla|al|il|la|lo|l'|nel|nella|colazione|pranzo|cena|snack|spuntino|merenda)\b/g, ' ');
+  text = text.replace(/\s+e\s+.+$/, '').trim();
+  text = text.replace(/[.,;!?]+$/, '').trim();
+  return text || null;
+}
+
+/**
+ * Estrae pasto target e alimento base da una richiesta Consultant Mode.
+ * @param {string} userText
+ * @returns {{ mealType: string, anchorFood: string, rawQuery: string } | null}
+ */
+export function parseConsultantMealIntent(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return null;
+
+  const mealType = parseTargetMealTypeFromUpdateText(text)?.mealType
+    || parseMealTypeFromUserText(text);
+  if (!mealType) return null;
+
+  let anchorFood = null;
+  const conMatch = text.match(
+    new RegExp(`\\b${CONSULTANT_MEAL_TYPE_TOKEN_RE}\\s+con\\s+(.+)`, 'i'),
+  );
+  if (conMatch?.[1]) {
+    anchorFood = cleanConsultantAnchorFood(conMatch[1]);
+  }
+
+  if (!anchorFood) {
+    const certMatch = text.match(
+      /(?:sicuramente|di\s+sicuro|certamente)\s+(.+?)(?:\s*$|[.,;!?]|(?:\s+per\s+)|(?:\s+e\s+))/i,
+    );
+    if (certMatch?.[1]) anchorFood = cleanConsultantAnchorFood(certMatch[1]);
+  }
+
+  if (!anchorFood) {
+    const verbMatch = text.match(
+      /\b(?:mangio|avr[oò]|prendo|user[oò])\s+(?:sicuramente|di\s+sicuro|certamente)\s+(.+?)(?:\s+per\s+|\s*$|[.,;])/i,
+    );
+    if (verbMatch?.[1]) anchorFood = cleanConsultantAnchorFood(verbMatch[1]);
+  }
+
+  if (!anchorFood) return null;
+
+  return {
+    mealType,
+    anchorFood,
+    rawQuery: text,
+  };
+}
+
+/**
+ * Consultant Mode: l'utente dichiara un alimento base sicuro per un pasto
+ * e chiede 3 varianti complete bilanciate sui macro rimanenti.
+ * @param {string} userText
+ * @param {Array<object>} [chatHistory]
+ * @returns {boolean}
+ */
+export function isConsultantMealIntent(userText, chatHistory = []) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return false;
+  if (isUpdateLoggedMealIntent(text, chatHistory)) return false;
+  if (isMealDraftEvaluationIntent(text)) return false;
+  if (isMealCompletionIntent(text)) return false;
+  if (CONSULTANT_EVALUATION_BLOCK_RE.test(text)) return false;
+  if (/\?\s*$/.test(text) && !/\bconsigl\w*/.test(text)) return false;
+  if (!CONSULTANT_MEAL_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (!CONSULTANT_CERTAINTY_RE.test(text) && !/\bconsigl\w*\s+/.test(text) && !/\bcon\s+\w/.test(text)) {
+    return false;
+  }
+  return Boolean(parseConsultantMealIntent(text));
+}
+
 /**
  * Richiesta di consiglio nutrizionale — DEVE routare a ASK_MEAL_ADVICE, non ADD_FOOD.
  * @param {string} userText
